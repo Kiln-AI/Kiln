@@ -14,8 +14,18 @@ from pydantic import BaseModel
 
 from ..utils.config import Config
 
+"""
+Provides model configuration and management for various LLM providers and models.
+This module handles the integration with different AI model providers and their respective models,
+including configuration, validation, and instantiation of language models.
+"""
+
 
 class ModelProviderName(str, Enum):
+    """
+    Enumeration of supported AI model providers.
+    """
+
     openai = "openai"
     groq = "groq"
     amazon_bedrock = "amazon_bedrock"
@@ -24,6 +34,10 @@ class ModelProviderName(str, Enum):
 
 
 class ModelFamily(str, Enum):
+    """
+    Enumeration of supported model families/architectures.
+    """
+
     gpt = "gpt"
     llama = "llama"
     phi = "phi"
@@ -33,6 +47,11 @@ class ModelFamily(str, Enum):
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
 class ModelName(str, Enum):
+    """
+    Enumeration of specific model versions supported by the system.
+    Where models have instruct and raw versions, instruct is default and raw is specified.
+    """
+
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
@@ -47,13 +66,32 @@ class ModelName(str, Enum):
 
 
 class KilnModelProvider(BaseModel):
+    """
+    Configuration for a specific model provider.
+
+    Attributes:
+        name: The provider's identifier
+        supports_structured_output: Whether the provider supports structured output formats
+        provider_options: Additional provider-specific configuration options
+    """
+
     name: ModelProviderName
-    # Allow overriding the model level setting
     supports_structured_output: bool = True
     provider_options: Dict = {}
 
 
 class KilnModel(BaseModel):
+    """
+    Configuration for a specific AI model.
+
+    Attributes:
+        family: The model's architecture family
+        name: The model's identifier
+        friendly_name: Human-readable name for the model
+        providers: List of providers that offer this model
+        supports_structured_output: Whether the model supports structured output formats
+    """
+
     family: str
     name: str
     friendly_name: str
@@ -292,6 +330,18 @@ built_in_models: List[KilnModel] = [
 
 
 def provider_name_from_id(id: str) -> str:
+    """
+    Converts a provider ID to its human-readable name.
+
+    Args:
+        id: The provider identifier string
+
+    Returns:
+        The human-readable name of the provider
+
+    Raises:
+        ValueError: If the provider ID is invalid or unhandled
+    """
     if id in ModelProviderName.__members__:
         enum_id = ModelProviderName(id)
         match enum_id:
@@ -350,6 +400,15 @@ def get_config_value(key: str):
 
 
 def check_provider_warnings(provider_name: ModelProviderName):
+    """
+    Validates that required configuration is present for a given provider.
+
+    Args:
+        provider_name: The provider to check
+
+    Raises:
+        ValueError: If required configuration keys are missing
+    """
     warning_check = provider_warnings.get(provider_name)
     if warning_check is None:
         return
@@ -359,6 +418,19 @@ def check_provider_warnings(provider_name: ModelProviderName):
 
 
 def langchain_model_from(name: str, provider_name: str | None = None) -> BaseChatModel:
+    """
+    Creates a LangChain chat model instance for the specified model and provider.
+
+    Args:
+        name: The name of the model to instantiate
+        provider_name: Optional specific provider to use (defaults to first available)
+
+    Returns:
+        A configured LangChain chat model instance
+
+    Raises:
+        ValueError: If the model/provider combination is invalid or misconfigured
+    """
     if name not in ModelName.__members__:
         raise ValueError(f"Invalid name: {name}")
 
@@ -421,14 +493,27 @@ def langchain_model_from(name: str, provider_name: str | None = None) -> BaseCha
         raise ValueError(f"Invalid model or provider: {name} - {provider_name}")
 
 
-def ollama_base_url():
+def ollama_base_url() -> str:
+    """
+    Gets the base URL for Ollama API connections.
+
+    Returns:
+        The base URL to use for Ollama API calls, using environment variable if set
+        or falling back to localhost default
+    """
     env_base_url = os.getenv("OLLAMA_BASE_URL")
     if env_base_url is not None:
         return env_base_url
     return "http://localhost:11434"
 
 
-async def ollama_online():
+async def ollama_online() -> bool:
+    """
+    Checks if the Ollama service is available and responding.
+
+    Returns:
+        True if Ollama is available and responding, False otherwise
+    """
     try:
         httpx.get(ollama_base_url() + "/api/tags")
     except httpx.RequestError:

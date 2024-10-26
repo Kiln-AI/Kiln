@@ -39,6 +39,16 @@ PT = TypeVar("PT", bound="KilnParentedModel")
 
 
 class KilnBaseModel(BaseModel):
+    """Base model for all Kiln data models with common functionality for persistence and versioning.
+
+    Attributes:
+        v (int): Schema version number for migration support
+        id (str): Unique identifier for the model instance
+        path (Path): File system path where the model is stored
+        created_at (datetime): Timestamp when the model was created
+        created_by (str): User ID of the creator
+    """
+
     model_config = ConfigDict(validate_assignment=True)
 
     v: int = Field(default=1)  # schema_version
@@ -63,11 +73,30 @@ class KilnBaseModel(BaseModel):
 
     @classmethod
     def load_from_folder(cls: Type[T], folderPath: Path) -> T:
+        """Load a model instance from a folder using the default filename.
+
+        Args:
+            folderPath (Path): Directory path containing the model file
+
+        Returns:
+            T: Instance of the model
+        """
         path = folderPath / cls.base_filename()
         return cls.load_from_file(path)
 
     @classmethod
     def load_from_file(cls: Type[T], path: Path) -> T:
+        """Load a model instance from a specific file path.
+
+        Args:
+            path (Path): Path to the model file
+
+        Returns:
+            T: Instance of the model
+
+        Raises:
+            ValueError: If the loaded model is not of the expected type or version
+        """
         with open(path, "r") as file:
             file_data = file.read()
             # TODO P2 perf: parsing the JSON twice here.
@@ -93,6 +122,11 @@ class KilnBaseModel(BaseModel):
         return m
 
     def save_to_file(self) -> None:
+        """Save the model instance to a file.
+
+        Raises:
+            ValueError: If the path is not set
+        """
         path = self.build_path()
         if path is None:
             raise ValueError(
@@ -117,6 +151,15 @@ class KilnBaseModel(BaseModel):
 
 
 class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
+    """Base model for Kiln models that have a parent-child relationship. This base class is for child models.
+
+    This class provides functionality for managing hierarchical relationships between models,
+    including parent reference handling and file system organization.
+
+    Attributes:
+        _parent (KilnBaseModel): Reference to the parent model instance
+    """
+
     _parent: KilnBaseModel | None = None
 
     # workaround to tell typechecker that we support the parent property, even though it's not a stock property
@@ -130,6 +173,11 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @property
     def parent(self) -> Optional[KilnBaseModel]:
+        """Get the parent model instance, loading it from disk if necessary.
+
+        Returns:
+            Optional[KilnBaseModel]: The parent model instance or None if not set
+        """
         if self._parent is not None:
             return self._parent
         # lazy load parent from path
@@ -245,6 +293,15 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 # Parent create methods for all child relationships
 # You must pass in parent_of in the subclass definition, defining the child relationships
 class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
+    """Base model for Kiln models that can have child models.
+
+    This class provides functionality for managing collections of child models and their persistence.
+    Child relationships must be defined using the parent_of parameter in the class definition.
+
+    Args:
+        parent_of (Dict[str, Type[KilnParentedModel]]): Mapping of relationship names to child model types
+    """
+
     @classmethod
     def _create_child_method(
         cls, relationship_name: str, child_class: Type[KilnParentedModel]
@@ -289,6 +346,19 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         path: Path | None = None,
         parent: KilnBaseModel | None = None,
     ):
+        """Validate and save a model instance along with all its nested child relationships.
+
+        Args:
+            data (Dict[str, Any]): Model data including child relationships
+            path (Path, optional): Path where the model should be saved
+            parent (KilnBaseModel, optional): Parent model instance for parented models
+
+        Returns:
+            KilnParentModel: The validated and saved model instance
+
+        Raises:
+            ValidationError: If validation fails for the model or any of its children
+        """
         # Validate first, then save. Don't want error half way through, and partly persisted
         # TODO P2: save to tmp dir, then move atomically. But need to merge directories so later.
         cls._validate_nested(data, save=False, path=path, parent=parent)

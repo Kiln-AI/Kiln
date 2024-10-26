@@ -10,21 +10,55 @@ JsonObjectSchema = Annotated[
     str,
     AfterValidator(lambda v: _check_json_schema(v)),
 ]
+"""A pydantic type that validates strings containing JSON schema definitions.
+Must be a valid JSON schema object with 'type': 'object' and 'properties' defined.
+"""
 
 
 def _check_json_schema(v: str) -> str:
-    # parsing returns needed errors
+    """Internal validation function for JSON schema strings.
+
+    Args:
+        v: String containing a JSON schema definition
+
+    Returns:
+        The input string if valid
+
+    Raises:
+        ValueError: If the schema is invalid
+    """
     schema_from_json_str(v)
     return v
 
 
 def validate_schema(instance: Dict, schema_str: str) -> None:
+    """Validate a dictionary against a JSON schema.
+
+    Args:
+        instance: Dictionary to validate
+        schema_str: JSON schema string to validate against
+
+    Raises:
+        jsonschema.exceptions.ValidationError: If validation fails
+        ValueError: If the schema is invalid
+    """
     schema = schema_from_json_str(schema_str)
     v = jsonschema.Draft202012Validator(schema)
     return v.validate(instance)
 
 
 def schema_from_json_str(v: str) -> Dict:
+    """Parse and validate a JSON schema string.
+
+    Args:
+        v: String containing a JSON schema definition
+
+    Returns:
+        Dict containing the parsed JSON schema
+
+    Raises:
+        ValueError: If the input is not a valid JSON schema object with required properties
+    """
     try:
         parsed = json.loads(v)
         jsonschema.Draft202012Validator.check_schema(parsed)
