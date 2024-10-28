@@ -11,6 +11,7 @@
   export let error: KilnError | null = null
   export let submitting = false
   export let saved = false
+  export let keyboard_submit = true
 
   async function focus_field(field: string) {
     // Async as the forms validation is also trying to set focus and we want to win
@@ -97,7 +98,30 @@
       event.preventDefault()
     }
   }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!keyboard_submit) {
+      return
+    }
+    // Command+Enter (Mac) or Ctrl+Enter (Windows/Linux)
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault()
+      if (!submitting) {
+        validate_and_submit()
+      }
+    }
+  }
+
+  // Add this function to detect macOS
+  function isMacOS() {
+    return (
+      typeof navigator !== "undefined" &&
+      navigator.platform.toLowerCase().includes("mac")
+    )
+  }
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 <form class="flex flex-col gap-6 w-full" {id}>
   <slot />
@@ -119,7 +143,9 @@
     {/if}
     <button
       type="submit"
-      class="btn {primary ? 'btn-primary' : ''} {saved ? 'btn-success' : ''}"
+      class="relative btn {primary ? 'btn-primary' : ''} {saved
+        ? 'btn-success'
+        : ''}"
       on:click={validate_and_submit}
       disabled={submitting}
     >
@@ -127,6 +153,17 @@
         ✔ Saved
       {:else if !submitting}
         {submit_label}
+        <span
+          class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+            ? ''
+            : 'hidden'}"
+        >
+          {#if isMacOS()}
+            <span class="tracking-widest">⌘↵</span>
+          {:else}
+            <span>ctrl ↵</span>
+          {/if}
+        </span>
       {:else}
         <span class="loading loading-spinner loading-md"></span>
       {/if}

@@ -25,9 +25,15 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pip install -r dev-requirements.txt
 
-      - name: Build Docs
+      - name: Build Python Core Docs
         working-directory: ./libs/core
-        run: pdoc -o ./docs/kiln_core_docs kiln_ai
+        run: pdoc -o ./docs/kiln_core_docs kiln_ai --logo https://github.com/user-attachments/assets/046f44ae-28cf-4c78-85c3-c3e5ad744fd7 --logo-link https://kiln-ai.com
+
+      - name: Install Redoc CLI
+        run: npm install -g @redocly/cli
+
+      - name: Build OpenAPI Docs
+        run: python -m libs.server.kiln_server.generate_openapi && mkdir ./libs/core/docs/kiln_server_openapi_docs && npx @redocly/cli build-docs openapi.json -o ./libs/core/docs/kiln_server_openapi_docs/index.html
 
       - name: Setup Pages
         id: pages

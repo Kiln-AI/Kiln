@@ -44,7 +44,7 @@ def connect_project_api(app: FastAPI):
         if os.path.exists(project_path):
             raise HTTPException(
                 status_code=400,
-                detail="Project with this name already exists. Please choose a different name.",
+                detail="Project with this folder name already exists. Please choose a different name or rename the prior project's folder.",
             )
 
         os.makedirs(project_path)

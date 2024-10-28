@@ -112,7 +112,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Prompts"
-    subtitle={`Explore prompts for ${task?.name}`}
+    subtitle={`Explore prompts for "${task?.name}"`}
     sub_subtitle="Kiln builds prompts based on data, not static text. Running prompts and rating the responses will improve your prompt quality using methods like few-shot and multi-shot prompting."
   >
     {#if task_loading}

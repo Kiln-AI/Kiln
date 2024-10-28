@@ -1,5 +1,4 @@
 import json
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,8 +14,7 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.utils.config import Config
 
-from libs.studio.kiln_studio.provider_api import (
-    ChatBedrockConverse,
+from app.desktop.studio_server.provider_api import (
     OllamaConnection,
     connect_bedrock,
     connect_groq,
@@ -55,7 +53,7 @@ def test_connect_api_key_unsupported_provider(client):
     assert response.json() == {"message": "Provider unsupported not supported"}
 
 
-@patch("libs.studio.kiln_studio.provider_api.connect_openai")
+@patch("app.desktop.studio_server.provider_api.connect_openai")
 def test_connect_api_key_openai_success(mock_connect_openai, client):
     mock_connect_openai.return_value = {"message": "Connected to OpenAI"}
     response = client.post(
@@ -67,8 +65,8 @@ def test_connect_api_key_openai_success(mock_connect_openai, client):
     mock_connect_openai.assert_called_once_with("test_key")
 
 
-@patch("libs.studio.kiln_studio.provider_api.requests.get")
-@patch("libs.studio.kiln_studio.provider_api.Config.shared")
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
 def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -87,7 +85,7 @@ def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
     assert mock_config.open_ai_api_key == "test_key"
 
 
-@patch("libs.studio.kiln_studio.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.requests.get")
 def test_connect_openai_invalid_key(mock_requests_get, client):
     mock_response = MagicMock()
     mock_response.status_code = 401
@@ -104,7 +102,7 @@ def test_connect_openai_invalid_key(mock_requests_get, client):
     }
 
 
-@patch("libs.studio.kiln_studio.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.requests.get")
 def test_connect_openai_request_exception(mock_requests_get, client):
     mock_requests_get.side_effect = Exception("Test error")
 
@@ -119,19 +117,19 @@ def test_connect_openai_request_exception(mock_requests_get, client):
 
 @pytest.fixture
 def mock_requests_get():
-    with patch("libs.studio.kiln_studio.provider_api.requests.get") as mock_get:
+    with patch("app.desktop.studio_server.provider_api.requests.get") as mock_get:
         yield mock_get
 
 
 @pytest.fixture
 def mock_config():
-    with patch("libs.studio.kiln_studio.provider_api.Config") as mock_config:
+    with patch("app.desktop.studio_server.provider_api.Config") as mock_config:
         mock_config.shared.return_value = MagicMock()
         yield mock_config
 
 
-@patch("libs.studio.kiln_studio.provider_api.requests.get")
-@patch("libs.studio.kiln_studio.provider_api.Config.shared")
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
 async def test_connect_groq_success(mock_config_shared, mock_requests_get):
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -236,12 +234,12 @@ async def test_connect_openrouter():
 
 @pytest.fixture
 def mock_environ():
-    with patch("libs.studio.kiln_studio.provider_api.os.environ", {}) as mock_env:
+    with patch("app.desktop.studio_server.provider_api.os.environ", {}) as mock_env:
         yield mock_env
 
 
 @pytest.mark.asyncio
-@patch("libs.studio.kiln_studio.provider_api.ChatBedrockConverse")
+@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
 async def test_connect_bedrock_success(mock_chat_bedrock, mock_environ):
     mock_llm = MagicMock()
     mock_chat_bedrock.return_value = mock_llm
@@ -263,7 +261,7 @@ async def test_connect_bedrock_success(mock_chat_bedrock, mock_environ):
 
 
 @pytest.mark.asyncio
-@patch("libs.studio.kiln_studio.provider_api.ChatBedrockConverse")
+@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
 async def test_connect_bedrock_invalid_credentials(mock_chat_bedrock, mock_environ):
     mock_llm = MagicMock()
     mock_chat_bedrock.return_value = mock_llm
@@ -283,7 +281,7 @@ async def test_connect_bedrock_invalid_credentials(mock_chat_bedrock, mock_envir
 
 
 @pytest.mark.asyncio
-@patch("libs.studio.kiln_studio.provider_api.ChatBedrockConverse")
+@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
 async def test_connect_bedrock_unknown_error(mock_chat_bedrock, mock_environ):
     mock_llm = MagicMock()
     mock_chat_bedrock.return_value = mock_llm
@@ -299,7 +297,7 @@ async def test_connect_bedrock_unknown_error(mock_chat_bedrock, mock_environ):
 
 
 @pytest.mark.asyncio
-@patch("libs.studio.kiln_studio.provider_api.ChatBedrockConverse")
+@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
 async def test_connect_bedrock_environment_variables(mock_chat_bedrock, mock_environ):
     mock_llm = MagicMock()
     mock_chat_bedrock.return_value = mock_llm
@@ -350,13 +348,14 @@ async def test_get_available_models(app, client):
     )
 
     with patch(
-        "libs.studio.kiln_studio.provider_api.Config.shared", return_value=mock_config
+        "app.desktop.studio_server.provider_api.Config.shared", return_value=mock_config
     ), patch(
-        "libs.studio.kiln_studio.provider_api.provider_warnings", mock_provider_warnings
+        "app.desktop.studio_server.provider_api.provider_warnings",
+        mock_provider_warnings,
     ), patch(
-        "libs.studio.kiln_studio.provider_api.built_in_models", mock_built_in_models
+        "app.desktop.studio_server.provider_api.built_in_models", mock_built_in_models
     ), patch(
-        "libs.studio.kiln_studio.provider_api.connect_ollama",
+        "app.desktop.studio_server.provider_api.connect_ollama",
         return_value=mock_ollama_connection,
     ):
         response = client.get("/api/available_models")
@@ -407,13 +406,14 @@ async def test_get_available_models_ollama_exception(app, client):
 
     # Mock connect_ollama to raise an HTTPException
     with patch(
-        "libs.studio.kiln_studio.provider_api.Config.shared", return_value=mock_config
+        "app.desktop.studio_server.provider_api.Config.shared", return_value=mock_config
     ), patch(
-        "libs.studio.kiln_studio.provider_api.provider_warnings", mock_provider_warnings
+        "app.desktop.studio_server.provider_api.provider_warnings",
+        mock_provider_warnings,
     ), patch(
-        "libs.studio.kiln_studio.provider_api.built_in_models", mock_built_in_models
+        "app.desktop.studio_server.provider_api.built_in_models", mock_built_in_models
     ), patch(
-        "libs.studio.kiln_studio.provider_api.connect_ollama",
+        "app.desktop.studio_server.provider_api.connect_ollama",
         side_effect=HTTPException(status_code=500),
     ):
         response = client.get("/api/available_models")

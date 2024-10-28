@@ -72,6 +72,32 @@
   }
   load_server_ratings(initial_run)
 
+  async function patch_run(
+    patch_body: Record<string, unknown>,
+  ): Promise<TaskRun> {
+    const {
+      data, // only present if 2XX response
+      error: fetch_error, // only present if 4XX or 5XX response
+    } = await client.PATCH(
+      "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+      {
+        params: {
+          path: {
+            project_id: project_id,
+            task_id: task.id || "",
+            run_id: run?.id || "",
+          },
+        },
+        // @ts-expect-error type checking and PATCH don't mix
+        body: patch_body,
+      },
+    )
+    if (fetch_error) {
+      throw fetch_error
+    }
+    return data
+  }
+
   async function save_ratings() {
     try {
       let requirement_ratings_obj: Record<string, FiveStarRating> = {}
@@ -89,28 +115,7 @@
           },
         },
       }
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.PATCH(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
-        {
-          params: {
-            path: {
-              project_id: project_id,
-              task_id: task.id || "",
-              run_id: run?.id || "",
-            },
-          },
-          // @ts-expect-error type checking and PATCH don't mix
-          body: patch_body,
-        },
-      )
-      if (fetch_error) {
-        // TODO: check error message extraction
-        throw new Error("Failed to run task: " + fetch_error)
-      }
-      updated_run = data
+      updated_run = await patch_run(patch_body)
       load_server_ratings(updated_run)
       save_rating_error = null
     } catch (err) {
@@ -245,6 +250,38 @@
       accept_repair_error = createKilnError(err)
     } finally {
       accept_repair_submitting = false
+    }
+  }
+
+  let delete_repair_error: KilnError | null = null
+  let delete_repair_submitting = false
+  async function delete_repair() {
+    if (
+      !confirm(
+        "Are you sure you want to delete this repair?\n\nThis action cannot be undone.",
+      )
+    ) {
+      return
+    }
+    try {
+      repair_run = null
+      delete_repair_error = null
+      delete_repair_submitting = true
+      let original_repair_instructions = run?.repair_instructions
+      let patch_body = {
+        repair_instructions: null,
+        repaired_output: null,
+      }
+      updated_run = await patch_run(patch_body)
+
+      // Pull in the instructions from the original repair, so they can edit them if wanted
+      if (!repair_instructions && original_repair_instructions) {
+        repair_instructions = original_repair_instructions
+      }
+    } catch (err) {
+      delete_repair_error = createKilnError(err)
+    } finally {
+      delete_repair_submitting = false
     }
   }
 </script>
@@ -394,14 +431,24 @@
           </div>
         {:else if repair_complete}
           <p class="text-sm text-gray-500 mb-4">
-            The model has fixed the output given your instructions.
+            The model has fixed the output given your instructions: &quot;{repair_instructions ||
+              run?.repair_instructions ||
+              "No instruction provided"}&quot;
           </p>
           <Output raw_output={run?.repaired_output?.output || ""} />
-          <div>
-            <div class="mt-2 text-sm text-gray-500">
-              Based on the repair instructions: &quot;{repair_instructions ||
-                "No instruction provided"}&quot;
-            </div>
+          <div class="mt-2 text-xs text-gray-500 text-right">
+            {#if delete_repair_submitting}
+              <span class="loading loading-spinner loading-sm"></span>
+            {:else if delete_repair_error}
+              <p class="text-error">
+                Error Deleting Repair:
+                {delete_repair_error.getMessage()}
+              </p>
+            {:else}
+              <button class="link" on:click={delete_repair}
+                >Delete Repair</button
+              >
+            {/if}
           </div>
         {/if}
       </div>

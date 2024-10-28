@@ -3,12 +3,11 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
 from kiln_ai.datamodel import Task, TaskRun
+from kiln_server.project_api import project_from_id
+from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, ConfigDict
-
-from libs.core.kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
-from libs.studio.kiln_studio.project_api import project_from_id
-from libs.studio.kiln_studio.task_api import task_from_id
 
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
@@ -66,6 +65,11 @@ def connect_run_api(app: FastAPI):
     async def get_run(project_id: str, task_id: str, run_id: str) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
 
+    @app.delete("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
+    async def delete_run(project_id: str, task_id: str, run_id: str):
+        run = run_from_id(project_id, task_id, run_id)
+        run.delete()
+
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs")
     async def get_runs(project_id: str, task_id: str) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
@@ -114,13 +118,13 @@ def connect_run_api(app: FastAPI):
         return await adapter.invoke(input)
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
-    async def update_run_route(
+    async def update_run(
         project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
     ) -> TaskRun:
-        return await update_run(project_id, task_id, run_id, run_data)
+        return await update_run_util(project_id, task_id, run_id, run_data)
 
 
-async def update_run(
+async def update_run_util(
     project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
 ) -> TaskRun:
     # Lock to prevent overwriting concurrent updates

@@ -6,9 +6,9 @@ import pytest
 import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from kiln_studio.webhost import HTMLStaticFiles
 
-from libs.studio.kiln_studio.server import make_app
+from app.desktop.desktop_server import make_app
+from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
@@ -16,8 +16,10 @@ def client():
     # a client based on a mock studio path
     with tempfile.TemporaryDirectory() as temp_dir:
         os.makedirs(temp_dir, exist_ok=True)
-        with patch("libs.studio.kiln_studio.webhost.studio_path", new=lambda: temp_dir):
-            from libs.studio.kiln_studio.webhost import studio_path
+        with patch(
+            "app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir
+        ):
+            from app.desktop.studio_server.webhost import studio_path
 
             assert studio_path() == temp_dir  # Verify the patch is working
             app = make_app()
@@ -110,7 +112,7 @@ def test_cors_blocked_origins(client, origin):
 
 
 def create_studio_test_file(relative_path):
-    from libs.studio.kiln_studio.webhost import studio_path
+    from app.desktop.studio_server.webhost import studio_path
 
     full_path = os.path.join(studio_path(), relative_path)
     os.makedirs(os.path.dirname(full_path), exist_ok=True)

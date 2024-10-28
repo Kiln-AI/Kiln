@@ -254,7 +254,8 @@ export interface paths {
         get: operations["get_run_api_projects__project_id__tasks__task_id__runs__run_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Run */
+        delete: operations["delete_run_api_projects__project_id__tasks__task_id__runs__run_id__delete"];
         options?: never;
         head?: never;
         /** Update Run Route */
@@ -394,7 +395,13 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelDetails"][];
         };
-        /** DataSource */
+        /**
+         * DataSource
+         * @description Represents the origin of data, either human or synthetic, with associated properties.
+         *
+         *     Properties vary based on the source type - for synthetic sources this includes
+         *     model information, for human sources this includes creator information.
+         */
         DataSource: {
             type: components["schemas"]["DataSourceType"];
             /**
@@ -426,6 +433,8 @@ export interface components {
         };
         /**
          * ModelName
+         * @description Enumeration of specific model versions supported by the system.
+         *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
         ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b";
@@ -438,10 +447,17 @@ export interface components {
         };
         /**
          * Priority
+         * @description Defines priority levels for tasks and requirements, where P0 is highest priority.
          * @enum {integer}
          */
         Priority: 0 | 1 | 2 | 3;
-        /** Project */
+        /**
+         * Project
+         * @description A collection of related tasks.
+         *
+         *     Projects organize tasks into logical groups and provide high-level descriptions
+         *     of the overall goals.
+         */
         "Project-Input": {
             /**
              * V
@@ -467,7 +483,13 @@ export interface components {
              */
             description?: string | null;
         };
-        /** Project */
+        /**
+         * Project
+         * @description A collection of related tasks.
+         *
+         *     Projects organize tasks into logical groups and provide high-level descriptions
+         *     of the overall goals.
+         */
         "Project-Output": {
             /**
              * V
@@ -555,7 +577,13 @@ export interface components {
             /** Ui Prompt Method */
             ui_prompt_method?: string | null;
         };
-        /** Task */
+        /**
+         * Task
+         * @description Represents a specific task to be performed, with associated requirements and validation rules.
+         *
+         *     Contains the task definition, requirements, input/output schemas, and maintains
+         *     a collection of task runs.
+         */
         Task: {
             /**
              * V
@@ -600,12 +628,20 @@ export interface components {
         };
         /**
          * TaskDeterminism
+         * @description Defines how strictly task outputs should match expected results.
+         *
+         *     - deterministic: Requires exact matches
+         *     - semantic_match: Allows different wording with same meaning
+         *     - flexible: Allows variation in both wording and meaning within requirements
          * @enum {string}
          */
         TaskDeterminism: "deterministic" | "semantic_match" | "flexible";
         /**
          * TaskOutput
          * @description An output for a specific task run.
+         *
+         *     Contains the actual output content, its source (human or synthetic),
+         *     and optional rating information.
          */
         "TaskOutput-Input": {
             /**
@@ -637,6 +673,9 @@ export interface components {
         /**
          * TaskOutput
          * @description An output for a specific task run.
+         *
+         *     Contains the actual output content, its source (human or synthetic),
+         *     and optional rating information.
          */
         "TaskOutput-Output": {
             /**
@@ -749,10 +788,17 @@ export interface components {
         };
         /**
          * TaskOutputRatingType
+         * @description Defines the types of rating systems available for task outputs.
          * @enum {string}
          */
         TaskOutputRatingType: "five_star" | "custom";
-        /** TaskRequirement */
+        /**
+         * TaskRequirement
+         * @description Defines a specific requirement that should be met by task outputs.
+         *
+         *     Includes an identifier, name, description, instruction for meeting the requirement,
+         *     and priority level.
+         */
         TaskRequirement: {
             /** Id */
             id?: string | null;
@@ -767,7 +813,10 @@ export interface components {
         };
         /**
          * TaskRun
-         * @description An run of a specific Task, including the input and output.
+         * @description Represents a single execution of a Task.
+         *
+         *     Contains the input used, its source, the output produced, and optional
+         *     repair information if the output needed correction.
          */
         "TaskRun-Input": {
             /**
@@ -805,7 +854,10 @@ export interface components {
         };
         /**
          * TaskRun
-         * @description An run of a specific Task, including the input and output.
+         * @description Represents a single execution of a Task.
+         *
+         *     Contains the input used, its source, the output produced, and optional
+         *     repair information if the output needed correction.
          */
         "TaskRun-Output": {
             /**
@@ -1309,6 +1361,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_run_api_projects__project_id__tasks__task_id__runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

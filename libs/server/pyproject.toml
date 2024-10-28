@@ -3,9 +3,9 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "kiln_studio"
+name = "kiln-server"
 version = "0.0.1"
-description = 'Kiln Studio'
+description = 'Kiln AI Server'
 readme = "README.md"
 authors = [
   "Steve Cosman, Chesterfield Laboratories Inc <scosman@users.noreply.github.com>",

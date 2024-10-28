@@ -35,6 +35,6 @@ jobs:
         run: poetry build
         working-directory: ./libs/core
 
-      - name: Build Studio
+      - name: Build Server
         run: poetry build
-        working-directory: ./libs/studio
+        working-directory: ./libs/server

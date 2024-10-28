@@ -98,6 +98,7 @@
           bind:error
           bind:submitting
           bind:primary={run_focus}
+          bind:keyboard_submit={run_focus}
         >
           <RunInputForm bind:input_schema bind:this={input_form} />
         </FormContainer>

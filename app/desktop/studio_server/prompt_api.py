@@ -1,12 +1,7 @@
-from typing import Any, Dict, List
-
 from fastapi import FastAPI, HTTPException
-from kiln_ai.datamodel import Task
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
+from kiln_server.task_api import task_from_id
 from pydantic import BaseModel
-
-from libs.core.kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
-from libs.studio.kiln_studio.project_api import project_from_id
-from libs.studio.kiln_studio.task_api import task_from_id
 
 
 class PromptApiResponse(BaseModel):
@@ -17,7 +12,7 @@ class PromptApiResponse(BaseModel):
 
 def connect_prompt_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_generator}")
-    async def gen_prompt(
+    async def generate_prompt(
         project_id: str, task_id: str, prompt_generator: str
     ) -> PromptApiResponse:
         task = task_from_id(project_id, task_id)

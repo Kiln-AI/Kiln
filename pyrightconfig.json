@@ -1,3 +1,3 @@
 {
-  "exclude": ["**/test_*.py", "app/desktop/build/**"]
+  "exclude": ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**"]
 }

@@ -271,34 +271,6 @@ def test_task_output_requirement_rating_keys(tmp_path):
     task_run.save_to_file()
     assert task_run.output.rating.requirement_ratings is not None
 
-    # Invalid case: unknown requirement ID
-    with pytest.raises(
-        ValueError,
-        match="Requirement ID .* is not a valid requirement ID for this task",
-    ):
-        task_run = TaskRun(
-            input="Test input",
-            input_source=DataSource(
-                type=DataSourceType.human,
-                properties={"created_by": "john_doe"},
-            ),
-            parent=task,
-            output=TaskOutput(
-                output="Test output",
-                source=DataSource(
-                    type=DataSourceType.human,
-                    properties={"created_by": "john_doe"},
-                ),
-                rating=TaskOutputRating(
-                    value=4,
-                    requirement_ratings={
-                        "unknown_id": 5,
-                    },
-                ),
-            ),
-        )
-        task_run.save_to_file()
-
 
 def test_task_output_schema_validation(tmp_path):
     # Create a project, task, and example hierarchy

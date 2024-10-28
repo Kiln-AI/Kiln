@@ -15,6 +15,7 @@
     "format_check": "prettier --check --plugin prettier-plugin-svelte ./"
   },
   "devDependencies": {
+    "@redocly/cli": "^1.25.9",
     "@sveltejs/adapter-static": "^3.0.2",
     "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^3.1.1",

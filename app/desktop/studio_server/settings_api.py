@@ -14,6 +14,6 @@ def connect_settings(app: FastAPI):
         return settings
 
     @app.get("/api/settings/{item_id}")
-    def read_item(item_id: str):
+    def read_setting_item(item_id: str):
         settings = Config.shared().settings(hide_sensitive=True)
         return {item_id: settings.get(item_id, None)}

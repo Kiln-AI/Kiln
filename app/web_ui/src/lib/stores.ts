@@ -186,3 +186,14 @@ export async function load_model_info() {
     model_info.set(null)
   }
 }
+
+export function model_name(
+  model_id: string,
+  provider_models: ProviderModels | null,
+): string {
+  if (!model_id) {
+    return "Unknown"
+  }
+  const model = provider_models?.models[model_id]
+  return model?.name || model_id
+}

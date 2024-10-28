@@ -1,4 +1,5 @@
 import json
+import shutil
 import uuid
 from abc import ABCMeta
 from builtins import classmethod
@@ -139,6 +140,15 @@ class KilnBaseModel(BaseModel):
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
         self.path = path
+
+    def delete(self) -> None:
+        if self.path is None:
+            raise ValueError("Cannot delete model because path is not set")
+        dir_path = self.path.parent if self.path.is_file() else self.path
+        if dir_path is None:
+            raise ValueError("Cannot delete model because path is not set")
+        shutil.rmtree(dir_path)
+        self.path = None
 
     def build_path(self) -> Path | None:
         if self.path is not None:

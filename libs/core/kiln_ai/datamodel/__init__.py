@@ -114,18 +114,6 @@ class TaskOutputRating(KilnBaseModel):
                 f"{rating_name.capitalize()} of type five_star must be between 1 and 5 stars"
             )
 
-    def validate_requirement_rating_keys(self, task: Task) -> Self:
-        if len(self.requirement_ratings) == 0:
-            return self
-
-        valid_requirement_ids = {req.id for req in task.requirements}
-        for key in self.requirement_ratings.keys():
-            if key not in valid_requirement_ids:
-                raise ValueError(
-                    f"Requirement ID '{key}' is not a valid requirement ID for this task"
-                )
-        return self
-
 
 class TaskOutput(KilnBaseModel):
     """
@@ -159,7 +147,10 @@ class TaskOutput(KilnBaseModel):
 
 class DataSourceType(str, Enum):
     """
-    The source of a piece of data.
+    The source type of a piece of data.
+
+    Human: a human created the data
+    Synthetic: a model created the data
     """
 
     human = "human"
@@ -318,19 +309,6 @@ class TaskRun(KilnParentedModel):
             return self
 
         self.output.validate_output_format(task)
-        return self
-
-    @model_validator(mode="after")
-    def validate_requirement_ratings(self) -> Self:
-        task = self.parent_task()
-        if task is None:
-            return self
-
-        if self.output.rating is not None:
-            self.output.rating.validate_requirement_rating_keys(task)
-        if self.repaired_output is not None and self.repaired_output.rating is not None:
-            self.repaired_output.rating.validate_requirement_rating_keys(task)
-
         return self
 
     @model_validator(mode="after")

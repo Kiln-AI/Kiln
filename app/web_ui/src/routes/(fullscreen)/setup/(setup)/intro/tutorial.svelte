@@ -49,7 +49,17 @@
     prior_section = section
     section = Math.max(0, Math.min(sections.length - 1, new_section))
   }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "ArrowLeft") {
+      set_section(section - 1)
+    } else if (event.key === "ArrowRight") {
+      set_section(section + 1)
+    }
+  }
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 <div class="grow"></div>
 <div class="flex flex-col md:flex-row gap-12 place-items-center">

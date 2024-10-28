@@ -1,5 +1,5 @@
 -e libs/core
--e libs/studio
+-e libs/server
 fastapi==0.111.1
 pydantic==2.8.2
 pyinstaller==6.9.0

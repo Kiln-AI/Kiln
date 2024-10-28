@@ -276,3 +276,33 @@ def test_lazy_load_parent(tmp_path):
     # Verify that the _parent attribute is now set
     assert hasattr(loaded_child, "_parent")
     assert loaded_child._parent is loaded_parent
+
+
+def test_delete(tmp_path):
+    # Test deleting a file
+    file_path = tmp_path / "test.kiln"
+    model = KilnBaseModel(path=file_path)
+    model.save_to_file()
+    assert file_path.exists()
+    model.delete()
+    assert not file_path.exists()
+    assert not file_path.parent.exists()
+    assert model.path is None
+
+
+def test_delete_dir(tmp_path):
+    # Test deleting a directory
+    dir_path = tmp_path / "test_dir"
+    dir_path.mkdir(parents=True)
+    model = KilnBaseModel(path=dir_path)
+    assert dir_path.exists()
+    model.delete()
+    assert not dir_path.exists()
+    assert model.path is None
+
+
+def test_delete_no_path():
+    # Test deleting with no path
+    model = KilnBaseModel()
+    with pytest.raises(ValueError, match="Cannot delete model because path is not set"):
+        model.delete()

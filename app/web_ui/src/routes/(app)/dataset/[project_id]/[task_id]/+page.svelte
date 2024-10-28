@@ -1,10 +1,10 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type { TaskRun, ProviderModels } from "$lib/types"
+  import type { TaskRun } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { model_info, load_model_info } from "$lib/stores"
+  import { model_info, load_model_info, model_name } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
 
@@ -173,17 +173,6 @@
   function sortRuns() {
     runs = runs ? [...runs].sort(sortFunction) : null
   }
-
-  function formatModelName(
-    model_id: string,
-    provider_models: ProviderModels | null,
-  ): string {
-    if (!model_id) {
-      return "Unknown"
-    }
-    const model = provider_models?.models[model_id]
-    return model?.name || model_id
-  }
 </script>
 
 <AppPage
@@ -233,7 +222,7 @@
               </td>
               <td>{formatRepairState(run)}</td>
               <td>
-                {formatModelName(
+                {model_name(
                   "" + run.output?.source?.properties["model_name"],
                   $model_info,
                 )}
