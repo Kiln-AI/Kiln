@@ -8,6 +8,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
+
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.project_api import (
     connect_project_api,
@@ -29,8 +30,10 @@ def client(app):
 
 
 def test_create_project_success(client):
-    with patch("os.path.exists", return_value=False), patch("os.makedirs"), patch(
-        "kiln_ai.datamodel.Project.save_to_file"
+    with (
+        patch("os.path.exists", return_value=False),
+        patch("os.makedirs"),
+        patch("kiln_ai.datamodel.Project.save_to_file"),
     ):
         response = client.post(
             "/api/project",
@@ -133,9 +136,10 @@ def test_get_projects_empty(client):
 
 
 def test_get_projects_with_current_project(client, mock_projects):
-    with patch.object(Config, "shared") as mock_config, patch(
-        "kiln_ai.datamodel.Project.load_from_file"
-    ) as mock_load:
+    with (
+        patch.object(Config, "shared") as mock_config,
+        patch("kiln_ai.datamodel.Project.load_from_file") as mock_load,
+    ):
         mock_config.return_value.projects = [p.path for p in mock_projects]
         mock_config.return_value.current_project = mock_projects[1].path
         mock_load.side_effect = mock_projects
@@ -148,9 +152,10 @@ def test_get_projects_with_current_project(client, mock_projects):
 
 
 def test_get_projects_with_invalid_current_project(client, mock_projects):
-    with patch.object(Config, "shared") as mock_config, patch(
-        "kiln_ai.datamodel.Project.load_from_file"
-    ) as mock_load:
+    with (
+        patch.object(Config, "shared") as mock_config,
+        patch("kiln_ai.datamodel.Project.load_from_file") as mock_load,
+    ):
         mock_config.return_value.projects = [p.path for p in mock_projects]
         mock_config.return_value.current_project = "/invalid/path"
         mock_load.side_effect = mock_projects
@@ -176,9 +181,11 @@ def test_get_projects_with_no_projects(client):
 
 def test_import_project_success(client):
     mock_project = Project(name="Imported Project", description="An imported project")
-    with patch("os.path.exists", return_value=True), patch(
-        "kiln_ai.datamodel.Project.load_from_file", return_value=mock_project
-    ), patch("kiln_server.project_api.add_project_to_config") as mock_add:
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch("kiln_server.project_api.add_project_to_config") as mock_add,
+    ):
         response = client.post("/api/import_project?project_path=/path/to/project.kiln")
 
     assert response.status_code == 200
@@ -201,9 +208,12 @@ def test_import_project_not_found(client):
 
 
 def test_import_project_load_error(client):
-    with patch("os.path.exists", return_value=True), patch(
-        "kiln_ai.datamodel.Project.load_from_file",
-        side_effect=Exception("Load error"),
+    with (
+        patch("os.path.exists", return_value=True),
+        patch(
+            "kiln_ai.datamodel.Project.load_from_file",
+            side_effect=Exception("Load error"),
+        ),
     ):
         response = client.post("/api/import_project?project_path=/path/to/project.kiln")
 
@@ -324,9 +334,10 @@ def test_project_from_id_load_exception(patched_config, mock_config):
 
 
 def test_get_projects_success(client, mock_projects):
-    with patch.object(Config, "shared") as mock_config, patch(
-        "kiln_ai.datamodel.Project.load_from_file"
-    ) as mock_load:
+    with (
+        patch.object(Config, "shared") as mock_config,
+        patch("kiln_ai.datamodel.Project.load_from_file") as mock_load,
+    ):
         mock_config.return_value.projects = [p.path for p in mock_projects]
         mock_load.side_effect = mock_projects
 
@@ -342,9 +353,10 @@ def test_get_projects_success(client, mock_projects):
 
 
 def test_get_projects_with_one_exception(client, mock_projects):
-    with patch.object(Config, "shared") as mock_config, patch(
-        "kiln_ai.datamodel.Project.load_from_file"
-    ) as mock_load:
+    with (
+        patch.object(Config, "shared") as mock_config,
+        patch("kiln_ai.datamodel.Project.load_from_file") as mock_load,
+    ):
         mock_config.return_value.projects = [p.path for p in mock_projects]
         mock_load.side_effect = [Exception("Load error"), mock_projects[1]]
 
@@ -359,10 +371,13 @@ def test_get_projects_with_one_exception(client, mock_projects):
 
 def test_delete_project_success(client):
     mock_project = MagicMock(path="/path/to/project.kiln")
-    with patch(
-        "kiln_server.project_api.project_from_id",
-        return_value=mock_project,
-    ), patch.object(Config, "shared") as mock_config:
+    with (
+        patch(
+            "kiln_server.project_api.project_from_id",
+            return_value=mock_project,
+        ),
+        patch.object(Config, "shared") as mock_config,
+    ):
         mock_config.return_value.projects = [
             "/path/to/project.kiln",
             "/path/to/other_project.kiln",

@@ -5,21 +5,25 @@
 
 ---
 
-## About
+## About Kiln AI
 
-The Kiln AI Server is a Python library that provides a REST API server for the Kiln AI datamodel.
+Learn more about Kiln AI at [getkiln.ai](https://getkiln.ai)
 
-See our [website](https://kiln-ai.com) for more information.
+This package is the Kiln AI server package. There is also a separate desktop application and python library package.
 
-## Table of Contents
+Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln)
 
-- [Installation](#installation)
+Docs: [https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html)
 
 ## Installation
 
 ```console
 pip install kiln_server
 ```
+
+## API Docs
+
+Our OpenApi docs: [https://kiln-ai.github.io/Kiln/kiln_server_openapi_docs/index.html](https://kiln-ai.github.io/Kiln/kiln_server_openapi_docs/index.html)
 
 ## Running the server
 
@@ -31,4 +35,15 @@ With auto-reload:
 
 ```console
 AUTO_RELOAD=true python -m kiln_server.server
+```
+
+## Using the server in another FastAPI app
+
+See server.py for examples, but you can connect individual API endpoints to your app like this:
+
+```python
+from kiln_server.project_api import connect_project_api
+
+app = FastAPI()
+connect_project_api(app)
 ```

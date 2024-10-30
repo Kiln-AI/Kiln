@@ -1,11 +1,12 @@
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel, Field
+
 from kiln_server.custom_errors import (
     connect_custom_errors,
     format_error_loc,
 )
-from pydantic import BaseModel, Field
 
 
 @pytest.fixture

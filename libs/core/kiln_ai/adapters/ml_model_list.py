@@ -485,7 +485,7 @@ def langchain_model_from(name: str, provider_name: str | None = None) -> BaseCha
             openai_api_key=api_key,  # type: ignore[arg-type]
             openai_api_base=base_url,  # type: ignore[arg-type]
             default_headers={
-                "HTTP-Referer": "https://kiln-ai.com/openrouter",
+                "HTTP-Referer": "https://getkiln.ai/openrouter",
                 "X-Title": "KilnAI",
             },
         )

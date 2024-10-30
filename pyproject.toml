@@ -1,0 +1,40 @@
+[project]
+name = "kiln-root"
+version = "0.1.0"
+description = "uv workspace project for Kiln AI. See kiln-ai package on pypi for our librabrary (libs/core)"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "kiln-ai==0.5.3",
+    "kiln-server",
+    "kiln-studio-desktop",
+]
+
+[dependency-groups]
+dev = [
+    "isort>=5.13.2",
+    "pyright==1.1.376",
+    "pytest-asyncio>=0.24.0",
+    "pytest>=8.3.3",
+    "python-dotenv>=1.0.1",
+    "ruff>=0.7.1",
+]
+
+
+[tool.uv.workspace]
+members = ["libs/core", "libs/server", "app/desktop"]
+
+[tool.uv.sources]
+kiln-server = { workspace = true }
+kiln-studio-desktop = { workspace = true }
+kiln-ai = { workspace = true }
+
+[tool.pyright]
+strictListInference = true
+reportMissingTypeArgument = true
+
+
+[tool.ruff]
+exclude = [
+]

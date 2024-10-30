@@ -1,8 +1,8 @@
 import json
 from abc import ABCMeta, abstractmethod
-from typing import Dict, Union
+from typing import Dict
 
-from kiln_ai.datamodel import Task
+from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.utils.formatting import snake_case
 
 
@@ -104,7 +104,24 @@ class MultiShotPromptBuilder(BasePromptBuilder):
                 base_prompt += f"{i+1}) {requirement.instruction}\n"
             base_prompt += "\n"
 
-        valid_examples: list[tuple[str, str]] = []
+        valid_examples = self.collect_examples()
+
+        if len(valid_examples) == 0:
+            return base_prompt
+
+        base_prompt += "# Example Outputs\n\n"
+        for i, example in enumerate(valid_examples):
+            base_prompt += self.prompt_section_for_example(i, example)
+
+        return base_prompt
+
+    def prompt_section_for_example(self, index: int, example: TaskRun) -> str:
+        # Prefer repaired output if it exists, otherwise use the regular output
+        output = example.repaired_output or example.output
+        return f"## Example {index+1}\n\nInput: {example.input}\nOutput: {output.output}\n\n"
+
+    def collect_examples(self) -> list[TaskRun]:
+        valid_examples: list[TaskRun] = []
         runs = self.task.runs()
 
         # first pass, we look for repaired outputs. These are the best examples.
@@ -112,7 +129,7 @@ class MultiShotPromptBuilder(BasePromptBuilder):
             if len(valid_examples) >= self.__class__.example_count():
                 break
             if run.repaired_output is not None:
-                valid_examples.append((run.input, run.repaired_output.output))
+                valid_examples.append(run)
 
         # second pass, we look for high quality outputs (rating based)
         # Minimum is "high_quality" (4 star in star rating scale), then sort by rating
@@ -131,16 +148,8 @@ class MultiShotPromptBuilder(BasePromptBuilder):
         for run in runs_with_rating:
             if len(valid_examples) >= self.__class__.example_count():
                 break
-            valid_examples.append((run.input, run.output.output))
-
-        if len(valid_examples) > 0:
-            base_prompt += "# Example Outputs\n\n"
-            for i, example in enumerate(valid_examples):
-                base_prompt += (
-                    f"## Example {i+1}\n\nInput: {example[0]}\nOutput: {example[1]}\n\n"
-                )
-
-        return base_prompt
+            valid_examples.append(run)
+        return valid_examples
 
 
 class FewShotPromptBuilder(MultiShotPromptBuilder):
@@ -156,10 +165,33 @@ class FewShotPromptBuilder(MultiShotPromptBuilder):
         return 4
 
 
+class RepairsPromptBuilder(MultiShotPromptBuilder):
+    """A prompt builder that includes multiple examples in the prompt, including repaired instructions describing what was wrong, and how it was fixed."""
+
+    def prompt_section_for_example(self, index: int, example: TaskRun) -> str:
+        if (
+            not example.repaired_output
+            or not example.repair_instructions
+            or not example.repaired_output.output
+        ):
+            return super().prompt_section_for_example(index, example)
+
+        prompt_section = f"## Example {index+1}\n\nInput: {example.input}\n\n"
+        prompt_section += (
+            f"Initial Output Which Was Insufficient: {example.output.output}\n\n"
+        )
+        prompt_section += f"Instructions On How to Improve the Initial Output: {example.repair_instructions}\n\n"
+        prompt_section += (
+            f"Repaired Output Which is Sufficient: {example.repaired_output.output}\n\n"
+        )
+        return prompt_section
+
+
 prompt_builder_registry = {
     "simple_prompt_builder": SimplePromptBuilder,
     "multi_shot_prompt_builder": MultiShotPromptBuilder,
     "few_shot_prompt_builder": FewShotPromptBuilder,
+    "repairs_prompt_builder": RepairsPromptBuilder,
 }
 
 
@@ -183,5 +215,7 @@ def prompt_builder_from_ui_name(ui_name: str) -> type[BasePromptBuilder]:
             return FewShotPromptBuilder
         case "many_shot":
             return MultiShotPromptBuilder
+        case "repairs":
+            return RepairsPromptBuilder
         case _:
             raise ValueError(f"Unknown prompt builder: {ui_name}")

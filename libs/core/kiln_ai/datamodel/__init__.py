@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 from enum import Enum, IntEnum
-from typing import TYPE_CHECKING, Dict, List, Self, Type, Union
+from typing import TYPE_CHECKING, Dict, List, Type, Union
 
 import jsonschema
 import jsonschema.exceptions
 from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
 from kiln_ai.datamodel.json_schema import JsonObjectSchema, schema_from_json_str
 

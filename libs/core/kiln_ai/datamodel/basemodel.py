@@ -11,7 +11,6 @@ from typing import (
     Dict,
     List,
     Optional,
-    Self,
     Type,
     TypeVar,
 )
@@ -25,6 +24,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_core import ErrorDetails
+from typing_extensions import Self
 
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case

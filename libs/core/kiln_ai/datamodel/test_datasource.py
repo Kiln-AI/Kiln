@@ -30,16 +30,14 @@ def test_valid_synthetic_data_source():
 
 
 def test_missing_required_property():
-    with pytest.raises(
-        ValidationError, match="'created_by' is required for DataSourceType.human data"
-    ):
+    with pytest.raises(ValidationError, match="'created_by' is required for"):
         DataSource(type=DataSourceType.human)
 
 
 def test_wrong_property_type():
     with pytest.raises(
         ValidationError,
-        match="'model_name' must be of type str for DataSourceType.synthetic data",
+        match="'model_name' must be of type str for",
     ):
         DataSource(
             type=DataSourceType.synthetic,
@@ -50,7 +48,7 @@ def test_wrong_property_type():
 def test_not_allowed_property():
     with pytest.raises(
         ValidationError,
-        match="'created_by' is not allowed for DataSourceType.synthetic data",
+        match="'created_by' is not allowed for",
     ):
         DataSource(
             type=DataSourceType.synthetic,

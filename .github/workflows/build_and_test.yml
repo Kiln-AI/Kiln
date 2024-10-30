@@ -6,35 +6,41 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.12
-          cache: "pip"
 
-      - run: pip install -r requirements.txt
-      - run: pip install -r dev-requirements.txt
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
 
       # Remove this later: needed as server expects this dir to exist
       - name: Mock Studio Web UI
         run: mkdir -p ./app/web_ui/build && echo "test" > ./app/web_ui/build/index.html
 
       - name: Test All Python
-        run: python3 -m pytest .
+        run: uv run python3 -m pytest .
 
       - name: Check Python Types
-        run: pyright .
-
-      - name: Install Core
-        run: poetry install
-        working-directory: ./libs/core
+        run: uv run pyright .
 
       - name: Build Core
-        run: poetry build
+        run: uv build
         working-directory: ./libs/core
 
       - name: Build Server
-        run: poetry build
+        run: uv build
         working-directory: ./libs/server

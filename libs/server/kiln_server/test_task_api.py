@@ -7,6 +7,7 @@ from kiln_ai.datamodel import (
     Project,
     Task,
 )
+
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.task_api import connect_task_api, task_from_id
 
@@ -52,9 +53,10 @@ def test_create_task_success(client, tmp_path):
         "instruction": "This is a test instruction",
     }
 
-    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id, patch(
-        "kiln_ai.datamodel.Task.save_to_file"
-    ) as mock_save:
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.Task.save_to_file") as mock_save,
+    ):
         mock_project_from_id.return_value = Project(
             name="Test Project", path=str(project_path)
         )
@@ -283,9 +285,12 @@ def test_update_task_validation_error(client, project_and_task):
 
     update_data = {"name": "Updated Task"}
 
-    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id, patch(
-        "kiln_server.task_api.Task.validate_and_save_with_subrelations"
-    ) as mock_validate:
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.task_api.Task.validate_and_save_with_subrelations"
+        ) as mock_validate,
+    ):
         mock_project_from_id.return_value = project
         mock_validate.return_value = None
         response = client.patch(
@@ -301,9 +306,12 @@ def test_update_task_unexpected_return_type(client, project_and_task):
 
     update_data = {"name": "Updated Task"}
 
-    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id, patch(
-        "kiln_server.task_api.Task.validate_and_save_with_subrelations"
-    ) as mock_validate:
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.task_api.Task.validate_and_save_with_subrelations"
+        ) as mock_validate,
+    ):
         mock_project_from_id.return_value = project
         mock_validate.return_value = MagicMock()  # Return a non-Task object
         response = client.patch(

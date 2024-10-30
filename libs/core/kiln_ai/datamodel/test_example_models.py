@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 from pydantic import ValidationError
@@ -56,10 +57,11 @@ def test_task_model_validation(valid_task_run):
     with pytest.raises(ValidationError, match="Input should be"):
         DataSource(type="invalid")
 
-    with pytest.raises(ValidationError, match="Invalid data source type"):
-        task_run = valid_task_run.model_copy(deep=True)
-        task_run.input_source.type = "invalid"
-        DataSource.model_validate(task_run.input_source, strict=True)
+    if sys.version_info >= (3, 12):
+        with pytest.raises(ValidationError, match="Invalid data source type"):
+            task_run = valid_task_run.model_copy(deep=True)
+            task_run.input_source.type = "invalid"
+            DataSource.model_validate(task_run.input_source, strict=True)
 
     # Missing required field
     with pytest.raises(ValidationError, match="Input should be a valid string"):
@@ -73,9 +75,7 @@ def test_task_model_validation(valid_task_run):
         DataSource.model_validate(task_run.input_source, strict=True)
 
     # Test we catch nested validation errors
-    with pytest.raises(
-        ValidationError, match="'created_by' is required for DataSourceType.human"
-    ):
+    with pytest.raises(ValidationError, match="'created_by' is required for"):
         task_run = TaskRun(
             input="Test input",
             input_source=DataSource(
@@ -407,9 +407,7 @@ def test_valid_human_task_output():
 
 
 def test_invalid_human_task_output_missing_created_by():
-    with pytest.raises(
-        ValidationError, match="'created_by' is required for DataSourceType.human"
-    ):
+    with pytest.raises(ValidationError, match="'created_by' is required for"):
         TaskOutput(
             output="Test output",
             source=DataSource(
@@ -455,7 +453,7 @@ def test_valid_synthetic_task_output():
 def test_invalid_synthetic_task_output_missing_keys():
     with pytest.raises(
         ValidationError,
-        match="'model_provider' is required for DataSourceType.synthetic",
+        match="'model_provider' is required for",
     ):
         TaskOutput(
             output="Test output",

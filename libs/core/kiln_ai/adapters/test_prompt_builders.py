@@ -6,6 +6,7 @@ from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter
 from kiln_ai.adapters.prompt_builders import (
     FewShotPromptBuilder,
     MultiShotPromptBuilder,
+    RepairsPromptBuilder,
     SimplePromptBuilder,
     prompt_builder_from_ui_name,
 )
@@ -72,7 +73,8 @@ def test_simple_prompt_builder_structured_output(tmp_path):
     assert input not in prompt
 
 
-def test_multi_shot_prompt_builder(tmp_path):
+@pytest.fixture
+def task_with_examples(tmp_path):
     # Create a project and task hierarchy
     project = Project(name="Test Project", path=(tmp_path / "test_project.kiln"))
     project.save_to_file()
@@ -193,9 +195,12 @@ def test_multi_shot_prompt_builder(tmp_path):
     )
     e3.save_to_file()
     check_example_outputs(task, 3)
+    return task
 
+
+def test_multi_shot_prompt_builder(task_with_examples):
     # Verify the order of examples
-    prompt_builder = MultiShotPromptBuilder(task=task)
+    prompt_builder = MultiShotPromptBuilder(task=task_with_examples)
     prompt = prompt_builder.build_prompt()
     assert "Why did the cow cross the road?" in prompt
     assert prompt.index("Why did the cow cross the road?") < prompt.index(
@@ -300,12 +305,14 @@ def check_example_outputs(task: Task, count: int):
 def test_prompt_builder_name():
     assert SimplePromptBuilder.prompt_builder_name() == "simple_prompt_builder"
     assert MultiShotPromptBuilder.prompt_builder_name() == "multi_shot_prompt_builder"
+    assert RepairsPromptBuilder.prompt_builder_name() == "repairs_prompt_builder"
 
 
 def test_prompt_builder_from_ui_name():
     assert prompt_builder_from_ui_name("basic") == SimplePromptBuilder
     assert prompt_builder_from_ui_name("few_shot") == FewShotPromptBuilder
     assert prompt_builder_from_ui_name("many_shot") == MultiShotPromptBuilder
+    assert prompt_builder_from_ui_name("repairs") == RepairsPromptBuilder
 
     with pytest.raises(ValueError, match="Unknown prompt builder: invalid_name"):
         prompt_builder_from_ui_name("invalid_name")
@@ -314,3 +321,18 @@ def test_prompt_builder_from_ui_name():
 def test_example_count():
     assert FewShotPromptBuilder.example_count() == 4
     assert MultiShotPromptBuilder.example_count() == 25
+
+
+def test_repair_multi_shot_prompt_builder(task_with_examples):
+    # Verify the order of examples
+    prompt_builder = RepairsPromptBuilder(task=task_with_examples)
+    prompt = prompt_builder.build_prompt()
+    assert (
+        'Repaired Output Which is Sufficient: {"joke": "Why did the cow cross the road? To get to the udder side!"}'
+        in prompt
+    )
+    assert "Instructions On How to Improve the Initial Output: Fix the joke" in prompt
+    assert (
+        'Initial Output Which Was Insufficient: {"joke": "Moo I am a cow joke."}'
+        in prompt
+    )

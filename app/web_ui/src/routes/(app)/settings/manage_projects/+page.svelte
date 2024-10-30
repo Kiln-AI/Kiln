@@ -67,7 +67,7 @@
                   {project.description}
                 </div>
               {/if}
-              <div class="text-xs text-gray-500 mt-1">
+              <div class="text-xs text-gray-500 mt-1 break-all">
                 {project.path}
               </div>
             </div>

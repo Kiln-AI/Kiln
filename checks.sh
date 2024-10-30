@@ -3,6 +3,8 @@
 # Check our project: formatting, linting, testing, building, etc.
 # Good to call this from .git/hooks/pre-commit
 
+# Important: run with `uv run` to setup the environment
+
 set -e
 
 # work from the root of the repo

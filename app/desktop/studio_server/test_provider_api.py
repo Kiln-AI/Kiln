@@ -347,16 +347,23 @@ async def test_get_available_models(app, client):
         message="Connected", models=["ollama_model1", "ollama_model2"]
     )
 
-    with patch(
-        "app.desktop.studio_server.provider_api.Config.shared", return_value=mock_config
-    ), patch(
-        "app.desktop.studio_server.provider_api.provider_warnings",
-        mock_provider_warnings,
-    ), patch(
-        "app.desktop.studio_server.provider_api.built_in_models", mock_built_in_models
-    ), patch(
-        "app.desktop.studio_server.provider_api.connect_ollama",
-        return_value=mock_ollama_connection,
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_models",
+            mock_built_in_models,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            return_value=mock_ollama_connection,
+        ),
     ):
         response = client.get("/api/available_models")
 
@@ -405,16 +412,23 @@ async def test_get_available_models_ollama_exception(app, client):
     ]
 
     # Mock connect_ollama to raise an HTTPException
-    with patch(
-        "app.desktop.studio_server.provider_api.Config.shared", return_value=mock_config
-    ), patch(
-        "app.desktop.studio_server.provider_api.provider_warnings",
-        mock_provider_warnings,
-    ), patch(
-        "app.desktop.studio_server.provider_api.built_in_models", mock_built_in_models
-    ), patch(
-        "app.desktop.studio_server.provider_api.connect_ollama",
-        side_effect=HTTPException(status_code=500),
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_models",
+            mock_built_in_models,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
     ):
         response = client.get("/api/available_models")
 

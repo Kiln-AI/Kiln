@@ -1,0 +1,29 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "kiln-ai"
+version = "0.5.1"
+readme = "README.md"
+description = 'Kiln AI'
+authors = [
+  "Steve Cosman, Chesterfield Laboratories Inc <scosman@users.noreply.github.com>",
+]
+license = "Proprietary"
+homepage = "https://getkiln.ai"
+repository = "https://github.com/Kiln-AI/kiln"
+documentation = "https://github.com/Kiln-AI/kiln#readme"
+
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/Kiln-AI/kiln/issues"
+
+[tool.poetry.dependencies]
+python = ">=3.9"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.2"
+
+[tool.pyright]
+strictListInference = true
+reportMissingTypeArgument = true

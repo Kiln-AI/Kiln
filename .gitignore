@@ -6,7 +6,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 .coverage
+**/.venv
 
 libs/core/docs
+libs/core/build
+libs/server/build
 
 dist/

@@ -7,6 +7,7 @@ import webbrowser
 import pystray
 from PIL import Image
 
+from app.desktop.custom_tray import KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
 
 # TODO: remove this and all other globals in this file
@@ -59,7 +60,6 @@ def on_quit():
 
 
 def run_taskbar():
-    # TODO: resolution
     image = Image.open(resource_path("taskbar.png"))
     # Use default on Windows to get "left click to open" behaviour. But it looks ugle on MacOS, so don't use it there
     make_open_studio_default = sys.platform == "Windows"
@@ -70,7 +70,7 @@ def run_taskbar():
         pystray.MenuItem("Quit", on_quit),
     )
     global tray
-    tray = pystray.Icon("kiln", image, "kiln", menu)
+    tray = KilnTray("kiln", image, "Kiln", menu)
     # running detached since we use tk mainloop to get events from dock icon
     tray.run_detached()
     return tray

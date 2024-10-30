@@ -13,6 +13,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.run_api import connect_run_api, deep_update, run_from_id
 
@@ -96,11 +97,13 @@ async def test_run_task_success(client, task_run_setup):
     task = task_run_setup["task"]
     run_task_request = task_run_setup["run_task_request"]
 
-    with patch(
-        "kiln_server.run_api.project_from_id"
-    ) as mock_project_from_id, patch.object(
-        LangChainPromptAdapter, "invoke", new_callable=AsyncMock
-    ) as mock_invoke, patch("kiln_ai.utils.config.Config.shared") as MockConfig:
+    with (
+        patch("kiln_server.run_api.project_from_id") as mock_project_from_id,
+        patch.object(
+            LangChainPromptAdapter, "invoke", new_callable=AsyncMock
+        ) as mock_invoke,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
         mock_project_from_id.return_value = project
         mock_invoke.return_value = task_run_setup["task_run"]
 
@@ -125,11 +128,13 @@ async def test_run_task_structured_output(client, task_run_setup):
     task = task_run_setup["task"]
     run_task_request = task_run_setup["run_task_request"]
 
-    with patch(
-        "kiln_server.run_api.project_from_id"
-    ) as mock_project_from_id, patch.object(
-        LangChainPromptAdapter, "invoke", new_callable=AsyncMock
-    ) as mock_invoke, patch("kiln_ai.utils.config.Config.shared") as MockConfig:
+    with (
+        patch("kiln_server.run_api.project_from_id") as mock_project_from_id,
+        patch.object(
+            LangChainPromptAdapter, "invoke", new_callable=AsyncMock
+        ) as mock_invoke,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
         mock_project_from_id.return_value = project
         task_run = task_run_setup["task_run"]
         task_run.output.output = '{"key": "value"}'
@@ -204,11 +209,13 @@ async def test_run_task_structured_input(client, task_run_setup):
             "structured_input": {"key": "value"},
         }
 
-        with patch(
-            "kiln_server.run_api.project_from_id"
-        ) as mock_project_from_id, patch.object(
-            LangChainPromptAdapter, "invoke", new_callable=AsyncMock
-        ) as mock_invoke, patch("kiln_ai.utils.config.Config.shared") as MockConfig:
+        with (
+            patch("kiln_server.run_api.project_from_id") as mock_project_from_id,
+            patch.object(
+                LangChainPromptAdapter, "invoke", new_callable=AsyncMock
+            ) as mock_invoke,
+            patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+        ):
             mock_project_from_id.return_value = project
             mock_invoke.return_value = task_run_setup["task_run"]
 
