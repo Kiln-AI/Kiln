@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "261139415948",
+  "created_at": "2024-10-24T13:43:56.504680",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"when\", \"prior_context\": \"How is school going for you?\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "967812387532",
+    "path": null,
+    "created_at": "2024-10-24T13:43:56.504603",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user is asking about someone's experience with school, and is now attempting to complete a sentence that starts with 'when'. The task is to replace the sentence fragment with a complete sentence that will follow the prior sentence to form a cohesive message.\", \"potential_topics\": \"1) Ask about specific school events or holidays.\\n2) Inquire about exam or test dates.\\n3) Ask about the start or end time of classes.\\n4) Ask about scheduling a meeting or study session.\\n5) Inquire about when assignments or projects are due.\\n6) Ask about upcoming school-related activities or clubs.\", \"options_json\": \"[\\n  {\\n    \\\"topic\\\": \\\"Ask about specific school events or holidays.\\\",\\n    \\\"options\\\": [\\n      \\\"When is your next school event?\\\",\\n      \\\"When is the next holiday break?\\\",\\n      \\\"When do you have your school events?\\\",\\n      \\\"When is the next big event at your school?\\\",\\n      \\\"When is your school holiday?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"When is a school event?\\\",\\n    \\\"name\\\": \\\"Ask about school events.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Inquire about exam or test dates.\\\",\\n    \\\"options\\\": [\\n      \\\"When are your exams scheduled?\\\",\\n      \\\"When is your next test?\\\",\\n      \\\"When do you have exams?\\\",\\n      \\\"When do you start your tests?\\\",\\n      \\\"When is your exam week?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"When are your exams?\\\",\\n    \\\"name\\\": \\\"Ask about exams.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Ask about the start or end time of classes.\\\",\\n    \\\"options\\\": [\\n      \\\"When do your classes start?\\\",\\n      \\\"When do your classes end?\\\",\\n      \\\"When is your first class?\\\",\\n      \\\"When is your last class?\\\",\\n      \\\"When do you usually finish school?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"When are your classes?\\\",\\n    \\\"name\\\": \\\"Ask about class times.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Ask about scheduling a meeting or study session.\\\",\\n    \\\"options\\\": [\\n      \\\"When can we meet to study?\\\",\\n      \\\"When are you free for a study session?\\\",\\n      \\\"When would be a good time for us to meet?\\\",\\n      \\\"When do you want to study together?\\\",\\n      \\\"When should we get together to study?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"When can we meet?\\\",\\n    \\\"name\\\": \\\"Schedule a meeting or study session.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Inquire about when assignments or projects are due.\\\",\\n    \\\"options\\\": [\\n      \\\"When is your assignment due?\\\",\\n      \\\"When do you have to submit your project?\\\",\\n      \\\"When is your next deadline?\\\",\\n      \\\"When is your homework due?\\\",\\n      \\\"When do you need to finish your project?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"When is something due?\\\",\\n    \\\"name\\\": \\\"Ask about due dates.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Ask about upcoming school-related activities or clubs.\\\",\\n    \\\"options\\\": [\\n      \\\"When is your club meeting?\\\",\\n      \\\"When is the next activity at your school?\\\",\\n      \\\"When do you have your club activities?\\\",\\n      \\\"When is your sports practice?\\\",\\n      \\\"When is your next club event?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"When is an activity happening?\\\",\\n    \\\"name\\\": \\\"Ask about activities or clubs.\\\"\\n  }\\n]\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openrouter",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

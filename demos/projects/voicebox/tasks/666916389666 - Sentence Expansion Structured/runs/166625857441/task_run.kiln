@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "id": "166625857441",
+  "created_at": "2024-10-24T19:45:53.239702",
+  "created_by": "scosman",
+  "input": "{\"prior_context\": \"How is school going for you?\", \"partial_sentence_fragment\": \"when\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "251940253216",
+    "path": null,
+    "created_at": "2024-10-24T19:45:53.239626",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The conversation context is about school, with the previous sentence asking, \\\"How is school going for you?\\\" The sentence fragment provided is \\\"when.\\\" The assistant is attempting to help with replacing a sentence fragment which will be concatenated to the prior sentence to form a cohesive message incorporating current intent from the fragment and context from prior sentences.\", \"potential_topics\": \"1) Ask about specific times or events related to school.\\n2) Inquire about the timing of school assignments or projects.\\n3) Ask about school holidays or breaks.\\n4) Inquire about timing for extracurricular activities or events.\\n5) Ask about the timing of exams or tests.\\n6) Inquire about general school schedule or routine.\", \"topics\": [{\"options\": [\"When do your classes usually start?\", \"When is your next school holiday?\", \"When do you usually have assignments due?\", \"When are your exams scheduled?\", \"When do you participate in extracurricular activities?\"], \"most_general\": \"I was wondering about your school schedule.\", \"name\": \"Ask about specific times or events related to school.\"}, {\"options\": [\"When is your next big assignment due?\", \"When do you usually start working on projects?\", \"When should you submit your homework?\", \"When do you prefer to study for assignments?\", \"When is your project presentation day?\"], \"most_general\": \"I was curious about your assignment schedule.\", \"name\": \"Inquire about timing of school assignments or projects.\"}, {\"options\": [\"When is your next school break?\", \"When do you have holidays from school?\", \"When is your next vacation from school?\", \"When do school holidays usually start?\", \"When is your next long weekend?\"], \"most_general\": \"I was wondering about your school holidays.\", \"name\": \"Ask about school holidays or breaks.\"}, {\"options\": [\"When do you have extracurricular activities?\", \"When is the next event for your club?\", \"When do you usually attend team practices?\", \"When is your next music rehearsal?\", \"When do your extracurricular activities take place?\"], \"most_general\": \"I was curious about your extracurricular schedule.\", \"name\": \"Inquire about timing for extracurricular activities or events.\"}, {\"options\": [\"When is your next exam?\", \"When do you have tests scheduled?\", \"When is your exam week?\", \"When do you start preparing for exams?\", \"When are your test dates?.\"], \"most_general\": \"I was wondering about your exam schedule.\", \"name\": \"Ask about the timing of exams or tests.\"}, {\"options\": [\"When does your school day usually start?\", \"When do you usually arrive at school?\", \"When does your school day end?\", \"When is your lunch break at school?\", \"When do you usually leave school?\"], \"most_general\": \"I was curious about your daily school routine.\", \"name\": \"Inquire about general school schedule or routine.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "319191417681",
+      "path": null,
+      "created_at": "2024-10-24T19:47:13.251568",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {
+        "657679249905": 2.0,
+        "457617267453": 5.0,
+        "284368128001": 5.0,
+        "315774475278": 5.0,
+        "305836520225": 5.0
+      },
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

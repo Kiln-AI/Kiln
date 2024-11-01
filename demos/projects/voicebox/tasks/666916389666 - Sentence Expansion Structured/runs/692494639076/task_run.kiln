@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "id": "692494639076",
+  "created_at": "2024-10-24T19:47:54.489786",
+  "created_by": "scosman",
+  "input": "{\"prior_context\": \"How was the concert?\", \"partial_sentence_fragment\": \"did\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "237623028806",
+    "path": null,
+    "created_at": "2024-10-24T19:47:54.489730",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The conversation context is about a concert, with the previous sentence asking, \\\"How was the concert?\\\" The sentence fragment provided is \\\"did\\\". The assistant is attempting to help with replacing a sentence fragment which will be concatenated to the prior sentence to form a cohesive message incorporating current intent from the fragment and context from prior sentences.\", \"potential_topics\": \"1) Ask if the person enjoyed the concert.\\n2) Inquire about the quality of the concert.\\n3) Ask about a specific aspect of the concert.\\n4) Ask if the person had a favorite part of the concert.\\n5) Ask if the person met anyone interesting at the concert.\\n6) Ask about the overall atmosphere of the concert.\", \"topics\": [{\"options\": [\"Did you enjoy the concert?\", \"Did you like the music?\", \"Did you have a favorite song?\", \"Did you find it entertaining?\", \"Did you have fun?\"], \"most_general\": \"I was wondering if you liked it.\", \"name\": \"Ask if they enjoyed the concert.\"}, {\"options\": [\"Did the concert live up to your expectations?\", \"Did you think the sound quality was good?\", \"Did the venue contribute to the overall experience?\", \"Did you feel it was well-organized?\", \"Did the length of the concert feel right?\"], \"most_general\": \"I wanted to know about the quality.\", \"name\": \"Inquire about the quality of the concert.\"}, {\"options\": [\"Did you like the opening act?\", \"Did you think the headliner was good?\", \"Did you enjoy the encore?\", \"Did you like the stage setup?\", \"Did you think the crowd was into it?\"], \"most_general\": \"I was curious about a specific part.\", \"name\": \"Ask about a specific aspect of the concert.\"}, {\"options\": [\"Did you have a highlight of the concert?\", \"Did you find a particular song stood out?\", \"Did you enjoy the visual effects?\", \"Did you think the band was energetic?\", \"Did you find it memorable?\"], \"most_general\": \"I wanted to know what you liked most.\", \"name\": \"Ask if they had a favorite part of the concert.\"}, {\"options\": [\"Did you meet the band?\", \"Did you run into any friends there?\", \"Did you make any new connections?\", \"Did you meet someone interesting in the crowd?\", \"Did you get to talk to anyone notable?\"], \"most_general\": \"I was wondering if you met anyone notable.\", \"name\": \"Ask if they met anyone interesting at the concert.\"}, {\"options\": [\"Did the crowd seem to enjoy it?\", \"Did you feel the energy in the room?\", \"Did you think the venue was a good fit?\", \"Did you find the overall atmosphere to be good?\", \"Did you feel it was a memorable experience?\"], \"most_general\": \"I wanted to know about the overall feel.\", \"name\": \"Ask about the overall atmosphere of the concert.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "llama_3_1_70b",
+        "model_provider": "groq",
+        "prompt_builder_name": "few_shot_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "469938320498",
+      "path": null,
+      "created_at": "2024-10-24T19:48:55.113084",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {
+        "457617267453": 5.0,
+        "284368128001": 5.0,
+        "315774475278": 5.0,
+        "657679249905": 5.0,
+        "305836520225": 5.0
+      },
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

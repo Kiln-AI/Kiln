@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "244044917494",
+  "created_at": "2024-10-24T13:42:03.531307",
+  "created_by": "scosman",
+  "input": "{\"prior_context\": \"How is work going?\", \"partial_sentence_fragment\": \"when\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "318208910389",
+    "path": null,
+    "created_at": "2024-10-24T13:42:03.531171",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user is continuing a conversation with someone, where the prior context was asking about how work is going. The current sentence fragment is 'when', and the assistant is attempting to help replace this fragment to form a cohesive message incorporating the current intent from the fragment and the context from the prior sentence.\", \"potential_topics\": \"1) Ask about specific work deadlines or timelines. \\n2) Inquire about upcoming meetings or events at work. \\n3) Ask when a project or task will be completed. \\n4) Inquire about scheduling a time to meet or talk about work. \\n5) Ask when the person is free after work. \\n6) Inquire about when they started a particular work task or project.\", \"options_json\": \"[\\n  {\\n    \\\"topic\\\": \\\"Ask about specific work deadlines or timelines.\\\",\\n    \\\"options\\\": [\\n      \\\"When is your next deadline?\\\",\\n      \\\"When do you expect to finish your current project?\\\",\\n      \\\"When is the report due?\\\",\\n      \\\"When do you have to submit your work?\\\",\\n      \\\"When is the final presentation?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"I was wondering about your work deadlines.\\\",\\n    \\\"name\\\": \\\"Ask about work deadlines.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Inquire about upcoming meetings or events at work.\\\",\\n    \\\"options\\\": [\\n      \\\"When is your next meeting?\\\",\\n      \\\"When is the team event scheduled?\\\",\\n      \\\"When is the company conference?\\\",\\n      \\\"When do you have a meeting with your boss?\\\",\\n      \\\"When is the project kickoff meeting?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"I was curious about your upcoming work events.\\\",\\n    \\\"name\\\": \\\"Ask about work meetings or events.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Ask when a project or task will be completed.\\\",\\n    \\\"options\\\": [\\n      \\\"When will you be done with the project?\\\",\\n      \\\"When do you plan to finish this task?\\\",\\n      \\\"When is the expected completion date?\\\",\\n      \\\"When will you wrap up the assignment?\\\",\\n      \\\"When is the project deadline?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"I was wondering about the project completion date.\\\",\\n    \\\"name\\\": \\\"Ask about project completion.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Inquire about scheduling a time to meet or talk about work.\\\",\\n    \\\"options\\\": [\\n      \\\"When can we meet to discuss work?\\\",\\n      \\\"When is a good time to call you about work?\\\",\\n      \\\"When are you available to talk about the project?\\\",\\n      \\\"When can we schedule a work meeting?\\\",\\n      \\\"When is a convenient time to meet up?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"I was thinking about setting up a time to discuss work.\\\",\\n    \\\"name\\\": \\\"Schedule a time to discuss work.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Ask when the person is free after work.\\\",\\n    \\\"options\\\": [\\n      \\\"When are you free after work?\\\",\\n      \\\"When can we hang out after you're done?\\\",\\n      \\\"When do you finish work today?\\\",\\n      \\\"When is your workday over?\\\",\\n      \\\"When can we catch up post-work?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"I was wondering when you're free after work.\\\",\\n    \\\"name\\\": \\\"Ask about free time post-work.\\\"\\n  },\\n  {\\n    \\\"topic\\\": \\\"Inquire about when they started a particular work task or project.\\\",\\n    \\\"options\\\": [\\n      \\\"When did you start this project?\\\",\\n      \\\"When was the task initiated?\\\",\\n      \\\"When did you begin working on it?\\\",\\n      \\\"When did this assignment kick off?\\\",\\n      \\\"When did you start the current work?\\\"\\n    ],\\n    \\\"most_general\\\": \\\"I was curious about when you started the project.\\\",\\n    \\\"name\\\": \\\"Ask about the start of a project.\\\"\\n  }\\n]\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openrouter",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "691773360220",
+  "created_at": "2024-10-24T13:42:55.577802",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"how school\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "127289141319",
+    "path": null,
+    "created_at": "2024-10-24T13:42:55.577772",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user is initiating a conversation without any prior context. They have typed the sentence fragment \\\"how school,\\\" which suggests they may be asking or commenting about someone's experience or situation regarding school. The assistant's goal is to replace this isolated sentence fragment with a complete sentence.\", \"potential_topics\": \"1) Ask about how school is going for the person.\\n2) Inquire about any recent events or changes at school.\\n3) Comment on the difficulty or ease of school.\\n4) Ask about the person's favorite subjects or activities at school.\\n5) Inquire about the person's friends or social life at school.\\n6) Comment on the person's achievements or progress at school.\", \"options_json\": \"[\\n    {\\n        \\\"topic\\\": \\\"Ask about how school is going for the person.\\\",\\n        \\\"options\\\": [\\n            \\\"How is school going?\\\",\\n            \\\"How have your classes been lately?\\\",\\n            \\\"Is school going well for you?\\\",\\n            \\\"Are you enjoying school these days?\\\",\\n            \\\"Has school been good this year?\\\"\\n        ],\\n        \\\"most_general\\\": \\\"I was wondering how school is.\\\",\\n        \\\"name\\\": \\\"Ask how school is.\\\"\\n    },\\n    {\\n        \\\"topic\\\": \\\"Inquire about any recent events or changes at school.\\\",\\n        \\\"options\\\": [\\n            \\\"Have there been any recent events at school?\\\",\\n            \\\"Did anything interesting happen at school recently?\\\",\\n            \\\"Are there any changes happening at school?\\\",\\n            \\\"Has school had any new announcements?\\\",\\n            \\\"Is there anything new at school this week?\\\"\\n        ],\\n        \\\"most_general\\\": \\\"I was wondering about recent school events.\\\",\\n        \\\"name\\\": \\\"Ask about recent school events.\\\"\\n    },\\n    {\\n        \\\"topic\\\": \\\"Comment on the difficulty or ease of school.\\\",\\n        \\\"options\\\": [\\n            \\\"Is school getting easier or harder?\\\",\\n            \\\"Do you find school challenging?\\\",\\n            \\\"Is school more difficult this year?\\\",\\n            \\\"Are your classes easy to manage?\\\",\\n            \\\"Is school tough for you?\\\"\\n        ],\\n        \\\"most_general\\\": \\\"I was thinking about how tough school can be.\\\",\\n        \\\"name\\\": \\\"Comment on school difficulty.\\\"\\n    },\\n    {\\n        \\\"topic\\\": \\\"Ask about the person's favorite subjects or activities at school.\\\",\\n        \\\"options\\\": [\\n            \\\"What is your favorite subject at school?\\\",\\n            \\\"Do you have any activities you enjoy at school?\\\",\\n            \\\"Which class do you like the most?\\\",\\n            \\\"Are there any clubs you enjoy at school?\\\",\\n            \\\"What subjects do you find interesting?\\\"\\n        ],\\n        \\\"most_general\\\": \\\"I was curious about your favorite school subjects.\\\",\\n        \\\"name\\\": \\\"Ask about favorite school subjects.\\\"\\n    },\\n    {\\n        \\\"topic\\\": \\\"Inquire about the person's friends or social life at school.\\\",\\n        \\\"options\\\": [\\n            \\\"Have you made any new friends at school?\\\",\\n            \\\"How are your friends doing at school?\\\",\\n            \\\"Do you socialize a lot at school?\\\",\\n            \\\"Is your social life busy at school?\\\",\\n            \\\"Are there any friends you see often at school?\\\"\\n        ],\\n        \\\"most_general\\\": \\\"I was wondering about your friends at school.\\\",\\n        \\\"name\\\": \\\"Ask about friends at school.\\\"\\n    },\\n    {\\n        \\\"topic\\\": \\\"Comment on the person's achievements or progress at school.\\\",\\n        \\\"options\\\": [\\n            \\\"Have you achieved anything new at school?\\\",\\n            \\\"Is your progress at school going well?\\\",\\n            \\\"Are you proud of your achievements at school?\\\",\\n            \\\"Have you reached any goals at school?\\\",\\n            \\\"Is school helping you grow?\\\"\\n        ],\\n        \\\"most_general\\\": \\\"I was thinking about your school achievements.\\\",\\n        \\\"name\\\": \\\"Comment on school achievements.\\\"\\n    }\\n]\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openrouter",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

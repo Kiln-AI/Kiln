@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "299725220608",
+  "created_at": "2024-10-26T14:28:45.151102",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfsdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "965714609605",
+    "path": null,
+    "created_at": "2024-10-26T14:28:45.151040",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has inputted a nonsensical fragment 'sdfsdf', which does not provide clear context or intent. The assistant is attempting to help by replacing an isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Express confusion or error about typing.\\n2) Ask for assistance or clarification.\\n3) Start a casual conversation.\\n4) Express a need or requirement.\\n5) Make a statement or observation.\\n6) Use humor or light-hearted comment.\", \"topics\": [{\"options\": [\"I'm not sure what I was trying to say.\", \"I think I made a typing mistake.\", \"Oops, I didn't mean to type that.\", \"That was an error, let me try again.\", \"I'm sorry, that didn't make sense.\"], \"most_general\": \"I think I made a mistake in typing.\", \"name\": \"Express confusion or error\"}, {\"options\": [\"Can you help me with something?\", \"Could you clarify what we were discussing?\", \"I'm not sure what to do next, can you advise?\", \"I need some help, can you assist me?\", \"Can you explain that to me again?\"], \"most_general\": \"Can you help me?\", \"name\": \"Ask for assistance\"}, {\"options\": [\"How has your day been?\", \"What's new with you?\", \"Have you been keeping busy lately?\", \"What's going on today?\", \"Anything exciting happening with you?\"], \"most_general\": \"How are you doing?\", \"name\": \"Start a casual conversation\"}, {\"options\": [\"I need some help with my wheelchair.\", \"I'm looking for some music recommendations.\", \"I could use a little guidance with something.\", \"I'm trying to find a new hobby.\", \"I'm looking for a good car show nearby.\"], \"most_general\": \"I need some assistance.\", \"name\": \"Express a need or requirement\"}, {\"options\": [\"It's quite chilly today, isn't it?\", \"I just saw an interesting documentary.\", \"The traffic in Hanover is light today.\", \"I heard a great song on the radio this morning.\", \"There's a car show this weekend I want to visit.\"], \"most_general\": \"I have something interesting to share.\", \"name\": \"Make a statement or observation\"}, {\"options\": [\"I just typed gibberish, haha!\", \"Looks like my fingers got a little confused.\", \"Oops, my keyboard decided to have fun!\", \"Guess I invented a new word!\", \"That was my keyboard practicing its own language.\"], \"most_general\": \"I made a funny typing mistake.\", \"name\": \"Use humor or light-hearted comment\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

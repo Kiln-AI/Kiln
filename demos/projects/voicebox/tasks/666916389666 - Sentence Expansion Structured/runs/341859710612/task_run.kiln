@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "341859710612",
+  "created_at": "2024-10-26T14:19:11.110800",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"asdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "202461311860",
+    "path": null,
+    "created_at": "2024-10-26T14:19:11.110753",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"We have no prior sentences provided and the sentence fragment is \\\"asdf\\\". The goal is to replace this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Expression of confusion or mistake.\\n2) Comment about keyboard issues or typing errors.\\n3) Request for assistance or support.\\n4) Mention of frustration or annoyance.\\n5) Change of topic or conversation direction.\\n6) Humorous comment or joke about the situation.\", \"topics\": [{\"options\": [\"I'm not sure what happened there.\", \"I made an error typing.\", \"That was a mistake.\", \"I didn't mean to type that.\", \"Oops, my mistake.\"], \"most_general\": \"I made an error.\", \"name\": \"Expression of confusion or mistake.\"}, {\"options\": [\"My keyboard is acting up.\", \"I'm having trouble typing.\", \"I think my keyboard is broken.\", \"My typing isn't working right.\", \"I'm experiencing a keyboard issue.\"], \"most_general\": \"I'm having keyboard issues.\", \"name\": \"Comment about keyboard issues or typing errors.\"}, {\"options\": [\"Can you help me with this?\", \"I need some assistance.\", \"Could you support me here?\", \"I could use some help.\", \"Is there any way you can assist?\"], \"most_general\": \"I need help.\", \"name\": \"Request for assistance or support.\"}, {\"options\": [\"I'm a bit frustrated right now.\", \"This is quite annoying.\", \"I'm feeling annoyed by this.\", \"This situation is irritating.\", \"I'm getting a bit frustrated.\"], \"most_general\": \"I'm feeling frustrated.\", \"name\": \"Mention of frustration or annoyance.\"}, {\"options\": [\"Let's discuss something else.\", \"Can we change the topic?\", \"I'd like to talk about something different.\", \"Let's move on to another subject.\", \"How about we switch the conversation?\"], \"most_general\": \"I want to change the topic.\", \"name\": \"Change of topic or conversation direction.\"}, {\"options\": [\"Just kidding around!\", \"That was a joke.\", \"I was just being silly.\", \"I'm just having some fun.\", \"That was meant to be funny.\"], \"most_general\": \"I was just joking.\", \"name\": \"Humorous comment or joke about the situation.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

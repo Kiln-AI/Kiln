@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "169987005878",
+  "created_at": "2024-10-26T14:21:03.916340",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "240956277548",
+    "path": null,
+    "created_at": "2024-10-26T14:21:03.916305",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has inputted 'sdf' as the partial sentence fragment. There is no prior context provided, so the fragment is isolated. The assistant is attempting to replace this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Ask for clarification or explanation. 2) Express confusion or misunderstanding. 3) Indicate a mistake or typo. 4) Request assistance or help. 5) Mention a technical issue or problem. 6) Inquire about a specific topic or subject.\", \"topics\": [{\"options\": [\"Could you explain what this means?\", \"Can you clarify this for me?\", \"What is this about?\", \"Can you provide more details?\", \"Could you elaborate on this?\"], \"most_general\": \"I need some clarification on this.\", \"name\": \"Ask for clarification or explanation.\"}, {\"options\": [\"I don't understand this.\", \"This doesn't make sense to me.\", \"I'm confused about this.\", \"Can you help me understand?\", \"I'm not sure what this means.\"], \"most_general\": \"I'm confused about this.\", \"name\": \"Express confusion or misunderstanding.\"}, {\"options\": [\"I think there was a typo.\", \"This seems like a mistake.\", \"I made an error in typing.\", \"Oops, I didn't mean to type that.\", \"That doesn't seem right.\"], \"most_general\": \"I think there was a typo.\", \"name\": \"Indicate a mistake or typo.\"}, {\"options\": [\"Can you help me with this?\", \"I need some assistance.\", \"Could you lend a hand?\", \"I'm looking for some help.\", \"Can someone assist me?\"], \"most_general\": \"I need some assistance.\", \"name\": \"Request assistance or help.\"}, {\"options\": [\"I'm having a technical issue.\", \"There's a problem with my device.\", \"I think something went wrong.\", \"I'm experiencing a glitch.\", \"My device isn't working properly.\"], \"most_general\": \"I'm having a technical issue.\", \"name\": \"Mention a technical issue or problem.\"}, {\"options\": [\"What is this topic about?\", \"Can you tell me more about this subject?\", \"I'm interested in this topic.\", \"Could you provide some insight on this?\", \"I'd like to learn more about this.\"], \"most_general\": \"I'm interested in this topic.\", \"name\": \"Inquire about a specific topic or subject.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

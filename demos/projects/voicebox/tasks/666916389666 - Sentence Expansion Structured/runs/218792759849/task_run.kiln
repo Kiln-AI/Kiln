@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "218792759849",
+  "created_at": "2024-10-26T14:18:05.484092",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfdsf\\n\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "385047038225",
+    "path": null,
+    "created_at": "2024-10-26T14:18:05.484041",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user provided a sentence fragment \\\"sdfdsf\\\" which appears to be a typo or gibberish. The task is to replace this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Expressing confusion or need for clarification.\\n2) Asking for help with a technical issue.\\n3) Sharing a random thought or idea.\\n4) Indicating a mistake or typo.\\n5) Starting a new conversation about a common interest.\\n6) Requesting assistance with communication.\", \"topics\": [{\"options\": [\"I'm not sure what that means, could you clarify?\", \"I think I made a mistake, can you help me understand this?\", \"I am confused, could you explain what is happening?\", \"Can you help me figure out what's going on here?\", \"I'm not sure about this, can you give me more information?\"], \"most_general\": \"I'm confused about something.\", \"name\": \"Express confusion\"}, {\"options\": [\"I'm having trouble with my device, can you help?\", \"Something's not working right, can you assist me?\", \"I need some help with a technical issue, please.\", \"My device is acting up, can you take a look?\", \"Can you help me troubleshoot this problem?\"], \"most_general\": \"I need help with a technical issue.\", \"name\": \"Ask for technical help\"}, {\"options\": [\"I just had a random thought, what do you think?\", \"Something interesting just crossed my mind, let's discuss.\", \"I have a thought I'd like to share with you.\", \"Here's a random idea I just had.\", \"I was thinking about something and wanted to share.\"], \"most_general\": \"I have a random thought to share.\", \"name\": \"Share a random thought\"}, {\"options\": [\"I think I made an error, can we fix it?\", \"Please ignore that, it was a mistake.\", \"Whoops, I didn't mean to type that.\", \"I think I hit the wrong keys, sorry about that.\", \"Let's disregard that, it was a typo.\"], \"most_general\": \"I made a mistake, sorry.\", \"name\": \"Indicate a mistake\"}, {\"options\": [\"I was thinking about cars, what's your favorite?\", \"Have you heard any good music lately?\", \"I wanted to talk about something we both enjoy.\", \"Let's start a new topic, how about music?\", \"Can we chat about cars or music?\"], \"most_general\": \"Let's start a conversation about a common interest.\", \"name\": \"Start a new conversation\"}, {\"options\": [\"I need help to express what I'm trying to say.\", \"Can you assist me with my communication?\", \"I'm having trouble communicating, could you help?\", \"I need some assistance to convey my thoughts.\", \"Can you help me say what I'm trying to express?\"], \"most_general\": \"I need help expressing myself.\", \"name\": \"Request help with communication\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

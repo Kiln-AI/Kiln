@@ -1,0 +1,63 @@
+{
+  "v": 1,
+  "id": "149513533813",
+  "created_at": "2024-10-26T14:27:36.024849",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"asfd\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "143263922549",
+    "path": null,
+    "created_at": "2024-10-26T14:27:36.024783",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has input a sentence fragment 'asfd', and the assistant is tasked with replacing this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Expressing confusion or a typo.\\n2) Asking for assistance or clarification.\\n3) Showing excitement or enthusiasm.\\n4) Sharing a random thought or idea.\\n5) Indicating a technical issue or error.\\n6) Expressing a sudden realization or reminder.\", \"topics\": [{\"options\": [\"I think I made a typo.\", \"Oops, I didn't mean to type that.\", \"Sorry, that was a mistake.\", \"I think I hit the wrong keys.\", \"That was unintentional.\"], \"most_general\": \"I think I made a typo.\", \"name\": \"Express confusion or a typo.\"}, {\"options\": [\"Can you help me with this?\", \"I'm not sure what I meant.\", \"Can you clarify this for me?\", \"I'm a bit confused, can you assist?\", \"Could you please assist me?\"], \"most_general\": \"Can you help me with this?\", \"name\": \"Ask for assistance or clarification.\"}, {\"options\": [\"I'm so excited right now!\", \"Wow, this is amazing!\", \"This is awesome!\", \"I'm thrilled about this!\", \"I can't believe how great this is!\"], \"most_general\": \"I'm so excited right now!\", \"name\": \"Show excitement or enthusiasm.\"}, {\"options\": [\"I just had a random thought.\", \"Here's an idea I had.\", \"Something interesting popped into my head.\", \"I suddenly remembered something.\", \"I had a quick thought just now.\"], \"most_general\": \"I just had a random thought.\", \"name\": \"Share a random thought or idea.\"}, {\"options\": [\"I think there's a technical issue.\", \"Something went wrong with my device.\", \"I'm experiencing an error.\", \"My device is acting up.\", \"I encountered a glitch.\"], \"most_general\": \"I think there's a technical issue.\", \"name\": \"Indicate a technical issue or error.\"}, {\"options\": [\"I just realized something important.\", \"I suddenly remembered something.\", \"Oh, I almost forgot!\", \"I just thought of something crucial.\", \"Something important just came to mind.\"], \"most_general\": \"I just realized something important.\", \"name\": \"Express a sudden realization or reminder.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "573826437833",
+      "path": null,
+      "created_at": "2024-10-26T15:25:02.740666",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 2.0,
+      "requirement_ratings": {},
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": "Don't  address spelling errors. Make the best assumptions you have of what they are trying to say. Calling attention to spelling errors can be embarrassing. In this case you have very little to go on, so a set of broad topics to start a conversation would be best.",
+  "repaired_output": {
+    "v": 1,
+    "id": "305355682807",
+    "path": null,
+    "created_at": "2024-10-26T15:26:25.606434",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has input a sentence fragment 'asfd', and the assistant is tasked with replacing this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Starting a conversation about music. 2) Asking about someone's day. 3) Sharing a personal update. 4) Discussing plans for the weekend. 5) Bringing up a recent event or news. 6) Asking a question about a shared interest.\", \"topics\": [{\"options\": [\"I've been listening to some great music lately.\", \"Do you like any new music?\", \"What's your favorite song right now?\", \"Have you heard any good tunes recently?\", \"Music has been on my mind a lot.\"], \"most_general\": \"I've been thinking about music.\", \"name\": \"Start a conversation about music.\"}, {\"options\": [\"How has your day been so far?\", \"Did anything interesting happen today?\", \"How are you feeling today?\", \"What's been the highlight of your day?\", \"Have you had a good day so far?\"], \"most_general\": \"How has your day been?\", \"name\": \"Ask about someone's day.\"}, {\"options\": [\"I wanted to share something new with you.\", \"Here's an update from my side.\", \"I have some news to tell you.\", \"Let me share what's been going on with me.\", \"I have a personal update to share.\"], \"most_general\": \"I wanted to share something new.\", \"name\": \"Share a personal update.\"}, {\"options\": [\"Do you have any plans for the weekend?\", \"What are you doing this weekend?\", \"Are you free over the weekend?\", \"Do you want to do something this weekend?\", \"I'm thinking about the weekend plans.\"], \"most_general\": \"Do you have any weekend plans?\", \"name\": \"Discuss plans for the weekend.\"}, {\"options\": [\"Did you hear about the recent event?\", \"There's something new in the news.\", \"Have you been following recent events?\", \"There's been a lot happening lately.\", \"I wanted to discuss something I read.\"], \"most_general\": \"Did you hear about the recent event?\", \"name\": \"Bring up a recent event or news.\"}, {\"options\": [\"Do you know much about cars?\", \"Have you seen the latest car models?\", \"What's your favorite car brand?\", \"Have you been to any car shows recently?\", \"I have a question about cars.\"], \"most_general\": \"Do you know much about cars?\", \"name\": \"Ask a question about a shared interest.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "model_type": "task_run"
+}

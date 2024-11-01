@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "267897195183",
+  "created_at": "2024-10-24T20:38:53.219888",
+  "created_by": "scosman",
+  "input": "{\"prior_context\": \"Did you hear my new song?\", \"partial_sentence_fragment\": \"It was\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "112583481336",
+    "path": null,
+    "created_at": "2024-10-24T20:38:53.219850",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The conversation context is about a new song, with the previous sentence asking, \\\"Did you hear my new song?\\\" The sentence fragment provided is \\\"It was\\\". The assistant is attempting to help with replacing a sentence fragment which will be concatenated to the prior sentence to form a cohesive message incorporating current intent from the fragment and context from prior sentences.\", \"potential_topics\": \"1) Discuss the song's meaning or inspiration. 2) Share the experience of creating the song. 3) Ask for the person's opinion on the song. 4) Inquire about the person's emotional response to the song. 5) Discuss the song's production quality. 6) Talk about the song's significance or importance.\", \"topics\": [{\"options\": [\"It was inspired by a personal experience.\", \"It was written for someone special.\", \"It was about a particular theme.\", \"It was influenced by another artist.\", \"It was a reflection of my feelings.\"], \"most_general\": \"I wanted to discuss the meaning behind it.\", \"name\": \"Discuss the song's meaning or inspiration.\"}, {\"options\": [\"It was fun to make.\", \"It was a passion project of mine.\", \"It was my first song.\", \"It was hard work.\", \"It was a challenge to produce.\"], \"most_general\": \"I wanted to share my experience creating it.\", \"name\": \"Share the experience of creating the song.\"}, {\"options\": [\"It was amazing, wasn't it?\", \"It was really good, right?\", \"It was your favorite, wasn't it?\", \"It was better than I expected.\", \"It was pretty catchy.\"], \"most_general\": \"I was wondering what you thought of it.\", \"name\": \"Ask for their opinion on the song.\"}, {\"options\": [\"It was really moving, wasn't it?\", \"It was emotional for you, right?\", \"It was hard to listen to.\", \"It was uplifting, wasn't it?\", \"It was really inspiring.\"], \"most_general\": \"I was curious about how it affected you.\", \"name\": \"Inquire about emotional response to the song.\"}, {\"options\": [\"It was well-produced, wasn't it?\", \"It was really well-mixed.\", \"It was recorded in a great studio.\", \"It was mastered perfectly.\", \"It was a great arrangement.\"], \"most_general\": \"I was wondering about the production quality.\", \"name\": \"Discuss the song's production quality.\"}, {\"options\": [\"It was a special song for me.\", \"It was one of my favorites.\", \"It was a milestone in my career.\", \"It was a game-changer for me.\", \"It was a turning point in my life.\"], \"most_general\": \"I wanted to talk about its significance.\", \"name\": \"Talk about the song's significance or importance.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "few_shot_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

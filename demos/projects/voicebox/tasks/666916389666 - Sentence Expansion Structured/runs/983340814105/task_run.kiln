@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "983340814105",
+  "created_at": "2024-10-26T14:29:43.930464",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfsdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "104543192567",
+    "path": null,
+    "created_at": "2024-10-26T14:29:43.930417",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has inputted an unclear or nonsensical sentence fragment \\\"sdfsdf\\\". The assistant is attempting to replace this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Expressing confusion or mistake about the input. 2) Asking for clarification about a previous topic. 3) Starting a casual conversation. 4) Expressing a need or request. 5) Mentioning something about current feelings or thoughts. 6) Initiating a topic about a hobby or interest.\", \"topics\": [{\"options\": [\"I made a mistake with my typing.\", \"I'm not sure what I meant to type.\", \"I accidentally typed something random.\", \"That was just a typo, sorry.\", \"I didn't mean to send that.\"], \"most_general\": \"I made a mistake.\", \"name\": \"Express a typing mistake\"}, {\"options\": [\"Could you remind me what we were talking about?\", \"I'm not sure what we were discussing.\", \"Can you clarify what you mean?\", \"Could you explain that again?\", \"I lost track of our conversation, can you help me? \"], \"most_general\": \"Can you clarify what we were discussing?\", \"name\": \"Ask for clarification\"}, {\"options\": [\"How are you today?\", \"What's new with you?\", \"I hope you're having a good day.\", \"Have you been up to anything fun?\", \"I was thinking about the weather today.\"], \"most_general\": \"How are you?\", \"name\": \"Start a casual conversation\"}, {\"options\": [\"Could you help me with something?\", \"I need to ask for a favor.\", \"Is there something I can get help with?\", \"I have a request to make.\", \"Can you assist me with a task?\"], \"most_general\": \"I need help with something.\", \"name\": \"Express a need or request\"}, {\"options\": [\"I'm feeling a bit tired today.\", \"I've been thinking a lot lately.\", \"I'm feeling happy right now.\", \"I have something on my mind.\", \"My mood is quite good today.\"], \"most_general\": \"I have something on my mind.\", \"name\": \"Share current feelings or thoughts\"}, {\"options\": [\"I've been listening to new music lately.\", \"I was reading about cars yesterday.\", \"I've been enjoying my hobbies.\", \"I'm thinking about going to a car show.\", \"I heard a great song recently.\"], \"most_general\": \"I've been enjoying my hobbies.\", \"name\": \"Talk about hobbies or interests\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

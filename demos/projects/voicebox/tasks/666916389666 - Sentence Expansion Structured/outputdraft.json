@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "properties": {
+    "restate_context": {
+      "title": "restate_context",
+      "type": "string",
+      "description": "Restate the context we have about the user's conversation, and the goal of this task. This is plaintext, sentence formatted."
+    },
+    "potential_topics": {
+      "title": "potential_topics",
+      "type": "string",
+      "description": "List 6 topics you predict the user may be trying to communicate next given the inputs and task goal. This is plaintext, list formatted."
+    },
+    "topics": {
+      "type": "array",
+      "title": "topics",
+      "description": "An array of topic_options objects, one for each corisponding the the list of topics in the potential_topics field. Each topic_options object contains an options array of 5 unique first-person response options for this topic, a most_general string, and a name string.",
+      "minItems": 4,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "title": "topic_options",
+        "description":"An object for a single topic, describing potentual first-person response options for this topic. For the examples below, we'll use the example topic \"Inquiry about a specific time regarding the person's school activities or schedule.\"",
+        "required": ["options", "most_general", "name"],
+        "properties": {
+          "options": {
+            "type": "array",
+            "title": "options",
+            "description": "Array of 5 unique first-person response options for this topic. These shouldn't conflict with the other topics, or other response in this topic. It's best if these span the range of possible comments within this topic. Some examples for the example topic are: \"When do your classes start?\", \"When is your next vacation or break?\", etc.",
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "most_general": {
+            "title": "most_general",
+            "type": "string",
+            "description": "This string is an extremely general way selecting this topic without any specifics at all. An example for the example toptic: \"I was curious about your schedule.\". This should also be in first person.",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "title": "name",
+            "description": "The topic name is a friendly description of the topic, not in first person. For the example topic, it could be \"Ask about school activities or schedule.\". It should use plain language (for example, \"Ask\" instead of \"Inquire\"). It is typically quite similar in meaning to the topic description, but with plain language, and potentually shortened for brevity if the original topic is over 12 words.",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "restate_context",
+    "potential_topics",
+    "topics"
+  ]
+}

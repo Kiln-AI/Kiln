@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "909475210647",
+  "created_at": "2024-10-24T13:44:19.369392",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"when\", \"prior_context\": \"How is was your day at work?\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "129999356207",
+    "path": null,
+    "created_at": "2024-10-24T13:44:19.369307",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has asked about the other person's day at work and is now trying to expand on the sentence fragment 'when'. The task is to provide a continuation that will form a cohesive message with the prior context.\", \"potential_topics\": \"1) Ask about a specific event at work.\\n2) Inquire about the timing of a meeting or deadline.\\n3) Discuss plans for meeting up after work.\\n4) Ask about the end time of their work shift.\\n5) Inquire about when they felt most productive during the day.\\n6) Ask when they took breaks during work.\", \"options_json\": \"[\\n  {\\n    \\\"name\\\": \\\"Ask about a specific event at work.\\\",\\n    \\\"most_general\\\": \\\"I was wondering about your work events.\\\",\\n    \\\"options\\\": [\\n      \\\"When did that meeting happen?\\\",\\n      \\\"When did you start working on that project?\\\",\\n      \\\"When did you have that conference call?\\\",\\n      \\\"When was the team lunch?\\\",\\n      \\\"When did the presentation start?\\\"\\n    ]\\n  },\\n  {\\n    \\\"name\\\": \\\"Inquire about the timing of a meeting or deadline.\\\",\\n    \\\"most_general\\\": \\\"I was curious about your work schedule.\\\",\\n    \\\"options\\\": [\\n      \\\"When is your next deadline?\\\",\\n      \\\"When was your last meeting?\\\",\\n      \\\"When is the project due?\\\",\\n      \\\"When are you meeting the client?\\\",\\n      \\\"When is the team meeting scheduled?\\\"\\n    ]\\n  },\\n  {\\n    \\\"name\\\": \\\"Discuss plans for meeting up after work.\\\",\\n    \\\"most_general\\\": \\\"I wanted to see if we could meet after work.\\\",\\n    \\\"options\\\": [\\n      \\\"When are you free to meet after work?\\\",\\n      \\\"When should we grab dinner?\\\",\\n      \\\"When do you want to hang out?\\\",\\n      \\\"When can we meet up?\\\",\\n      \\\"When should I come over?\\\"\\n    ]\\n  },\\n  {\\n    \\\"name\\\": \\\"Ask about the end time of their work shift.\\\",\\n    \\\"most_general\\\": \\\"I was wondering when your work shift ends.\\\",\\n    \\\"options\\\": [\\n      \\\"When do you finish work?\\\",\\n      \\\"When is your shift over?\\\",\\n      \\\"When do you clock out?\\\",\\n      \\\"When does your day end at work?\\\",\\n      \\\"When do you leave the office?\\\"\\n    ]\\n  },\\n  {\\n    \\\"name\\\": \\\"Inquire about when they felt most productive during the day.\\\",\\n    \\\"most_general\\\": \\\"I was curious about your productivity today.\\\",\\n    \\\"options\\\": [\\n      \\\"When were you most productive?\\\",\\n      \\\"When did you feel most focused?\\\",\\n      \\\"When did you accomplish the most?\\\",\\n      \\\"When did you have the most energy?\\\",\\n      \\\"When was your peak performance?\\\"\\n    ]\\n  },\\n  {\\n    \\\"name\\\": \\\"Ask when they took breaks during work.\\\",\\n    \\\"most_general\\\": \\\"I was wondering about your breaks today.\\\",\\n    \\\"options\\\": [\\n      \\\"When did you take your breaks?\\\",\\n      \\\"When was your lunch break?\\\",\\n      \\\"When did you step out for coffee?\\\",\\n      \\\"When did you relax a bit?\\\",\\n      \\\"When did you have a rest?\\\"\\n    ]\\n  }\\n]\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openrouter",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

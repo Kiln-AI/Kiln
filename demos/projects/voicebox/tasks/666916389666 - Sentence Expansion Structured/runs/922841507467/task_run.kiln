@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "922841507467",
+  "created_at": "2024-10-26T14:30:19.398116",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfsdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "194277540222",
+    "path": null,
+    "created_at": "2024-10-26T14:30:19.398080",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user provided the sentence fragment 'sdfsdf'. The assistant is attempting to help with expanding this fragmented input into a complete sentence.\", \"potential_topics\": \"1. Ask about recent activities or news.\\n2. Share thoughts on a recent event.\\n3. Inquire about someone's plans.\\n4. Talk about a favorite topic or interest.\\n5. Ask for help or assistance.\\n6. Share a personal update or feeling.\", \"topics\": [{\"options\": [\"What have you been up to lately?\", \"Did anything interesting happen recently?\", \"Can you tell me about your day?\", \"What news do you have for me?\", \"I've been thinking about recent events.\"], \"most_general\": \"I wanted to ask about your recent activities.\", \"name\": \"Ask about recent activities or news.\"}, {\"options\": [\"What do you think about that event?\", \"Did you enjoy the concert last week?\", \"What was your favorite part of the show?\", \"How do you feel about the news?\", \"Have you heard about the latest developments?\"], \"most_general\": \"I wanted to share my thoughts on a recent event.\", \"name\": \"Share thoughts on a recent event.\"}, {\"options\": [\"What are your plans for the weekend?\", \"Do you have anything special coming up?\", \"Are you going anywhere this week?\", \"What do you want to do tomorrow?\", \"Have you made any plans for next week?\"], \"most_general\": \"I would like to know about your plans.\", \"name\": \"Inquire about someone's plans.\"}, {\"options\": [\"I love talking about cars!\", \"Music is something I enjoy discussing.\", \"Do you have any hobbies you like to share?\", \"What are your favorite types of music?\", \"Let's talk about your favorite car models.\"], \"most_general\": \"I want to discuss a favorite topic or interest.\", \"name\": \"Talk about a favorite topic or interest.\"}, {\"options\": [\"Can you help me with something?\", \"I need assistance with a task.\", \"Is there anything you can do to help?\", \"Could you lend me a hand?\", \"I would appreciate your support.\"], \"most_general\": \"I am looking for help or assistance.\", \"name\": \"Ask for help or assistance.\"}, {\"options\": [\"I wanted to share something personal.\", \"I've been feeling a bit under the weather.\", \"Let me tell you about my day.\", \"I have a small update to share.\", \"I've been thinking about my family.\"], \"most_general\": \"I want to share a personal update or feeling.\", \"name\": \"Share a personal update or feeling.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o_mini",
+        "model_provider": "openrouter",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

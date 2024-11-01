@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "id": "947956008632",
+  "created_at": "2024-10-24T19:28:16.861393",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"how was\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "305650361610",
+    "path": null,
+    "created_at": "2024-10-24T19:28:16.861319",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has provided the sentence fragment \\\"how was\\\". The assistant is attempting to help the user complete this sentence fragment into a full sentence for better communication.\", \"potential_topics\": \"Ask about someone's day or experience.\\nInquire about an event or activity someone attended.\\nAsk for feedback on a recent experience.\\nCheck in on someone's health or well-being.\\nAsk about a recent trip or vacation.\", \"topics\": [{\"options\": [\"How was your day?\", \"How was your weekend?\", \"How was the event you attended?\", \"How was your trip?\", \"How was your experience with that?\"], \"most_general\": \"I was wondering how it was.\", \"name\": \"Ask about someone's day or experience.\"}, {\"options\": [\"How did your meeting go?\", \"How was the concert you went to?\", \"How was the movie you saw?\", \"How was the party last night?\", \"How was the food at the restaurant?\"], \"most_general\": \"I was curious about the event you attended.\", \"name\": \"Inquire about an event or activity someone attended.\"}, {\"options\": [\"What did you think of the show?\", \"How did you like the performance?\", \"How was your experience at the festival?\", \"What was the highlight of your day?\", \"Did you enjoy the game you watched?\"], \"most_general\": \"I wanted to know what you thought about it.\", \"name\": \"Ask for feedback on a recent experience.\"}, {\"options\": [\"How have you been feeling lately?\", \"Are you doing well?\", \"How is your health these days?\", \"How are you feeling after that?\", \"Is everything okay with you?\"], \"most_general\": \"I was checking in on your health.\", \"name\": \"Check in on someone's health or well-being.\"}, {\"options\": [\"How was your vacation in the summer?\", \"What was your favorite part of the trip?\", \"How did you enjoy your time away?\", \"What did you do on your last holiday?\", \"How was the beach you visited?\"], \"most_general\": \"I was curious about your recent trip.\", \"name\": \"Ask about a recent trip or vacation.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o_mini",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "449559208786",
+      "path": null,
+      "created_at": "2024-10-24T19:40:36.090873",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {
+        "457617267453": 5.0,
+        "284368128001": 5.0,
+        "315774475278": 4.0,
+        "657679249905": 5.0,
+        "305836520225": 5.0
+      },
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

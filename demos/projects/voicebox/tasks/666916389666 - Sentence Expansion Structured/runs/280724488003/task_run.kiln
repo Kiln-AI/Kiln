@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "280724488003",
+  "created_at": "2024-10-26T14:19:02.401817",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfsdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "219076516088",
+    "path": null,
+    "created_at": "2024-10-26T14:19:02.401767",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has inputted a sentence fragment 'sdfsdf', which appears to be a typo or placeholder. The goal is to replace this isolated sentence fragment at the start of a message with a complete sentence.\", \"potential_topics\": \"- Asking for clarification or help\\n- Expressing a greeting or introduction\\n- Indicating a technical issue or error\\n- Mentioning something about their interests, like music or cars\\n- Making a general statement or observation\\n- Requesting assistance or service\", \"topics\": [{\"options\": [\"Can you help me with something?\", \"I'm not sure what to say.\", \"Could you clarify something for me?\", \"I'm a bit confused, can you guide me?\", \"Can you explain this to me?\"], \"most_general\": \"I need some assistance.\", \"name\": \"Asking for help\"}, {\"options\": [\"Hello, how are you today?\", \"Hi, it's nice to meet you.\", \"Good morning!\", \"Hey there!\", \"Greetings!\"], \"most_general\": \"Hello!\", \"name\": \"Expressing a greeting\"}, {\"options\": [\"I think there's a problem with my device.\", \"Something seems to be wrong.\", \"I encountered a technical issue.\", \"Can you check this for me?\", \"Is there an error? Could you confirm?\"], \"most_general\": \"I might have a technical issue.\", \"name\": \"Indicating a technical issue\"}, {\"options\": [\"I've been listening to some great music lately.\", \"I just watched an interesting show about cars.\", \"I really love cars and their designs.\", \"Music has been on my mind a lot.\", \"I'm always fascinated by car engineering.\"], \"most_general\": \"I'm thinking about my interests.\", \"name\": \"Mentioning interests\"}, {\"options\": [\"It's a beautiful day today.\", \"I noticed it's been getting colder.\", \"Life is full of surprises.\", \"I was just thinking about something.\", \"It's interesting how things change.\"], \"most_general\": \"I have an observation to share.\", \"name\": \"Making an observation\"}, {\"options\": [\"Could you assist me with this task?\", \"I'm looking for some help with something.\", \"Is there someone who can help me?\", \"I need a little support with this.\", \"Can you lend me a hand?\"], \"most_general\": \"I need some help.\", \"name\": \"Requesting assistance\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "id": "739129418256",
+  "created_at": "2024-10-24T19:43:56.379390",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"how school\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "162582405857",
+    "path": null,
+    "created_at": "2024-10-24T19:43:56.379327",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user is attempting to communicate a message starting with the sentence fragment \\\"how school\\\". The assistant's goal is to help replace this isolated sentence fragment at the start of a message with complete sentence options that incorporate the user's intent.\", \"potential_topics\": \"1) Ask how the person's school is going.\\n2) Ask about specific classes or subjects the person is taking.\\n3) Inquire about the person's school friends or social activities.\\n4) Ask about any recent school events or news.\\n5) Inquire about the person's feelings or experiences with school.\\n6) Ask about the person's future plans related to school.\", \"topics\": [{\"options\": [\"How is your school going?\", \"How are things at school?\", \"What's new at your school?\", \"How has school been for you?\", \"How is everything going at school?\"], \"most_general\": \"I wanted to know how your school is going.\", \"name\": \"Ask how school is going.\"}, {\"options\": [\"How are your classes going?\", \"What subjects are you taking this term?\", \"Are there any classes you're enjoying?\", \"How difficult are your current classes?\", \"What class do you have next?\"], \"most_general\": \"I wanted to ask about your classes.\", \"name\": \"Ask about classes or subjects.\"}, {\"options\": [\"How are your school friends doing?\", \"Have you made any new friends at school?\", \"Are you involved in any clubs or activities?\", \"How's your social life at school?\", \"What do you and your friends do after school?\"], \"most_general\": \"I was curious about your school social life.\", \"name\": \"Ask about school friends or social activities.\"}, {\"options\": [\"Have there been any recent school events?\", \"Did you attend any school events lately?\", \"What's the latest school news?\", \"Are there any upcoming school activities?\", \"How was the last school event you went to?\"], \"most_general\": \"I wanted to ask about school events.\", \"name\": \"Ask about school events or news.\"}, {\"options\": [\"How do you feel about school lately?\", \"Are you enjoying school these days?\", \"Has school been stressful for you?\", \"What do you like most about school?\", \"Is there anything you dislike about school?\"], \"most_general\": \"I wanted to ask about your feelings on school.\", \"name\": \"Ask about feelings or experiences with school.\"}, {\"options\": [\"What are your future plans after school?\", \"Are you planning on pursuing further studies?\", \"Do you have any goals related to school?\", \"Are you thinking of changing schools?\", \"Do you have any major projects coming up?\"], \"most_general\": \"I wanted to know about your school-related plans.\", \"name\": \"Ask about future school plans.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "170908999820",
+      "path": null,
+      "created_at": "2024-10-24T19:45:00.944550",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {
+        "457617267453": 5.0,
+        "284368128001": 5.0,
+        "315774475278": 5.0,
+        "657679249905": 5.0,
+        "305836520225": 5.0
+      },
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

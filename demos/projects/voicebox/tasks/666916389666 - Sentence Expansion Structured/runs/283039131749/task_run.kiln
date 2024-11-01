@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "283039131749",
+  "created_at": "2024-10-25T12:29:11.440405",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"how\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "189934345242",
+    "path": null,
+    "created_at": "2024-10-25T12:29:11.440234",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has started their message with the sentence fragment \\\"how\\\". The assistant is attempting to help by replacing this isolated sentence fragment at the start of a message with a complete sentence.\", \"potential_topics\": \"1) Asking about someone's feelings or well-being.\\n2) Inquiring about the status of an event or situation.\\n3) Asking for directions or instructions.\\n4) Inquiring about the cost or price of something.\\n5) Asking about someone's day or recent activities.\\n6) Seeking information about a process or method.\", \"topics\": [{\"options\": [\"How are you feeling today?\", \"How have you been lately?\", \"How is your family doing?\", \"How are things going with you?\", \"How's everything on your end?\"], \"most_general\": \"I was curious about your well-being.\", \"name\": \"Ask about feelings or well-being.\"}, {\"options\": [\"How is the project coming along?\", \"How is the weather today?\", \"How did the meeting go?\", \"How are things progressing at work?\", \"How is the situation with your house?\"], \"most_general\": \"I was curious about the status of something.\", \"name\": \"Inquire about the status of an event or situation.\"}, {\"options\": [\"How do I get to your place?\", \"How can I complete this task?\", \"How do I use this new feature?\", \"How can I fix this problem?\", \"How do I make reservations at this restaurant?\"], \"most_general\": \"I was curious about directions or instructions.\", \"name\": \"Ask for directions or instructions.\"}, {\"options\": [\"How much does this cost?\", \"How expensive is this item?\", \"How much is the ticket for the event?\", \"How much do I owe you?\", \"How much is the service fee?\"], \"most_general\": \"I was curious about the cost of something.\", \"name\": \"Inquire about cost or price.\"}, {\"options\": [\"How was your day?\", \"How did your weekend go?\", \"How was your trip?\", \"How has your week been so far?\", \"How's everything been lately?\"], \"most_general\": \"I was curious about your day or activities.\", \"name\": \"Ask about someone's day or recent activities.\"}, {\"options\": [\"How does this process work?\", \"How do we solve this issue?\", \"How can we improve this method?\", \"How does this system operate?\", \"How do we implement this idea?\"], \"most_general\": \"I was curious about a process or method.\", \"name\": \"Seek information about a process or method.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

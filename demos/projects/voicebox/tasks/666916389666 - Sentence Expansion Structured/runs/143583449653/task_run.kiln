@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "id": "143583449653",
+  "created_at": "2024-10-24T19:41:31.182463",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"when\", \"prior_context\": \"How is work going?\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "321808165229",
+    "path": null,
+    "created_at": "2024-10-24T19:41:31.182424",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user previously asked \\\"How is work going?\\\" and is now trying to complete a statement starting with \\\"when\\\". The task is to generate a complete sentence that follows naturally from the conversation about work.\", \"potential_topics\": \"1) Ask when a project or task at work will be completed. 2) Inquire about when the person started their current job. 3) Ask when the next meeting or work event is scheduled. 4) Ask when they plan to take a vacation or day off. 5) Inquire about when they usually start or finish work. 6) Ask when they anticipate a promotion or job change.\", \"topics\": [{\"options\": [\"When do you think the project will be finished?\", \"When is the deadline for your current task?\", \"When do you expect to wrap up this project?\", \"When will you be done with the current assignment?\", \"When will the project milestone be reached?\"], \"most_general\": \"When will the work be completed?\", \"name\": \"Ask when work will be completed\"}, {\"options\": [\"When did you start working at this company?\", \"When did you join your current job?\", \"When did you begin working in your position?\", \"When did you first begin your career here?\", \"When was your first day at your job?\"], \"most_general\": \"When did you start your job?\", \"name\": \"Ask when they started their job\"}, {\"options\": [\"When is your next team meeting?\", \"When is the quarterly review scheduled?\", \"When do you have to attend the next conference?\", \"When is the annual company event?\", \"When is the upcoming work seminar?\"], \"most_general\": \"When is the next work event?\", \"name\": \"Ask when the next work event is\"}, {\"options\": [\"When are you planning to take a vacation?\", \"When is your next day off?\", \"When do you plan to take some time off?\", \"When are you thinking of taking a break from work?\", \"When do you have your next holiday planned?\"], \"most_general\": \"When will you take a vacation?\", \"name\": \"Ask about vacation plans\"}, {\"options\": [\"When do you usually start your workday?\", \"When do you typically clock in at the office?\", \"When does your workday begin?\", \"When do you finish work each day?\", \"When do you typically leave the office?\"], \"most_general\": \"When do you start and finish work?\", \"name\": \"Ask about start and finish times at work\"}, {\"options\": [\"When do you expect your next promotion?\", \"When do you think you'll change jobs?\", \"When do you plan to apply for a new position?\", \"When do you see yourself moving up in your career?\", \"When will you be eligible for a promotion?\"], \"most_general\": \"When is your next career move?\", \"name\": \"Ask about promotion or job change\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "901089957326",
+      "path": null,
+      "created_at": "2024-10-24T19:42:31.057858",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {
+        "457617267453": 5.0,
+        "284368128001": 5.0,
+        "315774475278": 5.0,
+        "657679249905": 3.0,
+        "305836520225": 5.0
+      },
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

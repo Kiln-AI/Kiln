@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "277662152477",
+  "created_at": "2024-10-26T14:18:14.480116",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfsdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "209345550020",
+    "path": null,
+    "created_at": "2024-10-26T14:18:14.480061",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The sentence fragment provided is 'sdfsdf', which does not provide meaningful context. The assistant is attempting to help replace an isolated sentence fragment at the start of a message, as there are no prior sentences provided.\", \"potential_topics\": \"1) Ask about the weather. 2) Inquire about recent activities. 3) Make a friendly greeting. 4) Ask about future plans. 5) Discuss a mutual interest. 6) Share a personal update.\", \"topics\": [{\"options\": [\"How's the weather today?\", \"Is it sunny or rainy there?\", \"Did you check the forecast?\", \"What's the temperature like?\", \"I was wondering about the weather.\"], \"most_general\": \"I was curious about the weather.\", \"name\": \"Ask about the weather.\"}, {\"options\": [\"What have you been up to lately?\", \"Did you do anything exciting this week?\", \"Have you gone anywhere interesting?\", \"What are you working on these days?\", \"I was wondering what you've been doing recently.\"], \"most_general\": \"I was curious about your recent activities.\", \"name\": \"Inquire about recent activities.\"}, {\"options\": [\"Hello! How are you today?\", \"Hi there! What's new?\", \"Hey! Hope you're doing well.\", \"Good day! How's everything?\", \"Just wanted to say hi!\"], \"most_general\": \"I wanted to greet you.\", \"name\": \"Make a friendly greeting.\"}, {\"options\": [\"Do you have any plans for the weekend?\", \"Are you planning any trips soon?\", \"What's on your agenda for tomorrow?\", \"Are you free next week?\", \"I was wondering about your future plans.\"], \"most_general\": \"I was curious about your future plans.\", \"name\": \"Ask about future plans.\"}, {\"options\": [\"Have you seen any good movies lately?\", \"Have you heard any new music?\", \"Did you watch the game last night?\", \"Have you read any interesting books?\", \"I was wondering about our shared interests.\"], \"most_general\": \"I was curious about our mutual interest.\", \"name\": \"Discuss a mutual interest.\"}, {\"options\": [\"I wanted to share something about myself.\", \"I've been thinking about something recently.\", \"I have some news to tell you.\", \"Something interesting happened to me.\", \"I was reflecting on recent events.\"], \"most_general\": \"I wanted to share a personal update.\", \"name\": \"Share a personal update.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

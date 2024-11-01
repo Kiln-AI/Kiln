@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "id": "287979992156",
+  "created_at": "2024-10-24T13:14:43.662378",
+  "created_by": "scosman",
+  "name": "Voicebox",
+  "description": "A project using technology to aid people who lack both the ability to speak and fine motor control. This is common with cerebral palsy. Learn more at https://github.com/scosman/voicebox",
+  "model_type": "project"
+}

@@ -23,7 +23,7 @@ dev = [
 
 
 [tool.uv.workspace]
-members = ["libs/core", "libs/server", "app/desktop"]
+members = ["libs/core", "libs/server", "app/desktop", "demos"]
 
 [tool.uv.sources]
 kiln-server = { workspace = true }

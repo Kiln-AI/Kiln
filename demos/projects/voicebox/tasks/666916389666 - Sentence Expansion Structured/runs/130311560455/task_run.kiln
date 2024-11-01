@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "id": "130311560455",
+  "created_at": "2024-10-28T14:41:00.947261",
+  "created_by": "scosman",
+  "input": "{\"prior_context\": \"How is school?\", \"partial_sentence_fragment\": \"friends\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "105376540108",
+    "path": null,
+    "created_at": "2024-10-28T14:41:00.947213",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user previously asked about school with the message \\\"How is school?\\\" and is now trying to continue the conversation with the partial sentence fragment \\\"friends\\\". The goal is to replace this fragment with a complete sentence that fits with the prior context, potentially asking further about friends or related topics.\", \"potential_topics\": \"1) Ask about their friends at school. 2) Ask if they have made new friends. 3) Inquire about spending time with friends. 4) Ask about their best friend. 5) Inquire if they have any group projects with friends. 6) Ask if they have seen their friends recently.\", \"topics\": [{\"options\": [\"How are your friends doing?\", \"Have you made any new friends lately?\", \"Are you spending time with your friends?\", \"Do you have a best friend at school?\", \"Have you caught up with your friends recently?\"], \"most_general\": \"I was curious about your friends.\", \"name\": \"Ask about their friends at school.\"}, {\"options\": [\"Have you met any new friends at school?\", \"Are you making new friends in your classes?\", \"Have you been introduced to any new people?\", \"Have you joined any clubs to meet new friends?\", \"Are there new students you've become friends with?\"], \"most_general\": \"I was curious if you've made new friends.\", \"name\": \"Ask if they have made new friends.\"}, {\"options\": [\"Are you going out with your friends this weekend?\", \"Do you hang out with your friends after school?\", \"Have you done any fun activities with your friends?\", \"Are you planning to meet up with friends soon?\", \"Do you like to spend time with your friends? \"], \"most_general\": \"I was curious if you're spending time with friends.\", \"name\": \"Inquire about spending time with friends.\"}, {\"options\": [\"Who is your best friend at school?\", \"Do you have a close friend you talk to often?\", \"Is there someone you consider your best friend?\", \"How long have you known your best friend?\", \"Do you and your best friend have any classes together?\"], \"most_general\": \"I was curious about your best friend.\", \"name\": \"Ask about their best friend.\"}, {\"options\": [\"Do you have any group projects with your friends?\", \"Are you working on any assignments with friends?\", \"Have you collaborated on any projects with friends?\", \"Do you find it fun to do group work with friends?\", \"Are there any group projects coming up with friends?\"], \"most_general\": \"I was curious if you have group projects with friends.\", \"name\": \"Inquire if they have any group projects with friends.\"}, {\"options\": [\"Have you seen your friends lately?\", \"Did you meet up with any friends last week?\", \"When was the last time you hung out with friends?\", \"Are there any friends you haven't seen in a while?\", \"Did you have a get-together with friends recently?\"], \"most_general\": \"I was curious if you've seen your friends recently.\", \"name\": \"Ask if they have seen their friends recently.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openrouter",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": {
+      "v": 1,
+      "id": "237491273582",
+      "path": null,
+      "created_at": "2024-10-28T14:41:22.306944",
+      "created_by": "scosman",
+      "type": "five_star",
+      "value": 5.0,
+      "requirement_ratings": {},
+      "model_type": "task_output_rating"
+    },
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}

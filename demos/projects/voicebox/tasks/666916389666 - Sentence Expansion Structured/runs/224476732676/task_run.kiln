@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "224476732676",
+  "created_at": "2024-10-26T14:18:30.553376",
+  "created_by": "scosman",
+  "input": "{\"partial_sentence_fragment\": \"sdfsdf\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "scosman"
+    }
+  },
+  "output": {
+    "v": 1,
+    "id": "156964093013",
+    "path": null,
+    "created_at": "2024-10-26T14:18:30.553324",
+    "created_by": "scosman",
+    "output": "{\"restate_context\": \"The user has provided a sentence fragment 'sdfsdf', which seems like a placeholder or error. The assistant is attempting to help replace this isolated sentence fragment at the start of a message.\", \"potential_topics\": \"1) Ask about the weather or current conditions. 2) Inquire about plans for the day. 3) Discuss a recent event or news. 4) Talk about health and well-being. 5) Ask about family or friends. 6) Discuss hobbies or interests.\", \"topics\": [{\"options\": [\"How is the weather today?\", \"Is it sunny or rainy outside?\", \"Have you been outside today?\", \"Do you think it will rain later?\", \"What's the temperature like today?\"], \"most_general\": \"I was curious about the weather.\", \"name\": \"Ask about the weather.\"}, {\"options\": [\"What are your plans for today?\", \"Are you planning to go anywhere today?\", \"Do you have any appointments today?\", \"Are you free today?\", \"What do you want to do today?\"], \"most_general\": \"I was wondering about today's plans.\", \"name\": \"Inquire about plans for the day.\"}, {\"options\": [\"Did you hear about the recent news?\", \"Have you read any interesting articles?\", \"Did anything exciting happen recently?\", \"Have you watched the latest news?\", \"Did you see what happened in the news today?\"], \"most_general\": \"I wanted to discuss recent news.\", \"name\": \"Discuss a recent event or news.\"}, {\"options\": [\"How have you been feeling lately?\", \"Is everything okay with your health?\", \"Have you been to the doctor recently?\", \"Are you feeling well today?\", \"Is there anything bothering you health-wise?\"], \"most_general\": \"I wanted to talk about health.\", \"name\": \"Talk about health and well-being.\"}, {\"options\": [\"How is your family doing?\", \"Have you spoken to any friends lately?\", \"Is everyone in your family okay?\", \"Have you seen your siblings recently?\", \"Have you visited any family recently?\"], \"most_general\": \"I was curious about family and friends.\", \"name\": \"Ask about family or friends.\"}, {\"options\": [\"Have you listened to any new music recently?\", \"Did you see any interesting cars lately?\", \"Have you been working on any hobbies?\", \"What music have you been enjoying?\", \"Have you attended any car shows recently?\"], \"most_general\": \"I wanted to discuss hobbies or interests.\", \"name\": \"Discuss hobbies or interests.\"}]}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_langchain_adapter",
+        "model_name": "gpt_4o",
+        "model_provider": "openai",
+        "prompt_builder_name": "simple_prompt_builder"
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "model_type": "task_run"
+}
