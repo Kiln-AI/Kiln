@@ -107,74 +107,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/providers/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Providers Models */
-        get: operations["get_providers_models_api_providers_models_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/available_models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Available Models */
-        get: operations["get_available_models_api_available_models_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/provider/ollama/connect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Connect Ollama Api */
-        post: operations["connect_ollama_api_api_provider_ollama_connect_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/provider/connect_api_key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Connect Api Key */
-        post: operations["connect_api_key_api_provider_connect_api_key_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/task": {
         parameters: {
             query?: never;
@@ -258,8 +190,8 @@ export interface paths {
         delete: operations["delete_run_api_projects__project_id__tasks__task_id__runs__run_id__delete"];
         options?: never;
         head?: never;
-        /** Update Run Route */
-        patch: operations["update_run_route_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
+        /** Update Run */
+        patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/runs": {
@@ -290,6 +222,91 @@ export interface paths {
         put?: never;
         /** Run Task */
         post: operations["run_task_api_projects__project_id__tasks__task_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Models */
+        get: operations["get_providers_models_api_providers_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Models */
+        get: operations["get_available_models_api_available_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provider/ollama/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect Ollama Api */
+        post: operations["connect_ollama_api_api_provider_ollama_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provider/connect_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect Api Key */
+        post: operations["connect_api_key_api_provider_connect_api_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_generator}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Prompt */
+        get: operations["generate_prompt_api_projects__project_id__task__task_id__gen_prompt__prompt_generator__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -330,23 +347,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_generator}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Gen Prompt */
-        get: operations["gen_prompt_api_projects__project_id__task__task_id__gen_prompt__prompt_generator__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -372,8 +372,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Item */
-        get: operations["read_item_api_settings__item_id__get"];
+        /** Read Setting Item */
+        get: operations["read_setting_item_api_settings__item_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -415,7 +415,10 @@ export interface components {
         };
         /**
          * DataSourceType
-         * @description The source of a piece of data.
+         * @description The source type of a piece of data.
+         *
+         *     Human: a human created the data
+         *     Synthetic: a model created the data
          * @enum {string}
          */
         DataSourceType: "human" | "synthetic";
@@ -430,6 +433,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Supports Structured Output */
+            supports_structured_output: boolean;
         };
         /**
          * ModelName
@@ -437,7 +442,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "nemotron_70b";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -1114,99 +1119,6 @@ export interface operations {
             };
         };
     };
-    get_providers_models_api_providers_models_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProviderModels"];
-                };
-            };
-        };
-    };
-    get_available_models_api_available_models_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AvailableModels"][];
-                };
-            };
-        };
-    };
-    connect_ollama_api_api_provider_ollama_connect_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OllamaConnection"];
-                };
-            };
-        };
-    };
-    connect_api_key_api_provider_connect_api_key_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     create_task_api_projects__project_id__task_post: {
         parameters: {
             query?: never;
@@ -1407,7 +1319,7 @@ export interface operations {
             };
         };
     };
-    update_run_route_api_projects__project_id__tasks__task_id__runs__run_id__patch: {
+    update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -1512,6 +1424,132 @@ export interface operations {
             };
         };
     };
+    get_providers_models_api_providers_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderModels"];
+                };
+            };
+        };
+    };
+    get_available_models_api_available_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableModels"][];
+                };
+            };
+        };
+    };
+    connect_ollama_api_api_provider_ollama_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaConnection"];
+                };
+            };
+        };
+    };
+    connect_api_key_api_provider_connect_api_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_prompt_api_projects__project_id__task__task_id__gen_prompt__prompt_generator__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                prompt_generator: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptApiResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_repair_api_projects__project_id__tasks__task_id__runs__run_id__run_repair_post: {
         parameters: {
             query?: never;
@@ -1586,39 +1624,6 @@ export interface operations {
             };
         };
     };
-    gen_prompt_api_projects__project_id__task__task_id__gen_prompt__prompt_generator__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                prompt_generator: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptApiResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     read_settings_api_settings_get: {
         parameters: {
             query?: never;
@@ -1674,7 +1679,7 @@ export interface operations {
             };
         };
     };
-    read_item_api_settings__item_id__get: {
+    read_setting_item_api_settings__item_id__get: {
         parameters: {
             query?: never;
             header?: never;

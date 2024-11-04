@@ -1,0 +1,41 @@
+<svg width="912" height="912" viewBox="0 0 912 912" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .red-rect {
+      transform-origin: left center;
+      animation: fallIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s backwards;
+    }
+    
+    .blue-path {
+      transform-origin: left center;
+      animation: swingIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.6s backwards;
+    }
+    
+    .yellow-path {
+      transform-origin: left center;
+      animation: swingIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.9s backwards;
+    }
+    
+    @keyframes fallIn {
+      0% {
+        transform: translateY(-912px) rotate(-10deg);
+      }
+      100% {
+        transform: translateY(0) rotate(0deg);
+      }
+    }
+    
+    @keyframes swingIn {
+      0% {
+        transform: rotate(45deg);
+        opacity: 0;
+      }
+      100% {
+        transform: rotate(0deg);
+        opacity: 1;
+      }
+    }
+  </style>
+  <rect class="red-rect" x="174" y="123" width="214" height="665" rx="24" fill="#E74D31"/>
+  <path class="blue-path" d="M482 764C482 777.255 492.745 788 506 788H760.056C781.976 788 792.424 761.033 776.226 746.265L522.17 514.626C506.761 500.577 482 511.509 482 532.361V764Z" fill="#415CF5"/>
+  <path class="yellow-path" d="M482 147C482 133.745 492.745 123 506 123H760.056C781.976 123 792.424 149.967 776.226 164.735L522.17 396.374C506.761 410.423 482 399.491 482 378.639V147Z" fill="#F4B544"/>
+</svg>

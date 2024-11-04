@@ -17,15 +17,6 @@ def make_app():
         description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln-ai",
     )
 
-    # Allow requests from localhost and 127.0.0.1
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     @app.get("/ping")
     def ping():
         return "pong"
@@ -34,6 +25,21 @@ def make_app():
     connect_task_api(app)
     connect_run_api(app)
     connect_custom_errors(app)
+
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://localhost:5173",
+        "https://127.0.0.1:5173",
+    ]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=allowed_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     return app
 

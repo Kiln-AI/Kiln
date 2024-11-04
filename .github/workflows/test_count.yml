@@ -12,16 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: 3.12
-          cache: "pip"
+          enable-cache: true
 
-      - name: Install Python dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -r dev-requirements.txt
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -32,7 +32,7 @@ jobs:
 
       - name: Count Python tests
         run: |
-          PYTHON_TEST_COUNT=$(python3 -m pytest --collect-only -q . | grep "tests collected" | awk '{print $1}' | sed 's/[^0-9]//g')
+          PYTHON_TEST_COUNT=$(uv run python3 -m pytest --collect-only -q . | grep "tests collected" | awk '{print $1}' | sed 's/[^0-9]//g')
           echo "PYTHON_TEST_COUNT=$PYTHON_TEST_COUNT" >> $GITHUB_ENV
 
       - name: Count NPM tests
@@ -58,8 +58,8 @@ jobs:
 
       - name: Run library coverage
         run: |
-          coverage run -m pytest -q ./libs/
-          TOTAL_LIB_COVERAGE=$(coverage report | grep TOTAL | awk {'print $4'})
+          uv run coverage run -m pytest -q ./libs/
+          TOTAL_LIB_COVERAGE=$(uv run coverage report | grep TOTAL | awk {'print $4'})
           echo "TOTAL_LIB_COVERAGE=$TOTAL_LIB_COVERAGE" >> $GITHUB_ENV
 
       - name: Create coverage badge

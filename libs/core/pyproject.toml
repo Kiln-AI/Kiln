@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.5.3"
+version = "0.5.4"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -8,10 +8,12 @@ authors = [
   {name = "Steve Cosman, Chesterfield Laboratories Inc", email = "scosman@users.noreply.github.com"}
 ]
 classifiers = [
+  "License :: OSI Approved :: MIT License",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12"
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 
 

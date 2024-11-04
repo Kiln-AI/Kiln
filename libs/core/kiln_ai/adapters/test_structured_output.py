@@ -15,19 +15,21 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
 
+@pytest.mark.parametrize(
+    "model_name,provider",
+    [
+        ("llama_3_1_8b", "groq"),
+        ("mistral_nemo", "openrouter"),
+        ("llama_3_1_70b", "amazon_bedrock"),
+        ("claude_3_5_sonnet", "openrouter"),
+        ("gemini_1_5_pro", "openrouter"),
+        ("gemini_1_5_flash", "openrouter"),
+        ("gemini_1_5_flash_8b", "openrouter"),
+    ],
+)
 @pytest.mark.paid
-async def test_structured_output_groq(tmp_path):
-    await run_structured_output_test(tmp_path, "llama_3_1_8b", "groq")
-
-
-@pytest.mark.paid
-async def test_structured_output_openrouter(tmp_path):
-    await run_structured_output_test(tmp_path, "mistral_nemo", "openrouter")
-
-
-@pytest.mark.paid
-async def test_structured_output_bedrock(tmp_path):
-    await run_structured_output_test(tmp_path, "llama_3_1_70b", "amazon_bedrock")
+async def test_structured_output(tmp_path, model_name, provider):
+    await run_structured_output_test(tmp_path, model_name, provider)
 
 
 @pytest.mark.ollama
@@ -39,16 +41,17 @@ async def test_structured_output_ollama_phi(tmp_path):
     await run_structured_output_test(tmp_path, "phi_3_5", "ollama")
 
 
-@pytest.mark.ollama
+@pytest.mark.paid
 async def test_structured_output_gpt_4o_mini(tmp_path):
     await run_structured_output_test(tmp_path, "gpt_4o_mini", "openai")
 
 
+@pytest.mark.parametrize("model_name", ["llama_3_1_8b"])
 @pytest.mark.ollama
-async def test_structured_output_ollama_llama(tmp_path):
+async def test_structured_output_ollama_llama(tmp_path, model_name):
     if not await ollama_online():
         pytest.skip("Ollama API not running. Expect it running on localhost:11434")
-    await run_structured_output_test(tmp_path, "llama_3_1_8b", "ollama")
+    await run_structured_output_test(tmp_path, model_name, "ollama")
 
 
 class MockAdapter(BaseAdapter):
@@ -105,6 +108,7 @@ async def test_mock_unstructred_response(tmp_path):
 @pytest.mark.paid
 @pytest.mark.ollama
 async def test_all_built_in_models_structured_output(tmp_path):
+    errors = []
     for model in built_in_models:
         if not model.supports_structured_output:
             print(
@@ -121,7 +125,10 @@ async def test_all_built_in_models_structured_output(tmp_path):
                 print(f"Running {model.name} {provider.name}")
                 await run_structured_output_test(tmp_path, model.name, provider.name)
             except Exception as e:
-                raise RuntimeError(f"Error running {model.name} {provider}") from e
+                print(f"Error running {model.name} {provider.name}")
+                errors.append(f"{model.name} {provider.name}: {e}")
+    if len(errors) > 0:
+        raise RuntimeError(f"Errors: {errors}")
 
 
 def build_structured_output_test_task(tmp_path: Path):

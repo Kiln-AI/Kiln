@@ -19,8 +19,9 @@ def project_from_id(project_id: str) -> Project:
                 project = Project.load_from_file(project_path)
                 if project.id == project_id:
                     return project
-            except Exception as e:
-                print(f"Error loading project, skipping: {project_path}: {e}")
+            except Exception:
+                # deleted files are possible continue with the rest
+                continue
 
     raise HTTPException(
         status_code=404,
@@ -79,8 +80,9 @@ def connect_project_api(app: FastAPI):
                 json_project = project.model_dump()
                 json_project["path"] = project_path
                 projects.append(json_project)
-            except Exception as e:
-                print(f"Error loading project, skipping: {project_path}: {e}")
+            except Exception:
+                # deleted files are possible continue with the rest
+                continue
 
         return projects
 

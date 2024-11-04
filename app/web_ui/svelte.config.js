@@ -9,7 +9,7 @@ const config = {
     }),
   },
   prerender: {
-    default: false,
+    default: true,
   },
   preprocess: vitePreprocess(),
 }

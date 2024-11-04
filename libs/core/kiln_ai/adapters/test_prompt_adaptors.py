@@ -16,9 +16,23 @@ async def test_groq(tmp_path):
     await run_simple_test(tmp_path, "llama_3_1_8b", "groq")
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "llama_3_1_8b",
+        "llama_3_1_70b",
+        "gemini_1_5_pro",
+        "gemini_1_5_flash",
+        "gemini_1_5_flash_8b",
+        "nemotron_70b",
+        "llama_3_2_3b",
+        "llama_3_2_11b",
+        "llama_3_2_90b",
+    ],
+)
 @pytest.mark.paid
-async def test_openrouter(tmp_path):
-    await run_simple_test(tmp_path, "llama_3_1_8b", "openrouter")
+async def test_openrouter(tmp_path, model_name):
+    await run_simple_test(tmp_path, model_name, "openrouter")
 
 
 @pytest.mark.ollama

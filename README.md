@@ -12,15 +12,22 @@
 
 # Kiln AI
 
-> Iteratively Build High Quality ML Agents with Data
+> Iteratively Build High Quality AI Products
 
-Kiln includes:
+## Key Features
 
-- A data platform for teams to collaborate on tasks, goals, evaluations, training data, and more. Designed for Git, providing familiar and rich tooling.
-- Easy-to-use desktop apps, enabling everyone to continuously contribute to your dataset and improve quality (QA, PM, labelers, subject matter experts, etc.). One-click launch, no command line or GPU required.
-- No-code data-science tools to quickly evaluate a variety of foundation models and AI techniques. Currently, we support about a dozen models and a variety of prompting solutions (few-shot, multi-shot, chain of thought), with plans for more (fine-tuning, RAG).
-- An open-source Python library and REST API for data scientists and engineers to deeply integrate where needed.
-- Completely private: Kiln runs locally, and we never have access to your dataset. Bring your own keys, or run locally with Ollama.
+- 🚀 **One-Click Desktop Apps**: Apps for Windows and MacOS. Anyone on your team can contribute to your datasets and improve quality.
+- 🔒 **Privacy-First**: Your data stays local - bring your own API keys or run locally with Ollama.
+- 🤝 **Team Collaboration**: Designed for collaboration, with git-based version control for your ML dataset.
+- 📊 **Rapid Evaluation**: Compare various models and data-science techniques with no-code tools.
+- 🔄 **Iterative Improvement**: Continuous dataset improvement with built-in evaluation, RLHF and QA tooling.
+- 🧑‍💻 **Hackers Delight**: An open-source Python library and REST API for data scientists and engineers to deeply integrate where needed.
+
+## Download Kiln Desktop Apps
+
+The Kiln desktop app is a free download, available on [MacOS and Windows](https://github.com/Kiln-AI/Kiln/releases/latest).
+
+[<img width="190" alt="Download button" src="https://github.com/user-attachments/assets/09874d7a-4873-4bb7-81c8-c3939206dc81">](https://github.com/Kiln-AI/Kiln/releases/latest)
 
 <kbd>
 <img width="185" alt="Run Screen" src="https://github.com/user-attachments/assets/158efb43-4991-4c19-9e3a-28f61c919892">
@@ -33,21 +40,19 @@ Kiln includes:
 <img width="185" alt="Prompts screen" src="https://github.com/user-attachments/assets/70544362-8420-4a49-9e9f-34a046c837dd">
 </kbd>
 
-## Download Now
-
-#### MacOS and Windows
-
-You can download our latest desktop app build [here](https://github.com/Kiln-AI/Kiln/releases/latest). Download the appropriate build for your machine (Mac or Windows).
-
 ## Install Python Library
 
 [![PyPI - Version](https://img.shields.io/pypi/v/kiln-ai.svg?logo=pypi&label=PyPI&logoColor=gold)](https://pypi.org/project/kiln-ai/) [![Docs](https://img.shields.io/badge/docs-pdoc-blue)](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html)
 
-`pip install kiln-ai`
+Our open-source [python library](https://pypi.org/project/kiln-ai/) allows for deep custom integrations. [Read the docs](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html).
+
+```bash
+pip install kiln-ai
+```
 
 ## What is this for?
 
-Kiln AI is for building high quality ML agents for products. What makes product development different than standard data science is that isn’t not static; no perfect dataset exists to learn from. Products are constantly evolving; bugs emerge from users, product goals change, new use-cases are added.
+Kiln AI is for building high quality ML agents for products. What makes product development different than standard data science is that it's not static; no perfect dataset exists to learn from. Products are constantly evolving; bugs emerge from users, product goals change, new use-cases are added.
 
 To solve this, Kiln makes it easy for teams to iteratively collaborate on high quality datasets, and quickly evaluate a range of AI foundation models and techniques.
 
@@ -75,28 +80,15 @@ We also offer [a REST API package](https://pypi.org/project/kiln-server/) for in
 
 Kiln is currently in alpha with plans to enter beta soon.
 
-## License
+## Contributing & Development
 
-We’re working out our license and will have it sorted soon. The plan is that the core library and REST API will be open source, so there’s zero lock-in. The desktop app will be source-available and free (as in beer).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for information on how to setup a development environment and contribute to Kiln.
 
-## Development Commands
+## Licenses & Trademarks
 
-Initial setup using python environment of your choice (venv, conda, etc.):
+- Python Library: [MIT License](libs/core/LICENSE.txt)
+- Python REST Server/API: [MIT License](libs/server/LICENSE.txt)
+- Desktop App: Available as a free download under our EULA. The source code is source-available, and under a [proprietary license](app/LICENSE.txt).
+- The Kiln names and logos are trademarks of Chesterfield Laboratories Inc.
 
-```
-pip install -r dev-requirements.txt
-pip install -r requirements.txt
-cd app/web_ui
-npm install
-```
-
-Run the API server, Studio server, and Studio Web UI with auto-reload for development:
-
-- Run the Python server: `python -m app.desktop.dev_server`
-- Run the Web UI from the `app/web_ui` directory: `npm run dev --`
-- Open the app: http://localhost:5173/run
-
-Running the desktop app without building an executable:
-
-- First, build the web UI from the `app/web_ui` directory: `npm run build`
-- Then run the desktop app: `python -m app.desktop.desktop`
+Copyright 2024 - Chesterfield Laboratories Inc.

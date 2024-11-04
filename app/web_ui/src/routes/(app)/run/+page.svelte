@@ -25,12 +25,15 @@
 
   $: model_name = model ? model.split("/")[1] : ""
   $: provider = model ? model.split("/")[0] : ""
+  let model_dropdown: AvailableModelsDropdown
+  let model_dropdown_error_message: string | null = null
 
   let response: TaskRun | null = null
   $: run_focus = !response
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
   $: input_schema = $current_task?.input_json_schema
+  $: requires_structured_output = !!$current_task?.output_json_schema
 
   async function run_task() {
     try {
@@ -38,6 +41,12 @@
       error = null
       response = null
       run_complete = false
+      model_dropdown_error_message = null
+      let selected_model = model_dropdown.get_selected_model()
+      if (!selected_model || selected_model != model) {
+        model_dropdown_error_message = "Required"
+        throw new Error("You must select a model before running")
+      }
       const {
         data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
@@ -106,7 +115,12 @@
       <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
         <div class="text-xl font-bold">Options</div>
         <PromptTypeSelector bind:prompt_method />
-        <AvailableModelsDropdown bind:model />
+        <AvailableModelsDropdown
+          bind:model
+          bind:requires_structured_output
+          bind:error_message={model_dropdown_error_message}
+          bind:this={model_dropdown}
+        />
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}

@@ -16,10 +16,12 @@ from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.provider_api import (
     OllamaConnection,
+    available_ollama_models,
     connect_bedrock,
     connect_groq,
     connect_openrouter,
     connect_provider_api,
+    model_from_ollama_tag,
 )
 
 
@@ -336,15 +338,22 @@ async def test_get_available_models(app, client):
             friendly_name="Model 2",
             family="",
             providers=[
-                KilnModelProvider(name=ModelProviderName.amazon_bedrock),
-                KilnModelProvider(name=ModelProviderName.ollama),
+                KilnModelProvider(
+                    name=ModelProviderName.amazon_bedrock,
+                    supports_structured_output=False,
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.ollama,
+                    supports_structured_output=True,
+                    provider_options={"model": "ollama_model2"},
+                ),
             ],
         ),
     ]
 
     # Mock connect_ollama
     mock_ollama_connection = OllamaConnection(
-        message="Connected", models=["ollama_model1", "ollama_model2"]
+        message="Connected", models=["ollama_model1", "ollama_model2:latest"]
     )
 
     with (
@@ -368,24 +377,27 @@ async def test_get_available_models(app, client):
         response = client.get("/api/available_models")
 
     assert response.status_code == 200
-    r = response.json()
     assert response.json() == [
         {
             "provider_id": "ollama",
             "provider_name": "Ollama",
             "models": [
-                {"id": "model2", "name": "Model 2"},
+                {"id": "model2", "name": "Model 2", "supports_structured_output": True}
             ],
         },
         {
             "provider_id": "openai",
             "provider_name": "OpenAI",
-            "models": [{"id": "model1", "name": "Model 1"}],
+            "models": [
+                {"id": "model1", "name": "Model 1", "supports_structured_output": True}
+            ],
         },
         {
             "provider_id": "amazon_bedrock",
             "provider_name": "Amazon Bedrock",
-            "models": [{"id": "model2", "name": "Model 2"}],
+            "models": [
+                {"id": "model2", "name": "Model 2", "supports_structured_output": False}
+            ],
         },
     ]
 
@@ -437,7 +449,9 @@ async def test_get_available_models_ollama_exception(app, client):
         {
             "provider_id": "openai",
             "provider_name": "OpenAI",
-            "models": [{"id": "model1", "name": "Model 1"}],
+            "models": [
+                {"id": "model1", "name": "Model 1", "supports_structured_output": True}
+            ],
         },
     ]
 
@@ -461,3 +475,173 @@ def test_get_providers_models(client):
     if ModelName.llama_3_1_8b in data["models"]:
         assert data["models"][ModelName.llama_3_1_8b]["id"] == ModelName.llama_3_1_8b
         assert data["models"][ModelName.llama_3_1_8b]["name"] == "Llama 3.1 8B"
+
+
+def test_model_from_ollama_tag():
+    # Create test models
+    test_models = [
+        KilnModel(
+            name="model1",
+            friendly_name="Model 1",
+            family="test",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.ollama,
+                    provider_options={
+                        "model": "llama2",
+                        "model_aliases": ["llama-2", "llama2-chat"],
+                    },
+                )
+            ],
+        ),
+        KilnModel(
+            name="model2",
+            friendly_name="Model 2",
+            family="test",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.ollama, provider_options={"model": "mistral"}
+                )
+            ],
+        ),
+        KilnModel(
+            name="model3",
+            friendly_name="Model 3",
+            family="test",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.openai, provider_options={"model": "gpt-4"}
+                )
+            ],
+        ),
+    ]
+
+    with patch("app.desktop.studio_server.provider_api.built_in_models", test_models):
+        # Test direct model match
+        result, provider = model_from_ollama_tag("llama2")
+        assert result is not None
+        assert result.name == "model1"
+        assert provider.name == ModelProviderName.ollama
+
+        # Test with :latest suffix
+        result, provider = model_from_ollama_tag("mistral:latest")
+        assert result is not None
+        assert result.name == "model2"
+        assert provider.name == ModelProviderName.ollama
+
+        # Test model alias match
+        result, provider = model_from_ollama_tag("llama-2")
+        assert result is not None
+        assert result.name == "model1"
+
+        # Test model alias with :latest
+        result, provider = model_from_ollama_tag("llama2-chat:latest")
+        assert result is not None
+        assert result.name == "model1"
+        assert provider.name == ModelProviderName.ollama
+
+        # Test no match found
+        result, provider = model_from_ollama_tag("nonexistent-model")
+        assert result is None
+        assert provider is None
+
+        # Test model without Ollama provider
+        result, provider = model_from_ollama_tag("gpt-4")
+        assert result is None
+        assert provider is None
+
+
+@pytest.mark.asyncio
+async def test_available_ollama_models():
+    # Create test models
+    test_models = [
+        KilnModel(
+            name="model1",
+            friendly_name="Model 1",
+            family="test",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.ollama,
+                    provider_options={"model": "llama2", "model_aliases": ["llama-2"]},
+                    supports_structured_output=True,
+                )
+            ],
+        ),
+        KilnModel(
+            name="model2",
+            friendly_name="Model 2",
+            family="test",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.ollama,
+                    provider_options={"model": "mistral"},
+                    supports_structured_output=False,
+                )
+            ],
+        ),
+    ]
+
+    # Test successful connection
+    mock_ollama_connection = OllamaConnection(
+        message="Connected", models=["llama2", "mistral:latest"]
+    )
+
+    with (
+        patch("app.desktop.studio_server.provider_api.built_in_models", test_models),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            return_value=mock_ollama_connection,
+        ),
+    ):
+        result = await available_ollama_models()
+
+        assert result is not None
+        assert result.provider_name == "Ollama"
+        assert result.provider_id == ModelProviderName.ollama
+        assert len(result.models) == 2
+
+        # Check first model
+        assert result.models[0].id == "model1"
+        assert result.models[0].name == "Model 1"
+        assert result.models[0].supports_structured_output is True
+
+        # Check second model
+        assert result.models[1].id == "model2"
+        assert result.models[1].name == "Model 2"
+        assert result.models[1].supports_structured_output is False
+
+    # Test when no models match
+    mock_ollama_connection = OllamaConnection(
+        message="Connected", models=["unknown-model"]
+    )
+
+    with (
+        patch("app.desktop.studio_server.provider_api.built_in_models", test_models),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            return_value=mock_ollama_connection,
+        ),
+    ):
+        result = await available_ollama_models()
+        assert result is None
+
+    # Test when Ollama connection fails
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_ollama",
+        side_effect=HTTPException(status_code=417, detail="Failed to connect"),
+    ):
+        result = await available_ollama_models()
+        assert result is None
+
+    # Test with empty models list
+    mock_ollama_connection = OllamaConnection(message="Connected", models=[])
+
+    with (
+        patch("app.desktop.studio_server.provider_api.built_in_models", test_models),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            return_value=mock_ollama_connection,
+        ),
+    ):
+        result = await available_ollama_models()
+        assert result is None

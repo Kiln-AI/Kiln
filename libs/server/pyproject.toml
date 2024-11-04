@@ -1,6 +1,6 @@
 [project]
 name = "kiln-server"
-version = "0.5.2"
+version = "0.5.4"
 requires-python = ">=3.10"
 description = 'Kiln AI Server'
 readme = "README.md"
@@ -10,15 +10,17 @@ authors = [
 ]
 classifiers = [
   "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12"
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
     "fastapi>=0.115.4",
     "httpx>=0.27.2",
-    "kiln-ai>=0.5.3",
+    "kiln-ai>=0.5.4",
     "pydantic>=2.9.2",
     "python-dotenv>=1.0.1",
     "uvicorn>=0.32.0",
@@ -36,10 +38,6 @@ dev = [
 
 
 [tool.uv.sources]
-# This works fine, if we don't use UV workspace mode (top level pyproject.toml), but errors if we do.
-# kiln-ai = { path = "../core" }
-
-# This returns "ModuleNotFoundError: No module named 'kiln_ai'" in workspace mode, if included here, or not included at all.
 kiln-ai = { workspace = true }
 
 [build-system]

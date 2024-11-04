@@ -109,7 +109,7 @@
       </li>
       <div class="mb-4 ml-4 mt-4">
         <div class="flex flex-row items-center mx-[-5px] p-0">
-          <img src="/logo.svg" alt="logo" class="w-8 h-8" />
+          <img src="/images/animated_logo.svg" alt="logo" class="w-8 h-8" />
           <div class="text-lg font-bold ml-1">Kiln AI</div>
         </div>
       </div>

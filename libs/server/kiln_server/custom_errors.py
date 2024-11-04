@@ -54,6 +54,7 @@ def connect_custom_errors(app: FastAPI):
 
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            headers={"Access-Control-Allow-Origin": "*"},
             content={
                 "error_messages": error_messages,
                 "message": ".\n".join(error_messages),
@@ -66,5 +67,20 @@ def connect_custom_errors(app: FastAPI):
     async def http_exception_handler(request: Request, exc: HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
+            headers={"Access-Control-Allow-Origin": "*"},
             content={"message": exc.detail},
+        )
+
+    # Fallback error handler for any other exception
+    @app.exception_handler(Exception)
+    async def fallback_error_handler(request: Request, exc: Exception):
+        # Prefer the message/detail from the exception if available, fallback to the exception string
+        message = str(exc)
+        message = getattr(exc, "detail", message)
+        message = getattr(exc, "message", message)
+
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            headers={"Access-Control-Allow-Origin": "*"},
+            content={"message": message, "raw_error": str(exc)},
         )

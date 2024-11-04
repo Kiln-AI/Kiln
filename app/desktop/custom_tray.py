@@ -7,7 +7,7 @@ import pystray
 class KilnTray(pystray.Icon):
     # Special handling for Mac to support dark/light mode and retina icons
     # lots of type ignores because we're accessing private attributes of pystray
-    def X_assert_image(self):
+    def _assert_image(self):
         if sys.platform != "darwin":
             super()._assert_image()  # type: ignore
             return

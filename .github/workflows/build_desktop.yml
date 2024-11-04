@@ -2,8 +2,6 @@ name: Build Desktop Apps
 
 on:
   push:
-    branches:
-      - main
 
 jobs:
   build:
@@ -16,15 +14,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # Use 3.12 - 3.13 not working yet (Numpy verion too old)
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
           cache: "pip"
 
-      - run: pip install -r requirements.txt
+      # Use GH python version (includes TK/TCL)
+      - name: Set up Python using GH python version
+        run: uv venv --python 3.12 --python-preference only-system
+
+      - name: Install the project
+        run: uv sync
 
       # Compress MacOS app param ignored on Windows
-      - run: sh ./app/desktop/build_desktop_app.sh --compress-mac-app
+      - run: uv run sh ./app/desktop/build_desktop_app.sh --compress-mac-app
       - uses: actions/upload-artifact@v4
         with:
           name: kiln-desktop-${{ runner.os }}-${{ runner.arch }}
