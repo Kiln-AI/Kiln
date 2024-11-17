@@ -2,7 +2,7 @@ import json
 from abc import ABCMeta, abstractmethod
 from typing import Dict
 
-from kiln_ai.datamodel import Task, TaskRun
+from kiln_ai.datamodel import RunnableTask, Task, TaskRun
 from kiln_ai.utils.formatting import snake_case
 
 
@@ -12,7 +12,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
     Provides the core interface and basic functionality for prompt builders.
     """
 
-    def __init__(self, task: Task):
+    def __init__(self, task: RunnableTask | Task):
         """Initialize the prompt builder with a task.
 
         Args:
@@ -143,6 +143,11 @@ class MultiShotPromptBuilder(BasePromptBuilder):
         return f"## Example {index+1}\n\nInput: {example.input}\nOutput: {output.output}\n\n"
 
     def collect_examples(self) -> list[TaskRun]:
+        if not isinstance(self.task, Task):
+            raise ValueError(
+                "Can't generate a multi-shot prompt without a persisted task"
+            )
+
         valid_examples: list[TaskRun] = []
         runs = self.task.runs()
 
@@ -209,7 +214,7 @@ class RepairsPromptBuilder(MultiShotPromptBuilder):
         return prompt_section
 
 
-def chain_of_thought_prompt(task: Task) -> str | None:
+def chain_of_thought_prompt(task: RunnableTask) -> str | None:
     """Standard implementation to build and return the chain of thought prompt string.
 
     Returns:

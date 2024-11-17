@@ -6,9 +6,11 @@ from typing import Dict
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
+    RunnableTask,
     Task,
     TaskOutput,
     TaskRun,
+    TaskRunRaw,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.utils.config import Config
@@ -45,7 +47,9 @@ class BaseAdapter(metaclass=ABCMeta):
     """
 
     def __init__(
-        self, kiln_task: Task, prompt_builder: BasePromptBuilder | None = None
+        self,
+        kiln_task: RunnableTask | Task,
+        prompt_builder: BasePromptBuilder | None = None,
     ):
         self.prompt_builder = prompt_builder or SimplePromptBuilder(kiln_task)
         self.kiln_task = kiln_task
@@ -67,7 +71,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: Dict | str,
         input_source: DataSource | None = None,
-    ) -> TaskRun:
+    ) -> TaskRunRaw | TaskRun:
         # validate input
         if self.input_schema is not None:
             if not isinstance(input, dict):
@@ -94,7 +98,11 @@ class BaseAdapter(metaclass=ABCMeta):
         run = self.generate_run(input, input_source, run_output)
 
         # Save the run if configured to do so, and we have a path to save to
-        if Config.shared().autosave_runs and self.kiln_task.path is not None:
+        if (
+            Config.shared().autosave_runs
+            and isinstance(self.kiln_task, Task)
+            and self.kiln_task.path is not None
+        ):
             run.save_to_file()
         else:
             # Clear the ID to indicate it's not persisted
@@ -135,8 +143,9 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
+        parent = self.kiln_task if isinstance(self.kiln_task, Task) else None
         new_task_run = TaskRun(
-            parent=self.kiln_task,
+            parent=parent,
             input=input_str,
             input_source=input_source,
             output=TaskOutput(
@@ -160,16 +169,17 @@ class BaseAdapter(metaclass=ABCMeta):
         new_run_dump = new_task_run.model_dump(exclude=exclude_fields)
 
         # Check if the same run already exists
-        existing_task_run = next(
-            (
-                task_run
-                for task_run in self.kiln_task.runs()
-                if task_run.model_dump(exclude=exclude_fields) == new_run_dump
-            ),
-            None,
-        )
-        if existing_task_run:
-            return existing_task_run
+        if isinstance(self.kiln_task, Task):
+            existing_task_run = next(
+                (
+                    task_run
+                    for task_run in self.kiln_task.runs()
+                    if task_run.model_dump(exclude=exclude_fields) == new_run_dump
+                ),
+                None,
+            )
+            if existing_task_run:
+                return existing_task_run
 
         return new_task_run
 

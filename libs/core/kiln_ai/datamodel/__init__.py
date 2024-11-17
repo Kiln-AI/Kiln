@@ -30,6 +30,7 @@ __all__ = [
     "Task",
     "Project",
     "TaskRun",
+    "RunnableTask",
     "TaskOutput",
     "TaskOutputRating",
     "Priority",
@@ -266,12 +267,9 @@ class DataSource(BaseModel):
         return self
 
 
-class TaskRun(KilnParentedModel):
+class TaskRunRaw(BaseModel):
     """
-    Represents a single execution of a Task.
-
-    Contains the input used, its source, the output produced, and optional
-    repair information if the output needed correction.
+    A raw task run, without any parent relationships, and not persisted into a project.
     """
 
     input: str = Field(
@@ -294,6 +292,32 @@ class TaskRun(KilnParentedModel):
         default=None,
         description="Intermediate outputs from the task run. Keys are the names of the intermediate output steps (cot=chain of thought, etc), values are the output data.",
     )
+
+    @model_validator(mode="after")
+    def validate_repaired_output(self) -> Self:
+        if self.repaired_output is not None:
+            if self.repaired_output.rating is not None:
+                raise ValueError(
+                    "Repaired output rating must be None. Repaired outputs are assumed to have a perfect rating, as they have been fixed."
+                )
+        if self.repair_instructions is None and self.repaired_output is not None:
+            raise ValueError(
+                "Repair instructions are required if providing a repaired output."
+            )
+        if self.repair_instructions is not None and self.repaired_output is None:
+            raise ValueError(
+                "A repaired output is required if providing repair instructions."
+            )
+        return self
+
+
+class TaskRun(TaskRunRaw, KilnParentedModel):
+    """
+    Represents a single execution of a Task.
+
+    Contains the input used, its source, the output produced, and optional
+    repair information if the output needed correction.
+    """
 
     def parent_task(self) -> Task | None:
         if not isinstance(self.parent, Task):
@@ -326,23 +350,6 @@ class TaskRun(KilnParentedModel):
         self.output.validate_output_format(task)
         return self
 
-    @model_validator(mode="after")
-    def validate_repaired_output(self) -> Self:
-        if self.repaired_output is not None:
-            if self.repaired_output.rating is not None:
-                raise ValueError(
-                    "Repaired output rating must be None. Repaired outputs are assumed to have a perfect rating, as they have been fixed."
-                )
-        if self.repair_instructions is None and self.repaired_output is not None:
-            raise ValueError(
-                "Repair instructions are required if providing a repaired output."
-            )
-        if self.repair_instructions is not None and self.repaired_output is None:
-            raise ValueError(
-                "A repaired output is required if providing repair instructions."
-            )
-        return self
-
 
 class TaskRequirement(BaseModel):
     """
@@ -373,16 +380,9 @@ class TaskDeterminism(str, Enum):
     flexible = "flexible"  # Flexible on semantic output. Eval should be custom based on parsing requirements.
 
 
-class Task(
-    KilnParentedModel,
-    KilnParentModel,
-    parent_of={"runs": TaskRun},
-):
+class RunnableTask(BaseModel):
     """
-    Represents a specific task to be performed, with associated requirements and validation rules.
-
-    Contains the task definition, requirements, input/output schemas, and maintains
-    a collection of task runs.
+    A task that can be be run, but isn't persisted into a project. See "Task" for the more common Task datamodel.
     """
 
     name: str = NAME_FIELD
@@ -411,6 +411,20 @@ class Task(
         if self.input_json_schema is None:
             return None
         return schema_from_json_str(self.input_json_schema)
+
+
+class Task(
+    RunnableTask,
+    KilnParentedModel,
+    KilnParentModel,
+    parent_of={"runs": TaskRun},
+):
+    """
+    Represents a specific task to be performed, with associated requirements and validation rules.
+
+    Contains the task definition, requirements, input/output schemas, and maintains
+    a collection of task runs.
+    """
 
     # Needed for typechecking. TODO P2: fix this in KilnParentModel
     def runs(self) -> list[TaskRun]:
