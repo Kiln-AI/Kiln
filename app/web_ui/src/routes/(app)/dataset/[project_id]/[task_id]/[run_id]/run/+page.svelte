@@ -22,7 +22,11 @@
   $: {
     model_props = Object.fromEntries(
       Object.entries({
-        Model: model_name(
+        "Input Source":
+          "" +
+          run?.input_source?.type.charAt(0).toUpperCase() +
+          run?.input_source?.type.slice(1),
+        "Output Model": model_name(
           "" + run?.output?.source?.properties?.model_name,
           $model_info,
         ),
@@ -98,8 +102,9 @@
   <AppPage
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
-    action_button={deleted ? null : "Delete Run"}
-    action_button_action={deleteRun}
+    action_buttons={deleted
+      ? []
+      : [{ label: "Delete Run", handler: deleteRun }]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

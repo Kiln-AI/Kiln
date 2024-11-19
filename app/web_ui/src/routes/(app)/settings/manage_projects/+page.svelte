@@ -37,8 +37,13 @@
 <AppPage
   title="Manage Projects"
   subtitle="Add or remove projects"
-  action_button="Create Project"
-  action_button_href="/settings/create_project"
+  action_buttons={[
+    { label: "Create Project", href: "/settings/create_project" },
+    {
+      label: "Import Project",
+      href: "/settings/create_project?import=true",
+    },
+  ]}
 >
   {#if $projects == null}
     <div class=" mx-auto py-8 px-24">

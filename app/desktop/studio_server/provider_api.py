@@ -12,7 +12,6 @@ from kiln_ai.adapters.ml_model_list import (
     OllamaConnection,
     built_in_models,
     ollama_base_url,
-    ollama_model_supported,
     parse_ollama_tags,
     provider_name_from_id,
     provider_warnings,
@@ -51,6 +50,7 @@ class ModelDetails(BaseModel):
     id: str
     name: str
     supports_structured_output: bool
+    supports_data_gen: bool
 
 
 class AvailableModels(BaseModel):
@@ -111,6 +111,7 @@ def connect_provider_api(app: FastAPI):
                                 id=model.name,
                                 name=model.friendly_name,
                                 supports_structured_output=provider.supports_structured_output,
+                                supports_data_gen=provider.supports_data_gen,
                             )
                         )
 
@@ -328,6 +329,7 @@ async def available_ollama_models() -> AvailableModels | None:
                         id=model.name,
                         name=model.friendly_name,
                         supports_structured_output=ollama_provider.supports_structured_output,
+                        supports_data_gen=ollama_provider.supports_data_gen,
                     )
                 )
 

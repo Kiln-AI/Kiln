@@ -188,12 +188,14 @@ export async function load_model_info() {
 }
 
 export function model_name(
-  model_id: string,
+  model_id: string | number | undefined,
   provider_models: ProviderModels | null,
 ): string {
   if (!model_id) {
     return "Unknown"
   }
+  // Could be a number, so convert to string
+  model_id = "" + model_id
   const model = provider_models?.models[model_id]
   return model?.name || model_id
 }

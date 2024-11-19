@@ -4,10 +4,11 @@
 
   let sections = [
     {
-      name: "Providers",
-      description: "Connect to AI providers like OpenAI, Google, or Ollama.",
+      name: "AI Providers",
+      description:
+        "Connect to AI providers like OpenAI, OpenRouter, or Ollama.",
       href: "/settings/providers",
-      button_text: "Providers",
+      button_text: "Manage Providers",
     },
     {
       name: "Projects",
@@ -16,22 +17,35 @@
       button_text: "All Projects",
     },
     {
-      name: "Current Project",
+      name: "Edit Project",
       description: "Edit the currently selected project.",
-      button_text: "Edit Project",
+      button_text: "Edit Current Project",
       href: "/settings/edit_project/" + $ui_state.current_project_id,
     },
     {
-      name: "Current Task",
+      name: "Edit Task",
       description: "Edit the currently selected task.",
-      button_text: "Edit Task",
+      button_text: "Edit Current Task",
       href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
     },
     {
+      name: "App Updates",
+      description: "Check if there is a new version of the app available.",
+      href: "/settings/check_for_update",
+      button_text: "Check for Update",
+    },
+    {
       name: "Replay Introduction",
-      description: "Watch the introduction again.",
+      description: "Watch the introduction slide-show.",
       href: "/settings/intro",
-      button_text: "Introduction",
+      button_text: "Play Intro",
+    },
+    {
+      name: "License",
+      description: "View the Kiln AI desktop app License Agreement.",
+      href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
+      button_text: "View EULA",
+      is_external: true,
     },
   ]
 </script>
@@ -44,7 +58,12 @@
           <h3 class="font-medium">{section.name}</h3>
           <p class="text-sm text-gray-500">{section.description}</p>
         </div>
-        <a href={section.href} class="btn" style="min-width: 14rem">
+        <a
+          href={section.href}
+          class="btn"
+          style="min-width: 14rem"
+          target={section.is_external ? "_blank" : "_self"}
+        >
           {section.button_text}
         </a>
       </div>

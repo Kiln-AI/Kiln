@@ -341,6 +341,7 @@ async def test_get_available_models(app, client):
                 KilnModelProvider(
                     name=ModelProviderName.amazon_bedrock,
                     supports_structured_output=False,
+                    supports_data_gen=False,
                 ),
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
@@ -382,21 +383,36 @@ async def test_get_available_models(app, client):
             "provider_id": "ollama",
             "provider_name": "Ollama",
             "models": [
-                {"id": "model2", "name": "Model 2", "supports_structured_output": True}
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "supports_structured_output": True,
+                    "supports_data_gen": True,
+                }
             ],
         },
         {
             "provider_id": "openai",
             "provider_name": "OpenAI",
             "models": [
-                {"id": "model1", "name": "Model 1", "supports_structured_output": True}
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "supports_structured_output": True,
+                    "supports_data_gen": True,
+                }
             ],
         },
         {
             "provider_id": "amazon_bedrock",
             "provider_name": "Amazon Bedrock",
             "models": [
-                {"id": "model2", "name": "Model 2", "supports_structured_output": False}
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "supports_structured_output": False,
+                    "supports_data_gen": False,
+                }
             ],
         },
     ]
@@ -450,7 +466,12 @@ async def test_get_available_models_ollama_exception(app, client):
             "provider_id": "openai",
             "provider_name": "OpenAI",
             "models": [
-                {"id": "model1", "name": "Model 1", "supports_structured_output": True}
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "supports_structured_output": True,
+                    "supports_data_gen": True,
+                }
             ],
         },
     ]

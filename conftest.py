@@ -40,9 +40,28 @@ def pytest_addoption(parser):
     )
 
 
+def is_single_manual_test(config, items) -> bool:
+    # Check if we're running manually (eg, in vscode)
+    if not config.getoption("--runsinglewithoutchecks"):
+        return False
+
+    if len(items) == 1:
+        return True
+    if len(items) == 0:
+        return False
+
+    # Check if all of the items are the same prefix, expluding a.b.c[param]
+    # This is still a 'single test' for the purposes of this flag
+    prefix = items[0].name.split("[")[0] + "["
+    for item in items:
+        if not item.name.startswith(prefix):
+            return False
+    return True
+
+
 def pytest_collection_modifyitems(config, items):
-    # Always run test if it's a single test invoked, and we have "runsinglewithoutchecks" (which is enabled in vscode params)
-    if len(items) == 1 and config.getoption("--runsinglewithoutchecks"):
+    # Always run test if it's a single test manually invoked
+    if is_single_manual_test(config, items):
         return
 
     # Mark tests that use paid services as skipped unless --runpaid is passed

@@ -70,7 +70,7 @@
     for={id}
     class="text-sm font-medium text-left flex flex-col gap-1 pb-[4px]"
   >
-    <div class="flex flex-row">
+    <div class="flex flex-row items-center">
       <span class="grow {light_label ? 'text-xs text-gray-500' : ''}"
         >{label}</span
       >

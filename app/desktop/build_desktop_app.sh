@@ -30,9 +30,7 @@ else
   echo "Building Windows App"
   cp desktop/win_taskbar.png desktop/build/taskbar.png
   cp desktop/win_icon.png desktop/build/icon.png
-  # onefile launches slower, but compiles whole app into a single .exe
-  # TODO: should use --windowed on Windows, but it doesn't work and needs debugging
-  PLATFORM_OPTS="--onefile --windowed --splash=../win_splash.png"
+  PLATFORM_OPTS="--windowed --splash=../win_splash.png"
 fi
 
 # Builds the desktop app

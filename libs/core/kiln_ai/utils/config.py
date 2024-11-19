@@ -97,7 +97,8 @@ class Config:
 
         # Check if the value is in settings
         if name in self._settings:
-            return property_config.type(self._settings[name])
+            value = self._settings[name]
+            return value if value is None else property_config.type(value)
 
         # Check environment variable
         if property_config.env_var and property_config.env_var in os.environ:
@@ -110,7 +111,7 @@ class Config:
         else:
             value = property_config.default
 
-        return property_config.type(value)
+        return None if value is None else property_config.type(value)
 
     def __setattr__(self, name, value):
         if name in ("_properties", "_settings"):

@@ -5,15 +5,19 @@
   export let subtitle: string = ""
   export let sub_subtitle: string = ""
 
-  export let action_button: string | null = null
-  export let action_button_href: string | null = null
-  export let action_button_action: (() => void) | null = null
+  type ActionButton = {
+    label: string
+    handler?: () => void
+    href?: string
+  }
 
-  function run_action_button() {
-    if (action_button_action) {
-      action_button_action()
-    } else if (action_button_href) {
-      goto(action_button_href)
+  export let action_buttons: ActionButton[] = []
+
+  function run_action_button(action_button: ActionButton) {
+    if (action_button.handler) {
+      action_button.handler()
+    } else if (action_button.href) {
+      goto(action_button.href)
     }
   }
 </script>
@@ -22,19 +26,24 @@
   <div class="flex flex-col grow">
     <h1 class="text-2xl font-bold">{title}</h1>
     {#if subtitle}
-      <p class="text-lg mt-2">{subtitle}</p>
+      <p class="text-base font-medium mt-1">{subtitle}</p>
     {/if}
     {#if sub_subtitle}
-      <p class="text-sm text-gray-500 mt-1">{sub_subtitle}</p>
+      <p class="text-sm font-light mt-1">{sub_subtitle}</p>
     {/if}
   </div>
-  {#if action_button}
-    <div>
-      <button on:click={run_action_button} class="btn px-6">
-        {action_button}
-      </button>
-    </div>
-  {/if}
+  <div class="flex flex-col md:flex-row gap-2">
+    {#each action_buttons as action_button}
+      <div>
+        <button
+          on:click={() => run_action_button(action_button)}
+          class="btn btn-xs md:btn-md md:px-6"
+        >
+          {action_button.label}
+        </button>
+      </div>
+    {/each}
+  </div>
 </div>
 
 <div class="mt-8 mb-12">

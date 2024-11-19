@@ -48,8 +48,18 @@ __all__ = [
 
 # Filename compatible names
 NAME_REGEX = r"^[A-Za-z0-9 _-]+$"
-NAME_FIELD = Field(min_length=1, max_length=120, pattern=NAME_REGEX)
-SHORT_NAME_FIELD = Field(min_length=1, max_length=20, pattern=NAME_REGEX)
+NAME_FIELD = Field(
+    min_length=1,
+    max_length=120,
+    pattern=NAME_REGEX,
+    description="A name for this entity.",
+)
+SHORT_NAME_FIELD = Field(
+    min_length=1,
+    max_length=32,
+    pattern=NAME_REGEX,
+    description="A name for this entity",
+)
 
 
 class Priority(IntEnum):
@@ -280,6 +290,10 @@ class TaskRun(KilnParentedModel):
         default=None,
         description="An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field.",
     )
+    intermediate_outputs: Dict[str, str] | None = Field(
+        default=None,
+        description="Intermediate outputs from the task run. Keys are the names of the intermediate output steps (cot=chain of thought, etc), values are the output data.",
+    )
 
     def parent_task(self) -> Task | None:
         if not isinstance(self.parent, Task):
@@ -372,14 +386,21 @@ class Task(
     """
 
     name: str = NAME_FIELD
-    description: str = Field(default="")
-    priority: Priority = Field(default=Priority.p2)
-    determinism: TaskDeterminism = Field(default=TaskDeterminism.flexible)
-    instruction: str = Field(min_length=1)
+    description: str | None = Field(
+        default=None,
+        description="A description of the task for you and your team. Will not be used in prompts/training/validation.",
+    )
+    instruction: str = Field(
+        min_length=1,
+        description="The instructions for the task. Will be used in prompts/training/validation.",
+    )
     requirements: List[TaskRequirement] = Field(default=[])
-    # TODO: make this required, or formalize the default message output schema
     output_json_schema: JsonObjectSchema | None = None
     input_json_schema: JsonObjectSchema | None = None
+    thinking_instruction: str | None = Field(
+        default=None,
+        description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
+    )
 
     def output_schema(self) -> Dict | None:
         if self.output_json_schema is None:

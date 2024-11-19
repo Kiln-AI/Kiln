@@ -11,6 +11,7 @@
   import { ui_state, projects } from "$lib/stores"
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
+  import { tick } from "svelte"
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
@@ -33,8 +34,9 @@
 
   // Warn before unload if there's any user input
   $: warn_before_unload =
-    [task.name, task.description, task.instruction].some((value) => !!value) ||
-    task.requirements.some((req) => !!req.name || !!req.instruction)
+    !saved &&
+    ([task.name, task.description, task.instruction].some((value) => !!value) ||
+      task.requirements.some((req) => !!req.name || !!req.instruction))
 
   export let target_project_id: string | null = null
   if (!target_project_id) {
@@ -68,6 +70,7 @@
         description: task.description,
         instruction: task.instruction,
         requirements: task.requirements,
+        thinking_instruction: task.thinking_instruction,
       }
       // Can only set schemas when creating a new task
       if (creating) {
@@ -123,13 +126,12 @@
         current_task_id: data.id,
         current_project_id: target_project_id,
       })
+      saved = true
+      // Wait for the saved change to propagate to the warn_before_unload
+      await tick()
       if (redirect_on_created) {
         goto(redirect_on_created)
       }
-      saved = true
-      setTimeout(() => {
-        saved = false
-      }, 2000)
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -145,6 +147,7 @@
       !!task.name ||
       !!task.description ||
       !!task.instruction ||
+      !!task.thinking_instruction ||
       has_edited_requirements ||
       !!inputSchemaSection.get_schema_string() ||
       !!outputSchemaSection.get_schema_string()
@@ -268,6 +271,16 @@
       bind:value={task.instruction}
     />
 
+    <FormElement
+      label="'Thinking' Instructions"
+      inputType="textarea"
+      id="thinking_instructions"
+      optional={true}
+      description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
+      info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
+      bind:value={task.thinking_instruction}
+    />
+
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
       <div class="text-xl font-bold" id="requirements_part">
         Part 2: Requirements
@@ -299,7 +312,7 @@
               id="requirement_name_{item_index}"
               light_label={true}
               bind:value={task.requirements[item_index].name}
-              max_length={20}
+              max_length={32}
             />
           </div>
           <div class="flex flex-col gap-1">

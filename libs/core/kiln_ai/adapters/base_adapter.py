@@ -24,6 +24,12 @@ class AdapterInfo:
     prompt_builder_name: str
 
 
+@dataclass
+class RunOutput:
+    output: Dict | str
+    intermediate_outputs: Dict[str, str] | None
+
+
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.
 
@@ -36,22 +42,6 @@ class BaseAdapter(metaclass=ABCMeta):
         kiln_task (Task): The task configuration and metadata
         output_schema (dict | None): JSON schema for validating structured outputs
         input_schema (dict | None): JSON schema for validating structured inputs
-
-    Example:
-        ```python
-        class CustomAdapter(BaseAdapter):
-            async def _run(self, input: Dict | str) -> Dict | str:
-                # Implementation for specific model
-                pass
-
-            def adapter_info(self) -> AdapterInfo:
-                return AdapterInfo(
-                    adapter_name="custom",
-                    model_name="model-1",
-                    model_provider="provider",
-                    prompt_builder_name="simple"
-                )
-        ```
     """
 
     def __init__(
@@ -85,21 +75,23 @@ class BaseAdapter(metaclass=ABCMeta):
             validate_schema(input, self.input_schema)
 
         # Run
-        result = await self._run(input)
+        run_output = await self._run(input)
 
         # validate output
         if self.output_schema is not None:
-            if not isinstance(result, dict):
-                raise RuntimeError(f"structured response is not a dict: {result}")
-            validate_schema(result, self.output_schema)
-        else:
-            if not isinstance(result, str):
+            if not isinstance(run_output.output, dict):
                 raise RuntimeError(
-                    f"response is not a string for non-structured task: {result}"
+                    f"structured response is not a dict: {run_output.output}"
+                )
+            validate_schema(run_output.output, self.output_schema)
+        else:
+            if not isinstance(run_output.output, str):
+                raise RuntimeError(
+                    f"response is not a string for non-structured task: {run_output.output}"
                 )
 
         # Generate the run and output
-        run = self.generate_run(input, input_source, result)
+        run = self.generate_run(input, input_source, run_output)
 
         # Save the run if configured to do so, and we have a path to save to
         if Config.shared().autosave_runs and self.kiln_task.path is not None:
@@ -118,27 +110,23 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: Dict | str) -> Dict | str:
+    async def _run(self, input: Dict | str) -> RunOutput:
         pass
 
     def build_prompt(self) -> str:
-        prompt = self.prompt_builder.build_prompt()
-        adapter_instructions = self.adapter_specific_instructions()
-        if adapter_instructions is not None:
-            prompt += f"# Format Instructions\n\n{adapter_instructions}\n\n"
-        return prompt
-
-    # override for adapter specific instructions (e.g. tool calling, json format, etc)
-    def adapter_specific_instructions(self) -> str | None:
-        return None
+        return self.prompt_builder.build_prompt()
 
     # create a run and task output
     def generate_run(
-        self, input: Dict | str, input_source: DataSource | None, output: Dict | str
+        self, input: Dict | str, input_source: DataSource | None, run_output: RunOutput
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
         input_str = json.dumps(input) if isinstance(input, dict) else input
-        output_str = json.dumps(output) if isinstance(output, dict) else output
+        output_str = (
+            json.dumps(run_output.output)
+            if isinstance(run_output.output, dict)
+            else run_output.output
+        )
 
         # If no input source is provided, use the human data source
         if input_source is None:
@@ -159,6 +147,7 @@ class BaseAdapter(metaclass=ABCMeta):
                     properties=self._properties_for_task_output(),
                 ),
             ),
+            intermediate_outputs=run_output.intermediate_outputs,
         )
 
         exclude_fields = {

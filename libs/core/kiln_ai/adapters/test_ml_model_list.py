@@ -4,9 +4,11 @@ from unittest.mock import patch
 import pytest
 
 from kiln_ai.adapters.ml_model_list import (
+    ModelName,
     ModelProviderName,
     OllamaConnection,
     check_provider_warnings,
+    get_model_and_provider,
     ollama_model_supported,
     parse_ollama_tags,
     provider_name_from_id,
@@ -123,3 +125,57 @@ def test_ollama_model_supported():
     assert ollama_model_supported(conn, "llama3.1:latest")
     assert ollama_model_supported(conn, "llama3.1")
     assert not ollama_model_supported(conn, "unknown_model")
+
+
+def test_get_model_and_provider_valid():
+    # Test with a known valid model and provider combination
+    model, provider = get_model_and_provider(
+        ModelName.phi_3_5, ModelProviderName.ollama
+    )
+
+    assert model is not None
+    assert provider is not None
+    assert model.name == ModelName.phi_3_5
+    assert provider.name == ModelProviderName.ollama
+    assert provider.provider_options["model"] == "phi3.5"
+
+
+def test_get_model_and_provider_invalid_model():
+    # Test with an invalid model name
+    model, provider = get_model_and_provider(
+        "nonexistent_model", ModelProviderName.ollama
+    )
+
+    assert model is None
+    assert provider is None
+
+
+def test_get_model_and_provider_invalid_provider():
+    # Test with a valid model but invalid provider
+    model, provider = get_model_and_provider(ModelName.phi_3_5, "nonexistent_provider")
+
+    assert model is None
+    assert provider is None
+
+
+def test_get_model_and_provider_valid_model_wrong_provider():
+    # Test with a valid model but a provider that doesn't support it
+    model, provider = get_model_and_provider(
+        ModelName.phi_3_5, ModelProviderName.amazon_bedrock
+    )
+
+    assert model is None
+    assert provider is None
+
+
+def test_get_model_and_provider_multiple_providers():
+    # Test with a model that has multiple providers
+    model, provider = get_model_and_provider(
+        ModelName.llama_3_1_70b, ModelProviderName.groq
+    )
+
+    assert model is not None
+    assert provider is not None
+    assert model.name == ModelName.llama_3_1_70b
+    assert provider.name == ModelProviderName.groq
+    assert provider.provider_options["model"] == "llama-3.1-70b-versatile"

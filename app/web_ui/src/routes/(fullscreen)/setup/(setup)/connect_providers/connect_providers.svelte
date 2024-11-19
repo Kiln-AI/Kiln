@@ -367,7 +367,7 @@
               {/if}
             </h3>
             {#if status[provider.id] && status[provider.id].error}
-              <p class="text-sm text-error" transition:fade>
+              <p class="text-sm text-error" in:fade>
                 {status[provider.id].error}
               </p>
             {:else}

@@ -41,18 +41,9 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
 
 3. Open the app: http://localhost:5173/run
 
-### Running the Desktop App
+### Running and Building the Desktop App
 
 See the [desktop README](app/desktop/README.md) instructions for running the desktop app locally.
-
-### Building the Desktop App
-
-Typically building desktop apps are done in a CI/CD pipeline, but if you need to build the desktop app locally, you can do so with:
-
-```bash
-cd app/desktop
-uv run ./build_desktop_app.sh
-```
 
 ## Tests, Formatting, and Linting
 

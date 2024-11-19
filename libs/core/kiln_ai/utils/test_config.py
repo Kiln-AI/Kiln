@@ -26,6 +26,7 @@ def config_with_yaml(mock_yaml_file):
                     str, default="default_value", env_var="EXAMPLE_PROPERTY"
                 ),
                 "int_property": ConfigProperty(int, default=0),
+                "empty_property": ConfigProperty(str),
             }
         )
 
@@ -65,6 +66,12 @@ def test_nonexistent_property(config_with_yaml):
     config = config_with_yaml
     with pytest.raises(AttributeError):
         config.nonexistent_property
+
+
+def test_nonexistent_property_get_value(config_with_yaml):
+    config = config_with_yaml
+    assert config.get_value("nonexistent_property") is None
+    assert config.get_value("empty_property") is None
 
 
 def test_property_type_conversion(config_with_yaml):

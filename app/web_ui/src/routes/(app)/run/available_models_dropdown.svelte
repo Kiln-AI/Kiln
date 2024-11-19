@@ -10,11 +10,13 @@
 
   export let model: string = $ui_state.selected_model
   export let requires_structured_output: boolean = false
-  export let error_message: string | null = "sdf"
+  export let requires_data_gen: boolean = false
+  export let error_message: string | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || {},
     requires_structured_output,
+    requires_data_gen,
   )
 
   onMount(async () => {
@@ -24,15 +26,20 @@
   function format_model_options(
     providers: AvailableModels[],
     structured_output: boolean,
+    requires_data_gen: boolean,
   ): [string, [unknown, string][]][] {
     let options = []
     for (const provider of providers) {
       let model_list = []
       for (const model of provider.models) {
         let id = provider.provider_id + "/" + model.id
-        if (!structured_output || model.supports_structured_output) {
-          model_list.push([id, model.name])
+        if (requires_data_gen && !model.supports_data_gen) {
+          continue
         }
+        if (structured_output && !model.supports_structured_output) {
+          continue
+        }
+        model_list.push([id, model.name])
       }
       if (model_list.length > 0) {
         options.push([provider.provider_name, model_list])
@@ -58,7 +65,9 @@
   bind:value={model}
   info_description={requires_structured_output
     ? "Some models are not available for tasks that require structured output"
-    : ""}
+    : requires_data_gen
+      ? "Some models are not available for synthetic data generation"
+      : ""}
   id="model"
   inputType="select"
   bind:error_message

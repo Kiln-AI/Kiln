@@ -12,7 +12,7 @@
   import RunInputForm from "./run_input_form.svelte"
 
   // TODO: implement checking input content
-  let warn_before_unload = false
+  // let warn_before_unload
   // TODO UI for errors
   let error: KilnError | null = null
   let submitting = false
@@ -87,6 +87,7 @@
     // Keep the input, but clear the response
     response = null
     run_complete = false
+    clear_all()
   }
 </script>
 
@@ -94,8 +95,7 @@
   <AppPage
     title="Run"
     bind:subtitle
-    action_button="Clear All"
-    action_button_action={clear_all}
+    action_buttons={[{ label: "Clear All", handler: clear_all }]}
   >
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
       <div class="grow">
@@ -103,7 +103,6 @@
         <FormContainer
           submit_label="Run"
           on:submit={run_task}
-          bind:warn_before_unload
           bind:error
           bind:submitting
           bind:primary={run_focus}

@@ -64,6 +64,7 @@ def schema_from_json_str(v: str) -> Dict:
         jsonschema.Draft202012Validator.check_schema(parsed)
         if not isinstance(parsed, dict):
             raise ValueError(f"JSON schema must be a dict, not {type(parsed)}")
+        # Top level arrays are valid JSON schemas, but we don't want to allow them here as they often cause issues
         if (
             "type" not in parsed
             or parsed["type"] != "object"

@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter
+from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter, RunOutput
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -14,7 +14,7 @@ from kiln_ai.utils.config import Config
 
 class MockAdapter(BaseAdapter):
     async def _run(self, input: dict | str) -> dict | str:
-        return "Test output"
+        return RunOutput(output="Test output", intermediate_outputs=None)
 
     def adapter_info(self) -> AdapterInfo:
         return AdapterInfo(
@@ -42,9 +42,13 @@ def test_save_run_isolation(test_task):
     adapter = MockAdapter(test_task)
     input_data = "Test input"
     output_data = "Test output"
+    run_output = RunOutput(
+        output=output_data,
+        intermediate_outputs={"chain_of_thought": "Test chain of thought"},
+    )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, output=output_data
+        input=input_data, input_source=None, run_output=run_output
     )
     task_run.save_to_file()
 
@@ -52,6 +56,9 @@ def test_save_run_isolation(test_task):
     assert task_run.parent == test_task
     assert task_run.input == input_data
     assert task_run.input_source.type == DataSourceType.human
+    assert task_run.intermediate_outputs == {
+        "chain_of_thought": "Test chain of thought"
+    }
     created_by = Config.shared().user_id
     if created_by and created_by != "":
         assert task_run.input_source.properties["created_by"] == created_by
@@ -86,13 +93,16 @@ def test_save_run_isolation(test_task):
     )
 
     # Run again, with same input and different output. Should create a new TaskRun.
-    task_output = adapter.generate_run(input_data, None, "Different output")
+    different_run_output = RunOutput(
+        output="Different output", intermediate_outputs=None
+    )
+    task_output = adapter.generate_run(input_data, None, different_run_output)
     task_output.save_to_file()
     assert len(test_task.runs()) == 2
     assert "Different output" in set(run.output.output for run in test_task.runs())
 
     # run again with same input and same output. Should not create a new TaskRun.
-    task_output = adapter.generate_run(input_data, None, output_data)
+    task_output = adapter.generate_run(input_data, None, run_output)
     task_output.save_to_file()
     assert len(test_task.runs()) == 2
     assert "Different output" in set(run.output.output for run in test_task.runs())
@@ -110,7 +120,7 @@ def test_save_run_isolation(test_task):
                 "adapter_name": "mock_adapter",
             },
         ),
-        output_data,
+        run_output,
     )
     task_output.save_to_file()
     assert len(test_task.runs()) == 3

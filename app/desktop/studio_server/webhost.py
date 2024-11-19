@@ -29,7 +29,10 @@ class HTMLStaticFiles(StaticFiles):
                 # Don't raise on 404, fall through to return the .html version
                 raise e
         #  Try the .html version of the file if the .html version exists, for 404s
-        return await super().get_response(f"{path}.html", scope)
+        response = await super().get_response(f"{path}.html", scope)
+        # This is already local, disable browser caching to prevent issues
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 def connect_webhost(app: FastAPI):

@@ -2,14 +2,14 @@ from typing import Dict
 
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.messages.base import BaseMessage
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
 import kiln_ai.datamodel as datamodel
 
-from .base_adapter import AdapterInfo, BaseAdapter, BasePromptBuilder
+from .base_adapter import AdapterInfo, BaseAdapter, BasePromptBuilder, RunOutput
 from .ml_model_list import langchain_model_from
 
 LangChainModelType = BaseChatModel | Runnable[LanguageModelInput, Dict | BaseModel]
@@ -84,15 +84,41 @@ class LangChainPromptAdapter(BaseAdapter):
             )
         return self._model
 
-    async def _run(self, input: Dict | str) -> Dict | str:
+    async def _run(self, input: Dict | str) -> RunOutput:
+        model = await self.model()
+        chain = model
+        intermediate_outputs = {}
+
         prompt = self.build_prompt()
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
             SystemMessage(content=prompt),
             HumanMessage(content=user_msg),
         ]
-        model = await self.model()
-        response = model.invoke(messages)
+
+        # COT with structured output
+        cot_prompt = self.prompt_builder.chain_of_thought_prompt()
+        if cot_prompt and self.has_structured_output():
+            # Base model (without structured output) used for COT message
+            base_model = await langchain_model_from(
+                self.model_name, self.model_provider
+            )
+            messages.append(
+                SystemMessage(content=cot_prompt),
+            )
+
+            cot_messages = [*messages]
+            cot_response = base_model.invoke(cot_messages)
+            intermediate_outputs["chain_of_thought"] = cot_response.content
+            messages.append(AIMessage(content=cot_response.content))
+            messages.append(
+                SystemMessage(content="Considering the above, return a final result.")
+            )
+        elif cot_prompt:
+            # for plaintext output, we just add COT instructions. We still only make one call.
+            messages.append(SystemMessage(content=cot_prompt))
+
+        response = chain.invoke(messages)
 
         if self.has_structured_output():
             if (
@@ -102,14 +128,20 @@ class LangChainPromptAdapter(BaseAdapter):
             ):
                 raise RuntimeError(f"structured response not returned: {response}")
             structured_response = response["parsed"]
-            return self._munge_response(structured_response)
+            return RunOutput(
+                output=self._munge_response(structured_response),
+                intermediate_outputs=intermediate_outputs,
+            )
         else:
             if not isinstance(response, BaseMessage):
                 raise RuntimeError(f"response is not a BaseMessage: {response}")
             text_content = response.content
             if not isinstance(text_content, str):
                 raise RuntimeError(f"response is not a string: {text_content}")
-            return text_content
+            return RunOutput(
+                output=text_content,
+                intermediate_outputs=intermediate_outputs,
+            )
 
     def adapter_info(self) -> AdapterInfo:
         return AdapterInfo(

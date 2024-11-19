@@ -49,8 +49,6 @@ def quit_app():
     global root
     if root is not None:
         root.destroy()
-        # TODO: shouldn't need explicit exit, but would need to test all platforms to remove
-        sys.exit(0)
 
 
 def on_quit():

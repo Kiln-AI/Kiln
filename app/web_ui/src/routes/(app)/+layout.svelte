@@ -4,6 +4,12 @@
   import SelectTasksMenu from "./select_tasks_menu.svelte"
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
+  import { update_update_store, update_info } from "$lib/utils/update"
+  import { onMount } from "svelte"
+
+  onMount(async () => {
+    update_update_store()
+  })
 
   enum Section {
     Dataset,
@@ -12,7 +18,9 @@
     SettingsManageProjects,
     SettingsEditProject,
     SettingsEditTask,
+    SettingsAppUpdate,
     Prompts,
+    Generate,
     Run,
     None,
   }
@@ -23,6 +31,7 @@
     Section.SettingsManageProjects,
     Section.SettingsEditProject,
     Section.SettingsEditTask,
+    Section.SettingsAppUpdate,
   ]
 
   function path_start(root: string, pathname: string): boolean {
@@ -46,10 +55,14 @@
       section = Section.SettingsEditProject
     } else if (path_start("/settings/edit_task", $page.url.pathname)) {
       section = Section.SettingsEditTask
+    } else if (path_start("/settings/check_for_update", $page.url.pathname)) {
+      section = Section.SettingsAppUpdate
     } else if (path_start("/settings", $page.url.pathname)) {
       section = Section.SettingsMain
     } else if (path_start("/run", $page.url.pathname)) {
       section = Section.Run
+    } else if (path_start("/generate", $page.url.pathname)) {
+      section = Section.Generate
     } else if (path_start("/prompts", $page.url.pathname)) {
       section = Section.Prompts
     } else {
@@ -194,6 +207,35 @@
           Dataset</a
         >
       </li>
+
+      <li class="menu-lg">
+        <a
+          href={`/generate/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+          class={section == Section.Generate ? "active" : ""}
+        >
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+          <svg
+            class="w-6 h-6 mr-2"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M22 10.5V12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2H13.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M16.652 3.45506L17.3009 2.80624C18.3759 1.73125 20.1188 1.73125 21.1938 2.80624C22.2687 3.88124 22.2687 5.62415 21.1938 6.69914L20.5449 7.34795M16.652 3.45506C16.652 3.45506 16.7331 4.83379 17.9497 6.05032C19.1662 7.26685 20.5449 7.34795 20.5449 7.34795M16.652 3.45506L10.6872 9.41993C10.2832 9.82394 10.0812 10.0259 9.90743 10.2487C9.70249 10.5114 9.52679 10.7957 9.38344 11.0965C9.26191 11.3515 9.17157 11.6225 8.99089 12.1646L8.41242 13.9M20.5449 7.34795L14.5801 13.3128C14.1761 13.7168 13.9741 13.9188 13.7513 14.0926C13.4886 14.2975 13.2043 14.4732 12.9035 14.6166C12.6485 14.7381 12.3775 14.8284 11.8354 15.0091L10.1 15.5876M10.1 15.5876L8.97709 15.9619C8.71035 16.0508 8.41626 15.9814 8.21744 15.7826C8.01862 15.5837 7.9492 15.2897 8.03811 15.0229L8.41242 13.9M10.1 15.5876L8.41242 13.9"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+          Generate</a
+        >
+      </li>
+
       <li class="menu-lg">
         <a
           href={`/prompts/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
@@ -248,15 +290,13 @@
           Settings</a
         >
         {#if settingsSections.includes(section)}
-          <ul>
+          <ul class="py-2 ml-6">
             <li class="menu-nested-sm">
               <a
-                class=" menu-nested-sm {section == Section.SettingsProviders
-                  ? 'active'
-                  : ''}"
+                class={section == Section.SettingsProviders ? "active" : ""}
                 href="/settings/providers"
               >
-                Providers
+                AI Providers
               </a>
             </li>
             <li class="menu-nested-sm">
@@ -285,9 +325,25 @@
                 Edit Task
               </a>
             </li>
+            <li class="menu-nested-sm">
+              <a
+                class={section == Section.SettingsAppUpdate ? "active" : ""}
+                href="/settings/check_for_update"
+              >
+                App Update
+              </a>
+            </li>
           </ul>
         {/if}
       </li>
+      {#if $update_info.update_result && $update_info.update_result.has_update}
+        <li class="menu-md mt-4">
+          <a href="/settings/check_for_update" class="px-6">
+            <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App Update
+            Available</a
+          >
+        </li>
+      {/if}
     </ul>
   </div>
 </div>
@@ -298,7 +354,7 @@
     padding: 0.1rem 0.25rem;
   }
   :global(ul > li.menu-nested-sm > a) {
-    padding: 0.5rem 1rem;
+    padding: 0.2rem 1rem;
     font-size: 0.875rem; /* Equivalent to text-sm in Tailwind */
   }
 </style>

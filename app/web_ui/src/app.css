@@ -5,3 +5,8 @@
 a {
   @apply cursor-pointer;
 }
+
+/* Work around https://github.com/saadeghi/daisyui/issues/2570 */
+.loading-spinner {
+  mask-image: url("/images/spinner.svg");
+}

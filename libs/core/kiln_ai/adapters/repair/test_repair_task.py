@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.adapters.base_adapter import RunOutput
 from kiln_ai.adapters.langchain_adapters import (
     LangChainPromptAdapter,
 )
@@ -222,7 +223,9 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
     with patch.object(
         LangChainPromptAdapter, "_run", new_callable=AsyncMock
     ) as mock_run:
-        mock_run.return_value = mocked_output
+        mock_run.return_value = RunOutput(
+            output=mocked_output, intermediate_outputs=None
+        )
 
         adapter = LangChainPromptAdapter(
             repair_task, model_name="llama_3_1_8b", provider="groq"

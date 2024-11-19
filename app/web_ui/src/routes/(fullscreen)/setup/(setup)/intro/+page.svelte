@@ -13,17 +13,17 @@
 </h1>
 
 <div
-  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 w-full mx-auto"
+  class="flex-none min-h-[50vh] mt-8 lg:mt-16 px-4 h-full flex flex-col py-18 w-full mx-auto"
 >
   <Tutorial bind:completed />
 </div>
 
 <div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
   {#if completed}
-    <a href="/setup/connect_providers">
+    <a href="/setup/subscribe">
       <button class="btn btn-primary w-full min-w-[130px]"> Continue </button>
     </a>
   {:else}
-    <a class="btn" href="/setup/connect_providers"> Skip Tutorial </a>
+    <a class="btn" href="/setup/subscribe"> Skip Tutorial </a>
   {/if}
 </div>

@@ -1,7 +1,7 @@
 export class KilnError extends Error {
   private error_messages: string[] | null
 
-  constructor(message: string | null, error_messages: string[] | null) {
+  constructor(message: string | null, error_messages: string[] | null = null) {
     super(message || "Unknown error")
     this.name = "KilnError"
     this.error_messages = error_messages

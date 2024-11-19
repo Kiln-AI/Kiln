@@ -69,7 +69,6 @@ def test_create_task_success(client, tmp_path):
     assert res["name"] == "Test Task"
     assert res["description"] == "This is a test task"
     assert res["id"] is not None
-    assert res["priority"] == 2
 
     # Verify that project_from_id was called with the correct argument
     mock_project_from_id.assert_called_once_with("project1-id")
@@ -131,7 +130,6 @@ def test_create_task_real_project(client, tmp_path):
         assert res["description"] == "This is a real task"
         assert res["instruction"] == "Task instruction"
         assert res["id"] is not None
-        assert res["priority"] == 2
 
         # Verify the task file on disk
         task_from_disk = project.tasks()[0]
@@ -140,7 +138,6 @@ def test_create_task_real_project(client, tmp_path):
         assert task_from_disk.description == "This is a real task"
         assert task_from_disk.instruction == "Task instruction"
         assert task_from_disk.id == res["id"]
-        assert task_from_disk.priority == 2
 
         # now post again, with an update
         update_data = {
@@ -162,7 +159,6 @@ def test_create_task_real_project(client, tmp_path):
         )
         assert task_from_disk_reloaded.id == task_from_disk.id
         assert task_from_disk_reloaded.instruction == "Task instruction"
-        assert task_from_disk_reloaded.priority == 2
         assert task_from_disk_reloaded.name == "Real Task"
         assert task_from_disk_reloaded.id == task_from_disk.id
 

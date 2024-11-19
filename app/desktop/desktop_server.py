@@ -5,6 +5,7 @@ import time
 import kiln_server.server as kiln_server
 import uvicorn
 
+from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
@@ -18,6 +19,7 @@ def make_app():
     connect_prompt_api(app)
     connect_repair_api(app)
     connect_settings(app)
+    connect_data_gen_api(app)
 
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)

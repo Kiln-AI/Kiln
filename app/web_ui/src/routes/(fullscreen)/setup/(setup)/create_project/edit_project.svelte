@@ -1,11 +1,18 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
+  import { page } from "$app/stores"
   import { load_projects } from "$lib/stores"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import type { Project } from "$lib/types"
+  import { onMount, tick } from "svelte"
+
+  let importing = false
+  onMount(() => {
+    importing = $page.url.searchParams.get("import") === "true"
+  })
 
   export let created = false
   // Prevents flash of complete UI if we're going to redirect
@@ -21,9 +28,8 @@
   let submitting = false
   let saved = false
 
-  $: warn_before_unload = [project?.name, project?.description].some(
-    (value) => !!value,
-  )
+  $: warn_before_unload =
+    !saved && [project?.name, project?.description].some((value) => !!value)
 
   function redirect_to_project(project_id: string) {
     goto(redirect_on_created + "/" + project_id)
@@ -77,17 +83,16 @@
       // now reload the projects, which should fetch the new project as current_project
       await load_projects()
       error = null
-      if (redirect_on_created && data?.id) {
-        redirect_to_project(data.id)
-        return
-      }
       if (create) {
         created = true
       }
       saved = true
-      setTimeout(() => {
-        saved = false
-      }, 3000)
+      // Wait for saved to propagate to warn_before_unload
+      await tick()
+      if (redirect_on_created && data?.id) {
+        redirect_to_project(data.id)
+        return
+      }
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -95,7 +100,6 @@
     }
   }
 
-  let importing = false
   let import_project_path = ""
 
   const import_project = async () => {
@@ -117,15 +121,14 @@
       }
 
       await load_projects()
+      created = true
+      saved = true
+      // Wait for saved to propagate to warn_before_unload
+      await tick()
       if (redirect_on_created && data?.id) {
         redirect_to_project(data.id)
         return
       }
-      created = true
-      saved = true
-      setTimeout(() => {
-        saved = false
-      }, 3000)
     } catch (e) {
       error = createKilnError(e)
     } finally {

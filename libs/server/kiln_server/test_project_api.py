@@ -475,6 +475,7 @@ def test_update_project_not_found(client):
     assert response.json() == {"message": "Project not found. ID: non-existent-id"}
 
 
+@pytest.mark.filterwarnings("ignore")
 def test_update_project_invalid_data(client, tmp_path):
     project_path = tmp_path / "update_test" / "project.kiln"
     original_project = Project(
