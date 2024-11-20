@@ -12,6 +12,16 @@ from .data_gen_prompts import (
 
 
 class DataGenCategoriesTaskInput(BaseModel):
+    """Input model for generating categories/subtopics.
+
+    Attributes:
+        node_path: List of strings representing the hierarchical path to current node
+        system_prompt: System prompt to guide the AI generation
+        num_subtopics: Number of subtopics to generate
+        human_guidance: Optional human guidance to influence generation
+        existing_topics: Optional list of existing topics to avoid duplication
+    """
+
     node_path: list[str]
     system_prompt: str
     num_subtopics: int
@@ -27,6 +37,18 @@ class DataGenCategoriesTaskInput(BaseModel):
         human_guidance: str | None = None,
         existing_topics: list[str] | None = None,
     ) -> "DataGenCategoriesTaskInput":
+        """Create a DataGenCategoriesTaskInput instance from a Task.
+
+        Args:
+            task: The source Task object
+            node_path: Path to current node in topic hierarchy
+            num_subtopics: Number of subtopics to generate
+            human_guidance: Optional guidance for generation
+            existing_topics: Optional list of existing topics
+
+        Returns:
+            A new DataGenCategoriesTaskInput instance
+        """
         prompt_builder = SimplePromptBuilder(task=task)
         return cls(
             node_path=node_path,
@@ -38,10 +60,22 @@ class DataGenCategoriesTaskInput(BaseModel):
 
 
 class DataGenCategoriesTaskOutput(BaseModel):
+    """Output model for generated categories/subtopics.
+
+    Attributes:
+        subtopics: List of generated subtopic strings
+    """
+
     subtopics: list[str]
 
 
 class DataGenCategoriesTask(Task, parent_of={}):
+    """Task for generating hierarchical categories/subtopics.
+
+    Generates synthetic data categories which can be used to generate
+    training data for model learning.
+    """
+
     def __init__(self):
         # Keep the typechecker happy. TODO: shouldn't need this or parent_of above.
         tmp_project = Project(name="DataGen")
@@ -60,6 +94,15 @@ class DataGenCategoriesTask(Task, parent_of={}):
 
 
 class DataGenSampleTaskInput(BaseModel):
+    """Input model for generating data samples for a kiln task.
+
+    Attributes:
+        topic: List of strings representing the topic path
+        system_prompt: System prompt to guide the AI generation
+        num_samples: Number of samples to generate
+        human_guidance: Optional human guidance to influence generation
+    """
+
     topic: list[str]
     system_prompt: str
     num_samples: int
@@ -73,6 +116,17 @@ class DataGenSampleTaskInput(BaseModel):
         num_samples: int = 8,
         human_guidance: str | None = None,
     ) -> "DataGenSampleTaskInput":
+        """Create a DataGenSampleTaskInput instance from a Task.
+
+        Args:
+            task: The source Task object
+            topic: Topic path for sample generation
+            num_samples: Number of samples to generate
+            human_guidance: Optional guidance for generation
+
+        Returns:
+            A new DataGenSampleTaskInput instance
+        """
         prompt_builder = SimplePromptBuilder(task=task)
         return cls(
             topic=topic,
@@ -83,6 +137,14 @@ class DataGenSampleTaskInput(BaseModel):
 
 
 def list_json_schema_for_task(task: Task) -> str:
+    """Generate a JSON schema for a list of task inputs (json schema)
+
+    Args:
+        task: Task object whose input schema will be used
+
+    Returns:
+        JSON string representing the schema for a list of task inputs
+    """
     if task.input_json_schema:
         items_schema = json.loads(task.input_json_schema)
     else:
@@ -105,6 +167,11 @@ def list_json_schema_for_task(task: Task) -> str:
 
 
 class DataGenSampleTask(Task, parent_of={}):
+    """Task for generating data samples for a given topic.
+
+    Generates synthetic data samples based on provided topics and subtopics.
+    """
+
     def __init__(self, target_task: Task, num_samples: int = 8):
         # Keep the typechecker happy. TODO: shouldn't need this or parent_of above.
         tmp_project = Project(name="DataGenSample")
