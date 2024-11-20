@@ -1,8 +1,9 @@
 import json
 
+from pydantic import BaseModel
+
 from kiln_ai.adapters.prompt_builders import SimplePromptBuilder
 from kiln_ai.datamodel import Project, Task
-from pydantic import BaseModel
 
 from .data_gen_prompts import (
     SAMPLE_GENERATION_PROMPT,

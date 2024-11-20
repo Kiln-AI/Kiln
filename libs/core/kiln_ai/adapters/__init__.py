@@ -12,7 +12,14 @@ The prompt_builders submodule contains classes that build prompts for use with t
 The repair submodule contains an adapter for the repair task.
 """
 
-from . import base_adapter, langchain_adapters, ml_model_list, prompt_builders, repair
+from . import (
+    base_adapter,
+    data_gen,
+    langchain_adapters,
+    ml_model_list,
+    prompt_builders,
+    repair,
+)
 
 __all__ = [
     "base_adapter",
@@ -20,4 +27,5 @@ __all__ = [
     "ml_model_list",
     "prompt_builders",
     "repair",
+    "data_gen",
 ]

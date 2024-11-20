@@ -13,8 +13,6 @@ This package is the Kiln AI server package. There is also a separate desktop app
 
 Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln)
 
-Docs: [https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html)
-
 ## Installation
 
 ```console

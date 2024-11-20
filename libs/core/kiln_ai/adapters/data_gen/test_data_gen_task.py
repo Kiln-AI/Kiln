@@ -1,6 +1,7 @@
 import json
 
 import pytest
+
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
