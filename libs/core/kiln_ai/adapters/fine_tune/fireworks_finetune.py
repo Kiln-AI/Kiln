@@ -357,7 +357,7 @@ LLAMA_3_1_JINJA_TEMPLATE = """
     {%- if message['role'] | upper == 'SYSTEM' and not ns.initial_system_message_handled -%}
         {%- set ns.initial_system_message_handled = true -%}
         {%- if 'tool_call_schema' in message -%}
-            {{ '<|start_header_id|>system<|end_header_id|>\\n\\nYou have access to the following function task_response:\\n\\n' + message['tool_call_schema'] + '\\n\\n' + message['content'] + stop_token }}
+            {{ '<|start_header_id|>system<|end_header_id|>\\n\\nYou have access to the following function:\\n\\n' + message['tool_call_schema'] + '\\n\\nAlways respond with a function call to the task_response function. For example:\\n\\n<function=task_response>{"example_parameter_name": "example_parameter_value"}</function>\\n\\n' + message['content'] + stop_token }}
         {%- else -%}
             {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
         {%- endif -%}
