@@ -760,6 +760,7 @@ version = "0.6.1"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "coverage" },
+    { name = "jinja2" },
     { name = "jsonschema" },
     { name = "langchain" },
     { name = "langchain-aws" },
@@ -788,6 +789,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "coverage", specifier = ">=7.6.4" },
+    { name = "jinja2", specifier = ">=3.1.4" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "langchain", specifier = ">=0.3.5" },
     { name = "langchain-aws", specifier = ">=0.2.4" },

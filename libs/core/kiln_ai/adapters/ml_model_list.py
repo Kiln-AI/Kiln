@@ -757,6 +757,23 @@ async def builtin_model_from(
     return provider
 
 
+class Wrapper:
+    def __init__(self, wrapped_class):
+        self.wrapped_class = wrapped_class
+
+    def __getattr__(self, attr):
+        original_func = getattr(self.wrapped_class, attr)
+
+        def wrapper(*args, **kwargs):
+            print(f"Calling function: {attr}")
+            print(f"Arguments: {args}, {kwargs}")
+            result = original_func(*args, **kwargs)
+            print(f"Response: {result}")
+            return result
+
+        return wrapper
+
+
 async def langchain_model_from(
     name: str, provider_name: str | None = None
 ) -> BaseChatModel:
@@ -772,7 +789,9 @@ async def langchain_model_from_provider(
 ) -> BaseChatModel:
     if provider.name == ModelProviderName.openai:
         api_key = Config.shared().open_ai_api_key
-        return ChatOpenAI(**provider.provider_options, openai_api_key=api_key)  # type: ignore[arg-type]
+        chat = ChatOpenAI(**provider.provider_options, openai_api_key=api_key)  # type: ignore[arg-type]
+        chat.client = Wrapper(chat.client)
+        return chat
     elif provider.name == ModelProviderName.groq:
         api_key = Config.shared().groq_api_key
         if api_key is None:

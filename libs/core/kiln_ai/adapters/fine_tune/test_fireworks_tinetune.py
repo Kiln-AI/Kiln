@@ -15,7 +15,7 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     DatasetFormat,
     DatasetFormatter,
     generate_chat_message_response,
-    generate_partitioned_tool_call,
+    generate_llama_3_1_tool_call,
 )
 from kiln_ai.adapters.fine_tune.fireworks_finetune import (
     LLAMA_3_1_JINJA_TEMPLATE,
@@ -514,6 +514,14 @@ async def test_llama_3_1_jinja_template_chat_completion(mock_task_run):
         == "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nTest Output"
     )
 
+    chat_message["mode"] = "train"
+    chat_message["unk_token"] = "<|UNK|>"
+    rendered_training = template.render(**chat_message)
+    assert (
+        rendered_training
+        == "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n<|UNK|>Test Output<|eot_id|><|UNK|>"
+    )
+
 
 async def test_llama_3_1_jinja_template_tool_call(mock_task, mock_task_run):
     mock_task_run.output.output = '{"key": "value"}'
@@ -525,14 +533,14 @@ async def test_llama_3_1_jinja_template_tool_call(mock_task, mock_task_run):
         }
     )
 
-    tool_call_message = generate_partitioned_tool_call(
+    tool_call_message = generate_llama_3_1_tool_call(
         mock_task_run, "You are a helpful assistant"
     )
     assert tool_call_message is not None
     assert len(tool_call_message["messages"]) == 3
     assert tool_call_message["messages"][0]["role"] == "system"
+    assert tool_call_message["messages"][0]["tool_call_schema"] is not None
     assert tool_call_message["messages"][1]["role"] == "user"
-    assert tool_call_message["messages"][1]["tool_call_schema"] is not None
     assert tool_call_message["messages"][2]["role"] == "assistant"
     assert tool_call_message["messages"][2]["content"] is None
     assert tool_call_message["messages"][2]["tool_call_json"] is not None
@@ -543,5 +551,13 @@ async def test_llama_3_1_jinja_template_tool_call(mock_task, mock_task_run):
     rendered = template.render(**tool_call_message)
     assert (
         rendered
-        == '<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input\n\nRespond with  {"name": function name, "parameters": dictionary of argument name and its value}. Do not use variables.\n\n{"type": "object", "properties": {"key": {"type": "string", "description": "A key"}}, "required": ["key"]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{"name": "task_response", "parameters": {"key": "value"}}'
+        == '<|start_header_id|>system<|end_header_id|>\n\nYou have access to the following function task_response:\n\n{\n  "name": "task_response",\n  "parameters": {\n    "key": {\n      "type": "string",\n      "description": "A key",\n      "required": true\n    }\n  }\n}\n\nAlways respond with a function call to the task_response function. ONLY reply in the following format:\n\n<{start_tag}={function_name}>{parameters}{end_tag}\nwhere\n\nstart_tag => `<function`\nparameters => a JSON dict with the function argument name as key and function argument value as value.\nend_tag => `</function>`\n\nHere is an example,\n<function=example_function_name>{"example_name": "example_value"}</function>\n\nReminder:\n- Function calls MUST follow the specified format\n- Required parameters MUST be specified\n- Only call one function at a time\n- Put the entire function call reply on one line\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n<function=task_response>{"key": "value"}</function>'
+    )
+
+    tool_call_message["mode"] = "train"
+    tool_call_message["unk_token"] = "<|UNK|>"
+    rendered_training = template.render(**tool_call_message)
+    assert (
+        rendered_training
+        == '<|start_header_id|>system<|end_header_id|>\n\nYou have access to the following function task_response:\n\n{\n  "name": "task_response",\n  "parameters": {\n    "key": {\n      "type": "string",\n      "description": "A key",\n      "required": true\n    }\n  }\n}\n\nAlways respond with a function call to the task_response function. ONLY reply in the following format:\n\n<{start_tag}={function_name}>{parameters}{end_tag}\nwhere\n\nstart_tag => `<function`\nparameters => a JSON dict with the function argument name as key and function argument value as value.\nend_tag => `</function>`\n\nHere is an example,\n<function=example_function_name>{"example_name": "example_value"}</function>\n\nReminder:\n- Function calls MUST follow the specified format\n- Required parameters MUST be specified\n- Only call one function at a time\n- Put the entire function call reply on one line\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n<function=task_response>{"key": "value"}</function><|eom_id|><|UNK|>'
     )

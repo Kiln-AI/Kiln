@@ -128,7 +128,8 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "baseModel": self.datamodel.base_model_id,
             "conversation": {
                 # TODO: check model and load the correct jinja template
-                "jinjaTemplate": LLAMA_3_1_JINJA_TEMPLATE,
+                # TODO: check unstructured works with None here
+                "jinjaTemplate": self._get_jinja_template(task),
             },
         }
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
@@ -160,6 +161,25 @@ class FireworksFinetune(BaseFinetuneAdapter):
         if self.datamodel.path:
             self.datamodel.save_to_file()
 
+    def _get_jinja_template(self, task: Task) -> str | None:
+        if not task.output_json_schema:
+            return None
+        if "llama-v3p2" in self.datamodel.base_model_id:
+            return LLAMA_3_2_JINJA_TEMPLATE
+        elif "llama-v3p1" in self.datamodel.base_model_id:
+            return LLAMA_3_1_JINJA_TEMPLATE
+        else:
+            raise ValueError(f"Unknown base model ID: {self.datamodel.base_model_id}")
+
+    def get_dataset_format(self, task: Task) -> DatasetFormat:
+        # unstructured output uses the default format
+        if not task.output_json_schema:
+            return DatasetFormat.OPENAI_CHAT_JSONL
+        if "llama-v3p2" in self.datamodel.base_model_id:
+            return DatasetFormat.FIREWORKS_LLAMA_3_2_TOOLCALL_JSONL
+        elif "llama-v3p1" in self.datamodel.base_model_id:
+            return DatasetFormat.FIREWORKS_LLAMA_3_1_TOOLCALL_JSONL
+
     async def generate_and_upload_jsonl(
         self, dataset: DatasetSplit, split_name: str, task: Task
     ) -> str:
@@ -167,15 +187,11 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # OpenAI compatible: https://docs.fireworks.ai/fine-tuning/fine-tuning-models#conversation
         # Note: Fireworks does not support tool calls (tested and failed on llama 3.1 70b)
         # TODO: model specific format
-        format = (
-            DatasetFormat.FIREWORKS_LLAMA_3_1_TOOLCALL_JSONL
-            if task.output_json_schema
-            else DatasetFormat.OPENAI_CHAT_JSONL
-        )
+        format = self.get_dataset_format(task)
         print(f"format: {format}")
         path = formatter.dump_to_file(split_name, format)
 
-        template = Template(LLAMA_3_1_JINJA_TEMPLATE)
+        template = Template(self._get_jinja_template(task))
         with open(path, "r") as f:
             lines = f.readlines()
             for line in lines:
@@ -378,6 +394,64 @@ LLAMA_3_1_JINJA_TEMPLATE = """
                 {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n<function=task_response>' + message['tool_call_json'] + '</function><|eom_id|>' + unk_token }}
             {%- else -%}
                 {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n<function=task_response>' + message['tool_call_json'] + '</function>' + ('<|eom_id|>' if loop.index0 != ns.last_assistant_index_for_eos else '') }}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- if _mode == 'generate' and ns.last_assistant_index_for_eos == -1 -%}
+    {{ '<|start_header_id|>assistant<|end_header_id|>' }}
+{%- endif -%}
+"""
+
+
+# oh dear
+LLAMA_3_2_JINJA_TEMPLATE = """
+{%- set _mode = mode | default('generate', true) -%}
+{%- set stop_token = '<|eot_id|>' -%}
+{%- set message_roles = ['SYSTEM', 'USER', 'ASSISTANT'] -%}
+{%- set ns = namespace(initial_system_message_handled=false, last_assistant_index_for_eos=-1, messages=messages) -%}
+{%- for message in ns.messages -%}
+    {%- if not message.get('role') -%}
+        {{ raise_exception('Key [role] is missing. Original input: ' +  message|tojson) }}
+    {%- endif -%}
+    {%- if message['role'] | upper not in message_roles -%}
+        {{ raise_exception('Invalid role ' + message['role']|tojson + '. Only ' + message_roles|tojson + ' are supported.') }}
+    {%- endif -%}
+    {%- if 'content' not in message  -%}
+        {{ raise_exception('Key [content] is missing. Original input: ' +  message|tojson) }}
+    {%- endif -%}
+    {%- if loop.last and message['role'] | upper == 'ASSISTANT' -%}
+        {%- set ns.last_assistant_index_for_eos = loop.index0 -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- if _mode == 'generate' -%}
+    {{ bos_token }}
+{%- endif -%}
+{%- for message in ns.messages -%}
+    {%- if message['role'] | upper == 'SYSTEM' and not ns.initial_system_message_handled -%}
+        {%- set ns.initial_system_message_handled = true -%}
+        {%- if 'tool_call_schema' in message -%}
+            {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + message['content'] + '\n\nYou should only return the function call in tools call sections. You SHOULD NOT include any other text in the response. You SHOULD always return a function call to the function named task_response.\\n\\nWhen you invoke a function, you MUST put it in the format of [func_name1(params_name1=params_value1, params_name2=params_value2...), func_name2(params)].\n\nHere is a list of functions in JSON format that you can invoke.\\n\\n' + message['tool_call_schema'] + stop_token }}
+        {%- else -%}
+            {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
+        {%- endif -%}
+    {%- elif message['role'] | upper != 'SYSTEM' -%}
+        {%- if (message['role'] | upper == 'USER') != ((loop.index0 - (1 if ns.initial_system_message_handled else 0)) % 2 == 0) -%}
+            {{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}
+        {%- endif -%}
+        {%- if message['role'] | upper == 'USER' -%}
+            {{ '<|start_header_id|>user<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
+        {%- elif message['role'] | upper == 'ASSISTANT' and message['content'] is not none -%}
+            {%- if _mode == 'train' -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' + unk_token + message['content'] + stop_token + unk_token }}
+            {%- else -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' + message['content'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
+            {%- endif -%}
+        {%- elif message['role'] | upper == 'ASSISTANT' and 'tool_call' in message and message['tool_call'] is not none -%}
+            {%- if _mode == 'train' -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' + message['tool_call'] + stop_token + unk_token }}
+            {%- else -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' + message['tool_call'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
             {%- endif -%}
         {%- endif -%}
     {%- endif -%}

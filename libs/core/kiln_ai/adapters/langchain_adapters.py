@@ -1,6 +1,7 @@
-import time
 from typing import Dict
 
+import langchain
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -14,6 +15,41 @@ from .base_adapter import AdapterInfo, BaseAdapter, BasePromptBuilder, RunOutput
 from .ml_model_list import langchain_model_from
 
 LangChainModelType = BaseChatModel | Runnable[LanguageModelInput, Dict | BaseModel]
+
+
+langchain.debug = True
+
+from langchain.globals import set_verbose
+
+set_verbose(True)
+
+from langchain.globals import set_debug
+
+set_debug(True)
+
+import os
+
+os.environ["GROQ_LOG"] = "debug"
+
+
+class DetailedDebugHandler(BaseCallbackHandler):
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        print("\n\n=== LLM Start ===")
+        print("=== Raw Messages ===")
+        for msg in kwargs.get("messages", []):
+            print(f"\nMessage Type: {msg.__class__.__name__}")
+            print(f"Content: {msg.content}")
+            # Print additional message attributes (like function call schemas)
+            for key, value in msg.additional_kwargs.items():
+                print(f"{key}: {value}")
+
+        print("\n=== Prompts ===")
+        print(f"Prompts: {prompts}")
+        print(f"Serialized: {serialized}")
+
+    def on_llm_end(self, response, **kwargs):
+        print("\n=== LLM End ===")
+        print(f"Response: {response}")
 
 
 class LangchainAdapter(BaseAdapter):
@@ -79,8 +115,9 @@ class LangchainAdapter(BaseAdapter):
                 )
             output_schema["title"] = "task_response"
             output_schema["description"] = "A response from the task"
+            # TODO: not universal for all BaseModels models
             self._model = self._model.with_structured_output(
-                output_schema, include_raw=True
+                output_schema, include_raw=True, method="json_mode"
             )
         return self._model
 
@@ -117,7 +154,23 @@ class LangchainAdapter(BaseAdapter):
         elif cot_prompt:
             messages.append(SystemMessage(content=cot_prompt))
 
-        response = await chain.ainvoke(messages)
+        # Add debug logging to see the final chain configuration
+        if hasattr(chain, "prompt"):
+            print("Chain Prompt Template:", chain.prompt)
+
+        # Add debug logging right before invocation
+        print("Final Messages being sent to LLM:", messages)
+
+        # Add the callback handler
+        callback_handler = DetailedDebugHandler()
+
+        # Handle both traditional LangChain models and Runnables
+        if isinstance(chain, BaseChatModel):
+            chain.callbacks = [callback_handler]
+            response = await chain.ainvoke(messages)
+        else:
+            # For Runnables, pass callbacks through invoke
+            response = await chain.ainvoke(messages, callbacks=[callback_handler])
 
         if self.has_structured_output():
             if (

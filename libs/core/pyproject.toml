@@ -19,6 +19,7 @@ classifiers = [
 
 dependencies = [
     "coverage>=7.6.4",
+    "jinja2>=3.1.4",
     "jsonschema>=4.23.0",
     "langchain-aws>=0.2.4",
     "langchain-fireworks>=0.2.5",

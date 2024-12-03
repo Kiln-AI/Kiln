@@ -25,6 +25,12 @@ class DatasetFormat(str, Enum):
         "huggingface_chat_template_toolcall_jsonl"
     )
 
+    """Fireworks Llama 3.1 tool call. Custom format to work with our Fireworks jinja templates"""
+    FIREWORKS_LLAMA_3_1_TOOLCALL_JSONL = "fireworks_llama_3_1_toolcall_jsonl"
+
+    """Fireworks Llama 3.2 tool call. Custom format to work with our Fireworks jinja templates"""
+    FIREWORKS_LLAMA_3_2_TOOLCALL_JSONL = "fireworks_llama_3_2_toolcall_jsonl"
+
 
 class FormatGenerator(Protocol):
     """Protocol for format generators"""
@@ -72,6 +78,97 @@ def generate_chat_message_toolcall(
                         },
                     }
                 ],
+            },
+        ]
+    }
+
+
+def generate_llama_3_1_tool_call(
+    task_run: TaskRun, system_message: str
+) -> Dict[str, Any]:
+    """Generate partitioned tool call for use with Fireworks jinja templates"""
+
+    try:
+        arguments = json.loads(task_run.output.output)
+        # Parse and pretty print the schema
+        schema = json.loads(task_run.parent_task().output_json_schema)
+        schema_parameters = {}
+        for param_name, param_info in schema["properties"].items():
+            schema_parameters[param_name] = {
+                "type": param_info["type"],
+                "description": param_info.get("description", ""),
+                "required": param_name in schema["required"],
+            }
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in for tool call or schema: {e}") from e
+    return {
+        "messages": [
+            {
+                "role": "system",
+                "content": system_message,
+                "tool_call_schema": json.dumps(
+                    {
+                        "name": "task_response",
+                        # "description": "This function is used to respond to the user query.",
+                        "parameters": schema_parameters,
+                    },
+                    indent=2,
+                ),
+            },
+            {
+                "role": "user",
+                "content": task_run.input,
+            },
+            {
+                "role": "assistant",
+                "content": None,
+                # Yes we parse then dump again. This ensures it's valid JSON, and ensures it goes to 1 line
+                "tool_call_json": json.dumps(arguments),
+            },
+        ]
+    }
+
+
+def generate_llama_3_2_tool_call(
+    task_run: TaskRun, system_message: str
+) -> Dict[str, Any]:
+    """Generate partitioned tool call for use with Fireworks jinja templates"""
+    try:
+        arguments = json.loads(task_run.output.output)
+        # Parse and pretty print the schema
+        schema = json.loads(task_run.parent_task().output_json_schema)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in for tool call or schema: {e}") from e
+
+    # Format arguments as Python-style function call
+    formatted_args = ", ".join(f"{k}: {json.dumps(v)}" for k, v in arguments.items())
+    tool_call = f"[task_response({formatted_args})]"
+
+    return {
+        "messages": [
+            {
+                "role": "system",
+                "content": system_message,
+                "tool_call_schema": json.dumps(
+                    {
+                        "name": "task_response",
+                        "parameters": {
+                            "type": "dict",
+                            "properties": schema["properties"],
+                            "required": schema["required"],
+                        },
+                    },
+                    indent=2,
+                ),
+            },
+            {
+                "role": "user",
+                "content": task_run.input,
+            },
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_call": tool_call,  # Use the formatted tool call string instead of JSON
             },
         ]
     }
@@ -126,6 +223,8 @@ FORMAT_GENERATORS: Dict[DatasetFormat, FormatGenerator] = {
     DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL: generate_chat_message_toolcall,
     DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL: generate_huggingface_chat_template,
     DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL: generate_huggingface_chat_template_toolcall,
+    DatasetFormat.FIREWORKS_LLAMA_3_1_TOOLCALL_JSONL: generate_llama_3_1_tool_call,
+    DatasetFormat.FIREWORKS_LLAMA_3_2_TOOLCALL_JSONL: generate_llama_3_2_tool_call,
 }
 
 
