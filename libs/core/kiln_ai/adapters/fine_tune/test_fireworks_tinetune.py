@@ -1,19 +1,33 @@
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from jinja2 import Template
 
 from kiln_ai.adapters.fine_tune.base_finetune import (
     FineTuneParameter,
     FineTuneStatus,
     FineTuneStatusType,
 )
-from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
-from kiln_ai.adapters.fine_tune.fireworks_finetune import FireworksFinetune
+from kiln_ai.adapters.fine_tune.dataset_formatter import (
+    DatasetFormat,
+    DatasetFormatter,
+    generate_chat_message_response,
+    generate_partitioned_tool_call,
+)
+from kiln_ai.adapters.fine_tune.fireworks_finetune import (
+    LLAMA_3_1_JINJA_TEMPLATE,
+    FireworksFinetune,
+)
 from kiln_ai.datamodel import (
     DatasetSplit,
+    DataSource,
+    DataSourceType,
     Task,
+    TaskOutput,
+    TaskRun,
     Train80Test20SplitDefinition,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
@@ -453,3 +467,81 @@ async def test_status_with_deploy(fireworks_finetune, mock_api_key):
         # Verify message was updated due to failed deployment
         assert status.status == FineTuneStatusType.completed
         assert status.message == "Fine-tuning job completed but failed to deploy model."
+
+
+@pytest.fixture
+def mock_data_source():
+    return DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "adapter_name": "langchain_adapter",
+        },
+    )
+
+
+@pytest.fixture
+def mock_task_run(mock_data_source, mock_task):
+    return TaskRun(
+        output=TaskOutput(
+            output="Test Output",
+            source=mock_data_source,
+        ),
+        input="Test Input",
+        input_source=mock_data_source,
+        parent=mock_task,
+    )
+
+
+async def test_llama_3_1_jinja_template_chat_completion(mock_task_run):
+    chat_message = generate_chat_message_response(
+        mock_task_run,
+        "You are a helpful assistant",
+    )
+    assert len(chat_message["messages"]) == 3
+    assert chat_message["messages"][0]["role"] == "system"
+    assert chat_message["messages"][1]["role"] == "user"
+    assert chat_message["messages"][2]["role"] == "assistant"
+
+    # Create Jinja template from the template string
+    template = Template(LLAMA_3_1_JINJA_TEMPLATE)
+    assert template is not None
+    rendered = template.render(**chat_message)
+    # Exact string from the sample template from fireworks
+    assert (
+        rendered
+        == "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nTest Output"
+    )
+
+
+async def test_llama_3_1_jinja_template_tool_call(mock_task, mock_task_run):
+    mock_task_run.output.output = '{"key": "value"}'
+    mock_task.output_json_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {"key": {"type": "string", "description": "A key"}},
+            "required": ["key"],
+        }
+    )
+
+    tool_call_message = generate_partitioned_tool_call(
+        mock_task_run, "You are a helpful assistant"
+    )
+    assert tool_call_message is not None
+    assert len(tool_call_message["messages"]) == 3
+    assert tool_call_message["messages"][0]["role"] == "system"
+    assert tool_call_message["messages"][1]["role"] == "user"
+    assert tool_call_message["messages"][1]["tool_call_schema"] is not None
+    assert tool_call_message["messages"][2]["role"] == "assistant"
+    assert tool_call_message["messages"][2]["content"] is None
+    assert tool_call_message["messages"][2]["tool_call_json"] is not None
+
+    # Create Jinja template from the template string
+    template = Template(LLAMA_3_1_JINJA_TEMPLATE)
+    assert template is not None
+    rendered = template.render(**tool_call_message)
+    assert (
+        rendered
+        == '<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nTest Input\n\nRespond with  {"name": function name, "parameters": dictionary of argument name and its value}. Do not use variables.\n\n{"type": "object", "properties": {"key": {"type": "string", "description": "A key"}}, "required": ["key"]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{"name": "task_response", "parameters": {"key": "value"}}'
+    )

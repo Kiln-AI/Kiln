@@ -124,7 +124,10 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "dataset": f"accounts/{account_id}/datasets/{train_file_id}",
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
-            "conversation": {},
+            "conversation": {
+                # TODO: check model and load the correct jinja template
+                "jinjaTemplate": LLAMA_3_1_JINJA_TEMPLATE,
+            },
         }
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
         payload.update(hyperparameters)
@@ -306,3 +309,58 @@ class FireworksFinetune(BaseFinetuneAdapter):
             return True
 
         return False
+
+
+LLAMA_3_1_JINJA_TEMPLATE = """
+{%- set _mode = mode | default('generate', true) -%}
+{%- set stop_token = '<|eot_id|>' -%}
+{%- set message_roles = ['SYSTEM', 'USER', 'ASSISTANT'] -%}
+{%- set ns = namespace(initial_system_message_handled=false, last_assistant_index_for_eos=-1, messages=messages) -%}
+{%- for message in ns.messages -%}
+    {%- if not message.get('role') -%}
+        {{ raise_exception('Key [role] is missing. Original input: ' +  message|tojson) }}
+    {%- endif -%}
+    {%- if message['role'] | upper not in message_roles -%}
+        {{ raise_exception('Invalid role ' + message['role']|tojson + '. Only ' + message_roles|tojson + ' are supported.') }}
+    {%- endif -%}
+    {%- if 'content' not in message  -%}
+        {{ raise_exception('Key [content] is missing. Original input: ' +  message|tojson) }}
+    {%- endif -%}
+    {%- if loop.last and message['role'] | upper == 'ASSISTANT' -%}
+        {%- set ns.last_assistant_index_for_eos = loop.index0 -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- if _mode == 'generate' -%}
+    {{ bos_token }}
+{%- endif -%}
+{%- for message in ns.messages -%}
+    {%- if message['role'] | upper == 'SYSTEM' and not ns.initial_system_message_handled -%}
+        {%- set ns.initial_system_message_handled = true -%}
+        {{ '<|start_header_id|>system<|end_header_id|>\n\n' + message['content'] + stop_token }}
+    {%- elif message['role'] | upper != 'SYSTEM' -%}
+        {%- if (message['role'] | upper == 'USER') != ((loop.index0 - (1 if ns.initial_system_message_handled else 0)) % 2 == 0) -%}
+            {{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}
+        {%- endif -%}
+        {%- if message['role'] | upper == 'USER' -%}
+            {{ '<|start_header_id|>user<|end_header_id|>\n\n' + message['content'] + 
+               ('' if 'tool_call_schema' not in message  else '\n\nRespond with  {"name": function name, "parameters": dictionary of argument name and its value}. Do not use variables.\n\n' + message['tool_call_schema']) 
+            }}{{ stop_token }}
+        {%- elif message['role'] | upper == 'ASSISTANT' and message['content'] is not none -%}
+            {%- if _mode == 'train' -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + unk_token + message['content'] + stop_token + unk_token }}
+            {%- else -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + message['content'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
+            {%- endif -%}
+        {%- elif message['role'] | upper == 'ASSISTANT' and 'tool_call_json' in message and message['tool_call_json'] is not none -%}
+            {%- if _mode == 'train' -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + unk_token + message['tool_call_json'] + stop_token + unk_token }}
+            {%- else -%}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + message['tool_call_json'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- if _mode == 'generate' and ns.last_assistant_index_for_eos == -1 -%}
+    {{ '<|start_header_id|>assistant<|end_header_id|>' }}
+{%- endif -%}
+"""
