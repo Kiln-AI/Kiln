@@ -1,6 +1,8 @@
+import json
 from uuid import uuid4
 
 import httpx
+from jinja2 import Template
 
 from kiln_ai.adapters.fine_tune.base_finetune import (
     BaseFinetuneAdapter,
@@ -164,8 +166,25 @@ class FireworksFinetune(BaseFinetuneAdapter):
         formatter = DatasetFormatter(dataset, self.datamodel.system_message)
         # OpenAI compatible: https://docs.fireworks.ai/fine-tuning/fine-tuning-models#conversation
         # Note: Fireworks does not support tool calls (tested and failed on llama 3.1 70b)
-        format = DatasetFormat.OPENAI_CHAT_JSONL
+        # TODO: model specific format
+        format = (
+            DatasetFormat.FIREWORKS_LLAMA_3_1_TOOLCALL_JSONL
+            if task.output_json_schema
+            else DatasetFormat.OPENAI_CHAT_JSONL
+        )
+        print(f"format: {format}")
         path = formatter.dump_to_file(split_name, format)
+
+        template = Template(LLAMA_3_1_JINJA_TEMPLATE)
+        with open(path, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                item = json.loads(line)
+                item["mode"] = "train"
+                item["unk_token"] = "<|UNK|>"
+                print(f"Item: {item}\n\n")
+                rendered = template.render(**item)
+                print(f"Rendered: {rendered}\n\n")
 
         # First call creates the dataset
         api_key = Config.shared().fireworks_api_key
@@ -311,6 +330,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         return False
 
 
+# oh dear
 LLAMA_3_1_JINJA_TEMPLATE = """
 {%- set _mode = mode | default('generate', true) -%}
 {%- set stop_token = '<|eot_id|>' -%}
@@ -336,26 +356,24 @@ LLAMA_3_1_JINJA_TEMPLATE = """
 {%- for message in ns.messages -%}
     {%- if message['role'] | upper == 'SYSTEM' and not ns.initial_system_message_handled -%}
         {%- set ns.initial_system_message_handled = true -%}
-        {{ '<|start_header_id|>system<|end_header_id|>\n\n' + message['content'] + stop_token }}
+        {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
     {%- elif message['role'] | upper != 'SYSTEM' -%}
         {%- if (message['role'] | upper == 'USER') != ((loop.index0 - (1 if ns.initial_system_message_handled else 0)) % 2 == 0) -%}
             {{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}
         {%- endif -%}
         {%- if message['role'] | upper == 'USER' -%}
-            {{ '<|start_header_id|>user<|end_header_id|>\n\n' + message['content'] + 
-               ('' if 'tool_call_schema' not in message  else '\n\nRespond with  {"name": function name, "parameters": dictionary of argument name and its value}. Do not use variables.\n\n' + message['tool_call_schema']) 
-            }}{{ stop_token }}
+            {{ '<|start_header_id|>user<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
         {%- elif message['role'] | upper == 'ASSISTANT' and message['content'] is not none -%}
             {%- if _mode == 'train' -%}
-                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + unk_token + message['content'] + stop_token + unk_token }}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' + unk_token + message['content'] + stop_token + unk_token }}
             {%- else -%}
-                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + message['content'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n' + message['content'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
             {%- endif -%}
         {%- elif message['role'] | upper == 'ASSISTANT' and 'tool_call_json' in message and message['tool_call_json'] is not none -%}
             {%- if _mode == 'train' -%}
-                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + unk_token + message['tool_call_json'] + stop_token + unk_token }}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n<function=task_response>' + message['tool_call_json'] + '</function><|eom_id|>' + unk_token }}
             {%- else -%}
-                {{ '<|start_header_id|>assistant<|end_header_id|>\n\n' + message['tool_call_json'] + (stop_token if loop.index0 != ns.last_assistant_index_for_eos else '') }}
+                {{ '<|start_header_id|>assistant<|end_header_id|>\\n\\n<function=task_response>' + message['tool_call_json'] + '</function>' + ('<|eom_id|>' if loop.index0 != ns.last_assistant_index_for_eos else '') }}
             {%- endif -%}
         {%- endif -%}
     {%- endif -%}
@@ -363,4 +381,13 @@ LLAMA_3_1_JINJA_TEMPLATE = """
 {%- if _mode == 'generate' and ns.last_assistant_index_for_eos == -1 -%}
     {{ '<|start_header_id|>assistant<|end_header_id|>' }}
 {%- endif -%}
+"""
+
+REMOVED = """
+ + (
+            '' if 'tool_call_schema' not in message  else 
+            'You have access to the following function task_response:\\n\\n'
+            + message['tool_call_schema']
+            + '\\n\\nAlways respond with a function call to the task_response function. ONLY reply in the following format:\\n\\n<{start_tag}={function_name}>{parameters}{end_tag}\\nwhere\\n\\nstart_tag => `<function`\\nparameters => a JSON dict with the function argument name as key and function argument value as value.\\nend_tag => `</function>`\\n\\nHere is an example,\\n<function=example_function_name>{"example_name": "example_value"}</function>\\n\\nReminder:\\n- Function calls MUST follow the specified format\\n- Required parameters MUST be specified\\n- Only call one function at a time\\n- Put the entire function call reply on one line\\n\\n'
+        )
 """
