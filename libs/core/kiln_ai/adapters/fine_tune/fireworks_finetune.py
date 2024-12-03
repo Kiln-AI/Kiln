@@ -356,7 +356,11 @@ LLAMA_3_1_JINJA_TEMPLATE = """
 {%- for message in ns.messages -%}
     {%- if message['role'] | upper == 'SYSTEM' and not ns.initial_system_message_handled -%}
         {%- set ns.initial_system_message_handled = true -%}
-        {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
+        {%- if 'tool_call_schema' in message -%}
+            {{ '<|start_header_id|>system<|end_header_id|>\\n\\nYou have access to the following function task_response:\\n\\n' + message['tool_call_schema'] + '\\n\\n' + message['content'] + stop_token }}
+        {%- else -%}
+            {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + message['content'] + stop_token }}
+        {%- endif -%}
     {%- elif message['role'] | upper != 'SYSTEM' -%}
         {%- if (message['role'] | upper == 'USER') != ((loop.index0 - (1 if ns.initial_system_message_handled else 0)) % 2 == 0) -%}
             {{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}
@@ -382,6 +386,8 @@ LLAMA_3_1_JINJA_TEMPLATE = """
     {{ '<|start_header_id|>assistant<|end_header_id|>' }}
 {%- endif -%}
 """
+
+# {{ '<|start_header_id|>system<|end_header_id|>\\n\\n' + ('' if 'tool_call_schema' not in message else 'You have access to the following function named task_response:\\n\\n' + message['tool_call_schema'] + '\\n\\nAlways respond with a function call to the task_response function. ONLY reply in the following format:\\n\\n<{start_tag}={function_name}>{parameters}{end_tag}\\nwhere\\n\\nstart_tag => `<function`\\nparameters => a JSON dict with the function argument name as key and function argument value as value.\\nend_tag => `</function>`\\n\\nHere is an example,\\n<function=example_function_name>{"example_name": "example_value"}</function>\\n\\nReminder:\\n- Function calls MUST follow the specified format\\n- Required parameters MUST be specified\\n- Only call one function at a time\\n- Put the entire function call reply on one line\\n\\n') + message['content'] + stop_token }}
 
 REMOVED = """
  + (
