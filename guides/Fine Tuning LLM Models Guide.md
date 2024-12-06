@@ -9,9 +9,9 @@ We'll be walking through an example where we start from scratch, and build 9 fin
 You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
 - [2 mins]: Define task, goals, and schema
-- [9 mins]: Synthetic data generation: create 920 high-quality examples using topic trees, large models, COT prompting, and interactive generation UI
-- [5 mins]: kick off 9 fine tuning jobs: Unsloth (Gemma, 2xLlama), OpenAI (GPT 4o, 4o-Mini), and Fireworks (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b)
-- [2 mins]: Test that the new models work
+- [9 mins]: Synthetic data generation: create 920 high-quality examples for training
+- [5 mins]: kick off 9 fine tuning jobs: Unsloth (Llama 3.1 8b), OpenAI (GPT 4o, 4o-Mini), and Fireworks (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b)
+- [2 mins]: Test that our new models work
 
 ### Step 1: Define your Task and Goals
 
