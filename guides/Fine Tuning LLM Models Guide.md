@@ -16,7 +16,7 @@ A Demo Project:
 
 Analysis:
 - [Cost Breakdown](#cost-breakdown)
-- [Next steps](#next-steps): evaluation and exporting models, data strategies
+- [Next steps](#next-steps): evaluation, exporting models, iteration and data strategies
 - [How to get started](#download-kiln-to-get-started)
 
 [<img width="190" alt="Download button" src="https://github.com/user-attachments/assets/09874d7a-4873-4bb7-81c8-c3939206dc81">](https://github.com/Kiln-AI/Kiln/releases/latest)
@@ -124,7 +124,7 @@ You can export your models for use on your machine, deployment to the cloud, or 
  - Unsloth: your fine-tunes can be directly export to GGUF or other formats which make these model easy to deploy. A GGUF can be [imported to Ollama](https://github.com/ollama/ollama/blob/main/docs/import.md) for local use.
  - OpenAI: sadly OpenAI won’t let you download their models.
 
-#### Iterate to improve quality
+#### Iterate to Improve Quality
 
 Models and products are rarely perfect on their first try. When you find bugs or have new goals, Kiln makes it easy to build new models. Some ways to iterate:
 
@@ -136,7 +136,7 @@ Models and products are rarely perfect on their first try. When you find bugs or
 - Regenerate fine-tunes as your dataset grows and evolves
 - Try new foundation models (directly and with fine tuning) when new state of the art models are released.
 
-#### Our "Ladder" data strategy
+#### Our "Ladder" Data Strategy
 
 Kiln enables a "Ladder" data strategy: the steps start from from small quantity and high effort, and progress to high quantity and low effort. Each step builds on the prior:
 
