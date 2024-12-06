@@ -17,7 +17,7 @@ You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
 First, we’ll need to define what the models should do. In Kiln we call this a “task definition”. Create a new task in the Kiln UI to get started, including a initial prompt, requirements, and input/output schema.
 
-[video]
+https://github.com/user-attachments/assets/5a7ed956-a797-4d8e-9ed9-2a9d98973e86
 
 ### Step 2: Generate Training Data (including Synthetic Data Gen)
 
@@ -27,7 +27,9 @@ Kiln offers a interactive UI for quickly and easily building synthetic datasets.
 
 Note: when generating synthetic data you want to get the best quality content possible. Don’t worry about cost and performance at this stage. Use large high quality models, detailed prompts with multi-shot prompting, chain of thought, and anything else that improves quality. You’ll be able to address performance and costs in later steps with fine tuning.
 
-[video]
+
+https://github.com/user-attachments/assets/f2142ff5-10ca-4a23-a88a-05e2bd24d641
+
 
 ### Step 3: Select Models to Fine Tune
 
@@ -47,7 +49,7 @@ Use the "Fine Tune" tab in the Kiln UI to kick off your fine-tunes. Simply selec
 
 We recommend setting aside a test and validation set when creating your dataset split. This will allow you to evaluate your fine-tunes after they are complete.
 
-[video]
+https://github.com/user-attachments/assets/e20af3f5-1e9e-4c55-a765-e1688782b7e2
 
 ### Step 5: Deploy and Run Your Models
 
@@ -57,7 +59,8 @@ Both providers are deployed as "serverless" services. You only pay by token usag
 
 Our fine-tuned models show some immediate promise. Previously models smaller than Llama < 70b could not produce the correct structured data format, but after fine tuning even the smallest model (Llama 3.2 1b) consistently works.
 
-[video]
+https://github.com/user-attachments/assets/2f64dd1d-a684-456f-8505-114defaff304
+
 
 ### Step 6 [Optional]: Training on your own Infrastructure
 
@@ -69,7 +72,7 @@ We currently recommend [Unsloth](https://github.com/unslothai/unsloth) and [Axol
 
 See this example [unsloth notebook](https://colab.research.google.com/drive/1Ivmt4rOnRxEAtu66yDs_sVZQSlvE8oqN?usp=sharing), which has been modified to load a dataset file exported from Kiln. You can use it to fine-tune locally or in Google Colab.
 
-[video]
+https://github.com/user-attachments/assets/102874b0-9b85-4aed-ba4a-b2d47c03816f
 
 ### Total Costs
 
