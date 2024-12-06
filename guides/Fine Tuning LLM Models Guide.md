@@ -10,9 +10,9 @@ You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
 The Demo:
 - [2 mins]: [Define task, goals, and schema](#step-1-define-your-task-and-goals)
-- [9 mins]: [Synthetic data generation](#step-2-generate-training-data-including-synthetic-data-gen): create 920 high-quality examples for training
+- [9 mins]: [Synthetic data generation](#step-2-generate-training-data-with-synthetic-data-generation): create 920 high-quality examples for training
 - [5 mins]: Dispatch 9 fine tuning jobs: [Fireworks](#step-4-dispatch-training-jobs) (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b), [OpenAI](#step-4-dispatch-training-jobs) (GPT 4o, 4o-Mini), and [Unsloth](#step-6-optional-training-on-your-own-infrastructure) (Llama 3.2 1b/3b)
-- [2 mins]: Test that our new models work
+- [2 mins]: [Deploy your new models and test they work](#step-5-deploy-and-run-your-models)
 
 Analysis:
 - [Cost Breakdown](#cost-breakdown)
@@ -27,7 +27,7 @@ For this demo we'll make a task that generates news article headlines of various
 
 https://github.com/user-attachments/assets/5a7ed956-a797-4d8e-9ed9-2a9d98973e86
 
-### Step 2: Generate Training Data (including Synthetic Data Gen)
+### Step 2: Generate Training Data with Synthetic Data Generation
 
 To fine tune, you’ll need a dataset to learn from.
 
