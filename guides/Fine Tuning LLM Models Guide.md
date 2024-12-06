@@ -84,7 +84,7 @@ Our demo use case was quite reasonably priced.
 - Fine tuning GPT 4o on OpenAI: $16.91
 - Fine tuning Llama 3.2 1b/3b on Unsloth: $0.00 (free Google Colab T4)
 
-If it wasn't for GPT-4o, the whole project would have less than $6!
+If it wasn't for GPT-4o, the whole project would have cost less than $6!
 
 Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 200x cheaper than the models we used during synthetic data generation (source:OpenRouter stats & prices).
 
