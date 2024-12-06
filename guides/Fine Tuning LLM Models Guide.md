@@ -1,21 +1,29 @@
-# Fine Tuning 9 Models in 18 minutes of work with Kiln AI - Guide
+# Fine Tuning 9 Models in 18 minutes with [Kiln AI](https://getkiln.ai) - Guide
 
-[Kiln](https://getkiln.ai) is a tool that makes it easy to fine-tune a wide variety of models like GPT-4o, Llama, Mistral, Gemma, and much more.
+[Kiln](https://getkiln.ai) is a new tool that makes it easy to fine-tune a wide variety of models like GPT-4o, Llama, Mistral, Gemma, and many more.
 
 ## Overview
 
-We'll be walking through an example where we start from scratch, and build 9 fine-tuned models in just under 18 minutes of active work (not counting time waiting for training to complete).
+We'll be walking through an example where we start from scratch, and build 9 fine-tuned models in just under 18 minutes of active work (not counting time waiting for training to complete), all for under $6.
 
 You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
-- [2 mins]: Define task, goals, and schema
-- [9 mins]: Synthetic data generation: create 920 high-quality examples for training
-- [5 mins]: kick off 9 fine tuning jobs: and Fireworks (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b), OpenAI (GPT 4o, 4o-Mini), and Unsloth (Llama 3.2 1b/3b)
+The Demo:
+- [2 mins]: [Define task, goals, and schema](#step-1-define-your-task-and-goals)
+- [9 mins]: [Synthetic data generation](#step-2-generate-training-data-including-synthetic-data-gen): create 920 high-quality examples for training
+- [5 mins]: Dispatch 9 fine tuning jobs: [Fireworks](#step-4-dispatch-training-jobs) (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b), [OpenAI](#step-4-dispatch-training-jobs) (GPT 4o, 4o-Mini), and [Unsloth](#step-6-optional-training-on-your-own-infrastructure) (Llama 3.2 1b/3b)
 - [2 mins]: Test that our new models work
+
+Analysis:
+- [Cost Breakdown](#cost-breakdown)
+- [Next steps](#next-steps) (evaluation/exporting)
+- [Download Kiln to Get Started](#get-kiln-to-get-started)
 
 ### Step 1: Define your Task and Goals
 
 First, we’ll need to define what the models should do. In Kiln we call this a “task definition”. Create a new task in the Kiln UI to get started, including a initial prompt, requirements, and input/output schema.
+
+For this demo we'll make a task that generates news article headlines of various styles from a summary of a news topic.
 
 https://github.com/user-attachments/assets/5a7ed956-a797-4d8e-9ed9-2a9d98973e86
 
@@ -23,10 +31,9 @@ https://github.com/user-attachments/assets/5a7ed956-a797-4d8e-9ed9-2a9d98973e86
 
 To fine tune, you’ll need a dataset to learn from.
 
-Kiln offers a interactive UI for quickly and easily building synthetic datasets. It includes topic trees to generate diverse content, a range of models/prompting strategies, interactive guidance and interactive UI for curation and correction. In the video below we use it to generate 920 training examples in 9 minutes of hands on work.
+Kiln offers a interactive UI for quickly and easily building synthetic datasets. It includes topic trees to generate diverse content, a range of models/prompting strategies, interactive guidance and interactive UI for curation and correction. In the video below we use it to generate 920 training examples in 9 minutes of hands-on work.
 
 Note: when generating synthetic data you want to get the best quality content possible. Don’t worry about cost and performance at this stage. Use large high quality models, detailed prompts with multi-shot prompting, chain of thought, and anything else that improves quality. You’ll be able to address performance and costs in later steps with fine tuning.
-
 
 https://github.com/user-attachments/assets/f2142ff5-10ca-4a23-a88a-05e2bd24d641
 
@@ -43,9 +50,9 @@ Kiln supports a wide range of models using our no-code UI, including:
 
 In this demo, we'll use them all!
 
-### Step 4: Kick off Training Jobs
+### Step 4: Dispatch Training Jobs
 
-Use the "Fine Tune" tab in the Kiln UI to kick off your fine-tunes. Simply select the models you want to train, the dataset, and add any training parameters.
+Use the "Fine Tune" tab in the Kiln UI to kick off your fine-tunes. Simply select the models you want to train, select a dataset, and add any training parameters.
 
 We recommend setting aside a test and validation set when creating your dataset split. This will allow you to evaluate your fine-tunes after they are complete.
 
@@ -55,11 +62,11 @@ https://github.com/user-attachments/assets/e20af3f5-1e9e-4c55-a765-e1688782b7e2
 
 Kiln will automatically deploy your fine-tunes when they are complete. You can use them from the Kiln UI without any additional configuration. Simply select a fine-tune by name from the model dropdown in the "Run" tab.
 
-You can also call them through OpenAI or Fireworks APIs using their model-IDs.
-
 Both Fireworks and OpenAI tunes are deployed "serverless". You only pay by for usage (tokens), with no recurring costs.
 
-Our fine-tuned models show some immediate promise. Previously models smaller than Llama < 70b could not produce the correct structured data format for our task. After fine tuning even the smallest model (Llama 3.2 1b) consistently works.
+You can use your models outside of Kiln by calling Fireworks or OpenAI APIs with the model ID from the "Fine Tune" tab.
+
+**Early Results**: Our fine-tuned models show some immediate promise. Previously models smaller than Llama 70b could not produce the correct structured data for our task. After fine tuning even the smallest model, Llama 3.2 1b, consistently works.
 
 https://github.com/user-attachments/assets/2f64dd1d-a684-456f-8505-114defaff304
 
@@ -68,7 +75,7 @@ https://github.com/user-attachments/assets/2f64dd1d-a684-456f-8505-114defaff304
 
 Kiln can also export your dataset to common formats for fine tuning on your own infrastructure. Simply select one of the "Download" options when creating your fine tune, and use the exported JSONL file to train with your own tools.
 
-We currently recommend [Unsloth](https://github.com/unslothai/unsloth) and [Axolotl]([https://github.com/gw000/axolotl](https://axolotl.ai)).
+We currently recommend [Unsloth](https://github.com/unslothai/unsloth) and [Axolotl]([https://github.com/gw000/axolotl](https://axolotl.ai)). These platforms let you train almost any open model, including Gemma, Mistral, Llama, Qwen, Smol, and many more.
 
 #### Unsloth Example
 
@@ -76,7 +83,7 @@ See this example [Unsloth notebook](https://colab.research.google.com/drive/1Ivm
 
 https://github.com/user-attachments/assets/102874b0-9b85-4aed-ba4a-b2d47c03816f
 
-### Total Costs
+### Cost Breakdown
 
 Our demo use case was quite reasonably priced.
 
