@@ -4,7 +4,7 @@
 
 ## Overview
 
-We'll be walking through an example where we start from scratch, and build 9 fine-tuned models in just under 18 minutes of active work (not counting time waiting for training to complete), all for under $6.
+We'll be walking through an example where we start from scratch, and build 9 fine-tuned models in just under 18 minutes of active work (not counting time waiting for training to complete).
 
 You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
