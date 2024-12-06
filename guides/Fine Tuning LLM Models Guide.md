@@ -120,7 +120,7 @@ If your task is deterministic (classification), Kiln AI will provide the validat
 
 You can export your models for use on your machine, deployment to the cloud, or embedding in your product.
 
- - Fireworks:you can [download the weights](https://docs.fireworks.ai/fine-tuning/fine-tuning-models#downloading-model-weights) in Hugging Face PEFT format, and convert as needed.
+ - Fireworks: you can [download the weights](https://docs.fireworks.ai/fine-tuning/fine-tuning-models#downloading-model-weights) in Hugging Face PEFT format, and convert as needed.
  - Unsloth: your fine-tunes can be directly export to GGUF or other formats which make these model easy to deploy. A GGUF can be [imported to Ollama](https://github.com/ollama/ollama/blob/main/docs/import.md) for local use.
  - OpenAI: sadly OpenAI won’t let you download their models.
 
