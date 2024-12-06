@@ -53,24 +53,26 @@ https://github.com/user-attachments/assets/e20af3f5-1e9e-4c55-a765-e1688782b7e2
 
 ### Step 5: Deploy and Run Your Models
 
-Kiln will automatically deploy your fine-tunes when they are complete. You can use them from the Kiln UI without any additional configuration, or call them through OpenAI or Fireworks APIs.
+Kiln will automatically deploy your fine-tunes when they are complete. You can use them from the Kiln UI without any additional configuration. Simply select a fine-tune by name from the model dropdown in the "Run" tab.
 
-Both providers are deployed as "serverless" services. You only pay by token usage, with no recurring costs.
+You can also call them through OpenAI or Fireworks APIs using their model-IDs.
 
-Our fine-tuned models show some immediate promise. Previously models smaller than Llama < 70b could not produce the correct structured data format, but after fine tuning even the smallest model (Llama 3.2 1b) consistently works.
+Both Fireworks and OpenAI tunes are deployed "serverless". You only pay by for usage (tokens), with no recurring costs.
+
+Our fine-tuned models show some immediate promise. Previously models smaller than Llama < 70b could not produce the correct structured data format for our task. After fine tuning even the smallest model (Llama 3.2 1b) consistently works.
 
 https://github.com/user-attachments/assets/2f64dd1d-a684-456f-8505-114defaff304
 
 
 ### Step 6 [Optional]: Training on your own Infrastructure
 
-Kiln can also export your dataset to common formats, for fine tuning on your own infrastructure. Simply select one of the "Download" options when creating your fine tune, and use the exported JSONL file to train with your own tools.
+Kiln can also export your dataset to common formats for fine tuning on your own infrastructure. Simply select one of the "Download" options when creating your fine tune, and use the exported JSONL file to train with your own tools.
 
 We currently recommend [Unsloth](https://github.com/unslothai/unsloth) and [Axolotl]([https://github.com/gw000/axolotl](https://axolotl.ai)).
 
 #### Unsloth Example
 
-See this example [unsloth notebook](https://colab.research.google.com/drive/1Ivmt4rOnRxEAtu66yDs_sVZQSlvE8oqN?usp=sharing), which has been modified to load a dataset file exported from Kiln. You can use it to fine-tune locally or in Google Colab.
+See this example [Unsloth notebook](https://colab.research.google.com/drive/1Ivmt4rOnRxEAtu66yDs_sVZQSlvE8oqN?usp=sharing), which has been modified to load a dataset file exported from Kiln. You can use it to fine-tune locally or in Google Colab.
 
 https://github.com/user-attachments/assets/102874b0-9b85-4aed-ba4a-b2d47c03816f
 
@@ -79,14 +81,14 @@ https://github.com/user-attachments/assets/102874b0-9b85-4aed-ba4a-b2d47c03816f
 Our demo use case was quite reasonably priced.
 
 - Generating training data: $2.06 on OpenRouter
-- Fine tuning Llama 3.2 1b, Llama 3.2 3b, Llama 3.1 8b, Llama 3.1 70b, and Mixtral 8x7b on Fireworks: $1.47
+- Fine tuning 5 models on Fireworks (Llama 3.2 1b, Llama 3.2 3b, Llama 3.1 8b, Llama 3.1 70b, and Mixtral 8x7b): $1.47
 - Fine tuning GPT 4o-Mini on OpenAI: $2.03
 - Fine tuning GPT 4o on OpenAI: $16.91
-- Fine tuning Llama 3.2 1b/3b on Unsloth: $0.00 (free Google Colab T4)
+- Fine tuning Llama 3.2 1b & 3b on Unsloth: $0.00 (free Google Colab T4)
 
 If it wasn't for GPT-4o, the whole project would have cost less than $6!
 
-Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 200x cheaper than the models we used during synthetic data generation (source:OpenRouter stats & prices).
+Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 200x cheaper than the models we used during synthetic data generation (source:OpenRouter perf stats & prices).
 
 ### Next Steps
 
@@ -94,7 +96,7 @@ What’s next after fine tuning?
 
 #### Evaluate Model Quality
 
-We now have 9 fine-tuned models, but which is best for our task? We should evaluate their quality for quality/speed/cost tradeoffs. 
+We now have 9 fine-tuned models, but which is best for our task? We should evaluate their quality for quality/speed/cost tradeoffs.
 
 We will be adding eval tools into Kiln soon to help with this process! In the meantime, you can used the reserved test/val splits to evaluate the fine tunes.
 
