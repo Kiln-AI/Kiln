@@ -66,7 +66,7 @@ https://github.com/user-attachments/assets/2f64dd1d-a684-456f-8505-114defaff304
 
 Kiln can also export your dataset to common formats, for fine tuning on your own infrastructure. Simply select one of the "Download" options when creating your fine tune, and use the exported JSONL file to train with your own tools.
 
-We currently recommend [Unsloth](https://github.com/unslothai/unsloth) and [Axolotl](https://github.com/gw000/axolotl).
+We currently recommend [Unsloth](https://github.com/unslothai/unsloth) and [Axolotl]([https://github.com/gw000/axolotl](https://axolotl.ai)).
 
 #### Unsloth Example
 
@@ -92,16 +92,11 @@ Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 200x chea
 
 What’s next after fine tuning?
 
-#### Evaluate model quality
+#### Evaluate Model Quality
 
-We now have 9 fine-tuned models, but which is best for our task? We should evaluate their quality for quality/speed/cost tradeoffs.
+We now have 9 fine-tuned models, but which is best for our task? We should evaluate their quality for quality/speed/cost tradeoffs. 
 
-Kiln offers tools to help with evaluation:
-
-- Kiln will withhold a validation and test set. Simply request a train/test/val split when creating your dataset.
-- OpenAI fine-tuning will check the validation set when training and report your val_loss. Note: this will only work for deterministic tasks like classification. Non-deterministic generative tasks will require human eval.
-
-We’re building more advanced eval tools in a later release.
+We will be adding eval tools into Kiln soon to help with this process! In the meantime, you can used the reserved test/val splits to evaluate the fine tunes.
 
 #### Exporting Models
 
@@ -115,20 +110,22 @@ Sadly, OpenAI won’t let you download their models.
 
 #### Iterate to improve quality
 
-Models and products are rarely right on their first try. When you find bugs or have new goals, Kiln makes it easy to build new models. To iterate:
+Models and products are rarely perfect on their first try. When you find bugs or have new goals, Kiln makes it easy to build new models. Some ways to iterate:
 
 - Experiment with fine-tuning hyperparameters (see the "Advanced Options" section of the UI)
 - Experiment with shorter training prompts, which can reduce costs
 - Add any bugs you encounter to your dataset, using Kiln to “repair” the issues. These get added to your training data for future iterations.
 - Rate your dataset using Kiln’s rating system, then build fine-tunes using only highly rated content.
 - Generate more synthetic data for common quality issues, so the model can learn to avoid them
-- Regenerate fine-tunes with your growing dataset
+- Regenerate fine-tunes as your dataset grows
 - Try new foundation models (directly and with fine tuning) when new state of the art models are released.
 
 ### Get Kiln to Get Started
 
 To get started, download Kiln. It’s 100% free:
 
-- Star us on Github
-- Download the latest Kiln AI release
-- Read more about Kiln in our [main Github Readme](https://github.com/Kiln-AI/Kiln?tab=readme-ov-file#readme)
+- Star us on [Github](https://github.com/Kiln-AI/Kiln)
+- [Download the latest Kiln AI release](https://github.com/Kiln-AI/Kiln/releases/latest)
+- Read more about Kiln in our [Github Readme](https://github.com/Kiln-AI/Kiln?tab=readme-ov-file#readme)
+
+
