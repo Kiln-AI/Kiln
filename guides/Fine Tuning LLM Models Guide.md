@@ -10,7 +10,7 @@ You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
 - [2 mins]: Define task, goals, and schema
 - [9 mins]: Synthetic data generation: create 920 high-quality examples for training
-- [5 mins]: kick off 9 fine tuning jobs: Unsloth (Llama 3.1 8b), OpenAI (GPT 4o, 4o-Mini), and Fireworks (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b)
+- [5 mins]: kick off 9 fine tuning jobs: and Fireworks (Llama 3.2 1b/3b/11b, Llama 3.1 8b/70b, Mixtral 8x7b), OpenAI (GPT 4o, 4o-Mini), and Unsloth (Llama 3.2 1b/3b)
 - [2 mins]: Test that our new models work
 
 ### Step 1: Define your Task and Goals
@@ -82,11 +82,11 @@ Our demo use case was quite reasonably priced.
 - Fine tuning Llama 3.2 1b, Llama 3.2 3b, Llama 3.1 8b, Llama 3.1 70b, and Mixtral 8x7b on Fireworks: $1.47
 - Fine tuning GPT 4o-Mini on OpenAI: $2.03
 - Fine tuning GPT 4o on OpenAI: $16.91
-- Fine tuning Llama/Gemma on Unsloth: $0.00 (free Google Colab T4)
+- Fine tuning Llama 3.2 1b/3b on Unsloth: $0.00 (free Google Colab T4)
 
 If it wasn't for GPT-4o, the whole project would have less than $6!
 
-Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 200x cheaper than our initial
+Meanwhile our fastest fine-tune (Llama 3.2 1b) is about 10x faster and 200x cheaper than the models we used during synthetic data generation (source:OpenRouter stats & prices).
 
 ### Next Steps
 
@@ -102,11 +102,9 @@ We will be adding eval tools into Kiln soon to help with this process! In the me
 
 You can export your models for use on your machine, deployment to the cloud, or embedding in your product.
 
-**Unsloth**: your fine-tunes can be directly export to GGUF or other formats which make these model easy to deploy. A GGUF can be [imported to Ollama](https://github.com/ollama/ollama/blob/main/docs/import.md) for local use.
-
-**Fireworks**:you can [download the weights](https://docs.fireworks.ai/fine-tuning/fine-tuning-models#downloading-model-weights) in Hugging Face PEFT format, and convert as needed.
-
-Sadly, OpenAI won’t let you download their models.
+ - Fireworks:you can [download the weights](https://docs.fireworks.ai/fine-tuning/fine-tuning-models#downloading-model-weights) in Hugging Face PEFT format, and convert as needed.
+ - Unsloth: your fine-tunes can be directly export to GGUF or other formats which make these model easy to deploy. A GGUF can be [imported to Ollama](https://github.com/ollama/ollama/blob/main/docs/import.md) for local use.
+ - OpenAI: sadly OpenAI won’t let you download their models.
 
 #### Iterate to improve quality
 
