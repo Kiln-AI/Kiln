@@ -206,7 +206,8 @@
       save_all_error = null
       save_all_completed = false
       save_all_sub_errors = []
-      const [provider, model_name] = model.split("/")
+      const provider = model.split("/")[0]
+      const model_name = model.split("/").slice(1).join("/")
       for (const sample of samples_to_save) {
         const { saved_id, error } = await save_sample(
           sample,

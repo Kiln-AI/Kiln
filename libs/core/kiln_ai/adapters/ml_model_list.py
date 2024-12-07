@@ -1,19 +1,7 @@
-import os
-from dataclasses import dataclass
 from enum import Enum
-from os import getenv
-from typing import Any, Dict, List, NoReturn
+from typing import Dict, List
 
-import httpx
-import requests
-from langchain_aws import ChatBedrockConverse
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_groq import ChatGroq
-from langchain_ollama import ChatOllama
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
-
-from ..utils.config import Config
 
 """
 Provides model configuration and management for various LLM providers and models.
@@ -32,6 +20,8 @@ class ModelProviderName(str, Enum):
     amazon_bedrock = "amazon_bedrock"
     ollama = "ollama"
     openrouter = "openrouter"
+    fireworks_ai = "fireworks_ai"
+    kiln_fine_tune = "kiln_fine_tune"
 
 
 class ModelFamily(str, Enum):
@@ -46,6 +36,8 @@ class ModelFamily(str, Enum):
     gemma = "gemma"
     gemini = "gemini"
     claude = "claude"
+    mixtral = "mixtral"
+    qwen = "qwen"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -58,6 +50,7 @@ class ModelName(str, Enum):
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
     llama_3_1_405b = "llama_3_1_405b"
+    llama_3_2_1b = "llama_3_2_1b"
     llama_3_2_3b = "llama_3_2_3b"
     llama_3_2_11b = "llama_3_2_11b"
     llama_3_2_90b = "llama_3_2_90b"
@@ -75,6 +68,9 @@ class ModelName(str, Enum):
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
     nemotron_70b = "nemotron_70b"
+    mixtral_8x7b = "mixtral_8x7b"
+    qwen_2p5_7b = "qwen_2p5_7b"
+    qwen_2p5_72b = "qwen_2p5_72b"
 
 
 class KilnModelProvider(BaseModel):
@@ -84,13 +80,20 @@ class KilnModelProvider(BaseModel):
     Attributes:
         name: The provider's identifier
         supports_structured_output: Whether the provider supports structured output formats
+        supports_data_gen: Whether the provider supports data generation
+        untested_model: Whether the model is untested (typically user added). The supports_ fields are not applicable.
+        provider_finetune_id: The finetune ID for the provider, if applicable
         provider_options: Additional provider-specific configuration options
+        adapter_options: Additional options specific to the adapter. Top level key should be adapter ID.
     """
 
     name: ModelProviderName
     supports_structured_output: bool = True
     supports_data_gen: bool = True
+    untested_model: bool = False
+    provider_finetune_id: str | None = None
     provider_options: Dict = {}
+    adapter_options: Dict = {}
 
 
 class KilnModel(BaseModel):
@@ -122,6 +125,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 provider_options={"model": "gpt-4o-mini"},
+                provider_finetune_id="gpt-4o-mini-2024-07-18",
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -138,6 +142,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 provider_options={"model": "gpt-4o"},
+                provider_finetune_id="gpt-4o-2024-08-06",
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -257,6 +262,15 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 provider_options={"model": "meta-llama/llama-3.1-8b-instruct"},
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                supports_structured_output=False,
+                supports_data_gen=False,
+                provider_finetune_id="accounts/fireworks/models/llama-v3p1-8b-instruct",
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p1-8b-instruct"
+                },
+            ),
         ],
     ),
     # Llama 3.1 70b
@@ -271,7 +285,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.amazon_bedrock,
-                # not sure how AWS manages to break this, but it's not working
+                # AWS 70b not working as well as the others.
                 supports_structured_output=False,
                 supports_data_gen=False,
                 provider_options={
@@ -286,6 +300,13 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 provider_options={"model": "llama3.1:70b"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                provider_finetune_id="accounts/fireworks/models/llama-v3p1-70b-instruct",
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p1-70b-instruct"
+                },
             ),
         ],
     ),
@@ -310,6 +331,13 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "meta-llama/llama-3.1-405b-instruct"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p1-405b-instruct"
+                },
             ),
         ],
     ),
@@ -348,6 +376,35 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Llama 3.2 1B
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_3_2_1b,
+        friendly_name="Llama 3.2 1B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                supports_structured_output=False,
+                supports_data_gen=False,
+                provider_options={"model": "meta-llama/llama-3.2-1b-instruct"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                supports_structured_output=False,
+                supports_data_gen=False,
+                provider_options={"model": "llama3.2:1b"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                provider_finetune_id="accounts/fireworks/models/llama-v3p2-1b-instruct",
+                supports_structured_output=False,
+                supports_data_gen=False,
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p2-1b-instruct"
+                },
+            ),
+        ],
+    ),
     # Llama 3.2 3B
     KilnModel(
         family=ModelFamily.llama,
@@ -366,6 +423,15 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 provider_options={"model": "llama3.2"},
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                provider_finetune_id="accounts/fireworks/models/llama-v3p2-3b-instruct",
+                supports_structured_output=False,
+                supports_data_gen=False,
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p2-3b-instruct"
+                },
+            ),
         ],
     ),
     # Llama 3.2 11B
@@ -376,15 +442,30 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                supports_structured_output=False,
-                supports_data_gen=False,
                 provider_options={"model": "meta-llama/llama-3.2-11b-vision-instruct"},
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 supports_structured_output=False,
                 supports_data_gen=False,
                 provider_options={"model": "llama3.2-vision"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p2-11b-vision-instruct"
+                },
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
             ),
         ],
     ),
@@ -396,15 +477,28 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                supports_structured_output=False,
-                supports_data_gen=False,
                 provider_options={"model": "meta-llama/llama-3.2-90b-vision-instruct"},
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
-                supports_structured_output=False,
-                supports_data_gen=False,
                 provider_options={"model": "llama3.2-vision:90b"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p2-90b-vision-instruct"
+                },
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
             ),
         ],
     ),
@@ -426,6 +520,15 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 provider_options={"model": "microsoft/phi-3.5-mini-128k-instruct"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                supports_structured_output=False,
+                supports_data_gen=False,
+                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
+                provider_options={
+                    "model": "accounts/fireworks/models/phi-3-vision-128k-instruct"
+                },
             ),
         ],
     ),
@@ -465,6 +568,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 provider_options={"model": "google/gemma-2-9b-it"},
             ),
+            # fireworks AI errors - not allowing system role. Exclude until resolved.
         ],
     ),
     # Gemma 2 27b
@@ -488,290 +592,100 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Mixtral 8x7B
+    KilnModel(
+        family=ModelFamily.mixtral,
+        name=ModelName.mixtral_8x7b,
+        friendly_name="Mixtral 8x7B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                provider_options={
+                    "model": "accounts/fireworks/models/mixtral-8x7b-instruct-hf",
+                },
+                provider_finetune_id="accounts/fireworks/models/mixtral-8x7b-instruct-hf",
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                provider_options={"model": "mistralai/mixtral-8x7b-instruct"},
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                supports_structured_output=False,
+                supports_data_gen=False,
+                provider_options={"model": "mixtral"},
+            ),
+        ],
+    ),
+    # Qwen 2.5 7B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_7b,
+        friendly_name="Qwen 2.5 7B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                provider_options={"model": "qwen/qwen-2.5-7b-instruct"},
+                # Tool calls not supported. JSON doesn't error, but fails.
+                supports_structured_output=False,
+                supports_data_gen=False,
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                provider_options={"model": "qwen2.5"},
+            ),
+        ],
+    ),
+    # Qwen 2.5 72B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_72b,
+        friendly_name="Qwen 2.5 72B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                provider_options={"model": "qwen/qwen-2.5-72b-instruct"},
+                # Not consistent with structure data. Works sometimes but not often
+                supports_structured_output=False,
+                supports_data_gen=False,
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                provider_options={"model": "qwen2.5:72b"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                provider_options={
+                    "model": "accounts/fireworks/models/qwen2p5-72b-instruct"
+                },
+                # Fireworks will start tuning, but it never finishes.
+                # provider_finetune_id="accounts/fireworks/models/qwen2p5-72b-instruct",
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
+            ),
+        ],
+    ),
 ]
-
-
-def get_model_and_provider(
-    model_name: str, provider_name: str
-) -> tuple[KilnModel | None, KilnModelProvider | None]:
-    model = next(filter(lambda m: m.name == model_name, built_in_models), None)
-    if model is None:
-        return None, None
-    provider = next(filter(lambda p: p.name == provider_name, model.providers), None)
-    # all or nothing
-    if provider is None or model is None:
-        return None, None
-    return model, provider
-
-
-def provider_name_from_id(id: str) -> str:
-    """
-    Converts a provider ID to its human-readable name.
-
-    Args:
-        id: The provider identifier string
-
-    Returns:
-        The human-readable name of the provider
-
-    Raises:
-        ValueError: If the provider ID is invalid or unhandled
-    """
-    if id in ModelProviderName.__members__:
-        enum_id = ModelProviderName(id)
-        match enum_id:
-            case ModelProviderName.amazon_bedrock:
-                return "Amazon Bedrock"
-            case ModelProviderName.openrouter:
-                return "OpenRouter"
-            case ModelProviderName.groq:
-                return "Groq"
-            case ModelProviderName.ollama:
-                return "Ollama"
-            case ModelProviderName.openai:
-                return "OpenAI"
-            case _:
-                # triggers pyright warning if I miss a case
-                raise_exhaustive_error(enum_id)
-
-    return "Unknown provider: " + id
-
-
-def raise_exhaustive_error(value: NoReturn) -> NoReturn:
-    raise ValueError(f"Unhandled enum value: {value}")
-
-
-@dataclass
-class ModelProviderWarning:
-    required_config_keys: List[str]
-    message: str
-
-
-provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
-    ModelProviderName.amazon_bedrock: ModelProviderWarning(
-        required_config_keys=["bedrock_access_key", "bedrock_secret_key"],
-        message="Attempted to use Amazon Bedrock without an access key and secret set. \nGet your keys from https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/overview",
-    ),
-    ModelProviderName.openrouter: ModelProviderWarning(
-        required_config_keys=["open_router_api_key"],
-        message="Attempted to use OpenRouter without an API key set. \nGet your API key from https://openrouter.ai/settings/keys",
-    ),
-    ModelProviderName.groq: ModelProviderWarning(
-        required_config_keys=["groq_api_key"],
-        message="Attempted to use Groq without an API key set. \nGet your API key from https://console.groq.com/keys",
-    ),
-    ModelProviderName.openai: ModelProviderWarning(
-        required_config_keys=["open_ai_api_key"],
-        message="Attempted to use OpenAI without an API key set. \nGet your API key from https://platform.openai.com/account/api-keys",
-    ),
-}
-
-
-def get_config_value(key: str):
-    try:
-        return Config.shared().__getattr__(key)
-    except AttributeError:
-        return None
-
-
-def check_provider_warnings(provider_name: ModelProviderName):
-    """
-    Validates that required configuration is present for a given provider.
-
-    Args:
-        provider_name: The provider to check
-
-    Raises:
-        ValueError: If required configuration keys are missing
-    """
-    warning_check = provider_warnings.get(provider_name)
-    if warning_check is None:
-        return
-    for key in warning_check.required_config_keys:
-        if get_config_value(key) is None:
-            raise ValueError(warning_check.message)
-
-
-async def langchain_model_from(
-    name: str, provider_name: str | None = None
-) -> BaseChatModel:
-    """
-    Creates a LangChain chat model instance for the specified model and provider.
-
-    Args:
-        name: The name of the model to instantiate
-        provider_name: Optional specific provider to use (defaults to first available)
-
-    Returns:
-        A configured LangChain chat model instance
-
-    Raises:
-        ValueError: If the model/provider combination is invalid or misconfigured
-    """
-    if name not in ModelName.__members__:
-        raise ValueError(f"Invalid name: {name}")
-
-    # Select the model from built_in_models using the name
-    model = next(filter(lambda m: m.name == name, built_in_models))
-    if model is None:
-        raise ValueError(f"Model {name} not found")
-
-    # If a provider is provided, select the provider from the model's provider_config
-    provider: KilnModelProvider | None = None
-    if model.providers is None or len(model.providers) == 0:
-        raise ValueError(f"Model {name} has no providers")
-    elif provider_name is None:
-        # TODO: priority order
-        provider = model.providers[0]
-    else:
-        provider = next(
-            filter(lambda p: p.name == provider_name, model.providers), None
-        )
-    if provider is None:
-        raise ValueError(f"Provider {provider_name} not found for model {name}")
-
-    check_provider_warnings(provider.name)
-
-    if provider.name == ModelProviderName.openai:
-        api_key = Config.shared().open_ai_api_key
-        return ChatOpenAI(**provider.provider_options, openai_api_key=api_key)  # type: ignore[arg-type]
-    elif provider.name == ModelProviderName.groq:
-        api_key = Config.shared().groq_api_key
-        if api_key is None:
-            raise ValueError(
-                "Attempted to use Groq without an API key set. "
-                "Get your API key from https://console.groq.com/keys"
-            )
-        return ChatGroq(**provider.provider_options, groq_api_key=api_key)  # type: ignore[arg-type]
-    elif provider.name == ModelProviderName.amazon_bedrock:
-        api_key = Config.shared().bedrock_access_key
-        secret_key = Config.shared().bedrock_secret_key
-        # langchain doesn't allow passing these, so ugly hack to set env vars
-        os.environ["AWS_ACCESS_KEY_ID"] = api_key
-        os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
-        return ChatBedrockConverse(
-            **provider.provider_options,
-        )
-    elif provider.name == ModelProviderName.ollama:
-        # Ollama model naming is pretty flexible. We try a few versions of the model name
-        potential_model_names = []
-        if "model" in provider.provider_options:
-            potential_model_names.append(provider.provider_options["model"])
-        if "model_aliases" in provider.provider_options:
-            potential_model_names.extend(provider.provider_options["model_aliases"])
-
-        # Get the list of models Ollama supports
-        ollama_connection = await get_ollama_connection()
-        if ollama_connection is None:
-            raise ValueError("Failed to connect to Ollama. Ensure Ollama is running.")
-
-        for model_name in potential_model_names:
-            if ollama_model_supported(ollama_connection, model_name):
-                return ChatOllama(model=model_name, base_url=ollama_base_url())
-
-        raise ValueError(f"Model {name} not installed on Ollama")
-    elif provider.name == ModelProviderName.openrouter:
-        api_key = Config.shared().open_router_api_key
-        base_url = getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
-        return ChatOpenAI(
-            **provider.provider_options,
-            openai_api_key=api_key,  # type: ignore[arg-type]
-            openai_api_base=base_url,  # type: ignore[arg-type]
-            default_headers={
-                "HTTP-Referer": "https://getkiln.ai/openrouter",
-                "X-Title": "KilnAI",
-            },
-        )
-    else:
-        raise ValueError(f"Invalid model or provider: {name} - {provider_name}")
-
-
-def ollama_base_url() -> str:
-    """
-    Gets the base URL for Ollama API connections.
-
-    Returns:
-        The base URL to use for Ollama API calls, using environment variable if set
-        or falling back to localhost default
-    """
-    env_base_url = os.getenv("OLLAMA_BASE_URL")
-    if env_base_url is not None:
-        return env_base_url
-    return "http://localhost:11434"
-
-
-async def ollama_online() -> bool:
-    """
-    Checks if the Ollama service is available and responding.
-
-    Returns:
-        True if Ollama is available and responding, False otherwise
-    """
-    try:
-        httpx.get(ollama_base_url() + "/api/tags")
-    except httpx.RequestError:
-        return False
-    return True
-
-
-class OllamaConnection(BaseModel):
-    message: str
-    models: List[str]
-
-
-# Parse the Ollama /api/tags response
-def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
-    # Build a list of models we support for Ollama from the built-in model list
-    supported_ollama_models = [
-        provider.provider_options["model"]
-        for model in built_in_models
-        for provider in model.providers
-        if provider.name == ModelProviderName.ollama
-    ]
-    # Append model_aliases to supported_ollama_models
-    supported_ollama_models.extend(
-        [
-            alias
-            for model in built_in_models
-            for provider in model.providers
-            for alias in provider.provider_options.get("model_aliases", [])
-        ]
-    )
-
-    if "models" in tags:
-        models = tags["models"]
-        if isinstance(models, list):
-            model_names = [model["model"] for model in models]
-            available_supported_models = [
-                model
-                for model in model_names
-                if model in supported_ollama_models
-                or model in [f"{m}:latest" for m in supported_ollama_models]
-            ]
-            if available_supported_models:
-                return OllamaConnection(
-                    message="Ollama connected",
-                    models=available_supported_models,
-                )
-
-    return OllamaConnection(
-        message="Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'.",
-        models=[],
-    )
-
-
-async def get_ollama_connection() -> OllamaConnection | None:
-    """
-    Gets the connection status for Ollama.
-    """
-    try:
-        tags = requests.get(ollama_base_url() + "/api/tags", timeout=5).json()
-
-    except Exception:
-        return None
-
-    return parse_ollama_tags(tags)
-
-
-def ollama_model_supported(conn: OllamaConnection, model_name: str) -> bool:
-    return model_name in conn.models or f"{model_name}:latest" in conn.models

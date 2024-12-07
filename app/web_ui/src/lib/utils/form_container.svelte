@@ -13,6 +13,7 @@
   export let submitting = false
   export let saved = false
   export let keyboard_submit = true
+  export let submit_visible = true
   $: ui_saved_indicator = update_ui_saved_indicator(saved)
 
   function update_ui_saved_indicator(saved: boolean): boolean {
@@ -178,7 +179,7 @@
       type="submit"
       class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
         ? 'btn-success'
-        : ''}"
+        : ''} {submit_visible ? '' : 'hidden'}"
       on:click={validate_and_submit}
       disabled={submitting}
     >

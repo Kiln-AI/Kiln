@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
+from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -99,9 +100,7 @@ async def test_run_task_success(client, task_run_setup):
 
     with (
         patch("kiln_server.run_api.project_from_id") as mock_project_from_id,
-        patch.object(
-            LangChainPromptAdapter, "invoke", new_callable=AsyncMock
-        ) as mock_invoke,
+        patch.object(LangchainAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
         patch("kiln_ai.utils.config.Config.shared") as MockConfig,
     ):
         mock_project_from_id.return_value = project
@@ -130,9 +129,7 @@ async def test_run_task_structured_output(client, task_run_setup):
 
     with (
         patch("kiln_server.run_api.project_from_id") as mock_project_from_id,
-        patch.object(
-            LangChainPromptAdapter, "invoke", new_callable=AsyncMock
-        ) as mock_invoke,
+        patch.object(LangchainAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
         patch("kiln_ai.utils.config.Config.shared") as MockConfig,
     ):
         mock_project_from_id.return_value = project
@@ -212,7 +209,7 @@ async def test_run_task_structured_input(client, task_run_setup):
         with (
             patch("kiln_server.run_api.project_from_id") as mock_project_from_id,
             patch.object(
-                LangChainPromptAdapter, "invoke", new_callable=AsyncMock
+                LangchainAdapter, "invoke", new_callable=AsyncMock
             ) as mock_invoke,
             patch("kiln_ai.utils.config.Config.shared") as MockConfig,
         ):

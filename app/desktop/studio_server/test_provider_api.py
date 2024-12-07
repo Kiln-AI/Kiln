@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -16,6 +16,7 @@ from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.provider_api import (
     OllamaConnection,
+    all_fine_tuned_models,
     available_ollama_models,
     connect_bedrock,
     connect_groq,
@@ -354,7 +355,7 @@ async def test_get_available_models(app, client):
 
     # Mock connect_ollama
     mock_ollama_connection = OllamaConnection(
-        message="Connected", models=["ollama_model1", "ollama_model2:latest"]
+        message="Connected", supported_models=["ollama_model1", "ollama_model2:latest"]
     )
 
     with (
@@ -388,6 +389,8 @@ async def test_get_available_models(app, client):
                     "name": "Model 2",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "task_filter": None,
+                    "untested_model": False,
                 }
             ],
         },
@@ -400,6 +403,8 @@ async def test_get_available_models(app, client):
                     "name": "Model 1",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "task_filter": None,
+                    "untested_model": False,
                 }
             ],
         },
@@ -412,6 +417,8 @@ async def test_get_available_models(app, client):
                     "name": "Model 2",
                     "supports_structured_output": False,
                     "supports_data_gen": False,
+                    "task_filter": None,
+                    "untested_model": False,
                 }
             ],
         },
@@ -461,7 +468,8 @@ async def test_get_available_models_ollama_exception(app, client):
         response = client.get("/api/available_models")
 
     assert response.status_code == 200
-    assert response.json() == [
+    json = response.json()
+    assert json == [
         {
             "provider_id": "openai",
             "provider_name": "OpenAI",
@@ -471,6 +479,8 @@ async def test_get_available_models_ollama_exception(app, client):
                     "name": "Model 1",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "task_filter": None,
+                    "untested_model": False,
                 }
             ],
         },
@@ -604,7 +614,9 @@ async def test_available_ollama_models():
 
     # Test successful connection
     mock_ollama_connection = OllamaConnection(
-        message="Connected", models=["llama2", "mistral:latest"]
+        message="Connected",
+        supported_models=["llama2", "mistral:latest"],
+        untested_models=["scosman-net"],
     )
 
     with (
@@ -619,21 +631,31 @@ async def test_available_ollama_models():
         assert result is not None
         assert result.provider_name == "Ollama"
         assert result.provider_id == ModelProviderName.ollama
-        assert len(result.models) == 2
+        assert len(result.models) == 3
 
         # Check first model
         assert result.models[0].id == "model1"
         assert result.models[0].name == "Model 1"
         assert result.models[0].supports_structured_output is True
+        assert result.models[0].untested_model is False
 
         # Check second model
         assert result.models[1].id == "model2"
         assert result.models[1].name == "Model 2"
         assert result.models[1].supports_structured_output is False
+        assert result.models[1].untested_model is False
+
+        # Check third model
+        assert result.models[2].id == "scosman-net"
+        assert result.models[2].name == "scosman-net"
+        assert result.models[2].supports_structured_output is False
+        assert result.models[2].untested_model is True
 
     # Test when no models match
     mock_ollama_connection = OllamaConnection(
-        message="Connected", models=["unknown-model"]
+        message="Connected",
+        supported_models=["unknown-model"],
+        untested_models=[],
     )
 
     with (
@@ -655,7 +677,9 @@ async def test_available_ollama_models():
         assert result is None
 
     # Test with empty models list
-    mock_ollama_connection = OllamaConnection(message="Connected", models=[])
+    mock_ollama_connection = OllamaConnection(
+        message="Connected", supported_models=[], untested_models=[]
+    )
 
     with (
         patch("app.desktop.studio_server.provider_api.built_in_models", test_models),
@@ -666,3 +690,81 @@ async def test_available_ollama_models():
     ):
         result = await available_ollama_models()
         assert result is None
+
+
+@patch("app.desktop.studio_server.provider_api.all_projects")
+def test_all_fine_tuned_models(mock_all_projects):
+    # Create mock projects, tasks, and fine-tunes
+    mock_fine_tune1 = Mock()
+    mock_fine_tune1.id = "ft1"
+    mock_fine_tune1.name = "Fine Tune 1"
+    mock_fine_tune1.fine_tune_model_id = "model1"
+    mock_fine_tune1.provider = ModelProviderName.openai
+
+    mock_fine_tune2 = Mock()
+    mock_fine_tune2.id = "ft2"
+    mock_fine_tune2.name = "Fine Tune 2"
+    mock_fine_tune2.fine_tune_model_id = "model2"
+    mock_fine_tune2.provider = ModelProviderName.openai
+
+    mock_fine_tune3 = Mock()
+    mock_fine_tune3.id = "ft3"
+    mock_fine_tune3.name = "Incomplete Fine Tune"
+    mock_fine_tune3.fine_tune_model_id = None  # Incomplete fine-tune
+    mock_fine_tune3.provider = ModelProviderName.openai
+
+    mock_task1 = Mock()
+    mock_task1.id = "task1"
+    mock_task1.finetunes.return_value = [mock_fine_tune1]
+
+    mock_task2 = Mock()
+    mock_task2.id = "task2"
+    mock_task2.finetunes.return_value = [mock_fine_tune2, mock_fine_tune3]
+
+    mock_project1 = Mock()
+    mock_project1.id = "proj1"
+    mock_project1.tasks.return_value = [mock_task1]
+
+    mock_project2 = Mock()
+    mock_project2.id = "proj2"
+    mock_project2.tasks.return_value = [mock_task2]
+
+    # Test case 1: Projects with fine-tuned models
+    mock_all_projects.return_value = [mock_project1, mock_project2]
+
+    result = all_fine_tuned_models()
+
+    assert result is not None
+    assert result.provider_name == "Fine Tuned Models"
+    assert result.provider_id == "kiln_fine_tune"
+    assert len(result.models) == 2  # Only completed fine-tunes should be included
+
+    # Verify first model details
+    assert result.models[0].id == "proj1::task1::ft1"
+    assert result.models[0].name == "Fine Tune 1 (OpenAI)"
+    assert result.models[0].supports_structured_output is True
+    assert result.models[0].supports_data_gen is True
+    assert result.models[0].task_filter == ["task1"]
+
+    # Verify second model details
+    assert result.models[1].id == "proj2::task2::ft2"
+    assert result.models[1].name == "Fine Tune 2 (OpenAI)"
+    assert result.models[1].supports_structured_output is True
+    assert result.models[1].supports_data_gen is True
+    assert result.models[1].task_filter == ["task2"]
+
+    # Test case 2: No projects
+    mock_all_projects.return_value = []
+
+    result = all_fine_tuned_models()
+    assert result is None
+
+    # Test case 3: Projects with no fine-tuned models
+    mock_task_empty = Mock()
+    mock_task_empty.finetunes.return_value = []
+    mock_project_empty = Mock()
+    mock_project_empty.tasks.return_value = [mock_task_empty]
+    mock_all_projects.return_value = [mock_project_empty]
+
+    result = all_fine_tuned_models()
+    assert result is None

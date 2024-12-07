@@ -2,7 +2,7 @@ from asyncio import Lock
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
-from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
+from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
 from kiln_ai.datamodel import Task, TaskRun
 from pydantic import BaseModel, ConfigDict
@@ -99,7 +99,7 @@ def connect_run_api(app: FastAPI):
                 detail=f"Unknown prompt method: {request.ui_prompt_method}",
             )
         prompt_builder = prompt_builder_class(task)
-        adapter = LangChainPromptAdapter(
+        adapter = adapter_for_task(
             task,
             model_name=request.model_name,
             provider=request.provider,

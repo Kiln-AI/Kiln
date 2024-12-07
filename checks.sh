@@ -39,8 +39,8 @@ else
     echo "Skipping Web UI: no files changed"
 fi
 
-echo "${headerStart}Running Python Tests${headerEnd}"
-python3 -m pytest -q .
-
 echo "${headerStart}Checking Types${headerEnd}"
 pyright .
+
+echo "${headerStart}Running Python Tests${headerEnd}"
+python3 -m pytest -q .

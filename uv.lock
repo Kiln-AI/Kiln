@@ -388,6 +388,22 @@ wheels = [
 ]
 
 [[package]]
+name = "fireworks-ai"
+version = "0.15.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "httpx-ws" },
+    { name = "pillow" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/f1/0bcc4debcae01f4afda52a24346302de24836046f9d40c98b4c9ca06ab5e/fireworks_ai-0.15.9.tar.gz", hash = "sha256:03f0cc16f1ce2c22103d06c737954154fc7a138b2122c3b243d3ff2d65ede65e", size = 90311 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/62/db/c7fde1e8d7dfb1eeffd977128c9f4b7a928bbc41a8bd49c4f12f80f52722/fireworks_ai-0.15.9-py3-none-any.whl", hash = "sha256:6f641c8bb587bbe1c165f00e89bcf20fc3607d0e627bee4ff58a97c56c3e2f44", size = 111629 },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -563,6 +579,30 @@ wheels = [
 ]
 
 [[package]]
+name = "httpx-sse"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4c/60/8f4281fa9bbf3c8034fd54c0e7412e66edbab6bc74c4996bd616f8d0406e/httpx-sse-0.4.0.tar.gz", hash = "sha256:1e81a3a3070ce322add1d3529ed42eb5f70817f45ed6ec915ab753f961139721", size = 12624 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/9b/a181f281f65d776426002f330c31849b86b31fc9d848db62e16f03ff739f/httpx_sse-0.4.0-py3-none-any.whl", hash = "sha256:f329af6eae57eaa2bdfd962b42524764af68075ea87370a2de920af5341e318f", size = 7819 },
+]
+
+[[package]]
+name = "httpx-ws"
+version = "0.6.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "httpcore" },
+    { name = "httpx" },
+    { name = "wsproto" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/55/4ee9f216bfda692e9739823e73765b7f66f088e6ac1de5fece14e87ca153/httpx_ws-0.6.2.tar.gz", hash = "sha256:b07446b9067a30f1012fa9851fdfd14207012cd657c485565884f90553d0854c", size = 23430 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/36/69a5a5da21f420ac67aaeafd963713db829ab1be307b0c5cbf80d846144b/httpx_ws-0.6.2-py3-none-any.whl", hash = "sha256:24f87427acb757ada200aeab016cc429fa0bc71b0730429c37634867194e305c", size = 14138 },
+]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -716,16 +756,18 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "coverage" },
     { name = "jsonschema" },
     { name = "langchain" },
     { name = "langchain-aws" },
+    { name = "langchain-fireworks" },
     { name = "langchain-groq" },
     { name = "langchain-ollama" },
     { name = "langchain-openai" },
+    { name = "openai" },
     { name = "pdoc" },
     { name = "pydantic" },
     { name = "pytest-cov" },
@@ -749,9 +791,11 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "langchain", specifier = ">=0.3.5" },
     { name = "langchain-aws", specifier = ">=0.2.4" },
+    { name = "langchain-fireworks", specifier = ">=0.2.5" },
     { name = "langchain-groq", specifier = ">=0.2.0" },
     { name = "langchain-ollama", specifier = ">=0.2.0" },
     { name = "langchain-openai", specifier = ">=0.2.4" },
+    { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
     { name = "pydantic", specifier = ">=2.9.2" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
@@ -907,7 +951,7 @@ wheels = [
 
 [[package]]
 name = "langchain-core"
-version = "0.3.14"
+version = "0.3.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonpatch" },
@@ -918,9 +962,25 @@ dependencies = [
     { name = "tenacity" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/d6/5128d9b885b070ad6e60a7719ab0d68fc2cd16d41797a195b03689256b7a/langchain_core-0.3.14.tar.gz", hash = "sha256:cef68958d59d0970a89c778004dfa7d4559a89139abbf8b0e348e18511792e84", size = 327895 }
+sdist = { url = "https://files.pythonhosted.org/packages/64/0c/9388d0959dff69fbca6e0f79076811cb1a494e06d04c8a880079228edded/langchain_core-0.3.21.tar.gz", hash = "sha256:561b52b258ffa50a9fb11d7a1940ebfd915654d1ec95b35e81dfd5ee84143411", size = 328597 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/e8/8c938d6aa99b978e6e6f372282474b37965459c45998d2413ef08953f517/langchain_core-0.3.14-py3-none-any.whl", hash = "sha256:3b1e031820ef60af7134ffb7fd15393c5be87031b4288cc1978130f4f468dca8", size = 408715 },
+    { url = "https://files.pythonhosted.org/packages/9b/50/e0bd90fc481d1cc8c2039ad6161b20fc8e396a7cba6064a4f1e8e5afea62/langchain_core-0.3.21-py3-none-any.whl", hash = "sha256:7e723dff80946a1198976c6876fea8326dc82566ef9bcb5f8d9188f738733665", size = 409467 },
+]
+
+[[package]]
+name = "langchain-fireworks"
+version = "0.2.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "fireworks-ai" },
+    { name = "langchain-core" },
+    { name = "openai" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/88/e3/b2e1566ba8a7201f80679fda6e3368956c048c381a3f6850c4e887b3f32f/langchain_fireworks-0.2.5.tar.gz", hash = "sha256:878d0dcd975f8d24ee1caf3d4cc6ccad0391352585ab81a8b33f8992bba6ced5", size = 16783 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/96/26df7bc1d67a94b26ec04017abeda9c82688eaa891c1821cdc151c696e78/langchain_fireworks-0.2.5-py3-none-any.whl", hash = "sha256:a37e9fada74a428040e676e14a6438b97db4af807cb1404001cec4def492f129", size = 17423 },
 ]
 
 [[package]]
@@ -2157,6 +2217,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e0/fc/1d785078eefd6945f3e5bab5c076e4230698046231eb0f3747bc5c8fa992/uvicorn-0.32.0.tar.gz", hash = "sha256:f78b36b143c16f54ccdb8190d0a26b5f1901fe5a3c777e1ab29f26391af8551e", size = 77564 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/14/78bd0e95dd2444b6caacbca2b730671d4295ccb628ef58b81bee903629df/uvicorn-0.32.0-py3-none-any.whl", hash = "sha256:60b8f3a5ac027dcd31448f411ced12b5ef452c646f76f02f8cc3f25d8d26fd82", size = 63723 },
+]
+
+[[package]]
+name = "wsproto"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "h11" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/4a/44d3c295350d776427904d73c189e10aeae66d7f555bb2feee16d1e4ba5a/wsproto-1.2.0.tar.gz", hash = "sha256:ad565f26ecb92588a3e43bc3d96164de84cd9902482b130d0ddbaa9664a85065", size = 53425 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/58/e860788190eba3bcce367f74d29c4675466ce8dddfba85f7827588416f01/wsproto-1.2.0-py3-none-any.whl", hash = "sha256:b9acddd652b585d75b20477888c56642fdade28bdfd3579aa24a4d2c037dd736", size = 24226 },
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-# kiln_ai
+# Kiln AI Core Library
 
 <p align="center">
     <picture>

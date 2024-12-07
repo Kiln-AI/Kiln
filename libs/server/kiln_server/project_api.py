@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import Project
+from kiln_ai.datamodel.registry import project_from_id as project_from_id_core
 from kiln_ai.utils.config import Config
 
 
@@ -12,21 +13,13 @@ def default_project_path():
 
 
 def project_from_id(project_id: str) -> Project:
-    project_paths = Config.shared().projects
-    if project_paths is not None:
-        for project_path in project_paths:
-            try:
-                project = Project.load_from_file(project_path)
-                if project.id == project_id:
-                    return project
-            except Exception:
-                # deleted files are possible continue with the rest
-                continue
-
-    raise HTTPException(
-        status_code=404,
-        detail=f"Project not found. ID: {project_id}",
-    )
+    project = project_from_id_core(project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project not found. ID: {project_id}",
+        )
+    return project
 
 
 def add_project_to_config(project_path: str):

@@ -23,7 +23,7 @@
   let prompt_method = "basic"
   let model: string = $ui_state.selected_model
 
-  $: model_name = model ? model.split("/")[1] : ""
+  $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null

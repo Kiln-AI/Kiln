@@ -5,10 +5,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.base_adapter import RunOutput
-from kiln_ai.adapters.langchain_adapters import (
-    LangChainPromptAdapter,
-)
+from kiln_ai.adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.repair.repair_task import (
     RepairTaskInput,
     RepairTaskRun,
@@ -60,7 +59,7 @@ json_joke_schema = """{
 
 @pytest.fixture
 def sample_task(tmp_path):
-    task_path = tmp_path / "task.json"
+    task_path = tmp_path / "task.kiln"
     task = Task(
         name="Joke Generator",
         path=task_path,
@@ -190,9 +189,7 @@ async def test_live_run(sample_task, sample_task_run, sample_repair_data):
     repair_task_input = RepairTaskRun.build_repair_task_input(**sample_repair_data)
     assert isinstance(repair_task_input, RepairTaskInput)
 
-    adapter = LangChainPromptAdapter(
-        repair_task, model_name="llama_3_1_8b", provider="groq"
-    )
+    adapter = adapter_for_task(repair_task, model_name="llama_3_1_8b", provider="groq")
 
     run = await adapter.invoke(repair_task_input.model_dump())
     assert run is not None
@@ -220,14 +217,12 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "rating": 8,
     }
 
-    with patch.object(
-        LangChainPromptAdapter, "_run", new_callable=AsyncMock
-    ) as mock_run:
+    with patch.object(LangchainAdapter, "_run", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = RunOutput(
             output=mocked_output, intermediate_outputs=None
         )
 
-        adapter = LangChainPromptAdapter(
+        adapter = adapter_for_task(
             repair_task, model_name="llama_3_1_8b", provider="groq"
         )
 

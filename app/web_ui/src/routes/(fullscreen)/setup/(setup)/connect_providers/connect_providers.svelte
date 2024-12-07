@@ -1,6 +1,8 @@
 <script lang="ts">
   import { fade } from "svelte/transition"
   import { onMount } from "svelte"
+  import { client } from "$lib/api_client"
+  import type { OllamaConnection } from "$lib/types"
 
   type Provider = {
     name: string
@@ -29,7 +31,7 @@
     {
       name: "OpenAI",
       id: "openai",
-      description: "The OG home to GPT-4 and more.",
+      description: "The OG home to GPT-4 and more. Supports fine-tuning.",
       image: "/images/openai.svg",
       featured: false,
       api_key_steps: [
@@ -57,6 +59,20 @@
         "Create an API Key",
         "Copy the new key, paste it below and click 'Connect'",
       ],
+    },
+    {
+      name: "Fireworks AI",
+      id: "fireworks_ai",
+      description: "Open models (Llama, Phi), plus the ability to fine-tune.",
+      image: "/images/fireworks.svg",
+      api_key_steps: [
+        "Go to https://fireworks.ai/account/api-keys",
+        "Create a new API Key and paste it below",
+        "Go to https://fireworks.ai/account/profile",
+        "Copy the Account ID, paste it below, and click 'Connect'",
+      ],
+      featured: false,
+      api_key_fields: ["API Key", "Account ID"],
     },
     {
       name: "Amazon Bedrock",
@@ -113,6 +129,12 @@
       error: null,
       custom_description: null,
     },
+    fireworks_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
   }
 
   export let has_connected_providers = false
@@ -139,37 +161,58 @@
   }
 
   const connect_ollama = async (user_initated: boolean = true) => {
+    status.ollama.connected = false
     status.ollama.connecting = user_initated
-    let data: { message: string | null; models: [] | null }
-    let res: Response
+
+    let data: OllamaConnection | null = null
     try {
-      res = await fetch("http://localhost:8757/api/provider/ollama/connect", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      })
-      data = await res.json()
+      const { data: req_data, error: req_error } = await client.GET(
+        "/api/provider/ollama/connect",
+      )
+      if (req_error) {
+        throw req_error
+      }
+      data = req_data
     } catch (e) {
-      status.ollama.error = "Failed to connect. Ensure Ollama app is running."
+      if (
+        e &&
+        typeof e === "object" &&
+        "message" in e &&
+        typeof e.message === "string"
+      ) {
+        status.ollama.error = e.message
+      } else {
+        status.ollama.error = "Failed to connect. Ensure Ollama app is running."
+      }
+      status.ollama.connected = false
       return
     } finally {
       status.ollama.connecting = false
     }
-    if (!res || res.status !== 200 || !data) {
-      status.ollama.error = data.message || "Failed to connect to Ollama"
-      return
-    }
-    if (!data.models || data.models.length === 0) {
-      status.ollama.error = "Ollama running, but no models available"
+    if (
+      data.supported_models.length === 0 &&
+      (!data.untested_models || data.untested_models.length === 0)
+    ) {
+      status.ollama.error =
+        "Ollama running, but no models available. Install some using ollama cli (e.g. 'ollama pull llama3.1')."
       return
     }
     status.ollama.error = null
     status.ollama.connected = true
+    const supported_models_str =
+      data.supported_models.length > 0
+        ? "The following supported models are available: " +
+          data.supported_models.join(", ") +
+          ". "
+        : "No supported models are installed -- we suggest installing some (e.g. 'ollama pull llama3.1'). "
+    const untested_models_str =
+      data.untested_models && data.untested_models.length > 0
+        ? "The following untested models are installed: " +
+          data.untested_models.join(", ") +
+          ". "
+        : ""
     status.ollama.custom_description =
-      "Ollama connected. The following supported models are available: " +
-      data.models.join(", ") +
-      "."
+      "Ollama connected. " + supported_models_str + untested_models_str
   }
 
   let api_key_issue = false
@@ -240,14 +283,14 @@
       if (data["groq_api_key"]) {
         status.groq.connected = true
       }
-      if (data["ollama_base_url"]) {
-        status.ollama.connected = true
-      }
       if (data["bedrock_access_key"] && data["bedrock_secret_key"]) {
         status.bedrock.connected = true
       }
       if (data["open_router_api_key"]) {
         status.openrouter.connected = true
+      }
+      if (data["fireworks_api_key"] && data["fireworks_account_id"]) {
+        status.fireworks_ai.connected = true
       }
     } catch (e) {
       console.error("check_existing_providers error", e)

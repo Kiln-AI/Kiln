@@ -116,7 +116,8 @@
       if (!model) {
         throw new KilnError("No model selected.", null)
       }
-      const [model_provider, model_name] = model.split("/")
+      const model_provider = model.split("/")[0]
+      const model_name = model.split("/").slice(1).join("/")
       if (!model_name || !model_provider) {
         throw new KilnError("Invalid model selected.", null)
       }
@@ -232,7 +233,8 @@
       if (!model) {
         throw new KilnError("No model selected.", null)
       }
-      const [model_provider, model_name] = model.split("/")
+      const model_provider = model.split("/")[0]
+      const model_name = model.split("/").slice(1).join("/")
       if (!model_name || !model_provider) {
         throw new KilnError("Invalid model selected.", null)
       }

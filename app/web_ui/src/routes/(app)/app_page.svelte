@@ -9,6 +9,7 @@
     label: string
     handler?: () => void
     href?: string
+    primary?: boolean
   }
 
   export let action_buttons: ActionButton[] = []
@@ -37,7 +38,9 @@
       <div>
         <button
           on:click={() => run_action_button(action_button)}
-          class="btn btn-xs md:btn-md md:px-6"
+          class="btn btn-xs md:btn-md md:px-6 {action_button.primary
+            ? 'btn-primary'
+            : ''}"
         >
           {action_button.label}
         </button>

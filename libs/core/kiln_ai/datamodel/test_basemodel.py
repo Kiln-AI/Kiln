@@ -5,7 +5,11 @@ from typing import Optional
 
 import pytest
 
-from kiln_ai.datamodel.basemodel import KilnBaseModel, KilnParentedModel
+from kiln_ai.datamodel.basemodel import (
+    KilnBaseModel,
+    KilnParentedModel,
+    string_to_valid_name,
+)
 
 
 @pytest.fixture
@@ -306,3 +310,27 @@ def test_delete_no_path():
     model = KilnBaseModel()
     with pytest.raises(ValueError, match="Cannot delete model because path is not set"):
         model.delete()
+
+
+def test_string_to_valid_name():
+    # Test basic valid strings remain unchanged
+    assert string_to_valid_name("Hello World") == "Hello World"
+    assert string_to_valid_name("Test-123") == "Test-123"
+    assert string_to_valid_name("my_file_name") == "my_file_name"
+
+    # Test invalid characters are replaced
+    assert string_to_valid_name("Hello@World!") == "Hello_World"
+    assert string_to_valid_name("File.name.txt") == "File_name_txt"
+    assert string_to_valid_name("Special#$%Chars") == "Special_Chars"
+
+    # Test consecutive invalid characters
+    assert string_to_valid_name("multiple!!!symbols") == "multiple_symbols"
+    assert string_to_valid_name("path/to/file") == "path_to_file"
+
+    # Test leading/trailing special characters
+    assert string_to_valid_name("__test__") == "test"
+    assert string_to_valid_name("...test...") == "test"
+
+    # Test empty string and whitespace
+    assert string_to_valid_name("") == ""
+    assert string_to_valid_name("   ") == ""

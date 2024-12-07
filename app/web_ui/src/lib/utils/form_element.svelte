@@ -141,16 +141,20 @@
           {#each select_options_grouped as group}
             <optgroup label={group[0]}>
               {#each group[1] as option}
-                <option value={option[0]} selected={option[0] === value}
-                  >{option[1]}</option
+                <option
+                  value={option[0]}
+                  disabled={("" + option[0]).startsWith("disabled")}
+                  selected={option[0] === value}>{option[1]}</option
                 >
               {/each}
             </optgroup>
           {/each}
         {:else}
           {#each select_options as option}
-            <option value={option[0]} selected={option[0] === value}
-              >{option[1]}</option
+            <option
+              value={option[0]}
+              disabled={("" + option[0]).startsWith("disabled")}
+              selected={option[0] === value}>{option[1]}</option
             >
           {/each}
         {/if}

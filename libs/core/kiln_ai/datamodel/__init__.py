@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
+import random
 from enum import Enum, IntEnum
-from typing import TYPE_CHECKING, Dict, List, Type, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, Type, Union
 
 import jsonschema
 import jsonschema.exceptions
@@ -14,6 +16,8 @@ from kiln_ai.datamodel.json_schema import JsonObjectSchema, schema_from_json_str
 from .basemodel import (
     ID_FIELD,
     ID_TYPE,
+    NAME_FIELD,
+    SHORT_NAME_FIELD,
     KilnBaseModel,
     KilnParentedModel,
     KilnParentModel,
@@ -40,26 +44,6 @@ __all__ = [
     "TaskRequirement",
     "TaskDeterminism",
 ]
-
-
-# Conventions:
-# 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
-# 2) Descrptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
-
-# Filename compatible names
-NAME_REGEX = r"^[A-Za-z0-9 _-]+$"
-NAME_FIELD = Field(
-    min_length=1,
-    max_length=120,
-    pattern=NAME_REGEX,
-    description="A name for this entity.",
-)
-SHORT_NAME_FIELD = Field(
-    min_length=1,
-    max_length=32,
-    pattern=NAME_REGEX,
-    description="A name for this entity",
-)
 
 
 class Priority(IntEnum):
@@ -154,6 +138,71 @@ class TaskOutput(KilnBaseModel):
             except jsonschema.exceptions.ValidationError as e:
                 raise ValueError(f"Output does not match task output schema: {e}")
         return self
+
+
+class FineTuneStatusType(str, Enum):
+    """
+    The status type of a fine-tune (running, completed, failed, etc).
+    """
+
+    unknown = "unknown"  # server error
+    pending = "pending"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+
+class Finetune(KilnParentedModel):
+    name: str = NAME_FIELD
+    description: str | None = Field(
+        default=None,
+        description="A description of the fine-tune for you and your team. Not used in training.",
+    )
+    provider: str = Field(
+        description="The provider to use for the fine-tune (e.g. 'openai')."
+    )
+    base_model_id: str = Field(
+        description="The id of the base model to use for the fine-tune. This string relates to the provider's IDs for their own models, not Kiln IDs."
+    )
+    provider_id: str | None = Field(
+        default=None,
+        description="The ID of the fine-tune job on the provider's side. May not be the same as the fine_tune_model_id.",
+    )
+    fine_tune_model_id: str | None = Field(
+        default=None,
+        description="The ID of the fine-tuned model on the provider's side. May not be the same as the provider_id.",
+    )
+    dataset_split_id: str = Field(
+        description="The ID of the dataset split to use for this fine-tune.",
+    )
+    train_split_name: str = Field(
+        default="train",
+        description="The name of the training split to use for this fine-tune.",
+    )
+    validation_split_name: str | None = Field(
+        default=None,
+        description="The name of the validation split to use for this fine-tune. Optional.",
+    )
+    parameters: dict[str, str | int | float | bool] = Field(
+        default={},
+        description="The parameters to use for this fine-tune. These are provider-specific.",
+    )
+    system_message: str = Field(
+        description="The system message to use for this fine-tune.",
+    )
+    latest_status: FineTuneStatusType = Field(
+        default=FineTuneStatusType.unknown,
+        description="The latest known status of this fine-tune. Not updated in real time.",
+    )
+    properties: Dict[str, str | int | float] = Field(
+        default={},
+        description="Properties of the fine-tune. Different providers may use different properties.",
+    )
+
+    def parent_task(self) -> Task | None:
+        if not isinstance(self.parent, Task):
+            return None
+        return self.parent
 
 
 class DataSourceType(str, Enum):
@@ -344,6 +393,160 @@ class TaskRun(KilnParentedModel):
         return self
 
 
+# Define the type alias for clarity
+DatasetFilter = Callable[[TaskRun], bool]
+
+
+def AllDatasetFilter(_: TaskRun) -> bool:
+    return True
+
+
+def HighRatingDatasetFilter(task_run: TaskRun) -> bool:
+    if task_run.output is None or task_run.output.rating is None:
+        return False
+    return task_run.output.rating.is_high_quality()
+
+
+class DatasetSplitDefinition(BaseModel):
+    """
+    A definition of a split in a dataset.
+
+    Example: name="train", description="The training set", percentage=0.8 (80% of the dataset)
+    """
+
+    name: str = NAME_FIELD
+    description: str | None = Field(
+        default=None,
+        description="A description of the dataset for you and your team. Not used in training.",
+    )
+    percentage: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="The percentage of the dataset that this split represents (between 0 and 1).",
+    )
+
+
+AllSplitDefinition: list[DatasetSplitDefinition] = [
+    DatasetSplitDefinition(name="all", percentage=1.0)
+]
+Train80Test20SplitDefinition: list[DatasetSplitDefinition] = [
+    DatasetSplitDefinition(name="train", percentage=0.8),
+    DatasetSplitDefinition(name="test", percentage=0.2),
+]
+Train60Test20Val20SplitDefinition: list[DatasetSplitDefinition] = [
+    DatasetSplitDefinition(name="train", percentage=0.6),
+    DatasetSplitDefinition(name="test", percentage=0.2),
+    DatasetSplitDefinition(name="val", percentage=0.2),
+]
+
+
+class DatasetSplit(KilnParentedModel):
+    """
+    A collection of task runs, with optional splits (train, test, validation).
+
+    Used to freeze a dataset into train/test/validation splits for repeatable fine-tuning or other tasks.
+
+    Maintains a list of IDs for each split, to avoid data duplication.
+    """
+
+    name: str = NAME_FIELD
+    description: str | None = Field(
+        default=None,
+        description="A description of the dataset for you and your team. Not used in training.",
+    )
+    splits: list[DatasetSplitDefinition] = Field(
+        default_factory=list,
+        description="The splits in the dataset.",
+    )
+    split_contents: dict[str, list[str]] = Field(
+        description="The contents of each split in the dataset. The key is the split name, and the value is a list of task run IDs.",
+    )
+
+    @model_validator(mode="after")
+    def validate_split_percentages(self) -> "DatasetSplit":
+        total = sum(split.percentage for split in self.splits)
+        if not math.isclose(total, 1.0, rel_tol=1e-9):
+            raise ValueError(f"The sum of split percentages must be 1.0 (got {total})")
+        return self
+
+    @classmethod
+    def from_task(
+        cls,
+        name: str,
+        task: "Task",
+        splits: list[DatasetSplitDefinition],
+        filter: DatasetFilter = AllDatasetFilter,
+        description: str | None = None,
+    ):
+        """
+        Build a dataset split from a task.
+        """
+        split_contents = cls.build_split_contents(task, splits, filter)
+        return cls(
+            parent=task,
+            name=name,
+            description=description,
+            splits=splits,
+            split_contents=split_contents,
+        )
+
+    @classmethod
+    def build_split_contents(
+        cls,
+        task: "Task",
+        splits: list[DatasetSplitDefinition],
+        filter: DatasetFilter,
+    ) -> dict[str, list[str]]:
+        valid_ids = []
+        for task_run in task.runs():
+            if filter(task_run):
+                valid_ids.append(task_run.id)
+
+        # Shuffle and split by split percentage
+        random.shuffle(valid_ids)
+        split_contents = {}
+        start_idx = 0
+        remaining_items = len(valid_ids)
+
+        # Handle all splits except the last one
+        for split in splits[:-1]:
+            split_size = round(len(valid_ids) * split.percentage)
+            split_contents[split.name] = valid_ids[start_idx : start_idx + split_size]
+            start_idx += split_size
+            remaining_items -= split_size
+
+        # Last split gets all remaining items (for rounding)
+        if splits:
+            split_contents[splits[-1].name] = valid_ids[start_idx:]
+
+        return split_contents
+
+    def parent_task(self) -> "Task | None":
+        # inline import to avoid circular import
+        from kiln_ai.datamodel import Task
+
+        if not isinstance(self.parent, Task):
+            return None
+        return self.parent
+
+    def missing_count(self) -> int:
+        """
+        Returns:
+            int: the number of task runs that have an ID persisted in this dataset split, but no longer exist in the dataset
+        """
+        parent = self.parent_task()
+        if parent is None:
+            raise ValueError("DatasetSplit has no parent task")
+
+        runs = parent.runs()
+        all_ids = set(run.id for run in runs)
+        all_ids_in_splits = set()
+        for ids in self.split_contents.values():
+            all_ids_in_splits.update(ids)
+        missing = all_ids_in_splits - all_ids
+        return len(missing)
+
+
 class TaskRequirement(BaseModel):
     """
     Defines a specific requirement that should be met by task outputs.
@@ -376,7 +579,11 @@ class TaskDeterminism(str, Enum):
 class Task(
     KilnParentedModel,
     KilnParentModel,
-    parent_of={"runs": TaskRun},
+    parent_of={
+        "runs": TaskRun,
+        "dataset_splits": DatasetSplit,
+        "finetunes": Finetune,
+    },
 ):
     """
     Represents a specific task to be performed, with associated requirements and validation rules.
@@ -415,6 +622,12 @@ class Task(
     # Needed for typechecking. TODO P2: fix this in KilnParentModel
     def runs(self) -> list[TaskRun]:
         return super().runs()  # type: ignore
+
+    def dataset_splits(self) -> list[DatasetSplit]:
+        return super().dataset_splits()  # type: ignore
+
+    def finetunes(self) -> list[Finetune]:
+        return super().finetunes()  # type: ignore
 
 
 class Project(KilnParentModel, parent_of={"tasks": Task}):

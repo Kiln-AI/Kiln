@@ -22,6 +22,7 @@
     Prompts,
     Generate,
     Run,
+    FineTune,
     None,
   }
 
@@ -63,6 +64,8 @@
       section = Section.Run
     } else if (path_start("/generate", $page.url.pathname)) {
       section = Section.Generate
+    } else if (path_start("/fine_tune", $page.url.pathname)) {
+      section = Section.FineTune
     } else if (path_start("/prompts", $page.url.pathname)) {
       section = Section.Prompts
     } else {
@@ -81,7 +84,7 @@
 <div class="drawer lg:drawer-open">
   <input id="main-drawer" type="checkbox" class="drawer-toggle" />
   <div class="drawer-content flex flex-col lg:mr-4 min-h-screen">
-    <div class="flex-none h-12">
+    <div class="flex-none h-12 lg:h-6">
       <div class="flex flex-row h-full items-center">
         <label for="main-drawer" class="drawer-button lg:hidden">
           <svg
@@ -101,7 +104,9 @@
       </div>
     </div>
 
-    <div class="flex-grow rounded-3xl bg-base-100 shadow-lg px-12 py-8 mb-4">
+    <div
+      class="flex-grow rounded-3xl bg-base-100 shadow-md px-12 py-8 mb-4 border"
+    >
       <slot />
     </div>
   </div>
@@ -120,13 +125,13 @@
           &#x2715;
         </label>
       </li>
-      <div class="mb-4 ml-4 mt-4">
+      <div class="mb-4 ml-4 mt-2">
         <div class="flex flex-row items-center mx-[-5px] p-0">
           <img src="/images/animated_logo.svg" alt="logo" class="w-8 h-8" />
           <div class="text-lg font-bold ml-1">Kiln AI</div>
         </div>
       </div>
-      <li class="mb-4 xl:mb-6">
+      <li class="mb-4">
         <details id="task-menu">
           <summary>
             <div class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
@@ -233,6 +238,84 @@
             />
           </svg>
           Generate</a
+        >
+      </li>
+
+      <li class="menu-lg">
+        <a
+          href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+          class={section == Section.FineTune ? "active" : ""}
+        >
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+          <svg
+            class="w-6 h-6 mr-2"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="2"
+              transform="rotate(180 12 12)"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <circle
+              cx="20"
+              cy="14"
+              r="2"
+              transform="rotate(180 20 14)"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <circle
+              cx="2"
+              cy="2"
+              r="2"
+              transform="matrix(-1 8.74228e-08 8.74228e-08 1 6 8)"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <path
+              d="M12 8L12 5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M20 10L20 5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M4 14L4 19"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M12 19L12 16"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M20 19L20 18"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M4 5L4 6"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+
+          Fine Tune</a
         >
       </li>
 

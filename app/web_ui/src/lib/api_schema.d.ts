@@ -269,10 +269,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /** Connect Ollama Api */
-        post: operations["connect_ollama_api_api_provider_ollama_connect_post"];
+        get: operations["connect_ollama_api_api_provider_ollama_connect_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -433,6 +433,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/dataset_splits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dataset Splits */
+        get: operations["dataset_splits_api_projects__project_id__tasks__task_id__dataset_splits_get"];
+        put?: never;
+        /** Create Dataset Split */
+        post: operations["create_dataset_split_api_projects__project_id__tasks__task_id__dataset_splits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/finetunes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetunes */
+        get: operations["finetunes_api_projects__project_id__tasks__task_id__finetunes_get"];
+        put?: never;
+        /** Create Finetune */
+        post: operations["create_finetune_api_projects__project_id__tasks__task_id__finetunes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetune */
+        get: operations["finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/finetune_providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetune Providers */
+        get: operations["finetune_providers_api_finetune_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/finetune/hyperparameters/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetune Hyperparameters */
+        get: operations["finetune_hyperparameters_api_finetune_hyperparameters__provider_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/download_dataset_jsonl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Dataset Jsonl */
+        get: operations["download_dataset_jsonl_api_download_dataset_jsonl_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -445,6 +549,46 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["ModelDetails"][];
+        };
+        /**
+         * CreateDatasetSplitRequest
+         * @description Request to create a dataset split
+         */
+        CreateDatasetSplitRequest: {
+            dataset_split_type: components["schemas"]["DatasetSplitType"];
+            filter_type: components["schemas"]["DatasetFilterType"];
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /**
+         * CreateFinetuneRequest
+         * @description Request to create a finetune
+         */
+        CreateFinetuneRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Dataset Id */
+            dataset_id: string;
+            /** Train Split Name */
+            train_split_name: string;
+            /** Validation Split Name */
+            validation_split_name?: string | null;
+            /** Parameters */
+            parameters: {
+                [key: string]: string | number | boolean;
+            };
+            /** Provider */
+            provider: string;
+            /** Base Model Id */
+            base_model_id: string;
+            /** System Message Generator */
+            system_message_generator?: string | null;
+            /** Custom System Message */
+            custom_system_message?: string | null;
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -576,6 +720,251 @@ export interface components {
          * @enum {string}
          */
         DataSourceType: "human" | "synthetic";
+        /**
+         * DatasetFilterType
+         * @description Dataset filter types used in the API. Any filter style can be created in code.
+         * @enum {string}
+         */
+        DatasetFilterType: "all" | "high_rating";
+        /**
+         * DatasetSplit
+         * @description A collection of task runs, with optional splits (train, test, validation).
+         *
+         *     Used to freeze a dataset into train/test/validation splits for repeatable fine-tuning or other tasks.
+         *
+         *     Maintains a list of IDs for each split, to avoid data duplication.
+         */
+        DatasetSplit: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the dataset for you and your team. Not used in training.
+             */
+            description?: string | null;
+            /**
+             * Splits
+             * @description The splits in the dataset.
+             */
+            splits?: components["schemas"]["DatasetSplitDefinition"][];
+            /**
+             * Split Contents
+             * @description The contents of each split in the dataset. The key is the split name, and the value is a list of task run IDs.
+             */
+            split_contents: {
+                [key: string]: string[];
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * DatasetSplitDefinition
+         * @description A definition of a split in a dataset.
+         *
+         *     Example: name="train", description="The training set", percentage=0.8 (80% of the dataset)
+         */
+        DatasetSplitDefinition: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the dataset for you and your team. Not used in training.
+             */
+            description?: string | null;
+            /**
+             * Percentage
+             * @description The percentage of the dataset that this split represents (between 0 and 1).
+             */
+            percentage: number;
+        };
+        /**
+         * DatasetSplitType
+         * @description Dataset split types used in the API. Any split type can be created in code.
+         * @enum {string}
+         */
+        DatasetSplitType: "train_test" | "train_test_val" | "all";
+        /**
+         * FineTuneParameter
+         * @description A parameter for a fine-tune. Hyperparameters, etc.
+         */
+        FineTuneParameter: {
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "string" | "int" | "float" | "bool";
+            /** Description */
+            description: string;
+            /**
+             * Optional
+             * @default true
+             */
+            optional: boolean;
+        };
+        /**
+         * FineTuneStatus
+         * @description The status of a fine-tune, including a user friendly message.
+         */
+        FineTuneStatus: {
+            status: components["schemas"]["FineTuneStatusType"];
+            /** Message */
+            message?: string | null;
+        };
+        /**
+         * FineTuneStatusType
+         * @description The status type of a fine-tune (running, completed, failed, etc).
+         * @enum {string}
+         */
+        FineTuneStatusType: "unknown" | "pending" | "running" | "completed" | "failed";
+        /** Finetune */
+        Finetune: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the fine-tune for you and your team. Not used in training.
+             */
+            description?: string | null;
+            /**
+             * Provider
+             * @description The provider to use for the fine-tune (e.g. 'openai').
+             */
+            provider: string;
+            /**
+             * Base Model Id
+             * @description The id of the base model to use for the fine-tune. This string relates to the provider's IDs for their own models, not Kiln IDs.
+             */
+            base_model_id: string;
+            /**
+             * Provider Id
+             * @description The ID of the fine-tune job on the provider's side. May not be the same as the fine_tune_model_id.
+             */
+            provider_id?: string | null;
+            /**
+             * Fine Tune Model Id
+             * @description The ID of the fine-tuned model on the provider's side. May not be the same as the provider_id.
+             */
+            fine_tune_model_id?: string | null;
+            /**
+             * Dataset Split Id
+             * @description The ID of the dataset split to use for this fine-tune.
+             */
+            dataset_split_id: string;
+            /**
+             * Train Split Name
+             * @description The name of the training split to use for this fine-tune.
+             * @default train
+             */
+            train_split_name: string;
+            /**
+             * Validation Split Name
+             * @description The name of the validation split to use for this fine-tune. Optional.
+             */
+            validation_split_name?: string | null;
+            /**
+             * Parameters
+             * @description The parameters to use for this fine-tune. These are provider-specific.
+             * @default {}
+             */
+            parameters: {
+                [key: string]: string | number | boolean;
+            };
+            /**
+             * System Message
+             * @description The system message to use for this fine-tune.
+             */
+            system_message: string;
+            /**
+             * @description The latest known status of this fine-tune. Not updated in real time.
+             * @default unknown
+             */
+            latest_status: components["schemas"]["FineTuneStatusType"];
+            /**
+             * Properties
+             * @description Properties of the fine-tune. Different providers may use different properties.
+             * @default {}
+             */
+            properties: {
+                [key: string]: string | number;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * FinetuneProvider
+         * @description Finetune provider: list of models a provider supports for fine-tuning
+         */
+        FinetuneProvider: {
+            /** Name */
+            name: string;
+            /** Id */
+            id: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Models */
+            models: components["schemas"]["FinetuneProviderModel"][];
+        };
+        /**
+         * FinetuneProviderModel
+         * @description Finetune provider model: a model a provider supports for fine-tuning
+         */
+        FinetuneProviderModel: {
+            /** Name */
+            name: string;
+            /** Id */
+            id: string;
+        };
+        /**
+         * FinetuneWithStatus
+         * @description Finetune with status
+         */
+        FinetuneWithStatus: {
+            finetune: components["schemas"]["Finetune"];
+            status: components["schemas"]["FineTuneStatus"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -591,6 +980,13 @@ export interface components {
             supports_structured_output: boolean;
             /** Supports Data Gen */
             supports_data_gen: boolean;
+            /**
+             * Untested Model
+             * @default false
+             */
+            untested_model: boolean;
+            /** Task Filter */
+            task_filter?: string[] | null;
         };
         /**
          * ModelName
@@ -598,13 +994,15 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "nemotron_70b";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "nemotron_70b";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
             message: string;
-            /** Models */
-            models: string[];
+            /** Supported Models */
+            supported_models: string[];
+            /** Untested Models */
+            untested_models?: string[];
         };
         /**
          * Priority
@@ -1640,7 +2038,7 @@ export interface operations {
             };
         };
     };
-    connect_ollama_api_api_provider_ollama_connect_post: {
+    connect_ollama_api_api_provider_ollama_connect_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1981,6 +2379,265 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dataset_splits_api_projects__project_id__tasks__task_id__dataset_splits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSplit"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_dataset_split_api_projects__project_id__tasks__task_id__dataset_splits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDatasetSplitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSplit"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finetunes_api_projects__project_id__tasks__task_id__finetunes_get: {
+        parameters: {
+            query?: {
+                update_status?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Finetune"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_finetune_api_projects__project_id__tasks__task_id__finetunes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFinetuneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Finetune"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                finetune_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinetuneWithStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finetune_providers_api_finetune_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinetuneProvider"][];
+                };
+            };
+        };
+    };
+    finetune_hyperparameters_api_finetune_hyperparameters__provider_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FineTuneParameter"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_dataset_jsonl_api_download_dataset_jsonl_get: {
+        parameters: {
+            query: {
+                project_id: string;
+                task_id: string;
+                dataset_id: string;
+                split_name: string;
+                format_type: string;
+                system_message_generator?: string | null;
+                custom_system_message?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

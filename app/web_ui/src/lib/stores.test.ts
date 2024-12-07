@@ -1,5 +1,12 @@
 import { get } from "svelte/store"
-import { projects, current_project, ui_state, default_ui_state } from "./stores"
+import {
+  projects,
+  current_project,
+  ui_state,
+  default_ui_state,
+  available_models,
+  provider_name_from_id,
+} from "./stores"
 import { describe, it, expect, beforeEach } from "vitest"
 
 const testProject = {
@@ -18,6 +25,8 @@ describe("stores", () => {
     projects.set(null)
     current_project.set(null)
     ui_state.set(default_ui_state)
+    // Reset the available_models store before each test
+    available_models.set([])
   })
 
   describe("projects store", () => {
@@ -72,6 +81,30 @@ describe("stores", () => {
         current_project_id: "test-project-id",
       })
       expect(get(current_project)).toEqual(testProject)
+    })
+  })
+
+  describe("provider_name_from_id", () => {
+    it("should return 'Unknown' when provider_id is empty", () => {
+      expect(provider_name_from_id("")).toBe("Unknown")
+    })
+
+    it("should return provider_name when provider exists", () => {
+      available_models.set([
+        {
+          provider_id: "test-provider",
+          provider_name: "Test Provider",
+          models: [],
+        },
+      ])
+      expect(provider_name_from_id("test-provider")).toBe("Test Provider")
+    })
+
+    it("should return provider_id when provider doesn't exist", () => {
+      available_models.set([])
+      expect(provider_name_from_id("non-existent-provider")).toBe(
+        "non-existent-provider",
+      )
     })
   })
 })

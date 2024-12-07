@@ -74,7 +74,7 @@ def mock_task_run(data_source, test_task):
 
 @pytest.fixture
 def mock_langchain_adapter(mock_task_run):
-    with patch("app.desktop.studio_server.data_gen_api.LangChainPromptAdapter") as mock:
+    with patch("app.desktop.studio_server.data_gen_api.adapter_for_task") as mock:
         mock_adapter = AsyncMock()
         mock_adapter.invoke = AsyncMock()
         mock.return_value = mock_adapter

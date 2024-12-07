@@ -10,7 +10,11 @@ jobs:
       fail-fast: false
       matrix:
         # macos-latest is for arm64 build, macos-13 is for x86_64
-        os: ["windows-latest", "macos-latest", "macos-13"]
+        include:
+          - os: windows-latest
+          - os: macos-latest # arm64
+          - os: macos-13 # x86_64
+          - os: ubuntu-latest # x86_64 (no arm64 support on GH Actions yet)
 
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +28,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
-          cache: "pip"
 
       # Use GH python version (includes TK/TCL)
       - name: Set up Python using GH python version
@@ -34,7 +37,7 @@ jobs:
         run: uv sync
 
       # Compress MacOS app param ignored on Windows
-      - run: uv run sh ./app/desktop/build_desktop_app.sh --compress-mac-app
+      - run: uv run bash ./app/desktop/build_desktop_app.sh --compress-mac-app
       - uses: actions/upload-artifact@v4
         with:
           name: kiln-desktop-${{ runner.os }}-${{ runner.arch }}

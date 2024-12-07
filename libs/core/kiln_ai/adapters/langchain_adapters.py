@@ -1,21 +1,35 @@
-from typing import Dict
+import os
+from os import getenv
+from typing import Any, Dict
 
+from langchain_aws import ChatBedrockConverse
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.messages.base import BaseMessage
 from langchain_core.runnables import Runnable
+from langchain_fireworks import ChatFireworks
+from langchain_groq import ChatGroq
+from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.ollama_tools import (
+    get_ollama_connection,
+    ollama_base_url,
+    ollama_model_installed,
+)
+from kiln_ai.utils.config import Config
 
 from .base_adapter import AdapterInfo, BaseAdapter, BasePromptBuilder, RunOutput
-from .ml_model_list import langchain_model_from
+from .ml_model_list import KilnModelProvider, ModelProviderName
+from .provider_tools import kiln_model_provider_from
 
 LangChainModelType = BaseChatModel | Runnable[LanguageModelInput, Dict | BaseModel]
 
 
-class LangChainPromptAdapter(BaseAdapter):
+class LangchainAdapter(BaseAdapter):
     _model: LangChainModelType | None = None
 
     def __init__(
@@ -51,12 +65,6 @@ class LangChainPromptAdapter(BaseAdapter):
                 "model_name and provider must be provided if custom_model is not provided"
             )
 
-    def adapter_specific_instructions(self) -> str | None:
-        # TODO: would be better to explicitly use bind_tools:tool_choice="task_response" here
-        if self.has_structured_output():
-            return "Always respond with a tool call. Never respond with a human readable message."
-        return None
-
     async def model(self) -> LangChainModelType:
         # cached model
         if self._model:
@@ -79,8 +87,13 @@ class LangChainPromptAdapter(BaseAdapter):
                 )
             output_schema["title"] = "task_response"
             output_schema["description"] = "A response from the task"
+            with_structured_output_options = await get_structured_output_options(
+                self.model_name, self.model_provider
+            )
             self._model = self._model.with_structured_output(
-                output_schema, include_raw=True
+                output_schema,
+                include_raw=True,
+                **with_structured_output_options,
             )
         return self._model
 
@@ -108,17 +121,16 @@ class LangChainPromptAdapter(BaseAdapter):
             )
 
             cot_messages = [*messages]
-            cot_response = base_model.invoke(cot_messages)
+            cot_response = await base_model.ainvoke(cot_messages)
             intermediate_outputs["chain_of_thought"] = cot_response.content
             messages.append(AIMessage(content=cot_response.content))
             messages.append(
                 SystemMessage(content="Considering the above, return a final result.")
             )
         elif cot_prompt:
-            # for plaintext output, we just add COT instructions. We still only make one call.
             messages.append(SystemMessage(content=cot_prompt))
 
-        response = chain.invoke(messages)
+        response = await chain.ainvoke(messages)
 
         if self.has_structured_output():
             if (
@@ -160,3 +172,81 @@ class LangChainPromptAdapter(BaseAdapter):
         ):
             return response["arguments"]
         return response
+
+
+async def get_structured_output_options(
+    model_name: str, model_provider: str
+) -> Dict[str, Any]:
+    finetune_provider = await kiln_model_provider_from(model_name, model_provider)
+    if finetune_provider and finetune_provider.adapter_options.get("langchain"):
+        return finetune_provider.adapter_options["langchain"].get(
+            "with_structured_output_options", {}
+        )
+    return {}
+
+
+async def langchain_model_from(
+    name: str, provider_name: str | None = None
+) -> BaseChatModel:
+    provider = await kiln_model_provider_from(name, provider_name)
+    return await langchain_model_from_provider(provider, name)
+
+
+async def langchain_model_from_provider(
+    provider: KilnModelProvider, model_name: str
+) -> BaseChatModel:
+    if provider.name == ModelProviderName.openai:
+        api_key = Config.shared().open_ai_api_key
+        return ChatOpenAI(**provider.provider_options, openai_api_key=api_key)  # type: ignore[arg-type]
+    elif provider.name == ModelProviderName.groq:
+        api_key = Config.shared().groq_api_key
+        if api_key is None:
+            raise ValueError(
+                "Attempted to use Groq without an API key set. "
+                "Get your API key from https://console.groq.com/keys"
+            )
+        return ChatGroq(**provider.provider_options, groq_api_key=api_key)  # type: ignore[arg-type]
+    elif provider.name == ModelProviderName.amazon_bedrock:
+        api_key = Config.shared().bedrock_access_key
+        secret_key = Config.shared().bedrock_secret_key
+        # langchain doesn't allow passing these, so ugly hack to set env vars
+        os.environ["AWS_ACCESS_KEY_ID"] = api_key
+        os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
+        return ChatBedrockConverse(
+            **provider.provider_options,
+        )
+    elif provider.name == ModelProviderName.fireworks_ai:
+        api_key = Config.shared().fireworks_api_key
+        return ChatFireworks(**provider.provider_options, api_key=api_key)
+    elif provider.name == ModelProviderName.ollama:
+        # Ollama model naming is pretty flexible. We try a few versions of the model name
+        potential_model_names = []
+        if "model" in provider.provider_options:
+            potential_model_names.append(provider.provider_options["model"])
+        if "model_aliases" in provider.provider_options:
+            potential_model_names.extend(provider.provider_options["model_aliases"])
+
+        # Get the list of models Ollama supports
+        ollama_connection = await get_ollama_connection()
+        if ollama_connection is None:
+            raise ValueError("Failed to connect to Ollama. Ensure Ollama is running.")
+
+        for model_name in potential_model_names:
+            if ollama_model_installed(ollama_connection, model_name):
+                return ChatOllama(model=model_name, base_url=ollama_base_url())
+
+        raise ValueError(f"Model {model_name} not installed on Ollama")
+    elif provider.name == ModelProviderName.openrouter:
+        api_key = Config.shared().open_router_api_key
+        base_url = getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+        return ChatOpenAI(
+            **provider.provider_options,
+            openai_api_key=api_key,  # type: ignore[arg-type]
+            openai_api_base=base_url,  # type: ignore[arg-type]
+            default_headers={
+                "HTTP-Referer": "https://getkiln.ai/openrouter",
+                "X-Title": "KilnAI",
+            },
+        )
+    else:
+        raise ValueError(f"Invalid model or provider: {model_name} - {provider.name}")

@@ -17,6 +17,7 @@ fi
 
 mkdir -p desktop/build
 
+echo "Building for $(uname)"
 if [ "$(uname)" == "Darwin" ]; then
   echo "Building MacOS app"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
@@ -26,11 +27,19 @@ if [ "$(uname)" == "Darwin" ]; then
 
   PY_PLAT=$(python -c 'import platform; print(platform.machine())')
   echo "Building MacOS app for single platform ($PY_PLAT)"
-else
+elif [[ "$(uname)" =~ ^MINGW64_NT-10.0 ]] || [[ "$(uname)" =~ ^MSYS_NT-10.0 ]]; then
   echo "Building Windows App"
   cp desktop/win_taskbar.png desktop/build/taskbar.png
   cp desktop/win_icon.png desktop/build/icon.png
   PLATFORM_OPTS="--windowed --splash=../win_splash.png"
+elif [ "$(uname)" == "Linux" ]; then
+  echo "Building Linux App"
+  cp desktop/mac_taskbar.png desktop/build/taskbar.png
+  cp desktop/mac_icon.png desktop/build/icon.png
+  PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png"
+else
+  echo "Unsupported operating system: $(uname)"
+  exit 1
 fi
 
 # Builds the desktop app

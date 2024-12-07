@@ -38,18 +38,19 @@ def test_connect_ollama_success(client):
         mock_get.return_value.json.return_value = {
             "models": [{"model": "phi3.5:latest"}]
         }
-        response = client.post("/api/provider/ollama/connect")
+        response = client.get("/api/provider/ollama/connect")
         assert response.status_code == 200
         assert response.json() == {
             "message": "Ollama connected",
-            "models": ["phi3.5:latest"],
+            "supported_models": ["phi3.5:latest"],
+            "untested_models": [],
         }
 
 
 def test_connect_ollama_connection_error(client):
     with patch("requests.get") as mock_get:
         mock_get.side_effect = requests.exceptions.ConnectionError
-        response = client.post("/api/provider/ollama/connect")
+        response = client.get("/api/provider/ollama/connect")
         assert response.status_code == 417
         assert response.json() == {
             "message": "Failed to connect. Ensure Ollama app is running."
@@ -59,7 +60,7 @@ def test_connect_ollama_connection_error(client):
 def test_connect_ollama_general_exception(client):
     with patch("requests.get") as mock_get:
         mock_get.side_effect = Exception("Test exception")
-        response = client.post("/api/provider/ollama/connect")
+        response = client.get("/api/provider/ollama/connect")
         assert response.status_code == 500
         assert response.json() == {
             "message": "Failed to connect to Ollama: Test exception"
@@ -69,14 +70,15 @@ def test_connect_ollama_general_exception(client):
 def test_connect_ollama_no_models(client):
     with patch("requests.get") as mock_get:
         mock_get.return_value.json.return_value = {"models": []}
-        response = client.post("/api/provider/ollama/connect")
+        response = client.get("/api/provider/ollama/connect")
         assert response.status_code == 200
         r = response.json()
         assert (
             r["message"]
             == "Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'."
         )
-        assert r["models"] == []
+        assert r["supported_models"] == []
+        assert r["untested_models"] == []
 
 
 @pytest.mark.parametrize(

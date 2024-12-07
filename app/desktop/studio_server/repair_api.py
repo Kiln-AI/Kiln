@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
+from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.repair.repair_task import RepairTaskRun
 from kiln_ai.datamodel import TaskRun
 from kiln_server.run_api import task_and_run_from_id
@@ -54,7 +54,7 @@ def connect_repair_api(app: FastAPI):
                 detail="Model name and provider must be specified.",
             )
 
-        adapter = LangChainPromptAdapter(
+        adapter = adapter_for_task(
             repair_task, model_name=model_name, provider=provider
         )
 

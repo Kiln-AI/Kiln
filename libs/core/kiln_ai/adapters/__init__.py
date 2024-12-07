@@ -15,6 +15,7 @@ The repair submodule contains an adapter for the repair task.
 from . import (
     base_adapter,
     data_gen,
+    fine_tune,
     langchain_adapters,
     ml_model_list,
     prompt_builders,
@@ -28,4 +29,5 @@ __all__ = [
     "prompt_builders",
     "repair",
     "data_gen",
+    "fine_tune",
 ]

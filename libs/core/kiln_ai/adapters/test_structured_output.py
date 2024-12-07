@@ -6,35 +6,18 @@ import jsonschema.exceptions
 import pytest
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter, RunOutput
-from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
 from kiln_ai.adapters.ml_model_list import (
     built_in_models,
-    ollama_online,
 )
+from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.prompt_builders import (
     BasePromptBuilder,
     SimpleChainOfThoughtPromptBuilder,
 )
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
-
-
-@pytest.mark.parametrize(
-    "model_name,provider",
-    [
-        ("llama_3_1_8b", "groq"),
-        ("mistral_nemo", "openrouter"),
-        ("llama_3_1_70b", "amazon_bedrock"),
-        ("claude_3_5_sonnet", "openrouter"),
-        ("gemini_1_5_pro", "openrouter"),
-        ("gemini_1_5_flash", "openrouter"),
-        ("gemini_1_5_flash_8b", "openrouter"),
-    ],
-)
-@pytest.mark.paid
-async def test_structured_output(tmp_path, model_name, provider):
-    await run_structured_output_test(tmp_path, model_name, provider)
 
 
 @pytest.mark.ollama
@@ -112,28 +95,27 @@ async def test_mock_unstructred_response(tmp_path):
 
 @pytest.mark.paid
 @pytest.mark.ollama
-async def test_all_built_in_models_structured_output(tmp_path):
-    errors = []
+@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
+async def test_all_built_in_models_structured_output(
+    tmp_path, model_name, provider_name
+):
     for model in built_in_models:
+        if model.name != model_name:
+            continue
         if not model.supports_structured_output:
-            print(
+            pytest.skip(
                 f"Skipping {model.name} because it does not support structured output"
             )
-            continue
         for provider in model.providers:
+            if provider.name != provider_name:
+                continue
             if not provider.supports_structured_output:
-                print(
+                pytest.skip(
                     f"Skipping {model.name} {provider.name} because it does not support structured output"
                 )
-                continue
-            try:
-                print(f"Running {model.name} {provider.name}")
-                await run_structured_output_test(tmp_path, model.name, provider.name)
-            except Exception as e:
-                print(f"Error running {model.name} {provider.name}")
-                errors.append(f"{model.name} {provider.name}: {e}")
-    if len(errors) > 0:
-        raise RuntimeError(f"Errors: {errors}")
+            await run_structured_output_test(tmp_path, model.name, provider.name)
+            return
+    raise RuntimeError(f"No model {model_name} {provider_name} found")
 
 
 def build_structured_output_test_task(tmp_path: Path):
@@ -157,7 +139,7 @@ def build_structured_output_test_task(tmp_path: Path):
 
 async def run_structured_output_test(tmp_path: Path, model_name: str, provider: str):
     task = build_structured_output_test_task(tmp_path)
-    a = LangChainPromptAdapter(task, model_name=model_name, provider=provider)
+    a = adapter_for_task(task, model_name=model_name, provider=provider)
     parsed = await a.invoke_returning_raw("Cows")  # a joke about cows
     if parsed is None or not isinstance(parsed, Dict):
         raise RuntimeError(f"structured response is not a dict: {parsed}")
@@ -204,7 +186,7 @@ async def run_structured_input_task(
     provider: str,
     pb: BasePromptBuilder | None = None,
 ):
-    a = LangChainPromptAdapter(
+    a = adapter_for_task(
         task, model_name=model_name, provider=provider, prompt_builder=pb
     )
     with pytest.raises(ValueError):
@@ -235,14 +217,11 @@ async def test_structured_input_gpt_4o_mini(tmp_path):
 
 @pytest.mark.paid
 @pytest.mark.ollama
-async def test_all_built_in_models_structured_input(tmp_path):
-    for model in built_in_models:
-        for provider in model.providers:
-            try:
-                print(f"Running {model.name} {provider.name}")
-                await run_structured_input_test(tmp_path, model.name, provider.name)
-            except Exception as e:
-                raise RuntimeError(f"Error running {model.name} {provider}") from e
+@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
+async def test_all_built_in_models_structured_input(
+    tmp_path, model_name, provider_name
+):
+    await run_structured_input_test(tmp_path, model_name, provider_name)
 
 
 @pytest.mark.paid

@@ -85,7 +85,7 @@ def mock_repair_task_run(improvement_task, data_source):
 
 @pytest.fixture
 def mock_langchain_adapter(mock_repair_task_run):
-    with patch("app.desktop.studio_server.repair_api.LangChainPromptAdapter") as mock:
+    with patch("app.desktop.studio_server.repair_api.adapter_for_task") as mock:
         mock_adapter = AsyncMock()
         mock_adapter.invoke = AsyncMock()
         mock.return_value = mock_adapter

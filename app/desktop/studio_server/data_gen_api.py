@@ -1,11 +1,11 @@
 from fastapi import FastAPI
+from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
     DataGenSampleTask,
     DataGenSampleTaskInput,
 )
-from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
 from kiln_server.task_api import task_from_id
@@ -80,7 +80,7 @@ def connect_data_gen_api(app: FastAPI):
             existing_topics=input.existing_topics,
         )
 
-        adapter = LangChainPromptAdapter(
+        adapter = adapter_for_task(
             categories_task,
             model_name=input.model_name,
             provider=input.provider,
@@ -103,7 +103,7 @@ def connect_data_gen_api(app: FastAPI):
             human_guidance=input.human_guidance,
         )
 
-        adapter = LangChainPromptAdapter(
+        adapter = adapter_for_task(
             sample_task,
             model_name=input.model_name,
             provider=input.provider,
@@ -122,7 +122,7 @@ def connect_data_gen_api(app: FastAPI):
 
         prompt_builder = prompt_builder_from_ui_name(sample.prompt_method)(task)
 
-        adapter = LangChainPromptAdapter(
+        adapter = adapter_for_task(
             task,
             model_name=sample.output_model_name,
             provider=sample.output_provider,

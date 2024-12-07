@@ -33,9 +33,20 @@ module.exports = {
     node: true,
   },
   rules: {
-    "no-undef": "off",
     // no-undef has been turned off because of this:
     // basically, it causes issues and TS does those checks so it's redundant
     // https://typescript-eslint.io/linting/troubleshooting#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
+    "no-undef": "off",
+
+    // Default eslint no-unused-vars modified to ignore underscore vars which we use for known unused vars
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        argsIgnorePattern: "^_$",
+        varsIgnorePattern: "^_$",
+        caughtErrorsIgnorePattern: "^_$",
+      },
+    ],
   },
 }

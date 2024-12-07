@@ -199,3 +199,13 @@ export function model_name(
   const model = provider_models?.models[model_id]
   return model?.name || model_id
 }
+
+export function provider_name_from_id(provider_id: string): string {
+  if (!provider_id) {
+    return "Unknown"
+  }
+  const provider = get(available_models).find(
+    (provider) => provider.provider_id === provider_id,
+  )
+  return provider?.provider_name || provider_id
+}

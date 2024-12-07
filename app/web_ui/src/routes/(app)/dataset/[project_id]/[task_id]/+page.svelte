@@ -8,6 +8,7 @@
   import { model_info, load_model_info, model_name } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
+  import { formatDate } from "$lib/utils/formatters"
 
   let runs: TaskRun[] | null = null
   let error: KilnError | null = null
@@ -92,26 +93,6 @@
     } else {
       return "No output"
     }
-  }
-
-  function formatDate(dateString: string | undefined): string {
-    if (!dateString) {
-      return "Unknown"
-    }
-    const date = new Date(dateString)
-    const currentYear = new Date().getFullYear()
-    const options: Intl.DateTimeFormatOptions = {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }
-
-    if (date.getFullYear() !== currentYear) {
-      options.year = "numeric"
-    }
-
-    return date.toLocaleString("en-US", options)
   }
 
   function previewText(

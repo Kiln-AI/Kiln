@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import uuid
 from abc import ABCMeta
@@ -37,6 +38,34 @@ ID_FIELD = Field(default_factory=lambda: str(uuid.uuid4().int)[:12])
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
+
+# Naming conventions:
+# 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
+# 2) Descrptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
+
+# Filename compatible names
+NAME_REGEX = r"^[A-Za-z0-9 _-]+$"
+NAME_FIELD = Field(
+    min_length=1,
+    max_length=120,
+    pattern=NAME_REGEX,
+    description="A name for this entity.",
+)
+SHORT_NAME_FIELD = Field(
+    min_length=1,
+    max_length=32,
+    pattern=NAME_REGEX,
+    description="A name for this entity",
+)
+
+
+def string_to_valid_name(name: str) -> str:
+    # Replace any character not allowed by NAME_REGEX with an underscore
+    valid_name = re.sub(r"[^A-Za-z0-9 _-]", "_", name)
+    # Replace consecutive underscores with a single underscore
+    valid_name = re.sub(r"_+", "_", valid_name)
+    # Remove leading and trailing underscores or whitespace
+    return valid_name.strip("_").strip()
 
 
 class KilnBaseModel(BaseModel):
@@ -97,6 +126,7 @@ class KilnBaseModel(BaseModel):
 
         Raises:
             ValueError: If the loaded model is not of the expected type or version
+            FileNotFoundError: If the file does not exist
         """
         with open(path, "r") as file:
             file_data = file.read()

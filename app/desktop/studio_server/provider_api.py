@@ -9,16 +9,21 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelName,
     ModelProviderName,
-    OllamaConnection,
     built_in_models,
+)
+from kiln_ai.adapters.ollama_tools import (
+    OllamaConnection,
     ollama_base_url,
     parse_ollama_tags,
+)
+from kiln_ai.adapters.provider_tools import (
     provider_name_from_id,
     provider_warnings,
 )
+from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from langchain_aws import ChatBedrockConverse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 async def connect_ollama() -> OllamaConnection:
@@ -51,6 +56,9 @@ class ModelDetails(BaseModel):
     name: str
     supports_structured_output: bool
     supports_data_gen: bool
+    # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
+    untested_model: bool = Field(default=False)
+    task_filter: List[str] | None = Field(default=None)
 
 
 class AvailableModels(BaseModel):
@@ -120,9 +128,14 @@ def connect_provider_api(app: FastAPI):
         if ollama_models:
             models.insert(0, ollama_models)
 
+        # Add any fine tuned models
+        fine_tuned_models = all_fine_tuned_models()
+        if fine_tuned_models:
+            models.append(fine_tuned_models)
+
         return models
 
-    @app.post("/api/provider/ollama/connect")
+    @app.get("/api/provider/ollama/connect")
     async def connect_ollama_api() -> OllamaConnection:
         return await connect_ollama()
 
@@ -136,7 +149,7 @@ def connect_provider_api(app: FastAPI):
                 content={"message": "Invalid key_data or provider"},
             )
 
-        api_key_providers = ["openai", "groq", "bedrock", "openrouter"]
+        api_key_providers = ["openai", "groq", "bedrock", "openrouter", "fireworks_ai"]
         if provider not in api_key_providers:
             return JSONResponse(
                 status_code=400,
@@ -149,6 +162,12 @@ def connect_provider_api(app: FastAPI):
             return await connect_groq(key_data["API Key"])
         elif provider == "openrouter" and isinstance(key_data["API Key"], str):
             return await connect_openrouter(key_data["API Key"])
+        elif (
+            provider == "fireworks_ai"
+            and isinstance(key_data["API Key"], str)
+            and isinstance(key_data["Account ID"], str)
+        ):
+            return await connect_fireworks(key_data["API Key"], key_data["Account ID"])
         elif (
             provider == "bedrock"
             and isinstance(key_data["Access Key"], str)
@@ -197,6 +216,48 @@ async def connect_openrouter(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to OpenRouter. Error: {str(e)}"},
+        )
+
+
+async def connect_fireworks(key: str, account_id: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # list the shared models (fireworks account)
+        response = requests.get(
+            f"https://api.fireworks.ai/v1/accounts/{account_id}/models",
+            headers=headers,
+        )
+
+        if response.status_code == 403:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Fireworks. Invalid API key or Account ID."
+                },
+            )
+        elif response.status_code == 200:
+            Config.shared().fireworks_api_key = key
+            Config.shared().fireworks_account_id = account_id
+
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Fireworks"},
+            )
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Fireworks. Error: [{response.status_code}] {response.text}"
+                },
+            )
+    except Exception as e:
+        # unexpected error
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Fireworks. Error: {str(e)}"},
         )
 
 
@@ -321,7 +382,7 @@ async def available_ollama_models() -> AvailableModels | None:
             models=[],
         )
 
-        for ollama_model_tag in ollama_connection.models:
+        for ollama_model_tag in ollama_connection.supported_models:
             model, ollama_provider = model_from_ollama_tag(ollama_model_tag)
             if model and ollama_provider:
                 ollama_models.models.append(
@@ -332,6 +393,16 @@ async def available_ollama_models() -> AvailableModels | None:
                         supports_data_gen=ollama_provider.supports_data_gen,
                     )
                 )
+        for ollama_model in ollama_connection.untested_models:
+            ollama_models.models.append(
+                ModelDetails(
+                    id=ollama_model,
+                    name=ollama_model,
+                    supports_structured_output=False,
+                    supports_data_gen=False,
+                    untested_model=True,
+                )
+            )
 
         if len(ollama_models.models) > 0:
             return ollama_models
@@ -363,3 +434,33 @@ def model_from_ollama_tag(
                     return model, ollama_provider
 
     return None, None
+
+
+def all_fine_tuned_models() -> AvailableModels | None:
+    # Add any fine tuned models
+    models: List[ModelDetails] = []
+
+    for project in all_projects():
+        for task in project.tasks():
+            for fine_tune in task.finetunes():
+                # check if the fine tune is completed
+                if fine_tune.fine_tune_model_id:
+                    models.append(
+                        ModelDetails(
+                            id=f"{project.id}::{task.id}::{fine_tune.id}",
+                            name=fine_tune.name
+                            + f" ({provider_name_from_id(fine_tune.provider)})",
+                            # YMMV, but we'll assume all fine tuned models support structured output and data gen
+                            supports_structured_output=True,
+                            supports_data_gen=True,
+                            task_filter=[str(task.id)],
+                        )
+                    )
+
+    if len(models) > 0:
+        return AvailableModels(
+            provider_name="Fine Tuned Models",
+            provider_id=ModelProviderName.kiln_fine_tune,
+            models=models,
+        )
+    return None

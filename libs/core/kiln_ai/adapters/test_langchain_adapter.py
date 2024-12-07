@@ -3,16 +3,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 
-from kiln_ai.adapters.langchain_adapters import LangChainPromptAdapter
+from kiln_ai.adapters.langchain_adapters import (
+    LangchainAdapter,
+    get_structured_output_options,
+)
 from kiln_ai.adapters.prompt_builders import SimpleChainOfThoughtPromptBuilder
 from kiln_ai.adapters.test_prompt_adaptors import build_test_task
 
 
 def test_langchain_adapter_munge_response(tmp_path):
     task = build_test_task(tmp_path)
-    lca = LangChainPromptAdapter(
-        kiln_task=task, model_name="llama_3_1_8b", provider="ollama"
-    )
+    lca = LangchainAdapter(kiln_task=task, model_name="llama_3_1_8b", provider="ollama")
     # Mistral Large tool calling format is a bit different
     response = {
         "name": "task_response",
@@ -35,7 +36,7 @@ def test_langchain_adapter_infer_model_name(tmp_path):
     task = build_test_task(tmp_path)
     custom = ChatGroq(model="llama-3.1-8b-instant", groq_api_key="test")
 
-    lca = LangChainPromptAdapter(kiln_task=task, custom_model=custom)
+    lca = LangchainAdapter(kiln_task=task, custom_model=custom)
 
     model_info = lca.adapter_info()
     assert model_info.model_name == "custom.langchain:llama-3.1-8b-instant"
@@ -45,9 +46,7 @@ def test_langchain_adapter_infer_model_name(tmp_path):
 def test_langchain_adapter_info(tmp_path):
     task = build_test_task(tmp_path)
 
-    lca = LangChainPromptAdapter(
-        kiln_task=task, model_name="llama_3_1_8b", provider="ollama"
-    )
+    lca = LangchainAdapter(kiln_task=task, model_name="llama_3_1_8b", provider="ollama")
 
     model_info = lca.adapter_info()
     assert model_info.adapter_name == "kiln_langchain_adapter"
@@ -60,7 +59,7 @@ async def test_langchain_adapter_with_cot(tmp_path):
     task.output_json_schema = (
         '{"type": "object", "properties": {"count": {"type": "integer"}}}'
     )
-    lca = LangChainPromptAdapter(
+    lca = LangchainAdapter(
         kiln_task=task,
         model_name="llama_3_1_8b",
         provider="ollama",
@@ -69,13 +68,13 @@ async def test_langchain_adapter_with_cot(tmp_path):
 
     # Mock the base model and its invoke method
     mock_base_model = MagicMock()
-    mock_base_model.invoke.return_value = AIMessage(
-        content="Chain of thought reasoning..."
+    mock_base_model.ainvoke = AsyncMock(
+        return_value=AIMessage(content="Chain of thought reasoning...")
     )
 
     # Create a separate mock for self.model()
     mock_model_instance = MagicMock()
-    mock_model_instance.invoke.return_value = {"parsed": {"count": 1}}
+    mock_model_instance.ainvoke = AsyncMock(return_value={"parsed": {"count": 1}})
 
     # Mock the langchain_model_from function to return the base model
     mock_model_from = AsyncMock(return_value=mock_base_model)
@@ -85,14 +84,14 @@ async def test_langchain_adapter_with_cot(tmp_path):
         patch(
             "kiln_ai.adapters.langchain_adapters.langchain_model_from", mock_model_from
         ),
-        patch.object(LangChainPromptAdapter, "model", return_value=mock_model_instance),
+        patch.object(LangchainAdapter, "model", return_value=mock_model_instance),
     ):
         response = await lca._run("test input")
 
     # First 3 messages are the same for both calls
     for invoke_args in [
-        mock_base_model.invoke.call_args[0][0],
-        mock_model_instance.invoke.call_args[0][0],
+        mock_base_model.ainvoke.call_args[0][0],
+        mock_model_instance.ainvoke.call_args[0][0],
     ]:
         assert isinstance(
             invoke_args[0], SystemMessage
@@ -107,11 +106,11 @@ async def test_langchain_adapter_with_cot(tmp_path):
         assert "step by step" in invoke_args[2].content
 
     # the COT should only have 3 messages
-    assert len(mock_base_model.invoke.call_args[0][0]) == 3
-    assert len(mock_model_instance.invoke.call_args[0][0]) == 5
+    assert len(mock_base_model.ainvoke.call_args[0][0]) == 3
+    assert len(mock_model_instance.ainvoke.call_args[0][0]) == 5
 
     # the final response should have the COT content and the final instructions
-    invoke_args = mock_model_instance.invoke.call_args[0][0]
+    invoke_args = mock_model_instance.ainvoke.call_args[0][0]
     assert isinstance(invoke_args[3], AIMessage)
     assert "Chain of thought reasoning..." in invoke_args[3].content
     assert isinstance(invoke_args[4], SystemMessage)
@@ -122,3 +121,32 @@ async def test_langchain_adapter_with_cot(tmp_path):
         == "Chain of thought reasoning..."
     )
     assert response.output == {"count": 1}
+
+
+async def test_get_structured_output_options():
+    # Mock the provider response
+    mock_provider = MagicMock()
+    mock_provider.adapter_options = {
+        "langchain": {
+            "with_structured_output_options": {
+                "force_json_response": True,
+                "max_retries": 3,
+            }
+        }
+    }
+
+    # Test with provider that has options
+    with patch(
+        "kiln_ai.adapters.langchain_adapters.kiln_model_provider_from",
+        AsyncMock(return_value=mock_provider),
+    ):
+        options = await get_structured_output_options("model_name", "provider")
+        assert options == {"force_json_response": True, "max_retries": 3}
+
+    # Test with provider that has no options
+    with patch(
+        "kiln_ai.adapters.langchain_adapters.kiln_model_provider_from",
+        AsyncMock(return_value=None),
+    ):
+        options = await get_structured_output_options("model_name", "provider")
+        assert options == {}
