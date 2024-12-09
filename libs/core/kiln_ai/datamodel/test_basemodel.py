@@ -2,6 +2,7 @@ import datetime
 import json
 from pathlib import Path
 from typing import Optional
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,6 +11,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.model_cache import ModelCache
 
 
 @pytest.fixture
@@ -43,6 +45,17 @@ def test_newer_file(tmp_path) -> Path:
         json.dump(data, file, indent=4)
 
     return test_file_path
+
+
+@pytest.fixture
+def tmp_model_cache():
+    temp_cache = ModelCache()
+    # We're testing integration, not cache functions, in this file
+    temp_cache._enabled = True
+    with (
+        patch("kiln_ai.datamodel.basemodel.ModelCache.shared", return_value=temp_cache),
+    ):
+        yield temp_cache
 
 
 def test_load_from_file(test_base_file):
@@ -334,3 +347,69 @@ def test_string_to_valid_name():
     # Test empty string and whitespace
     assert string_to_valid_name("") == ""
     assert string_to_valid_name("   ") == ""
+
+
+def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
+    tmp_model_cache.get_model = MagicMock(return_value=None)
+    tmp_model_cache.set_model = MagicMock()
+
+    # Load the model
+    model = KilnBaseModel.load_from_file(test_base_file)
+
+    # Check that the cache was checked and set
+    tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+    tmp_model_cache.set_model.assert_called_once()
+
+    # Ensure the model is correctly loaded
+    assert model.v == 1
+    assert model.path == test_base_file
+
+
+def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):
+    # Create and save the model
+    model = KilnBaseModel(path=test_base_file)
+
+    # Set mock after to ignore any previous calls, we want to see save calls it
+    tmp_model_cache.invalidate = MagicMock()
+    model.save_to_file()
+
+    # Check that the cache was invalidated. Might be called multiple times for setting props like path. but must be called at least once.
+    tmp_model_cache.invalidate.assert_called_with(test_base_file)
+
+
+def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
+    # Create and save the model
+    file_path = tmp_path / "test.kiln"
+    model = KilnBaseModel(path=file_path)
+    model.save_to_file()
+
+    # populate and check cache
+    model = KilnBaseModel.load_from_file(file_path)
+    cached_model = tmp_model_cache.get_model(file_path, KilnBaseModel)
+    assert cached_model.id == model.id
+
+    tmp_model_cache.invalidate = MagicMock()
+
+    # Delete the model
+    model.delete()
+
+    # Check that the cache was invalidated
+    tmp_model_cache.invalidate.assert_called_with(file_path)
+    assert tmp_model_cache.get_model(file_path, KilnBaseModel) is None
+
+
+def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
+    # Set up the mock to return a cached model
+    cached_model = KilnBaseModel(v=1, path=test_base_file)
+    tmp_model_cache.get_model = MagicMock(return_value=cached_model)
+
+    with patch("builtins.open", create=True) as mock_open:
+        # Load the model
+        model = KilnBaseModel.load_from_file(test_base_file)
+
+        # Check that the cache was checked and the cached model was returned
+        tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+        assert model is cached_model
+
+        # Assert that open was not called (we used the cached model, not file)
+        mock_open.assert_not_called()
