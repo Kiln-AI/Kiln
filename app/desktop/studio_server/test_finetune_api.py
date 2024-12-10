@@ -12,6 +12,8 @@ from kiln_ai.datamodel import (
     DatasetSplit,
     Finetune,
     HighRatingDatasetFilter,
+    Project,
+    Task,
     Train60Test20Val20SplitDefinition,
     Train80Test20SplitDefinition,
 )
@@ -64,8 +66,39 @@ def mock_task():
 
 
 @pytest.fixture
+def test_task(tmp_path, mock_task):
+    project_path = tmp_path / "project.kiln"
+
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="This is a test instruction",
+        description="This is a test task",
+        parent=project,
+    )
+    task.save_to_file()
+
+    for tune in mock_task.finetunes.return_value:
+        tune.parent = task
+        tune.save_to_file()
+
+    return task
+
+
+@pytest.fixture
 def mock_task_from_id(mock_task, monkeypatch):
     mock_func = Mock(return_value=mock_task)
+    monkeypatch.setattr(
+        "app.desktop.studio_server.finetune_api.task_from_id", mock_func
+    )
+    return mock_func
+
+
+@pytest.fixture
+def mock_task_from_id_disk_backed(test_task, monkeypatch):
+    mock_func = Mock(return_value=test_task)
     monkeypatch.setattr(
         "app.desktop.studio_server.finetune_api.task_from_id", mock_func
     )
@@ -773,7 +806,7 @@ def test_download_dataset_jsonl_with_prompt_builder(
     )
 
 
-async def test_get_finetune(client, mock_task_from_id, mock_task):
+async def test_get_finetune(client, mock_task_from_id_disk_backed):
     response = client.get("/api/projects/project1/tasks/task1/finetunes/ft1")
 
     assert response.status_code == 200
@@ -792,18 +825,16 @@ async def test_get_finetune(client, mock_task_from_id, mock_task):
         == "This fine-tune has not been started or has not been assigned a provider ID."
     )
 
-    mock_task_from_id.assert_called_once_with("project1", "task1")
-    mock_task.finetunes.assert_called_once()
+    mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
 
-def test_get_finetune_not_found(client, mock_task_from_id, mock_task):
+def test_get_finetune_not_found(client, mock_task_from_id_disk_backed):
     response = client.get("/api/projects/project1/tasks/task1/finetunes/nonexistent")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Finetune with ID 'nonexistent' not found"
 
-    mock_task_from_id.assert_called_once_with("project1", "task1")
-    mock_task.finetunes.assert_called_once()
+    mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
 
 async def test_get_finetunes_with_status_update(

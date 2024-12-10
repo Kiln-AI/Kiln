@@ -2,7 +2,7 @@
   import AppPage from "../../../app_page.svelte"
   import EmptyInto from "./empty_into.svelte"
   import { client } from "$lib/api_client"
-  import type { TaskRun } from "$lib/types"
+  import type { RunSummary } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { model_info, load_model_info, model_name } from "$lib/stores"
@@ -10,11 +10,11 @@
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
 
-  let runs: TaskRun[] | null = null
+  let runs: RunSummary[] | null = null
   let error: KilnError | null = null
   let loading = true
   let sortColumn:
-    | keyof TaskRun
+    | keyof RunSummary
     | "rating"
     | "inputPreview"
     | "source"
@@ -49,7 +49,7 @@
         throw new Error("Project or task ID not set.")
       }
       const { data: runs_response, error: get_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/runs",
+        "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         {
           params: {
             path: {
@@ -78,33 +78,7 @@
     }
   }
 
-  function formatRepairState(run: TaskRun): string {
-    if (run.repair_instructions) {
-      return "Repaired"
-    } else if (run.output && !run.output.rating) {
-      return "Rating needed"
-    } else if (
-      run.output?.rating?.value === 5.0 &&
-      run.output?.rating?.type === "five_star"
-    ) {
-      return "No repair needed"
-    } else if (run.output?.output) {
-      return "Repair needed"
-    } else {
-      return "No output"
-    }
-  }
-
-  function previewText(
-    text: string | undefined | null,
-    maxLength: number = 100,
-  ): string | null {
-    if (!text) return null
-    if (text.length <= maxLength) return text
-    return text.slice(0, maxLength) + "..."
-  }
-
-  function sortFunction(a: TaskRun, b: TaskRun) {
+  function sortFunction(a: RunSummary, b: RunSummary) {
     let aValue: string | number | Date | null | undefined
     let bValue: string | number | Date | null | undefined
 
@@ -118,34 +92,28 @@
         bValue = b[sortColumn]
         break
       case "rating":
-        aValue = a.output.rating?.value ?? -1
-        bValue = b.output.rating?.value ?? -1
+        aValue = a.rating?.value ?? -1
+        bValue = b.rating?.value ?? -1
         break
       case "source":
-        aValue = a.input_source?.type ?? ""
-        bValue = b.input_source?.type ?? ""
+        aValue = a.input_source ?? ""
+        bValue = b.input_source ?? ""
         break
       case "inputPreview":
-        aValue = (a.input ?? "").toLowerCase()
-        bValue = (b.input ?? "").toLowerCase()
+        aValue = (a.input_preview ?? "").toLowerCase()
+        bValue = (b.input_preview ?? "").toLowerCase()
         break
       case "outputPreview":
-        aValue = (a.output?.output ?? "").toLowerCase()
-        bValue = (b.output?.output ?? "").toLowerCase()
+        aValue = (a.output_preview ?? "").toLowerCase()
+        bValue = (b.output_preview ?? "").toLowerCase()
         break
       case "repairState":
-        aValue = formatRepairState(a)
-        bValue = formatRepairState(b)
+        aValue = a.repair_state
+        bValue = b.repair_state
         break
       case "model":
-        aValue = model_name(
-          a.output?.source?.properties["model_name"],
-          $model_info,
-        )
-        bValue = model_name(
-          b.output?.source?.properties["model_name"],
-          $model_info,
-        )
+        aValue = model_name(a.model_name || undefined, $model_info)
+        bValue = model_name(b.model_name || undefined, $model_info)
         break
       default:
         return 0
@@ -225,29 +193,21 @@
               }}
             >
               <td>
-                {run.output.rating && run.output.rating.value
-                  ? run.output.rating.type === "five_star"
-                    ? "★".repeat(run.output.rating.value)
-                    : run.output.rating.value + "(custom score)"
+                {run.rating && run.rating.value
+                  ? run.rating.type === "five_star"
+                    ? "★".repeat(run.rating.value)
+                    : run.rating.value + "(custom score)"
                   : "Unrated"}
               </td>
-              <td>{formatRepairState(run)}</td>
-              <td
-                >{run.input_source?.type.charAt(0).toUpperCase() +
-                  run.input_source?.type.slice(1)}</td
-              >
+              <td>{run.repair_state}</td>
+              <td>{run.input_source}</td>
               <td>
-                {model_name(
-                  run.output?.source?.properties["model_name"],
-                  $model_info,
-                )}
+                {model_name(run.model_name || undefined, $model_info)}
               </td>
               <td>{formatDate(run.created_at)}</td>
-              <td>{previewText(run.input) || "No input"}</td>
+              <td>{run.input_preview || "No input"}</td>
               <td>
-                {previewText(
-                  run.repaired_output?.output || run.output?.output,
-                ) || "No output"}
+                {run.output_preview || "No output"}
               </td>
             </tr>
           {/each}

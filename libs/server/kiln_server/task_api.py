@@ -8,10 +8,9 @@ from kiln_server.project_api import project_from_id
 
 def task_from_id(project_id: str, task_id: str) -> Task:
     parent_project = project_from_id(project_id)
-
-    for task in parent_project.tasks():
-        if task.id == task_id:
-            return task
+    task = Task.from_id_and_parent_path(task_id, parent_project.path)
+    if task:
+        return task
 
     raise HTTPException(
         status_code=404,

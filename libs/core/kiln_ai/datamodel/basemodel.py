@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import uuid
@@ -27,6 +28,7 @@ from pydantic import (
 from pydantic_core import ErrorDetails
 from typing_extensions import Self
 
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 
@@ -115,7 +117,7 @@ class KilnBaseModel(BaseModel):
         return cls.load_from_file(path)
 
     @classmethod
-    def load_from_file(cls: Type[T], path: Path) -> T:
+    def load_from_file(cls: Type[T], path: Path | str) -> T:
         """Load a model instance from a specific file path.
 
         Args:
@@ -128,7 +130,14 @@ class KilnBaseModel(BaseModel):
             ValueError: If the loaded model is not of the expected type or version
             FileNotFoundError: If the file does not exist
         """
+        if isinstance(path, str):
+            path = Path(path)
+        cached_model = ModelCache.shared().get_model(path, cls)
+        if cached_model is not None:
+            return cached_model
         with open(path, "r") as file:
+            # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
+            mtime_ns = os.fstat(file.fileno()).st_mtime_ns
             file_data = file.read()
             # TODO P2 perf: parsing the JSON twice here.
             # Once for model_type, once for model. Can't call model_validate with parsed json because enum types break; they get strings instead of enums.
@@ -150,6 +159,7 @@ class KilnBaseModel(BaseModel):
                 f"Class: {m.__class__.__name__}, id: {getattr(m, 'id', None)}, path: {path}, "
                 f"version: {m.v}, max version: {m.max_schema_version()}"
             )
+        ModelCache.shared().set_model(path, m, mtime_ns)
         return m
 
     def save_to_file(self) -> None:
@@ -170,6 +180,9 @@ class KilnBaseModel(BaseModel):
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
         self.path = path
+        # We could save, but invalidating will trigger load on next use.
+        # This ensures everything in cache is loaded from disk, and the cache perfectly reflects what's on disk
+        ModelCache.shared().invalidate(path)
 
     def delete(self) -> None:
         if self.path is None:
@@ -178,6 +191,7 @@ class KilnBaseModel(BaseModel):
         if dir_path is None:
             raise ValueError("Cannot delete model because path is not set")
         shutil.rmtree(dir_path)
+        ModelCache.shared().invalidate(self.path)
         self.path = None
 
     def build_path(self) -> Path | None:
@@ -298,9 +312,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         )
 
     @classmethod
-    def all_children_of_parent_path(
-        cls: Type[PT], parent_path: Path | None
-    ) -> list[PT]:
+    def iterate_children_paths_of_parent_path(cls: Type[PT], parent_path: Path | None):
         if parent_path is None:
             # children are disk based. If not saved, they don't exist
             return []
@@ -322,12 +334,40 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             return []
 
         # Collect all /relationship/{id}/{base_filename.kiln} files in the relationship folder
-        children = []
         for child_file in relationship_folder.glob(f"**/{cls.base_filename()}"):
-            child = cls.load_from_file(child_file)
-            children.append(child)
+            yield child_file
 
+    @classmethod
+    def all_children_of_parent_path(
+        cls: Type[PT], parent_path: Path | None
+    ) -> list[PT]:
+        children = []
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            children.append(cls.load_from_file(child_path))
         return children
+
+    @classmethod
+    def from_id_and_parent_path(
+        cls: Type[PT], id: str, parent_path: Path | None
+    ) -> PT | None:
+        """
+        Fast search by ID using the cache. Avoids the model_copy overhead on all but the exact match.
+
+        Uses cache so still slow on first load.
+        """
+        if parent_path is None:
+            return None
+
+        # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            child_id = ModelCache.shared().get_model_id(child_path, cls)
+            if child_id == id:
+                return cls.load_from_file(child_path)
+            if child_id is None:
+                child = cls.load_from_file(child_path)
+                if child.id == id:
+                    return child
+        return None
 
 
 # Parent create methods for all child relationships
