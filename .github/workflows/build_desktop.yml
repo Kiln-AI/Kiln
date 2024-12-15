@@ -36,9 +36,22 @@ jobs:
       - name: Install the project
         run: uv sync
 
-      # Compress MacOS app param ignored on Windows
-      - run: uv run bash ./app/desktop/build_desktop_app.sh --compress-mac-app
-      - uses: actions/upload-artifact@v4
+      # Compress MacOS app param ignored on other platforms
+      - name: Build Desktop App
+        run: uv run bash ./app/desktop/build_desktop_app.sh --compress-mac-app
+
+      - name: Build Windows Installer
+        if: matrix.os == 'windows-latest'
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: ./app/desktop/WinInnoSetup.iss
+
+      - name: Copy Windows Installer
+        if: matrix.os == 'windows-latest'
+        run: cp ./app/desktop/Output/kilnsetup.exe ./app/desktop/build/dist/Kiln.Windows.Installer.exe
+
+      - name: Upload Build
+        uses: actions/upload-artifact@v4
         with:
           name: kiln-desktop-${{ runner.os }}-${{ runner.arch }}
           path: ./app/desktop/build/dist/*

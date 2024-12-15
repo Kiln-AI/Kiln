@@ -1,4 +1,6 @@
 import json
+import os
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -82,6 +84,7 @@ def test_task_serialization(test_project_file):
         instruction="Test Base Task Instruction",
         thinking_instruction="Test Thinking Instruction",
     )
+    assert task._loaded_from_file is False
 
     task.save_to_file()
 
@@ -90,6 +93,11 @@ def test_task_serialization(test_project_file):
     assert parsed_task.description == "Test Description"
     assert parsed_task.instruction == "Test Base Task Instruction"
     assert parsed_task.thinking_instruction == "Test Thinking Instruction"
+    assert parsed_task._loaded_from_file is True
+
+    # Confirm the local property is not persisted to disk
+    json_data = json.loads(parsed_task.path.read_text())
+    assert "_loaded_from_file" not in json_data
 
 
 def test_save_to_file_without_path():
@@ -315,3 +323,119 @@ def test_finetune_parameters_validation():
             base_model_id="gpt-3.5-turbo",
             parameters={"invalid": [1, 2, 3]},  # Lists are not allowed
         )
+
+
+def test_task_run_input_source_validation(tmp_path):
+    # Setup basic output for TaskRun creation
+    output = TaskOutput(
+        output="test output",
+        source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "test-model",
+                "model_provider": "test-provider",
+                "adapter_name": "test-adapter",
+            },
+        ),
+    )
+
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test Instruction", parent=project)
+    task.save_to_file()
+
+    # Test 1: Creating without input_source should work when strict mode is off
+    task_run = TaskRun(
+        input="test input",
+        output=output,
+    )
+    task_run.parent = task
+    assert task_run.input_source is None
+
+    # Save for later usage
+    task_run.save_to_file()
+    task_missing_input_source = task_run.path
+
+    # Test 2: Creating with input_source should work when strict mode is off
+    task_run = TaskRun(
+        input="test input 2",
+        input_source=DataSource(
+            type=DataSourceType.human,
+            properties={"created_by": "test-user"},
+        ),
+        output=output,
+    )
+    assert task_run.input_source is not None
+
+    # Test 3: Creating without input_source should fail when strict mode is on
+    with patch("kiln_ai.datamodel.strict_mode", return_value=True):
+        with pytest.raises(ValueError) as exc_info:
+            task_run = TaskRun(
+                input="test input 3",
+                output=output,
+            )
+        assert "input_source is required when strict mode is enabled" in str(
+            exc_info.value
+        )
+
+        # Test 4: Loading from disk should work without input_source, even with strict mode on
+        assert os.path.exists(task_missing_input_source)
+        task_run = TaskRun.load_from_file(task_missing_input_source)
+        assert task_run.input_source is None
+
+
+def test_task_output_source_validation(tmp_path):
+    # Setup basic output source for validation
+    output_source = DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "test-model",
+            "model_provider": "test-provider",
+            "adapter_name": "test-adapter",
+        },
+    )
+
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test Instruction", parent=project)
+    task.save_to_file()
+
+    # Test 1: Creating without source should work when strict mode is off
+    task_output = TaskOutput(
+        output="test output",
+    )
+    assert task_output.source is None
+
+    # Save for later usage
+    task_run = TaskRun(
+        input="test input",
+        input_source=output_source,
+        output=task_output,
+    )
+    task_run.parent = task
+    task_run.save_to_file()
+    task_missing_output_source = task_run.path
+
+    # Test 2: Creating with source should work when strict mode is off
+    task_output = TaskOutput(
+        output="test output 2",
+        source=output_source,
+    )
+    assert task_output.source is not None
+
+    # Test 3: Creating without source should fail when strict mode is on
+    with patch("kiln_ai.datamodel.strict_mode", return_value=True):
+        with pytest.raises(ValueError) as exc_info:
+            task_output = TaskOutput(
+                output="test output 3",
+            )
+        assert "Output source is required when strict mode is enabled" in str(
+            exc_info.value
+        )
+
+        # Test 4: Loading from disk should work without source, even with strict mode on
+        assert os.path.exists(task_missing_output_source)
+        task_run = TaskRun.load_from_file(task_missing_output_source)
+        assert task_run.output.source is None

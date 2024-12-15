@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shutil
 import uuid
@@ -7,7 +8,6 @@ from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -21,12 +21,14 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    ValidationInfo,
     computed_field,
     model_validator,
 )
 from pydantic_core import ErrorDetails
 from typing_extensions import Self
 
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 
@@ -38,6 +40,7 @@ ID_FIELD = Field(default_factory=lambda: str(uuid.uuid4().int)[:12])
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
+
 
 # Naming conventions:
 # 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
@@ -87,6 +90,8 @@ class KilnBaseModel(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     created_by: str = Field(default_factory=lambda: Config.shared().user_id)
 
+    _loaded_from_file: bool = False
+
     @computed_field()
     def model_type(self) -> str:
         return self.type_name()
@@ -115,7 +120,7 @@ class KilnBaseModel(BaseModel):
         return cls.load_from_file(path)
 
     @classmethod
-    def load_from_file(cls: Type[T], path: Path) -> T:
+    def load_from_file(cls: Type[T], path: Path | str) -> T:
         """Load a model instance from a specific file path.
 
         Args:
@@ -128,14 +133,26 @@ class KilnBaseModel(BaseModel):
             ValueError: If the loaded model is not of the expected type or version
             FileNotFoundError: If the file does not exist
         """
+        if isinstance(path, str):
+            path = Path(path)
+        cached_model = ModelCache.shared().get_model(path, cls)
+        if cached_model is not None:
+            return cached_model
         with open(path, "r") as file:
+            # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
+            mtime_ns = os.fstat(file.fileno()).st_mtime_ns
             file_data = file.read()
             # TODO P2 perf: parsing the JSON twice here.
             # Once for model_type, once for model. Can't call model_validate with parsed json because enum types break; they get strings instead of enums.
             parsed_json = json.loads(file_data)
-            m = cls.model_validate_json(file_data, strict=True)
+            m = cls.model_validate_json(
+                file_data,
+                strict=True,
+                context={"loading_from_file": True},
+            )
             if not isinstance(m, cls):
                 raise ValueError(f"Loaded model is not of type {cls.__name__}")
+            m._loaded_from_file = True
             file_data = None
         m.path = path
         if m.v > m.max_schema_version():
@@ -150,7 +167,20 @@ class KilnBaseModel(BaseModel):
                 f"Class: {m.__class__.__name__}, id: {getattr(m, 'id', None)}, path: {path}, "
                 f"version: {m.v}, max version: {m.max_schema_version()}"
             )
+        ModelCache.shared().set_model(path, m, mtime_ns)
         return m
+
+    def loaded_from_file(self, info: ValidationInfo | None = None) -> bool:
+        # Two methods of indicated it's loaded from file:
+        # 1) info.context.get("loading_from_file") -> During actual loading, before we can set _loaded_from_file
+        # 2) self._loaded_from_file -> After loading, set by the loader
+        if (
+            info is not None
+            and info.context is not None
+            and info.context.get("loading_from_file", False)
+        ):
+            return True
+        return self._loaded_from_file
 
     def save_to_file(self) -> None:
         """Save the model instance to a file.
@@ -170,6 +200,9 @@ class KilnBaseModel(BaseModel):
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
         self.path = path
+        # We could save, but invalidating will trigger load on next use.
+        # This ensures everything in cache is loaded from disk, and the cache perfectly reflects what's on disk
+        ModelCache.shared().invalidate(path)
 
     def delete(self) -> None:
         if self.path is None:
@@ -178,6 +211,7 @@ class KilnBaseModel(BaseModel):
         if dir_path is None:
             raise ValueError("Cannot delete model because path is not set")
         shutil.rmtree(dir_path)
+        ModelCache.shared().invalidate(self.path)
         self.path = None
 
     def build_path(self) -> Path | None:
@@ -197,51 +231,44 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     including parent reference handling and file system organization.
 
     Attributes:
-        _parent (KilnBaseModel): Reference to the parent model instance
+        parent (KilnBaseModel): Reference to the parent model instance. Not persisted, just in memory.
     """
 
-    _parent: KilnBaseModel | None = None
+    # Parent is an in memory only reference to parent. If it's set we use that. If not we'll try to load it from disk based on the path.
+    # We don't persist the parent reference to disk. See the accessors below for how we make it a clean api (parent accessor will lazy load from disk)
+    parent: Optional[KilnBaseModel] = Field(default=None, exclude=True)
 
-    # workaround to tell typechecker that we support the parent property, even though it's not a stock property
-    if TYPE_CHECKING:
-        parent: KilnBaseModel  # type: ignore
+    def __getattribute__(self, name: str) -> Any:
+        if name == "parent":
+            return self.load_parent()
+        return super().__getattribute__(name)
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        if "parent" in data:
-            self.parent = data["parent"]
+    def cached_parent(self) -> Optional[KilnBaseModel]:
+        return object.__getattribute__(self, "parent")
 
-    @property
-    def parent(self) -> Optional[KilnBaseModel]:
+    def load_parent(self) -> Optional[KilnBaseModel]:
         """Get the parent model instance, loading it from disk if necessary.
 
         Returns:
             Optional[KilnBaseModel]: The parent model instance or None if not set
         """
-        if self._parent is not None:
-            return self._parent
+        cached_parent = self.cached_parent()
+        if cached_parent is not None:
+            return cached_parent
+
         # lazy load parent from path
         if self.path is None:
             return None
-        # TODO: this only works with base_filename. If we every support custom names, we need to change this.
+        # Note: this only works with base_filename. If we every support custom names, we need to change this.
         parent_path = (
             self.path.parent.parent.parent
             / self.__class__.parent_type().base_filename()
         )
         if parent_path is None:
             return None
-        self._parent = self.__class__.parent_type().load_from_file(parent_path)
-        return self._parent
-
-    @parent.setter
-    def parent(self, value: Optional[KilnBaseModel]):
-        if value is not None:
-            expected_parent_type = self.__class__.parent_type()
-            if not isinstance(value, expected_parent_type):
-                raise ValueError(
-                    f"Parent must be of type {expected_parent_type}, but was {type(value)}"
-                )
-        self._parent = value
+        loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
+        self.parent = loaded_parent
+        return loaded_parent
 
     # Dynamically implemented by KilnParentModel method injection
     @classmethod
@@ -255,11 +282,12 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @model_validator(mode="after")
     def check_parent_type(self) -> Self:
-        if self._parent is not None:
+        cached_parent = self.cached_parent()
+        if cached_parent is not None:
             expected_parent_type = self.__class__.parent_type()
-            if not isinstance(self._parent, expected_parent_type):
+            if not isinstance(cached_parent, expected_parent_type):
                 raise ValueError(
-                    f"Parent must be of type {expected_parent_type}, but was {type(self._parent)}"
+                    f"Parent must be of type {expected_parent_type}, but was {type(cached_parent)}"
                 )
         return self
 
@@ -298,9 +326,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         )
 
     @classmethod
-    def all_children_of_parent_path(
-        cls: Type[PT], parent_path: Path | None
-    ) -> list[PT]:
+    def iterate_children_paths_of_parent_path(cls: Type[PT], parent_path: Path | None):
         if parent_path is None:
             # children are disk based. If not saved, they don't exist
             return []
@@ -322,12 +348,40 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             return []
 
         # Collect all /relationship/{id}/{base_filename.kiln} files in the relationship folder
-        children = []
         for child_file in relationship_folder.glob(f"**/{cls.base_filename()}"):
-            child = cls.load_from_file(child_file)
-            children.append(child)
+            yield child_file
 
+    @classmethod
+    def all_children_of_parent_path(
+        cls: Type[PT], parent_path: Path | None
+    ) -> list[PT]:
+        children = []
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            children.append(cls.load_from_file(child_path))
         return children
+
+    @classmethod
+    def from_id_and_parent_path(
+        cls: Type[PT], id: str, parent_path: Path | None
+    ) -> PT | None:
+        """
+        Fast search by ID using the cache. Avoids the model_copy overhead on all but the exact match.
+
+        Uses cache so still slow on first load.
+        """
+        if parent_path is None:
+            return None
+
+        # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            child_id = ModelCache.shared().get_model_id(child_path, cls)
+            if child_id == id:
+                return cls.load_from_file(child_path)
+            if child_id is None:
+                child = cls.load_from_file(child_path)
+                if child.id == id:
+                    return child
+        return None
 
 
 # Parent create methods for all child relationships

@@ -6,6 +6,7 @@ import pytest
 import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel import strict_mode
 
 from app.desktop.desktop_server import make_app
 from app.desktop.studio_server.webhost import HTMLStaticFiles
@@ -23,14 +24,19 @@ def client():
 
             assert studio_path() == temp_dir  # Verify the patch is working
             app = make_app()
-            client = TestClient(app)
-            yield client
+            with TestClient(app) as client:
+                yield client
 
 
 def test_ping(client):
     response = client.get("/ping")
     assert response.status_code == 200
     assert response.json() == "pong"
+
+
+# Check that the server is running in strict datamodel mode
+def test_strict_mode(client):
+    assert strict_mode()
 
 
 def test_connect_ollama_success(client):

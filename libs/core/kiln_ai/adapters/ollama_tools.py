@@ -6,6 +6,7 @@ import requests
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
+from kiln_ai.utils.config import Config
 
 
 def ollama_base_url() -> str:
@@ -16,9 +17,9 @@ def ollama_base_url() -> str:
         The base URL to use for Ollama API calls, using environment variable if set
         or falling back to localhost default
     """
-    env_base_url = os.getenv("OLLAMA_BASE_URL")
-    if env_base_url is not None:
-        return env_base_url
+    config_base_url = Config.shared().ollama_base_url
+    if config_base_url:
+        return config_base_url
     return "http://localhost:11434"
 
 

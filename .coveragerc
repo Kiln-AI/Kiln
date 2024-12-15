@@ -2,3 +2,4 @@
 omit =
     **/test_*.py
     libs/core/kiln_ai/adapters/ml_model_list.py
+    conftest.py

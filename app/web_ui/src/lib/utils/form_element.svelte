@@ -5,6 +5,7 @@
   export let value: unknown
   export let description: string = ""
   export let info_description: string = ""
+  export let placeholder: string | null = null
   export let optional: boolean = false
   export let max_length: number | null = null
   export let error_message: string | null = null // start null because they haven't had a chance to edit it yet
@@ -105,7 +106,7 @@
   <div class="relative">
     {#if inputType === "textarea"}
       <textarea
-        placeholder={error_message || label}
+        placeholder={error_message || placeholder || label}
         {id}
         class="textarea text-base textarea-bordered w-full h-18 wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
@@ -117,7 +118,7 @@
     {:else if inputType === "input"}
       <input
         type="text"
-        placeholder={error_message || label}
+        placeholder={error_message || placeholder || label}
         {id}
         class="input text-base input-bordered w-full font-base {error_message ||
         inline_error

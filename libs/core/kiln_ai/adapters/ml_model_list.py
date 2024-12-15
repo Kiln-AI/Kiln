@@ -22,6 +22,7 @@ class ModelProviderName(str, Enum):
     openrouter = "openrouter"
     fireworks_ai = "fireworks_ai"
     kiln_fine_tune = "kiln_fine_tune"
+    kiln_custom_registry = "kiln_custom_registry"
 
 
 class ModelFamily(str, Enum):
@@ -54,6 +55,7 @@ class ModelName(str, Enum):
     llama_3_2_3b = "llama_3_2_3b"
     llama_3_2_11b = "llama_3_2_11b"
     llama_3_2_90b = "llama_3_2_90b"
+    llama_3_3_70b = "llama_3_3_70b"
     gpt_4o_mini = "gpt_4o_mini"
     gpt_4o = "gpt_4o"
     phi_3_5 = "phi_3_5"
@@ -502,6 +504,38 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Llama 3.3 70B
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_3_3_70b,
+        friendly_name="Llama 3.3 70B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                provider_options={"model": "meta-llama/llama-3.3-70b-instruct"},
+                # Openrouter not supporing tools yet. Once they do probably can remove. JSON mode sometimes works, but not consistently.
+                supports_structured_output=False,
+                supports_data_gen=False,
+                adapter_options={
+                    "langchain": {
+                        "with_structured_output_options": {"method": "json_mode"}
+                    }
+                },
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                provider_options={"model": "llama3.3"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                # Finetuning not live yet
+                # provider_finetune_id="accounts/fireworks/models/llama-v3p3-70b-instruct",
+                provider_options={
+                    "model": "accounts/fireworks/models/llama-v3p3-70b-instruct"
+                },
+            ),
+        ],
+    ),
     # Phi 3.5
     KilnModel(
         family=ModelFamily.phi,
@@ -598,18 +632,6 @@ built_in_models: List[KilnModel] = [
         name=ModelName.mixtral_8x7b,
         friendly_name="Mixtral 8x7B",
         providers=[
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                provider_options={
-                    "model": "accounts/fireworks/models/mixtral-8x7b-instruct-hf",
-                },
-                provider_finetune_id="accounts/fireworks/models/mixtral-8x7b-instruct-hf",
-                adapter_options={
-                    "langchain": {
-                        "with_structured_output_options": {"method": "json_mode"}
-                    }
-                },
-            ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "mistralai/mixtral-8x7b-instruct"},

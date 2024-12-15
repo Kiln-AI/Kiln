@@ -41,8 +41,13 @@ def connect_repair_api(app: FastAPI):
             evaluator_feedback=input.evaluator_feedback,
         )
 
-        model_name = input.model_name or run.output.source.properties.get("model_name")
-        provider = input.provider or run.output.source.properties.get("model_provider")
+        source_properties = (
+            run.output.source.properties
+            if run.output.source and run.output.source.properties
+            else {}
+        )
+        model_name = input.model_name or source_properties.get("model_name")
+        provider = input.provider or source_properties.get("model_provider")
         if (
             not model_name
             or not provider

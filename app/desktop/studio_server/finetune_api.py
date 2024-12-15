@@ -138,10 +138,7 @@ def connect_fine_tune_api(app: FastAPI):
         project_id: str, task_id: str, finetune_id: str
     ) -> FinetuneWithStatus:
         task = task_from_id(project_id, task_id)
-        finetune = next(
-            (finetune for finetune in task.finetunes() if finetune.id == finetune_id),
-            None,
-        )
+        finetune = Finetune.from_id_and_parent_path(finetune_id, task.path)
         if finetune is None:
             raise HTTPException(
                 status_code=404,
@@ -227,14 +224,7 @@ def connect_fine_tune_api(app: FastAPI):
             )
         finetune_adapter_class = finetune_registry[request.provider]
 
-        dataset = next(
-            (
-                split
-                for split in task.dataset_splits()
-                if split.id == request.dataset_id
-            ),
-            None,
-        )
+        dataset = DatasetSplit.from_id_and_parent_path(request.dataset_id, task.path)
         if dataset is None:
             raise HTTPException(
                 status_code=404,
@@ -281,10 +271,7 @@ def connect_fine_tune_api(app: FastAPI):
                 detail=f"Dataset format '{format_type}' not found",
             )
         task = task_from_id(project_id, task_id)
-        dataset = next(
-            (split for split in task.dataset_splits() if split.id == dataset_id),
-            None,
-        )
+        dataset = DatasetSplit.from_id_and_parent_path(dataset_id, task.path)
         if dataset is None:
             raise HTTPException(
                 status_code=404,

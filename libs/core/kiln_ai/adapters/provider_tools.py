@@ -11,6 +11,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ollama_tools import (
     get_ollama_connection,
 )
+from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.registry import project_from_id
 
 from ..utils.config import Config
@@ -111,6 +112,11 @@ async def kiln_model_provider_from(
     if built_in_model:
         return built_in_model
 
+    # For custom registry, get the provider name and model name from the model id
+    if provider_name == ModelProviderName.kiln_custom_registry:
+        provider_name = name.split("::", 1)[0]
+        name = name.split("::", 1)[1]
+
     # Custom/untested model. Set untested, and build a ModelProvider at runtime
     if provider_name is None:
         raise ValueError("Provider name is required for custom models")
@@ -143,10 +149,10 @@ def finetune_provider_model(
     project = project_from_id(project_id)
     if project is None:
         raise ValueError(f"Project {project_id} not found")
-    task = next((t for t in project.tasks() if t.id == task_id), None)
+    task = Task.from_id_and_parent_path(task_id, project.path)
     if task is None:
         raise ValueError(f"Task {task_id} not found")
-    fine_tune = next((f for f in task.finetunes() if f.id == fine_tune_id), None)
+    fine_tune = Finetune.from_id_and_parent_path(fine_tune_id, task.path)
     if fine_tune is None:
         raise ValueError(f"Fine tune {fine_tune_id} not found")
     if fine_tune.fine_tune_model_id is None:
@@ -220,6 +226,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Fine Tuned Models"
             case ModelProviderName.fireworks_ai:
                 return "Fireworks AI"
+            case ModelProviderName.kiln_custom_registry:
+                return "Custom Models"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_error(enum_id)
@@ -233,6 +241,7 @@ def provider_options_for_custom_model(
     """
     Generated model provider options for a custom model. Each has their own format/options.
     """
+
     if provider_name not in ModelProviderName.__members__:
         raise ValueError(f"Invalid provider name: {provider_name}")
 
@@ -249,6 +258,10 @@ def provider_options_for_custom_model(
             | ModelProviderName.groq
         ):
             return {"model": model_name}
+        case ModelProviderName.kiln_custom_registry:
+            raise ValueError(
+                "Custom models from registry should be parsed into provider/model before calling this."
+            )
         case ModelProviderName.kiln_fine_tune:
             raise ValueError(
                 "Fine tuned models should populate provider options via another path"

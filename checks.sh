@@ -43,4 +43,4 @@ echo "${headerStart}Checking Types${headerEnd}"
 pyright .
 
 echo "${headerStart}Running Python Tests${headerEnd}"
-python3 -m pytest -q .
+python3 -m pytest --benchmark-quiet -q .

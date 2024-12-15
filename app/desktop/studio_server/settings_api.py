@@ -1,15 +1,19 @@
+from typing import Any
+
 from fastapi import FastAPI
 from kiln_ai.utils.config import Config
 
 
 def connect_settings(app: FastAPI):
     @app.post("/api/settings")
-    def update_settings(new_settings: dict[str, int | float | str | bool | None]):
+    def update_settings(
+        new_settings: dict[str, int | float | str | bool | list | None],
+    ):
         Config.shared().update_settings(new_settings)
         return Config.shared().settings(hide_sensitive=True)
 
     @app.get("/api/settings")
-    def read_settings():
+    def read_settings() -> dict[str, Any]:
         settings = Config.shared().settings(hide_sensitive=True)
         return settings
 

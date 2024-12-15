@@ -80,6 +80,10 @@ class Config:
                 list,
                 default_lambda=lambda: [],
             ),
+            "custom_models": ConfigProperty(
+                list,
+                default_lambda=lambda: [],
+            ),
         }
         self._settings = self.load_settings()
 
@@ -145,7 +149,7 @@ class Config:
             settings = yaml.safe_load(f.read()) or {}
         return settings
 
-    def settings(self, hide_sensitive=False):
+    def settings(self, hide_sensitive=False) -> Dict[str, Any]:
         if hide_sensitive:
             return {
                 k: "[hidden]"

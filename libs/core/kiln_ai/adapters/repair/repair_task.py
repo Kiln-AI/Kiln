@@ -43,8 +43,10 @@ feedback describing what should be improved. Your job is to understand the evalu
     @classmethod
     def _original_prompt(cls, run: TaskRun, task: Task) -> str:
         prompt_builder_class: Type[BasePromptBuilder] | None = None
-        prompt_builder_name = run.output.source.properties.get(
-            "prompt_builder_name", None
+        prompt_builder_name = (
+            run.output.source.properties.get("prompt_builder_name", None)
+            if run.output.source
+            else None
         )
         if prompt_builder_name is not None and isinstance(prompt_builder_name, str):
             prompt_builder_class = prompt_builder_registry.get(

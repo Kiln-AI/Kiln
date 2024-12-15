@@ -10,11 +10,12 @@ from .run_api import connect_run_api
 from .task_api import connect_task_api
 
 
-def make_app():
+def make_app(lifespan=None):
     app = FastAPI(
         title="Kiln AI Server",
         summary="A REST API for the Kiln AI datamodel.",
         description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln-ai",
+        lifespan=lifespan,
     )
 
     @app.get("/ping")

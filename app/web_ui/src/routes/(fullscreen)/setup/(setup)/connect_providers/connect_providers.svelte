@@ -3,6 +3,7 @@
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import type { OllamaConnection } from "$lib/types"
+  import FormElement from "$lib/utils/form_element.svelte"
 
   type Provider = {
     name: string
@@ -160,6 +161,8 @@
     }
   }
 
+  let custom_ollama_url: string | null = null
+
   const connect_ollama = async (user_initated: boolean = true) => {
     status.ollama.connected = false
     status.ollama.connecting = user_initated
@@ -168,6 +171,13 @@
     try {
       const { data: req_data, error: req_error } = await client.GET(
         "/api/provider/ollama/connect",
+        {
+          params: {
+            query: {
+              custom_ollama_url: custom_ollama_url || undefined,
+            },
+          },
+        },
       )
       if (req_error) {
         throw req_error
@@ -211,8 +221,15 @@
           data.untested_models.join(", ") +
           ". "
         : ""
+    const custom_url_str =
+      custom_ollama_url && custom_ollama_url == "http://localhost:11434"
+        ? ""
+        : "Custom Ollama URL: " + custom_ollama_url
     status.ollama.custom_description =
-      "Ollama connected. " + supported_models_str + untested_models_str
+      "Ollama connected. " +
+      supported_models_str +
+      untested_models_str +
+      custom_url_str
   }
 
   let api_key_issue = false
@@ -292,6 +309,9 @@
       if (data["fireworks_api_key"] && data["fireworks_account_id"]) {
         status.fireworks_ai.connected = true
       }
+      if (data["ollama_base_url"]) {
+        custom_ollama_url = data["ollama_base_url"]
+      }
     } catch (e) {
       console.error("check_existing_providers error", e)
     } finally {
@@ -299,13 +319,19 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
+    await check_existing_providers()
+    // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
     })
-    check_existing_providers()
   })
+
+  function show_custom_ollama_url_dialog() {
+    // @ts-expect-error showModal is not a method on HTMLElement
+    document.getElementById("ollama_dialog")?.showModal()
+  }
 </script>
 
 <div class="w-full">
@@ -418,6 +444,14 @@
                 {status[provider.id].custom_description || provider.description}
               </p>
             {/if}
+            {#if provider.id === "ollama" && status[provider.id] && status[provider.id].error}
+              <button
+                class="link text-left text-sm text-gray-500"
+                on:click={show_custom_ollama_url_dialog}
+              >
+                Set Custom Ollama URL
+              </button>
+            {/if}
           </div>
           <button
             class="btn md:min-w-[100px]"
@@ -442,3 +476,46 @@
     </div>
   {/if}
 </div>
+
+<dialog id="ollama_dialog" class="modal">
+  <div class="modal-box">
+    <form method="dialog">
+      <button
+        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
+        >✕</button
+      >
+    </form>
+
+    <h3 class="text-lg font-bold">Custom Ollama URL</h3>
+    <p class="text-sm font-light mb-8">
+      By default, Kiln attempts to connect to Ollama running on localhost:11434.
+      If you run Ollama on a custom URL or port, enter it here to connect.
+    </p>
+    <FormElement
+      id="ollama_url"
+      label="Ollama URL"
+      info_description="It should included the http prefix, and the port number. For example, http://localhost:11434"
+      bind:value={custom_ollama_url}
+      placeholder="http://localhost:11434"
+    />
+    <div class="flex flex-row gap-4 items-center mt-4 justify-end">
+      <form method="dialog">
+        <button class="btn">Cancel</button>
+      </form>
+      <button
+        class="btn btn-primary"
+        disabled={!custom_ollama_url}
+        on:click={() => {
+          connect_ollama(true)
+          // @ts-expect-error showModal is not a method on HTMLElement
+          document.getElementById("ollama_dialog")?.close()
+        }}
+      >
+        Connect
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>

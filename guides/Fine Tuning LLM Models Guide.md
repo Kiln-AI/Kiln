@@ -4,7 +4,9 @@
 
 ## Overview
 
-We'll be walking through an example where we start from scratch, and build 9 fine-tuned models in just under 18 minutes of active work (not counting time waiting for training to complete).
+We'll be walking through an example where we start from scratch, and build 9 fine-tuned models in just under 18 minutes of active work, not counting time waiting for training and data-gen.
+
+No coding is necessary, and our UI will guide you through the process. Step 6 is optional, and requires some basic python skills. Our open-source python library is available for advanced users.
 
 You can follow this guide to create your own LLM fine-tunes. We'll cover:
 
@@ -121,7 +123,7 @@ If your task is deterministic (classification), Kiln AI will provide the validat
 You can export your models for use on your machine, deployment to the cloud, or embedding in your product.
 
  - Fireworks: you can [download the weights](https://docs.fireworks.ai/fine-tuning/fine-tuning-models#downloading-model-weights) in Hugging Face PEFT format, and convert as needed.
- - Unsloth: your fine-tunes can be directly export to GGUF or other formats which make these model easy to deploy. A GGUF can be [imported to Ollama](https://github.com/ollama/ollama/blob/main/docs/import.md) for local use.
+ - Unsloth: your fine-tunes can be directly export to GGUF or other formats which make these model easy to deploy. A GGUF can be [imported to Ollama](https://github.com/ollama/ollama/blob/main/docs/import.md) for local use. Once added to Ollama, the models will become available in Kiln UI as well.
  - OpenAI: sadly OpenAI won’t let you download their models.
 
 #### Iterate to Improve Quality
@@ -135,6 +137,10 @@ Models and products are rarely perfect on their first try. When you find bugs or
 - Generate  synthetic data targeting common bugs you see, so the model can learn to avoid those issues
 - Regenerate fine-tunes as your dataset grows and evolves
 - Try new foundation models (directly and with fine tuning) when new state of the art models are released.
+
+#### Integrate with Code
+
+Kiln can be used entirely through the UI and doesn't require coding. However, if you'd like a code-based integration, our open-source [Python library](https://pypi.org/project/kiln-ai/) is available.
 
 #### Our "Ladder" Data Strategy
 

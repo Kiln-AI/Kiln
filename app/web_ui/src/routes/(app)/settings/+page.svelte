@@ -4,11 +4,11 @@
 
   let sections = [
     {
-      name: "AI Providers",
+      name: "AI Providers & Models",
       description:
         "Connect to AI providers like OpenAI, OpenRouter, or Ollama.",
       href: "/settings/providers",
-      button_text: "Manage Providers",
+      button_text: "Manage Providers & Models",
     },
     {
       name: "Projects",

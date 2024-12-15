@@ -2,6 +2,7 @@ import datetime
 import json
 from pathlib import Path
 from typing import Optional
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,6 +11,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.model_cache import ModelCache
 
 
 @pytest.fixture
@@ -43,6 +45,17 @@ def test_newer_file(tmp_path) -> Path:
         json.dump(data, file, indent=4)
 
     return test_file_path
+
+
+@pytest.fixture
+def tmp_model_cache():
+    temp_cache = ModelCache()
+    # We're testing integration, not cache functions, in this file
+    temp_cache._enabled = True
+    with (
+        patch("kiln_ai.datamodel.basemodel.ModelCache.shared", return_value=temp_cache),
+    ):
+        yield temp_cache
 
 
 def test_load_from_file(test_base_file):
@@ -277,9 +290,8 @@ def test_lazy_load_parent(tmp_path):
     assert loaded_parent.name == "Parent"
     assert loaded_parent.path == parent.path
 
-    # Verify that the _parent attribute is now set
-    assert hasattr(loaded_child, "_parent")
-    assert loaded_child._parent is loaded_parent
+    # Verify that the parent is cached
+    assert loaded_child.cached_parent() is loaded_parent
 
 
 def test_delete(tmp_path):
@@ -334,3 +346,126 @@ def test_string_to_valid_name():
     # Test empty string and whitespace
     assert string_to_valid_name("") == ""
     assert string_to_valid_name("   ") == ""
+
+
+def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
+    tmp_model_cache.get_model = MagicMock(return_value=None)
+    tmp_model_cache.set_model = MagicMock()
+
+    # Load the model
+    model = KilnBaseModel.load_from_file(test_base_file)
+
+    # Check that the cache was checked and set
+    tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+    tmp_model_cache.set_model.assert_called_once()
+
+    # Ensure the model is correctly loaded
+    assert model.v == 1
+    assert model.path == test_base_file
+
+
+def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):
+    # Create and save the model
+    model = KilnBaseModel(path=test_base_file)
+
+    # Set mock after to ignore any previous calls, we want to see save calls it
+    tmp_model_cache.invalidate = MagicMock()
+    model.save_to_file()
+
+    # Check that the cache was invalidated. Might be called multiple times for setting props like path. but must be called at least once.
+    tmp_model_cache.invalidate.assert_called_with(test_base_file)
+
+
+def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
+    # Create and save the model
+    file_path = tmp_path / "test.kiln"
+    model = KilnBaseModel(path=file_path)
+    model.save_to_file()
+
+    # populate and check cache
+    model = KilnBaseModel.load_from_file(file_path)
+    cached_model = tmp_model_cache.get_model(file_path, KilnBaseModel)
+    assert cached_model.id == model.id
+
+    tmp_model_cache.invalidate = MagicMock()
+
+    # Delete the model
+    model.delete()
+
+    # Check that the cache was invalidated
+    tmp_model_cache.invalidate.assert_called_with(file_path)
+    assert tmp_model_cache.get_model(file_path, KilnBaseModel) is None
+
+
+def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
+    # Set up the mock to return a cached model
+    cached_model = KilnBaseModel(v=1, path=test_base_file)
+    tmp_model_cache.get_model = MagicMock(return_value=cached_model)
+
+    with patch("builtins.open", create=True) as mock_open:
+        # Load the model
+        model = KilnBaseModel.load_from_file(test_base_file)
+
+        # Check that the cache was checked and the cached model was returned
+        tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+        assert model is cached_model
+
+        # Assert that open was not called (we used the cached model, not file)
+        mock_open.assert_not_called()
+
+
+def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+    child3 = DefaultParentedModel(parent=parent, name="Child3")
+
+    # Save all children
+    child1.save_to_file()
+    child2.save_to_file()
+    child3.save_to_file()
+
+    # Test finding existing child by ID
+    found_child = DefaultParentedModel.from_id_and_parent_path(
+        child2.id, test_base_parented_file
+    )
+    assert found_child is not None
+    assert found_child.id == child2.id
+    assert found_child.name == "Child2"
+    assert found_child is not child2  # not same instance (deep copy)
+
+    # Test non-existent ID returns None
+    not_found = DefaultParentedModel.from_id_and_parent_path(
+        "nonexistent", test_base_parented_file
+    )
+    assert not_found is None
+
+
+def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_cache):
+    # Set up parent and child
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    child = DefaultParentedModel(parent=parent, name="Child")
+    child.save_to_file()
+
+    # First load to populate cache
+    _ = DefaultParentedModel.from_id_and_parent_path(child.id, test_base_parented_file)
+
+    # Mock cache to verify it's used
+    tmp_model_cache.get_model_id = MagicMock(return_value=child.id)
+
+    # Load again - should use cache
+    found_child = DefaultParentedModel.from_id_and_parent_path(
+        child.id, test_base_parented_file
+    )
+
+    assert found_child is not None
+    assert found_child.id == child.id
+    tmp_model_cache.get_model_id.assert_called()
+
+
+def test_from_id_and_parent_path_without_parent():
+    # Test with None parent_path
+    not_found = DefaultParentedModel.from_id_and_parent_path("any-id", None)
+    assert not_found is None

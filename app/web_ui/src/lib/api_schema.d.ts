@@ -211,6 +211,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs_summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Runs Summary */
+        get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/run": {
         parameters: {
             query?: never;
@@ -994,7 +1011,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "nemotron_70b";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_72b";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -1128,6 +1145,27 @@ export interface components {
              * @description The provider of the model to use for the repair task. Optional, if not specified, the provider of the original task will be used.
              */
             provider?: string | null;
+        };
+        /** RunSummary */
+        RunSummary: {
+            /** Id */
+            id: string | null;
+            rating?: components["schemas"]["TaskOutputRating-Output"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Input Preview */
+            input_preview?: string | null;
+            /** Output Preview */
+            output_preview?: string | null;
+            /** Repair State */
+            repair_state?: string | null;
+            /** Model Name */
+            model_name?: string | null;
+            /** Input Source */
+            input_source?: string | null;
         };
         /** RunTaskRequest */
         RunTaskRequest: {
@@ -1962,6 +2000,38 @@ export interface operations {
             };
         };
     };
+    get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_task_api_projects__project_id__tasks__task_id__run_post: {
         parameters: {
             query?: never;
@@ -2040,7 +2110,9 @@ export interface operations {
     };
     connect_ollama_api_api_provider_ollama_connect_get: {
         parameters: {
-            query?: never;
+            query?: {
+                custom_ollama_url?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2054,6 +2126,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OllamaConnection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2213,7 +2294,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -2228,7 +2309,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    [key: string]: number | string | boolean | null;
+                    [key: string]: number | string | boolean | unknown[] | null;
                 };
             };
         };

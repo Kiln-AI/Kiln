@@ -20,8 +20,10 @@ from app.desktop.studio_server.provider_api import (
     available_ollama_models,
     connect_bedrock,
     connect_groq,
+    connect_ollama,
     connect_openrouter,
     connect_provider_api,
+    custom_models,
     model_from_ollama_tag,
 )
 
@@ -768,3 +770,149 @@ def test_all_fine_tuned_models(mock_all_projects):
 
     result = all_fine_tuned_models()
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_connect_ollama_rejects_invalid_url_format():
+    with pytest.raises(HTTPException) as exc_info:
+        await connect_ollama("invalid-url-no-protocol")
+    assert exc_info.value.status_code == 400
+    assert "Invalid Ollama URL" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_connect_ollama_uses_custom_url_when_provided():
+    mock_tags_response = {"models": []}
+    with (
+        patch("requests.get") as mock_get,
+        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_get.return_value.json.return_value = mock_tags_response
+        mock_parse.return_value = OllamaConnection(
+            message="Connected", supported_models=[]
+        )
+        mock_config.return_value.ollama_base_url = "http://default-url:11434"
+
+        await connect_ollama("http://custom-url:11434")
+
+        mock_get.assert_called_once_with("http://custom-url:11434/api/tags", timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_connect_ollama_uses_default_url_when_no_custom_url():
+    mock_tags_response = {"models": []}
+    with (
+        patch("requests.get") as mock_get,
+        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        patch(
+            "app.desktop.studio_server.provider_api.ollama_base_url"
+        ) as mock_base_url,
+    ):
+        mock_get.return_value.json.return_value = mock_tags_response
+        mock_parse.return_value = OllamaConnection(
+            message="Connected", supported_models=[]
+        )
+        mock_base_url.return_value = "http://default-url:11434"
+
+        await connect_ollama(None)
+
+        mock_get.assert_called_once_with("http://default-url:11434/api/tags", timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_connect_ollama_saves_custom_url_on_success():
+    mock_tags_response = {"models": []}
+    with (
+        patch("requests.get") as mock_get,
+        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_get.return_value.json.return_value = mock_tags_response
+        mock_parse.return_value = OllamaConnection(
+            message="Connected", supported_models=[]
+        )
+
+        mock_config_instance = MagicMock()
+        mock_config_instance.ollama_base_url = "http://old-url:11434"
+        mock_config.return_value = mock_config_instance
+
+        await connect_ollama("http://new-url:11434")
+
+        mock_config_instance.save_setting.assert_called_once_with(
+            "ollama_base_url", "http://new-url:11434"
+        )
+
+
+@pytest.mark.asyncio
+async def test_connect_ollama_does_not_save_unchanged_url():
+    mock_tags_response = {"models": []}
+    with (
+        patch("requests.get") as mock_get,
+        patch("app.desktop.studio_server.provider_api.parse_ollama_tags") as mock_parse,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_get.return_value.json.return_value = mock_tags_response
+        mock_parse.return_value = OllamaConnection(
+            message="Connected", supported_models=[]
+        )
+
+        mock_config_instance = MagicMock()
+        mock_config_instance.ollama_base_url = "http://same-url:11434"
+        mock_config.return_value = mock_config_instance
+
+        await connect_ollama("http://same-url:11434")
+
+        mock_config_instance.save_setting.assert_not_called()
+
+
+def test_custom_models():
+    # Mock Config.shared().custom_models
+    mock_custom_models = [
+        "openai::model1",
+        "groq::model2",
+        "invalid_model_format",
+        "openai::model::with::delimiters",
+    ]
+
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.custom_models = mock_custom_models
+        mock_config.return_value = mock_config_instance
+
+        result = custom_models()
+
+        assert result is not None
+        assert result.provider_name == "Custom Models"
+        assert result.provider_id == ModelProviderName.kiln_custom_registry
+        assert len(result.models) == 3  # Only valid models should be included
+
+        # Verify first model details
+        assert result.models[0].id == "openai::model1"
+        assert result.models[0].name == "OpenAI: model1"
+        assert result.models[0].supports_structured_output is False
+        assert result.models[0].supports_data_gen is False
+        assert result.models[0].untested_model is True
+
+        # Verify second model details
+        assert result.models[1].id == "groq::model2"
+        assert result.models[1].name == "Groq: model2"
+        assert result.models[1].supports_structured_output is False
+        assert result.models[1].supports_data_gen is False
+        assert result.models[1].untested_model is True
+
+        # Verify third model details
+        assert result.models[2].id == "openai::model::with::delimiters"
+        assert result.models[2].name == "OpenAI: model::with::delimiters"
+        assert result.models[2].supports_structured_output is False
+        assert result.models[2].supports_data_gen is False
+        assert result.models[2].untested_model is True
+
+    # Test case: No custom models
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.custom_models = []
+        mock_config.return_value = mock_config_instance
+
+        result = custom_models()
+        assert result is None
