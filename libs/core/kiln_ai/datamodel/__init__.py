@@ -1,3 +1,7 @@
+"""
+See our docs for details about our datamodel: https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html
+"""
+
 from __future__ import annotations
 
 import json
