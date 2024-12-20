@@ -756,7 +756,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "coverage" },

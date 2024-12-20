@@ -9,6 +9,7 @@ def adapter_for_task(
     model_name: str | None = None,
     provider: str | None = None,
     prompt_builder: BasePromptBuilder | None = None,
+    tags: list[str] | None = None,
 ) -> BaseAdapter:
     # We use langchain for everything right now, but can add any others here
     return LangchainAdapter(
@@ -16,4 +17,5 @@ def adapter_for_task(
         model_name=model_name,
         provider=provider,
         prompt_builder=prompt_builder,
+        tags=tags,
     )

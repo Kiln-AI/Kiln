@@ -296,6 +296,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provider/openai_compatible": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Openai Compatible Providers */
+        post: operations["save_openai_compatible_providers_api_provider_openai_compatible_post"];
+        /** Delete Openai Compatible Providers */
+        delete: operations["delete_openai_compatible_providers_api_provider_openai_compatible_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider/connect_api_key": {
         parameters: {
             query?: never;
@@ -987,6 +1005,35 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * KilnBaseModel
+         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
+         *
+         *     Attributes:
+         *         v (int): Schema version number for migration support
+         *         id (str): Unique identifier for the model instance
+         *         path (Path): File system path where the model is stored
+         *         created_at (datetime): Timestamp when the model was created
+         *         created_by (str): User ID of the creator
+         */
+        KilnBaseModel: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+        };
         /** ModelDetails */
         ModelDetails: {
             /** Id */
@@ -1146,6 +1193,19 @@ export interface components {
              */
             provider?: string | null;
         };
+        /**
+         * RequirementRating
+         * @description Rating for a specific requirement within a task output.
+         */
+        RequirementRating: {
+            /**
+             * Value
+             * @description The rating value. Interpretation depends on rating type
+             */
+            value: number;
+            /** @description The type of rating */
+            type: components["schemas"]["TaskOutputRatingType"];
+        };
         /** RunSummary */
         RunSummary: {
             /** Id */
@@ -1166,6 +1226,8 @@ export interface components {
             model_name?: string | null;
             /** Input Source */
             input_source?: string | null;
+            /** Tags */
+            tags?: string[] | null;
         };
         /** RunTaskRequest */
         RunTaskRequest: {
@@ -1179,6 +1241,8 @@ export interface components {
             structured_input?: Record<string, never> | null;
             /** Ui Prompt Method */
             ui_prompt_method?: string | null;
+            /** Tags */
+            tags?: string[] | null;
         };
         /**
          * Task
@@ -1266,7 +1330,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source: components["schemas"]["DataSource"];
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
         };
@@ -1300,7 +1364,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source: components["schemas"]["DataSource"];
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /** Model Type */
@@ -1310,7 +1374,10 @@ export interface components {
          * TaskOutputRating
          * @description A rating for a task output, including an overall rating and ratings for each requirement.
          *
-         *     Only supports five star ratings for now, but extensible for custom values.
+         *     Supports:
+         *     - five_star: 1-5 star ratings
+         *     - pass_fail: boolean pass/fail (1.0 = pass, 0.0 = fail)
+         *     - pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)
          */
         "TaskOutputRating-Input": {
             /**
@@ -1333,23 +1400,29 @@ export interface components {
             type: components["schemas"]["TaskOutputRatingType"];
             /**
              * Value
-             * @description The overall rating value (typically 1-5 stars).
+             * @description The rating value. Interpretation depends on rating type:
+             *     - five_star: 1-5 stars
+             *     - pass_fail: 1.0 (pass) or 0.0 (fail)
+             *     - pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)
              */
             value?: number | null;
             /**
              * Requirement Ratings
-             * @description The ratings of the requirements of the task. The keys are the ids of the requirements. The values are the ratings (typically 1-5 stars).
+             * @description The ratings of the requirements of the task.
              * @default {}
              */
             requirement_ratings: {
-                [key: string]: number;
+                [key: string]: components["schemas"]["RequirementRating"];
             };
         };
         /**
          * TaskOutputRating
          * @description A rating for a task output, including an overall rating and ratings for each requirement.
          *
-         *     Only supports five star ratings for now, but extensible for custom values.
+         *     Supports:
+         *     - five_star: 1-5 star ratings
+         *     - pass_fail: boolean pass/fail (1.0 = pass, 0.0 = fail)
+         *     - pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)
          */
         "TaskOutputRating-Output": {
             /**
@@ -1372,16 +1445,19 @@ export interface components {
             type: components["schemas"]["TaskOutputRatingType"];
             /**
              * Value
-             * @description The overall rating value (typically 1-5 stars).
+             * @description The rating value. Interpretation depends on rating type:
+             *     - five_star: 1-5 stars
+             *     - pass_fail: 1.0 (pass) or 0.0 (fail)
+             *     - pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)
              */
             value?: number | null;
             /**
              * Requirement Ratings
-             * @description The ratings of the requirements of the task. The keys are the ids of the requirements. The values are the ratings (typically 1-5 stars).
+             * @description The ratings of the requirements of the task.
              * @default {}
              */
             requirement_ratings: {
-                [key: string]: number;
+                [key: string]: components["schemas"]["RequirementRating"];
             };
             /** Model Type */
             readonly model_type: string;
@@ -1391,13 +1467,13 @@ export interface components {
          * @description Defines the types of rating systems available for task outputs.
          * @enum {string}
          */
-        TaskOutputRatingType: "five_star" | "custom";
+        TaskOutputRatingType: "five_star" | "pass_fail" | "pass_fail_critical" | "custom";
         /**
          * TaskRequirement
          * @description Defines a specific requirement that should be met by task outputs.
          *
          *     Includes an identifier, name, description, instruction for meeting the requirement,
-         *     and priority level.
+         *     priority level, and rating type (five_star, pass_fail, pass_fail_critical, custom).
          */
         TaskRequirement: {
             /** Id */
@@ -1413,6 +1489,8 @@ export interface components {
             instruction: string;
             /** @default 2 */
             priority: components["schemas"]["Priority"];
+            /** @default five_star */
+            type: components["schemas"]["TaskOutputRatingType"];
         };
         /**
          * TaskRun
@@ -1438,13 +1516,14 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source: components["schemas"]["DataSource"];
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Input"];
             /**
@@ -1461,6 +1540,12 @@ export interface components {
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Tags
+             * @description Tags for the task run. Tags are used to categorize task runs for filtering and reporting.
+             * @default []
+             */
+            tags: string[];
         };
         /**
          * TaskRun
@@ -1492,7 +1577,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source: components["schemas"]["DataSource"];
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Output"];
             /**
@@ -1509,6 +1594,12 @@ export interface components {
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Tags
+             * @description Tags for the task run. Tags are used to categorize task runs for filtering and reporting.
+             * @default []
+             */
+            tags: string[];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2139,6 +2230,70 @@ export interface operations {
             };
         };
     };
+    save_openai_compatible_providers_api_provider_openai_compatible_post: {
+        parameters: {
+            query: {
+                name: string;
+                base_url: string;
+                api_key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_openai_compatible_providers_api_provider_openai_compatible_delete: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     connect_api_key_api_provider_connect_api_key_post: {
         parameters: {
             query?: never;
@@ -2439,7 +2594,9 @@ export interface operations {
     };
     save_sample_api_projects__project_id__tasks__task_id__save_sample_post: {
         parameters: {
-            query?: never;
+            query?: {
+                session_id?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;

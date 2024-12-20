@@ -45,12 +45,16 @@ class BaseAdapter(metaclass=ABCMeta):
     """
 
     def __init__(
-        self, kiln_task: Task, prompt_builder: BasePromptBuilder | None = None
+        self,
+        kiln_task: Task,
+        prompt_builder: BasePromptBuilder | None = None,
+        tags: list[str] | None = None,
     ):
         self.prompt_builder = prompt_builder or SimplePromptBuilder(kiln_task)
         self.kiln_task = kiln_task
         self.output_schema = self.kiln_task.output_json_schema
         self.input_schema = self.kiln_task.input_json_schema
+        self.default_tags = tags
 
     async def invoke_returning_raw(
         self,
@@ -148,6 +152,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 ),
             ),
             intermediate_outputs=run_output.intermediate_outputs,
+            tags=self.default_tags or [],
         )
 
         exclude_fields = {

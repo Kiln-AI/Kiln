@@ -84,7 +84,7 @@ def task_run():
                 type=DataSourceType.human,
                 properties={"created_by": "test-user"},
             ),
-            rating=TaskOutputRating(rating=5, type=TaskOutputRatingType.five_star),
+            rating=TaskOutputRating(value=5, type=TaskOutputRatingType.five_star),
         ),
     )
 

@@ -27,6 +27,7 @@ def config_with_yaml(mock_yaml_file):
                 ),
                 "int_property": ConfigProperty(int, default=0),
                 "empty_property": ConfigProperty(str),
+                "list_of_objects": ConfigProperty(list, default=[]),
             }
         )
 
@@ -251,3 +252,50 @@ def test_stale_values_bug(config_with_yaml):
     # Simulate updating the settings file with set_settings
     config_with_yaml.update_settings({"example_property": "third_value"})
     assert config_with_yaml.example_property == "third_value"
+
+
+async def test_openai_compatible_providers():
+    config = Config.shared()
+    assert config.openai_compatible_providers == []
+
+    new_settings = [
+        {
+            "name": "provider1",
+            "url": "https://provider1.com",
+            "api_key": "password1",
+        },
+        {
+            "name": "provider2",
+            "url": "https://provider2.com",
+        },
+    ]
+    config.save_setting("openai_compatible_providers", new_settings)
+    assert config.openai_compatible_providers == new_settings
+
+    # Test that sensitive keys are hidden
+    settings = config.settings(hide_sensitive=True)
+    assert settings["openai_compatible_providers"] == [
+        {"name": "provider1", "url": "https://provider1.com", "api_key": "[hidden]"},
+        {"name": "provider2", "url": "https://provider2.com"},
+    ]
+
+
+def test_yaml_persistence_structured_data(config_with_yaml, mock_yaml_file):
+    # Set a value
+    new_settings = [
+        {
+            "name": "provider1",
+            "url": "https://provider1.com",
+            "api_key": "password1",
+        },
+        {
+            "name": "provider2",
+            "url": "https://provider2.com",
+        },
+    ]
+    config_with_yaml.list_of_objects = new_settings
+
+    # Check that the value was saved to the YAML file
+    with open(mock_yaml_file, "r") as f:
+        saved_settings = yaml.safe_load(f)
+    assert saved_settings["list_of_objects"] == new_settings

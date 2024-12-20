@@ -3,13 +3,14 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Rating from "./rating.svelte"
   let repair_instructions: string | null = null
-  import type { TaskRun, Task } from "$lib/types"
+  import type { TaskRun, Task, RequirementRating } from "$lib/types"
   import { client } from "$lib/api_client"
   import Output from "./output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
+  import TagDropdown from "./tag_dropdown.svelte"
 
   export let project_id: string
   export let task: Task
@@ -19,6 +20,8 @@
   export let model_name: string | null = null
   export let provider: string | null = null
   export let run_complete: boolean = false
+  export let focus_repair_on_appear: boolean = false
+
   // note: this run is NOT the main run, but a repair run TaskRun
   let repair_run: TaskRun | null = null
 
@@ -27,14 +30,13 @@
   $: run_complete = overall_rating === 5 || !!run?.repaired_output?.output
 
   let show_raw_data = false
-
   let save_rating_error: KilnError | null = null
-
+  let show_create_tag = false
   // TODO warn_before_unload
 
-  type FiveStarRating = 1 | 2 | 3 | 4 | 5 | null
-  let overall_rating: FiveStarRating = null
-  let requirement_ratings: FiveStarRating[] = []
+  type RatingValue = number | null
+  let overall_rating: RatingValue = null
+  let requirement_ratings: RatingValue[] = []
 
   // Repair is available if the run has an overall rating but it's not 5 stars, and it doesn't yet have a repaired output
   $: should_offer_repair =
@@ -60,12 +62,16 @@
     if (!new_run) {
       return
     }
-    overall_rating = (new_run.output.rating?.value || null) as FiveStarRating
+    overall_rating = (new_run.output.rating?.value || null) as RatingValue
     Object.entries(new_run.output.rating?.requirement_ratings || {}).forEach(
       ([req_id, rating]) => {
         let index = task.requirements.findIndex((req) => req.id === req_id)
         if (index !== -1) {
-          requirement_ratings[index] = rating as FiveStarRating
+          const task_req = task.requirements[index]
+          // Only load if the task requirement type matches the rating type. Technically users can switch the rating type, and we don't want to assume a 1 star rating is a "pass"
+          if (task_req.type === rating.type) {
+            requirement_ratings[index] = rating.value
+          }
         }
       },
     )
@@ -98,12 +104,47 @@
     return data
   }
 
+  let tags_error: KilnError | null = null
+  function add_tags(tags: string[]) {
+    let prior_tags = run.tags
+    let new_tags = [...prior_tags, ...tags]
+    let unique_tags = [...new Set(new_tags)]
+    save_tags(unique_tags)
+  }
+
+  function remove_tag(tag: string) {
+    let prior_tags = run.tags
+    let new_tags = prior_tags.filter((t) => t !== tag)
+    save_tags(new_tags)
+  }
+
+  async function save_tags(tags: string[]) {
+    try {
+      let patch_body = {
+        tags: tags,
+      }
+      updated_run = await patch_run(patch_body)
+      show_create_tag = false
+      tags_error = null
+    } catch (err) {
+      tags_error = createKilnError(err)
+    }
+  }
+
   async function save_ratings() {
     try {
-      let requirement_ratings_obj: Record<string, FiveStarRating> = {}
+      let requirement_ratings_obj: Record<string, RequirementRating | null> = {}
       task.requirements.forEach((req, index) => {
-        if (req.id) {
-          requirement_ratings_obj[req.id] = requirement_ratings[index]
+        if (!req.id) {
+          return
+        }
+        if (requirement_ratings[index] !== null) {
+          requirement_ratings_obj[req.id] = {
+            value: requirement_ratings[index],
+            type: req.type,
+          }
+        } else {
+          requirement_ratings_obj[req.id] = null
         }
       })
       let patch_body = {
@@ -175,9 +216,8 @@
   }
 
   // Watch for changes to ratings and save them if they change
-  let prior_overall_rating: 1 | 2 | 3 | 4 | 5 | null = overall_rating
-  let prior_requirement_ratings: (1 | 2 | 3 | 4 | 5 | null)[] =
-    requirement_ratings
+  let prior_overall_rating: RatingValue = overall_rating
+  let prior_requirement_ratings: RatingValue[] = requirement_ratings
   $: {
     if (
       overall_rating !== prior_overall_rating ||
@@ -289,7 +329,7 @@
 <div>
   <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
     <div class="grow">
-      <div class="text-xl font-bold mb-1">Outputs</div>
+      <div class="text-xl font-bold mb-1">Output</div>
       {#if task.output_json_schema}
         <div class="text-xs font-medium text-gray-500 flex flex-row mb-2">
           <svg
@@ -319,6 +359,90 @@
           </div>
         </div>
       </div>
+
+      {#if should_offer_repair || repair_review_available || repair_complete}
+        <div class="grow mt-10">
+          <div class="text-xl font-bold mb-2">Repair Output</div>
+          {#if should_offer_repair}
+            <p class="text-sm text-gray-500 mb-4">
+              Since the output isn't 5-star, provide instructions for the model
+              on how to fix it.
+            </p>
+            <FormContainer
+              submit_label="Attempt Repair"
+              on:submit={attempt_repair}
+              bind:submitting={repair_submitting}
+              bind:error={repair_error}
+              focus_on_mount={focus_repair_on_appear}
+            >
+              <FormElement
+                id="repair_instructions"
+                label="Repair Instructions"
+                inputType="textarea"
+                bind:value={repair_instructions}
+              />
+            </FormContainer>
+          {:else if repair_review_available}
+            <p class="text-sm text-gray-500 mb-4">
+              The model has attempted to fix the output given <span
+                class="tooltip link"
+                data-tip="The instructions you provided to the model: {repair_instructions ||
+                  'No instruction provided'}">your instructions</span
+              >. Review the result.
+            </p>
+            <Output raw_output={repair_run?.output.output || ""} />
+          {:else if repair_complete}
+            <p class="text-sm text-gray-500 mb-4">
+              The model has fixed the output given <span
+                class="tooltip link"
+                data-tip="The instructions you provided to the model: {repair_instructions ||
+                  'No instruction provided'}">your instructions</span
+              >.
+            </p>
+            <Output raw_output={run?.repaired_output?.output || ""} />
+            <div class="mt-2 text-xs text-gray-500 text-right">
+              {#if delete_repair_submitting}
+                <span class="loading loading-spinner loading-sm"></span>
+              {:else if delete_repair_error}
+                <p class="text-error">
+                  Error Deleting Repair:
+                  {delete_repair_error.getMessage()}
+                </p>
+              {:else}
+                <button class="link" on:click={delete_repair}
+                  >Delete Repair</button
+                >
+              {/if}
+            </div>
+          {/if}
+        </div>
+        {#if repair_review_available}
+          <div class="flex flex-row gap-4 mt-4 justify-end">
+            <button class="btn" on:click={() => (repair_run = null)}
+              >Retry Repair</button
+            >
+            <button
+              class="btn btn-primary"
+              on:click={accept_repair}
+              disabled={accept_repair_submitting}
+            >
+              {#if accept_repair_submitting}
+                <span class="loading loading-spinner loading-sm"></span>
+              {:else}
+                Accept Repair (5 Stars)
+              {/if}
+            </button>
+            {#if accept_repair_error}
+              <p class="text-error font-medium text-sm">
+                Error Accepting Repair<br />
+                <span class="text-error text-xs font-normal">
+                  {accept_repair_error.getMessage()}</span
+                >
+              </p>
+            {/if}
+          </div>
+        {/if}
+      {/if}
     </div>
 
     <div class="w-72 2xl:w-96 flex-none">
@@ -364,7 +488,7 @@
               {requirement.name}:
               <button
                 class="tooltip"
-                data-tip={`Requirement #${index + 1} - ${requirement.instruction || "No instruction provided"}`}
+                data-tip={`Requirement #${index + 1} - ${requirement.instruction || "No instruction provided"}${requirement.type === "pass_fail_critical" ? " Use 'critical' rating for responses which are never tolerable, beyond a typical failure." : ""}`}
               >
                 <svg
                   fill="currentColor"
@@ -381,7 +505,11 @@
               </button>
             </div>
             <div class="flex items-center">
-              <Rating bind:rating={requirement_ratings[index]} size={6} />
+              <Rating
+                bind:rating={requirement_ratings[index]}
+                type={requirement.type}
+                size={6}
+              />
             </div>
           {/each}
         {/if}
@@ -389,98 +517,53 @@
           Overall Rating:
         </div>
         <div class="flex items-center">
-          <Rating bind:rating={overall_rating} size={7} />
+          <Rating bind:rating={overall_rating} type="five_star" size={7} />
         </div>
+      </div>
+      <div class="mt-8 mb-4">
+        <div class="text-xl font-bold">Tags</div>
+        {#if tags_error}
+          <p class="text-error text-sm">
+            {tags_error.getMessage()}
+          </p>
+        {/if}
+        <div class="flex flex-row flex-wrap gap-2 mt-2">
+          {#each run.tags.sort() as tag}
+            <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
+              <span class="truncate">{tag}</span>
+              <button
+                class="pl-3 font-medium shrink-0"
+                on:click={() => remove_tag(tag)}>✕</button
+              >
+            </div>
+          {/each}
+          <button
+            class="badge bg-gray-200 text-gray-500 p-3 font-medium {show_create_tag
+              ? 'hidden'
+              : ''}"
+            on:click={() => (show_create_tag = true)}>+</button
+          >
+        </div>
+        {#if show_create_tag}
+          <div
+            class="mt-3 flex flex-row gap-2 items-center {show_create_tag
+              ? ''
+              : 'hidden'}"
+          >
+            <TagDropdown
+              on_select={(tag) => add_tags([tag])}
+              on_escape={() => (show_create_tag = false)}
+              focus_on_mount={true}
+            />
+            <div class="flex-none">
+              <button
+                class="btn btn-sm btn-circle text-xl font-medium"
+                on:click={() => (show_create_tag = false)}>✕</button
+              >
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
   </div>
-
-  {#if should_offer_repair || repair_review_available || repair_complete}
-    <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mt-24">
-      <div class="grow">
-        <div class="text-xl font-bold mb-2">Repair</div>
-        {#if should_offer_repair}
-          <p class="text-sm text-gray-500 mb-4">
-            Since the output isn't 5-star, provide instructions for the model on
-            how to fix it.
-          </p>
-          <FormContainer
-            submit_label="Attempt Repair"
-            on:submit={attempt_repair}
-            bind:submitting={repair_submitting}
-            bind:error={repair_error}
-          >
-            <FormElement
-              id="repair_instructions"
-              label="Repair Instructions"
-              inputType="textarea"
-              bind:value={repair_instructions}
-            />
-          </FormContainer>
-        {:else if repair_review_available}
-          <p class="text-sm text-gray-500 mb-4">
-            The model has attempted to fix the output given your instructions.
-            Review the result.
-          </p>
-          <Output raw_output={repair_run?.output.output || ""} />
-          <div>
-            <div class="mt-2 text-sm text-gray-500">
-              Based on the repair instructions: &quot;{repair_instructions ||
-                "No instruction provided"}&quot;
-            </div>
-          </div>
-        {:else if repair_complete}
-          <p class="text-sm text-gray-500 mb-4">
-            The model has fixed the output given your instructions: &quot;{repair_instructions ||
-              run?.repair_instructions ||
-              "No instruction provided"}&quot;
-          </p>
-          <Output raw_output={run?.repaired_output?.output || ""} />
-          <div class="mt-2 text-xs text-gray-500 text-right">
-            {#if delete_repair_submitting}
-              <span class="loading loading-spinner loading-sm"></span>
-            {:else if delete_repair_error}
-              <p class="text-error">
-                Error Deleting Repair:
-                {delete_repair_error.getMessage()}
-              </p>
-            {:else}
-              <button class="link" on:click={delete_repair}
-                >Delete Repair</button
-              >
-            {/if}
-          </div>
-        {/if}
-      </div>
-      <div class="w-72 2xl:w-96 flex-none">
-        {#if repair_review_available}
-          <div class="text-xl font-bold mb-2">Evaluate Repair</div>
-          <div class="flex flex-col gap-4 mt-12">
-            <button
-              class="btn btn-primary"
-              on:click={accept_repair}
-              disabled={accept_repair_submitting}
-            >
-              {#if accept_repair_submitting}
-                <span class="loading loading-spinner loading-sm"></span>
-              {:else}
-                Accept Repair (5 Stars)
-              {/if}
-            </button>
-            {#if accept_repair_error}
-              <p class="text-error font-medium text-sm">
-                Error Accepting Repair<br />
-                <span class="text-error text-xs font-normal">
-                  {accept_repair_error.getMessage()}</span
-                >
-              </p>
-            {/if}
-            <button class="btn" on:click={() => (repair_run = null)}
-              >Retry Repair</button
-            >
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
 </div>

@@ -439,3 +439,52 @@ def test_task_output_source_validation(tmp_path):
         assert os.path.exists(task_missing_output_source)
         task_run = TaskRun.load_from_file(task_missing_output_source)
         assert task_run.output.source is None
+
+
+def test_task_run_tags_validation():
+    # Setup basic output for TaskRun creation
+    output = TaskOutput(
+        output="test output",
+        source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "test-model",
+                "model_provider": "test-provider",
+                "adapter_name": "test-adapter",
+            },
+        ),
+    )
+
+    # Test 1: Valid tags should work
+    task_run = TaskRun(
+        input="test input",
+        output=output,
+        tags=["test_tag", "another_tag", "tag123"],
+    )
+    assert task_run.tags == ["test_tag", "another_tag", "tag123"]
+
+    # Test 2: Empty list of tags should work
+    task_run = TaskRun(
+        input="test input",
+        output=output,
+        tags=[],
+    )
+    assert task_run.tags == []
+
+    # Test 3: Empty string tag should fail
+    with pytest.raises(ValueError) as exc_info:
+        TaskRun(
+            input="test input",
+            output=output,
+            tags=["valid_tag", ""],
+        )
+    assert "Tags cannot be empty strings" in str(exc_info.value)
+
+    # Test 4: Tag with spaces should fail
+    with pytest.raises(ValueError) as exc_info:
+        TaskRun(
+            input="test input",
+            output=output,
+            tags=["valid_tag", "invalid tag"],
+        )
+    assert "Tags cannot contain spaces. Try underscores." in str(exc_info.value)

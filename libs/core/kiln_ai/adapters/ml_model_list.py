@@ -23,6 +23,7 @@ class ModelProviderName(str, Enum):
     fireworks_ai = "fireworks_ai"
     kiln_fine_tune = "kiln_fine_tune"
     kiln_custom_registry = "kiln_custom_registry"
+    openai_compatible = "openai_compatible"
 
 
 class ModelFamily(str, Enum):
@@ -523,6 +524,12 @@ built_in_models: List[KilnModel] = [
                 },
             ),
             KilnModelProvider(
+                name=ModelProviderName.groq,
+                supports_structured_output=True,
+                supports_data_gen=True,
+                provider_options={"model": "llama-3.3-70b-versatile"},
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.ollama,
                 provider_options={"model": "llama3.3"},
             ),
@@ -530,6 +537,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 # Finetuning not live yet
                 # provider_finetune_id="accounts/fireworks/models/llama-v3p3-70b-instruct",
+                supports_structured_output=True,
+                supports_data_gen=True,
                 provider_options={
                     "model": "accounts/fireworks/models/llama-v3p3-70b-instruct"
                 },

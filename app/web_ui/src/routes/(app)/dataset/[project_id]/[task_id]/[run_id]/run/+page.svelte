@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
+  import type { ActionButton } from "../../../../../types"
   import Run from "../../../../../run/run.svelte"
   import Output from "../../../../../run/output.svelte"
   import { current_task, model_name, model_info } from "$lib/stores"
@@ -8,10 +9,14 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun } from "$lib/types"
+  import { formatDate } from "$lib/utils/formatters"
+  import { goto } from "$app/navigation"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
   $: project_id = $page.params.project_id
+  // @ts-expect-error list_page is not a property of PageState
+  $: list_page = ($page.state.list_page || []) as string[]
 
   // TODO: we need to remove task_id from the URL, or load it by ID. $current_task is a lie
   let run: TaskRun | null = null
@@ -33,12 +38,17 @@
         "Model Provider": run?.output?.source?.properties?.model_provider,
         "Prompt Builder": run?.output?.source?.properties?.prompt_builder_name,
         "Created By": run?.input_source?.properties?.created_by,
+        "Created At": formatDate(run?.created_at),
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       }).filter(([_, value]) => value !== undefined),
     )
   }
 
   onMount(async () => {
+    await load_run()
+  })
+
+  async function load_run() {
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
@@ -64,7 +74,7 @@
     } finally {
       loading = false
     }
-  })
+  }
 
   let deleted = false
   async function deleteRun() {
@@ -96,15 +106,74 @@
       loading = false
     }
   }
+
+  function next_run() {
+    const index = list_page.indexOf(run_id)
+    if (index < list_page.length - 1) {
+      const next_run_id = list_page[index + 1]
+      load_run_by_id(next_run_id)
+    }
+  }
+
+  function prev_run() {
+    const index = list_page.indexOf(run_id)
+    if (index > 0) {
+      const prev_run_id = list_page[index - 1]
+      load_run_by_id(prev_run_id)
+    }
+  }
+
+  function load_run_by_id(new_run_id: string) {
+    run_id = new_run_id
+    run = null
+    goto(`/dataset/${project_id}/${task_id}/${run_id}/run`, {
+      state: { list_page: list_page },
+    })
+    load_run()
+  }
+
+  function isMac(): boolean {
+    return (
+      typeof window !== "undefined" &&
+      navigator.platform.toUpperCase().indexOf("MAC") >= 0
+    )
+  }
+
+  let buttons: ActionButton[] = []
+  $: {
+    buttons = []
+    if (!deleted) {
+      buttons.push({
+        icon: "/images/delete.svg",
+        handler: deleteRun,
+        shortcut: isMac() ? "Backspace" : "Delete",
+      })
+    }
+    if (list_page.length > 1) {
+      const index = list_page.indexOf(run_id)
+      if (index !== -1) {
+        buttons.push({
+          icon: "/images/previous.svg",
+          handler: prev_run,
+          shortcut: "ArrowLeft",
+          disabled: index === 0,
+        })
+        buttons.push({
+          icon: "/images/next.svg",
+          handler: next_run,
+          shortcut: "ArrowRight",
+          disabled: index === list_page.length - 1,
+        })
+      }
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
-    action_buttons={deleted
-      ? []
-      : [{ label: "Delete Run", handler: deleteRun }]}
+    action_buttons={buttons}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -115,7 +184,7 @@
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
     {:else if run && $current_task}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
         <div class="grow">
           <div class="text-xl font-bold mb-4">Input</div>
           <Output raw_output={run.input} />
@@ -127,7 +196,9 @@
           >
             {#each Object.entries(model_props) as [key, value]}
               <div class="flex items-center">{key}</div>
-              <div class="flex items-center text-gray-500">{value}</div>
+              <div class="flex items-center text-gray-500 truncate">
+                {value}
+              </div>
             {/each}
           </div>
         </div>

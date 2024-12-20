@@ -439,7 +439,7 @@ async def test_update_run(client, tmp_path):
             "task_id": task.id,
             "run_id": run.id,
             "expected_status": 422,
-            "expected_detail": "Output.Rating.Type: Input should be 'five_star' or 'custom'",
+            "expected_detail": "Output.Rating.Type: Input should be 'five_star', 'pass_fail', 'pass_fail_critical' or 'custom'",
             "updates": {
                 "output": {
                     "rating": {"type": "invalid", "rating": 1},

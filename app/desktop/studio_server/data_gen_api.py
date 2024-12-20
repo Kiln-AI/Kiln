@@ -117,16 +117,22 @@ def connect_data_gen_api(app: FastAPI):
         project_id: str,
         task_id: str,
         sample: DataGenSaveSamplesApiInput,
+        session_id: str | None = None,
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
         prompt_builder = prompt_builder_from_ui_name(sample.prompt_method)(task)
+
+        tags = ["synthetic"]
+        if session_id:
+            tags.append(f"synthetic_session_{session_id}")
 
         adapter = adapter_for_task(
             task,
             model_name=sample.output_model_name,
             provider=sample.output_provider,
             prompt_builder=prompt_builder,
+            tags=tags,
         )
 
         properties: dict[str, str | int | float] = {

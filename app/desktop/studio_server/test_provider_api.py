@@ -1,5 +1,6 @@
 import json
-from unittest.mock import MagicMock, Mock, patch
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -15,7 +16,10 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.provider_api import (
+    AvailableModels,
+    ModelDetails,
     OllamaConnection,
+    OpenAICompatibleProviderCache,
     all_fine_tuned_models,
     available_ollama_models,
     connect_bedrock,
@@ -25,6 +29,8 @@ from app.desktop.studio_server.provider_api import (
     connect_provider_api,
     custom_models,
     model_from_ollama_tag,
+    openai_compatible_providers,
+    openai_compatible_providers_uncached,
 )
 
 
@@ -916,3 +922,382 @@ def test_custom_models():
 
         result = custom_models()
         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_save_openai_compatible_providers(client):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = []
+        mock_config.return_value = mock_config_instance
+
+        response = client.post(
+            "/api/provider/openai_compatible",
+            params={
+                "name": "test_provider",
+                "base_url": "https://api.test.com",
+                "api_key": "test_key",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "OpenAI compatible provider saved"}
+
+        # Verify the provider was saved correctly
+        mock_config_instance.openai_compatible_providers = [
+            {
+                "name": "test_provider",
+                "base_url": "https://api.test.com",
+                "api_key": "test_key",
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_save_openai_compatible_providers_duplicate_name(client):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = [
+            {
+                "name": "existing_provider",
+                "base_url": "https://api.existing.com",
+                "api_key": "existing_key",
+            }
+        ]
+        mock_config.return_value = mock_config_instance
+
+        response = client.post(
+            "/api/provider/openai_compatible",
+            params={
+                "name": "existing_provider",
+                "base_url": "https://api.test.com",
+                "api_key": "test_key",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"detail": "Provider with this name already exists"}
+
+
+@pytest.mark.asyncio
+async def test_save_openai_compatible_providers_new_array(client):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = (
+            None  # Simulating no providers
+        )
+        mock_config.return_value = mock_config_instance
+
+        response = client.post(
+            "/api/provider/openai_compatible",
+            params={
+                "name": "first_provider",
+                "base_url": "https://api.first.com",
+                "api_key": "first_key",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "OpenAI compatible provider saved"}
+
+        # Verify the provider was saved correctly
+        mock_config_instance.openai_compatible_providers = [
+            {
+                "name": "first_provider",
+                "base_url": "https://api.first.com",
+                "api_key": "first_key",
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_save_openai_compatible_providers_add_to_existing_array(client):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = [
+            {
+                "name": "first_provider",
+                "base_url": "https://api.first.com",
+                "api_key": "first_key",
+            }
+        ]
+        mock_config.return_value = mock_config_instance
+
+        response = client.post(
+            "/api/provider/openai_compatible",
+            params={
+                "name": "second_provider",
+                "base_url": "https://api.second.com",
+                "api_key": "second_key",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "OpenAI compatible provider saved"}
+
+        # Verify both providers are in the list
+        assert mock_config_instance.openai_compatible_providers == [
+            {
+                "name": "first_provider",
+                "base_url": "https://api.first.com",
+                "api_key": "first_key",
+            },
+            {
+                "name": "second_provider",
+                "base_url": "https://api.second.com",
+                "api_key": "second_key",
+            },
+        ]
+
+
+@pytest.mark.asyncio
+async def test_delete_openai_compatible_providers(client):
+    # Test successful deletion
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = [
+            {
+                "name": "provider1",
+                "base_url": "https://api.test1.com",
+                "api_key": "key1",
+            },
+            {
+                "name": "provider2",
+                "base_url": "https://api.test2.com",
+                "api_key": "key2",
+            },
+        ]
+        mock_config.return_value = mock_config_instance
+
+        response = client.delete(
+            "/api/provider/openai_compatible",
+            params={"name": "provider1"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "OpenAI compatible provider deleted"}
+
+        # Verify the correct provider was removed
+        assert mock_config_instance.openai_compatible_providers == [
+            {
+                "name": "provider2",
+                "base_url": "https://api.test2.com",
+                "api_key": "key2",
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_delete_openai_compatible_providers_empty_name(client):
+    # Test deletion with empty name
+    response = client.delete(
+        "/api/provider/openai_compatible",
+        params={"name": ""},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"message": "Name is required"}
+
+
+@pytest.mark.asyncio
+async def test_delete_openai_compatible_providers_nonexistent(client):
+    # Test deletion of non-existent provider
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = [
+            {
+                "name": "provider1",
+                "base_url": "https://api.test1.com",
+                "api_key": "key1",
+            }
+        ]
+        mock_config.return_value = mock_config_instance
+
+        response = client.delete(
+            "/api/provider/openai_compatible",
+            params={"name": "nonexistent_provider"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "OpenAI compatible provider deleted"}
+
+        # Verify the original list remains unchanged
+        assert mock_config_instance.openai_compatible_providers == [
+            {
+                "name": "provider1",
+                "base_url": "https://api.test1.com",
+                "api_key": "key1",
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_delete_openai_compatible_providers_empty_list(client):
+    # Test deletion when providers list is empty
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config_instance = MagicMock()
+        mock_config_instance.openai_compatible_providers = None
+        mock_config.return_value = mock_config_instance
+
+        response = client.delete(
+            "/api/provider/openai_compatible",
+            params={"name": "any_provider"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "OpenAI compatible provider deleted"}
+
+        # Verify empty list is set
+        assert mock_config_instance.openai_compatible_providers == []
+
+
+def test_openai_compatible_provider_cache_is_stale():
+    # Test initial state
+    cache = OpenAICompatibleProviderCache(providers=[])
+    assert cache.is_stale() is True
+
+    # Test within time window
+    cache.last_updated = datetime.now()
+    cache.openai_compat_config_when_cached = ["provider1"]
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value.openai_compatible_providers = ["provider1"]
+        assert cache.is_stale() is False
+
+    # Test expired time window
+    cache.last_updated = datetime.now() - timedelta(minutes=61)
+    assert cache.is_stale() is True
+
+    # Test config change
+    cache.last_updated = datetime.now()
+    cache.openai_compat_config_when_cached = ["provider1"]
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value.openai_compatible_providers = ["provider2"]
+        assert cache.is_stale() is True
+
+
+def test_openai_compatible_providers():
+    mock_provider_config = [
+        {
+            "name": "test_provider",
+            "base_url": "https://api.test.com",
+            "api_key": "test_key",
+        }
+    ]
+    mock_models = [
+        {"id": "model1", "name": "Model 1"},
+        {"id": "model2", "name": "Model 2"},
+    ]
+
+    with (
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+        patch(
+            "app.desktop.studio_server.provider_api.openai_compatible_providers_uncached"
+        ) as mock_uncached,
+    ):
+        mock_config.return_value.openai_compatible_providers = mock_provider_config
+        mock_uncached.return_value = [
+            AvailableModels(
+                provider_id=ModelProviderName.openai_compatible,
+                provider_name="test_provider",
+                models=[
+                    ModelDetails(
+                        id="test_provider::model1",
+                        name="model1",
+                        supports_structured_output=False,
+                        supports_data_gen=False,
+                        untested_model=True,
+                    )
+                ],
+            )
+        ]
+
+        # First call should create cache
+        result1 = openai_compatible_providers()
+        assert len(result1) == 1
+        assert result1[0].provider_name == "test_provider"
+        mock_uncached.assert_called_once_with(mock_provider_config)
+
+        # Second call should use cache
+        mock_uncached.reset_mock()
+        result2 = openai_compatible_providers()
+        assert len(result2) == 1
+        assert result2[0].provider_name == "test_provider"
+        mock_uncached.assert_not_called()
+
+        # After config change, should refresh cache
+        mock_config.return_value.openai_compatible_providers = [
+            {
+                "name": "new_provider",
+                "base_url": "https://api.new.com",
+                "api_key": "new_key",
+            }
+        ]
+        openai_compatible_providers()
+        mock_uncached.assert_called_once()
+
+
+def test_openai_compatible_providers_uncached():
+    mock_providers = [
+        {
+            "name": "test_provider",
+            "base_url": "https://api.test.com",
+            "api_key": "test_key",
+        }
+    ]
+
+    # Mock OpenAI client and its models.list() method
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+    mock_models_list = MagicMock()
+    mock_models_list.return_value = [mock_model]
+    mock_client = MagicMock()
+    mock_client.models.list = mock_models_list
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        result = openai_compatible_providers_uncached(mock_providers)
+
+        assert len(result) == 1
+        assert result[0].provider_name == "test_provider"
+        assert result[0].provider_id == ModelProviderName.openai_compatible
+        assert len(result[0].models) == 1
+        assert result[0].models[0].id == "test_provider::gpt-4"
+        assert result[0].models[0].name == "gpt-4"
+        assert result[0].models[0].untested_model is True
+
+
+def test_openai_compatible_providers_uncached_empty_providers():
+    assert openai_compatible_providers_uncached([]) == []
+    assert openai_compatible_providers_uncached(None) == []
+
+
+def test_openai_compatible_providers_uncached_invalid_provider():
+    invalid_providers = [
+        {"name": "test", "base_url": "", "api_key": "key"},  # Missing base_url
+        {
+            "name": "",
+            "base_url": "https://api.test.com",
+            "api_key": "key",
+        },  # Missing name
+        {"base_url": "https://api.test.com", "api_key": "key"},  # No name
+        {"name": "test", "api_key": "key"},  # No base_url
+    ]
+
+    with patch("openai.OpenAI") as mock_openai:
+        result = openai_compatible_providers_uncached(invalid_providers)
+        assert result == []
+        mock_openai.assert_not_called()
+
+
+def test_openai_compatible_providers_uncached_api_error():
+    mock_providers = [
+        {
+            "name": "test_provider",
+            "base_url": "https://api.test.com",
+            "api_key": "test_key",
+        }
+    ]
+
+    with patch("openai.OpenAI") as mock_openai:
+        mock_openai.return_value.models.list.side_effect = Exception("API Error")
+        result = openai_compatible_providers_uncached(mock_providers)
+        assert result == []

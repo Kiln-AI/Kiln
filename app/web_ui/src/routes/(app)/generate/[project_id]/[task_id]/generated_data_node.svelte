@@ -344,6 +344,13 @@
       >
         Add Top Level Data
       </button>
+      <div class="text-sm text-gray-500">
+        Read out <a
+          href="https://github.com/Kiln-AI/Kiln/blob/main/guides/Synthetic%20Data%20Generation.md"
+          class="link"
+          target="_blank">synthetic data guide</a
+        >
+      </div>
     </div>
   </div>
 {:else}

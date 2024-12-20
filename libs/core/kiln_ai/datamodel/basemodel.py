@@ -142,14 +142,8 @@ class KilnBaseModel(BaseModel):
             # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
             mtime_ns = os.fstat(file.fileno()).st_mtime_ns
             file_data = file.read()
-            # TODO P2 perf: parsing the JSON twice here.
-            # Once for model_type, once for model. Can't call model_validate with parsed json because enum types break; they get strings instead of enums.
             parsed_json = json.loads(file_data)
-            m = cls.model_validate_json(
-                file_data,
-                strict=True,
-                context={"loading_from_file": True},
-            )
+            m = cls.model_validate(parsed_json, context={"loading_from_file": True})
             if not isinstance(m, cls):
                 raise ValueError(f"Loaded model is not of type {cls.__name__}")
             m._loaded_from_file = True
@@ -471,7 +465,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         validation_errors = []
 
         try:
-            instance = cls.model_validate(data, strict=True)
+            instance = cls.model_validate(data)
             if path is not None:
                 instance.path = path
             if parent is not None and isinstance(instance, KilnParentedModel):
@@ -499,7 +493,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
                             parent_type._validate_nested(**kwargs)
                         elif issubclass(parent_type, KilnParentedModel):
                             # Root node
-                            subinstance = parent_type.model_validate(value, strict=True)
+                            subinstance = parent_type.model_validate(value)
                             if instance is not None:
                                 subinstance.parent = instance
                             if save:

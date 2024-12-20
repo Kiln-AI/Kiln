@@ -42,7 +42,6 @@ def resource_path(relative_path):
 
 
 def quit_app():
-    # TODO: Windows issue needs pyinstaller update: https://github.com/pyinstaller/pyinstaller/issues/8701
     global tray
     if tray is not None:
         tray.stop()

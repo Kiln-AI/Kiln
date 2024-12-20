@@ -2,9 +2,12 @@
 
 [Kiln](https://getkiln.ai) can generate synthetic data for your tasks. 
 
+
 ## Video Walkthrough
 
-<img src="https://github.com/user-attachments/assets/eab36818-2c88-4e52-ac39-a71c40e5cc79" width="520"/>
+<a href="https://github.com/user-attachments/assets/eab36818-2c88-4e52-ac39-a71c40e5cc79">
+<img alt="video walkthrough" src="https://github.com/user-attachments/assets/55607f66-33b6-46a3-a99d-3b90375712f7" />
+</a>
 
 ## Use Cases
 
@@ -63,19 +66,33 @@ Kiln offers a number of options when generating a dataset:
 
 ## Iteration
 
-You can use synthetic data generation as many times as you'd like. Data will be appended to your dataset.
+You can use synthetic data generation as many times as you'd like. Data will be appended to your dataset each time you do.
 
-This can be useful for updating your dataset for new examples (e.g. fixing a bug/issue, or adding new use-cases).
+### Resolving bugs with synthetic data
+
+Synthetic data can help resolve issues in your LLM systems.
+
+As an example, let's assume your model is often generating text using the wrong tone. For this example: too formal when the use case calls for more causal tone. 
+
+Synthetic data can help resolve this issue, and ensure it doesn't regress.
+
+1) Open the synthetic dataset tab.
+2) Select a high quality model - even if it's not one that's fast or cheap enough for production.
+3) Start generating data which shows the issue, but use the human guidance feature and better model to ensure the outputs are high quality.
+4) Manually delete examples that don't have the correct style.
+5) Once the synthetic data tool is reliably generating correct data (with this model and guidance pair), scale up your generation to hundreds of samples.
+6) Save your new synthetic dataset
+
+The new examples will be saved to your dataset, and will include a unique tag to idenity them (e.g. `synthetic_session_12345`). With this new dataset in hand you can resolve the issue:
+
+1) Simple: Fix the root prompt, and use this new dataset subset in your evaluations to ensure it works (and doesn't regress in the future)
+2) Advanced: [Fine-tune a model](Fine%20Tuning%20LLM%20Models%20Guide.md) with this data, so smaller and faster models learn to emulate your desired styles. Withhold a test set to ensure it worked.
 
 ## Collaboration
 
 Kiln's dataset is designed to be collaborative. Subject matter experts, PM and QA can be generating and rating data, while data scientists can be reviewing and merging data.
 
-The dataset format is designed to be Git friendly, including:
-
-- UUIDs to avoid conflicts when many people are working in parallel
-- Data formats that work well with diff tools
-- Internal attribution (created_by tags), which makes it possible to allow non-technical team members to use a branch on a shared drive (if Git isn't their thing)
+Read our [guide on collaboration](Collaborating%20with%20Kiln.md) for more details.
 
 ## Reviewing and Rating Data
 

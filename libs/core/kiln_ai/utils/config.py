@@ -2,7 +2,7 @@ import getpass
 import os
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
@@ -15,12 +15,14 @@ class ConfigProperty:
         env_var: Optional[str] = None,
         default_lambda: Optional[Callable[[], Any]] = None,
         sensitive: bool = False,
+        sensitive_keys: Optional[List[str]] = None,
     ):
         self.type = type_
         self.default = default
         self.env_var = env_var
         self.default_lambda = default_lambda
         self.sensitive = sensitive
+        self.sensitive_keys = sensitive_keys
 
 
 class Config:
@@ -83,6 +85,11 @@ class Config:
             "custom_models": ConfigProperty(
                 list,
                 default_lambda=lambda: [],
+            ),
+            "openai_compatible_providers": ConfigProperty(
+                list,
+                default_lambda=lambda: [],
+                sensitive_keys=["api_key"],
             ),
         }
         self._settings = self.load_settings()
@@ -150,14 +157,26 @@ class Config:
         return settings
 
     def settings(self, hide_sensitive=False) -> Dict[str, Any]:
-        if hide_sensitive:
-            return {
-                k: "[hidden]"
-                if k in self._properties and self._properties[k].sensitive
-                else v
-                for k, v in self._settings.items()
-            }
-        return self._settings
+        if not hide_sensitive:
+            return self._settings
+
+        settings = {
+            k: "[hidden]"
+            if k in self._properties and self._properties[k].sensitive
+            else v
+            for k, v in self._settings.items()
+        }
+        # Hide sensitive keys in lists. Could generalize this if we every have more types, but right not it's only needed for root elements of lists
+        for key, value in settings.items():
+            if key in self._properties and self._properties[key].sensitive_keys:
+                sensitive_keys = self._properties[key].sensitive_keys or []
+                for sensitive_key in sensitive_keys:
+                    if isinstance(value, list):
+                        for item in value:
+                            if sensitive_key in item:
+                                item[sensitive_key] = "[hidden]"
+
+        return settings
 
     def save_setting(self, name: str, value: Any):
         self.update_settings({name: value})

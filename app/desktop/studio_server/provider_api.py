@@ -1,6 +1,9 @@
 import os
-from typing import Dict, List
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
+import openai
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -153,6 +156,10 @@ def connect_provider_api(app: FastAPI):
         if custom:
             models.append(custom)
 
+        # Add any openai compatible providers
+        openai_compatible = openai_compatible_providers()
+        models.extend(openai_compatible)
+
         return models
 
     @app.get("/api/provider/ollama/connect")
@@ -160,6 +167,43 @@ def connect_provider_api(app: FastAPI):
         custom_ollama_url: str | None = None,
     ) -> OllamaConnection:
         return await connect_ollama(custom_ollama_url)
+
+    @app.post("/api/provider/openai_compatible")
+    async def save_openai_compatible_providers(name: str, base_url: str, api_key: str):
+        providers = Config.shared().openai_compatible_providers or []
+        existing_provider = next((p for p in providers if p["name"] == name), None)
+        if existing_provider:
+            raise HTTPException(
+                status_code=400,
+                detail="Provider with this name already exists",
+            )
+        providers.append(
+            {
+                "name": name,
+                "base_url": base_url,
+                "api_key": api_key,
+            }
+        )
+        Config.shared().openai_compatible_providers = providers
+        return JSONResponse(
+            status_code=200,
+            content={"message": "OpenAI compatible provider saved"},
+        )
+
+    @app.delete("/api/provider/openai_compatible")
+    async def delete_openai_compatible_providers(name: str):
+        if not name:
+            return JSONResponse(
+                status_code=400,
+                content={"message": "Name is required"},
+            )
+        providers = Config.shared().openai_compatible_providers or []
+        providers = [p for p in providers if p["name"] != name]
+        Config.shared().openai_compatible_providers = providers
+        return JSONResponse(
+            status_code=200,
+            content={"message": "OpenAI compatible provider deleted"},
+        )
 
     @app.post("/api/provider/connect_api_key")
     async def connect_api_key(payload: dict):
@@ -516,3 +560,99 @@ def all_fine_tuned_models() -> AvailableModels | None:
             models=models,
         )
     return None
+
+
+@dataclass
+class OpenAICompatibleProviderCache:
+    providers: List[AvailableModels]
+    last_updated: datetime | None = None
+    openai_compat_config_when_cached: Any | None = None
+
+    # Cache for 60 minutes, or if the config changes
+    def is_stale(self) -> bool:
+        if self.last_updated is None:
+            return True
+
+        if datetime.now() - self.last_updated > timedelta(minutes=60):
+            return True
+
+        current_providers = Config.shared().openai_compatible_providers
+        if current_providers != self.openai_compat_config_when_cached:
+            return True
+
+        return False
+
+
+_openai_compatible_providers_cache: OpenAICompatibleProviderCache | None = None
+
+
+def openai_compatible_providers() -> List[AvailableModels]:
+    global _openai_compatible_providers_cache
+
+    if (
+        _openai_compatible_providers_cache is None
+        or _openai_compatible_providers_cache.is_stale()
+    ):
+        # Load values and cache them
+        provider_config = Config.shared().openai_compatible_providers
+        providers = openai_compatible_providers_uncached(provider_config)
+        _openai_compatible_providers_cache = OpenAICompatibleProviderCache(
+            providers=providers,
+            last_updated=datetime.now(),
+            openai_compat_config_when_cached=provider_config,
+        )
+
+    return _openai_compatible_providers_cache.providers
+
+
+def openai_compatible_providers_uncached(providers: List[Any]) -> List[AvailableModels]:
+    if not providers or len(providers) == 0:
+        return []
+
+    openai_compatible_models: List[AvailableModels] = []
+    for provider in providers:
+        models: List[ModelDetails] = []
+        base_url = provider.get("base_url")
+        if not base_url or not base_url.startswith("http"):
+            print(f"No base URL for OpenAI compatible provider {provider} - {base_url}")
+            continue
+        name = provider.get("name")
+        if not name:
+            print(f"No name for OpenAI compatible provider {provider}")
+            continue
+
+        # API key is optional, as some providers don't require it
+        api_key = provider.get("api_key") or ""
+        openai_client = openai.OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+        try:
+            provider_models = openai_client.models.list()
+            for model in provider_models:
+                models.append(
+                    ModelDetails(
+                        id=f"{name}::{model.id}",
+                        name=model.id,
+                        supports_structured_output=False,
+                        supports_data_gen=False,
+                        untested_model=True,
+                    )
+                )
+
+            openai_compatible_models.append(
+                AvailableModels(
+                    provider_id=ModelProviderName.openai_compatible,
+                    provider_name=name,
+                    models=models,
+                )
+            )
+        except Exception as e:
+            print(f"Error connecting to OpenAI compatible provider {name}: {e}")
+            continue
+
+    if len(openai_compatible_models) == 0:
+        return []
+
+    return openai_compatible_models

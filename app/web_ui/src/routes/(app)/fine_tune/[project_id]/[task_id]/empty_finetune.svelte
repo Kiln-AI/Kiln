@@ -81,14 +81,18 @@
     <div>
       Fine tunes can be faster, cheaper and more accurate than standard models.
     </div>
-    <div>
-      We suggest generating at least 100 data examples before fine tuning.
-    </div>
     <a
       href={`/fine_tune/${project_id}/${task_id}/create_finetune`}
       class="btn btn-primary mt-2"
     >
       Create Fine-Tune
+    </a>
+    <a
+      href="https://github.com/Kiln-AI/Kiln/blob/main/guides/Fine%20Tuning%20LLM%20Models%20Guide.md"
+      class="btn"
+      target="_blank"
+    >
+      Fine-Tuning Guide
     </a>
   </div>
 </div>

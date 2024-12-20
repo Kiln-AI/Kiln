@@ -85,30 +85,71 @@ class TaskOutputRatingType(str, Enum):
     """Defines the types of rating systems available for task outputs."""
 
     five_star = "five_star"
+    pass_fail = "pass_fail"
+    pass_fail_critical = "pass_fail_critical"
     custom = "custom"
+
+
+class RequirementRating(BaseModel):
+    """Rating for a specific requirement within a task output."""
+
+    value: float = Field(
+        description="The rating value. Interpretation depends on rating type"
+    )
+    type: TaskOutputRatingType = Field(description="The type of rating")
 
 
 class TaskOutputRating(KilnBaseModel):
     """
     A rating for a task output, including an overall rating and ratings for each requirement.
 
-    Only supports five star ratings for now, but extensible for custom values.
+    Supports:
+    - five_star: 1-5 star ratings
+    - pass_fail: boolean pass/fail (1.0 = pass, 0.0 = fail)
+    - pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)
     """
 
     type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
     value: float | None = Field(
-        description="The overall rating value (typically 1-5 stars).",
+        description="The rating value. Interpretation depends on rating type:\n- five_star: 1-5 stars\n- pass_fail: 1.0 (pass) or 0.0 (fail)\n- pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)",
         default=None,
     )
-    requirement_ratings: Dict[ID_TYPE, float] = Field(
+    requirement_ratings: Dict[ID_TYPE, RequirementRating] = Field(
         default={},
-        description="The ratings of the requirements of the task. The keys are the ids of the requirements. The values are the ratings (typically 1-5 stars).",
+        description="The ratings of the requirements of the task.",
     )
+
+    # Previously we stored rating values as a dict of floats, but now we store them as RequirementRating objects.
+    @model_validator(mode="before")
+    def upgrade_old_format(cls, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return data
+
+        # Check if we have the old format (dict of floats)
+        req_ratings = data.get("requirement_ratings", {})
+        if req_ratings and all(
+            isinstance(v, (int, float)) for v in req_ratings.values()
+        ):
+            # Convert each float to a RequirementRating object
+            # all ratings are five star at the point we used this format
+            data["requirement_ratings"] = {
+                k: {"value": v, "type": TaskOutputRatingType.five_star}
+                for k, v in req_ratings.items()
+            }
+
+        return data
 
     # Used to select high quality outputs for example selection (MultiShotPromptBuilder, etc)
     def is_high_quality(self) -> bool:
+        if self.value is None:
+            return False
+
         if self.type == TaskOutputRatingType.five_star:
-            return self.value is not None and self.value >= 4
+            return self.value >= 4
+        elif self.type == TaskOutputRatingType.pass_fail:
+            return self.value == 1.0
+        elif self.type == TaskOutputRatingType.pass_fail_critical:
+            return self.value == 1.0
         return False
 
     @model_validator(mode="after")
@@ -116,22 +157,59 @@ class TaskOutputRating(KilnBaseModel):
         if self.type not in TaskOutputRatingType:
             raise ValueError(f"Invalid rating type: {self.type}")
 
-        if self.type == TaskOutputRatingType.five_star:
-            if self.value is not None:
-                self._validate_five_star(self.value, "overall rating")
-            for req_id, req_rating in self.requirement_ratings.items():
-                self._validate_five_star(req_rating, f"requirement rating for {req_id}")
+        # Overall rating is optional
+        if self.value is not None:
+            self._validate_rating(self.type, self.value, "overall rating")
+
+        for req_id, req_rating in self.requirement_ratings.items():
+            self._validate_rating(
+                req_rating.type,
+                req_rating.value,
+                f"requirement rating for req ID: {req_id}",
+            )
 
         return self
 
-    def _validate_five_star(self, rating: float, rating_name: str) -> None:
-        if not isinstance(rating, float) or not rating.is_integer():
+    def _validate_rating(
+        self, type: TaskOutputRatingType, rating: float | None, rating_name: str
+    ) -> None:
+        if type == TaskOutputRatingType.five_star:
+            self._validate_five_star(rating, rating_name)
+        elif type == TaskOutputRatingType.pass_fail:
+            self._validate_pass_fail(rating, rating_name)
+        elif type == TaskOutputRatingType.pass_fail_critical:
+            self._validate_pass_fail_critical(rating, rating_name)
+
+    def _validate_five_star(self, rating: float | None, rating_name: str) -> None:
+        if rating is None or not isinstance(rating, float) or not rating.is_integer():
             raise ValueError(
-                f"{rating_name.capitalize()} of type five_star must be an integer value (1.0, 2.0, 3.0, 4.0, or 5.0)"
+                f"{rating_name.capitalize()} of type five_star must be an integer value (1-5)"
             )
         if rating < 1 or rating > 5:
             raise ValueError(
                 f"{rating_name.capitalize()} of type five_star must be between 1 and 5 stars"
+            )
+
+    def _validate_pass_fail(self, rating: float | None, rating_name: str) -> None:
+        if rating is None or not isinstance(rating, float) or not rating.is_integer():
+            raise ValueError(
+                f"{rating_name.capitalize()} of type pass_fail must be an integer value (0 or 1)"
+            )
+        if rating not in [0, 1]:
+            raise ValueError(
+                f"{rating_name.capitalize()} of type pass_fail must be 0 (fail) or 1 (pass)"
+            )
+
+    def _validate_pass_fail_critical(
+        self, rating: float | None, rating_name: str
+    ) -> None:
+        if rating is None or not isinstance(rating, float) or not rating.is_integer():
+            raise ValueError(
+                f"{rating_name.capitalize()} of type pass_fail_critical must be an integer value (-1, 0, or 1)"
+            )
+        if rating not in [-1, 0, 1]:
+            raise ValueError(
+                f"{rating_name.capitalize()} of type pass_fail_critical must be -1 (critical fail), 0 (fail), or 1 (pass)"
             )
 
 
@@ -381,6 +459,10 @@ class TaskRun(KilnParentedModel):
         default=None,
         description="Intermediate outputs from the task run. Keys are the names of the intermediate output steps (cot=chain of thought, etc), values are the output data.",
     )
+    tags: List[str] = Field(
+        default=[],
+        description="Tags for the task run. Tags are used to categorize task runs for filtering and reporting.",
+    )
 
     def parent_task(self) -> Task | None:
         if not isinstance(self.parent, Task):
@@ -440,6 +522,16 @@ class TaskRun(KilnParentedModel):
             return self
         if self.input_source is None:
             raise ValueError("input_source is required when strict mode is enabled")
+        return self
+
+    @model_validator(mode="after")
+    def validate_tags(self) -> Self:
+        for tag in self.tags:
+            if not tag:
+                raise ValueError("Tags cannot be empty strings")
+            if " " in tag:
+                raise ValueError("Tags cannot contain spaces. Try underscores.")
+
         return self
 
 
@@ -602,7 +694,7 @@ class TaskRequirement(BaseModel):
     Defines a specific requirement that should be met by task outputs.
 
     Includes an identifier, name, description, instruction for meeting the requirement,
-    and priority level.
+    priority level, and rating type (five_star, pass_fail, pass_fail_critical, custom).
     """
 
     id: ID_TYPE = ID_FIELD
@@ -610,6 +702,7 @@ class TaskRequirement(BaseModel):
     description: str | None = Field(default=None)
     instruction: str = Field(min_length=1)
     priority: Priority = Field(default=Priority.p2)
+    type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
 
 
 class TaskDeterminism(str, Enum):

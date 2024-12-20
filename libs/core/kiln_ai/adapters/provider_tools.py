@@ -108,6 +108,9 @@ async def kiln_model_provider_from(
     if provider_name == ModelProviderName.kiln_fine_tune:
         return finetune_provider_model(name)
 
+    if provider_name == ModelProviderName.openai_compatible:
+        return openai_compatible_provider_model(name)
+
     built_in_model = await builtin_model_from(name, provider_name)
     if built_in_model:
         return built_in_model
@@ -134,6 +137,45 @@ async def kiln_model_provider_from(
 
 
 finetune_cache: dict[str, KilnModelProvider] = {}
+
+
+def openai_compatible_provider_model(
+    model_id: str,
+) -> KilnModelProvider:
+    try:
+        openai_provider_name, model_id = model_id.split("::")
+    except Exception:
+        raise ValueError(f"Invalid openai compatible model ID: {model_id}")
+
+    openai_compatible_providers = Config.shared().openai_compatible_providers or []
+    provider = next(
+        filter(
+            lambda p: p.get("name") == openai_provider_name, openai_compatible_providers
+        ),
+        None,
+    )
+    if provider is None:
+        raise ValueError(f"OpenAI compatible provider {openai_provider_name} not found")
+
+    # API key optional some providers don't use it
+    api_key = provider.get("api_key")
+    base_url = provider.get("base_url")
+    if base_url is None:
+        raise ValueError(
+            f"OpenAI compatible provider {openai_provider_name} has no base URL"
+        )
+
+    return KilnModelProvider(
+        name=ModelProviderName.openai_compatible,
+        provider_options={
+            "model": model_id,
+            "api_key": api_key,
+            "openai_api_base": base_url,
+        },
+        supports_structured_output=False,
+        supports_data_gen=False,
+        untested_model=True,
+    )
 
 
 def finetune_provider_model(
@@ -228,6 +270,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Fireworks AI"
             case ModelProviderName.kiln_custom_registry:
                 return "Custom Models"
+            case ModelProviderName.openai_compatible:
+                return "OpenAI Compatible"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_error(enum_id)
@@ -265,6 +309,10 @@ def provider_options_for_custom_model(
         case ModelProviderName.kiln_fine_tune:
             raise ValueError(
                 "Fine tuned models should populate provider options via another path"
+            )
+        case ModelProviderName.openai_compatible:
+            raise ValueError(
+                "OpenAI compatible models should populate provider options via another path"
             )
         case _:
             # triggers pyright warning if I miss a case

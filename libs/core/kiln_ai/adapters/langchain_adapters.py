@@ -39,8 +39,9 @@ class LangchainAdapter(BaseAdapter):
         model_name: str | None = None,
         provider: str | None = None,
         prompt_builder: BasePromptBuilder | None = None,
+        tags: list[str] | None = None,
     ):
-        super().__init__(kiln_task, prompt_builder=prompt_builder)
+        super().__init__(kiln_task, prompt_builder=prompt_builder, tags=tags)
         if custom_model is not None:
             self._model = custom_model
 
@@ -198,6 +199,9 @@ async def langchain_model_from_provider(
     if provider.name == ModelProviderName.openai:
         api_key = Config.shared().open_ai_api_key
         return ChatOpenAI(**provider.provider_options, openai_api_key=api_key)  # type: ignore[arg-type]
+    elif provider.name == ModelProviderName.openai_compatible:
+        # See provider_tools.py for how base_url, key and other parameters are set
+        return ChatOpenAI(**provider.provider_options)  # type: ignore[arg-type]
     elif provider.name == ModelProviderName.groq:
         api_key = Config.shared().groq_api_key
         if api_key is None:

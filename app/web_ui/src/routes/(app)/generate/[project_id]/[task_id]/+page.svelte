@@ -15,6 +15,8 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
 
+  let session_id = Math.floor(Math.random() * 1000000000000).toString()
+
   let guidance_enabled = false
   let human_guidance = ""
 
@@ -260,6 +262,9 @@
             path: {
               project_id,
               task_id,
+            },
+            query: {
+              session_id,
             },
           },
           body: {

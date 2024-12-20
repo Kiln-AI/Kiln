@@ -4,6 +4,8 @@
   import { client } from "$lib/api_client"
   import type { OllamaConnection } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   type Provider = {
     name: string
@@ -91,6 +93,13 @@
         "Bedrock is difficult to setup.\n\nWe suggest OpenRouter as it's easier to setup and has more models.",
       api_key_fields: ["Access Key", "Secret Key"],
     },
+    {
+      name: "Custom API",
+      id: "openai_compatible",
+      description: "Connect any OpenAI compatible API.",
+      image: "/images/api.svg",
+      featured: false,
+    },
   ]
 
   type ProviderStatus = {
@@ -136,6 +145,12 @@
       error: null,
       custom_description: null,
     },
+    openai_compatible: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
   }
 
   export let has_connected_providers = false
@@ -152,8 +167,11 @@
     if (status[provider.id].connected) {
       return
     }
-    if (provider.name === "Ollama") {
+    if (provider.id === "ollama") {
       connect_ollama()
+    }
+    if (provider.id === "openai_compatible") {
+      show_custom_api_dialog()
     }
 
     if (provider.api_key_steps) {
@@ -290,6 +308,12 @@
   }
 
   let loaded_initial_providers = true
+  type CustomOpenAICompatibleProvider = {
+    name: string
+    base_url: string
+    api_key: string
+  }
+  let custom_openai_compatible_providers: CustomOpenAICompatibleProvider[] = []
   const check_existing_providers = async () => {
     try {
       let res = await fetch("http://localhost:8757/api/settings")
@@ -312,6 +336,13 @@
       if (data["ollama_base_url"]) {
         custom_ollama_url = data["ollama_base_url"]
       }
+      if (
+        data["openai_compatible_providers"] &&
+        data["openai_compatible_providers"].length > 0
+      ) {
+        status.openai_compatible.connected = true
+        custom_openai_compatible_providers = data["openai_compatible_providers"]
+      }
     } catch (e) {
       console.error("check_existing_providers error", e)
     } finally {
@@ -331,6 +362,99 @@
   function show_custom_ollama_url_dialog() {
     // @ts-expect-error showModal is not a method on HTMLElement
     document.getElementById("ollama_dialog")?.showModal()
+  }
+
+  function show_custom_api_dialog() {
+    // @ts-expect-error showModal is not a method on HTMLElement
+    document.getElementById("openai_compatible_dialog")?.showModal()
+  }
+
+  let new_provider_name = ""
+  let new_provider_base_url = ""
+  let new_provider_api_key = ""
+  let adding_new_provider = false
+  let new_provider_error: KilnError | null = null
+  async function add_new_provider() {
+    try {
+      adding_new_provider = true
+      if (!new_provider_base_url.startsWith("http")) {
+        throw new Error("Base URL must start with http")
+      }
+
+      const { error: save_error } = await client.POST(
+        "/api/provider/openai_compatible",
+        {
+          params: {
+            query: {
+              name: new_provider_name,
+              base_url: new_provider_base_url,
+              api_key: new_provider_api_key,
+            },
+          },
+        },
+      )
+      if (save_error) {
+        throw save_error
+      }
+
+      // Refresh to trigger the UI update
+      custom_openai_compatible_providers = [
+        ...custom_openai_compatible_providers,
+        {
+          name: new_provider_name,
+          base_url: new_provider_base_url,
+          api_key: new_provider_api_key,
+        },
+      ]
+
+      // Reset the form
+      new_provider_name = ""
+      new_provider_base_url = ""
+      new_provider_api_key = ""
+      new_provider_error = null
+
+      status.openai_compatible.connected = true
+      // @ts-expect-error daisyui does not add types
+      document.getElementById("openai_compatible_dialog")?.close()
+    } catch (e) {
+      new_provider_error = createKilnError(e)
+    } finally {
+      adding_new_provider = false
+    }
+  }
+
+  async function remove_openai_compatible_provider_at_index(index: number) {
+    if (index < 0 || index >= custom_openai_compatible_providers.length) {
+      return
+    }
+    try {
+      let provider = custom_openai_compatible_providers[index]
+
+      const { error: delete_error } = await client.DELETE(
+        "/api/provider/openai_compatible",
+        {
+          params: {
+            query: {
+              name: provider.name,
+            },
+          },
+        },
+      )
+      if (delete_error) {
+        throw delete_error
+      }
+
+      // Update UI
+      custom_openai_compatible_providers =
+        custom_openai_compatible_providers.filter(
+          (v, _) => v.name !== provider.name,
+        )
+      if (custom_openai_compatible_providers.length === 0) {
+        status.openai_compatible.connected = false
+      }
+    } catch (e) {
+      alert("Failed to remove provider: " + e)
+    }
   }
 </script>
 
@@ -452,6 +576,14 @@
                 Set Custom Ollama URL
               </button>
             {/if}
+            {#if provider.id === "openai_compatible" && status[provider.id] && status[provider.id].connected}
+              <button
+                class="link text-left text-sm text-gray-500"
+                on:click={show_custom_api_dialog}
+              >
+                Update Custom APIs
+              </button>
+            {/if}
           </div>
           <button
             class="btn md:min-w-[100px]"
@@ -518,4 +650,75 @@
   <form method="dialog" class="modal-backdrop">
     <button>close</button>
   </form>
+</dialog>
+
+<dialog id="openai_compatible_dialog" class="modal">
+  <div class="modal-box">
+    <form method="dialog">
+      <button
+        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
+        >✕</button
+      >
+    </form>
+
+    <h3 class="text-lg font-bold flex flex-row gap-4">Connect Custom APIs</h3>
+    <p class="text-sm font-light mb-8">
+      Connect any any OpenAI compatible API by adding a base URL and API key.
+    </p>
+    {#if custom_openai_compatible_providers.length > 0}
+      <div class="flex flex-col gap-2">
+        <div class="font-medium">Existing APIs</div>
+        {#each custom_openai_compatible_providers as provider, index}
+          <div class="flex flex-row gap-3 card bg-base-200 px-4 items-center">
+            <div class="text-sm">{provider.name}</div>
+            <div class="text-sm text-gray-500 grow truncate">
+              {provider.base_url}
+            </div>
+            <button
+              class="btn btn-sm btn-ghost"
+              on:click={() => remove_openai_compatible_provider_at_index(index)}
+            >
+              Remove
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    <div class="flex flex-col gap-2 mt-8">
+      <div class="font-medium">Add New API</div>
+      <FormContainer
+        submit_label="Add"
+        on:submit={add_new_provider}
+        gap={2}
+        submitting={adding_new_provider}
+        error={new_provider_error}
+      >
+        <FormElement
+          id="name"
+          label="API Name"
+          bind:value={new_provider_name}
+          placeholder="My home server"
+          info_description="A name for this endpoint for you use. Example: 'My home server'"
+        />
+        <FormElement
+          id="base_url"
+          label="Base URL"
+          bind:value={new_provider_base_url}
+          placeholder="https://..."
+          info_description="The base URL of an OpenAI compatible API. For example, https://openrouter.ai/api/v1"
+        />
+        <FormElement
+          id="api_key"
+          label="API Key"
+          bind:value={new_provider_api_key}
+          placeholder="sk-..."
+          info_description="The API key for the OpenAI compatible API."
+        />
+      </FormContainer>
+    </div>
+
+    <form method="dialog" class="modal-backdrop">
+      <button>close</button>
+    </form>
+  </div>
 </dialog>

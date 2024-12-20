@@ -38,6 +38,7 @@ class RunTaskRequest(BaseModel):
     plaintext_input: str | None = None
     structured_input: Dict[str, Any] | None = None
     ui_prompt_method: str | None = None
+    tags: list[str] | None = None
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
@@ -52,6 +53,7 @@ class RunSummary(BaseModel):
     repair_state: str | None = None
     model_name: str | None = None
     input_source: str | None = None
+    tags: list[str] | None = None
 
     @classmethod
     def format_preview(cls, text: str | None, max_length: int = 100) -> str | None:
@@ -98,6 +100,7 @@ class RunSummary(BaseModel):
         return RunSummary(
             id=run.id,
             rating=run.output.rating,
+            tags=run.tags,
             input_preview=RunSummary.format_preview(run.input),
             output_preview=RunSummary.format_preview(output),
             created_at=run.created_at,
@@ -171,6 +174,7 @@ def connect_run_api(app: FastAPI):
             model_name=request.model_name,
             provider=request.provider,
             prompt_builder=prompt_builder,
+            tags=request.tags,
         )
 
         input = request.plaintext_input
