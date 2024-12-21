@@ -692,7 +692,7 @@ class DatasetSplit(KilnParentedModel):
         if parent is None:
             raise ValueError("DatasetSplit has no parent task")
 
-        runs = parent.runs()
+        runs = parent.runs(readonly=True)
         all_ids = set(run.id for run in runs)
         all_ids_in_splits = set()
         for ids in self.split_contents.values():
@@ -775,8 +775,8 @@ class Task(
         return schema_from_json_str(self.input_json_schema)
 
     # Needed for typechecking. TODO P2: fix this in KilnParentModel
-    def runs(self) -> list[TaskRun]:
-        return super().runs()  # type: ignore
+    def runs(self, readonly: bool = False) -> list[TaskRun]:
+        return super().runs(readonly=readonly)  # type: ignore
 
     def dataset_splits(self) -> list[DatasetSplit]:
         return super().dataset_splits()  # type: ignore

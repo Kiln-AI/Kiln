@@ -168,7 +168,7 @@ class BaseAdapter(metaclass=ABCMeta):
         existing_task_run = next(
             (
                 task_run
-                for task_run in self.kiln_task.runs()
+                for task_run in self.kiln_task.runs(readonly=True)
                 if task_run.model_dump(exclude=exclude_fields) == new_run_dump
             ),
             None,

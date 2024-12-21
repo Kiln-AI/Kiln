@@ -142,12 +142,13 @@ def connect_run_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs")
     async def get_runs(project_id: str, task_id: str) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
-        return list(task.runs())
+        return list(task.runs(readonly=True))
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
     async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
-        runs = task.runs()
+        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
+        runs = task.runs(readonly=True)
         run_summaries: list[RunSummary] = []
         for run in runs:
             summary = RunSummary.from_run(run)

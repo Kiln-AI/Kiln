@@ -144,7 +144,7 @@ class MultiShotPromptBuilder(BasePromptBuilder):
 
     def collect_examples(self) -> list[TaskRun]:
         valid_examples: list[TaskRun] = []
-        runs = self.task.runs()
+        runs = self.task.runs(readonly=True)
 
         # first pass, we look for repaired outputs. These are the best examples.
         for run in runs:

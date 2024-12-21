@@ -120,11 +120,12 @@ class KilnBaseModel(BaseModel):
         return cls.load_from_file(path)
 
     @classmethod
-    def load_from_file(cls: Type[T], path: Path | str) -> T:
+    def load_from_file(cls: Type[T], path: Path | str, readonly: bool = False) -> T:
         """Load a model instance from a specific file path.
 
         Args:
             path (Path): Path to the model file
+            readonly (bool): If True, the model will be returned in readonly mode (cached instance, not a copy, not safe to mutate)
 
         Returns:
             T: Instance of the model
@@ -135,7 +136,7 @@ class KilnBaseModel(BaseModel):
         """
         if isinstance(path, str):
             path = Path(path)
-        cached_model = ModelCache.shared().get_model(path, cls)
+        cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
         if cached_model is not None:
             return cached_model
         with open(path, "r") as file:
@@ -347,11 +348,12 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @classmethod
     def all_children_of_parent_path(
-        cls: Type[PT], parent_path: Path | None
+        cls: Type[PT], parent_path: Path | None, readonly: bool = False
     ) -> list[PT]:
         children = []
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
-            children.append(cls.load_from_file(child_path))
+            item = cls.load_from_file(child_path, readonly=readonly)
+            children.append(item)
         return children
 
     @classmethod
@@ -394,8 +396,8 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
     def _create_child_method(
         cls, relationship_name: str, child_class: Type[KilnParentedModel]
     ):
-        def child_method(self) -> list[child_class]:
-            return child_class.all_children_of_parent_path(self.path)
+        def child_method(self, readonly: bool = False) -> list[child_class]:
+            return child_class.all_children_of_parent_path(self.path, readonly=readonly)
 
         child_method.__name__ = relationship_name
         child_method.__annotations__ = {"return": List[child_class]}

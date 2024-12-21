@@ -356,7 +356,9 @@ def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
     model = KilnBaseModel.load_from_file(test_base_file)
 
     # Check that the cache was checked and set
-    tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+    tmp_model_cache.get_model.assert_called_once_with(
+        test_base_file, KilnBaseModel, readonly=False
+    )
     tmp_model_cache.set_model.assert_called_once()
 
     # Ensure the model is correctly loaded
@@ -407,7 +409,9 @@ def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
         model = KilnBaseModel.load_from_file(test_base_file)
 
         # Check that the cache was checked and the cached model was returned
-        tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+        tmp_model_cache.get_model.assert_called_once_with(
+            test_base_file, KilnBaseModel, readonly=False
+        )
         assert model is cached_model
 
         # Assert that open was not called (we used the cached model, not file)
