@@ -12,8 +12,10 @@
   export let light_label: boolean = false // styling
   export let select_options: [unknown, string][] = []
   export let select_options_grouped: [string, [unknown, string][]][] = []
+  export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
+  export let tall: boolean = false
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -105,10 +107,14 @@
   </label>
   <div class="relative">
     {#if inputType === "textarea"}
+      <!-- Ensure compiler doesn't optimize away the heights -->
+      <span class="h-18 h-60 hidden"></span>
       <textarea
         placeholder={error_message || placeholder || label}
         {id}
-        class="textarea text-base textarea-bordered w-full h-18 wrap-pre text-left align-top
+        class="textarea text-base textarea-bordered w-full {tall
+          ? 'h-60'
+          : 'h-18'} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
         on:input={run_validator}
@@ -136,6 +142,7 @@
           ? 'select-error'
           : ''}"
         bind:value
+        on:input={on_select}
         {disabled}
       >
         {#if select_options_grouped.length > 0}
