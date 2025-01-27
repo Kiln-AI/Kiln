@@ -12,7 +12,7 @@ This Privacy Notice for Chesterfield Laboratories Inc. (doing business as Kiln A
 
 # SUMMARY OF KEY POINTS
 
-**_This summary provides key points from our Privacy Notice, but you can find out more details about any of these topics by clicking the link following each key point or by using our ~table of contents~ below to find the section you are looking for._**
+**_This summary provides key points from our Privacy Notice, but you can find out more details about any of these topics by clicking the link following each key point or by using our [table of contents](#TABLE-OF-CONTENTS) below to find the section you are looking for._**
 
 **What personal information do we process?** When you visit, use, or navigate our Services, we may process personal information depending on how you interact with us and the Services, the choices you make, and the products and features you use. Learn more about [personal information you disclose to us](#Personal-information-you-disclose-to-us).
 
@@ -90,7 +90,7 @@ The information we collect includes:
 **We process your personal information for a variety of reasons, depending on how you interact with our Services, including:**
 
 - **To request feedback.** We may process your information when necessary to request feedback and to contact you about your use of our Services.
-- **To send you marketing and promotional communications.** We may process the personal information you send to us for our marketing purposes, if this is in accordance with your marketing preferences. You can opt out of our marketing emails at any time. For more information, see '~WHAT ARE YOUR PRIVACY RIGHTS?~' below.
+- **To send you marketing and promotional communications.** We may process the personal information you send to us for our marketing purposes, if this is in accordance with your marketing preferences. You can opt out of our marketing emails at any time. For more information, see 'WHAT ARE YOUR PRIVACY RIGHTS?' below.
 - **To identify usage trends.** We may process information about how you use our Services to better understand how they are being used so we can improve them.
 - **To save or protect an individual's vital interest.** We may process your information when necessary to save or protect an individual's vital interest, such as to prevent harm.
 
@@ -102,7 +102,7 @@ The information we collect includes:
 
 The General Data Protection Regulation (GDPR) and UK GDPR require us to explain the valid legal bases we rely on in order to process your personal information. As such, we may rely on the following legal bases to process your personal information:
 
-- **Consent.** We may process your information if you have given us permission (i.e. consent) to use your personal information for a specific purpose. You can withdraw your consent at any time. Learn more about ~withdrawing your consent~.
+- **Consent.** We may process your information if you have given us permission (i.e. consent) to use your personal information for a specific purpose. You can withdraw your consent at any time. Learn more about [withdrawing your consent](#8-WHAT-ARE-YOUR-PRIVACY-RIGHTS).
 - **Legitimate Interests.** We may process your information when we believe it is reasonably necessary to achieve our legitimate business interests and those interests do not outweigh your interests and fundamental rights and freedoms. For example, we may process your personal information for some of the purposes described in order to:
 - Send users information about special offers and discounts on our products and services
 - Analyse how our Services are used so we can improve them to engage and retain users
@@ -112,7 +112,7 @@ The General Data Protection Regulation (GDPR) and UK GDPR require us to explain 
   ⠀
   **_If you are located in Canada, this section applies to you._**
 
-We may process your information if you have given us specific permission (i.e. express consent) to use your personal information for a specific purpose, or in situations where your permission can be inferred (i.e. implied consent). You can ~withdraw your consent~ at any time.
+We may process your information if you have given us specific permission (i.e. express consent) to use your personal information for a specific purpose, or in situations where your permission can be inferred (i.e. implied consent). You can [withdraw your consent](#8-WHAT-ARE-YOUR-PRIVACY-RIGHTS) at any time.
 
 In some exceptional cases, we may be legally permitted under applicable law to process your information without your consent, including, for example:
 
@@ -142,7 +142,7 @@ We may use cookies and similar tracking technologies (like web beacons and pixel
 
 We also permit third parties and service providers to use online tracking technologies on our Services for analytics and advertising, including to help manage and display advertisements, to tailor advertisements to your interests, or to send abandoned shopping cart reminders (depending on your communication preferences). The third parties and service providers use their technology to provide advertising about products and services tailored to your interests which may appear either on our Services or on other websites.
 
-To the extent these online tracking technologies are deemed to be a 'sale'/'sharing' (which includes targeted advertising, as defined under the applicable laws) under applicable US state laws, you can opt out of these online tracking technologies by submitting a request as described below under section '~DO UNITED STATES RESIDENTS HAVE SPECIFIC PRIVACY RIGHTS?~'
+To the extent these online tracking technologies are deemed to be a 'sale'/'sharing' (which includes targeted advertising, as defined under the applicable laws) under applicable US state laws, you can opt out of these online tracking technologies by submitting a request as described below under section 'DO UNITED STATES RESIDENTS HAVE SPECIFIC PRIVACY RIGHTS?'
 
 Specific information about how we use such technologies and how you can refuse certain cookies is set out in our Cookie Notice.
 
@@ -164,21 +164,21 @@ We do not knowingly collect, solicit data from, or market to children under 18 y
 
 **_In Short:_** *Depending on your state of residence in the US or in some regions, such as the European Economic Area (EEA), United Kingdom (UK), Switzerland, and Canada, you have rights that allow you greater access to and control over your personal information. You may review, change, or terminate your account at any time, depending on your country, province, or state of residence.*
 
-In some regions (like the EEA, UK, Switzerland, and Canada), you have certain rights under applicable data protection laws. These may include the right (i) to request access and obtain a copy of your personal information, (ii) to request rectification or erasure; (iii) to restrict the processing of your personal information; (iv) if applicable, to data portability; and (v) not to be subject to automated decision-making. In certain circumstances, you may also have the right to object to the processing of your personal information. You can make such a request by contacting us by using the contact details provided in the section '~HOW CAN YOU CONTACT US ABOUT THIS NOTICE?~' below.
+In some regions (like the EEA, UK, Switzerland, and Canada), you have certain rights under applicable data protection laws. These may include the right (i) to request access and obtain a copy of your personal information, (ii) to request rectification or erasure; (iii) to restrict the processing of your personal information; (iv) if applicable, to data portability; and (v) not to be subject to automated decision-making. In certain circumstances, you may also have the right to object to the processing of your personal information. You can make such a request by contacting us by using the contact details provided in the section 'HOW CAN YOU CONTACT US ABOUT THIS NOTICE?' below.
 
 We will consider and act upon any request in accordance with applicable data protection laws.
 
-If you are located in the EEA or UK and you believe we are unlawfully processing your personal information, you also have the right to complain to your ~[Member State data protection authority](https://ec.europa.eu/justice/data-protection/bodies/authorities/index_en.htm)~ or ~[UK data protection authority](https://ico.org.uk/make-a-complaint/data-protection-complaints/data-protection-complaints/)~.
+If you are located in the EEA or UK and you believe we are unlawfully processing your personal information, you also have the right to complain to your [Member State data protection authority](https://ec.europa.eu/justice/data-protection/bodies/authorities/index_en.htm) or [UK data protection authority](https://ico.org.uk/make-a-complaint/data-protection-complaints/data-protection-complaints/).
 
-If you are located in Switzerland, you may contact the ~[Federal Data Protection and Information Commissioner](https://www.edoeb.admin.ch/edoeb/en/home.html)~.
+If you are located in Switzerland, you may contact the [Federal Data Protection and Information Commissioner](https://www.edoeb.admin.ch/edoeb/en/home.html).
 
-**~Withdrawing your consent:~** If we are relying on your consent to process your personal information, which may be express and/or implied consent depending on the applicable law, you have the right to withdraw your consent at any time. You can withdraw your consent at any time by contacting us by using the contact details provided in the section '~HOW CAN YOU CONTACT US ABOUT THIS NOTICE?~' below.
+**Withdrawing your consent:** If we are relying on your consent to process your personal information, which may be express and/or implied consent depending on the applicable law, you have the right to withdraw your consent at any time. You can withdraw your consent at any time by contacting us by using the contact details provided in the section 'HOW CAN YOU CONTACT US ABOUT THIS NOTICE?' below.
 
 However, please note that this will not affect the lawfulness of the processing before its withdrawal nor, when applicable law allows, will it affect the processing of your personal information conducted in reliance on lawful processing grounds other than consent.
 
-**~Opting out of marketing and promotional communications:~** You can unsubscribe from our marketing and promotional communications at any time by clicking on the unsubscribe link in the emails that we send, or by contacting us using the details provided in the section '~HOW CAN YOU CONTACT US ABOUT THIS NOTICE?~' below. You will then be removed from the marketing lists. However, we may still communicate with you - for example, to send you service-related messages that are necessary for the administration and use of your account, to respond to service requests, or for other non-marketing purposes.
+**Opting out of marketing and promotional communications:** You can unsubscribe from our marketing and promotional communications at any time by clicking on the unsubscribe link in the emails that we send, or by contacting us using the details provided in the section 'HOW CAN YOU CONTACT US ABOUT THIS NOTICE?' below. You will then be removed from the marketing lists. However, we may still communicate with you - for example, to send you service-related messages that are necessary for the administration and use of your account, to respond to service requests, or for other non-marketing purposes.
 
-**~Cookies and similar technologies:~** Most Web browsers are set to accept cookies by default. If you prefer, you can usually choose to set your browser to remove cookies and to reject cookies. If you choose to remove cookies or reject cookies, this could affect certain features or services of our Services.
+**Cookies and similar technologies:** Most Web browsers are set to accept cookies by default. If you prefer, you can usually choose to set your browser to remove cookies and to reject cookies. If you choose to remove cookies or reject cookies, this could affect certain features or services of our Services.
 
 If you have questions or comments about your privacy rights, you may email us at support@getkiln.ai.
 
@@ -220,13 +220,15 @@ We may also collect other personal information outside of these categories throu
 
 _Sources of Personal Information_
 
-Learn more about the sources of personal information we collect in '~WHAT INFORMATION DO WE COLLECT?~'
-How We Use and Share Personal Information
-Learn more about how we use your personal information in the section, '~HOW DO WE PROCESS YOUR INFORMATION?~'
+Learn more about the sources of personal information we collect in 'WHAT INFORMATION DO WE COLLECT?'
+
+_How We Use and Share Personal Information_
+
+Learn more about how we use your personal information in the section, 'HOW DO WE PROCESS YOUR INFORMATION?'
 
 **Will your information be shared with anyone else?**
 
-We may disclose your personal information with our service providers pursuant to a written contract between us and each service provider. Learn more about how we disclose personal information to in the section, '~WHEN AND WITH WHOM DO WE SHARE YOUR PERSONAL INFORMATION?~'
+We may disclose your personal information with our service providers pursuant to a written contract between us and each service provider. Learn more about how we disclose personal information to in the section, 'WHEN AND WITH WHOM DO WE SHARE YOUR PERSONAL INFORMATION?'
 
 We may use your personal information for our own business purposes, such as for undertaking internal research for technological development and demonstration. This is not considered to be 'selling' of your personal information.
 
