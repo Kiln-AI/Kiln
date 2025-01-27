@@ -1,6 +1,6 @@
 # END USER LICENCE AGREEMENT
 
-**Last updated November 05, 2024**
+**Last updated January 27, 2025**
 
 Kiln AI Desktop is licensed to You (End-User) by Chesterfield Laboratories Incorporated ('Licensor'), for use only under the terms of this Licence Agreement.
 
@@ -32,7 +32,11 @@ The Licensed Application is not tailored to comply with industry-specific regula
 
 ## 4. USER-GENERATED CONTRIBUTIONS
 
-We may provide you with the opportunity to create, submit, post, display, transmit, perform, publish, distribute, or broadcast content and materials to us or in the Licensed Application, including but not limited to text, writings, video, audio, photographs, graphics, comments, suggestions, or personal information or other material (collectively, 'Contributions'). Contributions may be viewable by other users of the Licensed Application and through third-party websites or applications. As such, any Contributions you transmit may be treated in accordance with the Licensed Application Privacy Policy. When you create or make available any Contributions, you thereby represent and warrant that:
+We may provide you with the opportunity to create, submit, post, display, transmit, perform, publish, distribute, or broadcast content and materials to us or in the Licensed Application, including but not limited to text, writings, video, audio, photographs, graphics, comments, suggestions, or personal information or other material (collectively, 'Contributions'). Contributions may be viewable by other users of the Licensed Application and through third-party websites or applications. As such, any Contributions you transmit may be treated in accordance with the Licensed Application Privacy Policy.
+
+**Please note:** Any data or content that you **input into, import into, or create or generate using** the Licensed Application, and do not expressly transmit or submit to us, shall **not be considered "Contributions"** under this Agreement. Such data remains private and local to your device unless you **choose to** share it with us.
+
+When you create or make available any Contributions, you thereby represent and warrant that:
 
 1. The creation, distribution, transmission, public display, or performance, and the accessing, downloading, or copying of your Contributions do not and will not infringe the proprietary rights, including but not limited to the copyright, patent, trademark, trade secret, or moral rights of any third party.
 2. You are the creator and owner of or have the necessary licences, rights, consents, releases, and permissions to use and to authorise us, the Licensed Application, and other users of the Licensed Application to use your Contributions in any manner contemplated by the Licensed Application and this Licence Agreement.
@@ -56,7 +60,7 @@ You agree that we may access, store, process, and use any information and person
 
 By submitting suggestions or other feedback regarding the Licensed Application, you agree that we can use and share such feedback for any purpose without compensation to you.
 
-We are not liable for any statements or representations in your Contributions provided by you in any area in the Licensed Application. You are solely responsible for your Contributions to the Licensed Application and you expressly agree to exonerate us from any and all responsibility and to refrain from any legal action against us regarding your Contributions.
+We do not assert any ownership over your Contributions. You retain full ownership of all of your Contributions and any intellectual property rights or other proprietary rights associated with your Contributions. We are not liable for any statements or representations in your Contributions provided by you in any area in the Licensed Application. You are solely responsible for your Contributions to the Licensed Application and you expressly agree to exonerate us from any and all responsibility and to refrain from any legal action against us regarding your Contributions.
 
 This Contribution License shall apply exclusively to End-Users as defined herein. For entities seeking to contribute to the source code or repository of the Licensed Application, a separate Contribution License Agreement shall govern such contributions and must be executed prior to any such contribution.
 
