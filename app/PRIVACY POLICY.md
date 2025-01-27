@@ -191,7 +191,9 @@ California law requires us to let you know how we respond to web browser DNT sig
 # 10. DO UNITED STATES RESIDENTS HAVE SPECIFIC PRIVACY RIGHTS?
 
 **_In Short:_** *If you are a resident of, you may have the right to request access to and receive details about the personal information we maintain about you and how we have processed it, correct inaccuracies, get a copy of, or delete your personal information. You may also have the right to withdraw your consent to our processing of your personal information. These rights may be limited in some circumstances by applicable law. More information is provided below.*
-Categories of Personal Information We Collect
+
+**Categories of Personal Information We Collect**
+
 We have collected the following categories of personal information in the past twelve (12) months:
 
 | **Category**                                                           | **Examples**                                                                                                                                                                                             | **Collected** |
@@ -214,15 +216,15 @@ We may also collect other personal information outside of these categories throu
 - Participation in customer surveys or contests; and
 - Facilitation in the delivery of our Services and to respond to your inquiries.
 
-⠀We will use and retain the collected personal information as needed to provide the Services or for:
+We will use and retain the collected personal information as needed to provide the Services or for:
 
 - Category A - As long as the user has an account with us
 
-_Sources of Personal Information_
+**Sources of Personal Information**
 
 Learn more about the sources of personal information we collect in 'WHAT INFORMATION DO WE COLLECT?'
 
-_How We Use and Share Personal Information_
+**How We Use and Share Personal Information**
 
 Learn more about how we use your personal information in the section, 'HOW DO WE PROCESS YOUR INFORMATION?'
 
@@ -234,7 +236,7 @@ We may use your personal information for our own business purposes, such as for 
 
 We have not disclosed, sold, or shared any personal information to third parties for a business or commercial purpose in the preceding twelve (12) months. We will not sell or share personal information in the future belonging to website visitors, users, and other consumers.
 
-_Your Rights_
+**Your Rights**
 
 You have rights under certain US state data protection laws. However, these rights are not absolute, and in certain cases, we may decline your request as permitted by law. These rights include:
 
@@ -246,7 +248,7 @@ You have rights under certain US state data protection laws. However, these righ
 - **Right to non-discrimination** for exercising your rights
 - **Right to opt out** of the processing of your personal data if it is used for targeted advertising, the sale of personal data, or profiling in furtherance of decisions that produce legal or similarly significant effects ('profiling')
 
-_How to Exercise Your Rights_
+**How to Exercise Your Rights**
 
 To exercise these rights, you can contact us by emailing us at support@getkiln.ai, or by referring to the contact details at the bottom of this document.
 
