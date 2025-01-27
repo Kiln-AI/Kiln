@@ -20,11 +20,11 @@ This Privacy Notice for Chesterfield Laboratories Inc. (doing business as Kiln A
 
 **Do we collect any information from third parties?** We do not collect any information from third parties.
 
-**How do we process your information?** We process your information to provide, improve, and administer our Services, communicate with you, for security and fraud prevention, and to comply with law. We may also process your information for other purposes with your consent. We process your information only when we have a valid legal reason to do so. [Learn more about how we process your information](#2.-HOW-DO-WE-PROCESS-YOUR-INFORMATION?).
+**How do we process your information?** We process your information to provide, improve, and administer our Services, communicate with you, for security and fraud prevention, and to comply with law. We may also process your information for other purposes with your consent. We process your information only when we have a valid legal reason to do so. [Learn more about how we process your information](#2-HOW-DO-WE-PROCESS-YOUR-INFORMATION).
 
-**In what situations and with which parties do we share personal information?** We may share information in specific situations and with specific third parties. Learn more about [when and with whom we share your personal information](#4.-WHEN-AND-WITH-WHOM-DO-WE-SHARE-YOUR-PERSONAL-INFORMATION?).
+**In what situations and with which parties do we share personal information?** We may share information in specific situations and with specific third parties. Learn more about [when and with whom we share your personal information](#4-WHEN-AND-WITH-WHOM-DO-WE-SHARE-YOUR-PERSONAL-INFORMATION).
 
-**What are your rights?** Depending on where you are located geographically, the applicable privacy law may mean you have certain rights regarding your personal information. Learn more about [your privacy rights](#8.-WHAT-ARE-YOUR-PRIVACY-RIGHTS?).
+**What are your rights?** Depending on where you are located geographically, the applicable privacy law may mean you have certain rights regarding your personal information. Learn more about [your privacy rights](#8-WHAT-ARE-YOUR-PRIVACY-RIGHTS).
 
 **How do you exercise your rights?** The easiest way to exercise your rights is by contacting us. We will consider and act upon any request in accordance with applicable data protection laws.
 
@@ -66,7 +66,6 @@ We collect personal information that you voluntarily provide to us when you expr
 - billing addresses
 - debit/credit card numbers
 
-
 **Sensitive Information.** We do not process sensitive information.
 
 All personal information that you provide to us must be true, complete, and accurate, and you must notify us of any changes to such personal information.
@@ -95,7 +94,6 @@ The information we collect includes:
 - **To identify usage trends.** We may process information about how you use our Services to better understand how they are being used so we can improve them.
 - **To save or protect an individual's vital interest.** We may process your information when necessary to save or protect an individual's vital interest, such as to prevent harm.
 
-
 # 3. WHAT LEGAL BASES DO WE RELY ON TO PROCESS YOUR INFORMATION?
 
 **_In Short:_** *We only process your personal information when we believe it is necessary and we have a valid legal reason (i.e. legal basis) to do so under applicable law, like with your consent, to comply with laws, to provide you with services to enter into or fulfil our contractual obligations, to protect your rights, or to fulfil our legitimate business interests.*
@@ -111,8 +109,8 @@ The General Data Protection Regulation (GDPR) and UK GDPR require us to explain 
 - Understand how our users use our products and services so we can improve user experience
 - **Legal Obligations.** We may process your information where we believe it is necessary for compliance with our legal obligations, such as to cooperate with a law enforcement body or regulatory agency, exercise or defend our legal rights, or disclose your information as evidence in litigation in which we are involved.
 - **Vital Interests.** We may process your information where we believe it is necessary to protect your vital interests or the vital interests of a third party, such as situations involving potential threats to the safety of any person.
-⠀
-**_If you are located in Canada, this section applies to you._**
+  ⠀
+  **_If you are located in Canada, this section applies to you._**
 
 We may process your information if you have given us specific permission (i.e. express consent) to use your personal information for a specific purpose, or in situations where your permission can be inferred (i.e. implied consent). You can ~withdraw your consent~ at any time.
 
@@ -139,7 +137,6 @@ In some exceptional cases, we may be legally permitted under applicable law to p
 We may need to share your personal information in the following situations:
 
 - **Business Transfers.** We may share or transfer your information in connection with, or during negotiations of, any merger, sale of company assets, financing, or acquisition of all or a portion of our business to another company.
-
 
 We may use cookies and similar tracking technologies (like web beacons and pixels) to gather information when you interact with our Services. Some online tracking technologies help us maintain the security of our Services, prevent crashes, fix bugs, save your preferences, and assist with basic site functions.
 
@@ -197,19 +194,19 @@ California law requires us to let you know how we respond to web browser DNT sig
 Categories of Personal Information We Collect
 We have collected the following categories of personal information in the past twelve (12) months:
 
-| **Category**   | **Examples**                                                                                                                                                                                             | **Collected** |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-----------: |
-| A. Identifiers | Contact details, such as real name, alias, postal address, telephone or mobile contact number, unique personal identifier, online identifier, Internet Protocol address, email address, and account name |  <br>YES<br>  |
-| B. Protected classification characteristics under state or federal law | Gender, age, date of birth, race and ethnicity, national origin, marital status, and other demographic data                                                                     | <br>NO<br> |
-| C. Commercial information                                              | Transaction information, purchase history, financial details, and payment information                                                                                           | <br>NO<br> |
-| D. Biometric information                                               | Fingerprints and voiceprints                                                                                                                                                    | <br>NO<br> |
-| E. Internet or other similar network activity                          | Browsing history, search history, online behaviour, interest data, and interactions with our and other websites, applications, systems, and advertisements                      | <br>NO<br> |
-| F. Geolocation data                                                    | Device location                                                                                                                                                                 | <br>NO<br> |
-| G. Audio, electronic, sensory, or similar information                  | Images and audio, video or call recordings created in connection with our business activities                                                                                   | <br>NO<br> |
-| H. Professional or employment-related information                      | Business contact details in order to provide you our Services at a business level or job title, work history, and professional qualifications if you apply for a job with us    | <br>NO<br> |
-| I. Education Information                                               | Student records and directory information                                                                                                                                       | <br>NO<br> |
-| J. Inferences drawn from collected personal information                | Inferences drawn from any of the collected personal information listed above to create a profile or summary about, for example, an individual's preferences and characteristics | <br>NO<br> |
-| K. Sensitive personal Information                                      |                                                                                                                                                                                 | <br>NO<br> |
+| **Category**                                                           | **Examples**                                                                                                                                                                                             | **Collected** |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-----------: |
+| A. Identifiers                                                         | Contact details, such as real name, alias, postal address, telephone or mobile contact number, unique personal identifier, online identifier, Internet Protocol address, email address, and account name |  <br>YES<br>  |
+| B. Protected classification characteristics under state or federal law | Gender, age, date of birth, race and ethnicity, national origin, marital status, and other demographic data                                                                                              |  <br>NO<br>   |
+| C. Commercial information                                              | Transaction information, purchase history, financial details, and payment information                                                                                                                    |  <br>NO<br>   |
+| D. Biometric information                                               | Fingerprints and voiceprints                                                                                                                                                                             |  <br>NO<br>   |
+| E. Internet or other similar network activity                          | Browsing history, search history, online behaviour, interest data, and interactions with our and other websites, applications, systems, and advertisements                                               |  <br>NO<br>   |
+| F. Geolocation data                                                    | Device location                                                                                                                                                                                          |  <br>NO<br>   |
+| G. Audio, electronic, sensory, or similar information                  | Images and audio, video or call recordings created in connection with our business activities                                                                                                            |  <br>NO<br>   |
+| H. Professional or employment-related information                      | Business contact details in order to provide you our Services at a business level or job title, work history, and professional qualifications if you apply for a job with us                             |  <br>NO<br>   |
+| I. Education Information                                               | Student records and directory information                                                                                                                                                                |  <br>NO<br>   |
+| J. Inferences drawn from collected personal information                | Inferences drawn from any of the collected personal information listed above to create a profile or summary about, for example, an individual's preferences and characteristics                          |  <br>NO<br>   |
+| K. Sensitive personal Information                                      |                                                                                                                                                                                                          |  <br>NO<br>   |
 
 We may also collect other personal information outside of these categories through instances where you interact with us in person, online, or by phone or mail in the context of:
 
@@ -220,7 +217,6 @@ We may also collect other personal information outside of these categories throu
 ⠀We will use and retain the collected personal information as needed to provide the Services or for:
 
 - Category A - As long as the user has an account with us
-
 
 _Sources of Personal Information_
 
