@@ -4,7 +4,7 @@
 
 This Privacy Notice for Chesterfield Laboratories Inc. (doing business as Kiln AI) ('**we**', '**us**', or '**our**'), describes how and why we might access, collect, store, use, and/or share ('**process**') your personal information when you use our services ('**Services**'), including when you:
 
-- Download and use our mobile application (Kiln AI Desktop), or any other application of ours that links to this Privacy Notice
+- Download and use our application (Kiln AI Desktop), or any other application of ours that links to this Privacy Notice
 - Use Kiln AI Desktop, a piece of software created to work with AI datasets and models. It is used to generate datasets, run AI models, build AI products, and other related tasks.
 - Engage with us in other related ways, including any sales, marketing, or events
 
