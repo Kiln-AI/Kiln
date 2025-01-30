@@ -1,4 +1,3 @@
-import json
 from typing import Any, Dict, NoReturn
 
 import kiln_ai.datamodel as datamodel
@@ -8,7 +7,7 @@ from kiln_ai.adapters.base_adapter import (
     BasePromptBuilder,
     RunOutput,
 )
-from kiln_ai.adapters.ml_model_list import ModelParserID, StructuredOutputMode
+from kiln_ai.adapters.ml_model_list import StructuredOutputMode
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionMessage

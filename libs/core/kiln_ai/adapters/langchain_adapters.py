@@ -91,12 +91,15 @@ class LangchainAdapter(BaseAdapter):
         )
 
         # TODO better way: structured_output_mode = raw?
-        # If we're going to parse the output, don't use LC's structured output
+        # Don't setup structured output unless task is structured, and we haven't said we want instruction based JSON
         provider = await self.model_provider()
-        custom_output_parser = provider.parser == ModelParserID.r1_thinking
-        print(f"custom_output_parser: {custom_output_parser}")
+        use_lc_structured_output = (
+            self.has_structured_output()
+            and provider.structured_output_mode
+            != StructuredOutputMode.json_instructions
+        )
 
-        if self.has_structured_output():
+        if use_lc_structured_output:
             if not hasattr(self._model, "with_structured_output") or not callable(
                 getattr(self._model, "with_structured_output")
             ):
@@ -127,6 +130,15 @@ class LangchainAdapter(BaseAdapter):
         intermediate_outputs = {}
 
         prompt = self.build_prompt()
+        # TODO P0: move this to prompt builder
+        provider = await self.model_provider()
+        if provider.structured_output_mode == StructuredOutputMode.json_instructions:
+            prompt = (
+                prompt
+                + f"\n\n### Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.kiln_task.output_schema()}\n```"
+            )
+            print(f"prompt: {prompt}")
+
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
             SystemMessage(content=prompt),
@@ -156,7 +168,7 @@ class LangchainAdapter(BaseAdapter):
             messages.append(SystemMessage(content=cot_prompt))
 
         # TODO: make this thinking native
-        response = await chain.ainvoke(messages, include_reasoning=True)
+        response = await chain.ainvoke(messages)
         print(f"response: {response}")
 
         # Langchain may have already parsed the response into structured output, so use that if available.
@@ -220,6 +232,9 @@ async def get_structured_output_options(
             options["method"] = "json_mode"
         case StructuredOutputMode.json_schema:
             options["method"] = "json_schema"
+        case StructuredOutputMode.json_instructions:
+            # JSON done via instructions in prompt, not via API
+            pass
         case StructuredOutputMode.default:
             # Let langchain decide the default
             pass

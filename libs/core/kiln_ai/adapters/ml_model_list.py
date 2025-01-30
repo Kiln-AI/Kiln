@@ -224,12 +224,14 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 provider_options={"model": "accounts/fireworks/models/deepseek-r1"},
                 parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 # I want your RAM
                 name=ModelProviderName.ollama,
                 provider_options={"model": "deepseek-r1:671b"},
                 parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
