@@ -52,7 +52,11 @@ class OpenAICompatibleAdapter(BaseAdapter):
         prompt = self.build_prompt()
 
         # TODO P0: move this to prompt builder
-        if provider.structured_output_mode == StructuredOutputMode.json_instructions:
+        if (
+            self.has_structured_output()
+            and provider.structured_output_mode
+            == StructuredOutputMode.json_instructions
+        ):
             prompt = (
                 prompt
                 + f"\n\n### Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.kiln_task.output_schema()}\n```"

@@ -25,7 +25,6 @@ from kiln_ai.utils.config import Config
 from .base_adapter import AdapterInfo, BaseAdapter, BasePromptBuilder, RunOutput
 from .ml_model_list import (
     KilnModelProvider,
-    ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
 )
@@ -132,7 +131,11 @@ class LangchainAdapter(BaseAdapter):
         prompt = self.build_prompt()
         # TODO P0: move this to prompt builder
         provider = await self.model_provider()
-        if provider.structured_output_mode == StructuredOutputMode.json_instructions:
+        if (
+            self.has_structured_output()
+            and provider.structured_output_mode
+            == StructuredOutputMode.json_instructions
+        ):
             prompt = (
                 prompt
                 + f"\n\n### Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.kiln_task.output_schema()}\n```"
