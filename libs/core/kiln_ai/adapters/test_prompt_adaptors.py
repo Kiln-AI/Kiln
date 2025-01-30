@@ -108,7 +108,11 @@ async def test_amazon_bedrock(tmp_path):
 async def test_mock(tmp_path):
     task = build_test_task(tmp_path)
     mockChatModel = FakeListChatModel(responses=["mock response"])
-    adapter = LangchainAdapter(task, custom_model=mockChatModel)
+    adapter = LangchainAdapter(
+        task,
+        custom_model=mockChatModel,
+        provider="ollama",
+    )
     run = await adapter.invoke("You are a mock, send me the response!")
     assert "mock response" in run.output.output
 
@@ -116,7 +120,7 @@ async def test_mock(tmp_path):
 async def test_mock_returning_run(tmp_path):
     task = build_test_task(tmp_path)
     mockChatModel = FakeListChatModel(responses=["mock response"])
-    adapter = LangchainAdapter(task, custom_model=mockChatModel)
+    adapter = LangchainAdapter(task, custom_model=mockChatModel, provider="ollama")
     run = await adapter.invoke("You are a mock, send me the response!")
     assert run.output.output == "mock response"
     assert run is not None
@@ -127,7 +131,7 @@ async def test_mock_returning_run(tmp_path):
     assert run.output.source.properties == {
         "adapter_name": "kiln_langchain_adapter",
         "model_name": "custom.langchain:unknown_model",
-        "model_provider": "custom.langchain:FakeListChatModel",
+        "model_provider": "ollama",
         "prompt_builder_name": "simple_prompt_builder",
     }
 

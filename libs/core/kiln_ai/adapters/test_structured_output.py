@@ -44,7 +44,7 @@ async def test_structured_output_ollama_llama(tmp_path, model_name):
 
 class MockAdapter(BaseAdapter):
     def __init__(self, kiln_task: datamodel.Task, response: Dict | str | None):
-        super().__init__(kiln_task)
+        super().__init__(kiln_task, model_name="phi_3_5", model_provider_name="ollama")
         self.response = response
 
     async def _run(self, input: str) -> RunOutput:

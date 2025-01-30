@@ -82,6 +82,14 @@ class ModelName(str, Enum):
     deepseek_r1 = "deepseek_r1"
 
 
+class ModelParserID(str, Enum):
+    """
+    Enumeration of supported model parsers.
+    """
+
+    r1_thinking = "r1_thinking"
+
+
 class KilnModelProvider(BaseModel):
     """
     Configuration for a specific model provider.
@@ -94,6 +102,7 @@ class KilnModelProvider(BaseModel):
         provider_finetune_id: The finetune ID for the provider, if applicable
         provider_options: Additional provider-specific configuration options
         structured_output_mode: The mode we should use to call the model for structured output, if it was trained with structured output.
+        parser: A parser to use for the model, if applicable
     """
 
     name: ModelProviderName
@@ -103,6 +112,7 @@ class KilnModelProvider(BaseModel):
     provider_finetune_id: str | None = None
     provider_options: Dict = {}
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.default
+    parser: ModelParserID | None = None
 
 
 class KilnModel(BaseModel):
@@ -207,21 +217,19 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "deepseek/deepseek-r1"},
-                structured_output_mode=StructuredOutputMode.json_schema,
+                parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_mode,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 provider_options={"model": "accounts/fireworks/models/deepseek-r1"},
-                # Truncates the thinking, but json_mode works
-                structured_output_mode=StructuredOutputMode.json_mode,
-                supports_structured_output=False,
-                supports_data_gen=False,
+                parser=ModelParserID.r1_thinking,
             ),
             KilnModelProvider(
                 # I want your RAM
                 name=ModelProviderName.ollama,
                 provider_options={"model": "deepseek-r1:671b"},
-                structured_output_mode=StructuredOutputMode.json_schema,
+                parser=ModelParserID.r1_thinking,
             ),
         ],
     ),

@@ -39,8 +39,12 @@ def test_task(tmp_path):
     return task
 
 
-def test_save_run_isolation(test_task):
-    adapter = MockAdapter(test_task)
+@pytest.fixture
+def adapter(test_task):
+    return MockAdapter(test_task, model_name="phi_3_5", model_provider_name="ollama")
+
+
+def test_save_run_isolation(test_task, adapter):
     input_data = "Test input"
     output_data = "Test output"
     run_output = RunOutput(
@@ -124,8 +128,7 @@ def test_save_run_isolation(test_task):
     assert output_data in set(run.output.output for run in test_task.runs())
 
 
-def test_generate_run_non_ascii(test_task):
-    adapter = MockAdapter(test_task)
+def test_generate_run_non_ascii(test_task, adapter):
     input_data = {"key": "input with non-ascii character: 你好"}
     output_data = {"key": "output with non-ascii character: 你好"}
     run_output = RunOutput(
@@ -154,13 +157,12 @@ def test_generate_run_non_ascii(test_task):
 
 
 @pytest.mark.asyncio
-async def test_autosave_false(test_task):
+async def test_autosave_false(test_task, adapter):
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = False
         mock_config.user_id = "test_user"
 
-        adapter = MockAdapter(test_task)
         input_data = "Test input"
 
         run = await adapter.invoke(input_data)
@@ -173,13 +175,12 @@ async def test_autosave_false(test_task):
 
 
 @pytest.mark.asyncio
-async def test_autosave_true(test_task):
+async def test_autosave_true(test_task, adapter):
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = True
         mock_config.user_id = "test_user"
 
-        adapter = MockAdapter(test_task)
         input_data = "Test input"
 
         run = await adapter.invoke(input_data)
