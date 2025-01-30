@@ -1,4 +1,5 @@
 from kiln_ai.adapters.parsers.base_parser import BaseParser
+from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
 
 
@@ -66,7 +67,7 @@ class R1ThinkingParser(BaseParser):
         # Parse JSON if needed
         output = result
         if self.structured_output:
-            output = self.parse_json_string(result)
+            output = parse_json_string(result)
 
         return RunOutput(
             output=output,

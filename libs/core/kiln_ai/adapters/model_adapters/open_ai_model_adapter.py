@@ -8,7 +8,8 @@ from kiln_ai.adapters.base_adapter import (
     BasePromptBuilder,
     RunOutput,
 )
-from kiln_ai.adapters.ml_model_list import StructuredOutputMode
+from kiln_ai.adapters.ml_model_list import ModelParserID, StructuredOutputMode
+from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
@@ -50,6 +51,15 @@ class OpenAICompatibleAdapter(BaseAdapter):
         intermediate_outputs = {}
 
         prompt = self.build_prompt()
+
+        # TODO P0: move this to prompt builder
+        if provider.structured_output_mode == StructuredOutputMode.json_instructions:
+            prompt = (
+                prompt
+                + f"\n\n### Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.kiln_task.output_schema()}\n```"
+            )
+            print(f"prompt: {prompt}")
+
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
             {"role": "system", "content": prompt},
@@ -100,7 +110,7 @@ class OpenAICompatibleAdapter(BaseAdapter):
                 f"Expected ChatCompletion response, got {type(response)}."
             )
 
-        if response.error:
+        if hasattr(response, "error") and response.error:
             raise RuntimeError(
                 f"OpenAI compatible API returned status code {response.error.get('code')}: {response.error.get('message') or 'Unknown error'}."
             )
@@ -109,24 +119,21 @@ class OpenAICompatibleAdapter(BaseAdapter):
                 "No message content returned in the response from OpenAI compatible API"
             )
 
-        response_content = response.choices[0].message.content
+        message = response.choices[0].message
+        response_content = message.content
         if not isinstance(response_content, str):
             raise RuntimeError(f"response is not a string: {response_content}")
 
-        # reasoning = response.choices[0].message.get("reasoning")
-        # print(f"reasoning: {reasoning}")
+        # Save reasoning if it exists
+        if hasattr(message, "reasoning") and message.reasoning:
+            intermediate_outputs["reasoning"] = message.reasoning
 
         if self.has_structured_output():
-            try:
-                structured_response = json.loads(response_content)
-                return RunOutput(
-                    output=structured_response,
-                    intermediate_outputs=intermediate_outputs,
-                )
-            except json.JSONDecodeError as e:
-                raise RuntimeError(
-                    f"Failed to parse JSON response: {response_content}"
-                ) from e
+            structured_response = parse_json_string(response_content)
+            return RunOutput(
+                output=structured_response,
+                intermediate_outputs=intermediate_outputs,
+            )
 
         return RunOutput(
             output=response_content,
@@ -168,6 +175,10 @@ class OpenAICompatibleAdapter(BaseAdapter):
             case StructuredOutputMode.function_calling:
                 # TODO P0
                 return {"response_format": {"type": "function_calling"}}
+            case StructuredOutputMode.json_instructions:
+                # JSON done via instructions in prompt, not the API response format
+                # TODO try json_object on stable API
+                return {}
             case StructuredOutputMode.default:
                 return {}
             case _:

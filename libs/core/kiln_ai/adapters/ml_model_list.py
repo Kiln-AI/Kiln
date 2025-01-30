@@ -217,8 +217,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "deepseek/deepseek-r1"},
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_mode,
+                # parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,

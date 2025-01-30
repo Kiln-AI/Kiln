@@ -103,6 +103,7 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output = await self._run(input)
 
         # Parse
+        # TODO P0
         provider = await self.model_provider()
         parser = model_parser_from_id(provider.parser)(
             structured_output=self.has_structured_output()
