@@ -21,7 +21,6 @@ def adapter_for_task(
     if provider == ModelProviderName.openrouter:
         api_key = Config.shared().open_router_api_key
         base_url = getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
-        print(f"base_url: {base_url} provider: {provider} model_name: {model_name}")
         return OpenAICompatibleAdapter(
             base_url=base_url,
             api_key=api_key,

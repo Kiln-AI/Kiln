@@ -278,6 +278,13 @@ class FineTuneStatusType(str, Enum):
 class StructuredOutputMode(str, Enum):
     """
     Enumeration of supported structured output modes.
+
+    - default: let the adapter decide
+    - json_schema: request json using API capabilities for json_schema
+    - function_calling: request json using API capabilities for function calling
+    - json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema
+    - json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used.
+    - json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities.
     """
 
     default = "default"

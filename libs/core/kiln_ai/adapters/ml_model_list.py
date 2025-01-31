@@ -207,7 +207,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "deepseek/deepseek-chat"},
-                # TODO test this
                 structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
