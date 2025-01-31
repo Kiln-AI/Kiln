@@ -243,24 +243,6 @@ async def get_structured_output_options(
     return options
 
 
-# class that wraps another class and logs all function calls being executed
-class Wrapper:
-    def __init__(self, wrapped_class):
-        self.wrapped_class = wrapped_class
-
-    def __getattr__(self, attr):
-        original_func = getattr(self.wrapped_class, attr)
-
-        def wrapper(*args, **kwargs):
-            print(f"Calling function: {attr}")
-            print(f"Arguments: {args}, {kwargs}")
-            result = original_func(*args, **kwargs)
-            print(f"Response: {result}")
-            return result
-
-        return wrapper
-
-
 async def langchain_model_from(
     name: str, provider_name: str | None = None
 ) -> BaseChatModel:
@@ -317,20 +299,6 @@ async def langchain_model_from_provider(
 
         raise ValueError(f"Model {model_name} not installed on Ollama")
     elif provider.name == ModelProviderName.openrouter:
-        # TODO raise error
-        raise ValueError("OpenRouter is not supported in Langchain")
-        api_key = Config.shared().open_router_api_key
-        base_url = getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
-        cor = ChatOpenAI(
-            **provider.provider_options,
-            openai_api_key=api_key,  # type: ignore[arg-type]
-            openai_api_base=base_url,  # type: ignore[arg-type]
-            default_headers={
-                "HTTP-Referer": "https://getkiln.ai/openrouter",
-                "X-Title": "KilnAI",
-            },
-        )
-        cor.client = Wrapper(cor.client)
-        return cor
+        raise ValueError("OpenRouter is not supported in Langchain adapter")
     else:
         raise ValueError(f"Invalid model or provider: {model_name} - {provider.name}")
