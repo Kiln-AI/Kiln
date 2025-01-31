@@ -3,6 +3,9 @@ import json
 import pytest
 
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterInfo, BaseAdapter
+from kiln_ai.adapters.model_adapters.test_structured_output import (
+    build_structured_output_test_task,
+)
 from kiln_ai.adapters.prompt_builders import (
     FewShotChainOfThoughtPromptBuilder,
     FewShotPromptBuilder,
@@ -16,7 +19,6 @@ from kiln_ai.adapters.prompt_builders import (
     prompt_builder_from_ui_name,
 )
 from kiln_ai.adapters.test_prompt_adaptors import build_test_task
-from kiln_ai.adapters.test_structured_output import build_structured_output_test_task
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
