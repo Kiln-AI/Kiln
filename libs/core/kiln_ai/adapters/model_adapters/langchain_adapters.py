@@ -1,5 +1,4 @@
 import os
-from os import getenv
 from typing import Any, Dict, NoReturn
 
 from langchain_aws import ChatBedrockConverse

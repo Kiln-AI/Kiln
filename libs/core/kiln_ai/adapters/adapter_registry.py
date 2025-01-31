@@ -6,6 +6,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.model_adapters.openai_model_adapter import (
     OpenAICompatibleAdapter,
+    OpenAICompatibleConfig,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.utils.config import Config
@@ -19,20 +20,22 @@ def adapter_for_task(
     tags: list[str] | None = None,
 ) -> BaseAdapter:
     if provider == ModelProviderName.openrouter:
-        api_key = Config.shared().open_router_api_key
-        base_url = getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
         return OpenAICompatibleAdapter(
-            base_url=base_url,
-            api_key=api_key,
             kiln_task=kiln_task,
-            model_name=model_name,
-            provider_name=provider,
+            config=OpenAICompatibleConfig(
+                base_url=getenv("OPENROUTER_BASE_URL")
+                or "https://openrouter.ai/api/v1",
+                api_key=Config.shared().open_router_api_key,
+                model_name=model_name,
+                provider_name=provider,
+                openrouter_style_reasoning=True,
+                default_headers={
+                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "X-Title": "KilnAI",
+                },
+            ),
             prompt_builder=prompt_builder,
             tags=tags,
-            default_headers={
-                "HTTP-Referer": "https://getkiln.ai/openrouter",
-                "X-Title": "KilnAI",
-            },
         )
 
     # We use langchain for all others right now, but moving off it as we touch anything.
