@@ -74,7 +74,7 @@ def test_empty_thinking_content(parser):
         output="<think></think>This is the result", intermediate_outputs=None
     )
     parsed = parser.parse_output(response)
-    assert parsed.intermediate_outputs == {}
+    assert parsed.intermediate_outputs == {"reasoning": ""}
     assert parsed.output == "This is the result"
 
 
@@ -114,27 +114,31 @@ def test_non_string_input(parser):
         parser.parse_output(RunOutput(output={}, intermediate_outputs=None))
 
 
-def test_non_none_intermediate_outputs(parser):
-    with pytest.raises(
-        ValueError, match="Intermediate outputs must be empty for R1 parser"
-    ):
-        parser.parse_output(
-            RunOutput(
-                output="<think>Some content</think>result",
-                intermediate_outputs={"some": "data"},
-            )
+def test_intermediate_outputs(parser):
+    # append to existing intermediate outputs
+    out = parser.parse_output(
+        RunOutput(
+            output="<think>Some content</think>result",
+            intermediate_outputs={"existing": "data"},
         )
+    )
+    assert out.intermediate_outputs["reasoning"] == "Some content"
+    assert out.intermediate_outputs["existing"] == "data"
 
-    # empty dict and None are allowed
-    parser.parse_output(
+    # empty dict is allowed
+    out = parser.parse_output(
         RunOutput(
             output="<think>Some content</think>result",
             intermediate_outputs={},
         )
     )
-    parser.parse_output(
+    assert out.intermediate_outputs["reasoning"] == "Some content"
+
+    # None is allowed
+    out = parser.parse_output(
         RunOutput(
             output="<think>Some content</think>result",
             intermediate_outputs=None,
         )
     )
+    assert out.intermediate_outputs["reasoning"] == "Some content"

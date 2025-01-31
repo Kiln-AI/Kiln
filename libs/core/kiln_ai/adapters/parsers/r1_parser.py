@@ -20,17 +20,9 @@ class R1ThinkingParser(BaseParser):
         Raises:
             ValueError: If response format is invalid (missing tags, multiple tags, or no content after closing tag)
         """
-        # TODO
-        print(f"original_output: {original_output.output}")
-
         # This parser only works for strings
         if not isinstance(original_output.output, str):
             raise ValueError("Response must be a string for R1 parser")
-        if (
-            original_output.intermediate_outputs
-            and len(original_output.intermediate_outputs) > 0
-        ):
-            raise ValueError("Intermediate outputs must be empty for R1 parser")
 
         # Strip whitespace and validate basic structure
         cleaned_response = original_output.output.strip()
@@ -55,8 +47,6 @@ class R1ThinkingParser(BaseParser):
         thinking_content = cleaned_response[
             think_start + len(self.START_TAG) : think_end
         ].strip()
-        if len(thinking_content) == 0:
-            thinking_content = None
 
         # Extract result (everything after </think>)
         result = cleaned_response[think_end + len(self.END_TAG) :].strip()
@@ -69,9 +59,9 @@ class R1ThinkingParser(BaseParser):
         if self.structured_output:
             output = parse_json_string(result)
 
-        intermediate_outputs = {}
-        if thinking_content:
-            intermediate_outputs = {"reasoning": thinking_content}
+        # Add thinking content to intermediate outputs if it exists
+        intermediate_outputs = original_output.intermediate_outputs or {}
+        intermediate_outputs["reasoning"] = thinking_content
 
         return RunOutput(
             output=output,
