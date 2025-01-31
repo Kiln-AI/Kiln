@@ -102,15 +102,11 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output = await self._run(input)
 
         # Parse
-        # TODO P0
         provider = await self.model_provider()
         parser = model_parser_from_id(provider.parser)(
             structured_output=self.has_structured_output()
         )
         parsed_output = parser.parse_output(original_output=run_output)
-        print(
-            f"parsed_output: {parsed_output.output} \nIntermediate outputs: {parsed_output.intermediate_outputs}"
-        )
 
         # validate output
         if self.output_schema is not None:
@@ -149,14 +145,16 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     async def build_prompt(self) -> str:
+        # The prompt builder needs to know if we want to inject formatting instructions
         provider = await self.model_provider()
-        json_instructions = self.has_structured_output() and (
+        add_json_instructions = self.has_structured_output() and (
             provider.structured_output_mode == StructuredOutputMode.json_instructions
             or provider.structured_output_mode
             == StructuredOutputMode.json_instruction_and_object
         )
+
         return self.prompt_builder.build_prompt(
-            include_json_instructions=json_instructions
+            include_json_instructions=add_json_instructions
         )
 
     # create a run and task output
