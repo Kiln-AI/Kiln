@@ -31,7 +31,6 @@ from kiln_ai.adapters.ollama_tools import (
     ollama_base_url,
     ollama_model_installed,
 )
-from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.utils.config import Config
 
 LangChainModelType = BaseChatModel | Runnable[LanguageModelInput, Dict | BaseModel]
@@ -92,12 +91,11 @@ class LangchainAdapter(BaseAdapter):
         if self._model:
             return self._model
 
-        self._model = await langchain_model_from(
-            self.model_name, self.model_provider_name
-        )
+        self._model = await self.langchain_model_from()
 
-        # TODO better way: structured_output_mode = raw?
-        # Don't setup structured output unless task is structured, and we haven't said we want instruction based JSON
+        # Decide if we want to use Langchain's structured output:
+        # 1. Only for structured tasks
+        # 2. Only if the provider's mode isn't json_instructions (only mode that doesn't use an API option for structured output capabilities)
         provider = await self.model_provider()
         use_lc_structured_output = (
             self.has_structured_output()
@@ -120,7 +118,7 @@ class LangchainAdapter(BaseAdapter):
                 )
             output_schema["title"] = "task_response"
             output_schema["description"] = "A response from the task"
-            with_structured_output_options = await get_structured_output_options(
+            with_structured_output_options = await self.get_structured_output_options(
                 self.model_name, self.model_provider_name
             )
             self._model = self._model.with_structured_output(
@@ -142,14 +140,12 @@ class LangchainAdapter(BaseAdapter):
             HumanMessage(content=user_msg),
         ]
 
-        # TODO: make this thinking native
+        # TODO: make this compatible with thinking models
         # COT with structured output
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
         if cot_prompt and self.has_structured_output():
             # Base model (without structured output) used for COT message
-            base_model = await langchain_model_from(
-                self.model_name, self.model_provider_name
-            )
+            base_model = await self.langchain_model_from()
             messages.append(
                 SystemMessage(content=cot_prompt),
             )
@@ -164,9 +160,7 @@ class LangchainAdapter(BaseAdapter):
         elif cot_prompt:
             messages.append(SystemMessage(content=cot_prompt))
 
-        # TODO: make this thinking native
         response = await chain.ainvoke(messages)
-        print(f"response: {response}")
 
         # Langchain may have already parsed the response into structured output, so use that if available.
         # However, a plain string may still be fixed at the parsing layer, so not being structured isn't a critical failure (yet)
@@ -184,9 +178,11 @@ class LangchainAdapter(BaseAdapter):
 
         if not isinstance(response, BaseMessage):
             raise RuntimeError(f"response is not a BaseMessage: {response}")
+
         text_content = response.content
         if not isinstance(text_content, str):
             raise RuntimeError(f"response is not a string: {text_content}")
+
         return RunOutput(
             output=text_content,
             intermediate_outputs=intermediate_outputs,
@@ -211,44 +207,40 @@ class LangchainAdapter(BaseAdapter):
             return response["arguments"]
         return response
 
+    async def get_structured_output_options(
+        self, model_name: str, model_provider_name: str
+    ) -> Dict[str, Any]:
+        provider = await self.model_provider()
+        if not provider:
+            return {}
 
-async def get_structured_output_options(
-    model_name: str, model_provider_name: str
-) -> Dict[str, Any]:
-    # TODO self cache
-    provider = await kiln_model_provider_from(model_name, model_provider_name)
-    if not provider:
-        return {}
+        options = {}
+        # We may need to add some provider specific logic here if providers use different names for the same mode, but everyone is copying openai for now
+        match provider.structured_output_mode:
+            case StructuredOutputMode.function_calling:
+                options["method"] = "function_calling"
+            case StructuredOutputMode.json_mode:
+                options["method"] = "json_mode"
+            case StructuredOutputMode.json_schema:
+                options["method"] = "json_schema"
+            case StructuredOutputMode.json_instructions:
+                # JSON done via instructions in prompt, not via API
+                pass
+            case StructuredOutputMode.default:
+                # Let langchain decide the default
+                pass
+            case _:
+                raise ValueError(
+                    f"Unhandled enum value: {provider.structured_output_mode}"
+                )
+                # triggers pyright warning if I miss a case
+                return NoReturn
 
-    options = {}
-    # We may need to add some provider specific logic here if providers use different names for the same mode, but everyone is copying openai for now
-    match provider.structured_output_mode:
-        case StructuredOutputMode.function_calling:
-            options["method"] = "function_calling"
-        case StructuredOutputMode.json_mode:
-            options["method"] = "json_mode"
-        case StructuredOutputMode.json_schema:
-            options["method"] = "json_schema"
-        case StructuredOutputMode.json_instructions:
-            # JSON done via instructions in prompt, not via API
-            pass
-        case StructuredOutputMode.default:
-            # Let langchain decide the default
-            pass
-        case _:
-            raise ValueError(f"Unhandled enum value: {provider.structured_output_mode}")
-            # triggers pyright warning if I miss a case
-            return NoReturn
+        return options
 
-    return options
-
-
-async def langchain_model_from(
-    name: str, provider_name: str | None = None
-) -> BaseChatModel:
-    # TODO use self.model_provider() for caching
-    provider = await kiln_model_provider_from(name, provider_name)
-    return await langchain_model_from_provider(provider, name)
+    async def langchain_model_from(self) -> BaseChatModel:
+        provider = await self.model_provider()
+        return await langchain_model_from_provider(provider, self.model_name)
 
 
 async def langchain_model_from_provider(

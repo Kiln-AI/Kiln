@@ -16,16 +16,22 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.adapters.model_adapters.langchain_adapters import (
     LangchainAdapter,
-    get_structured_output_options,
     langchain_model_from_provider,
 )
 from kiln_ai.adapters.prompt_builders import SimpleChainOfThoughtPromptBuilder
 from kiln_ai.adapters.test_prompt_adaptors import build_test_task
 
 
-def test_langchain_adapter_munge_response(tmp_path):
-    task = build_test_task(tmp_path)
-    lca = LangchainAdapter(kiln_task=task, model_name="llama_3_1_8b", provider="ollama")
+@pytest.fixture
+def mock_adapter(tmp_path):
+    return LangchainAdapter(
+        kiln_task=build_test_task(tmp_path),
+        model_name="llama_3_1_8b",
+        provider="ollama",
+    )
+
+
+def test_langchain_adapter_munge_response(mock_adapter):
     # Mistral Large tool calling format is a bit different
     response = {
         "name": "task_response",
@@ -34,12 +40,12 @@ def test_langchain_adapter_munge_response(tmp_path):
             "punchline": "Because she wanted to be a moo-sician!",
         },
     }
-    munged = lca._munge_response(response)
+    munged = mock_adapter._munge_response(response)
     assert munged["setup"] == "Why did the cow join a band?"
     assert munged["punchline"] == "Because she wanted to be a moo-sician!"
 
     # non mistral format should continue to work
-    munged = lca._munge_response(response["arguments"])
+    munged = mock_adapter._munge_response(response["arguments"])
     assert munged["setup"] == "Why did the cow join a band?"
     assert munged["punchline"] == "Because she wanted to be a moo-sician!"
 
@@ -93,10 +99,7 @@ async def test_langchain_adapter_with_cot(tmp_path):
 
     # Patch both the langchain_model_from function and self.model()
     with (
-        patch(
-            "kiln_ai.adapters.model_adapters.langchain_adapters.langchain_model_from",
-            mock_model_from,
-        ),
+        patch.object(LangchainAdapter, "langchain_model_from", mock_model_from),
         patch.object(LangchainAdapter, "model", return_value=mock_model_instance),
     ):
         response = await lca._run("test input")
@@ -145,18 +148,18 @@ async def test_langchain_adapter_with_cot(tmp_path):
         (StructuredOutputMode.default, None),
     ],
 )
-async def test_get_structured_output_options(structured_output_mode, expected_method):
+async def test_get_structured_output_options(
+    mock_adapter, structured_output_mode, expected_method
+):
     # Mock the provider response
     mock_provider = MagicMock()
     mock_provider.structured_output_mode = structured_output_mode
 
-    # Test with provider that has options
-    with patch(
-        "kiln_ai.adapters.model_adapters.langchain_adapters.kiln_model_provider_from",
-        AsyncMock(return_value=mock_provider),
-    ):
-        options = await get_structured_output_options("model_name", "provider")
-        assert options.get("method") == expected_method
+    # Mock adapter.model_provider()
+    mock_adapter.model_provider = AsyncMock(return_value=mock_provider)
+
+    options = await mock_adapter.get_structured_output_options("model_name", "provider")
+    assert options.get("method") == expected_method
 
 
 @pytest.mark.asyncio
@@ -292,31 +295,25 @@ async def test_langchain_adapter_model_structured_output(tmp_path):
     adapter = LangchainAdapter(
         kiln_task=task, model_name="test_model", provider="ollama"
     )
+    adapter.get_structured_output_options = AsyncMock(
+        return_value={"option1": "value1"}
+    )
+    adapter.langchain_model_from = AsyncMock(return_value=mock_model)
 
-    with (
-        patch(
-            "kiln_ai.adapters.model_adapters.langchain_adapters.langchain_model_from",
-            AsyncMock(return_value=mock_model),
-        ),
-        patch(
-            "kiln_ai.adapters.model_adapters.langchain_adapters.get_structured_output_options",
-            AsyncMock(return_value={"option1": "value1"}),
-        ),
-    ):
-        model = await adapter.model()
+    model = await adapter.model()
 
-        # Verify the model was configured with structured output
-        mock_model.with_structured_output.assert_called_once_with(
-            {
-                "type": "object",
-                "properties": {"count": {"type": "integer"}},
-                "title": "task_response",
-                "description": "A response from the task",
-            },
-            include_raw=True,
-            option1="value1",
-        )
-        assert model == "structured_model"
+    # Verify the model was configured with structured output
+    mock_model.with_structured_output.assert_called_once_with(
+        {
+            "type": "object",
+            "properties": {"count": {"type": "integer"}},
+            "title": "task_response",
+            "description": "A response from the task",
+        },
+        include_raw=True,
+        option1="value1",
+    )
+    assert model == "structured_model"
 
 
 @pytest.mark.asyncio
@@ -333,10 +330,7 @@ async def test_langchain_adapter_model_no_structured_output_support(tmp_path):
     adapter = LangchainAdapter(
         kiln_task=task, model_name="test_model", provider="ollama"
     )
+    adapter.langchain_model_from = AsyncMock(return_value=mock_model)
 
-    with patch(
-        "kiln_ai.adapters.model_adapters.langchain_adapters.langchain_model_from",
-        AsyncMock(return_value=mock_model),
-    ):
-        with pytest.raises(ValueError, match="does not support structured output"):
-            await adapter.model()
+    with pytest.raises(ValueError, match="does not support structured output"):
+        await adapter.model()
