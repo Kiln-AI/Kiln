@@ -1,10 +1,10 @@
 from os import getenv
 
 from kiln_ai import datamodel
-from kiln_ai.adapters.base_adapter import BaseAdapter
-from kiln_ai.adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.adapters.model_adapters.open_ai_model_adapter import (
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
+from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
+from kiln_ai.adapters.model_adapters.openai_model_adapter import (
     OpenAICompatibleAdapter,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder

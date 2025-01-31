@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterInfo, BaseAdapter
 from kiln_ai.adapters.prompt_builders import (
     FewShotChainOfThoughtPromptBuilder,
     FewShotPromptBuilder,

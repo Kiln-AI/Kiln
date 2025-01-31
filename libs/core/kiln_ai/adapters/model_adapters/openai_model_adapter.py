@@ -1,13 +1,13 @@
 from typing import Any, Dict, NoReturn
 
 import kiln_ai.datamodel as datamodel
-from kiln_ai.adapters.base_adapter import (
+from kiln_ai.adapters.ml_model_list import StructuredOutputMode
+from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterInfo,
     BaseAdapter,
     BasePromptBuilder,
     RunOutput,
 )
-from kiln_ai.adapters.ml_model_list import StructuredOutputMode
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionMessage

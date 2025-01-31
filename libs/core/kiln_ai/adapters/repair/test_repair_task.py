@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.base_adapter import RunOutput
-from kiln_ai.adapters.langchain_adapters import LangchainAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import RunOutput
+from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.repair.repair_task import (
     RepairTaskInput,
     RepairTaskRun,

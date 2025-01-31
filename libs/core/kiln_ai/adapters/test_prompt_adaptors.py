@@ -6,8 +6,8 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.prompt_builders import (
     BasePromptBuilder,

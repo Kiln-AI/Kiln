@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterInfo,
+    BaseAdapter,
+    RunOutput,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,

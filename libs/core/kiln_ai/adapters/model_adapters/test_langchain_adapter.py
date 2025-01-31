@@ -9,15 +9,15 @@ from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
-from kiln_ai.adapters.langchain_adapters import (
-    LangchainAdapter,
-    get_structured_output_options,
-    langchain_model_from_provider,
-)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
+)
+from kiln_ai.adapters.model_adapters.langchain_adapters import (
+    LangchainAdapter,
+    get_structured_output_options,
+    langchain_model_from_provider,
 )
 from kiln_ai.adapters.prompt_builders import SimpleChainOfThoughtPromptBuilder
 from kiln_ai.adapters.test_prompt_adaptors import build_test_task
@@ -94,7 +94,8 @@ async def test_langchain_adapter_with_cot(tmp_path):
     # Patch both the langchain_model_from function and self.model()
     with (
         patch(
-            "kiln_ai.adapters.langchain_adapters.langchain_model_from", mock_model_from
+            "kiln_ai.adapters.model_adapters.langchain_adapters.langchain_model_from",
+            mock_model_from,
         ),
         patch.object(LangchainAdapter, "model", return_value=mock_model_instance),
     ):
@@ -151,7 +152,7 @@ async def test_get_structured_output_options(structured_output_mode, expected_me
 
     # Test with provider that has options
     with patch(
-        "kiln_ai.adapters.langchain_adapters.kiln_model_provider_from",
+        "kiln_ai.adapters.model_adapters.langchain_adapters.kiln_model_provider_from",
         AsyncMock(return_value=mock_provider),
     ):
         options = await get_structured_output_options("model_name", "provider")
@@ -164,7 +165,9 @@ async def test_langchain_model_from_provider_openai():
         name=ModelProviderName.openai, provider_options={"model": "gpt-4"}
     )
 
-    with patch("kiln_ai.adapters.langchain_adapters.Config.shared") as mock_config:
+    with patch(
+        "kiln_ai.adapters.model_adapters.langchain_adapters.Config.shared"
+    ) as mock_config:
         mock_config.return_value.open_ai_api_key = "test_key"
         model = await langchain_model_from_provider(provider, "gpt-4")
         assert isinstance(model, ChatOpenAI)
@@ -177,7 +180,9 @@ async def test_langchain_model_from_provider_groq():
         name=ModelProviderName.groq, provider_options={"model": "mixtral-8x7b"}
     )
 
-    with patch("kiln_ai.adapters.langchain_adapters.Config.shared") as mock_config:
+    with patch(
+        "kiln_ai.adapters.model_adapters.langchain_adapters.Config.shared"
+    ) as mock_config:
         mock_config.return_value.groq_api_key = "test_key"
         model = await langchain_model_from_provider(provider, "mixtral-8x7b")
         assert isinstance(model, ChatGroq)
@@ -191,7 +196,9 @@ async def test_langchain_model_from_provider_bedrock():
         provider_options={"model": "anthropic.claude-v2", "region_name": "us-east-1"},
     )
 
-    with patch("kiln_ai.adapters.langchain_adapters.Config.shared") as mock_config:
+    with patch(
+        "kiln_ai.adapters.model_adapters.langchain_adapters.Config.shared"
+    ) as mock_config:
         mock_config.return_value.bedrock_access_key = "test_access"
         mock_config.return_value.bedrock_secret_key = "test_secret"
         model = await langchain_model_from_provider(provider, "anthropic.claude-v2")
@@ -206,7 +213,9 @@ async def test_langchain_model_from_provider_fireworks():
         name=ModelProviderName.fireworks_ai, provider_options={"model": "mixtral-8x7b"}
     )
 
-    with patch("kiln_ai.adapters.langchain_adapters.Config.shared") as mock_config:
+    with patch(
+        "kiln_ai.adapters.model_adapters.langchain_adapters.Config.shared"
+    ) as mock_config:
         mock_config.return_value.fireworks_api_key = "test_key"
         model = await langchain_model_from_provider(provider, "mixtral-8x7b")
         assert isinstance(model, ChatFireworks)
@@ -222,15 +231,15 @@ async def test_langchain_model_from_provider_ollama():
     mock_connection = MagicMock()
     with (
         patch(
-            "kiln_ai.adapters.langchain_adapters.get_ollama_connection",
+            "kiln_ai.adapters.model_adapters.langchain_adapters.get_ollama_connection",
             return_value=AsyncMock(return_value=mock_connection),
         ),
         patch(
-            "kiln_ai.adapters.langchain_adapters.ollama_model_installed",
+            "kiln_ai.adapters.model_adapters.langchain_adapters.ollama_model_installed",
             return_value=True,
         ),
         patch(
-            "kiln_ai.adapters.langchain_adapters.ollama_base_url",
+            "kiln_ai.adapters.model_adapters.langchain_adapters.ollama_base_url",
             return_value="http://localhost:11434",
         ),
     ):
@@ -281,16 +290,16 @@ async def test_langchain_adapter_model_structured_output(tmp_path):
     mock_model.with_structured_output = MagicMock(return_value="structured_model")
 
     adapter = LangchainAdapter(
-        kiln_task=task, model_name="test_model", provider="test_provider"
+        kiln_task=task, model_name="test_model", provider="ollama"
     )
 
     with (
         patch(
-            "kiln_ai.adapters.langchain_adapters.langchain_model_from",
+            "kiln_ai.adapters.model_adapters.langchain_adapters.langchain_model_from",
             AsyncMock(return_value=mock_model),
         ),
         patch(
-            "kiln_ai.adapters.langchain_adapters.get_structured_output_options",
+            "kiln_ai.adapters.model_adapters.langchain_adapters.get_structured_output_options",
             AsyncMock(return_value={"option1": "value1"}),
         ),
     ):
@@ -322,11 +331,11 @@ async def test_langchain_adapter_model_no_structured_output_support(tmp_path):
     del mock_model.with_structured_output
 
     adapter = LangchainAdapter(
-        kiln_task=task, model_name="test_model", provider="test_provider"
+        kiln_task=task, model_name="test_model", provider="ollama"
     )
 
     with patch(
-        "kiln_ai.adapters.langchain_adapters.langchain_model_from",
+        "kiln_ai.adapters.model_adapters.langchain_adapters.langchain_model_from",
         AsyncMock(return_value=mock_model),
     ):
         with pytest.raises(ValueError, match="does not support structured output"):

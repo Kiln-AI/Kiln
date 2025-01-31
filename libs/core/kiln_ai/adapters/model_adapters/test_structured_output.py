@@ -7,9 +7,13 @@ import pytest
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter, RunOutput
 from kiln_ai.adapters.ml_model_list import (
     built_in_models,
+)
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterInfo,
+    BaseAdapter,
+    RunOutput,
 )
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.prompt_builders import (

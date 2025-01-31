@@ -15,20 +15,24 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
+    ModelProviderName,
+    StructuredOutputMode,
+)
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterInfo,
+    BaseAdapter,
+    BasePromptBuilder,
+    RunOutput,
+)
 from kiln_ai.adapters.ollama_tools import (
     get_ollama_connection,
     ollama_base_url,
     ollama_model_installed,
 )
+from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.utils.config import Config
-
-from .base_adapter import AdapterInfo, BaseAdapter, BasePromptBuilder, RunOutput
-from .ml_model_list import (
-    KilnModelProvider,
-    ModelProviderName,
-    StructuredOutputMode,
-)
-from .provider_tools import kiln_model_provider_from
 
 LangChainModelType = BaseChatModel | Runnable[LanguageModelInput, Dict | BaseModel]
 
