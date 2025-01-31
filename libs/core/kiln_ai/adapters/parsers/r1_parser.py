@@ -69,7 +69,11 @@ class R1ThinkingParser(BaseParser):
         if self.structured_output:
             output = parse_json_string(result)
 
+        intermediate_outputs = {}
+        if thinking_content:
+            intermediate_outputs = {"reasoning": thinking_content}
+
         return RunOutput(
             output=output,
-            intermediate_outputs={"reasoning": thinking_content},
+            intermediate_outputs=intermediate_outputs,
         )

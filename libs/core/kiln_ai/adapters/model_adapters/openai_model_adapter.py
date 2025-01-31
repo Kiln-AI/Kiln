@@ -1,7 +1,12 @@
 from typing import Any, Dict, NoReturn
 
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletion, ChatCompletionMessage
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from openai.types.chat.chat_completion import Choice
 
 import kiln_ai.datamodel as datamodel
@@ -48,13 +53,13 @@ class OpenAICompatibleAdapter(BaseAdapter):
     async def _run(self, input: Dict | str) -> RunOutput:
         provider = await self.model_provider()
 
-        intermediate_outputs = {}
+        intermediate_outputs: dict[str, str] = {}
 
         prompt = await self.build_prompt()
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_msg},
+            ChatCompletionSystemMessageParam(role="system", content=prompt),
+            ChatCompletionUserMessageParam(role="user", content=user_msg),
         ]
 
         # Handle chain of thought if enabled
@@ -69,15 +74,18 @@ class OpenAICompatibleAdapter(BaseAdapter):
                 messages=messages,
             )
             cot_content = cot_response.choices[0].message.content
-            intermediate_outputs = {"chain_of_thought": cot_content}
+            if cot_content is not None:
+                intermediate_outputs["chain_of_thought"] = cot_content
 
             messages.extend(
                 [
-                    {"role": "assistant", "content": cot_content},
-                    {
-                        "role": "system",
-                        "content": "Considering the above, return a final result.",
-                    },
+                    ChatCompletionAssistantMessageParam(
+                        role="assistant", content=cot_content
+                    ),
+                    ChatCompletionSystemMessageParam(
+                        role="system",
+                        content="Considering the above, return a final result.",
+                    ),
                 ]
             )
         elif cot_prompt:
@@ -101,9 +109,9 @@ class OpenAICompatibleAdapter(BaseAdapter):
                 f"Expected ChatCompletion response, got {type(response)}."
             )
 
-        if hasattr(response, "error") and response.error:
+        if hasattr(response, "error") and response.error:  # pyright: ignore
             raise RuntimeError(
-                f"OpenAI compatible API returned status code {response.error.get('code')}: {response.error.get('message') or 'Unknown error'}."
+                f"OpenAI compatible API returned status code {response.error.get('code')}: {response.error.get('message') or 'Unknown error'}."  # pyright: ignore
             )
         if not response.choices or len(response.choices) == 0:
             raise RuntimeError(
@@ -113,8 +121,8 @@ class OpenAICompatibleAdapter(BaseAdapter):
         message = response.choices[0].message
 
         # Save reasoning if it exists
-        if hasattr(message, "reasoning") and message.reasoning:
-            intermediate_outputs["reasoning"] = message.reasoning
+        if hasattr(message, "reasoning") and message.reasoning:  # pyright: ignore
+            intermediate_outputs["reasoning"] = message.reasoning  # pyright: ignore
 
         # the string content of the response
         response_content = message.content

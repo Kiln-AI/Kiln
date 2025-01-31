@@ -74,7 +74,7 @@ def test_empty_thinking_content(parser):
         output="<think></think>This is the result", intermediate_outputs=None
     )
     parsed = parser.parse_output(response)
-    assert parsed.intermediate_outputs["reasoning"] is None
+    assert parsed.intermediate_outputs == {}
     assert parsed.output == "This is the result"
 
 

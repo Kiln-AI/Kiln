@@ -76,6 +76,9 @@ class LangchainAdapter(BaseAdapter):
                 "model_name and provider must be provided if custom_model is not provided"
             )
 
+        if model_name is None:
+            raise ValueError("model_name must be provided")
+
         super().__init__(
             kiln_task,
             model_name=model_name,
