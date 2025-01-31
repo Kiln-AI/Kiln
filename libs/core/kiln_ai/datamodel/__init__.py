@@ -285,6 +285,7 @@ class StructuredOutputMode(str, Enum):
     function_calling = "function_calling"
     json_mode = "json_mode"
     json_instructions = "json_instructions"
+    json_instruction_and_object = "json_instruction_and_object"
 
 
 class Finetune(KilnParentedModel):

@@ -15,7 +15,7 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.utils.config import Config
 
-from .ml_model_list import KilnModelProvider
+from .ml_model_list import KilnModelProvider, StructuredOutputMode
 from .parsers.parser_registry import model_parser_from_id
 from .prompt_builders import BasePromptBuilder, SimplePromptBuilder
 
@@ -149,8 +149,16 @@ class BaseAdapter(metaclass=ABCMeta):
     async def _run(self, input: Dict | str) -> RunOutput:
         pass
 
-    def build_prompt(self) -> str:
-        return self.prompt_builder.build_prompt()
+    async def build_prompt(self) -> str:
+        provider = await self.model_provider()
+        json_instructions = self.has_structured_output() and (
+            provider.structured_output_mode == StructuredOutputMode.json_instructions
+            or provider.structured_output_mode
+            == StructuredOutputMode.json_instruction_and_object
+        )
+        return self.prompt_builder.build_prompt(
+            include_json_instructions=json_instructions
+        )
 
     # create a run and task output
     def generate_run(

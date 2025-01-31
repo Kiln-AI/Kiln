@@ -24,7 +24,7 @@ class MockPromptBuilder(BasePromptBuilder):
     def prompt_builder_name(cls):
         return "MockPromptBuilder"
 
-    def build_prompt(self):
+    def build_base_prompt(self):
         return "Mock prompt"
 
     def build_prompt_for_ui(self):

@@ -49,20 +49,7 @@ class OpenAICompatibleAdapter(BaseAdapter):
 
         intermediate_outputs = {}
 
-        prompt = self.build_prompt()
-
-        # TODO P0: move this to prompt builder
-        if (
-            self.has_structured_output()
-            and provider.structured_output_mode
-            == StructuredOutputMode.json_instructions
-        ):
-            prompt = (
-                prompt
-                + f"\n\n### Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.kiln_task.output_schema()}\n```"
-            )
-            print(f"prompt: {prompt}")
-
+        prompt = await self.build_prompt()
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
             {"role": "system", "content": prompt},
@@ -123,13 +110,29 @@ class OpenAICompatibleAdapter(BaseAdapter):
             )
 
         message = response.choices[0].message
-        response_content = message.content
-        if not isinstance(response_content, str):
-            raise RuntimeError(f"response is not a string: {response_content}")
 
         # Save reasoning if it exists
         if hasattr(message, "reasoning") and message.reasoning:
             intermediate_outputs["reasoning"] = message.reasoning
+
+        # the string content of the response
+        response_content = message.content
+
+        # Fallback: Use args of first tool call to task_response if it exists
+        if not response_content and message.tool_calls:
+            tool_call = next(
+                (
+                    tool_call
+                    for tool_call in message.tool_calls
+                    if tool_call.function.name == "task_response"
+                ),
+                None,
+            )
+            if tool_call:
+                response_content = tool_call.function.arguments
+
+        if not isinstance(response_content, str):
+            raise RuntimeError(f"response is not a string: {response_content}")
 
         if self.has_structured_output():
             structured_response = parse_json_string(response_content)
@@ -177,16 +180,38 @@ class OpenAICompatibleAdapter(BaseAdapter):
                 }
             case StructuredOutputMode.function_calling:
                 # TODO P0
-                return {"response_format": {"type": "function_calling"}}
+                return self.tool_call_params()
             case StructuredOutputMode.json_instructions:
                 # JSON done via instructions in prompt, not the API response format
                 # TODO try json_object on stable API
                 return {}
+            case StructuredOutputMode.json_instruction_and_object:
+                # We set response_format to json_object, but we also need to set the instructions in the prompt
+                return {"response_format": {"type": "json_object"}}
             case StructuredOutputMode.default:
-                return {}
+                # Default to function calling -- it's older than the other modes
+                return self.tool_call_params()
             case _:
                 raise ValueError(
                     f"Unsupported structured output mode: {provider.structured_output_mode}"
                 )
                 # pyright will detect missing cases with this
                 return NoReturn
+
+    def tool_call_params(self) -> dict[str, Any]:
+        return {
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "task_response",
+                        "parameters": self.kiln_task.output_schema(),
+                        "strict": True,
+                    },
+                }
+            ],
+            "tool_choice": {
+                "type": "function",
+                "function": {"name": "task_response"},
+            },
+        }

@@ -180,6 +180,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                structured_output_mode=StructuredOutputMode.function_calling,
                 provider_options={"model": "anthropic/claude-3-5-haiku"},
             ),
         ],
@@ -192,6 +193,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                structured_output_mode=StructuredOutputMode.function_calling,
                 provider_options={"model": "anthropic/claude-3.5-sonnet"},
             ),
         ],
@@ -205,6 +207,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "deepseek/deepseek-chat"},
+                # TODO test this
+                structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
     ),
@@ -217,7 +221,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "deepseek/deepseek-r1"},
-                # parser=ModelParserID.r1_thinking,
+                # No custom parser -- openrouter implemented it themselves
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
@@ -316,7 +320,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.function_calling,
                 provider_options={"model": "meta-llama/llama-3.1-8b-instruct"},
             ),
             KilnModelProvider(
@@ -350,7 +354,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.function_calling,
                 provider_options={"model": "meta-llama/llama-3.1-70b-instruct"},
             ),
             KilnModelProvider(
@@ -391,7 +395,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.function_calling,
                 provider_options={"model": "meta-llama/llama-3.1-405b-instruct"},
             ),
             KilnModelProvider(
@@ -413,6 +417,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "mistralai/mistral-nemo"},
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
     ),
@@ -452,6 +457,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 supports_structured_output=False,
                 supports_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 provider_options={"model": "meta-llama/llama-3.2-1b-instruct"},
             ),
             KilnModelProvider(
@@ -472,6 +478,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 supports_structured_output=False,
                 supports_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 provider_options={"model": "meta-llama/llama-3.2-3b-instruct"},
             ),
             KilnModelProvider(
@@ -597,6 +604,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
                 provider_options={"model": "microsoft/phi-3.5-mini-128k-instruct"},
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -622,8 +630,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 # JSON mode not consistent enough to enable in UI
-                structured_output_mode=StructuredOutputMode.json_mode,
-                supports_structured_output=False,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 provider_options={"model": "microsoft/phi-4"},
             ),
@@ -661,7 +668,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 provider_options={"model": "google/gemma-2-9b-it"},
             ),
@@ -683,6 +690,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 provider_options={"model": "google/gemma-2-27b-it"},
             ),
@@ -697,7 +705,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "mistralai/mixtral-8x7b-instruct"},
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -715,7 +723,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "qwen/qwen-2.5-7b-instruct"},
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -736,7 +744,7 @@ built_in_models: List[KilnModel] = [
                 # Not consistent with structure data. Works sometimes but not often
                 supports_structured_output=False,
                 supports_data_gen=False,
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,

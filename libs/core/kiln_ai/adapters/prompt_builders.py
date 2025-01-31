@@ -28,8 +28,24 @@ class BasePromptBuilder(metaclass=ABCMeta):
         """
         return None
 
+    def build_prompt(self, include_json_instructions: bool = False) -> str:
+        """Build and return the complete prompt string.
+
+        Returns:
+            str: The constructed prompt.
+        """
+        prompt = self.build_base_prompt()
+
+        if include_json_instructions and self.task.output_schema():
+            prompt = (
+                prompt
+                + f"\n\n# Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.task.output_schema()}\n```"
+            )
+
+        return prompt
+
     @abstractmethod
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Build and return the complete prompt string.
 
         Returns:
@@ -88,7 +104,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
 class SimplePromptBuilder(BasePromptBuilder):
     """A basic prompt builder that combines task instruction with requirements."""
 
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Build a simple prompt with instruction and requirements.
 
         Returns:
@@ -120,7 +136,7 @@ class MultiShotPromptBuilder(BasePromptBuilder):
         """
         return 25
 
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Build a prompt with instruction, requirements, and multiple examples.
 
         Returns:
@@ -272,7 +288,7 @@ class SavedPromptBuilder(BasePromptBuilder):
     def prompt_id(self) -> str | None:
         return self.prompt_model.id
 
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Returns a saved prompt.
 
         Returns:

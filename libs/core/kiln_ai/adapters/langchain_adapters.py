@@ -128,20 +128,7 @@ class LangchainAdapter(BaseAdapter):
         chain = model
         intermediate_outputs = {}
 
-        prompt = self.build_prompt()
-        # TODO P0: move this to prompt builder
-        provider = await self.model_provider()
-        if (
-            self.has_structured_output()
-            and provider.structured_output_mode
-            == StructuredOutputMode.json_instructions
-        ):
-            prompt = (
-                prompt
-                + f"\n\n### Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.kiln_task.output_schema()}\n```"
-            )
-            print(f"prompt: {prompt}")
-
+        prompt = await self.build_prompt()
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
             SystemMessage(content=prompt),
