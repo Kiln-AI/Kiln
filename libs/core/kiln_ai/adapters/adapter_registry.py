@@ -13,7 +13,7 @@ from kiln_ai.utils.config import Config
 
 def adapter_for_task(
     kiln_task: datamodel.Task,
-    model_name: str | None = None,
+    model_name: str,
     provider: str | None = None,
     prompt_builder: BasePromptBuilder | None = None,
     tags: list[str] | None = None,
