@@ -145,6 +145,10 @@
       "download_vertex_gemini_1_5",
       "Download: Google Vertex-AI Gemini 1.5 format (JSONL)",
     ])
+    available_model_select.push([
+      "download_gemini_api",
+      "Download: Gemini API format (JSON)",
+    ])
   }
 
   const download_model_select_options: Record<string, string> = {
@@ -155,6 +159,7 @@
     download_huggingface_chat_template_toolcall:
       "huggingface_chat_template_toolcall_jsonl",
     download_vertex_gemini_1_5: "vertex_gemini_1_5",
+    download_gemini_api: "gemini_api",
   }
 
   let datasets: DatasetSplit[] | null = null

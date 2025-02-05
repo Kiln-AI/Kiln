@@ -33,6 +33,9 @@ class DatasetFormat(str, Enum):
     """Vertex Gemini 1.5 format (flash and pro)"""
     VERTEX_GEMINI_1_5 = "vertex_gemini_1_5"
 
+    """Gemini API format (Not vertex AI, but Gemini API)"""
+    GEMINI_API = "gemini_api"
+
 
 @dataclass
 class ModelTrainingData:
@@ -340,6 +343,23 @@ def generate_vertex_gemini_1_5(
     }
 
 
+def generate_gemini_api(
+    training_data: ModelTrainingData,
+) -> Dict[str, Any]:
+    """Generate Gemini API format"""
+    # https://ai.google.dev/gemini-api/docs/model-tuning
+
+    if training_data.supports_cot():
+        raise ValueError(
+            "Reasoning and chain of thought are not supported for Gemini API. It can only tune on input/output pairs."
+        )
+
+    return {
+        "text_input": training_data.input,
+        "output": training_data.final_output,
+    }
+
+
 FORMAT_GENERATORS: Dict[DatasetFormat, FormatGenerator] = {
     DatasetFormat.OPENAI_CHAT_JSONL: generate_chat_message_response,
     DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL: generate_json_schema_message,
@@ -347,6 +367,7 @@ FORMAT_GENERATORS: Dict[DatasetFormat, FormatGenerator] = {
     DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL: generate_huggingface_chat_template,
     DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL: generate_huggingface_chat_template_toolcall,
     DatasetFormat.VERTEX_GEMINI_1_5: generate_vertex_gemini_1_5,
+    DatasetFormat.GEMINI_API: generate_gemini_api,
 }
 
 
@@ -411,6 +432,8 @@ class DatasetFormatter:
 
         # Generate formatted output with UTF-8 encoding
         with open(output_path, "w", encoding="utf-8") as f:
+            # TODO P0
+            f.write("[")
             for run_id in self.dataset.split_contents[split_name]:
                 task_run = runs_by_id[run_id]
                 if task_run is None:
@@ -427,6 +450,7 @@ class DatasetFormatter:
                 example = generator(training_data)
                 # Allow non-ascii characters in the dataset.
                 # Better readability for non-English users. If you don't support UTF-8... you should.
-                f.write(json.dumps(example, ensure_ascii=False) + "\n")
-
+                f.write(json.dumps(example, ensure_ascii=False) + ",\n")
+            # TODO P0
+            f.write("]")
         return output_path
