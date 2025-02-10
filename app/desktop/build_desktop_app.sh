@@ -16,11 +16,6 @@ if [[ $* != *--skip-web* ]]; then
   cd $APP_DIR
 fi
 
-# TODO remove this
-mkdir -p web_ui/build
-# write a basic index.html to the build directory
-echo "<html><body><h1>Kiln Studio</h1></body></html>" > web_ui/build/index.html
-
 # Building the bootloader ourselves helps not be falsely detected as malware by antivirus software on windows.
 # We clone pyinstaller, build the bootloader, and install it into the pyproject desktop pyproject.
 if [[ $* == *--build-bootloader* ]]; then
@@ -65,13 +60,6 @@ else
   echo "Unsupported operating system: $(uname)"
   exit 1
 fi
-
-# Output information about the current python environment
-echo "PYTHONPATH: $PYTHONPATH"
-echo "PYTHON: $(which python)"
-echo "PYTHON VERSION: $(python --version)"
-# output the path where pip libraries are installed
-echo "PIP LIBRARY PATH: $(python -m site)"
 
 # Builds the desktop app
 # TODO: use a spec instead of long winded command line
