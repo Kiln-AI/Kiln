@@ -2,9 +2,10 @@
 
 set -e
 
-# move to the root of the project
+# move to the /app directory of the project
 cd "$(dirname "$0")"
 cd ..
+APP_DIR=$PWD
 
 if [[ $* != *--skip-web* ]]; then
   # build the web ui
@@ -12,7 +13,7 @@ if [[ $* != *--skip-web* ]]; then
   cd web_ui
   npm install
   npm run build
-  cd ..
+  cd $APP_DIR
 fi
 
 # TODO remove this
@@ -21,33 +22,28 @@ mkdir -p web_ui/build
 echo "<html><body><h1>Kiln Studio</h1></body></html>" > web_ui/build/index.html
 
 # Building the bootloader ourselves helps not be falsely detected as malware by antivirus software on windows.
+# We clone pyinstaller, build the bootloader, and install it into the pyproject desktop pyproject.
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building pyinstaller inlucding bootloader"
   which pyinstaller
   pyinstaller --version
 
-  ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
-  cd desktop/build/bootloader
-  git clone https://github.com/pyinstaller/pyinstaller.git
+  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.zip -o pyinstaller.zip
+  unzip pyinstaller.zip
   cd pyinstaller/bootloader
   python ./waf all
 
   # install the pyinstaller we just built into the desktop pyproject
-  cd $ROOT_DIR/desktop
+  cd $APP_DIR/desktop
   echo "PWD: $PWD"
   uv add build/bootloader/pyinstaller
   echo "which pyinstaller"
   which pyinstaller
   pyinstaller --version
 
-  # return to the root of the project
-  cd $ROOT_DIR
-
-  # List all directories in the .venv
-  echo "Listing all directories in the .venv, nested to all levels"
-
-  # export PYTHONPATH=$PWD/../.venv/Lib/site-packages
+  # return to the /app directory of the project
+  cd $APP_DIR
 fi
 
 mkdir -p desktop/build
