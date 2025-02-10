@@ -7,12 +7,9 @@ dependencies = [
     "kiln-server",
     "pillow>=11.0.0",
     "pystray>=0.19.5",
-]
-
-[dependency-groups]
-dev = [
     "pyinstaller==6.11.1",
 ]
+
 
 [tool.uv.sources]
 kiln-server = { workspace = true }

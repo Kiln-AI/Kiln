@@ -9,6 +9,7 @@ dependencies = [
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
+    "pyinstaller",
 ]
 
 [dependency-groups]
@@ -29,6 +30,7 @@ members = ["libs/core", "libs/server", "app/desktop"]
 kiln-server = { workspace = true }
 kiln-studio-desktop = { workspace = true }
 kiln-ai = { workspace = true }
+pyinstaller = { path = "app/desktop/build/bootloader/pyinstaller" }
 
 [tool.pyright]
 strictListInference = true

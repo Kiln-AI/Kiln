@@ -23,6 +23,8 @@ echo "<html><body><h1>Kiln Studio</h1></body></html>" > web_ui/build/index.html
 # Building the bootloader ourselves helps not be falsely detected as malware by antivirus software on windows.
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building pyinstaller inlucding bootloader"
+  which pyinstaller
+  echo "pyinstaller --version"
 
   ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
@@ -31,9 +33,10 @@ if [[ $* == *--build-bootloader* ]]; then
   cd pyinstaller/bootloader
   python ./waf all
   cd ..
-  pip install .
+  uv add .
   echo "which pyinstaller"
   which pyinstaller
+  echo "pyinstaller --version"
 
   # return to the root of the project
   cd $ROOT_DIR
