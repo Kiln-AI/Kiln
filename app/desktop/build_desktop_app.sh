@@ -32,7 +32,7 @@ if [[ $* == *--build-bootloader* ]]; then
   git clone https://github.com/pyinstaller/pyinstaller.git
   cd pyinstaller/bootloader
   python ./waf all
-  cd $ROOT_DIR
+  cd $ROOT_DIR/app/desktop
   echo "PWD: $PWD"
   # install the pyinstaller we just built
   uv add build/bootloader/pyinstaller
