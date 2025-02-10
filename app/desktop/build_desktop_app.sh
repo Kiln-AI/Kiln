@@ -23,6 +23,7 @@ if [[ $* == *--build-bootloader* ]]; then
   git clone https://github.com/pyinstaller/pyinstaller.git
   cd pyinstaller/bootloader
   python ./waf all
+  cd ..
   pip install .
   which pyinstaller
   
