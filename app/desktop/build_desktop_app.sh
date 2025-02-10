@@ -19,12 +19,6 @@ fi
 
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building bootloader"
-  echo "which pyinstaller"
-  which pyinstaller
-  pip uninstall pyinstaller
-  echo "uninstalled pyinstaller"
-  echo "which pyinstaller"
-  which pyinstaller
 
   ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
