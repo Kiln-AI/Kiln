@@ -1,8 +1,6 @@
 name: Build Signed Windows Release
 
-on:
-  release:
-    types: [created]
+on: push
 
 jobs:
   build:
@@ -28,50 +26,8 @@ jobs:
       - name: Install the project
         run: uv sync
 
-      - name: Build Desktop App
-        run: uv run bash ./app/desktop/build_desktop_app.sh
-
-      - name: Sign internal files with Trusted Signing
-        uses: azure/trusted-signing-action@v0.5.1
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: https://eus.codesigning.azure.net/
-          trusted-signing-account-name: Kiln-Steve-Signing
-          certificate-profile-name: Kiln-AI-Signing
-          files-folder: ${{ github.workspace }}/app/desktop/build/dist
-          files-folder-recurse: true
-          files-folder-filter: exe
-          # TODO: consider signing dlls as well. But for testing, we don't want to use all our quota.
-          # files-folder-filter: exe,dll
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Build Windows Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
-        with:
-          path: ./app/desktop/WinInnoSetup.iss
-
-      - name: Sign Windows Installer exe
-        uses: azure/trusted-signing-action@v0.5.1
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: https://eus.codesigning.azure.net/
-          trusted-signing-account-name: Kiln-Steve-Signing
-          certificate-profile-name: Kiln-AI-Signing
-          files-folder: ${{ github.workspace }}/app/desktop/Output
-          files-folder-recurse: true
-          files-folder-filter: kilnsetup.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Copy Windows Installer
-        run: cp ./app/desktop/Output/kilnsetup.exe ./app/desktop/build/dist/Kiln.Windows.Installer.exe
+      - name: Build Desktop App including pyinstaller bootloader
+        run: uv run bash ./app/desktop/build_desktop_app.sh --build-bootloader
 
       - name: Upload Build
         uses: actions/upload-artifact@v4

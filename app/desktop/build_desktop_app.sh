@@ -15,6 +15,19 @@ if [[ $* != *--skip-web* ]]; then
   cd ..
 fi
 
+if [[ $* == *--build-bootloader* ]]; then
+  echo "Building bootloader"
+  echo "path $PWD"
+  mkdir -p desktop/build/bootloader
+  cd desktop/build/bootloader
+  git clone git@github.com:pyinstaller/pyinstaller.git
+  cd pyinstaller/bootloader
+  python ./waf all
+  echo "path $PWD"
+  cd ../../../../..
+  echo "path $PWD"
+fi
+
 mkdir -p desktop/build
 
 echo "Building for $(uname)"
