@@ -23,10 +23,12 @@ if [[ $* == *--build-bootloader* ]]; then
   git clone https://github.com/pyinstaller/pyinstaller.git
   cd pyinstaller/bootloader
   python ./waf all
+  pip install .
+  which pyinstaller
   
   # Set environment variable to use custom bootloader
-  export PYTHONPATH="$PWD/../..:$PYTHONPATH"
-  export PYINSTALLER_BOOTLOADER_DIR="$PWD/../../PyInstaller/bootloader"
+  #export PYTHONPATH="$PWD/../..:$PYTHONPATH"
+  #export PYINSTALLER_BOOTLOADER_DIR="$PWD/../../PyInstaller/bootloader"
 
   # return to the root of the project
   cd $ROOT_DIR
@@ -64,7 +66,6 @@ fi
 pyinstaller $(printf %s "$PLATFORM_OPTS") --icon="./icon.png" \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
-  --bootloader-ignore-signals \
   -n Kiln --specpath=./desktop/build \
   --paths=. ./desktop/desktop.py
 
