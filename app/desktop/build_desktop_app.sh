@@ -25,23 +25,17 @@ echo "<html><body><h1>Kiln Studio</h1></body></html>" > web_ui/build/index.html
 # We clone pyinstaller, build the bootloader, and install it into the pyproject desktop pyproject.
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building pyinstaller inlucding bootloader"
-  which pyinstaller
-  pyinstaller --version
 
   mkdir -p desktop/build/bootloader
-  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.zip -o pyinstaller.zip
-  unzip -q pyinstaller.zip
+  curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.tar.gz -o pyinstaller.tar.gz
+  tar -xzf pyinstaller.tar.gz
   mv pyinstaller-6.11.1 pyinstaller
   cd pyinstaller/bootloader
   python ./waf all
 
   # install the pyinstaller we just built into the desktop pyproject
   cd $APP_DIR/desktop
-  echo "PWD: $PWD"
   uv add build/bootloader/pyinstaller
-  echo "which pyinstaller"
-  which pyinstaller
-  pyinstaller --version
 
   # return to the /app directory of the project
   cd $APP_DIR
