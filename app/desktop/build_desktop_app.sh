@@ -74,7 +74,7 @@ pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
   -n Kiln --specpath=./desktop/build \
-  --paths=. ./desktop/desktop.py
+  ./desktop/desktop.py
 
 # MacOS apps have symlinks, and GitHub artifact upload zip will break them. Tar instead.
 if [[ $* == *--compress-mac-app* && "$(uname)" == "Darwin" ]]; then
