@@ -900,17 +900,23 @@ source = { virtual = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },
     { name = "pillow" },
-    { name = "pyinstaller" },
     { name = "pystray" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyinstaller" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "kiln-server", editable = "libs/server" },
     { name = "pillow", specifier = ">=11.0.0" },
-    { name = "pyinstaller", specifier = "==6.11.1" },
     { name = "pystray", specifier = ">=0.19.5" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pyinstaller", specifier = "==6.11.1" }]
 
 [[package]]
 name = "langchain"
