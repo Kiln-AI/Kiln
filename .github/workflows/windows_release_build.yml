@@ -29,6 +29,9 @@ jobs:
       - name: Activate venv
         run: .venv\Scripts\activate
 
+      - name: List all directories in the .venv, nested to all levels
+        run: find .venv -type d
+
       - name: Build Desktop App including pyinstaller bootloader
         run: bash ./app/desktop/build_desktop_app.sh --build-bootloader
 

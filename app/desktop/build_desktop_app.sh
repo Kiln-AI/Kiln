@@ -36,7 +36,6 @@ if [[ $* == *--build-bootloader* ]]; then
 
   # List all directories in the .venv
   echo "Listing all directories in the .venv, nested to all levels"
-  find $PWD/.venv -type d
 
   export PYTHONPATH=$PWD/.venv/Lib/python3.12/site-packages
 fi
