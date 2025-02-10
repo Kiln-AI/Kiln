@@ -27,6 +27,7 @@ if [[ $* == *--build-bootloader* ]]; then
   echo "Building pyinstaller inlucding bootloader"
 
   mkdir -p desktop/build/bootloader
+  cd desktop/build/bootloader
   curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.tar.gz -o pyinstaller.tar.gz
   tar -xzf pyinstaller.tar.gz
   mv pyinstaller-6.11.1 pyinstaller
