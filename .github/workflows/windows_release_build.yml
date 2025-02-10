@@ -26,11 +26,8 @@ jobs:
       - name: Install the project, without pyinstaller dev dependency as we'll install it manually
         run: uv sync --no-group dev
 
-      - name: Activate venv
-        run: .venv\Scripts\activate
-
       - name: Build Desktop App including pyinstaller bootloader
-        run: bash ./app/desktop/build_desktop_app.sh --build-bootloader
+        run: .venv\Scripts\activate && bash ./app/desktop/build_desktop_app.sh --build-bootloader --skip-web
 
       - name: Upload Build
         uses: actions/upload-artifact@v4

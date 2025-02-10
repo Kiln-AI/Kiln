@@ -19,7 +19,6 @@ fi
 # Building the bootloader ourselves helps not be falsely detected as malware by antivirus software on windows.
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building pyinstaller inlucding bootloader"
-  source ../../.venv/bin/activate
 
   ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
