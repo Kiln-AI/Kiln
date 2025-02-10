@@ -24,7 +24,7 @@ echo "<html><body><h1>Kiln Studio</h1></body></html>" > web_ui/build/index.html
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building pyinstaller inlucding bootloader"
   which pyinstaller
-  echo "pyinstaller --version"
+  pyinstaller --version
 
   ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
@@ -32,11 +32,13 @@ if [[ $* == *--build-bootloader* ]]; then
   git clone https://github.com/pyinstaller/pyinstaller.git
   cd pyinstaller/bootloader
   python ./waf all
-  cd ..
-  uv add .
+  cd $ROOT_DIR
+  echo "PWD: $PWD"
+  # install the pyinstaller we just built
+  uv add build/bootloader/pyinstaller
   echo "which pyinstaller"
   which pyinstaller
-  echo "pyinstaller --version"
+  pyinstaller --version
 
   # return to the root of the project
   cd $ROOT_DIR
