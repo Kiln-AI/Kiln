@@ -30,7 +30,8 @@ if [[ $* == *--build-bootloader* ]]; then
 
   mkdir -p desktop/build/bootloader
   curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.zip -o pyinstaller.zip
-  unzip pyinstaller.zip
+  unzip -q pyinstaller.zip
+  mv pyinstaller-6.11.1 pyinstaller
   cd pyinstaller/bootloader
   python ./waf all
 
