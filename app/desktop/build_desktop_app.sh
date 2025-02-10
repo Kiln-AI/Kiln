@@ -41,7 +41,7 @@ if [[ $* == *--build-bootloader* ]]; then
   # List all directories in the .venv
   echo "Listing all directories in the .venv, nested to all levels"
 
-  export PYTHONPATH=$PWD/.venv/Lib/python3.12/site-packages
+  # export PYTHONPATH=$PWD/../.venv/Lib/site-packages
 fi
 
 mkdir -p desktop/build
@@ -70,7 +70,7 @@ fi
 
 # Builds the desktop app
 # TODO: use a spec instead of long winded command line
-pyinstaller $(printf %s "$PLATFORM_OPTS") \
+pyinstaller $(printf %s "$PLATFORM_OPTS") --paths=../.venv/Lib/site-packages \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
   -n Kiln --specpath=./desktop/build \
