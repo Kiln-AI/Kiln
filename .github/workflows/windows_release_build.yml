@@ -1,6 +1,8 @@
 name: Build Signed Windows Release
 
-on: push
+on:
+  release:
+    types: [created]
 
 jobs:
   build:
