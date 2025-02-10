@@ -20,7 +20,7 @@ if [[ $* == *--build-bootloader* ]]; then
   echo "path $PWD"
   mkdir -p desktop/build/bootloader
   cd desktop/build/bootloader
-  git clone git@github.com:pyinstaller/pyinstaller.git
+  git clone https://github.com/pyinstaller/pyinstaller.git
   cd pyinstaller/bootloader
   python ./waf all
   echo "path $PWD"
