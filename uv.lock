@@ -821,7 +821,6 @@ dependencies = [
     { name = "kiln-ai" },
     { name = "kiln-server" },
     { name = "kiln-studio-desktop" },
-    { name = "pyinstaller" },
 ]
 
 [package.dev-dependencies]
@@ -839,7 +838,6 @@ requires-dist = [
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "kiln-studio-desktop", virtual = "app/desktop" },
-    { name = "pyinstaller" },
 ]
 
 [package.metadata.requires-dev]

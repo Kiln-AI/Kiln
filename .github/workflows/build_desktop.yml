@@ -34,7 +34,7 @@ jobs:
         run: uv venv --python 3.12 --python-preference only-system
 
       - name: Install the project
-        run: uv sync --dev
+        run: uv sync
 
       # Compress MacOS app param ignored on other platforms
       - name: Build Desktop App
