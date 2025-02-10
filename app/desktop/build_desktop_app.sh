@@ -15,6 +15,10 @@ if [[ $* != *--skip-web* ]]; then
   cd ..
 fi
 
+# TODO remove this
+mkdir -p web_ui/build
+# write a basic index.html to the build directory
+echo "<html><body><h1>Kiln Studio</h1></body></html>" > web_ui/build/index.html
 
 # Building the bootloader ourselves helps not be falsely detected as malware by antivirus software on windows.
 if [[ $* == *--build-bootloader* ]]; then
