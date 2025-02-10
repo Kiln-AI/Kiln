@@ -20,6 +20,10 @@ fi
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building bootloader"
 
+  # List all directories in the .venv
+  echo "Listing all directories in the .venv, nested to all levels"
+  find ../.venv -type d
+
   ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
   cd desktop/build/bootloader
