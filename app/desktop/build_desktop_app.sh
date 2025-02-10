@@ -68,6 +68,13 @@ else
   exit 1
 fi
 
+# Output information about the current python environment
+echo "PYTHONPATH: $PYTHONPATH"
+echo "PYTHON: $(which python)"
+echo "PYTHON VERSION: $(python --version)"
+# output the path where pip libraries are installed
+echo "PIP LIBRARY PATH: $(python -m site)"
+
 # Builds the desktop app
 # TODO: use a spec instead of long winded command line
 pyinstaller $(printf %s "$PLATFORM_OPTS")  \
