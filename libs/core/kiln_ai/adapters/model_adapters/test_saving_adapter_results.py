@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterInfo,
+    BaseAdapter,
+    RunOutput,
+)
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -22,6 +26,7 @@ class MockAdapter(BaseAdapter):
             model_name="mock_model",
             model_provider="mock_provider",
             prompt_builder_name="mock_prompt_builder",
+            prompt_id="mock_prompt_id",
         )
 
 
@@ -38,8 +43,12 @@ def test_task(tmp_path):
     return task
 
 
-def test_save_run_isolation(test_task):
-    adapter = MockAdapter(test_task)
+@pytest.fixture
+def adapter(test_task):
+    return MockAdapter(test_task, model_name="phi_3_5", model_provider_name="ollama")
+
+
+def test_save_run_isolation(test_task, adapter):
     input_data = "Test input"
     output_data = "Test output"
     run_output = RunOutput(
@@ -91,7 +100,7 @@ def test_save_run_isolation(test_task):
         reloaded_output.source.properties["prompt_builder_name"]
         == "mock_prompt_builder"
     )
-
+    assert reloaded_output.source.properties["prompt_id"] == "mock_prompt_id"
     # Run again, with same input and different output. Should create a new TaskRun.
     different_run_output = RunOutput(
         output="Different output", intermediate_outputs=None
@@ -100,13 +109,6 @@ def test_save_run_isolation(test_task):
     task_output.save_to_file()
     assert len(test_task.runs()) == 2
     assert "Different output" in set(run.output.output for run in test_task.runs())
-
-    # run again with same input and same output. Should not create a new TaskRun.
-    task_output = adapter.generate_run(input_data, None, run_output)
-    task_output.save_to_file()
-    assert len(test_task.runs()) == 2
-    assert "Different output" in set(run.output.output for run in test_task.runs())
-    assert output_data in set(run.output.output for run in test_task.runs())
 
     # run again with input of different type. Should create a new TaskRun and TaskOutput.
     task_output = adapter.generate_run(
@@ -130,14 +132,41 @@ def test_save_run_isolation(test_task):
     assert output_data in set(run.output.output for run in test_task.runs())
 
 
+def test_generate_run_non_ascii(test_task, adapter):
+    input_data = {"key": "input with non-ascii character: 你好"}
+    output_data = {"key": "output with non-ascii character: 你好"}
+    run_output = RunOutput(
+        output=output_data,
+        intermediate_outputs=None,
+    )
+
+    task_run = adapter.generate_run(
+        input=input_data, input_source=None, run_output=run_output
+    )
+    task_run.save_to_file()
+
+    # as these values are saved as strings, they should properly represent the non-ascii characters
+    assert task_run.input == '{"key": "input with non-ascii character: 你好"}'
+    assert task_run.output.output == '{"key": "output with non-ascii character: 你好"}'
+
+    # check that the stringified unicode strings can be read back from the file
+    reloaded_task = Task.load_from_file(test_task.path)
+    reloaded_runs = reloaded_task.runs()
+    assert len(reloaded_runs) == 1
+    reloaded_run = reloaded_runs[0]
+    assert reloaded_run.input == '{"key": "input with non-ascii character: 你好"}'
+    assert (
+        reloaded_run.output.output == '{"key": "output with non-ascii character: 你好"}'
+    )
+
+
 @pytest.mark.asyncio
-async def test_autosave_false(test_task):
+async def test_autosave_false(test_task, adapter):
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = False
         mock_config.user_id = "test_user"
 
-        adapter = MockAdapter(test_task)
         input_data = "Test input"
 
         run = await adapter.invoke(input_data)
@@ -150,13 +179,12 @@ async def test_autosave_false(test_task):
 
 
 @pytest.mark.asyncio
-async def test_autosave_true(test_task):
+async def test_autosave_true(test_task, adapter):
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = True
         mock_config.user_id = "test_user"
 
-        adapter = MockAdapter(test_task)
         input_data = "Test input"
 
         run = await adapter.invoke(input_data)

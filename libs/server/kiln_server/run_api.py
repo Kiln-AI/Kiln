@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
@@ -142,17 +143,44 @@ def connect_run_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs")
     async def get_runs(project_id: str, task_id: str) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
-        return list(task.runs())
+        return list(task.runs(readonly=True))
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
     async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
-        runs = task.runs()
+        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
+        runs = task.runs(readonly=True)
         run_summaries: list[RunSummary] = []
         for run in runs:
             summary = RunSummary.from_run(run)
             run_summaries.append(summary)
         return run_summaries
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/delete")
+    async def delete_runs(project_id: str, task_id: str, run_ids: list[str]):
+        task = task_from_id(project_id, task_id)
+        failed_runs: list[str] = []
+        last_error: Exception | None = None
+        for run_id in run_ids:
+            try:
+                run = TaskRun.from_id_and_parent_path(run_id, task.path)
+                if run:
+                    run.delete()
+                else:
+                    failed_runs.append(run_id)
+                    last_error = Exception("Run not found")
+            except Exception as e:
+                last_error = e
+                failed_runs.append(run_id)
+        if failed_runs:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "failed_runs": failed_runs,
+                    "error": str(last_error) if last_error else "Unknown error",
+                },
+            )
+        return {"success": True}
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/run")
     async def run_task(
@@ -160,19 +188,19 @@ def connect_run_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        prompt_builder_class = prompt_builder_from_ui_name(
-            request.ui_prompt_method or "basic"
+        prompt_builder = prompt_builder_from_ui_name(
+            request.ui_prompt_method or "basic",
+            task,
         )
-        if prompt_builder_class is None:
+        if prompt_builder is None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unknown prompt method: {request.ui_prompt_method}",
             )
-        prompt_builder = prompt_builder_class(task)
         adapter = adapter_for_task(
             task,
             model_name=request.model_name,
-            provider=request.provider,
+            provider=model_provider_from_string(request.provider),
             prompt_builder=prompt_builder,
             tags=request.tags,
         )
@@ -194,6 +222,43 @@ def connect_run_api(app: FastAPI):
         project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
     ) -> TaskRun:
         return await update_run_util(project_id, task_id, run_id, run_data)
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags")
+    async def edit_tags(
+        project_id: str,
+        task_id: str,
+        run_ids: list[str],
+        add_tags: list[str] | None = None,
+        remove_tags: list[str] | None = None,
+    ):
+        task = task_from_id(project_id, task_id)
+        failed_runs: list[str] = []
+        for run_id in run_ids:
+            run = TaskRun.from_id_and_parent_path(run_id, task.path)
+            if not run:
+                failed_runs.append(run_id)
+            else:
+                modified = False
+                if remove_tags and any(tag in (run.tags or []) for tag in remove_tags):
+                    run.tags = list(
+                        set(tag for tag in (run.tags or []) if tag not in remove_tags)
+                    )
+                    modified = True
+                if add_tags and any(tag not in (run.tags or []) for tag in add_tags):
+                    run.tags = list(set((run.tags or []) + add_tags))
+                    modified = True
+                if modified:
+                    run.save_to_file()
+
+        if failed_runs:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "failed_runs": failed_runs,
+                    "error": "Runs not found",
+                },
+            )
+        return {"success": True}
 
 
 async def update_run_util(
@@ -217,3 +282,9 @@ async def update_run_util(
         updated_run.path = run.path
         updated_run.save_to_file()
         return updated_run
+
+
+def model_provider_from_string(provider: str) -> ModelProviderName:
+    if not provider or provider not in ModelProviderName.__members__:
+        raise ValueError(f"Unsupported provider: {provider}")
+    return ModelProviderName(provider)

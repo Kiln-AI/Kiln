@@ -3,11 +3,12 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { page } from "$app/stores"
-  import { current_task } from "$lib/stores"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { formatDate } from "$lib/utils/formatters"
+  import type { FinetuneDataStrategy } from "$lib/types"
+  import Warning from "$lib/ui/warning.svelte"
 
   import PromptTypeSelector from "../../../../run/prompt_type_selector.svelte"
 
@@ -26,7 +27,10 @@
   let new_dataset_split = disabled_header
   let new_dataset_filter = disabled_header
   let automatic_validation = disabled_header
+  let data_strategy: FinetuneDataStrategy = "final_only"
   let finetune_custom_system_prompt = ""
+  let finetune_custom_thinking_instructions =
+    "Think step by step, explaining your reasoning."
   let system_prompt_method = "basic"
 
   $: project_id = $page.params.project_id
@@ -38,6 +42,9 @@
   let available_models_loading = true
 
   $: selected_dataset = datasets?.find((d) => d.id === dataset_id)
+  $: selecting_thinking_dataset =
+    selected_dataset?.filter === "thinking_model" ||
+    selected_dataset?.filter === "thinking_model_high_rated"
   $: selected_dataset_has_val = selected_dataset?.splits?.find(
     (s) => s.name === "val",
   )
@@ -119,8 +126,12 @@
       "Download: OpenAI chat format (JSONL)",
     ])
     available_model_select.push([
+      "download_jsonl_json_schema_msg",
+      "Download: OpenAI chat format with JSON response (JSONL)",
+    ])
+    available_model_select.push([
       "download_jsonl_toolcall",
-      "Download: OpenAI chat format with tool calls (JSONL)",
+      "Download: OpenAI chat format with tool call response (JSONL)",
     ])
     available_model_select.push([
       "download_huggingface_chat_template",
@@ -130,14 +141,20 @@
       "download_huggingface_chat_template_toolcall",
       "Download: HuggingFace chat template with tool calls (JSONL)",
     ])
+    available_model_select.push([
+      "download_vertex_gemini_1_5",
+      "Download: Google Vertex-AI Gemini 1.5 format (JSONL)",
+    ])
   }
 
   const download_model_select_options: Record<string, string> = {
     download_jsonl_msg: "openai_chat_jsonl",
+    download_jsonl_json_schema_msg: "openai_chat_json_schema_jsonl",
     download_jsonl_toolcall: "openai_chat_toolcall_jsonl",
     download_huggingface_chat_template: "huggingface_chat_template_jsonl",
     download_huggingface_chat_template_toolcall:
       "huggingface_chat_template_toolcall_jsonl",
+    download_vertex_gemini_1_5: "vertex_gemini_1_5",
   }
 
   let datasets: DatasetSplit[] | null = null
@@ -325,6 +342,12 @@
       ? finetune_custom_system_prompt
       : undefined
   }
+  function get_custom_thinking_instructions_param(): string | undefined {
+    return system_prompt_method === "custom" &&
+      data_strategy === "final_and_intermediate"
+      ? finetune_custom_thinking_instructions
+      : undefined
+  }
 
   let create_finetune_error: KilnError | null = null
   let create_finetune_loading = false
@@ -358,7 +381,10 @@
                 : undefined,
               system_message_generator: get_system_prompt_method_param(),
               custom_system_message: get_custom_system_prompt_param(),
+              custom_thinking_instructions:
+                get_custom_thinking_instructions_param(),
               parameters: hyperparameter_values,
+              data_strategy: data_strategy,
               validation_split_name:
                 automatic_validation === "yes" ? "val" : undefined,
             },
@@ -435,9 +461,11 @@
       project_id: project_id,
       task_id: task_id,
       split_name: split_name,
+      data_strategy: data_strategy,
       format_type: download_model_select_options[model_provider],
       system_message_generator: get_system_prompt_method_param(),
       custom_system_message: get_custom_system_prompt_param(),
+      custom_thinking_instructions: get_custom_thinking_instructions_param(),
     }
 
     // Format params as query string, including escaping values and filtering undefined
@@ -573,13 +601,6 @@
                 to expand your dataset.
               </div>
             {/if}
-            {#if model_provider_id === "fireworks_ai" && task_id === $current_task?.id && !!$current_task?.output_json_schema}
-              <div class="text-sm">
-                <span class="badge badge-warning mr-2">Technical Note</span> Fireworks
-                fine-tuning does not support tool calling. The model will be trained
-                with JSON output instead.
-              </div>
-            {/if}
           {/if}
           {#if show_automatic_validation_option}
             <FormElement
@@ -604,18 +625,53 @@
             description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
             info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
             exclude_cot={true}
-            show_custom={true}
+            custom_prompt_name="Custom Fine Tuning Prompt"
           />
           {#if system_prompt_method === "custom"}
-            <FormElement
-              label="Custom System Message"
-              description="Enter a custom system message to use during fine-tuning."
-              info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
-              inputType="textarea"
-              id="finetune_custom_system_prompt"
-              bind:value={finetune_custom_system_prompt}
-            />
+            <div class="p-4 border-l-4 border-gray-300">
+              <FormElement
+                label="Custom System Prompt"
+                description="Enter a custom system prompt to use during fine-tuning."
+                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                inputType="textarea"
+                id="finetune_custom_system_prompt"
+                bind:value={finetune_custom_system_prompt}
+              />
+              {#if data_strategy === "final_and_intermediate"}
+                <div class="mt-4"></div>
+                <FormElement
+                  label="Custom Thinking Instructions"
+                  description="Instructions for the model's 'thinking' stage, before returning the final response."
+                  info_description="When training with intermediate results (reasoning, chain of thought, etc.), this prompt will be used to ask the model to 'think' before returning the final response."
+                  inputType="textarea"
+                  id="finetune_custom_thinking_instructions"
+                  bind:value={finetune_custom_thinking_instructions}
+                />
+              {/if}
+            </div>
           {/if}
+          <div>
+            <FormElement
+              label="Training Strategy"
+              description="Should the model be trained on the final response only, or also include intermediate thinking?"
+              info_description="If you select 'Final Response and Intermediate Thinking', the model will also be trained on the intermediate thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
+              inputType="select"
+              id="data_strategy"
+              select_options={[
+                ["final_only", "Final Response Only"],
+                [
+                  "final_and_intermediate",
+                  "Final Response and Intermediate Thinking",
+                ],
+              ]}
+              bind:value={data_strategy}
+            />
+            {#if data_strategy === "final_and_intermediate" && !selecting_thinking_dataset}
+              <Warning
+                warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
+              />
+            {/if}
+          </div>
           {#if !is_download}
             <div class="collapse collapse-arrow bg-base-200">
               <input type="checkbox" class="peer" />
@@ -729,7 +785,7 @@
         <FormElement
           label="Dataset Filter"
           description="Select a filter for your dataset. Typically you want to filter out examples that are not rated 4+ stars."
-          info_description="A 'High Rating' filter will include only examples that are rated 4+ stars. The 'All' filter will include all examples."
+          info_description="A 'High Rating' filter will include only examples that are rated 4+ stars. The 'All' filter will include all examples. Thinking filters will also check the sample has reasoning or chain-of-thought data for training thinking models."
           inputType="select"
           optional={false}
           id="dataset_filter"
@@ -737,6 +793,14 @@
             [disabled_header, "Select a dataset filter"],
             ["high_rating", "High Rating (4+ stars)"],
             ["all", "All (no filter)"],
+            [
+              "thinking_model",
+              "Thinking (items with reasoning/chain-of-thought)",
+            ],
+            [
+              "thinking_model_high_rated",
+              "Thinking + High Rated (4+ stars and thinking)",
+            ],
           ]}
           bind:value={new_dataset_filter}
         />
@@ -751,6 +815,7 @@
             [disabled_header, "Select a split strategy"],
             ["train_test", "Train/Test -- 80/20"],
             ["train_test_val", "Train/Test/Val -- 60/20/20"],
+            ["train_test_val_80", "Train/Test/Val -- 80/10/10"],
             ["all", "Entire Dataset -- 100"],
           ]}
           bind:value={new_dataset_split}

@@ -20,8 +20,32 @@ class BasePromptBuilder(metaclass=ABCMeta):
         """
         self.task = task
 
+    def prompt_id(self) -> str | None:
+        """Returns the ID of the prompt, scoped to this builder.
+
+        Returns:
+            str | None: The ID of the prompt, or None if not set.
+        """
+        return None
+
+    def build_prompt(self, include_json_instructions) -> str:
+        """Build and return the complete prompt string.
+
+        Returns:
+            str: The constructed prompt.
+        """
+        prompt = self.build_base_prompt()
+
+        if include_json_instructions and self.task.output_schema():
+            prompt = (
+                prompt
+                + f"\n\n# Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.task.output_schema()}\n```"
+            )
+
+        return prompt
+
     @abstractmethod
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Build and return the complete prompt string.
 
         Returns:
@@ -50,7 +74,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
             str: The formatted user message.
         """
         if isinstance(input, Dict):
-            return f"The input is:\n{json.dumps(input, indent=2)}"
+            return f"The input is:\n{json.dumps(input, indent=2, ensure_ascii=False)}"
 
         return f"The input is:\n{input}"
 
@@ -70,7 +94,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
         Returns:
             str: The constructed prompt string.
         """
-        base_prompt = self.build_prompt()
+        base_prompt = self.build_prompt(include_json_instructions=False)
         cot_prompt = self.chain_of_thought_prompt()
         if cot_prompt:
             base_prompt += "\n# Thinking Instructions\n\n" + cot_prompt
@@ -80,7 +104,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
 class SimplePromptBuilder(BasePromptBuilder):
     """A basic prompt builder that combines task instruction with requirements."""
 
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Build a simple prompt with instruction and requirements.
 
         Returns:
@@ -95,7 +119,7 @@ class SimplePromptBuilder(BasePromptBuilder):
             )
             # iterate requirements, formatting them in numbereed list like 1) task.instruction\n2)...
             for i, requirement in enumerate(self.task.requirements):
-                base_prompt += f"{i+1}) {requirement.instruction}\n"
+                base_prompt += f"{i + 1}) {requirement.instruction}\n"
 
         return base_prompt
 
@@ -112,18 +136,18 @@ class MultiShotPromptBuilder(BasePromptBuilder):
         """
         return 25
 
-    def build_prompt(self) -> str:
+    def build_base_prompt(self) -> str:
         """Build a prompt with instruction, requirements, and multiple examples.
 
         Returns:
             str: The constructed prompt string with examples.
         """
-        base_prompt = f"# Instruction\n\n{ self.task.instruction }\n\n"
+        base_prompt = f"# Instruction\n\n{self.task.instruction}\n\n"
 
         if len(self.task.requirements) > 0:
             base_prompt += "# Requirements\n\nYour response should respect the following requirements:\n"
             for i, requirement in enumerate(self.task.requirements):
-                base_prompt += f"{i+1}) {requirement.instruction}\n"
+                base_prompt += f"{i + 1}) {requirement.instruction}\n"
             base_prompt += "\n"
 
         valid_examples = self.collect_examples()
@@ -140,11 +164,11 @@ class MultiShotPromptBuilder(BasePromptBuilder):
     def prompt_section_for_example(self, index: int, example: TaskRun) -> str:
         # Prefer repaired output if it exists, otherwise use the regular output
         output = example.repaired_output or example.output
-        return f"## Example {index+1}\n\nInput: {example.input}\nOutput: {output.output}\n\n"
+        return f"## Example {index + 1}\n\nInput: {example.input}\nOutput: {output.output}\n\n"
 
     def collect_examples(self) -> list[TaskRun]:
         valid_examples: list[TaskRun] = []
-        runs = self.task.runs()
+        runs = self.task.runs(readonly=True)
 
         # first pass, we look for repaired outputs. These are the best examples.
         for run in runs:
@@ -198,7 +222,7 @@ class RepairsPromptBuilder(MultiShotPromptBuilder):
         ):
             return super().prompt_section_for_example(index, example)
 
-        prompt_section = f"## Example {index+1}\n\nInput: {example.input}\n\n"
+        prompt_section = f"## Example {index + 1}\n\nInput: {example.input}\n\n"
         prompt_section += (
             f"Initial Output Which Was Insufficient: {example.output.output}\n\n"
         )
@@ -209,7 +233,7 @@ class RepairsPromptBuilder(MultiShotPromptBuilder):
         return prompt_section
 
 
-def chain_of_thought_prompt(task: Task) -> str | None:
+def chain_of_thought_prompt(task: Task) -> str:
     """Standard implementation to build and return the chain of thought prompt string.
 
     Returns:
@@ -244,6 +268,77 @@ class MultiShotChainOfThoughtPromptBuilder(MultiShotPromptBuilder):
         return chain_of_thought_prompt(self.task)
 
 
+class SavedPromptBuilder(BasePromptBuilder):
+    """A prompt builder that looks up a static prompt."""
+
+    def __init__(self, task: Task, prompt_id: str):
+        super().__init__(task)
+        prompt_model = next(
+            (
+                prompt
+                for prompt in task.prompts(readonly=True)
+                if prompt.id == prompt_id
+            ),
+            None,
+        )
+        if not prompt_model:
+            raise ValueError(f"Prompt ID not found: {prompt_id}")
+        self.prompt_model = prompt_model
+
+    def prompt_id(self) -> str | None:
+        return self.prompt_model.id
+
+    def build_base_prompt(self) -> str:
+        """Returns a saved prompt.
+
+        Returns:
+            str: The prompt string.
+        """
+        return self.prompt_model.prompt
+
+    def chain_of_thought_prompt(self) -> str | None:
+        return self.prompt_model.chain_of_thought_instructions
+
+
+class FineTunePromptBuilder(BasePromptBuilder):
+    """A prompt builder that looks up a fine-tune prompt."""
+
+    def __init__(self, task: Task, nested_fine_tune_id: str):
+        super().__init__(task)
+
+        # IDs are in project_id::task_id::fine_tune_id format
+        self.full_fine_tune_id = nested_fine_tune_id
+        parts = nested_fine_tune_id.split("::")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Invalid fine-tune ID format. Expected 'project_id::task_id::fine_tune_id', got: {nested_fine_tune_id}"
+            )
+        fine_tune_id = parts[2]
+
+        fine_tune_model = next(
+            (
+                fine_tune
+                for fine_tune in task.finetunes(readonly=True)
+                if fine_tune.id == fine_tune_id
+            ),
+            None,
+        )
+        if not fine_tune_model:
+            raise ValueError(f"Fine-tune ID not found: {fine_tune_id}")
+        self.fine_tune_model = fine_tune_model
+
+    def prompt_id(self) -> str | None:
+        return self.full_fine_tune_id
+
+    def build_base_prompt(self) -> str:
+        return self.fine_tune_model.system_message
+
+    def chain_of_thought_prompt(self) -> str | None:
+        return self.fine_tune_model.thinking_instructions
+
+
+# TODO P2: we end up with 2 IDs for these: the keys here (ui_name) and the prompt_builder_name from the class
+# We end up maintaining this in _prompt_generators as well.
 prompt_builder_registry = {
     "simple_prompt_builder": SimplePromptBuilder,
     "multi_shot_prompt_builder": MultiShotPromptBuilder,
@@ -256,7 +351,7 @@ prompt_builder_registry = {
 
 
 # Our UI has some names that are not the same as the class names, which also hint parameters.
-def prompt_builder_from_ui_name(ui_name: str) -> type[BasePromptBuilder]:
+def prompt_builder_from_ui_name(ui_name: str, task: Task) -> BasePromptBuilder:
     """Convert a name used in the UI to the corresponding prompt builder class.
 
     Args:
@@ -268,20 +363,31 @@ def prompt_builder_from_ui_name(ui_name: str) -> type[BasePromptBuilder]:
     Raises:
         ValueError: If the UI name is not recognized.
     """
+
+    # Saved prompts are prefixed with "id::"
+    if ui_name.startswith("id::"):
+        prompt_id = ui_name[4:]
+        return SavedPromptBuilder(task, prompt_id)
+
+    # Fine-tune prompts are prefixed with "fine_tune_prompt::"
+    if ui_name.startswith("fine_tune_prompt::"):
+        fine_tune_id = ui_name[18:]
+        return FineTunePromptBuilder(task, fine_tune_id)
+
     match ui_name:
         case "basic":
-            return SimplePromptBuilder
+            return SimplePromptBuilder(task)
         case "few_shot":
-            return FewShotPromptBuilder
+            return FewShotPromptBuilder(task)
         case "many_shot":
-            return MultiShotPromptBuilder
+            return MultiShotPromptBuilder(task)
         case "repairs":
-            return RepairsPromptBuilder
+            return RepairsPromptBuilder(task)
         case "simple_chain_of_thought":
-            return SimpleChainOfThoughtPromptBuilder
+            return SimpleChainOfThoughtPromptBuilder(task)
         case "few_shot_chain_of_thought":
-            return FewShotChainOfThoughtPromptBuilder
+            return FewShotChainOfThoughtPromptBuilder(task)
         case "multi_shot_chain_of_thought":
-            return MultiShotChainOfThoughtPromptBuilder
+            return MultiShotChainOfThoughtPromptBuilder(task)
         case _:
             raise ValueError(f"Unknown prompt builder: {ui_name}")

@@ -1,0 +1,3 @@
+ - Always assume pydantic 2 (not pydantic 1)
+ - Always use pytest for tests
+ 

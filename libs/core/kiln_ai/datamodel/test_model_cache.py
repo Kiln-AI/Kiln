@@ -242,3 +242,27 @@ def test_check_timestamp_granularity_linux_error():
         cache = ModelCache()
         assert cache._check_timestamp_granularity() is False
         assert cache._enabled is False
+
+
+def test_get_model_readonly(model_cache, test_path):
+    if not model_cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+
+    model = ModelTest(name="test", value=123)
+    mtime_ns = test_path.stat().st_mtime_ns
+
+    # Set the model in the cache
+    model_cache.set_model(test_path, model, mtime_ns)
+
+    # Get the model in readonly mode
+    readonly_model = model_cache.get_model(test_path, ModelTest, readonly=True)
+    # Get a regular (copied) model
+    copied_model = model_cache.get_model(test_path, ModelTest)
+
+    # The readonly model should be the exact same instance as the cached model
+    assert readonly_model is model_cache.model_cache[test_path][0]
+    # While the regular get should be a different instance
+    assert copied_model is not model_cache.model_cache[test_path][0]
+
+    # Both should have the same data
+    assert readonly_model == copied_model == model

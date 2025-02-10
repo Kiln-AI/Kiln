@@ -175,6 +175,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/task/{task_id}/prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Prompt */
+        post: operations["create_prompt_api_projects__project_id__task__task_id__prompt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/task/{task_id}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prompts */
+        get: operations["get_prompts_api_projects__project_id__task__task_id__prompts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -228,6 +262,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Runs */
+        post: operations["delete_runs_api_projects__project_id__tasks__task_id__runs_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/run": {
         parameters: {
             query?: never;
@@ -239,6 +290,23 @@ export interface paths {
         put?: never;
         /** Run Task */
         post: operations["run_task_api_projects__project_id__tasks__task_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Tags */
+        post: operations["edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -325,6 +393,23 @@ export interface paths {
         put?: never;
         /** Connect Api Key */
         post: operations["connect_api_key_api_provider_connect_api_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provider/disconnect_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disconnect Api Key */
+        post: operations["disconnect_api_key_api_provider_disconnect_api_key_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -585,6 +670,15 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelDetails"][];
         };
+        /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
+        Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
+            /** Run Ids */
+            run_ids: string[];
+            /** Add Tags */
+            add_tags?: string[] | null;
+            /** Remove Tags */
+            remove_tags?: string[] | null;
+        };
         /**
          * CreateDatasetSplitRequest
          * @description Request to create a dataset split
@@ -624,6 +718,9 @@ export interface components {
             system_message_generator?: string | null;
             /** Custom System Message */
             custom_system_message?: string | null;
+            /** Custom Thinking Instructions */
+            custom_thinking_instructions?: string | null;
+            data_strategy: components["schemas"]["FinetuneDataStrategy"];
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -757,10 +854,10 @@ export interface components {
         DataSourceType: "human" | "synthetic";
         /**
          * DatasetFilterType
-         * @description Dataset filter types used in the API. Any filter style can be created in code.
+         * @description Dataset filter names.
          * @enum {string}
          */
-        DatasetFilterType: "all" | "high_rating";
+        DatasetFilterType: "all" | "high_rating" | "thinking_model" | "thinking_model_high_rated";
         /**
          * DatasetSplit
          * @description A collection of task runs, with optional splits (train, test, validation).
@@ -808,6 +905,8 @@ export interface components {
             split_contents: {
                 [key: string]: string[];
             };
+            /** @description The filter used to build the dataset. */
+            filter?: components["schemas"]["DatasetFilterType"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -839,7 +938,7 @@ export interface components {
          * @description Dataset split types used in the API. Any split type can be created in code.
          * @enum {string}
          */
-        DatasetSplitType: "train_test" | "train_test_val" | "all";
+        DatasetSplitType: "train_test" | "train_test_val" | "train_test_val_80" | "all";
         /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
@@ -875,7 +974,12 @@ export interface components {
          * @enum {string}
          */
         FineTuneStatusType: "unknown" | "pending" | "running" | "completed" | "failed";
-        /** Finetune */
+        /**
+         * Finetune
+         * @description The Kiln fine-tune datamodel.
+         *
+         *     Initially holds a reference to a training job, with needed identifiers to update the status. When complete, contains the new model ID.
+         */
         Finetune: {
             /**
              * V
@@ -903,6 +1007,8 @@ export interface components {
              * @description A description of the fine-tune for you and your team. Not used in training.
              */
             description?: string | null;
+            /** @description The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode. */
+            structured_output_mode?: components["schemas"]["StructuredOutputMode"] | null;
             /**
              * Provider
              * @description The provider to use for the fine-tune (e.g. 'openai').
@@ -953,6 +1059,11 @@ export interface components {
              */
             system_message: string;
             /**
+             * Thinking Instructions
+             * @description The thinking instructions to use for this fine-tune. Only used when data_strategy is final_and_intermediate.
+             */
+            thinking_instructions?: string | null;
+            /**
              * @description The latest known status of this fine-tune. Not updated in real time.
              * @default unknown
              */
@@ -965,9 +1076,19 @@ export interface components {
             properties: {
                 [key: string]: string | number;
             };
+            /**
+             * @description The strategy to use for training the model. 'final_only' will only train on the final response. 'final_and_intermediate' will train on the final response and intermediate outputs (chain of thought or reasoning).
+             * @default final_only
+             */
+            data_strategy: components["schemas"]["FinetuneDataStrategy"];
             /** Model Type */
             readonly model_type: string;
         };
+        /**
+         * FinetuneDataStrategy
+         * @enum {string}
+         */
+        FinetuneDataStrategy: "final_only" | "final_and_intermediate";
         /**
          * FinetuneProvider
          * @description Finetune provider: list of models a provider supports for fine-tuning
@@ -1058,7 +1179,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_72b";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "phi_4" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_72b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -1146,6 +1267,45 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /**
+         * Prompt
+         * @description A prompt for a task.
+         */
+        Prompt: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Prompt
+             * @description The prompt for the task.
+             */
+            prompt: string;
+            /**
+             * Chain Of Thought Instructions
+             * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
+             */
+            chain_of_thought_instructions?: string | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
         /** PromptApiResponse */
         PromptApiResponse: {
             /** Prompt */
@@ -1154,6 +1314,37 @@ export interface components {
             prompt_builder_name: string;
             /** Ui Generator Name */
             ui_generator_name: string;
+        };
+        /** PromptCreateRequest */
+        PromptCreateRequest: {
+            /** Name */
+            name: string;
+            /** Prompt */
+            prompt: string;
+            /** Chain Of Thought Instructions */
+            chain_of_thought_instructions?: string | null;
+        };
+        /** PromptGenerator */
+        PromptGenerator: {
+            /** Id */
+            id: string;
+            /** Ui Id */
+            ui_id: string;
+            /** Short Description */
+            short_description: string;
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+            /** Chain Of Thought */
+            chain_of_thought: boolean;
+        };
+        /** PromptResponse */
+        PromptResponse: {
+            /** Generators */
+            generators: components["schemas"]["PromptGenerator"][];
+            /** Prompts */
+            prompts: components["schemas"]["Prompt"][];
         };
         /** ProviderModel */
         ProviderModel: {
@@ -1244,6 +1435,19 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /**
+         * StructuredOutputMode
+         * @description Enumeration of supported structured output modes.
+         *
+         *     - default: let the adapter decide
+         *     - json_schema: request json using API capabilities for json_schema
+         *     - function_calling: request json using API capabilities for function calling
+         *     - json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema
+         *     - json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.
+         *     - json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).
+         * @enum {string}
+         */
+        StructuredOutputMode: "default" | "json_schema" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object";
         /**
          * Task
          * @description Represents a specific task to be performed, with associated requirements and validation rules.
@@ -1956,6 +2160,74 @@ export interface operations {
             };
         };
     };
+    create_prompt_api_projects__project_id__task__task_id__prompt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Prompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompts_api_projects__project_id__task__task_id__prompts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_api_projects__project_id__tasks__task_id__runs__run_id__get: {
         parameters: {
             query?: never;
@@ -2123,6 +2395,42 @@ export interface operations {
             };
         };
     };
+    delete_runs_api_projects__project_id__tasks__task_id__runs_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": string[];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_task_api_projects__project_id__tasks__task_id__run_post: {
         parameters: {
             query?: never;
@@ -2146,6 +2454,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2306,6 +2650,37 @@ export interface operations {
                 "application/json": Record<string, never>;
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_api_key_api_provider_disconnect_api_key_post: {
+        parameters: {
+            query: {
+                provider_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -2860,8 +3235,10 @@ export interface operations {
                 dataset_id: string;
                 split_name: string;
                 format_type: string;
+                data_strategy: string;
                 system_message_generator?: string | null;
                 custom_system_message?: string | null;
+                custom_thinking_instructions?: string | null;
             };
             header?: never;
             path?: never;

@@ -9,7 +9,9 @@ from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
     Finetune,
+    FinetuneDataStrategy,
     Project,
+    Prompt,
     Task,
     TaskOutput,
     TaskRun,
@@ -68,6 +70,20 @@ def test_save_to_file(test_project_file):
     assert data["v"] == 1
     assert data["name"] == "Test Project"
     assert data["description"] == "Test Description"
+
+
+def test_save_to_file_non_ascii(test_project_file):
+    project = Project(
+        name="Test Project", description="Chúc mừng!", path=test_project_file
+    )
+    project.save_to_file()
+
+    with open(test_project_file, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    assert data["v"] == 1
+    assert data["name"] == "Test Project"
+    assert data["description"] == "Chúc mừng!"
 
 
 def test_task_defaults():
@@ -488,3 +504,116 @@ def test_task_run_tags_validation():
             tags=["valid_tag", "invalid tag"],
         )
     assert "Tags cannot contain spaces. Try underscores." in str(exc_info.value)
+
+
+def test_prompt_validation():
+    prompt = Prompt(name="Test Prompt Name", prompt="Test Prompt")
+    assert prompt.name == "Test Prompt Name"
+    assert prompt.prompt == "Test Prompt"
+
+    with pytest.raises(ValidationError):
+        Prompt(name="Test Prompt")
+
+    with pytest.raises(ValidationError):
+        Prompt(name="Test Prompt", prompt=None)
+
+    with pytest.raises(ValidationError):
+        Prompt(name="Test Prompt", prompt="")
+
+    with pytest.raises(ValidationError):
+        Prompt(prompt="Test Prompt")
+
+
+def test_prompt_parent_task():
+    task = Task(name="Test Task", instruction="Test Instruction")
+    prompt = Prompt(name="Test Prompt", prompt="Test Prompt", parent=task)
+    assert prompt.parent == task
+
+
+@pytest.mark.parametrize(
+    "thinking_instructions,data_strategy,should_raise,expected_message",
+    [
+        # Test 1: Valid case - no thinking instructions with final_only
+        (
+            None,
+            FinetuneDataStrategy.final_only,
+            False,
+            None,
+        ),
+        # Test 2: Valid case - thinking instructions with final_and_intermediate
+        (
+            "Think step by step",
+            FinetuneDataStrategy.final_and_intermediate,
+            False,
+            None,
+        ),
+        # Test 3: Invalid case - thinking instructions with final_only
+        (
+            "Think step by step",
+            FinetuneDataStrategy.final_only,
+            True,
+            "Thinking instructions can only be used when data_strategy is final_and_intermediate",
+        ),
+        # Test 4: Invalid case - no thinking instructions with final_and_intermediate
+        (
+            None,
+            FinetuneDataStrategy.final_and_intermediate,
+            True,
+            "Thinking instructions are required when data_strategy is final_and_intermediate",
+        ),
+    ],
+)
+def test_finetune_thinking_instructions_validation(
+    thinking_instructions, data_strategy, should_raise, expected_message
+):
+    base_params = {
+        "name": "test-finetune",
+        "provider": "openai",
+        "base_model_id": "gpt-3.5-turbo",
+        "dataset_split_id": "split1",
+        "system_message": "test message",
+        "data_strategy": data_strategy,
+    }
+
+    if thinking_instructions is not None:
+        base_params["thinking_instructions"] = thinking_instructions
+
+    if should_raise:
+        with pytest.raises(ValueError) as exc_info:
+            Finetune(**base_params)
+        assert expected_message in str(exc_info.value)
+    else:
+        finetune = Finetune(**base_params)
+        assert finetune.thinking_instructions == thinking_instructions
+        assert finetune.data_strategy == data_strategy
+
+
+@pytest.mark.parametrize(
+    "intermediate_outputs,expected",
+    [
+        # No intermediate outputs
+        (None, False),
+        # Empty intermediate outputs
+        ({}, False),
+        # Only chain_of_thought
+        ({"chain_of_thought": "thinking process"}, True),
+        # Only reasoning
+        ({"reasoning": "reasoning process"}, True),
+        # Both chain_of_thought and reasoning
+        (
+            {"chain_of_thought": "thinking process", "reasoning": "reasoning process"},
+            True,
+        ),
+        # Other intermediate outputs but no thinking data
+        ({"other_output": "some data"}, False),
+        # Mixed other outputs with thinking data
+        ({"chain_of_thought": "thinking process", "other_output": "some data"}, True),
+    ],
+)
+def test_task_run_has_thinking_training_data(intermediate_outputs, expected):
+    task_run = TaskRun(
+        input="test input",
+        output=TaskOutput(output="test output"),
+        intermediate_outputs=intermediate_outputs,
+    )
+    assert task_run.has_thinking_training_data() == expected

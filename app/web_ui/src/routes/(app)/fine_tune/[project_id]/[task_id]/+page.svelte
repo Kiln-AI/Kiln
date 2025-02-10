@@ -80,8 +80,10 @@
 </script>
 
 <AppPage
-  title="Fine Tunes"
-  subtitle="Tune models for the current task."
+  title="Fine Tune"
+  subtitle="Fine-tune models for the current task."
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.getkiln.ai/docs/fine-tuning-guide"
   action_buttons={is_empty
     ? []
     : [
@@ -101,7 +103,7 @@
       <EmptyFinetune {project_id} {task_id} />
     </div>
   {:else if finetunes}
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
           <tr>

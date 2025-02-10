@@ -11,6 +11,7 @@
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
   import TagDropdown from "./tag_dropdown.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   export let project_id: string
   export let task: Task
@@ -324,6 +325,15 @@
       delete_repair_submitting = false
     }
   }
+
+  function get_intermediate_output_title(name: string): string {
+    return (
+      {
+        reasoning: "Model Reasoning Output",
+        chain_of_thought: "Chain of Thought Output",
+      }[name] || name
+    )
+  }
 </script>
 
 <div>
@@ -345,6 +355,19 @@
         </div>
       {/if}
       <Output raw_output={run.output.output} />
+      {#if run.intermediate_outputs}
+        {#each Object.entries(run.intermediate_outputs) as [name, intermediate_output]}
+          <div
+            class="text-xs font-bold text-gray-500 mt-4 mb-1 flex flex-row items-center gap-1"
+          >
+            {get_intermediate_output_title(name)}
+            <InfoTooltip
+              tooltip_text={`This is intermediate output from the model, and not considered part of the final answer. This thinking helped formulate the final answer above. This is known as 'chain of thought', 'thinking output', or 'inference time compute'.`}
+            />
+          </div>
+          <Output raw_output={intermediate_output} />
+        {/each}
+      {/if}
       <div>
         <div class="mt-2">
           <button class="text-xs link" on:click={toggle_raw_data}
@@ -486,23 +509,9 @@
           {#each task.requirements as requirement, index}
             <div class="flex items-center">
               {requirement.name}:
-              <button
-                class="tooltip"
-                data-tip={`Requirement #${index + 1} - ${requirement.instruction || "No instruction provided"}${requirement.type === "pass_fail_critical" ? " Use 'critical' rating for responses which are never tolerable, beyond a typical failure." : ""}`}
-              >
-                <svg
-                  fill="currentColor"
-                  class="w-6 h-6 inline"
-                  viewBox="0 0 1024 1024"
-                  version="1"
-                  xmlns="http://www.w3.org/2000/svg"
-                  ><path
-                    d="M512 717a205 205 0 1 0 0-410 205 205 0 0 0 0 410zm0 51a256 256 0 1 1 0-512 256 256 0 0 1 0 512z"
-                  /><path
-                    d="M485 364c7-7 16-11 27-11s20 4 27 11c8 8 11 17 11 28 0 10-3 19-11 27-7 7-16 11-27 11s-20-4-27-11c-8-8-11-17-11-27 0-11 3-20 11-28zM479 469h66v192h-66z"
-                  /></svg
-                >
-              </button>
+              <InfoTooltip
+                tooltip_text={`Requirement #${index + 1} - ${requirement.instruction || "No instruction provided"}${requirement.type === "pass_fail_critical" ? " Use 'critical' rating for responses which are never tolerable, beyond a typical failure." : ""}`}
+              />
             </div>
             <div class="flex items-center">
               <Rating

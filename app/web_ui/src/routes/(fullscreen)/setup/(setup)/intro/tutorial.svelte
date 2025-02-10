@@ -32,6 +32,15 @@
       image_path: "/images/logo_grid.png",
     },
     {
+      title: "Fine Tuning and Synthetic Data Generation",
+      promos: [
+        "Fine tune your models to your specific use case.",
+        "Create synthetic data to train your models.",
+        "Dozens of base models to choose from, locally or in the cloud.",
+      ],
+      image_path: "/images/training.png",
+    },
+    {
       title: "Library and API",
       promos: [
         "Our open-source python library makes it easy to extend Kiln.",

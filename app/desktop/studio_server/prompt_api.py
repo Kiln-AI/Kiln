@@ -18,14 +18,13 @@ def connect_prompt_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         try:
-            prompt_builder_class = prompt_builder_from_ui_name(prompt_generator)
-            prompt_builder = prompt_builder_class(task)
+            prompt_builder = prompt_builder_from_ui_name(prompt_generator, task)
             prompt = prompt_builder.build_prompt_for_ui()
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
         return PromptApiResponse(
             prompt=prompt,
-            prompt_builder_name=prompt_builder_class.prompt_builder_name(),
+            prompt_builder_name=prompt_builder.__class__.prompt_builder_name(),
             ui_generator_name=prompt_generator,
         )

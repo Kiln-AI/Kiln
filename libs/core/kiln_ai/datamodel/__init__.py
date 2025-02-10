@@ -60,6 +60,7 @@ __all__ = [
     "TaskRequirement",
     "strict_mode",
     "set_strict_mode",
+    "Prompt",
 ]
 
 
@@ -274,11 +275,46 @@ class FineTuneStatusType(str, Enum):
     failed = "failed"
 
 
+class StructuredOutputMode(str, Enum):
+    """
+    Enumeration of supported structured output modes.
+
+    - default: let the adapter decide
+    - json_schema: request json using API capabilities for json_schema
+    - function_calling: request json using API capabilities for function calling
+    - json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema
+    - json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.
+    - json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).
+    """
+
+    default = "default"
+    json_schema = "json_schema"
+    function_calling = "function_calling"
+    json_mode = "json_mode"
+    json_instructions = "json_instructions"
+    json_instruction_and_object = "json_instruction_and_object"
+
+
+class FinetuneDataStrategy(str, Enum):
+    final_only = "final_only"
+    final_and_intermediate = "final_and_intermediate"
+
+
 class Finetune(KilnParentedModel):
+    """
+    The Kiln fine-tune datamodel.
+
+    Initially holds a reference to a training job, with needed identifiers to update the status. When complete, contains the new model ID.
+    """
+
     name: str = NAME_FIELD
     description: str | None = Field(
         default=None,
         description="A description of the fine-tune for you and your team. Not used in training.",
+    )
+    structured_output_mode: StructuredOutputMode | None = Field(
+        default=None,
+        description="The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode.",
     )
     provider: str = Field(
         description="The provider to use for the fine-tune (e.g. 'openai')."
@@ -309,8 +345,13 @@ class Finetune(KilnParentedModel):
         default={},
         description="The parameters to use for this fine-tune. These are provider-specific.",
     )
+    # These two fields are saved exactly used for training. Even if they map exactly to a custom prompt or generator, those can change, so we want to keep a record of the training prompt.
     system_message: str = Field(
         description="The system message to use for this fine-tune.",
+    )
+    thinking_instructions: str | None = Field(
+        default=None,
+        description="The thinking instructions to use for this fine-tune. Only used when data_strategy is final_and_intermediate.",
     )
     latest_status: FineTuneStatusType = Field(
         default=FineTuneStatusType.unknown,
@@ -320,11 +361,33 @@ class Finetune(KilnParentedModel):
         default={},
         description="Properties of the fine-tune. Different providers may use different properties.",
     )
+    data_strategy: FinetuneDataStrategy = Field(
+        default=FinetuneDataStrategy.final_only,
+        description="The strategy to use for training the model. 'final_only' will only train on the final response. 'final_and_intermediate' will train on the final response and intermediate outputs (chain of thought or reasoning).",
+    )
 
     def parent_task(self) -> Task | None:
         if not isinstance(self.parent, Task):
             return None
         return self.parent
+
+    @model_validator(mode="after")
+    def validate_thinking_instructions(self) -> Self:
+        if (
+            self.thinking_instructions is not None
+            and self.data_strategy != FinetuneDataStrategy.final_and_intermediate
+        ):
+            raise ValueError(
+                "Thinking instructions can only be used when data_strategy is final_and_intermediate"
+            )
+        if (
+            self.thinking_instructions is None
+            and self.data_strategy == FinetuneDataStrategy.final_and_intermediate
+        ):
+            raise ValueError(
+                "Thinking instructions are required when data_strategy is final_and_intermediate"
+            )
+        return self
 
 
 class DataSourceType(str, Enum):
@@ -394,6 +457,13 @@ class DataSource(BaseModel):
         ),
         DataSourceProperty(
             name="prompt_builder_name",
+            type=str,
+            not_allowed_for=[DataSourceType.human],
+        ),
+        DataSourceProperty(
+            # Optional: an ID within the scope of the prompt_builder_name.
+            # Used for prompt builders with IDs (like saved prompts, fine-tune prompts)
+            name="prompt_id",
             type=str,
             not_allowed_for=[DataSourceType.human],
         ),
@@ -470,13 +540,39 @@ class TaskRun(KilnParentedModel):
         description="Tags for the task run. Tags are used to categorize task runs for filtering and reporting.",
     )
 
+    def has_thinking_training_data(self) -> bool:
+        """
+        Does this run have thinking data that we can use to train a thinking model?
+        """
+        if self.intermediate_outputs is None:
+            return False
+        return (
+            "chain_of_thought" in self.intermediate_outputs
+            or "reasoning" in self.intermediate_outputs
+        )
+
     def parent_task(self) -> Task | None:
         if not isinstance(self.parent, Task):
             return None
         return self.parent
 
     @model_validator(mode="after")
-    def validate_input_format(self) -> Self:
+    def validate_input_format(self, info: ValidationInfo) -> Self:
+        # Don't validate if loading from file (not new). Too slow.
+        # We don't allow changing task schema, so this is redundant validation.
+        # Note: we still validate if editing a loaded model
+        if self.loading_from_file(info):
+            # Consider loading an existing model as validated.
+            self._last_validated_input = self.input
+            return self
+
+        # Don't validate if input has not changed. Too slow to run this every time.
+        if (
+            hasattr(self, "_last_validated_input")
+            and self.input == self._last_validated_input
+        ):
+            return self
+
         task = self.parent_task()
         if task is None:
             # don't validate this relationship until we have a path or parent. Give them time to build it (but will catch it before saving)
@@ -490,15 +586,33 @@ class TaskRun(KilnParentedModel):
                 raise ValueError("Input is not a valid JSON object")
             except jsonschema.exceptions.ValidationError as e:
                 raise ValueError(f"Input does not match task input schema: {e}")
+        self._last_validated_input = self.input
         return self
 
     @model_validator(mode="after")
-    def validate_output_format(self) -> Self:
+    def validate_output_format(self, info: ValidationInfo) -> Self:
+        # Don't validate if loading from file (not new). Too slow.
+        # Note: we still validate if editing a loaded model's output.
+        if self.loading_from_file(info):
+            # Consider loading an existing model as validated.
+            self._last_validated_output = self.output.output if self.output else None
+            return self
+
+        # Don't validate unless output has changed since last validation.
+        # The validator is slow and costly, don't want it running when setting other fields.
+        if (
+            hasattr(self, "_last_validated_output")
+            and self.output is not None
+            and self.output.output == self._last_validated_output
+        ):
+            return self
+
         task = self.parent_task()
         if task is None:
             return self
 
         self.output.validate_output_format(task)
+        self._last_validated_output = self.output.output if self.output else None
         return self
 
     @model_validator(mode="after")
@@ -550,9 +664,45 @@ def AllDatasetFilter(_: TaskRun) -> bool:
 
 
 def HighRatingDatasetFilter(task_run: TaskRun) -> bool:
-    if task_run.output is None or task_run.output.rating is None:
+    if task_run.output is None:
+        return False
+    if task_run.repaired_output is not None:
+        # Repairs always considered high quality
+        return True
+    if task_run.output.rating is None:
         return False
     return task_run.output.rating.is_high_quality()
+
+
+def ThinkingModelDatasetFilter(task_run: TaskRun) -> bool:
+    """
+    A filter that returns True if the task has intermediate outputs we can training a 'thinking' model on (reasoning or chain of thought)
+    """
+    return task_run.has_thinking_training_data()
+
+
+def ThinkingModelHighRatedFilter(task_run: TaskRun) -> bool:
+    """
+    A filter that returns True if the task has thinking data and the output is high quality
+    """
+    return ThinkingModelDatasetFilter(task_run) and HighRatingDatasetFilter(task_run)
+
+
+class DatasetFilterType(str, Enum):
+    """Dataset filter names."""
+
+    ALL = "all"
+    HIGH_RATING = "high_rating"
+    THINKING_MODEL = "thinking_model"
+    THINKING_MODEL_HIGH_RATED = "thinking_model_high_rated"
+
+
+dataset_filters = {
+    DatasetFilterType.ALL: AllDatasetFilter,
+    DatasetFilterType.HIGH_RATING: HighRatingDatasetFilter,
+    DatasetFilterType.THINKING_MODEL: ThinkingModelDatasetFilter,
+    DatasetFilterType.THINKING_MODEL_HIGH_RATED: ThinkingModelHighRatedFilter,
+}
 
 
 class DatasetSplitDefinition(BaseModel):
@@ -586,6 +736,11 @@ Train60Test20Val20SplitDefinition: list[DatasetSplitDefinition] = [
     DatasetSplitDefinition(name="test", percentage=0.2),
     DatasetSplitDefinition(name="val", percentage=0.2),
 ]
+Train80Test10Val10SplitDefinition: list[DatasetSplitDefinition] = [
+    DatasetSplitDefinition(name="train", percentage=0.8),
+    DatasetSplitDefinition(name="test", percentage=0.1),
+    DatasetSplitDefinition(name="val", percentage=0.1),
+]
 
 
 class DatasetSplit(KilnParentedModel):
@@ -609,6 +764,10 @@ class DatasetSplit(KilnParentedModel):
     split_contents: dict[str, list[str]] = Field(
         description="The contents of each split in the dataset. The key is the split name, and the value is a list of task run IDs.",
     )
+    filter: DatasetFilterType | None = Field(
+        default=None,
+        description="The filter used to build the dataset.",
+    )
 
     @model_validator(mode="after")
     def validate_split_percentages(self) -> "DatasetSplit":
@@ -623,12 +782,13 @@ class DatasetSplit(KilnParentedModel):
         name: str,
         task: "Task",
         splits: list[DatasetSplitDefinition],
-        filter: DatasetFilter = AllDatasetFilter,
+        filter_type: DatasetFilterType = DatasetFilterType.ALL,
         description: str | None = None,
     ):
         """
         Build a dataset split from a task.
         """
+        filter = dataset_filters[filter_type]
         split_contents = cls.build_split_contents(task, splits, filter)
         return cls(
             parent=task,
@@ -636,6 +796,7 @@ class DatasetSplit(KilnParentedModel):
             description=description,
             splits=splits,
             split_contents=split_contents,
+            filter=filter_type,
         )
 
     @classmethod
@@ -686,13 +847,29 @@ class DatasetSplit(KilnParentedModel):
         if parent is None:
             raise ValueError("DatasetSplit has no parent task")
 
-        runs = parent.runs()
+        runs = parent.runs(readonly=True)
         all_ids = set(run.id for run in runs)
         all_ids_in_splits = set()
         for ids in self.split_contents.values():
             all_ids_in_splits.update(ids)
         missing = all_ids_in_splits - all_ids
         return len(missing)
+
+
+class Prompt(KilnParentedModel):
+    """
+    A prompt for a task.
+    """
+
+    name: str = NAME_FIELD
+    prompt: str = Field(
+        description="The prompt for the task.",
+        min_length=1,
+    )
+    chain_of_thought_instructions: str | None = Field(
+        default=None,
+        description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.",
+    )
 
 
 class TaskRequirement(BaseModel):
@@ -732,6 +909,7 @@ class Task(
         "runs": TaskRun,
         "dataset_splits": DatasetSplit,
         "finetunes": Finetune,
+        "prompts": Prompt,
     },
 ):
     """
@@ -768,15 +946,18 @@ class Task(
             return None
         return schema_from_json_str(self.input_json_schema)
 
-    # Needed for typechecking. TODO P2: fix this in KilnParentModel
-    def runs(self) -> list[TaskRun]:
-        return super().runs()  # type: ignore
+    # These wrappers help for typechecking. TODO P2: fix this in KilnParentModel
+    def runs(self, readonly: bool = False) -> list[TaskRun]:
+        return super().runs(readonly=readonly)  # type: ignore
 
-    def dataset_splits(self) -> list[DatasetSplit]:
-        return super().dataset_splits()  # type: ignore
+    def dataset_splits(self, readonly: bool = False) -> list[DatasetSplit]:
+        return super().dataset_splits(readonly=readonly)  # type: ignore
 
-    def finetunes(self) -> list[Finetune]:
-        return super().finetunes()  # type: ignore
+    def finetunes(self, readonly: bool = False) -> list[Finetune]:
+        return super().finetunes(readonly=readonly)  # type: ignore
+
+    def prompts(self, readonly: bool = False) -> list[Prompt]:
+        return super().prompts(readonly=readonly)  # type: ignore
 
 
 class Project(KilnParentModel, parent_of={"tasks": Task}):

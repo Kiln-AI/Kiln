@@ -14,6 +14,7 @@
   import PromptTypeSelector from "../../../run/prompt_type_selector.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
+  import FormElement from "$lib/utils/form_element.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -29,6 +30,10 @@
 
   let prompt_method = "basic"
   let model: string = $ui_state.selected_model
+
+  // Shared vars for all nodes, so UI saves last used value
+  let num_subtopics_to_generate: number = 8
+  let num_samples_to_generate: number = 8
 
   const save_action_button = {
     label: "Save All",
@@ -201,7 +206,41 @@
   let save_all_error: KilnError | null = null
   let save_all_sub_errors: KilnError[] = []
   let save_all_completed = false
+  let save_all_samples_mode: "parallel" | "sequential" = "parallel"
   let ui_show_errors = false
+
+  // Worker function that processes items until queue is empty
+  async function worker(
+    queue: SampleData[],
+    model_name: string,
+    provider: string,
+    prompt_method: string,
+  ) {
+    while (queue.length > 0) {
+      const sample = queue.shift()!
+      const result = await save_sample(
+        sample,
+        model_name,
+        provider,
+        prompt_method,
+        sample.topic_path,
+      )
+
+      if (result.error) {
+        save_all_sub_errors.push(result.error)
+        // Trigger reactivity
+        save_all_sub_errors = save_all_sub_errors
+      } else if (!result.saved_id) {
+        save_all_sub_errors.push(new KilnError("No ID returned from server"))
+        // Trigger reactivity
+        save_all_sub_errors = save_all_sub_errors
+      } else {
+        sample.saved_id = result.saved_id
+        saved_count++
+      }
+    }
+  }
+
   async function save_all_samples() {
     try {
       save_all_running = true
@@ -210,23 +249,17 @@
       save_all_sub_errors = []
       const provider = model.split("/")[0]
       const model_name = model.split("/").slice(1).join("/")
-      for (const sample of samples_to_save) {
-        const { saved_id, error } = await save_sample(
-          sample,
-          model_name,
-          provider,
-          prompt_method,
-          sample.topic_path,
-        )
-        if (error) {
-          save_all_sub_errors.push(error)
-        } else if (!saved_id) {
-          save_all_sub_errors.push(new KilnError("No ID returned from server"))
-        } else {
-          sample.saved_id = saved_id
-          saved_count++
-        }
-      }
+
+      const queue = [...samples_to_save]
+      let parallelism = save_all_samples_mode === "parallel" ? 25 : 1
+
+      // Create and start N workers
+      const workers = Array(parallelism)
+        .fill(null)
+        .map(() => worker(queue, model_name, provider, prompt_method))
+
+      // Wait for all workers to complete
+      await Promise.all(workers)
     } catch (e) {
       save_all_error = createKilnError(e)
     } finally {
@@ -295,8 +328,9 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Generate Synthetic Data"
-    subtitle={`Grow your dataset with synthetic data`}
+    title="Synthetic Data Generation"
+    sub_subtitle_link="https://docs.getkiln.ai/docs/synthetic-data-generation"
+    sub_subtitle="Read the Docs"
     {action_buttons}
   >
     <div
@@ -328,6 +362,8 @@
           {project_id}
           {task_id}
           {human_guidance}
+          bind:num_subtopics_to_generate
+          bind:num_samples_to_generate
         />
       </div>
     {:else if task_error}
@@ -362,6 +398,9 @@
         ></progress>
         <div class="font-light text-xs text-center mt-1">
           {saved_count} of {samples_to_save.length}
+          {#if save_all_sub_errors && save_all_sub_errors.length > 0}
+            complete — {save_all_sub_errors.length} failed
+          {/if}
         </div>
       </div>
     {:else if save_all_completed}
@@ -451,6 +490,17 @@
           bind:model
         />
         <PromptTypeSelector bind:prompt_method />
+        <FormElement
+          id="save_all_samples_mode_element"
+          inputType="select"
+          info_description="Parallel is ideal for APIs (OpenAI, Fireworks, etc.) as they can handle thousands of requests in parallel. Sequential is ideal for Ollama or other servers that can only handle one request at a time."
+          select_options={[
+            ["parallel", "Parallel - Ideal for APIs (OpenAI, Fireworks)"],
+            ["sequential", "Sequential - Ideal for Ollama"],
+          ]}
+          bind:value={save_all_samples_mode}
+          label="Run Mode"
+        />
       </FormContainer>
     {/if}
   </div>

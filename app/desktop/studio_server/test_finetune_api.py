@@ -1,20 +1,26 @@
 import unittest.mock
-from unittest.mock import AsyncMock, Mock
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter
+from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat
 from kiln_ai.adapters.ml_model_list import KilnModel, KilnModelProvider
 from kiln_ai.datamodel import (
     AllDatasetFilter,
     AllSplitDefinition,
     DatasetSplit,
     Finetune,
+    FinetuneDataStrategy,
     HighRatingDatasetFilter,
     Project,
     Task,
+    ThinkingModelDatasetFilter,
+    ThinkingModelHighRatedFilter,
     Train60Test20Val20SplitDefinition,
+    Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
 )
 
@@ -24,6 +30,7 @@ from app.desktop.studio_server.finetune_api import (
     DatasetFilterType,
     DatasetSplitType,
     connect_fine_tune_api,
+    thinking_instructions_from_request,
 )
 
 
@@ -268,6 +275,7 @@ def test_get_finetune_hyperparameters_invalid_provider(client, mock_finetune_reg
 def test_dataset_split_type_enum():
     assert DatasetSplitType.TRAIN_TEST.value == "train_test"
     assert DatasetSplitType.TRAIN_TEST_VAL.value == "train_test_val"
+    assert DatasetSplitType.TRAIN_TEST_VAL_80.value == "train_test_val_80"
     assert DatasetSplitType.ALL.value == "all"
 
 
@@ -284,18 +292,29 @@ def test_api_split_types_mapping():
         api_split_types[DatasetSplitType.TRAIN_TEST_VAL]
         == Train60Test20Val20SplitDefinition
     )
+    assert (
+        api_split_types[DatasetSplitType.TRAIN_TEST_VAL_80]
+        == Train80Test10Val10SplitDefinition
+    )
     assert api_split_types[DatasetSplitType.ALL] == AllSplitDefinition
     for split_type in DatasetSplitType:
         assert split_type in api_split_types
 
 
 def test_api_filter_types_mapping():
-    from app.desktop.studio_server.finetune_api import api_filter_types
+    from kiln_ai.datamodel import dataset_filters
 
-    assert api_filter_types[DatasetFilterType.ALL] == AllDatasetFilter
-    assert api_filter_types[DatasetFilterType.HIGH_RATING] == HighRatingDatasetFilter
+    assert dataset_filters[DatasetFilterType.ALL] == AllDatasetFilter
+    assert dataset_filters[DatasetFilterType.HIGH_RATING] == HighRatingDatasetFilter
+    assert (
+        dataset_filters[DatasetFilterType.THINKING_MODEL] == ThinkingModelDatasetFilter
+    )
+    assert (
+        dataset_filters[DatasetFilterType.THINKING_MODEL_HIGH_RATED]
+        == ThinkingModelHighRatedFilter
+    )
     for filter_type in DatasetFilterType:
-        assert filter_type in api_filter_types
+        assert filter_type in dataset_filters
 
 
 @pytest.fixture
@@ -321,7 +340,7 @@ def test_create_dataset_split(
     with mock_from_task as from_task_mock, mock_save as save_mock:
         request_data = {
             "dataset_split_type": "train_test",
-            "filter_type": "all",
+            "filter_type": "high_rating",
             "name": "Test Split",
             "description": "Test description",
         }
@@ -338,6 +357,8 @@ def test_create_dataset_split(
         # Verify the mocks were called correctly
         mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
         from_task_mock.assert_called_once()
+        args, kwargs = from_task_mock.call_args
+        assert kwargs["filter_type"] == DatasetFilterType.HIGH_RATING
         save_mock.assert_called_once()
 
 
@@ -415,18 +436,34 @@ def mock_finetune_adapter():
                 base_model_id="base_model_1",
                 dataset_split_id="split1",
                 system_message="Test system message",
+                thinking_instructions=None,
             ),
         )
     )
     return adapter
 
 
+@pytest.mark.parametrize(
+    "data_strategy,custom_thinking_instructions,expected_thinking_instructions",
+    [
+        (FinetuneDataStrategy.final_only, None, None),
+        (
+            FinetuneDataStrategy.final_and_intermediate,
+            None,
+            "Think step by step, explaining your reasoning.",
+        ),  # Our default
+        (FinetuneDataStrategy.final_and_intermediate, "CTI", "CTI"),
+    ],
+)
 async def test_create_finetune(
     client,
     mock_task_from_id_disk_backed,
     test_task,
     mock_finetune_registry,
     mock_finetune_adapter,
+    data_strategy,
+    custom_thinking_instructions,
+    expected_thinking_instructions,
 ):
     mock_finetune_registry["test_provider"] = mock_finetune_adapter
 
@@ -440,6 +477,8 @@ async def test_create_finetune(
         "provider": "test_provider",
         "base_model_id": "base_model_1",
         "custom_system_message": "Test system message",
+        "custom_thinking_instructions": custom_thinking_instructions,
+        "data_strategy": data_strategy.value,
     }
 
     response = client.post(
@@ -462,10 +501,12 @@ async def test_create_finetune(
         provider_base_model_id="base_model_1",
         train_split_name="train",
         system_message="Test system message",
+        thinking_instructions=expected_thinking_instructions,
         parameters={"learning_rate": 0.001, "epochs": 10},
         name="New Finetune",
         description="Test description",
         validation_split_name="validation",
+        data_strategy=data_strategy,
     )
 
 
@@ -477,6 +518,7 @@ def test_create_finetune_invalid_provider(client, mock_task_from_id_disk_backed)
         "provider": "invalid_provider",
         "base_model_id": "base_model_1",
         "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
     }
 
     response = client.post(
@@ -504,6 +546,7 @@ def test_create_finetune_invalid_dataset(
         "provider": "test_provider",
         "base_model_id": "base_model_1",
         "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
     }
 
     response = client.post(
@@ -529,6 +572,7 @@ def test_create_finetune_request_validation():
         provider="test_provider",
         base_model_id="base_model_1",
         custom_system_message="Test system message",
+        data_strategy=FinetuneDataStrategy.final_only,
     )
     assert request.name == "Test Finetune"
     assert request.description == "Test description"
@@ -543,6 +587,7 @@ def test_create_finetune_request_validation():
         provider="test_provider",
         base_model_id="base_model_1",
         custom_system_message="Test system message",
+        data_strategy=FinetuneDataStrategy.final_only,
     )
     assert request.name is None
     assert request.description is None
@@ -569,6 +614,7 @@ def test_create_finetune_no_system_message(
         "parameters": {},
         "provider": "test_provider",
         "base_model_id": "base_model_1",
+        "data_strategy": "final_only",
     }
 
     response = client.post(
@@ -582,15 +628,38 @@ def test_create_finetune_no_system_message(
     )
 
 
+def test_create_finetune_no_data_strategy(
+    client,
+    mock_task_from_id_disk_backed,
+    mock_finetune_registry,
+    mock_finetune_adapter,
+):
+    mock_finetune_registry["test_provider"] = mock_finetune_adapter
+
+    request_data = {
+        "dataset_id": "split1",
+        "train_split_name": "train",
+        "parameters": {},
+        "provider": "test_provider",
+        "base_model_id": "base_model_1",
+        "custom_system_message": "Test system message",
+    }
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes", json=request_data
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.fixture
 def mock_prompt_builder():
     builder = Mock()
     builder.build_prompt.return_value = "Generated system message"
-    builder_class = Mock(return_value=builder)
 
     with unittest.mock.patch(
         "app.desktop.studio_server.finetune_api.prompt_builder_from_ui_name",
-        return_value=builder_class,
+        return_value=builder,
     ) as mock:
         yield mock, builder
 
@@ -612,6 +681,7 @@ async def test_create_finetune_with_prompt_builder(
         "provider": "test_provider",
         "base_model_id": "base_model_1",
         "system_message_generator": "test_prompt_builder",
+        "data_strategy": "final_only",
     }
 
     response = client.post(
@@ -623,7 +693,7 @@ async def test_create_finetune_with_prompt_builder(
     assert result["id"] == "new_ft"
 
     # Verify prompt builder was called correctly
-    prompt_builder_mock.assert_called_once_with("test_prompt_builder")
+    prompt_builder_mock.assert_called_once()
     builder.build_prompt.assert_called_once()
 
     # Verify the adapter was called with the generated system message
@@ -652,6 +722,7 @@ def test_create_finetune_prompt_builder_error(
         "provider": "test_provider",
         "base_model_id": "base_model_1",
         "system_message_generator": "test_prompt_builder",
+        "data_strategy": "final_only",
     }
 
     response = client.post(
@@ -668,7 +739,7 @@ def test_create_finetune_prompt_builder_error(
 @pytest.fixture
 def mock_dataset_formatter():
     formatter = Mock()
-    formatter.dump_to_file.return_value = "path/to/dataset.jsonl"
+    formatter.dump_to_file.return_value = Path("path/to/dataset.jsonl")
 
     with unittest.mock.patch(
         "app.desktop.studio_server.finetune_api.DatasetFormatter",
@@ -677,18 +748,23 @@ def mock_dataset_formatter():
         yield mock_class, formatter
 
 
+@pytest.mark.parametrize(
+    "data_strategy",
+    [FinetuneDataStrategy.final_only, FinetuneDataStrategy.final_and_intermediate],
+)
 def test_download_dataset_jsonl(
     client,
     mock_task_from_id_disk_backed,
     mock_dataset_formatter,
     tmp_path,
+    data_strategy,
 ):
     mock_formatter_class, mock_formatter = mock_dataset_formatter
 
     # Create a temporary file to simulate the dataset
     test_file = tmp_path / "dataset.jsonl"
     test_file.write_text('{"test": "data"}')
-    mock_formatter.dump_to_file.return_value = str(test_file)
+    mock_formatter.dump_to_file.return_value = test_file
 
     response = client.get(
         "/api/download_dataset_jsonl",
@@ -699,6 +775,7 @@ def test_download_dataset_jsonl(
             "split_name": "train",
             "format_type": "openai_chat_jsonl",
             "custom_system_message": "Test system message",
+            "data_strategy": data_strategy.value,
         },
     )
 
@@ -706,43 +783,67 @@ def test_download_dataset_jsonl(
     assert response.headers["Content-Type"] == "application/jsonl"
     assert (
         response.headers["Content-Disposition"]
-        == 'attachment; filename="dataset_split1_train_openai_chat_jsonl.jsonl"'
+        == f'attachment; filename="{test_file.name}"'
     )
     assert response.content == b'{"test": "data"}'
 
     # Verify the formatter was created and used correctly
     mock_formatter_class.assert_called_once()
-    mock_formatter.dump_to_file.assert_called_once_with("train", "openai_chat_jsonl")
+    mock_formatter.dump_to_file.assert_called_once_with(
+        "train",
+        DatasetFormat.OPENAI_CHAT_JSONL,
+        data_strategy,
+    )
 
 
-def test_download_dataset_jsonl_invalid_format(client, mock_task_from_id_disk_backed):
+@pytest.fixture
+def valid_download_params():
+    return {
+        "project_id": "project1",
+        "task_id": "task1",
+        "dataset_id": "split1",
+        "split_name": "train",
+        "format_type": "openai_chat_jsonl",
+        "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
+    }
+
+
+def test_download_dataset_jsonl_invalid_format(
+    client, mock_task_from_id_disk_backed, valid_download_params
+):
+    valid_download_params["format_type"] = "invalid_format"
     response = client.get(
         "/api/download_dataset_jsonl",
-        params={
-            "project_id": "project1",
-            "task_id": "task1",
-            "dataset_id": "split1",
-            "split_name": "train",
-            "format_type": "invalid_format",
-            "custom_system_message": "Test system message",
-        },
+        params=valid_download_params,
     )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Dataset format 'invalid_format' not found"
 
 
-def test_download_dataset_jsonl_invalid_dataset(client, mock_task_from_id_disk_backed):
+def test_download_dataset_jsonl_data_strategy_invalid(
+    client, mock_task_from_id_disk_backed, valid_download_params
+):
+    valid_download_params["data_strategy"] = "invalid_data_strategy"
     response = client.get(
         "/api/download_dataset_jsonl",
-        params={
-            "project_id": "project1",
-            "task_id": "task1",
-            "dataset_id": "invalid_split",
-            "split_name": "train",
-            "format_type": "openai_chat_jsonl",
-            "custom_system_message": "Test system message",
-        },
+        params=valid_download_params,
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["detail"] == "Data strategy 'invalid_data_strategy' not found"
+    )
+
+
+def test_download_dataset_jsonl_invalid_dataset(
+    client, mock_task_from_id_disk_backed, valid_download_params
+):
+    valid_download_params["dataset_id"] = "invalid_split"
+    response = client.get(
+        "/api/download_dataset_jsonl",
+        params=valid_download_params,
     )
 
     assert response.status_code == 404
@@ -751,17 +852,13 @@ def test_download_dataset_jsonl_invalid_dataset(client, mock_task_from_id_disk_b
     )
 
 
-def test_download_dataset_jsonl_invalid_split(client, mock_task_from_id_disk_backed):
+def test_download_dataset_jsonl_invalid_split(
+    client, mock_task_from_id_disk_backed, valid_download_params
+):
+    valid_download_params["split_name"] = "invalid_split"
     response = client.get(
         "/api/download_dataset_jsonl",
-        params={
-            "project_id": "project1",
-            "task_id": "task1",
-            "dataset_id": "split1",
-            "split_name": "invalid_split",
-            "format_type": "openai_chat_jsonl",
-            "custom_system_message": "Test system message",
-        },
+        params=valid_download_params,
     )
 
     assert response.status_code == 404
@@ -784,7 +881,7 @@ def test_download_dataset_jsonl_with_prompt_builder(
     # Create a temporary file to simulate the dataset
     test_file = tmp_path / "dataset.jsonl"
     test_file.write_text('{"test": "data"}')
-    mock_formatter.dump_to_file.return_value = str(test_file)
+    mock_formatter.dump_to_file.return_value = test_file
 
     response = client.get(
         "/api/download_dataset_jsonl",
@@ -795,18 +892,24 @@ def test_download_dataset_jsonl_with_prompt_builder(
             "split_name": "train",
             "format_type": "openai_chat_jsonl",
             "system_message_generator": "test_prompt_builder",
+            "custom_thinking_instructions": "custom thinking instructions",
+            "data_strategy": "final_only",
         },
     )
 
     assert response.status_code == 200
 
     # Verify prompt builder was used
-    prompt_builder_mock.assert_called_once_with("test_prompt_builder")
+    prompt_builder_mock.assert_called_once_with("test_prompt_builder", test_task)
     builder.build_prompt.assert_called_once()
 
     split1 = next(split for split in test_task.dataset_splits() if split.id == "split1")
     # Verify formatter was created with generated system message
-    mock_formatter_class.assert_called_once_with(split1, "Generated system message")
+    mock_formatter_class.assert_called_once_with(
+        dataset=split1,
+        system_message="Generated system message",
+        thinking_instructions=None,
+    )
 
 
 async def test_get_finetune(client, mock_task_from_id_disk_backed):
@@ -887,3 +990,42 @@ async def test_get_finetunes_with_status_update(
     # Verify that status was only checked for the pending finetune
     mock_adapter_class.assert_called_once_with(tune1)
     mock_adapter.status.assert_called_once()
+
+
+def test_thinking_instructions_non_cot_strategy():
+    """Test that non-COT strategies return None regardless of other parameters"""
+    task = Mock(spec=Task)
+    result = thinking_instructions_from_request(
+        task=task,
+        data_strategy=FinetuneDataStrategy.final_only,
+        custom_thinking_instructions="custom instructions",
+    )
+    assert result is None
+
+
+def test_thinking_instructions_custom():
+    """Test that custom instructions are returned when provided"""
+    task = Mock(spec=Task)
+    custom_instructions = "My custom thinking instructions"
+    result = thinking_instructions_from_request(
+        task=task,
+        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        custom_thinking_instructions=custom_instructions,
+    )
+    assert result == custom_instructions
+
+
+@patch("app.desktop.studio_server.finetune_api.chain_of_thought_prompt")
+def test_thinking_instructions_default(mock_cot):
+    """Test that default chain of thought prompt is used when no custom instructions"""
+    task = Mock(spec=Task)
+    mock_cot.return_value = "Default COT instructions"
+
+    result = thinking_instructions_from_request(
+        task=task,
+        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        custom_thinking_instructions=None,
+    )
+
+    mock_cot.assert_called_once_with(task)
+    assert result == "Default COT instructions"

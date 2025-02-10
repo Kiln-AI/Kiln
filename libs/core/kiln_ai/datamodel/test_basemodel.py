@@ -6,6 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterInfo, BaseAdapter
+from kiln_ai.adapters.run_output import RunOutput
+from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
     KilnBaseModel,
     KilnParentedModel,
@@ -356,7 +359,9 @@ def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
     model = KilnBaseModel.load_from_file(test_base_file)
 
     # Check that the cache was checked and set
-    tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+    tmp_model_cache.get_model.assert_called_once_with(
+        test_base_file, KilnBaseModel, readonly=False
+    )
     tmp_model_cache.set_model.assert_called_once()
 
     # Ensure the model is correctly loaded
@@ -407,7 +412,9 @@ def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
         model = KilnBaseModel.load_from_file(test_base_file)
 
         # Check that the cache was checked and the cached model was returned
-        tmp_model_cache.get_model.assert_called_once_with(test_base_file, KilnBaseModel)
+        tmp_model_cache.get_model.assert_called_once_with(
+            test_base_file, KilnBaseModel, readonly=False
+        )
         assert model is cached_model
 
         # Assert that open was not called (we used the cached model, not file)
@@ -469,3 +476,75 @@ def test_from_id_and_parent_path_without_parent():
     # Test with None parent_path
     not_found = DefaultParentedModel.from_id_and_parent_path("any-id", None)
     assert not_found is None
+
+
+class MockAdapter(BaseAdapter):
+    """Implementation of BaseAdapter for testing"""
+
+    async def _run(self, input):
+        return RunOutput(output="test output", intermediate_outputs=None)
+
+    def adapter_info(self) -> AdapterInfo:
+        return AdapterInfo(
+            adapter_name="test",
+            model_name=self.model_name,
+            model_provider=self.model_provider_name,
+            prompt_builder_name="test",
+        )
+
+
+@pytest.fixture
+def base_task():
+    return Task(name="test_task", instruction="test_instruction")
+
+
+@pytest.fixture
+def adapter(base_task):
+    return MockAdapter(
+        kiln_task=base_task,
+        model_name="test_model",
+        model_provider_name="test_provider",
+    )
+
+
+async def test_invoke_parsing_flow(adapter):
+    # Mock dependencies
+    mock_provider = MagicMock()
+    mock_provider.parser = "test_parser"
+
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"key": "value"}
+    )
+
+    mock_parser_class = MagicMock(return_value=mock_parser)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser_class,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        # Execute
+        result = await adapter.invoke("test input")
+
+        # Verify parser was created correctly
+        mock_parser_class.assert_called_once_with(structured_output=False)
+
+        # Verify parsing occurred
+        mock_parser.parse_output.assert_called_once()
+        parsed_args = mock_parser.parse_output.call_args[1]
+        assert isinstance(parsed_args["original_output"], RunOutput)
+        assert parsed_args["original_output"].output == "test output"
+
+        # Verify result contains parsed output
+        assert isinstance(result, TaskRun)
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"key": "value"}
+        assert result.input == "test input"

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { fade } from "svelte/transition"
   import { onMount } from "svelte"
-  import { client } from "$lib/api_client"
   import type { OllamaConnection } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { client } from "$lib/api_client"
 
   type Provider = {
     name: string
@@ -34,7 +34,7 @@
     {
       name: "OpenAI",
       id: "openai",
-      description: "The OG home to GPT-4 and more. Supports fine-tuning.",
+      description: "The OG home to GPT-4o and more. Supports fine-tuning.",
       image: "/images/openai.svg",
       featured: false,
       api_key_steps: [
@@ -79,7 +79,7 @@
     },
     {
       name: "Amazon Bedrock",
-      id: "bedrock",
+      id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
       image: "/images/aws.svg",
       featured: false,
@@ -133,7 +133,7 @@
       error: null,
       custom_description: null,
     },
-    bedrock: {
+    amazon_bedrock: {
       connected: false,
       connecting: false,
       error: null,
@@ -161,6 +161,43 @@
   let api_key_provider: Provider | null = null
   $: {
     intermediate_step = api_key_provider != null
+  }
+
+  const disconnect_provider = async (provider: Provider) => {
+    if (provider.id === "ollama") {
+      alert(
+        "Ollama automatically connects to the localhost Ollama instance when it is running. It can't be manually disconnected. To change your preferred Ollama URL, turn of your localhost Ollama instance then return to this screen.",
+      )
+      return
+    }
+    if (
+      !confirm(
+        "Are you sure you want to disconnect this provider? Your connection details will be deleted and can not be recovered.",
+      )
+    ) {
+      return
+    }
+    try {
+      const { error: disconnect_error } = await client.POST(
+        "/api/provider/disconnect_api_key",
+        {
+          params: {
+            query: {
+              provider_id: provider.id,
+            },
+          },
+        },
+      )
+      if (disconnect_error) {
+        throw disconnect_error
+      }
+
+      status[provider.id].connected = false
+    } catch (e) {
+      console.error("disconnect_provider error", e)
+      alert("Failed to disconnect provider. Unknown error.")
+      return
+    }
   }
 
   const connect_provider = (provider: Provider) => {
@@ -307,7 +344,8 @@
     }
   }
 
-  let loaded_initial_providers = true
+  let loading_initial_providers = true
+  let initial_load_failure = false
   type CustomOpenAICompatibleProvider = {
     name: string
     base_url: string
@@ -325,7 +363,7 @@
         status.groq.connected = true
       }
       if (data["bedrock_access_key"] && data["bedrock_secret_key"]) {
-        status.bedrock.connected = true
+        status.amazon_bedrock.connected = true
       }
       if (data["open_router_api_key"]) {
         status.openrouter.connected = true
@@ -345,8 +383,9 @@
       }
     } catch (e) {
       console.error("check_existing_providers error", e)
+      initial_load_failure = true
     } finally {
-      loaded_initial_providers = false
+      loading_initial_providers = false
     }
   }
 
@@ -538,6 +577,8 @@
   {:else}
     <div class="w-full flex flex-col gap-6 max-w-lg">
       {#each providers as provider}
+        {@const is_connected =
+          status[provider.id] && status[provider.id].connected}
         <div class="flex flex-row gap-4 items-center">
           <img
             src={provider.image}
@@ -576,33 +617,50 @@
                 Set Custom Ollama URL
               </button>
             {/if}
-            {#if provider.id === "openai_compatible" && status[provider.id] && status[provider.id].connected}
-              <button
-                class="link text-left text-sm text-gray-500"
-                on:click={show_custom_api_dialog}
-              >
-                Update Custom APIs
-              </button>
-            {/if}
           </div>
-          <button
-            class="btn md:min-w-[100px]"
-            on:click={() => connect_provider(provider)}
-          >
-            {#if loaded_initial_providers}
-              &nbsp;
-            {:else if status[provider.id] && status[provider.id].connected}
+
+          {#if loading_initial_providers}
+            <!-- Light loading state-->
+            <div class="btn md:min-w-[100px] skeleton bg-base-200"></div>
+            &nbsp;
+          {:else if is_connected && provider.id === "openai_compatible"}
+            <button
+              class="btn md:min-w-[100px]"
+              on:click={() => show_custom_api_dialog()}
+            >
+              Manage
+            </button>
+          {:else if is_connected}
+            <button
+              class="btn md:min-w-[100px] hover:btn-error group"
+              on:click={() => disconnect_provider(provider)}
+            >
               <img
                 src="/images/circle-check.svg"
-                class="size-6"
+                class="size-6 group-hover:hidden"
                 alt="Connected"
               />
-            {:else if status[provider.id].connecting}
-              <div class="loading loading-spinner loading-md"></div>
-            {:else}
+              <span class="text-xs hidden group-hover:inline">Disconnect</span>
+            </button>
+          {:else if status[provider.id].connecting}
+            <div class="btn md:min-w-[100px]">
+              <div class=" loading loading-spinner loading-md"></div>
+            </div>
+          {:else if initial_load_failure}
+            <div>
+              <div class="btn md:min-w-[100px] btn-error text-xs">Error</div>
+              <div class="text-xs text-gray-500 text-center pt-1">
+                Reload page
+              </div>
+            </div>
+          {:else}
+            <button
+              class="btn md:min-w-[100px]"
+              on:click={() => connect_provider(provider)}
+            >
               Connect
-            {/if}
-          </button>
+            </button>
+          {/if}
         </div>
       {/each}
     </div>
@@ -704,12 +762,13 @@
           id="base_url"
           label="Base URL"
           bind:value={new_provider_base_url}
-          placeholder="https://..."
+          placeholder="https://.../v1"
           info_description="The base URL of an OpenAI compatible API. For example, https://openrouter.ai/api/v1"
         />
         <FormElement
           id="api_key"
           label="API Key"
+          optional={true}
           bind:value={new_provider_api_key}
           placeholder="sk-..."
           info_description="The API key for the OpenAI compatible API."

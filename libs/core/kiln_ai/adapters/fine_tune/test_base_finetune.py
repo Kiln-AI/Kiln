@@ -4,6 +4,7 @@ import pytest
 
 from kiln_ai.adapters.fine_tune.base_finetune import (
     BaseFinetuneAdapter,
+    FinetuneDataStrategy,
     FineTuneParameter,
     FineTuneStatus,
     FineTuneStatusType,
@@ -154,6 +155,8 @@ async def test_create_and_start_success(mock_dataset):
         train_split_name="train",
         parameters={"epochs": 10},  # Required parameter
         system_message="Test system message",
+        data_strategy=FinetuneDataStrategy.final_only,
+        thinking_instructions=None,
     )
 
     assert isinstance(adapter, MockFinetune)
@@ -166,6 +169,8 @@ async def test_create_and_start_success(mock_dataset):
     assert datamodel.parameters == {"epochs": 10}
     assert datamodel.system_message == "Test system message"
     assert datamodel.path.exists()
+    assert datamodel.data_strategy == FinetuneDataStrategy.final_only
+    assert datamodel.thinking_instructions is None
 
 
 async def test_create_and_start_with_all_params(mock_dataset):
@@ -180,6 +185,8 @@ async def test_create_and_start_with_all_params(mock_dataset):
         description="Custom Description",
         validation_split_name="test",
         system_message="Test system message",
+        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        thinking_instructions="Custom thinking instructions",
     )
 
     assert datamodel.name == "Custom Name"
@@ -188,6 +195,8 @@ async def test_create_and_start_with_all_params(mock_dataset):
     assert datamodel.parameters == {"epochs": 10, "learning_rate": 0.001}
     assert datamodel.system_message == "Test system message"
     assert adapter.datamodel == datamodel
+    assert datamodel.data_strategy == FinetuneDataStrategy.final_and_intermediate
+    assert datamodel.thinking_instructions == "Custom thinking instructions"
 
     # load the datamodel from the file, confirm it's saved
     loaded_datamodel = FinetuneModel.load_from_file(datamodel.path)
@@ -204,6 +213,8 @@ async def test_create_and_start_invalid_parameters(mock_dataset):
             train_split_name="train",
             parameters={"learning_rate": 0.001},  # Missing required 'epochs'
             system_message="Test system message",
+            thinking_instructions=None,
+            data_strategy=FinetuneDataStrategy.final_only,
         )
 
 
@@ -222,6 +233,8 @@ async def test_create_and_start_no_parent_task():
             train_split_name="train",
             parameters={"epochs": 10},
             system_message="Test system message",
+            data_strategy=FinetuneDataStrategy.final_only,
+            thinking_instructions=None,
         )
 
 
@@ -243,6 +256,8 @@ async def test_create_and_start_no_parent_task_path():
             train_split_name="train",
             parameters={"epochs": 10},
             system_message="Test system message",
+            data_strategy=FinetuneDataStrategy.final_only,
+            thinking_instructions=None,
         )
 
 
@@ -269,6 +284,8 @@ async def test_create_and_start_invalid_train_split(mock_dataset):
             train_split_name="invalid_train",  # Invalid train split
             parameters={"epochs": 10},
             system_message="Test system message",
+            data_strategy=FinetuneDataStrategy.final_only,
+            thinking_instructions=None,
         )
 
 
@@ -287,4 +304,6 @@ async def test_create_and_start_invalid_validation_split(mock_dataset):
             validation_split_name="invalid_test",  # Invalid validation split
             parameters={"epochs": 10},
             system_message="Test system message",
+            data_strategy=FinetuneDataStrategy.final_only,
+            thinking_instructions=None,
         )

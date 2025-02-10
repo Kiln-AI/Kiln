@@ -10,7 +10,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
     FineTuneStatusType,
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
-from kiln_ai.datamodel import DatasetSplit, Task
+from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
 
 oai_client = openai.AsyncOpenAI(
@@ -124,13 +124,18 @@ class OpenAIFinetune(BaseFinetuneAdapter):
         if not task:
             raise ValueError("Task is required to start a fine-tune")
 
+        # Use chat format for unstructured output, and JSON for formatted output (was previously function calls)
+        format = DatasetFormat.OPENAI_CHAT_JSONL
+        if task.output_json_schema:
+            format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
+            self.datamodel.structured_output_mode = StructuredOutputMode.json_schema
         train_file_id = await self.generate_and_upload_jsonl(
-            dataset, self.datamodel.train_split_name, task
+            dataset, self.datamodel.train_split_name, task, format
         )
         validation_file_id = None
         if self.datamodel.validation_split_name:
             validation_file_id = await self.generate_and_upload_jsonl(
-                dataset, self.datamodel.validation_split_name, task
+                dataset, self.datamodel.validation_split_name, task, format
             )
 
         # Filter to hyperparameters which are set via the hyperparameters field (some like seed are set via the API)
@@ -156,16 +161,12 @@ class OpenAIFinetune(BaseFinetuneAdapter):
         return None
 
     async def generate_and_upload_jsonl(
-        self, dataset: DatasetSplit, split_name: str, task: Task
+        self, dataset: DatasetSplit, split_name: str, task: Task, format: DatasetFormat
     ) -> str:
-        formatter = DatasetFormatter(dataset, self.datamodel.system_message)
-        # All OpenAI models support tool calls for structured outputs
-        format = (
-            DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL
-            if task.output_json_schema
-            else DatasetFormat.OPENAI_CHAT_JSONL
+        formatter = DatasetFormatter(
+            dataset, self.datamodel.system_message, self.datamodel.thinking_instructions
         )
-        path = formatter.dump_to_file(split_name, format)
+        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
 
         response = await oai_client.files.create(
             file=open(path, "rb"),

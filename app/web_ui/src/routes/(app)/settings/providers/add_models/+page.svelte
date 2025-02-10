@@ -5,6 +5,7 @@
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { provider_name_from_id } from "$lib/stores"
+  import Dialog from "$lib/ui/dialog.svelte"
 
   let connected_providers: [string, string][] = []
   let loading_providers = true
@@ -33,7 +34,7 @@
         connected_providers.push(["groq", "Groq"])
       }
       if (settings["bedrock_access_key"] && settings["bedrock_secret_key"]) {
-        connected_providers.push(["bedrock", "AWS Bedrock"])
+        connected_providers.push(["amazon_bedrock", "AWS Bedrock"])
       }
       if (settings["open_router_api_key"]) {
         connected_providers.push(["openrouter", "OpenRouter"])
@@ -63,12 +64,13 @@
     save_model_list()
   }
 
+  let add_model_dialog: Dialog | null = null
+
   function show_add_model_modal() {
-    // @ts-expect-error showModal is not a method on HTMLElement
-    document.getElementById("add_model_modal")?.showModal()
+    add_model_dialog?.show()
   }
 
-  function add_model() {
+  async function add_model() {
     if (
       new_model_provider &&
       new_model_provider.length > 0 &&
@@ -77,12 +79,16 @@
     ) {
       let model_id = new_model_provider + "::" + new_model_name
       custom_models = [...custom_models, model_id]
-      save_model_list()
+      await save_model_list()
       new_model_name = null
+    } else {
+      throw new KilnError(
+        "Invalid model provider or name. Please try again with all fields.",
+        null,
+      )
     }
 
-    // @ts-expect-error showModal is not a method on HTMLElement
-    document.getElementById("add_model_modal")?.close()
+    return true
   }
 
   let saving_model_list = false
@@ -102,6 +108,8 @@
       }
     } catch (e) {
       save_model_list_error = createKilnError(e)
+      // Re-throw the error so the dialog can can show it
+      throw save_model_list_error
     } finally {
       saving_model_list = false
     }
@@ -119,7 +127,7 @@
 </script>
 
 <AppPage
-  title="Add Models"
+  title="Add Models from Existing Providers"
   sub_subtitle="Each AI provider already includes models tested for Kiln. Add additional models here."
   action_buttons={custom_models && custom_models.length > 0
     ? [
@@ -174,46 +182,42 @@
       Saving
     </div>
   {:else if save_model_list_error}
-    <div class="alert alert-error">
+    <div class="mt-4 text-error font-medium">
       <span>Error saving model list: {save_model_list_error.message}</span>
     </div>
   {/if}
 </AppPage>
 
-<dialog id="add_model_modal" class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Add Model</h3>
-    <div class="text-sm">Add a model from an existing provider.</div>
-    <div class="text-sm text-gray-500 mt-3">
-      Provide the exact model ID used by the provider API. For example, OpenAI's
-      "gpt-3.5-turbo" or Groq's "gemma2-9b-it".
-    </div>
-    <div class="flex flex-col gap-4 mt-8">
-      <FormElement
-        label="Model Provider"
-        id="model_provider"
-        inputType="select"
-        select_options={connected_providers}
-        bind:value={new_model_provider}
-      />
-      <FormElement
-        label="Model Name"
-        id="model_name"
-        inputType="input"
-        bind:value={new_model_name}
-      />
-    </div>
-    <div class="flex flex-row gap-6 justify-center flex-col mt-4">
-      <button class="btn btn-primary" on:click={add_model}>Add Model</button>
-    </div>
+<Dialog
+  bind:this={add_model_dialog}
+  title="Add Model"
+  action_buttons={[
+    { label: "Cancel", isCancel: true },
+    {
+      label: "Add Model",
+      asyncAction: add_model,
+      disabled: !new_model_provider || !new_model_name,
+    },
+  ]}
+>
+  <div class="text-sm">Add a model from an existing provider.</div>
+  <div class="text-sm text-gray-500 mt-3">
+    Provide the exact model ID used by the provider API. For example, OpenAI's
+    "gpt-3.5-turbo" or Groq's "gemma2-9b-it".
   </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+  <div class="flex flex-col gap-4 mt-8">
+    <FormElement
+      label="Model Provider"
+      id="model_provider"
+      inputType="select"
+      select_options={connected_providers}
+      bind:value={new_model_provider}
+    />
+    <FormElement
+      label="Model Name"
+      id="model_name"
+      inputType="input"
+      bind:value={new_model_name}
+    />
+  </div>
+</Dialog>

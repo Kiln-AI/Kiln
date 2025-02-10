@@ -1,3 +1,4 @@
+from typing import Tuple
 from uuid import uuid4
 
 import httpx
@@ -9,7 +10,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
     FineTuneStatusType,
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
-from kiln_ai.datamodel import DatasetSplit, Task
+from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
 
 
@@ -19,7 +20,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
     """
 
     async def status(self) -> FineTuneStatus:
-        status = await self._status()
+        status, _ = await self._status()
         # update the datamodel if the status has changed
         if self.datamodel.latest_status != status.status:
             self.datamodel.latest_status = status.status
@@ -34,7 +35,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
 
         return status
 
-    async def _status(self) -> FineTuneStatus:
+    async def _status(self) -> Tuple[FineTuneStatus, str | None]:
         try:
             api_key = Config.shared().fireworks_api_key
             account_id = Config.shared().fireworks_account_id
@@ -42,13 +43,13 @@ class FireworksFinetune(BaseFinetuneAdapter):
                 return FineTuneStatus(
                     status=FineTuneStatusType.unknown,
                     message="Fireworks API key or account ID not set",
-                )
+                ), None
             fine_tuning_job_id = self.datamodel.provider_id
             if not fine_tuning_job_id:
                 return FineTuneStatus(
                     status=FineTuneStatusType.unknown,
                     message="Fine-tuning job ID not set. Can not retrieve status.",
-                )
+                ), None
             # Fireworks uses path style IDs
             url = f"https://api.fireworks.ai/v1/{fine_tuning_job_id}"
             headers = {"Authorization": f"Bearer {api_key}"}
@@ -60,49 +61,63 @@ class FireworksFinetune(BaseFinetuneAdapter):
                 return FineTuneStatus(
                     status=FineTuneStatusType.unknown,
                     message=f"Error retrieving fine-tuning job status: [{response.status_code}] {response.text}",
-                )
+                ), None
             data = response.json()
+            model_id = data.get("outputModel")
 
             if "state" not in data:
                 return FineTuneStatus(
                     status=FineTuneStatusType.unknown,
                     message="Invalid response from Fireworks (no state).",
-                )
+                ), model_id
 
             state = data["state"]
-            if state in ["FAILED", "DELETING"]:
+            if state in ["FAILED", "DELETING", "JOB_STATE_FAILED"]:
                 return FineTuneStatus(
                     status=FineTuneStatusType.failed,
                     message="Fine-tuning job failed",
-                )
-            elif state in ["CREATING", "PENDING", "RUNNING"]:
+                ), model_id
+            elif state in [
+                "CREATING",
+                "PENDING",
+                "RUNNING",
+                "JOB_STATE_VALIDATING",
+                "JOB_STATE_RUNNING",
+            ]:
                 return FineTuneStatus(
                     status=FineTuneStatusType.running,
                     message=f"Fine-tuning job is running [{state}]",
-                )
-            elif state == "COMPLETED":
+                ), model_id
+            elif state in ["COMPLETED", "JOB_STATE_COMPLETED"]:
                 return FineTuneStatus(
                     status=FineTuneStatusType.completed,
                     message="Fine-tuning job completed",
-                )
+                ), model_id
             else:
                 return FineTuneStatus(
                     status=FineTuneStatusType.unknown,
                     message=f"Unknown fine-tuning job status [{state}]",
-                )
+                ), model_id
         except Exception as e:
             return FineTuneStatus(
                 status=FineTuneStatusType.unknown,
                 message=f"Error retrieving fine-tuning job status: {e}",
-            )
+            ), None
 
     async def _start(self, dataset: DatasetSplit) -> None:
         task = self.datamodel.parent_task()
         if not task:
             raise ValueError("Task is required to start a fine-tune")
 
+        format = DatasetFormat.OPENAI_CHAT_JSONL
+        if task.output_json_schema:
+            # This formatter will check it's valid JSON, and normalize the output (chat format just uses exact string).
+            format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
+            # Fireworks doesn't support function calls or json schema, so we'll use json mode at call time
+            self.datamodel.structured_output_mode = StructuredOutputMode.json_mode
+
         train_file_id = await self.generate_and_upload_jsonl(
-            dataset, self.datamodel.train_split_name, task
+            dataset, self.datamodel.train_split_name, task, format
         )
 
         api_key = Config.shared().fireworks_api_key
@@ -110,9 +125,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         if not api_key or not account_id:
             raise ValueError("Fireworks API key or account ID not set")
 
-        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/fineTuningJobs"
-        # Model ID != fine tune ID on Fireworks. Model is the result of the tune job.
-        model_id = str(uuid4())
+        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/supervisedFineTuningJobs"
         # Limit the display name to 60 characters
         display_name = (
             f"Kiln AI fine-tuning [ID:{self.datamodel.id}][name:{self.datamodel.name}]"[
@@ -120,11 +133,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             ]
         )
         payload = {
-            "modelId": model_id,
             "dataset": f"accounts/{account_id}/datasets/{train_file_id}",
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
-            "conversation": {},
         }
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
         payload.update(hyperparameters)
@@ -148,21 +159,22 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # model ID is the model that results from the fine-tune job
         job_id = data["name"]
         self.datamodel.provider_id = job_id
-        # Keep track of the expected model ID before it's deployed as a property. We move it to fine_tune_model_id after deployment.
-        self.datamodel.properties["undeployed_model_id"] = (
-            f"accounts/{account_id}/models/{model_id}"
-        )
+
+        # Fireworks has 2 different fine tuning endpoints, and depending which you use, the URLs change
+        self.datamodel.properties["endpoint_version"] = "v2"
+
         if self.datamodel.path:
             self.datamodel.save_to_file()
 
     async def generate_and_upload_jsonl(
-        self, dataset: DatasetSplit, split_name: str, task: Task
+        self, dataset: DatasetSplit, split_name: str, task: Task, format: DatasetFormat
     ) -> str:
-        formatter = DatasetFormatter(dataset, self.datamodel.system_message)
-        # OpenAI compatible: https://docs.fireworks.ai/fine-tuning/fine-tuning-models#conversation
-        # Note: Fireworks does not support tool calls (confirmed by Fireworks team) so we'll use json mode
-        format = DatasetFormat.OPENAI_CHAT_JSONL
-        path = formatter.dump_to_file(split_name, format)
+        formatter = DatasetFormatter(
+            dataset=dataset,
+            system_message=self.datamodel.system_message,
+            thinking_instructions=self.datamodel.thinking_instructions,
+        )
+        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
 
         # First call creates the dataset
         api_key = Config.shared().fireworks_api_key
@@ -276,7 +288,10 @@ class FireworksFinetune(BaseFinetuneAdapter):
         if not api_key or not account_id:
             raise ValueError("Fireworks API key or account ID not set")
 
-        model_id = self.datamodel.properties.get("undeployed_model_id")
+        # Model ID != fine tune ID on Fireworks. Model is the result of the tune job. Call status to get it.
+        status, model_id = await self._status()
+        if status.status != FineTuneStatusType.completed:
+            return False
         if not model_id or not isinstance(model_id, str):
             return False
 

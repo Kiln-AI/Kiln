@@ -9,20 +9,24 @@ from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models,
 )
-from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
+from kiln_ai.adapters.prompt_builders import (
+    chain_of_thought_prompt,
+    prompt_builder_from_ui_name,
+)
 from kiln_ai.adapters.provider_tools import (
     provider_enabled,
     provider_name_from_id,
 )
 from kiln_ai.datamodel import (
-    AllDatasetFilter,
     AllSplitDefinition,
+    DatasetFilterType,
     DatasetSplit,
     Finetune,
+    FinetuneDataStrategy,
     FineTuneStatusType,
-    HighRatingDatasetFilter,
     Task,
     Train60Test20Val20SplitDefinition,
+    Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
 )
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -51,26 +55,15 @@ class DatasetSplitType(Enum):
 
     TRAIN_TEST = "train_test"
     TRAIN_TEST_VAL = "train_test_val"
+    TRAIN_TEST_VAL_80 = "train_test_val_80"
     ALL = "all"
 
 
 api_split_types = {
     DatasetSplitType.TRAIN_TEST: Train80Test20SplitDefinition,
     DatasetSplitType.TRAIN_TEST_VAL: Train60Test20Val20SplitDefinition,
+    DatasetSplitType.TRAIN_TEST_VAL_80: Train80Test10Val10SplitDefinition,
     DatasetSplitType.ALL: AllSplitDefinition,
-}
-
-
-class DatasetFilterType(Enum):
-    """Dataset filter types used in the API. Any filter style can be created in code."""
-
-    ALL = "all"
-    HIGH_RATING = "high_rating"
-
-
-api_filter_types = {
-    DatasetFilterType.ALL: AllDatasetFilter,
-    DatasetFilterType.HIGH_RATING: HighRatingDatasetFilter,
 }
 
 
@@ -96,6 +89,8 @@ class CreateFinetuneRequest(BaseModel):
     base_model_id: str
     system_message_generator: str | None = None
     custom_system_message: str | None = None
+    custom_thinking_instructions: str | None = None
+    data_strategy: FinetuneDataStrategy
 
 
 class FinetuneWithStatus(BaseModel):
@@ -200,14 +195,17 @@ def connect_fine_tune_api(app: FastAPI):
     ) -> DatasetSplit:
         task = task_from_id(project_id, task_id)
         split_definitions = api_split_types[request.dataset_split_type]
-        filter = api_filter_types[request.filter_type]
 
         name = request.name
         if not name:
             name = generate_memorable_name()
 
         dataset_split = DatasetSplit.from_task(
-            name, task, split_definitions, filter, request.description
+            name,
+            task,
+            split_definitions,
+            filter_type=request.filter_type,
+            description=request.description,
         )
         dataset_split.save_to_file()
         return dataset_split
@@ -240,6 +238,9 @@ def connect_fine_tune_api(app: FastAPI):
         system_message = system_message_from_request(
             task, request.custom_system_message, request.system_message_generator
         )
+        thinking_instructions = thinking_instructions_from_request(
+            task, request.data_strategy, request.custom_thinking_instructions
+        )
 
         _, finetune_model = await finetune_adapter_class.create_and_start(
             dataset=dataset,
@@ -247,10 +248,12 @@ def connect_fine_tune_api(app: FastAPI):
             provider_base_model_id=request.base_model_id,
             train_split_name=request.train_split_name,
             system_message=system_message,
+            thinking_instructions=thinking_instructions,
             parameters=request.parameters,
             name=request.name,
             description=request.description,
             validation_split_name=request.validation_split_name,
+            data_strategy=request.data_strategy,
         )
 
         return finetune_model
@@ -262,14 +265,24 @@ def connect_fine_tune_api(app: FastAPI):
         dataset_id: str,
         split_name: str,
         format_type: str,
+        data_strategy: str,
         system_message_generator: str | None = None,
         custom_system_message: str | None = None,
+        custom_thinking_instructions: str | None = None,
     ) -> StreamingResponse:
         if format_type not in [format.value for format in DatasetFormat]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Dataset format '{format_type}' not found",
             )
+        format_type_typed = DatasetFormat(format_type)
+        if data_strategy not in [strategy.value for strategy in FinetuneDataStrategy]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Data strategy '{data_strategy}' not found",
+            )
+        data_strategy_typed = FinetuneDataStrategy(data_strategy)
+
         task = task_from_id(project_id, task_id)
         dataset = DatasetSplit.from_id_and_parent_path(dataset_id, task.path)
         if dataset is None:
@@ -286,15 +299,27 @@ def connect_fine_tune_api(app: FastAPI):
         system_message = system_message_from_request(
             task, custom_system_message, system_message_generator
         )
+        thinking_instructions = thinking_instructions_from_request(
+            task, data_strategy_typed, custom_thinking_instructions
+        )
+
+        dataset_formatter = DatasetFormatter(
+            dataset=dataset,
+            system_message=system_message,
+            thinking_instructions=thinking_instructions,
+        )
+        path = dataset_formatter.dump_to_file(
+            split_name,
+            format_type_typed,
+            data_strategy_typed,
+        )
 
         # set headers to force download in a browser
         headers = {
-            "Content-Disposition": f'attachment; filename="dataset_{dataset_id}_{split_name}_{format_type}.jsonl"',
+            "Content-Disposition": f'attachment; filename="{path.name}"',
             "Content-Type": "application/jsonl",
         }
 
-        dataset_formatter = DatasetFormatter(dataset, system_message)
-        path = dataset_formatter.dump_to_file(split_name, format_type)  # type: ignore
         return StreamingResponse(open(path, "rb"), headers=headers)
 
 
@@ -313,9 +338,10 @@ def system_message_from_request(
                 detail="System message generator is required when custom system message is not provided",
             )
         try:
-            prompt_builder_class = prompt_builder_from_ui_name(system_message_generator)
-            prompt_builder = prompt_builder_class(task)
-            system_message = prompt_builder.build_prompt()
+            prompt_builder = prompt_builder_from_ui_name(system_message_generator, task)
+            system_message = prompt_builder.build_prompt(
+                include_json_instructions=False
+            )
         except Exception as e:
             raise HTTPException(
                 status_code=400,
@@ -328,3 +354,20 @@ def system_message_from_request(
         )
 
     return system_message
+
+
+def thinking_instructions_from_request(
+    task: Task,
+    data_strategy: FinetuneDataStrategy,
+    custom_thinking_instructions: str | None,
+) -> str | None:
+    if data_strategy != FinetuneDataStrategy.final_and_intermediate:
+        # Not using COT/Thinking style
+        return None
+
+    if custom_thinking_instructions:
+        # prefer custom instructions
+        return custom_thinking_instructions
+
+    # default for this task
+    return chain_of_thought_prompt(task)

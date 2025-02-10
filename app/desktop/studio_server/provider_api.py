@@ -25,6 +25,7 @@ from kiln_ai.adapters.provider_tools import (
 )
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from langchain_aws import ChatBedrockConverse
 from pydantic import BaseModel, Field
 
@@ -205,6 +206,15 @@ def connect_provider_api(app: FastAPI):
             content={"message": "OpenAI compatible provider deleted"},
         )
 
+    def parse_api_key(key_data: dict) -> str:
+        api_key = key_data.get("API Key")
+        if not api_key or not isinstance(api_key, str):
+            raise HTTPException(
+                status_code=400,
+                detail="API Key not found",
+            )
+        return api_key
+
     @app.post("/api/provider/connect_api_key")
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
@@ -215,36 +225,78 @@ def connect_provider_api(app: FastAPI):
                 content={"message": "Invalid key_data or provider"},
             )
 
-        api_key_providers = ["openai", "groq", "bedrock", "openrouter", "fireworks_ai"]
-        if provider not in api_key_providers:
+        if provider not in ModelProviderName.__members__:
             return JSONResponse(
                 status_code=400,
                 content={"message": f"Provider {provider} not supported"},
             )
 
-        if provider == "openai" and isinstance(key_data["API Key"], str):
-            return await connect_openai(key_data["API Key"])
-        elif provider == "groq" and isinstance(key_data["API Key"], str):
-            return await connect_groq(key_data["API Key"])
-        elif provider == "openrouter" and isinstance(key_data["API Key"], str):
-            return await connect_openrouter(key_data["API Key"])
-        elif (
-            provider == "fireworks_ai"
-            and isinstance(key_data["API Key"], str)
-            and isinstance(key_data["Account ID"], str)
-        ):
-            return await connect_fireworks(key_data["API Key"], key_data["Account ID"])
-        elif (
-            provider == "bedrock"
-            and isinstance(key_data["Access Key"], str)
-            and isinstance(key_data["Secret Key"], str)
-        ):
-            return await connect_bedrock(key_data["Access Key"], key_data["Secret Key"])
-        else:
+        typed_provider = ModelProviderName(provider)
+
+        match typed_provider:
+            case ModelProviderName.openai:
+                return await connect_openai(parse_api_key(key_data))
+            case ModelProviderName.groq:
+                return await connect_groq(parse_api_key(key_data))
+            case ModelProviderName.openrouter:
+                return await connect_openrouter(parse_api_key(key_data))
+            case ModelProviderName.fireworks_ai:
+                return await connect_fireworks(key_data)
+            case ModelProviderName.amazon_bedrock:
+                return await connect_bedrock(key_data)
+            case (
+                ModelProviderName.kiln_custom_registry
+                | ModelProviderName.kiln_fine_tune
+                | ModelProviderName.openai_compatible
+                | ModelProviderName.ollama
+            ):
+                return JSONResponse(
+                    status_code=400,
+                    content={"message": "Provider not supported for API keys"},
+                )
+            case _:
+                raise_exhaustive_enum_error(typed_provider)
+
+    @app.post("/api/provider/disconnect_api_key")
+    async def disconnect_api_key(provider_id: str) -> JSONResponse:
+        if provider_id not in ModelProviderName.__members__:
             return JSONResponse(
                 status_code=400,
-                content={"message": f"Provider {provider} missing API key"},
+                content={"message": f"Invalid provider: {provider_id}"},
             )
+        typed_provider_id = ModelProviderName(provider_id)
+
+        match typed_provider_id:
+            case ModelProviderName.openai:
+                Config.shared().open_ai_api_key = None
+            case ModelProviderName.groq:
+                Config.shared().groq_api_key = None
+            case ModelProviderName.openrouter:
+                Config.shared().open_router_api_key = None
+            case ModelProviderName.fireworks_ai:
+                Config.shared().fireworks_api_key = None
+                Config.shared().fireworks_account_id = None
+            case ModelProviderName.amazon_bedrock:
+                Config.shared().bedrock_access_key = None
+                Config.shared().bedrock_secret_key = None
+            case (
+                ModelProviderName.kiln_custom_registry
+                | ModelProviderName.kiln_fine_tune
+                | ModelProviderName.openai_compatible
+                | ModelProviderName.ollama
+            ):
+                return JSONResponse(
+                    status_code=400,
+                    content={"message": "Provider not supported"},
+                )
+            case _:
+                # Raises a pyright error if I miss a case
+                raise_exhaustive_enum_error(typed_provider_id)
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Provider disconnected"},
+        )
 
 
 async def connect_openrouter(key: str):
@@ -285,8 +337,21 @@ async def connect_openrouter(key: str):
         )
 
 
-async def connect_fireworks(key: str, account_id: str):
+async def connect_fireworks(key_data: dict):
     try:
+        key = key_data.get("API Key")
+        account_id = key_data.get("Account ID")
+        if (
+            not account_id
+            or not isinstance(account_id, str)
+            or not key
+            or not isinstance(key, str)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Account ID or API Key not found",
+            )
+
         headers = {
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
@@ -394,7 +459,19 @@ async def connect_groq(key: str):
     )
 
 
-async def connect_bedrock(access_key: str, secret_key: str):
+async def connect_bedrock(key_data: dict):
+    access_key = key_data.get("Access Key")
+    secret_key = key_data.get("Secret Key")
+    if (
+        not access_key
+        or not isinstance(access_key, str)
+        or not secret_key
+        or not isinstance(secret_key, str)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Access Key or Secret Key not found",
+        )
     try:
         # Langchain API is not good... need to use env vars. Pop these in finally block
         os.environ["AWS_ACCESS_KEY_ID"] = access_key
@@ -567,10 +644,14 @@ class OpenAICompatibleProviderCache:
     providers: List[AvailableModels]
     last_updated: datetime | None = None
     openai_compat_config_when_cached: Any | None = None
+    had_error: bool = False
 
     # Cache for 60 minutes, or if the config changes
     def is_stale(self) -> bool:
         if self.last_updated is None:
+            return True
+
+        if self.had_error:
             return True
 
         if datetime.now() - self.last_updated > timedelta(minutes=60):
@@ -594,23 +675,26 @@ def openai_compatible_providers() -> List[AvailableModels]:
         or _openai_compatible_providers_cache.is_stale()
     ):
         # Load values and cache them
-        provider_config = Config.shared().openai_compatible_providers
-        providers = openai_compatible_providers_uncached(provider_config)
-        _openai_compatible_providers_cache = OpenAICompatibleProviderCache(
-            providers=providers,
-            last_updated=datetime.now(),
-            openai_compat_config_when_cached=provider_config,
-        )
+        cache = openai_compatible_providers_load_cache()
+        _openai_compatible_providers_cache = cache
+
+    if _openai_compatible_providers_cache is None:
+        return []
 
     return _openai_compatible_providers_cache.providers
 
 
-def openai_compatible_providers_uncached(providers: List[Any]) -> List[AvailableModels]:
-    if not providers or len(providers) == 0:
-        return []
+def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | None:
+    provider_config = Config.shared().openai_compatible_providers
+    if not provider_config or len(provider_config) == 0:
+        return None
+
+    # Errors that can be retried, like network issues, are tracked in cache.
+    # We retry populating the cache on each call
+    has_error = False
 
     openai_compatible_models: List[AvailableModels] = []
-    for provider in providers:
+    for provider in provider_config:
         models: List[ModelDetails] = []
         base_url = provider.get("base_url")
         if not base_url or not base_url.startswith("http"):
@@ -626,6 +710,10 @@ def openai_compatible_providers_uncached(providers: List[Any]) -> List[Available
         openai_client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
+            # Important: max_retries must be 0 for performance.
+            # It's common for these servers to be down sometimes (could be local app that isn't running)
+            # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
+            max_retries=0,
         )
 
         try:
@@ -650,9 +738,14 @@ def openai_compatible_providers_uncached(providers: List[Any]) -> List[Available
             )
         except Exception as e:
             print(f"Error connecting to OpenAI compatible provider {name}: {e}")
+            has_error = True
             continue
 
-    if len(openai_compatible_models) == 0:
-        return []
+    cache = OpenAICompatibleProviderCache(
+        providers=openai_compatible_models,
+        last_updated=datetime.now(),
+        openai_compat_config_when_cached=provider_config,
+        had_error=has_error,
+    )
 
-    return openai_compatible_models
+    return cache

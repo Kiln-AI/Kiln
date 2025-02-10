@@ -1,5 +1,15 @@
 # Guide: Collaborating with Kiln
 
+---
+
+# This guide as moved to [our docs](https://docs.getkiln.ai/docs/collaboration). This page may be out of date.
+
+We suggest reading the [latest version](https://docs.getkiln.ai/docs/collaboration).
+
+---
+
+## Original Content
+
 Kiln is designed to be a collaborative environment for building AI projects. This guide will help you understand how a team can collaborate with Kiln.
 
 ## Table of Contents

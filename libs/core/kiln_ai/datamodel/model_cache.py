@@ -62,12 +62,17 @@ class ModelCache:
             raise ValueError(f"Model at {path} is not of type {model_type.__name__}")
         return model
 
-    def get_model(self, path: Path, model_type: Type[T]) -> Optional[T]:
-        # We return a copy so in-memory edits don't impact the cache until they are saved
+    def get_model(
+        self, path: Path, model_type: Type[T], readonly: bool = False
+    ) -> Optional[T]:
+        # We return a copy by default, so in-memory edits don't impact the cache until they are saved
         # Benchmark shows about 2x slower, but much more foolproof
         model = self._get_model(path, model_type)
         if model:
-            return model.model_copy(deep=True)
+            if readonly:
+                return model
+            else:
+                return model.model_copy(deep=True)
         return None
 
     def get_model_id(self, path: Path, model_type: Type[T]) -> Optional[str]:

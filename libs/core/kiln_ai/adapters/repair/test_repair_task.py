@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.base_adapter import RunOutput
-from kiln_ai.adapters.langchain_adapters import LangchainAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import RunOutput
+from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
 from kiln_ai.adapters.repair.repair_task import (
     RepairTaskInput,
     RepairTaskRun,
@@ -223,7 +223,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         )
 
         adapter = adapter_for_task(
-            repair_task, model_name="llama_3_1_8b", provider="groq"
+            repair_task, model_name="llama_3_1_8b", provider="ollama"
         )
 
         run = await adapter.invoke(repair_task_input.model_dump())
@@ -237,7 +237,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
     assert run.output.source.properties == {
         "adapter_name": "kiln_langchain_adapter",
         "model_name": "llama_3_1_8b",
-        "model_provider": "groq",
+        "model_provider": "ollama",
         "prompt_builder_name": "simple_prompt_builder",
     }
     assert run.input_source.type == DataSourceType.human

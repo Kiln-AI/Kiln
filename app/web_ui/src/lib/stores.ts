@@ -1,6 +1,12 @@
 import { writable, get } from "svelte/store"
 import { dev } from "$app/environment"
-import type { Project, Task, AvailableModels, ProviderModels } from "./types"
+import type {
+  Project,
+  Task,
+  AvailableModels,
+  ProviderModels,
+  PromptResponse,
+} from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
 
@@ -29,6 +35,7 @@ export const ui_state = localStorageStore("ui_state", default_ui_state)
 export const projects = writable<AllProjects | null>(null)
 export const current_project = writable<Project | null>(null)
 export const current_task = writable<Task | null>(null)
+export const current_task_prompts = writable<PromptResponse | null>(null)
 
 let previous_ui_state: UIState = default_ui_state
 
@@ -134,6 +141,11 @@ export async function load_current_task(project: Project | null) {
       throw error
     }
     task = data
+
+    // Load the current task's prompts after 50ms, as it's not the most critical data
+    setTimeout(() => {
+      load_available_prompts()
+    }, 50)
   } catch (error: unknown) {
     // Can't load this task, likely deleted. Clear the ID, which will force the user to select a new task
     if (dev) {
@@ -208,4 +220,34 @@ export function provider_name_from_id(provider_id: string): string {
     (provider) => provider.provider_id === provider_id,
   )
   return provider?.provider_name || provider_id
+}
+
+// Available prompts for the current
+export async function load_available_prompts() {
+  const project = get(current_project)
+  const task = get(current_task)
+  if (!project || !task || !project.id || !task.id) {
+    current_task_prompts.set(null)
+    return
+  }
+  try {
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/task/{task_id}/prompts",
+      {
+        params: {
+          path: {
+            project_id: project.id,
+            task_id: task.id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    current_task_prompts.set(data)
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    current_task_prompts.set(null)
+  }
 }

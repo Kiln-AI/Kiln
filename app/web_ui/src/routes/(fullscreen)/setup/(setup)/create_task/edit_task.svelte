@@ -15,6 +15,7 @@
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
+  export let hide_example_task: boolean = false
 
   // @ts-expect-error This is a partial task, which is fine.
   export let task: Task = {
@@ -38,10 +39,9 @@
     ([task.name, task.description, task.instruction].some((value) => !!value) ||
       task.requirements.some((req) => !!req.name || !!req.instruction))
 
-  export let target_project_id: string | null = null
-  if (!target_project_id) {
-    target_project_id = $current_project?.id || null
-  }
+  // Allow explicitly setting project ID, or infer current project ID
+  export let explicit_project_id: string | undefined = undefined
+  $: target_project_id = explicit_project_id || $current_project?.id || null
 
   export let project_target_name: string | null = null
   $: {
@@ -240,7 +240,7 @@
   >
     <div>
       <div class="text-xl font-bold">Part 1: Overview</div>
-      {#if !task.id}
+      {#if !task.id && !hide_example_task}
         <h3 class="text-sm mt-1">
           Just exploring?
           <button class="link text-primary" on:click={example_task}
@@ -372,8 +372,21 @@
     <div>
       {#if task.id}
         <div>
-          You can't edit a task's input format after creating it. It would
-          invalidate all past data.
+          <div class="text-sm mb-2 flex flex-col gap-1">
+            <p>
+              You can't edit an existing task's input format, as existing
+              dataset items would not conform to the new schema.
+            </p>
+            <p>
+              You can
+              <a
+                class="link"
+                href="/settings/clone_task/{target_project_id}/{task.id}"
+                >clone this task</a
+              >
+              instead.
+            </p>
+          </div>
           <Output
             raw_output={task.input_json_schema || "Input Format: Plain text"}
           />
@@ -398,8 +411,21 @@
     <div>
       {#if task.id}
         <div>
-          You can't edit a task's output format after creating it. It would
-          invalidate all past data.
+          <div class="text-sm mb-2 flex flex-col gap-1">
+            <p>
+              You can't edit an existing task's output format, as existing
+              dataset items would not conform to the new schema.
+            </p>
+            <p>
+              You can
+              <a
+                class="link"
+                href="/settings/clone_task/{target_project_id}/{task.id}"
+                >clone this task</a
+              >
+              instead.
+            </p>
+          </div>
           <Output
             raw_output={task.output_json_schema || "Output Format: Plain text"}
           />

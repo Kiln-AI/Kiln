@@ -7,6 +7,8 @@
   import type { FinetuneWithStatus } from "$lib/types"
   import { provider_name_from_id, load_available_models } from "$lib/stores"
   import { formatDate } from "$lib/utils/formatters"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Output from "../../../../../run/output.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -57,6 +59,7 @@
     name: string
     value: string | null | undefined
     link?: string
+    info?: string
   }
   let properties: Property[] = []
   function build_properties() {
@@ -89,6 +92,11 @@
       },
       { name: "Created At", value: formatDate(finetune_data.created_at) },
       { name: "Created By", value: finetune_data.created_by },
+      {
+        name: "Data Strategy",
+        value: data_strategy_name(finetune_data.data_strategy),
+        info: "The strategy used to build the training data for the fine tune. Final-only will only use the final output of the task run. Final-and-intermediate also trains on intermediate outputs (reasoning or chain of thought). You should typically call a fine-tune with the same strategy it was trained with.",
+      },
     ]
     properties = properties.filter((property) => !!property.value)
   }
@@ -98,7 +106,13 @@
       return `https://platform.openai.com/finetune/${finetune.finetune.provider_id}`
     } else if (finetune?.finetune.provider === "fireworks_ai") {
       const url_id = finetune.finetune.provider_id?.split("/").pop()
-      return `https://fireworks.ai/dashboard/fine-tuning/${url_id}`
+      if (finetune.finetune.properties["endpoint_version"] === "v2") {
+        // V2 style URL
+        return `https://fireworks.ai/dashboard/fine-tuning/${url_id}`
+      } else {
+        // V1 style URL
+        return `https://fireworks.ai/dashboard/fine-tuning/v1/${url_id}`
+      }
     }
     return undefined
   }
@@ -127,6 +141,17 @@
       return model_id.split("/").pop() || model_id
     }
     return model_id
+  }
+
+  function data_strategy_name(data_strategy: string): string {
+    switch (data_strategy) {
+      case "final_only":
+        return "Final answer only"
+      case "final_and_intermediate":
+        return "Final answer and intermediate reasoning"
+      default:
+        return data_strategy
+    }
   }
 </script>
 
@@ -175,12 +200,35 @@
                 {:else}
                   {property.value}
                 {/if}
+                {#if property.info}
+                  <InfoTooltip tooltip_text={property.info} />
+                {/if}
               </div>
             {/each}
           </div>
+
+          {#if finetune.finetune.system_message || finetune.finetune.thinking_instructions}
+            <div class="text-xl font-bold mt-8">Training Prompt</div>
+            {#if finetune.finetune.system_message}
+              <div>
+                <div class="text-sm font-bold text-gray-500 mb-2">
+                  System Prompt
+                </div>
+                <Output raw_output={finetune.finetune.system_message} />
+              </div>
+            {/if}
+            {#if finetune.finetune.thinking_instructions}
+              <div>
+                <div class="text-sm font-bold text-gray-500 mb-2">
+                  Thinking Instructions
+                </div>
+                <Output raw_output={finetune.finetune.thinking_instructions} />
+              </div>
+            {/if}
+          {/if}
         </div>
 
-        <div class="grow flex flex-col gap-4">
+        <div class="grow flex flex-col gap-4 min-w-[400px]">
           <div class="text-xl font-bold">Status</div>
           <div
             class="grid grid-cols-[auto,1fr] gap-y-4 gap-x-4 text-sm 2xl:text-base"

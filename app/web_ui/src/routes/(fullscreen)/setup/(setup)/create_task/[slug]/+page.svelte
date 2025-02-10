@@ -19,7 +19,7 @@
 <div
   class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 w-full max-w-[600px] mx-auto"
 >
-  <EditTask redirect_on_created="/" target_project_id={project_id} />
+  <EditTask redirect_on_created="/" explicit_project_id={project_id} />
 </div>
 
 <div class="grow-[1.5]"></div>

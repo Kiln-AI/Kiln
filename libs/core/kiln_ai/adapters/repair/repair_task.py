@@ -3,7 +3,11 @@ from typing import Type
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_registry
+from kiln_ai.adapters.prompt_builders import (
+    BasePromptBuilder,
+    SavedPromptBuilder,
+    prompt_builder_registry,
+)
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
 
@@ -42,11 +46,18 @@ feedback describing what should be improved. Your job is to understand the evalu
 
     @classmethod
     def _original_prompt(cls, run: TaskRun, task: Task) -> str:
+        if run.output.source is None or run.output.source.properties is None:
+            raise ValueError("No source properties found")
+
+        # Try ID first, then builder name
+        prompt_id = run.output.source.properties.get("prompt_id", None)
+        if prompt_id is not None and isinstance(prompt_id, str):
+            static_prompt_builder = SavedPromptBuilder(task, prompt_id)
+            return static_prompt_builder.build_prompt(include_json_instructions=False)
+
         prompt_builder_class: Type[BasePromptBuilder] | None = None
-        prompt_builder_name = (
-            run.output.source.properties.get("prompt_builder_name", None)
-            if run.output.source
-            else None
+        prompt_builder_name = run.output.source.properties.get(
+            "prompt_builder_name", None
         )
         if prompt_builder_name is not None and isinstance(prompt_builder_name, str):
             prompt_builder_class = prompt_builder_registry.get(
@@ -59,7 +70,7 @@ feedback describing what should be improved. Your job is to understand the evalu
             raise ValueError(
                 f"Prompt builder {prompt_builder_name} is not a valid prompt builder"
             )
-        return prompt_builder.build_prompt()
+        return prompt_builder.build_prompt(include_json_instructions=False)
 
     @classmethod
     def build_repair_task_input(

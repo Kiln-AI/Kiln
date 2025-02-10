@@ -1,5 +1,19 @@
 # Guide: Fine Tuning 9 Models in 18 minutes with [Kiln AI](https://getkiln.ai)
 
+
+---
+
+# This guide has moved to [our docs](https://docs.getkiln.ai/docs/fine-tuning-guide). This page may be out of date.
+
+We suggest reading the [latest version](https://docs.getkiln.ai/docs/fine-tuning-guide).
+
+---
+
+
+
+
+## Original content
+
 [Kiln](https://getkiln.ai) is a new tool that makes it easy to fine-tune a wide variety of models like GPT-4o, Llama, Mistral, Gemma, and many more.
 
 ## Overview

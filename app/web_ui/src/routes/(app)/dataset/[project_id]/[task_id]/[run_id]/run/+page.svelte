@@ -3,7 +3,12 @@
   import type { ActionButton } from "../../../../../types"
   import Run from "../../../../../run/run.svelte"
   import Output from "../../../../../run/output.svelte"
-  import { current_task, model_name, model_info } from "$lib/stores"
+  import {
+    current_task,
+    model_name,
+    model_info,
+    current_task_prompts,
+  } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
@@ -25,8 +30,42 @@
 
   let model_props: Record<string, string | number | undefined> = {}
   $: {
+    // Attempt to lookup a nice name for the prompt
+    let prompt_name = $current_task_prompts?.prompts.find(
+      (prompt) => prompt.id === run?.output?.source?.properties?.prompt_id,
+    )?.name
+    let prompt_generator_name = $current_task_prompts?.generators.find(
+      (generator) =>
+        generator.ui_id ===
+        run?.output?.source?.properties?.prompt_builder_name,
+    )?.name
+
+    // Special case for fine-tuned prompts
+    if (
+      run?.output?.source?.properties?.prompt_builder_name ===
+      "fine_tune_prompt_builder"
+    ) {
+      prompt_generator_name = "Fine-Tune Prompt"
+      prompt_name = undefined
+    } else if (!prompt_generator_name && !prompt_name) {
+      prompt_generator_name =
+        "" + run?.output?.source?.properties?.prompt_builder_name
+    }
+
+    let topic_path: string | undefined = undefined
+    if (
+      run?.input_source?.properties?.topic_path &&
+      typeof run?.input_source?.properties?.topic_path === "string"
+    ) {
+      topic_path = run?.input_source?.properties?.topic_path?.replaceAll(
+        ">>>>>",
+        " > ",
+      )
+    }
+
     model_props = Object.fromEntries(
       Object.entries({
+        ID: run?.id || undefined,
         "Input Source":
           "" +
           run?.input_source?.type.charAt(0).toUpperCase() +
@@ -36,9 +75,11 @@
           $model_info,
         ),
         "Model Provider": run?.output?.source?.properties?.model_provider,
-        "Prompt Builder": run?.output?.source?.properties?.prompt_builder_name,
+        "Prompt Generator": prompt_generator_name,
+        Prompt: prompt_name,
         "Created By": run?.input_source?.properties?.created_by,
         "Created At": formatDate(run?.created_at),
+        Topic: topic_path,
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       }).filter(([_, value]) => value !== undefined),
     )
@@ -196,7 +237,7 @@
           >
             {#each Object.entries(model_props) as [key, value]}
               <div class="flex items-center">{key}</div>
-              <div class="flex items-center text-gray-500 truncate">
+              <div class="flex items-center text-gray-500 overflow-x-hidden">
                 {value}
               </div>
             {/each}

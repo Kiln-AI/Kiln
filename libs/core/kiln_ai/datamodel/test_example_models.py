@@ -284,6 +284,9 @@ def test_task_output_requirement_rating_keys(tmp_path):
     assert task_run.output.rating.requirement_ratings is not None
 
 
+_schema_match = "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema."
+
+
 def test_task_output_schema_validation(tmp_path):
     # Create a project, task, and example hierarchy
     project = Project(name="Test Project", path=(tmp_path / "test_project"))
@@ -321,12 +324,24 @@ def test_task_output_schema_validation(tmp_path):
     task_output.save_to_file()
 
     # changing to invalid output
-    with pytest.raises(ValueError, match="does not match task output schema"):
+    with pytest.raises(
+        ValueError,
+        match=_schema_match,
+    ):
         task_output.output.output = '{"name": "John Doe", "age": "thirty"}'
         task_output.save_to_file()
 
+    # changing to invalid output from loaded model
+    loaded_task_output = TaskRun.load_from_file(task_output.path)
+    with pytest.raises(
+        ValueError,
+        match=_schema_match,
+    ):
+        loaded_task_output.output.output = '{"name": "John Doe", "age": "forty"}'
+        loaded_task_output.save_to_file()
+
     # Invalid case: output does not match task output schema
-    with pytest.raises(ValueError, match="does not match task output schema"):
+    with pytest.raises(ValueError, match=_schema_match):
         task_output = TaskRun(
             input="Test input",
             input_source=DataSource(
@@ -382,12 +397,18 @@ def test_task_input_schema_validation(tmp_path):
     valid_task_output.save_to_file()
 
     # Changing to invalid input
-    with pytest.raises(ValueError, match="does not match task input schema"):
+    with pytest.raises(ValueError, match=_schema_match):
         valid_task_output.input = '{"name": "John Doe", "age": "thirty"}'
         valid_task_output.save_to_file()
 
+    # loading from file, then changing to invalid input
+    loaded_task_output = TaskRun.load_from_file(valid_task_output.path)
+    with pytest.raises(ValueError, match=_schema_match):
+        loaded_task_output.input = '{"name": "John Doe", "age": "thirty"}'
+        loaded_task_output.save_to_file()
+
     # Invalid case: input does not match task input schema
-    with pytest.raises(ValueError, match="does not match task input schema"):
+    with pytest.raises(ValueError, match=_schema_match):
         task_output = TaskRun(
             input='{"name": "John Doe", "age": "thirty"}',
             input_source=DataSource(

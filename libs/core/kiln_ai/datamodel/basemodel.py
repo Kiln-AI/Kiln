@@ -120,11 +120,12 @@ class KilnBaseModel(BaseModel):
         return cls.load_from_file(path)
 
     @classmethod
-    def load_from_file(cls: Type[T], path: Path | str) -> T:
+    def load_from_file(cls: Type[T], path: Path | str, readonly: bool = False) -> T:
         """Load a model instance from a specific file path.
 
         Args:
             path (Path): Path to the model file
+            readonly (bool): If True, the model will be returned in readonly mode (cached instance, not a copy, not safe to mutate)
 
         Returns:
             T: Instance of the model
@@ -135,10 +136,10 @@ class KilnBaseModel(BaseModel):
         """
         if isinstance(path, str):
             path = Path(path)
-        cached_model = ModelCache.shared().get_model(path, cls)
+        cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
         if cached_model is not None:
             return cached_model
-        with open(path, "r") as file:
+        with open(path, "r", encoding="utf-8") as file:
             # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
             mtime_ns = os.fstat(file.fileno()).st_mtime_ns
             file_data = file.read()
@@ -168,13 +169,20 @@ class KilnBaseModel(BaseModel):
         # Two methods of indicated it's loaded from file:
         # 1) info.context.get("loading_from_file") -> During actual loading, before we can set _loaded_from_file
         # 2) self._loaded_from_file -> After loading, set by the loader
+        if self.loading_from_file(info):
+            return True
+        return self._loaded_from_file
+
+    # indicates the model is currently being loaded from file (not mutating it after)
+    def loading_from_file(self, info: ValidationInfo | None = None) -> bool:
+        # info.context.get("loading_from_file") -> During actual loading, before we can set _loaded_from_file
         if (
             info is not None
             and info.context is not None
             and info.context.get("loading_from_file", False)
         ):
             return True
-        return self._loaded_from_file
+        return False
 
     def save_to_file(self) -> None:
         """Save the model instance to a file.
@@ -190,7 +198,7 @@ class KilnBaseModel(BaseModel):
             )
         path.parent.mkdir(parents=True, exist_ok=True)
         json_data = self.model_dump_json(indent=2, exclude={"path"})
-        with open(path, "w") as file:
+        with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
         self.path = path
@@ -342,16 +350,28 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             return []
 
         # Collect all /relationship/{id}/{base_filename.kiln} files in the relationship folder
-        for child_file in relationship_folder.glob(f"**/{cls.base_filename()}"):
-            yield child_file
+        # manual code instead of glob for performance (5x speedup over glob)
+
+        base_filename = cls.base_filename()
+        # Iterate through immediate subdirectories using scandir for better performance
+        # Benchmark: scandir is 10x faster than glob, so worth the extra code
+        with os.scandir(relationship_folder) as entries:
+            for entry in entries:
+                if not entry.is_dir():
+                    continue
+
+                child_file = Path(entry.path) / base_filename
+                if child_file.is_file():
+                    yield child_file
 
     @classmethod
     def all_children_of_parent_path(
-        cls: Type[PT], parent_path: Path | None
+        cls: Type[PT], parent_path: Path | None, readonly: bool = False
     ) -> list[PT]:
         children = []
         for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
-            children.append(cls.load_from_file(child_path))
+            item = cls.load_from_file(child_path, readonly=readonly)
+            children.append(item)
         return children
 
     @classmethod
@@ -394,8 +414,8 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
     def _create_child_method(
         cls, relationship_name: str, child_class: Type[KilnParentedModel]
     ):
-        def child_method(self) -> list[child_class]:
-            return child_class.all_children_of_parent_path(self.path)
+        def child_method(self, readonly: bool = False) -> list[child_class]:
+            return child_class.all_children_of_parent_path(self.path, readonly=readonly)
 
         child_method.__name__ = relationship_name
         child_method.__annotations__ = {"return": List[child_class]}

@@ -1,8 +1,13 @@
 import json
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Literal, Tuple
 
+from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
+from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder, SimplePromptBuilder
+from kiln_ai.adapters.provider_tools import kiln_model_provider_from
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -13,8 +18,6 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.utils.config import Config
 
-from .prompt_builders import BasePromptBuilder, SimplePromptBuilder
-
 
 @dataclass
 class AdapterInfo:
@@ -22,12 +25,10 @@ class AdapterInfo:
     model_name: str
     model_provider: str
     prompt_builder_name: str
+    prompt_id: str | None = None
 
 
-@dataclass
-class RunOutput:
-    output: Dict | str
-    intermediate_outputs: Dict[str, str] | None
+COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -47,6 +48,8 @@ class BaseAdapter(metaclass=ABCMeta):
     def __init__(
         self,
         kiln_task: Task,
+        model_name: str,
+        model_provider_name: str,
         prompt_builder: BasePromptBuilder | None = None,
         tags: list[str] | None = None,
     ):
@@ -55,6 +58,26 @@ class BaseAdapter(metaclass=ABCMeta):
         self.output_schema = self.kiln_task.output_json_schema
         self.input_schema = self.kiln_task.input_json_schema
         self.default_tags = tags
+        self.model_name = model_name
+        self.model_provider_name = model_provider_name
+        self._model_provider: KilnModelProvider | None = None
+
+    def model_provider(self) -> KilnModelProvider:
+        """
+        Lazy load the model provider for this adapter.
+        """
+        if self._model_provider is not None:
+            return self._model_provider
+        if not self.model_name or not self.model_provider_name:
+            raise ValueError("model_name and model_provider_name must be provided")
+        self._model_provider = kiln_model_provider_from(
+            self.model_name, self.model_provider_name
+        )
+        if not self._model_provider:
+            raise ValueError(
+                f"model_provider_name {self.model_provider_name} not found for model {self.model_name}"
+            )
+        return self._model_provider
 
     async def invoke_returning_raw(
         self,
@@ -81,21 +104,28 @@ class BaseAdapter(metaclass=ABCMeta):
         # Run
         run_output = await self._run(input)
 
+        # Parse
+        provider = self.model_provider()
+        parser = model_parser_from_id(provider.parser)(
+            structured_output=self.has_structured_output()
+        )
+        parsed_output = parser.parse_output(original_output=run_output)
+
         # validate output
         if self.output_schema is not None:
-            if not isinstance(run_output.output, dict):
+            if not isinstance(parsed_output.output, dict):
                 raise RuntimeError(
-                    f"structured response is not a dict: {run_output.output}"
+                    f"structured response is not a dict: {parsed_output.output}"
                 )
-            validate_schema(run_output.output, self.output_schema)
+            validate_schema(parsed_output.output, self.output_schema)
         else:
-            if not isinstance(run_output.output, str):
+            if not isinstance(parsed_output.output, str):
                 raise RuntimeError(
-                    f"response is not a string for non-structured task: {run_output.output}"
+                    f"response is not a string for non-structured task: {parsed_output.output}"
                 )
 
         # Generate the run and output
-        run = self.generate_run(input, input_source, run_output)
+        run = self.generate_run(input, input_source, parsed_output)
 
         # Save the run if configured to do so, and we have a path to save to
         if Config.shared().autosave_runs and self.kiln_task.path is not None:
@@ -118,16 +148,49 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     def build_prompt(self) -> str:
-        return self.prompt_builder.build_prompt()
+        # The prompt builder needs to know if we want to inject formatting instructions
+        provider = self.model_provider()
+        add_json_instructions = self.has_structured_output() and (
+            provider.structured_output_mode == StructuredOutputMode.json_instructions
+            or provider.structured_output_mode
+            == StructuredOutputMode.json_instruction_and_object
+        )
+
+        return self.prompt_builder.build_prompt(
+            include_json_instructions=add_json_instructions
+        )
+
+    def run_strategy(
+        self,
+    ) -> Tuple[Literal["cot_as_message", "cot_two_call", "basic"], str | None]:
+        # Determine the run strategy for COT prompting. 3 options:
+        # 1. "Thinking" LLM designed to output thinking in a structured format plus a COT prompt: we make 1 call to the LLM, which outputs thinking in a structured format. We include the thinking instuctions as a message.
+        # 2. Normal LLM with COT prompt: we make 2 calls to the LLM - one for thinking and one for the final response. This helps us use the LLM's structured output modes (json_schema, tools, etc), which can't be used in a single call. It also separates the thinking from the final response.
+        # 3. Non chain of thought: we make 1 call to the LLM, with no COT prompt.
+        cot_prompt = self.prompt_builder.chain_of_thought_prompt()
+        reasoning_capable = self.model_provider().reasoning_capable
+
+        if cot_prompt and reasoning_capable:
+            # 1: "Thinking" LLM designed to output thinking in a structured format
+            # A simple message with the COT prompt appended to the message list is sufficient
+            return "cot_as_message", cot_prompt
+        elif cot_prompt:
+            # 2: Unstructured output with COT
+            # Two calls to separate the thinking from the final response
+            return "cot_two_call", cot_prompt
+        else:
+            return "basic", None
 
     # create a run and task output
     def generate_run(
         self, input: Dict | str, input_source: DataSource | None, run_output: RunOutput
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
-        input_str = json.dumps(input) if isinstance(input, dict) else input
+        input_str = (
+            json.dumps(input, ensure_ascii=False) if isinstance(input, dict) else input
+        )
         output_str = (
-            json.dumps(run_output.output)
+            json.dumps(run_output.output, ensure_ascii=False)
             if isinstance(run_output.output, dict)
             else run_output.output
         )
@@ -155,27 +218,6 @@ class BaseAdapter(metaclass=ABCMeta):
             tags=self.default_tags or [],
         )
 
-        exclude_fields = {
-            "id": True,
-            "created_at": True,
-            "updated_at": True,
-            "path": True,
-            "output": {"id": True, "created_at": True, "updated_at": True},
-        }
-        new_run_dump = new_task_run.model_dump(exclude=exclude_fields)
-
-        # Check if the same run already exists
-        existing_task_run = next(
-            (
-                task_run
-                for task_run in self.kiln_task.runs()
-                if task_run.model_dump(exclude=exclude_fields) == new_run_dump
-            ),
-            None,
-        )
-        if existing_task_run:
-            return existing_task_run
-
         return new_task_run
 
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:
@@ -187,5 +229,7 @@ class BaseAdapter(metaclass=ABCMeta):
         props["model_name"] = adapter_info.model_name
         props["model_provider"] = adapter_info.model_provider
         props["prompt_builder_name"] = adapter_info.prompt_builder_name
+        if adapter_info.prompt_id is not None:
+            props["prompt_id"] = adapter_info.prompt_id
 
         return props

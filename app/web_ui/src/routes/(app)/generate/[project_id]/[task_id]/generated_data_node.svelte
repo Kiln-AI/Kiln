@@ -42,9 +42,12 @@
     return sample.input
   }
 
+  // Export these so we can share a var across all nodes -- makes it nicer if the UI saves the last value
+  export let num_subtopics_to_generate: number = 8
+  export let num_samples_to_generate: number = 8
+
   let topic_generation_error: KilnError | null = null
   let generate_subtopics: boolean = false
-  let num_subtopics_to_generate: number = 6
   let custom_topics_string: string = ""
   async function open_generate_subtopics_modal() {
     // Avoid having a trillion of these hidden in the DOM
@@ -223,7 +226,6 @@
     scroll_to_bottom_of_element_by_id(`${id}-samples`)
   }
 
-  let num_samples_to_generate: number = 8
   let sample_generating: boolean = false
   let sample_generation_error: KilnError | null = null
   async function generate_samples() {
@@ -324,34 +326,21 @@
   <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
     {#if is_empty}
       <div class="flex flex-col items-center justify-center min-h-[60vh]">
-        <DataGenIntro />
+        <DataGenIntro
+          generate_subtopics={open_generate_subtopics_modal}
+          generate_samples={open_generate_samples_modal}
+        />
+      </div>
+    {:else}
+      <div class="flex flex-row justify-center mb-6 gap-8">
+        <button class="btn" on:click={() => open_generate_subtopics_modal()}>
+          Add Top Level Topics
+        </button>
+        <button class="btn" on:click={() => open_generate_samples_modal()}>
+          Add Top Level Data
+        </button>
       </div>
     {/if}
-    <div
-      class="flex flex-row justify-center {is_empty
-        ? ' flex-col gap-6'
-        : 'mb-6 gap-8'}"
-    >
-      <button
-        class="btn {is_empty ? 'btn-primary' : ''}"
-        on:click={() => open_generate_subtopics_modal()}
-      >
-        Add Top Level Topics
-      </button>
-      <button
-        class="btn {is_empty ? 'btn-primary' : ''}"
-        on:click={() => open_generate_samples_modal()}
-      >
-        Add Top Level Data
-      </button>
-      <div class="text-sm text-gray-500">
-        Read out <a
-          href="https://github.com/Kiln-AI/Kiln/blob/main/guides/Synthetic%20Data%20Generation.md"
-          class="link"
-          target="_blank">synthetic data guide</a
-        >
-      </div>
-    </div>
   </div>
 {:else}
   <div
@@ -422,6 +411,8 @@
         {project_id}
         {task_id}
         {human_guidance}
+        bind:num_subtopics_to_generate
+        bind:num_samples_to_generate
         on:delete_topic={handleChildDeleteTopic}
       />
     {/each}

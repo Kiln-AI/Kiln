@@ -1,5 +1,17 @@
 # Synthetic Data Generation - Kiln AI 
 
+
+---
+
+# This guide as moved to [our docs](https://docs.getkiln.ai/docs/synthetic-data-generation). This page may be out of date.
+
+We suggest reading the [latest version](https://docs.getkiln.ai/docs/synthetic-data-generation).
+
+---
+
+## Original Content
+
+
 [Kiln](https://getkiln.ai) can generate synthetic data for your tasks. 
 
 

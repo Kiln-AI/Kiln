@@ -42,9 +42,14 @@ def validate_schema(instance: Dict, schema_str: str) -> None:
         jsonschema.exceptions.ValidationError: If validation fails
         ValueError: If the schema is invalid
     """
-    schema = schema_from_json_str(schema_str)
-    v = jsonschema.Draft202012Validator(schema)
-    return v.validate(instance)
+    try:
+        schema = schema_from_json_str(schema_str)
+        v = jsonschema.Draft202012Validator(schema)
+        v.validate(instance)
+    except jsonschema.exceptions.ValidationError as e:
+        raise ValueError(
+            f"This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information. The error from the schema check was: {e.message}"
+        ) from e
 
 
 def schema_from_json_str(v: str) -> Dict:

@@ -13,6 +13,6 @@
     subtitle="A 'task' is a single goal for a model to accomplish."
     sub_subtitle="Target project: {project_target_name}"
   >
-    <EditTask bind:project_target_name target_project_id={project_id} />
+    <EditTask bind:project_target_name explicit_project_id={project_id} />
   </AppPage>
 </div>

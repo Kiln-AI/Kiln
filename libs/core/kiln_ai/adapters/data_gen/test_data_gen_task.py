@@ -180,7 +180,7 @@ def test_data_gen_sample_task_initialization(base_task):
     }
 
 
-def test_list_json_schema_for_task_with_output_schema(base_task):
+def test_list_json_schema_for_task_with_input_schema(base_task):
     # Arrange
     base_task.input_json_schema = json.dumps(
         {
@@ -202,9 +202,29 @@ def test_list_json_schema_for_task_with_output_schema(base_task):
     assert generated_samples_schema["items"]["properties"]["age"]["type"] == "integer"
 
 
-def test_list_json_schema_for_task_without_output_schema(base_task):
+def test_list_json_schema_for_task_with_input_schema_non_ascii(base_task):
     # Arrange
-    base_task.output_json_schema = None
+    base_task.input_json_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {
+                "名字": {"type": "string"},
+                "年齢": {"type": "integer"},
+            },
+        }
+    )
+
+    # Act
+    schema = list_json_schema_for_task(base_task)
+
+    # Assert
+    assert "名字" in schema
+    assert "年齢" in schema
+
+
+def test_list_json_schema_for_task_without_input_schema(base_task):
+    # Arrange
+    base_task.input_json_schema = None
 
     # Act
     schema = list_json_schema_for_task(base_task)

@@ -237,7 +237,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Generate</a
+          Synthetic Data</a
         >
       </li>
 

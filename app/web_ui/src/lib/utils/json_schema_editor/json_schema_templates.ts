@@ -49,7 +49,12 @@ export function title_to_name(title: string): string {
     .replace(/[^a-z0-9_.]/g, "")
 }
 
-export function schema_from_model(m: SchemaModel): JsonSchema {
+export function schema_from_model(
+  m: SchemaModel,
+  creating: boolean,
+): JsonSchema {
+  const properties: Record<string, JsonSchemaProperty> = {}
+  const required: string[] = []
   for (let i = 0; i < m.properties.length; i++) {
     const title = m.properties[i].title
     if (!title) {
@@ -63,22 +68,23 @@ export function schema_from_model(m: SchemaModel): JsonSchema {
         null,
       )
     }
+    // When creating a new model, we want to infer the id from the title.
+    // When using an existing model, we want to use the id provided, even if title has changed.
+    const key = creating ? safe_name : m.properties[i].id || safe_name
+    properties[key] = {
+      title: m.properties[i].title,
+      type: m.properties[i].type,
+      description: m.properties[i].description,
+    }
+    if (m.properties[i].required) {
+      required.push(key)
+    }
   }
+  console.log(properties)
   return {
     type: "object",
-    properties: Object.fromEntries(
-      m.properties.map((p) => [
-        p.id || title_to_name(p.title),
-        {
-          title: p.title,
-          type: p.type,
-          description: p.description,
-        },
-      ]),
-    ),
-    required: m.properties
-      .filter((p) => p.required)
-      .map((p) => title_to_name(p.title)),
+    properties: properties,
+    required: required,
   }
 }
 
@@ -88,7 +94,10 @@ export function empty_schema_model(): SchemaModel {
   }
 }
 
-export const empty_schema: JsonSchema = schema_from_model(empty_schema_model())
+export const empty_schema: JsonSchema = schema_from_model(
+  empty_schema_model(),
+  true,
+)
 
 export function example_schema_model(): SchemaModel {
   return {

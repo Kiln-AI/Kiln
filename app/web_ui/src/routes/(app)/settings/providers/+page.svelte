@@ -5,6 +5,8 @@
 
 <AppPage
   title="AI Providers & Models"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
   action_buttons={[
     {
       label: "Add Models",

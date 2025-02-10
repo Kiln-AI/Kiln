@@ -39,7 +39,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Load an Existing Dataset into a Kiln Task Dataset](#load-an-existing-dataset-into-a-kiln-task-dataset)
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
-- [Advanced Usage](#advanced-usage)
+- [Full API Reference](#full-api-reference)
 
 ## Installation
 
@@ -62,11 +62,14 @@ The Kiln Python library provides a set of Python classes that which help you eas
 
 ### Datamodel Overview
 
+Here's a high level overview of the Kiln datamodel. A project folder will reflect this nested structure:
+
 - Project: a Kiln Project that organizes related tasks
   - Task: a specific task including prompt instructions, input/output schemas, and requirements
     - TaskRun: a sample (run) of a task including input, output and human rating information
-    - DatasetSplit: a frozen collection of task runs divided into train/test/validation splits
     - Finetune: configuration and status tracking for fine-tuning models on task data
+    - Prompt: a prompt for this task
+    - DatasetSplit: a frozen collection of task runs divided into train/test/validation splits
 
 ### Load a Project
 
@@ -197,8 +200,8 @@ final_df = pd.concat(dfs, ignore_index=True)
 print(final_df)
 ```
 
-### Advanced Usage
+## Full API Reference
 
 The library can do a lot more than the examples we've shown here.
 
-See the [docs](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html) for more information.
+See the full API reference in the [docs](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html) under the `Submodules` section of the sidebar.

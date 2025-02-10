@@ -88,11 +88,11 @@
       Create Fine-Tune
     </a>
     <a
-      href="https://github.com/Kiln-AI/Kiln/blob/main/guides/Fine%20Tuning%20LLM%20Models%20Guide.md"
+      href="https://docs.getkiln.ai/docs/fine-tuning-guide"
       class="btn"
       target="_blank"
     >
-      Fine-Tuning Guide
+      Fine Tuning Guide
     </a>
   </div>
 </div>

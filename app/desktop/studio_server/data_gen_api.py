@@ -8,6 +8,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
+from kiln_server.run_api import model_provider_from_string
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -83,7 +84,7 @@ def connect_data_gen_api(app: FastAPI):
         adapter = adapter_for_task(
             categories_task,
             model_name=input.model_name,
-            provider=input.provider,
+            provider=model_provider_from_string(input.provider),
         )
 
         categories_run = await adapter.invoke(task_input.model_dump())
@@ -106,7 +107,7 @@ def connect_data_gen_api(app: FastAPI):
         adapter = adapter_for_task(
             sample_task,
             model_name=input.model_name,
-            provider=input.provider,
+            provider=model_provider_from_string(input.provider),
         )
 
         samples_run = await adapter.invoke(task_input.model_dump())
@@ -121,7 +122,7 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        prompt_builder = prompt_builder_from_ui_name(sample.prompt_method)(task)
+        prompt_builder = prompt_builder_from_ui_name(sample.prompt_method, task)
 
         tags = ["synthetic"]
         if session_id:
@@ -130,7 +131,7 @@ def connect_data_gen_api(app: FastAPI):
         adapter = adapter_for_task(
             task,
             model_name=sample.output_model_name,
-            provider=sample.output_provider,
+            provider=model_provider_from_string(sample.output_provider),
             prompt_builder=prompt_builder,
             tags=tags,
         )

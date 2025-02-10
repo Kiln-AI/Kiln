@@ -80,7 +80,7 @@ describe("schema_from_model", () => {
       required: ["user_name"],
     }
 
-    expect(schema_from_model(model)).toEqual(expected)
+    expect(schema_from_model(model, true)).toEqual(expected)
   })
 
   it("handles empty SchemaModel", () => {
@@ -94,7 +94,7 @@ describe("schema_from_model", () => {
       required: [],
     }
 
-    expect(schema_from_model(model)).toEqual(expected)
+    expect(schema_from_model(model, true)).toEqual(expected)
   })
 
   it("correctly handles required fields", () => {
@@ -124,7 +124,7 @@ describe("schema_from_model", () => {
       ],
     }
 
-    const result = schema_from_model(model)
+    const result = schema_from_model(model, true)
     expect(result.required).toEqual(["field1", "field3"])
   })
 
@@ -148,11 +148,45 @@ describe("schema_from_model", () => {
       ],
     }
 
-    const result = schema_from_model(model)
+    const result = schema_from_model(model, true)
     expect(Object.keys(result.properties)).toEqual([
       "user_name",
       "email_address",
     ])
+  })
+
+  it("preserves property IDs when creating=false, even if titles change", () => {
+    const model: SchemaModel = {
+      properties: [
+        {
+          id: "original_id",
+          title: "Changed Title",
+          description: "Some description",
+          type: "string",
+          required: true,
+        },
+        {
+          id: "another_id",
+          title: "Another Changed Title",
+          description: "Another description",
+          type: "number",
+          required: false,
+        },
+      ],
+    }
+
+    const result = schema_from_model(model, false)
+
+    // Check that the property keys match the original IDs, not the new titles
+    expect(Object.keys(result.properties)).toEqual([
+      "original_id",
+      "another_id",
+    ])
+
+    // Verify the titles were updated while IDs were preserved
+    expect(result.properties["original_id"].title).toBe("Changed Title")
+    expect(result.properties["another_id"].title).toBe("Another Changed Title")
+    expect(result.required).toEqual(["original_id"])
   })
 })
 

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Dict
 
@@ -7,9 +8,13 @@ import pytest
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.base_adapter import AdapterInfo, BaseAdapter, RunOutput
 from kiln_ai.adapters.ml_model_list import (
     built_in_models,
+)
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterInfo,
+    BaseAdapter,
+    RunOutput,
 )
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.prompt_builders import (
@@ -44,7 +49,7 @@ async def test_structured_output_ollama_llama(tmp_path, model_name):
 
 class MockAdapter(BaseAdapter):
     def __init__(self, kiln_task: datamodel.Task, response: Dict | str | None):
-        super().__init__(kiln_task)
+        super().__init__(kiln_task, model_name="phi_3_5", model_provider_name="ollama")
         self.response = response
 
     async def _run(self, input: str) -> RunOutput:
@@ -93,19 +98,10 @@ async def test_mock_unstructred_response(tmp_path):
         answer = await adapter.invoke("You are a mock, send me the response!")
 
 
-@pytest.mark.paid
-@pytest.mark.ollama
-@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
-async def test_all_built_in_models_structured_output(
-    tmp_path, model_name, provider_name
-):
+def check_supports_structured_output(model_name: str, provider_name: str):
     for model in built_in_models:
         if model.name != model_name:
             continue
-        if not model.supports_structured_output:
-            pytest.skip(
-                f"Skipping {model.name} because it does not support structured output"
-            )
         for provider in model.providers:
             if provider.name != provider_name:
                 continue
@@ -113,9 +109,18 @@ async def test_all_built_in_models_structured_output(
                 pytest.skip(
                     f"Skipping {model.name} {provider.name} because it does not support structured output"
                 )
-            await run_structured_output_test(tmp_path, model.name, provider.name)
             return
     raise RuntimeError(f"No model {model_name} {provider_name} found")
+
+
+@pytest.mark.paid
+@pytest.mark.ollama
+@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
+async def test_all_built_in_models_structured_output(
+    tmp_path, model_name, provider_name
+):
+    check_supports_structured_output(model_name, provider_name)
+    await run_structured_output_test(tmp_path, model_name, provider_name)
 
 
 def build_structured_output_test_task(tmp_path: Path):
@@ -140,7 +145,14 @@ def build_structured_output_test_task(tmp_path: Path):
 async def run_structured_output_test(tmp_path: Path, model_name: str, provider: str):
     task = build_structured_output_test_task(tmp_path)
     a = adapter_for_task(task, model_name=model_name, provider=provider)
-    parsed = await a.invoke_returning_raw("Cows")  # a joke about cows
+    try:
+        parsed = await a.invoke_returning_raw("Cows")  # a joke about cows
+    except ValueError as e:
+        if str(e) == "Failed to connect to Ollama. Ensure Ollama is running.":
+            pytest.skip(
+                f"Skipping {model_name} {provider} because Ollama is not running"
+            )
+        raise e
     if parsed is None or not isinstance(parsed, Dict):
         raise RuntimeError(f"structured response is not a dict: {parsed}")
     assert parsed["setup"] is not None
@@ -161,6 +173,7 @@ def build_structured_input_test_task(tmp_path: Path):
         parent=project,
         name="test task",
         instruction="You are an assistant which classifies a triangle given the lengths of its sides. If all sides are of equal length, the triangle is equilateral. If two sides are equal, the triangle is isosceles. Otherwise, it is scalene.\n\nAt the end of your response return the result in double square brackets. It should be plain text. It should be exactly one of the three following strings: '[[equilateral]]', or '[[isosceles]]', or '[[scalene]]'.",
+        thinking_prompt="Think step by step.",
     )
     task.input_json_schema = json_triangle_schema
     schema = task.input_schema()
@@ -177,7 +190,14 @@ def build_structured_input_test_task(tmp_path: Path):
 
 async def run_structured_input_test(tmp_path: Path, model_name: str, provider: str):
     task = build_structured_input_test_task(tmp_path)
-    await run_structured_input_task(task, model_name, provider)
+    try:
+        await run_structured_input_task(task, model_name, provider)
+    except ValueError as e:
+        if str(e) == "Failed to connect to Ollama. Ensure Ollama is running.":
+            pytest.skip(
+                f"Skipping {model_name} {provider} because Ollama is not running"
+            )
+        raise e
 
 
 async def run_structured_input_task(
@@ -196,10 +216,19 @@ async def run_structured_input_task(
         # invalid structured input
         await a.invoke({"a": 1, "b": 2, "d": 3})
 
-    response = await a.invoke_returning_raw({"a": 2, "b": 2, "c": 2})
+    try:
+        response = await a.invoke_returning_raw({"a": 2, "b": 2, "c": 2})
+    except ValueError as e:
+        if str(e) == "Failed to connect to Ollama. Ensure Ollama is running.":
+            pytest.skip(
+                f"Skipping {model_name} {provider} because Ollama is not running"
+            )
+        raise e
     assert response is not None
-    assert isinstance(response, str)
-    assert "[[equilateral]]" in response
+    if isinstance(response, str):
+        assert "[[equilateral]]" in response
+    else:
+        assert response["is_equilateral"] is True
     adapter_info = a.adapter_info()
     expected_pb_name = "simple_prompt_builder"
     if pb is not None:
@@ -207,7 +236,6 @@ async def run_structured_input_task(
     assert adapter_info.prompt_builder_name == expected_pb_name
     assert adapter_info.model_name == model_name
     assert adapter_info.model_provider == provider
-    assert adapter_info.adapter_name == "kiln_langchain_adapter"
 
 
 @pytest.mark.paid
@@ -227,7 +255,52 @@ async def test_all_built_in_models_structured_input(
 @pytest.mark.paid
 @pytest.mark.ollama
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
-async def test_structured_cot_prompt_builder(tmp_path, model_name, provider_name):
+async def test_structured_input_cot_prompt_builder(tmp_path, model_name, provider_name):
     task = build_structured_input_test_task(tmp_path)
+    pb = SimpleChainOfThoughtPromptBuilder(task)
+    await run_structured_input_task(task, model_name, provider_name, pb)
+
+
+@pytest.mark.paid
+@pytest.mark.ollama
+@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
+async def test_structured_output_cot_prompt_builder(
+    tmp_path, model_name, provider_name
+):
+    check_supports_structured_output(model_name, provider_name)
+    triangle_schema = {
+        "type": "object",
+        "properties": {
+            "is_equilateral": {
+                "type": "boolean",
+                "description": "True if all sides of the triangle are equal in length",
+            },
+            "is_scalene": {
+                "type": "boolean",
+                "description": "True if all sides of the triangle have different lengths",
+            },
+            "is_obtuse": {
+                "type": "boolean",
+                "description": "True if one of the angles is greater than 90 degrees",
+            },
+        },
+        "required": ["is_equilateral", "is_scalene", "is_obtuse"],
+        "additionalProperties": False,
+    }
+    task = build_structured_input_test_task(tmp_path)
+    task.instruction = """
+You are an assistant which classifies a triangle given the lengths of its sides. If all sides are of equal length, the triangle is equilateral. If two sides are equal, the triangle is isosceles. Otherwise, it is scalene.\n\n"
+
+When asked for a final result, this is the format (for an equilateral example):
+```json
+{
+    "is_equilateral": true,
+    "is_scalene": false,
+    "is_obtuse": false
+}
+```
+"""
+    task.output_json_schema = json.dumps(triangle_schema)
+    task.save_to_file()
     pb = SimpleChainOfThoughtPromptBuilder(task)
     await run_structured_input_task(task, model_name, provider_name, pb)

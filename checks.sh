@@ -15,8 +15,8 @@ headerEnd=" ===\033[0m\n"
 
 echo "${headerStart}Checking Python: Ruff, format, check${headerEnd}"
 # I is import sorting
-ruff check --select I
-ruff format --check
+uvx  ruff check --select I
+uvx ruff format --check .
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
 find . -type f | grep -v "/node_modules/" | grep  -v "/\." | grep -v "/dist/" | grep -v "/desktop/build/" | xargs misspell -error

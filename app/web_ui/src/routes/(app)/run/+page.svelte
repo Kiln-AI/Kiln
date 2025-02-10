@@ -10,7 +10,7 @@
   import type { TaskRun } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import RunInputForm from "./run_input_form.svelte"
-
+  import Warning from "$lib/ui/warning.svelte"
   // TODO: implement checking input content
   // let warn_before_unload
   // TODO UI for errors
@@ -63,7 +63,11 @@
           plaintext_input: input_form.get_plaintext_input_data(),
           // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
           structured_input: input_form.get_structured_input_data(),
-          ui_prompt_method: prompt_method,
+          // "custom" is the fine-tune prompt. Pass the model ID to the server.
+          ui_prompt_method:
+            prompt_method == "custom"
+              ? "fine_tune_prompt::" + model_name
+              : prompt_method,
           tags: ["manual_run"],
         },
       })
@@ -90,6 +94,23 @@
     run_complete = false
     clear_all()
   }
+
+  // Finetunes are tuned with specific prompts.
+  $: is_fine_tune_model = model && model.startsWith("kiln_fine_tune/")
+  $: {
+    update_fine_tune_prompt_selection(model)
+  }
+  function update_fine_tune_prompt_selection(model_id: string) {
+    if (model_id && model_id.startsWith("kiln_fine_tune/")) {
+      // Select the fine-tune prompt automatically, when selecting a fine-tuned model
+      prompt_method = "custom"
+    } else {
+      if (prompt_method == "custom") {
+        // Reset to basic, since custom is no longer available
+        prompt_method = "basic"
+      }
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -114,7 +135,20 @@
       </div>
       <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
         <div class="text-xl font-bold">Options</div>
-        <PromptTypeSelector bind:prompt_method />
+        <div>
+          <PromptTypeSelector
+            bind:prompt_method
+            info_description="Choose a custom prompt, or an prompt auto-generated from your task and data. If you want a new custom prompt, you can create one in the 'Prompt' tab."
+            custom_prompt_name={is_fine_tune_model
+              ? "Fine-Tune Specific Prompt"
+              : undefined}
+          />
+          {#if is_fine_tune_model && prompt_method != "custom"}
+            <Warning
+              warning_message="We strongly recommend using prompt the model was trained on when running a fine-tuned model."
+            />
+          {/if}
+        </div>
         <AvailableModelsDropdown
           bind:model
           bind:requires_structured_output

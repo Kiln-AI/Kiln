@@ -13,6 +13,8 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetF
 from kiln_ai.adapters.fine_tune.fireworks_finetune import FireworksFinetune
 from kiln_ai.datamodel import (
     DatasetSplit,
+    FinetuneDataStrategy,
+    StructuredOutputMode,
     Task,
     Train80Test20SplitDefinition,
 )
@@ -33,7 +35,6 @@ def fireworks_finetune(tmp_path):
             dataset_split_id="dataset-123",
             system_message="Test system message",
             path=tmp_file,
-            properties={"undeployed_model_id": "ftm-123"},
         ),
     )
     return finetune
@@ -228,8 +229,20 @@ def mock_task():
     )
 
 
+@pytest.mark.parametrize(
+    "data_strategy,thinking_instructions",
+    [
+        (FinetuneDataStrategy.final_and_intermediate, "thinking instructions"),
+        (FinetuneDataStrategy.final_only, None),
+    ],
+)
 async def test_generate_and_upload_jsonl_success(
-    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+    mock_dataset,
+    mock_task,
+    mock_api_key,
+    data_strategy,
+    thinking_instructions,
+    tmp_path,
 ):
     mock_path = Path("mock_path.jsonl")
     mock_dataset_id = "dataset-123"
@@ -249,11 +262,27 @@ async def test_generate_and_upload_jsonl_success(
     status_response.status_code = 200
     status_response.json.return_value = {"state": "READY"}
 
+    # Set the data strategy on the finetune model
+    tmp_file = tmp_path / "test-finetune.kiln"
+    fireworks_finetune = FireworksFinetune(
+        datamodel=FinetuneModel(
+            name="test-finetune",
+            provider="fireworks",
+            provider_id="fw-123",
+            base_model_id="llama-v2-7b",
+            train_split_name="train",
+            dataset_split_id="dataset-123",
+            system_message="Test system message",
+            path=tmp_file,
+            data_strategy=data_strategy,
+            thinking_instructions=thinking_instructions,
+        ),
+    )
+
     with (
         patch(
             "kiln_ai.adapters.fine_tune.fireworks_finetune.DatasetFormatter",
-            return_value=mock_formatter,
-        ),
+        ) as mock_formatter_constructor,
         patch("httpx.AsyncClient") as mock_client_class,
         patch("builtins.open"),
         patch(
@@ -261,26 +290,58 @@ async def test_generate_and_upload_jsonl_success(
             return_value=mock_dataset_id,
         ),
     ):
+        mock_formatter_constructor.return_value = mock_formatter
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=[create_response, upload_response])
         mock_client.get = AsyncMock(return_value=status_response)
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         result = await fireworks_finetune.generate_and_upload_jsonl(
-            mock_dataset, "train", mock_task
+            mock_dataset, "train", mock_task, DatasetFormat.OPENAI_CHAT_JSONL
         )
 
         # Verify formatter was created with correct parameters
-        mock_formatter.dump_to_file.assert_called_once_with(
-            "train", DatasetFormat.OPENAI_CHAT_JSONL
-        )
+        assert mock_formatter_constructor.call_count == 1
+        assert mock_formatter_constructor.call_args[1] == {
+            "dataset": mock_dataset,
+            "system_message": "Test system message",
+            "thinking_instructions": thinking_instructions,
+        }
+
+        # Verify the thinking instructions were set on the formatter
+        mock_formatter.method_calls[0][0] == "dump_to_file"
+        mock_formatter.method_calls[0][1] == {
+            "dataset": mock_dataset,
+            "thinking_instructions": thinking_instructions,
+        }
 
         assert result == mock_dataset_id
         assert mock_client.post.call_count == 2
         assert mock_client.get.call_count == 1
 
 
-async def test_start_success(fireworks_finetune, mock_dataset, mock_task, mock_api_key):
+@pytest.mark.parametrize(
+    "output_schema,expected_mode,expected_format",
+    [
+        (
+            '{"type": "object", "properties": {"key": {"type": "string"}}}',
+            StructuredOutputMode.json_mode,
+            DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL,
+        ),
+        (None, None, DatasetFormat.OPENAI_CHAT_JSONL),
+    ],
+)
+async def test_start_success(
+    fireworks_finetune,
+    mock_dataset,
+    mock_task,
+    mock_api_key,
+    output_schema,
+    expected_mode,
+    expected_format,
+):
+    mock_task.output_json_schema = output_schema
+
     fireworks_finetune.datamodel.parent = mock_task
     mock_dataset_id = "dataset-123"
     mock_model_id = "ft-model-123"
@@ -306,11 +367,16 @@ async def test_start_success(fireworks_finetune, mock_dataset, mock_task, mock_a
 
         # Verify dataset was uploaded
         fireworks_finetune.generate_and_upload_jsonl.assert_called_once_with(
-            mock_dataset, fireworks_finetune.datamodel.train_split_name, mock_task
+            mock_dataset,
+            fireworks_finetune.datamodel.train_split_name,
+            mock_task,
+            expected_format,
         )
 
         # Verify model ID was updated
         assert fireworks_finetune.datamodel.provider_id == mock_model_id
+        assert fireworks_finetune.datamodel.structured_output_mode == expected_mode
+        assert fireworks_finetune.datamodel.properties["endpoint_version"] == "v2"
 
 
 async def test_start_api_error(
@@ -369,7 +435,15 @@ async def test_deploy_success(fireworks_finetune, mock_api_key):
     success_response.status_code = 200
     assert fireworks_finetune.datamodel.fine_tune_model_id is None
 
-    with patch("httpx.AsyncClient") as mock_client_class:
+    status_response = (
+        FineTuneStatus(status=FineTuneStatusType.completed, message=""),
+        "ftm-123",
+    )
+
+    with (
+        patch("httpx.AsyncClient") as mock_client_class,
+        patch.object(fireworks_finetune, "_status", return_value=status_response),
+    ):
         mock_client = AsyncMock()
         mock_client.post.return_value = success_response
         mock_client_class.return_value.__aenter__.return_value = mock_client
@@ -388,13 +462,22 @@ async def test_deploy_already_deployed(fireworks_finetune, mock_api_key):
         "message": "Model already deployed",
     }
 
-    with patch("httpx.AsyncClient") as mock_client_class:
+    status_response = (
+        FineTuneStatus(status=FineTuneStatusType.completed, message=""),
+        "ftm-123",
+    )
+
+    with (
+        patch("httpx.AsyncClient") as mock_client_class,
+        patch.object(fireworks_finetune, "_status", return_value=status_response),
+    ):
         mock_client = AsyncMock()
         mock_client.post.return_value = already_deployed_response
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         result = await fireworks_finetune._deploy()
         assert result is True
+        assert fireworks_finetune.datamodel.fine_tune_model_id == "ftm-123"
 
 
 async def test_deploy_failure(fireworks_finetune, mock_api_key):
@@ -423,22 +506,31 @@ async def test_deploy_missing_credentials(fireworks_finetune):
 
 
 async def test_deploy_missing_model_id(fireworks_finetune, mock_api_key):
-    # Test missing model ID
-    fireworks_finetune.datamodel.properties["undeployed_model_id"] = None
-
-    response = await fireworks_finetune._deploy()
-    assert response is False
+    # Mock _status to return no model ID
+    status_response = (
+        FineTuneStatus(
+            status=FineTuneStatusType.completed, message="Fine-tuning job completed"
+        ),
+        None,
+    )
+    with (
+        patch.object(fireworks_finetune, "_status", return_value=status_response),
+    ):
+        response = await fireworks_finetune._deploy()
+        assert response is False
 
 
 async def test_status_with_deploy(fireworks_finetune, mock_api_key):
     # Mock _status to return completed
-    mock_status_response = FineTuneStatus(
-        status=FineTuneStatusType.completed, message="Fine-tuning job completed"
+    status_response = (
+        FineTuneStatus(
+            status=FineTuneStatusType.completed, message="Fine-tuning job completed"
+        ),
+        "ftm-123",
     )
-
     with (
         patch.object(
-            fireworks_finetune, "_status", return_value=mock_status_response
+            fireworks_finetune, "_status", return_value=status_response
         ) as mock_status,
         patch.object(fireworks_finetune, "_deploy", return_value=False) as mock_deploy,
     ):
