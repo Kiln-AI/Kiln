@@ -66,7 +66,7 @@ fi
 
 # Builds the desktop app
 # TODO: use a spec instead of long winded command line
-pyinstaller $(printf %s "$PLATFORM_OPTS") --paths=../.venv/Lib/site-packages:../libs/core:../libs/server \
+pyinstaller $(printf %s "$PLATFORM_OPTS") --paths=../.venv/Lib/site-packages:.  \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
   -n Kiln --specpath=./desktop/build \
