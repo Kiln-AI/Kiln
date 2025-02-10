@@ -15,8 +15,17 @@ if [[ $* != *--skip-web* ]]; then
   cd ..
 fi
 
+
+
 if [[ $* == *--build-bootloader* ]]; then
   echo "Building bootloader"
+  echo "which pyinstaller"
+  which pyinstaller
+  pip uninstall pyinstaller
+  echo "uninstalled pyinstaller"
+  echo "which pyinstaller"
+  which pyinstaller
+
   ROOT_DIR=$PWD
   mkdir -p desktop/build/bootloader
   cd desktop/build/bootloader
@@ -25,11 +34,8 @@ if [[ $* == *--build-bootloader* ]]; then
   python ./waf all
   cd ..
   pip install .
+  echo "which pyinstaller"
   which pyinstaller
-  
-  # Set environment variable to use custom bootloader
-  #export PYTHONPATH="$PWD/../..:$PYTHONPATH"
-  #export PYINSTALLER_BOOTLOADER_DIR="$PWD/../../PyInstaller/bootloader"
 
   # return to the root of the project
   cd $ROOT_DIR
