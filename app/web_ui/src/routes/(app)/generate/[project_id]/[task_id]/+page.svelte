@@ -15,6 +15,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
   import FormElement from "$lib/utils/form_element.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -28,7 +29,7 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  let prompt_method = "basic"
+  let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
 
   // Shared vars for all nodes, so UI saves last used value
@@ -284,6 +285,10 @@
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
+      const save_sample_guidance =
+        guidance_enabled && human_guidance.length > 0
+          ? human_guidance
+          : undefined
       const {
         error: post_error,
         data,
@@ -308,6 +313,7 @@
             output_provider: provider,
             prompt_method,
             topic_path: topic_path || [],
+            human_guidance: save_sample_guidance,
           },
         },
       )
@@ -485,6 +491,18 @@
             {/if}
           </div>
         </div>
+        {#if guidance_enabled && human_guidance.length > 0}
+          {#if prompt_method.includes("::")}
+            <Warning
+              warning_message="Human guidance is enabled, but you've selected a custom prompt with a fixed string. Human guidance will not be applied."
+            />
+          {:else}
+            <Warning
+              warning_message="Human guidance is enabled. Your guidance will be passed to the model and used to influence output."
+              warning_color="warning"
+            />
+          {/if}
+        {/if}
         <AvailableModelsDropdown
           requires_structured_output={task?.output_json_schema ? true : false}
           bind:model

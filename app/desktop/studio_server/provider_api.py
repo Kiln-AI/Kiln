@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -19,15 +20,14 @@ from kiln_ai.adapters.ollama_tools import (
     ollama_base_url,
     parse_ollama_tags,
 )
-from kiln_ai.adapters.provider_tools import (
-    provider_name_from_id,
-    provider_warnings,
-)
+from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from langchain_aws import ChatBedrockConverse
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnection:
@@ -75,6 +75,7 @@ class ModelDetails(BaseModel):
     name: str
     supports_structured_output: bool
     supports_data_gen: bool
+    supports_logprobs: bool
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
@@ -139,6 +140,7 @@ def connect_provider_api(app: FastAPI):
                                 name=model.friendly_name,
                                 supports_structured_output=provider.supports_structured_output,
                                 supports_data_gen=provider.supports_data_gen,
+                                supports_logprobs=provider.supports_logprobs,
                             )
                         )
 
@@ -534,6 +536,7 @@ async def available_ollama_models() -> AvailableModels | None:
                         name=model.friendly_name,
                         supports_structured_output=ollama_provider.supports_structured_output,
                         supports_data_gen=ollama_provider.supports_data_gen,
+                        supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                     )
                 )
         for ollama_model in ollama_connection.untested_models:
@@ -543,6 +546,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     name=ollama_model,
                     supports_structured_output=False,
                     supports_data_gen=False,
+                    supports_logprobs=False,
                     untested_model=True,
                 )
             )
@@ -595,12 +599,13 @@ def custom_models() -> AvailableModels | None:
                     name=f"{provider_name_from_id(provider_id)}: {model_name}",
                     supports_structured_output=False,
                     supports_data_gen=False,
+                    supports_logprobs=False,
                     untested_model=True,
                 )
             )
-        except Exception as e:
+        except Exception:
             # Continue on to the rest
-            print(f"Error processing custom model {model_id}: {e}")
+            logger.error("Error processing custom model %s", model_id, exc_info=True)
 
     return AvailableModels(
         provider_name="Custom Models",
@@ -626,6 +631,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             # YMMV, but we'll assume all fine tuned models support structured output and data gen
                             supports_structured_output=True,
                             supports_data_gen=True,
+                            supports_logprobs=False,
                             task_filter=[str(task.id)],
                         )
                     )
@@ -698,11 +704,13 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
         models: List[ModelDetails] = []
         base_url = provider.get("base_url")
         if not base_url or not base_url.startswith("http"):
-            print(f"No base URL for OpenAI compatible provider {provider} - {base_url}")
+            logger.warning(
+                "No base URL for OpenAI compatible provider %s - %s", provider, base_url
+            )
             continue
         name = provider.get("name")
         if not name:
-            print(f"No name for OpenAI compatible provider {provider}")
+            logger.warning("No name for OpenAI compatible provider %s", provider)
             continue
 
         # API key is optional, as some providers don't require it
@@ -725,6 +733,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         name=model.id,
                         supports_structured_output=False,
                         supports_data_gen=False,
+                        supports_logprobs=False,
                         untested_model=True,
                     )
                 )
@@ -736,8 +745,10 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                     models=models,
                 )
             )
-        except Exception as e:
-            print(f"Error connecting to OpenAI compatible provider {name}: {e}")
+        except Exception:
+            logger.error(
+                "Error connecting to OpenAI compatible provider %s", name, exc_info=True
+            )
             has_error = True
             continue
 

@@ -385,7 +385,7 @@ def test_task_run_input_source_validation(tmp_path):
     assert task_run.input_source is not None
 
     # Test 3: Creating without input_source should fail when strict mode is on
-    with patch("kiln_ai.datamodel.strict_mode", return_value=True):
+    with patch("kiln_ai.datamodel.task_run.strict_mode", return_value=True):
         with pytest.raises(ValueError) as exc_info:
             task_run = TaskRun(
                 input="test input 3",
@@ -442,7 +442,7 @@ def test_task_output_source_validation(tmp_path):
     assert task_output.source is not None
 
     # Test 3: Creating without source should fail when strict mode is on
-    with patch("kiln_ai.datamodel.strict_mode", return_value=True):
+    with patch("kiln_ai.datamodel.task_output.strict_mode", return_value=True):
         with pytest.raises(ValueError) as exc_info:
             task_output = TaskOutput(
                 output="test output 3",

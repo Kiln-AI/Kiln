@@ -142,10 +142,15 @@ class Config:
             raise AttributeError(f"Config has no attribute '{name}'")
 
     @classmethod
-    def settings_path(cls, create=True):
+    def settings_dir(cls, create=True):
         settings_dir = os.path.join(Path.home(), ".kiln_ai")
         if create and not os.path.exists(settings_dir):
             os.makedirs(settings_dir)
+        return settings_dir
+
+    @classmethod
+    def settings_path(cls, create=True):
+        settings_dir = cls.settings_dir(create)
         return os.path.join(settings_dir, "settings.yaml")
 
     @classmethod

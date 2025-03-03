@@ -40,7 +40,7 @@ def data_source():
             "model_name": "gpt_4o",
             "model_provider": "openai",
             "adapter_name": "langchain_adapter",
-            "prompt_builder_name": "simple_prompt_builder",
+            "prompt_id": "simple_prompt_builder",
         },
     )
 

@@ -5,7 +5,7 @@ import pytest
 from openai import AsyncOpenAI
 
 from kiln_ai.adapters.ml_model_list import StructuredOutputMode
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterInfo, BasePromptBuilder
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.openai_compatible_config import (
     OpenAICompatibleConfig,
 )
@@ -38,62 +38,46 @@ def mock_task(tmp_path):
 
 
 @pytest.fixture
-def mock_prompt_builder():
-    builder = Mock(spec=BasePromptBuilder)
-    type(builder).prompt_builder_name = Mock(return_value="test_prompt_builder")
-    builder.prompt_id = Mock(return_value="test_prompt_id")
-    return builder
-
-
-@pytest.fixture
 def config():
     return OpenAICompatibleConfig(
         api_key="test_key",
         base_url="https://api.test.com",
         model_name="test-model",
-        provider_name="test-provider",
+        provider_name="openrouter",
         default_headers={"X-Test": "test"},
     )
 
 
-def test_initialization(config, mock_task, mock_prompt_builder):
+def test_initialization(config, mock_task):
     adapter = OpenAICompatibleAdapter(
         config=config,
         kiln_task=mock_task,
-        prompt_builder=mock_prompt_builder,
-        tags=["test-tag"],
+        prompt_id="simple_prompt_builder",
+        base_adapter_config=AdapterConfig(default_tags=["test-tag"]),
     )
 
     assert isinstance(adapter.client, AsyncOpenAI)
     assert adapter.config == config
-    assert adapter.kiln_task == mock_task
-    assert adapter.prompt_builder == mock_prompt_builder
-    assert adapter.default_tags == ["test-tag"]
-    assert adapter.model_name == config.model_name
-    assert adapter.model_provider_name == config.provider_name
+    assert adapter.run_config.task == mock_task
+    assert adapter.run_config.prompt_id == "simple_prompt_builder"
+    assert adapter.base_adapter_config.default_tags == ["test-tag"]
+    assert adapter.run_config.model_name == config.model_name
+    assert adapter.run_config.model_provider_name == config.provider_name
 
 
-def test_adapter_info(config, mock_task, mock_prompt_builder):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+def test_adapter_info(config, mock_task):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
-    info = adapter.adapter_info()
-    assert isinstance(info, AdapterInfo)
-    assert info.model_name == config.model_name
-    assert info.model_provider == config.provider_name
-    assert info.adapter_name == "kiln_openai_compatible_adapter"
-    assert info.prompt_builder_name == "base_prompt_builder"
-    assert info.prompt_id == "test_prompt_id"
+    assert adapter.adapter_name() == "kiln_openai_compatible_adapter"
+
+    assert adapter.run_config.model_name == config.model_name
+    assert adapter.run_config.model_provider_name == config.provider_name
+    assert adapter.run_config.prompt_id == "simple_prompt_builder"
 
 
 @pytest.mark.asyncio
-async def test_response_format_options_unstructured(
-    config, mock_task, mock_prompt_builder
-):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+async def test_response_format_options_unstructured(config, mock_task):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
     # Mock has_structured_output to return False
     with patch.object(adapter, "has_structured_output", return_value=False):
@@ -109,12 +93,8 @@ async def test_response_format_options_unstructured(
     ],
 )
 @pytest.mark.asyncio
-async def test_response_format_options_json_mode(
-    config, mock_task, mock_prompt_builder, mode
-):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+async def test_response_format_options_json_mode(config, mock_task, mode):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
@@ -134,12 +114,8 @@ async def test_response_format_options_json_mode(
     ],
 )
 @pytest.mark.asyncio
-async def test_response_format_options_function_calling(
-    config, mock_task, mock_prompt_builder, mode
-):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+async def test_response_format_options_function_calling(config, mock_task, mode):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
@@ -153,12 +129,8 @@ async def test_response_format_options_function_calling(
 
 
 @pytest.mark.asyncio
-async def test_response_format_options_json_instructions(
-    config, mock_task, mock_prompt_builder
-):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+async def test_response_format_options_json_instructions(config, mock_task):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
@@ -172,12 +144,8 @@ async def test_response_format_options_json_instructions(
 
 
 @pytest.mark.asyncio
-async def test_response_format_options_json_schema(
-    config, mock_task, mock_prompt_builder
-):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+async def test_response_format_options_json_schema(config, mock_task):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
@@ -198,12 +166,35 @@ async def test_response_format_options_json_schema(
         }
 
 
-def test_tool_call_params(config, mock_task, mock_prompt_builder):
-    adapter = OpenAICompatibleAdapter(
-        config=config, kiln_task=mock_task, prompt_builder=mock_prompt_builder
-    )
+def test_tool_call_params_weak(config, mock_task):
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
 
-    params = adapter.tool_call_params()
+    params = adapter.tool_call_params(strict=False)
+    expected_schema = mock_task.output_schema()
+    expected_schema["additionalProperties"] = False
+
+    assert params == {
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "task_response",
+                    "parameters": expected_schema,
+                },
+            }
+        ],
+        "tool_choice": {
+            "type": "function",
+            "function": {"name": "task_response"},
+        },
+    }
+
+
+def test_tool_call_params_strict(config, mock_task):
+    config.provider_name = "openai"
+    adapter = OpenAICompatibleAdapter(config=config, kiln_task=mock_task)
+
+    params = adapter.tool_call_params(strict=True)
     expected_schema = mock_task.output_schema()
     expected_schema["additionalProperties"] = False
 

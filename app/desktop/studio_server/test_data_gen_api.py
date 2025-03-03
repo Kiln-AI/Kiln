@@ -160,7 +160,7 @@ def test_save_sample_success_paid_run(
         input_provider="openai",
         output_model_name="gpt_4o_mini",
         output_provider="openai",
-        prompt_method="basic",
+        prompt_method="simple_prompt_builder",
         topic_path=[],  # No topic path
     )
 
@@ -215,7 +215,7 @@ def test_save_sample_success_with_mock_invoke(
         input_provider="openai",
         output_model_name="gpt_4o_mini",
         output_provider="openai",
-        prompt_method="basic",
+        prompt_method="simple_prompt_builder",
         topic_path=["AI", "Machine Learning", "Deep Learning"],
     )
 
@@ -270,7 +270,7 @@ def test_save_sample_success_with_topic_path(
         input_provider="openai",
         output_model_name="gpt_4o_mini",
         output_provider="openai",
-        prompt_method="basic",
+        prompt_method="simple_prompt_builder",
     )
 
     # Act

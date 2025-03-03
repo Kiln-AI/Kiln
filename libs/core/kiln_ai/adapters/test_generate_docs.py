@@ -1,12 +1,12 @@
+import logging
 from typing import List
 
 import pytest
 
-from libs.core.kiln_ai.adapters.ml_model_list import (
-    KilnModelProvider,
-    built_in_models,
-)
+from libs.core.kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
 from libs.core.kiln_ai.adapters.provider_tools import provider_name_from_id
+
+logger = logging.getLogger(__name__)
 
 
 def _all_providers_support(providers: List[KilnModelProvider], attribute: str) -> bool:
@@ -58,8 +58,8 @@ def test_generate_model_table():
         table.append(row)
 
     # Print the table (useful for documentation)
-    print("\nModel Capability Matrix:\n")
-    print("\n".join(table))
+    logger.info("\nModel Capability Matrix:\n")
+    logger.info("\n".join(table))
 
     # Basic assertions to ensure the table is well-formed
     assert len(table) > 2, "Table should have header and at least one row"

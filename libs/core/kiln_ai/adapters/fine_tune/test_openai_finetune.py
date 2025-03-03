@@ -15,9 +15,9 @@ from kiln_ai.datamodel import (
     FinetuneDataStrategy,
     StructuredOutputMode,
     Task,
-    Train80Test20SplitDefinition,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
 from kiln_ai.utils.config import Config
 
 

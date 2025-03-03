@@ -95,7 +95,7 @@ def sample_task_run(sample_task):
                     "model_name": "gpt_4o",
                     "model_provider": "openai",
                     "adapter_name": "langchain_adapter",
-                    "prompt_builder_name": "simple_prompt_builder",
+                    "prompt_id": "simple_prompt_builder",
                 },
             ),
         ),
@@ -201,7 +201,7 @@ async def test_live_run(sample_task, sample_task_run, sample_repair_data):
         "adapter_name": "kiln_langchain_adapter",
         "model_name": "llama_3_1_8b",
         "model_provider": "groq",
-        "prompt_builder_name": "simple_prompt_builder",
+        "prompt_id": "simple_prompt_builder",
     }
 
 
@@ -238,7 +238,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "adapter_name": "kiln_langchain_adapter",
         "model_name": "llama_3_1_8b",
         "model_provider": "ollama",
-        "prompt_builder_name": "simple_prompt_builder",
+        "prompt_id": "simple_prompt_builder",
     }
     assert run.input_source.type == DataSourceType.human
     assert "created_by" in run.input_source.properties

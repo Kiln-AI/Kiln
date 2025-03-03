@@ -41,8 +41,8 @@ export function model_from_schema_string(s: string): SchemaModel {
   return model_from_schema(JSON.parse(s))
 }
 
-export function title_to_name(title: string): string {
-  return title
+export function string_to_json_key(s: string): string {
+  return s
     .trim()
     .toLowerCase()
     .replace(/ /g, "_")
@@ -60,7 +60,7 @@ export function schema_from_model(
     if (!title) {
       throw new KilnError("Property is empty. Please provide a name.", null)
     }
-    const safe_name = title_to_name(m.properties[i].title)
+    const safe_name = string_to_json_key(m.properties[i].title)
     if (!safe_name) {
       throw new KilnError(
         "Property name only contains special characters. Must be alphanumeric. Provided name with issues: " +
@@ -80,7 +80,6 @@ export function schema_from_model(
       required.push(key)
     }
   }
-  console.log(properties)
   return {
     type: "object",
     properties: properties,

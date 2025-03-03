@@ -13,6 +13,7 @@ from kiln_ai.adapters.prompt_builders import (
     BasePromptBuilder,
     SimpleChainOfThoughtPromptBuilder,
 )
+from kiln_ai.datamodel import PromptId
 
 
 def get_all_models_and_providers():
@@ -132,7 +133,7 @@ async def test_mock_returning_run(tmp_path):
         "adapter_name": "kiln_langchain_adapter",
         "model_name": "custom.langchain:unknown_model",
         "model_provider": "ollama",
-        "prompt_builder_name": "simple_prompt_builder",
+        "prompt_id": "simple_prompt_builder",
     }
 
 
@@ -149,8 +150,9 @@ async def test_all_models_providers_plaintext(tmp_path, model_name, provider_nam
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
 async def test_cot_prompt_builder(tmp_path, model_name, provider_name):
     task = build_test_task(tmp_path)
-    pb = SimpleChainOfThoughtPromptBuilder(task)
-    await run_simple_task(task, model_name, provider_name, pb)
+    await run_simple_task(
+        task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
+    )
 
 
 def build_test_task(tmp_path: Path):
@@ -186,20 +188,20 @@ async def run_simple_test(
     tmp_path: Path,
     model_name: str,
     provider: str | None = None,
-    prompt_builder: BasePromptBuilder | None = None,
+    prompt_id: PromptId | None = None,
 ):
     task = build_test_task(tmp_path)
-    return await run_simple_task(task, model_name, provider, prompt_builder)
+    return await run_simple_task(task, model_name, provider, prompt_id)
 
 
 async def run_simple_task(
     task: datamodel.Task,
     model_name: str,
     provider: str,
-    prompt_builder: BasePromptBuilder | None = None,
+    prompt_id: PromptId | None = None,
 ) -> datamodel.TaskRun:
     adapter = adapter_for_task(
-        task, model_name=model_name, provider=provider, prompt_builder=prompt_builder
+        task, model_name=model_name, provider=provider, prompt_id=prompt_id
     )
 
     run = await adapter.invoke(
@@ -212,13 +214,14 @@ async def run_simple_task(
     )
     assert "64" in run.output.output
     source_props = run.output.source.properties
-    assert source_props["adapter_name"] == "kiln_langchain_adapter"
+    assert source_props["adapter_name"] in [
+        "kiln_langchain_adapter",
+        "kiln_openai_compatible_adapter",
+    ]
     assert source_props["model_name"] == model_name
     assert source_props["model_provider"] == provider
-    expected_prompt_builder_name = (
-        prompt_builder.__class__.prompt_builder_name()
-        if prompt_builder
-        else "simple_prompt_builder"
-    )
-    assert source_props["prompt_builder_name"] == expected_prompt_builder_name
+    if prompt_id is None:
+        assert source_props["prompt_id"] == "simple_prompt_builder"
+    else:
+        assert source_props["prompt_id"] == prompt_id
     return run

@@ -9,25 +9,24 @@ from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat
 from kiln_ai.adapters.ml_model_list import KilnModel, KilnModelProvider
 from kiln_ai.datamodel import (
-    AllDatasetFilter,
-    AllSplitDefinition,
     DatasetSplit,
     Finetune,
     FinetuneDataStrategy,
-    HighRatingDatasetFilter,
     Project,
     Task,
-    ThinkingModelDatasetFilter,
-    ThinkingModelHighRatedFilter,
+)
+from kiln_ai.datamodel.dataset_filters import DatasetFilterId
+from kiln_ai.datamodel.dataset_split import (
+    AllSplitDefinition,
     Train60Test20Val20SplitDefinition,
     Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
 )
+from pydantic import BaseModel
 
 from app.desktop.studio_server.finetune_api import (
     CreateDatasetSplitRequest,
     CreateFinetuneRequest,
-    DatasetFilterType,
     DatasetSplitType,
     connect_fine_tune_api,
     thinking_instructions_from_request,
@@ -279,9 +278,28 @@ def test_dataset_split_type_enum():
     assert DatasetSplitType.ALL.value == "all"
 
 
-def test_dataset_filter_type_enum():
-    assert DatasetFilterType.ALL.value == "all"
-    assert DatasetFilterType.HIGH_RATING.value == "high_rating"
+class ModelTester(BaseModel):
+    dataset_id: DatasetFilterId
+
+
+# Check these stings from UI exist
+@pytest.mark.parametrize(
+    "id,expect_error",
+    [
+        ("all", False),
+        ("high_rating", False),
+        ("thinking_model", False),
+        ("thinking_model_high_rated", False),
+        ("invalid", True),
+    ],
+)
+def test_dataset_filter_ids(id, expect_error):
+    if expect_error:
+        with pytest.raises(ValueError):
+            ModelTester(dataset_id=id)
+    else:
+        model = ModelTester(dataset_id=id)
+        assert model.dataset_id == id
 
 
 def test_api_split_types_mapping():
@@ -299,22 +317,6 @@ def test_api_split_types_mapping():
     assert api_split_types[DatasetSplitType.ALL] == AllSplitDefinition
     for split_type in DatasetSplitType:
         assert split_type in api_split_types
-
-
-def test_api_filter_types_mapping():
-    from kiln_ai.datamodel import dataset_filters
-
-    assert dataset_filters[DatasetFilterType.ALL] == AllDatasetFilter
-    assert dataset_filters[DatasetFilterType.HIGH_RATING] == HighRatingDatasetFilter
-    assert (
-        dataset_filters[DatasetFilterType.THINKING_MODEL] == ThinkingModelDatasetFilter
-    )
-    assert (
-        dataset_filters[DatasetFilterType.THINKING_MODEL_HIGH_RATED]
-        == ThinkingModelHighRatedFilter
-    )
-    for filter_type in DatasetFilterType:
-        assert filter_type in dataset_filters
 
 
 @pytest.fixture
@@ -340,7 +342,7 @@ def test_create_dataset_split(
     with mock_from_task as from_task_mock, mock_save as save_mock:
         request_data = {
             "dataset_split_type": "train_test",
-            "filter_type": "high_rating",
+            "filter_id": "high_rating",
             "name": "Test Split",
             "description": "Test description",
         }
@@ -358,7 +360,7 @@ def test_create_dataset_split(
         mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
         from_task_mock.assert_called_once()
         args, kwargs = from_task_mock.call_args
-        assert kwargs["filter_type"] == DatasetFilterType.HIGH_RATING
+        assert kwargs["filter_id"] == "high_rating"
         save_mock.assert_called_once()
 
 
@@ -372,7 +374,7 @@ def test_create_dataset_split_auto_name(
     mock_save = unittest.mock.patch.object(DatasetSplit, "save_to_file")
 
     with mock_from_task as from_task_mock, mock_save as save_mock:
-        request_data = {"dataset_split_type": "train_test", "filter_type": "all"}
+        request_data = {"dataset_split_type": "train_test", "filter_id": "all"}
 
         response = client.post(
             "/api/projects/project1/tasks/task1/dataset_splits", json=request_data
@@ -393,33 +395,31 @@ def test_create_dataset_split_request_validation():
     # Test valid request
     request = CreateDatasetSplitRequest(
         dataset_split_type=DatasetSplitType.TRAIN_TEST,
-        filter_type=DatasetFilterType.ALL,
+        filter_id="all",
         name="Test Split",
         description="Test description",
     )
     assert request.dataset_split_type == DatasetSplitType.TRAIN_TEST
-    assert request.filter_type == DatasetFilterType.ALL
+    assert request.filter_id == "all"
     assert request.name == "Test Split"
     assert request.description == "Test description"
 
     # Test optional fields
     request = CreateDatasetSplitRequest(
         dataset_split_type=DatasetSplitType.TRAIN_TEST,
-        filter_type=DatasetFilterType.ALL,
+        filter_id="all",
     )
     assert request.name is None
     assert request.description is None
 
     # Test invalid dataset split type
     with pytest.raises(ValueError):
-        CreateDatasetSplitRequest(
-            dataset_split_type="invalid_type", filter_type=DatasetFilterType.ALL
-        )
+        CreateDatasetSplitRequest(dataset_split_type="invalid_type", filter_id="all")
 
     # Test invalid filter type
     with pytest.raises(ValueError):
         CreateDatasetSplitRequest(
-            dataset_split_type=DatasetSplitType.TRAIN_TEST, filter_type="invalid_type"
+            dataset_split_type=DatasetSplitType.TRAIN_TEST, filter_id="invalid_type"
         )
 
 
@@ -658,7 +658,7 @@ def mock_prompt_builder():
     builder.build_prompt.return_value = "Generated system message"
 
     with unittest.mock.patch(
-        "app.desktop.studio_server.finetune_api.prompt_builder_from_ui_name",
+        "app.desktop.studio_server.finetune_api.prompt_builder_from_id",
         return_value=builder,
     ) as mock:
         yield mock, builder

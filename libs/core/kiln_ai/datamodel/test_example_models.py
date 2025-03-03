@@ -11,7 +11,6 @@ from kiln_ai.datamodel import (
     Finetune,
     Project,
     Task,
-    TaskDeterminism,
     TaskOutput,
     TaskOutputRating,
     TaskOutputRatingType,
@@ -125,7 +124,6 @@ def test_structured_output_workflow(tmp_path):
         name="Structured Output Task",
         parent=project,
         instruction="Generate a JSON object with name and age",
-        determinism=TaskDeterminism.semantic_match,
         output_json_schema=json.dumps(
             {
                 "type": "object",
@@ -142,7 +140,7 @@ def test_structured_output_workflow(tmp_path):
 
     # Create runs
     runs = []
-    for source in DataSourceType:
+    for source in [DataSourceType.human, DataSourceType.synthetic]:
         for _ in range(2):
             task_run = TaskRun(
                 input="Generate info for John Doe",
@@ -157,7 +155,7 @@ def test_structured_output_workflow(tmp_path):
                         "adapter_name": "TestAdapter",
                         "model_name": "GPT-4",
                         "model_provider": "OpenAI",
-                        "prompt_builder_name": "TestPromptBuilder",
+                        "prompt_id": "simple_prompt_builder",
                     },
                 ),
                 parent=task,
@@ -216,9 +214,9 @@ def test_structured_output_workflow(tmp_path):
 
     assert loaded_task.name == "Structured Output Task"
     assert len(loaded_task.requirements) == 2
-    assert len(loaded_task.runs()) == 5
-
     loaded_runs = loaded_task.runs()
+    assert len(loaded_runs) == 5
+
     for task_run in loaded_runs:
         output = task_run.output
         assert output.rating is not None
@@ -472,7 +470,7 @@ def test_valid_synthetic_task_output():
                 "adapter_name": "TestAdapter",
                 "model_name": "GPT-4",
                 "model_provider": "OpenAI",
-                "prompt_builder_name": "TestPromptBuilder",
+                "prompt_id": "simple_prompt_builder",
             },
         ),
     )
@@ -480,7 +478,7 @@ def test_valid_synthetic_task_output():
     assert output.source.properties["adapter_name"] == "TestAdapter"
     assert output.source.properties["model_name"] == "GPT-4"
     assert output.source.properties["model_provider"] == "OpenAI"
-    assert output.source.properties["prompt_builder_name"] == "TestPromptBuilder"
+    assert output.source.properties["prompt_id"] == "simple_prompt_builder"
 
 
 def test_invalid_synthetic_task_output_missing_keys():
@@ -509,23 +507,21 @@ def test_invalid_synthetic_task_output_empty_values():
                     "adapter_name": "TestAdapter",
                     "model_name": "",
                     "model_provider": "OpenAI",
-                    "prompt_builder_name": "TestPromptBuilder",
+                    "prompt_id": "simple_prompt_builder",
                 },
             ),
         )
 
 
 def test_invalid_synthetic_task_output_non_string_values():
-    with pytest.raises(
-        ValidationError, match="'prompt_builder_name' must be of type str"
-    ):
+    with pytest.raises(ValidationError, match="'prompt_id' must be of type str"):
         DataSource(
             type=DataSourceType.synthetic,
             properties={
                 "adapter_name": "TestAdapter",
                 "model_name": "GPT-4",
                 "model_provider": "OpenAI",
-                "prompt_builder_name": 123,
+                "prompt_id": 123,
             },
         )
 

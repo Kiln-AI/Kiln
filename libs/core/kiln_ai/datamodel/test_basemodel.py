@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterInfo, BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
@@ -15,6 +15,7 @@ from kiln_ai.datamodel.basemodel import (
     string_to_valid_name,
 )
 from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.task import RunConfig
 
 
 @pytest.fixture
@@ -484,13 +485,8 @@ class MockAdapter(BaseAdapter):
     async def _run(self, input):
         return RunOutput(output="test output", intermediate_outputs=None)
 
-    def adapter_info(self) -> AdapterInfo:
-        return AdapterInfo(
-            adapter_name="test",
-            model_name=self.model_name,
-            model_provider=self.model_provider_name,
-            prompt_builder_name="test",
-        )
+    def adapter_name(self) -> str:
+        return "test"
 
 
 @pytest.fixture
@@ -501,9 +497,12 @@ def base_task():
 @pytest.fixture
 def adapter(base_task):
     return MockAdapter(
-        kiln_task=base_task,
-        model_name="test_model",
-        model_provider_name="test_provider",
+        run_config=RunConfig(
+            task=base_task,
+            model_name="test_model",
+            model_provider_name="test_provider",
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
 

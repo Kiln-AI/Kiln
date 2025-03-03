@@ -32,13 +32,13 @@
     try {
       prompt_loading = true
       const { data: prompt_response, error: get_error } = await client.GET(
-        "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_generator}",
+        "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_id}",
         {
           params: {
             path: {
               project_id,
               task_id,
-              prompt_generator,
+              prompt_id: prompt_generator,
             },
           },
         },
@@ -81,7 +81,8 @@
           To improve the quality of this prompt, <a
             href={`/settings/edit_task/${project_id}/${task_id}`}
             class="link">edit the task instructions or requirements</a
-          ><span class={generator_id === "basic" ? "hidden" : ""}
+          ><span
+            class={generator_id === "simple_prompt_builder" ? "hidden" : ""}
             >, or add more data to your dataset by <a class="link" href="/run"
               >running the task</a
             >, or add ratings and repairs to your

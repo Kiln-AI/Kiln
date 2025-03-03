@@ -1,11 +1,15 @@
 <script lang="ts">
   export let warning_message: string | undefined | null = undefined
+  export let warning_color: "error" | "warning" = "error"
+  export let tight: boolean = false
 </script>
 
 {#if warning_message}
   <div class="text-sm text-gray-500 flex flex-row items-center mt-2">
     <svg
-      class="w-5 h-5 text-error flex-none"
+      class="w-5 h-5 flex-none {warning_color === 'error'
+        ? 'text-error'
+        : 'text-warning'}"
       fill="currentColor"
       width="800px"
       height="800px"
@@ -18,7 +22,7 @@
       />
     </svg>
 
-    <div class="pl-4">
+    <div class={tight ? "pl-1" : "pl-4"}>
       {warning_message}
     </div>
   </div>

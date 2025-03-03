@@ -12,7 +12,7 @@
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
-  $: is_empty = !!finetunes && finetunes.length == 0
+  $: is_empty = !finetunes || finetunes.length == 0
 
   let finetunes: Finetune[] | null = null
   let finetunes_error: KilnError | null = null

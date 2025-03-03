@@ -1,3 +1,4 @@
  - Always assume pydantic 2 (not pydantic 1)
  - Always use pytest for tests
+ - The project supports Python 3.10 and above
  

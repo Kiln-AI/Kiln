@@ -2,8 +2,6 @@ import json
 from pathlib import Path
 from typing import Dict
 
-import jsonschema
-import jsonschema.exceptions
 import pytest
 
 import kiln_ai.datamodel as datamodel
@@ -12,16 +10,13 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import (
-    AdapterInfo,
     BaseAdapter,
     RunOutput,
 )
 from kiln_ai.adapters.ollama_tools import ollama_online
-from kiln_ai.adapters.prompt_builders import (
-    BasePromptBuilder,
-    SimpleChainOfThoughtPromptBuilder,
-)
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
+from kiln_ai.datamodel import PromptId
+from kiln_ai.datamodel.task import RunConfig
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
 
@@ -39,9 +34,9 @@ async def test_structured_output_gpt_4o_mini(tmp_path):
     await run_structured_output_test(tmp_path, "gpt_4o_mini", "openai")
 
 
-@pytest.mark.parametrize("model_name", ["llama_3_1_8b"])
+@pytest.mark.parametrize("model_name", ["llama_3_1_8b", "gemma_2_2b"])
 @pytest.mark.ollama
-async def test_structured_output_ollama_llama(tmp_path, model_name):
+async def test_structured_output_ollama(tmp_path, model_name):
     if not await ollama_online():
         pytest.skip("Ollama API not running. Expect it running on localhost:11434")
     await run_structured_output_test(tmp_path, model_name, "ollama")
@@ -49,19 +44,21 @@ async def test_structured_output_ollama_llama(tmp_path, model_name):
 
 class MockAdapter(BaseAdapter):
     def __init__(self, kiln_task: datamodel.Task, response: Dict | str | None):
-        super().__init__(kiln_task, model_name="phi_3_5", model_provider_name="ollama")
+        super().__init__(
+            run_config=RunConfig(
+                task=kiln_task,
+                model_name="phi_3_5",
+                model_provider_name="ollama",
+                prompt_id="simple_chain_of_thought_prompt_builder",
+            ),
+        )
         self.response = response
 
     async def _run(self, input: str) -> RunOutput:
         return RunOutput(output=self.response, intermediate_outputs=None)
 
-    def adapter_info(self) -> AdapterInfo:
-        return AdapterInfo(
-            adapter_name="mock_adapter",
-            model_name="mock_model",
-            model_provider="mock_provider",
-            prompt_builder_name="mock_prompt_builder",
-        )
+    def adapter_name(self) -> str:
+        return "mock_adapter"
 
 
 async def test_mock_unstructred_response(tmp_path):
@@ -204,15 +201,21 @@ async def run_structured_input_task(
     task: datamodel.Task,
     model_name: str,
     provider: str,
-    pb: BasePromptBuilder | None = None,
+    prompt_id: PromptId | None = None,
 ):
     a = adapter_for_task(
-        task, model_name=model_name, provider=provider, prompt_builder=pb
+        task,
+        model_name=model_name,
+        provider=provider,
+        prompt_id=prompt_id,
     )
     with pytest.raises(ValueError):
         # not structured input in dictionary
         await a.invoke("a=1, b=2, c=3")
-    with pytest.raises(jsonschema.exceptions.ValidationError):
+    with pytest.raises(
+        ValueError,
+        match="This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema.",
+    ):
         # invalid structured input
         await a.invoke({"a": 1, "b": 2, "d": 3})
 
@@ -229,13 +232,14 @@ async def run_structured_input_task(
         assert "[[equilateral]]" in response
     else:
         assert response["is_equilateral"] is True
-    adapter_info = a.adapter_info()
+
     expected_pb_name = "simple_prompt_builder"
-    if pb is not None:
-        expected_pb_name = pb.__class__.prompt_builder_name()
-    assert adapter_info.prompt_builder_name == expected_pb_name
-    assert adapter_info.model_name == model_name
-    assert adapter_info.model_provider == provider
+    if prompt_id is not None:
+        expected_pb_name = prompt_id
+    assert a.run_config.prompt_id == expected_pb_name
+
+    assert a.run_config.model_name == model_name
+    assert a.run_config.model_provider_name == provider
 
 
 @pytest.mark.paid
@@ -257,8 +261,9 @@ async def test_all_built_in_models_structured_input(
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
 async def test_structured_input_cot_prompt_builder(tmp_path, model_name, provider_name):
     task = build_structured_input_test_task(tmp_path)
-    pb = SimpleChainOfThoughtPromptBuilder(task)
-    await run_structured_input_task(task, model_name, provider_name, pb)
+    await run_structured_input_task(
+        task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
+    )
 
 
 @pytest.mark.paid
@@ -302,5 +307,6 @@ When asked for a final result, this is the format (for an equilateral example):
 """
     task.output_json_schema = json.dumps(triangle_schema)
     task.save_to_file()
-    pb = SimpleChainOfThoughtPromptBuilder(task)
-    await run_structured_input_task(task, model_name, provider_name, pb)
+    await run_structured_input_task(
+        task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
+    )

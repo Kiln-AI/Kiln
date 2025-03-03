@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Annotated, Dict
 
 import jsonschema
@@ -83,3 +84,8 @@ def schema_from_json_str(v: str) -> Dict:
         raise ValueError(f"Invalid JSON: {v}\n {e}")
     except Exception as e:
         raise ValueError(f"Unexpected error parsing JSON schema: {v}\n {e}")
+
+
+def string_to_json_key(s: str) -> str:
+    """Convert a string to a valid JSON key."""
+    return re.sub(r"[^a-z0-9_]", "", s.strip().lower().replace(" ", "_"))

@@ -12,14 +12,27 @@
   export let model: string = $ui_state.selected_model
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
+  export let requires_logprobs: boolean = false
   export let error_message: string | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || {},
     requires_structured_output,
     requires_data_gen,
+    requires_logprobs,
     $ui_state.current_task_id,
   )
+
+  // Export the parsed model name and provider name
+  export let model_name: string | null = null
+  export let provider_name: string | null = null
+  $: get_model_provider(model)
+  function get_model_provider(model_provider: string) {
+    model_name = model_provider
+      ? model_provider.split("/").slice(1).join("/")
+      : null
+    provider_name = model_provider ? model_provider.split("/")[0] : null
+  }
 
   onMount(async () => {
     await load_available_models()
@@ -31,6 +44,7 @@
     providers: AvailableModels[],
     structured_output: boolean,
     requires_data_gen: boolean,
+    requires_logprobs: boolean,
     current_task_id: string | null,
   ): [string, [unknown, string][]][] {
     let options = []
@@ -63,6 +77,10 @@
           unsupported_models.push([id, long_label])
           continue
         }
+        if (requires_logprobs && !model.supports_logprobs) {
+          unsupported_models.push([id, long_label])
+          continue
+        }
         model_list.push([id, model.name])
       }
       if (model_list.length > 0) {
@@ -75,9 +93,14 @@
     }
 
     if (unsupported_models.length > 0) {
-      const not_recommended_label = requires_data_gen
-        ? "Not Recommended - Data Gen Not Supported"
-        : "Not Recommended - Structured Output Fails"
+      let not_recommended_label = "Not Recommended"
+      if (requires_data_gen) {
+        not_recommended_label = "Not Recommended - Data Gen Not Supported"
+      } else if (requires_structured_output) {
+        not_recommended_label = "Not Recommended - Structured Output Fails"
+      } else if (requires_logprobs) {
+        not_recommended_label = "Not Recommended - Logprobs Not Supported"
+      }
       options.push([not_recommended_label, unsupported_models])
     }
 
@@ -117,6 +140,10 @@
     {#if requires_data_gen}
       <Warning
         warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."
+      />
+    {:else if requires_logprobs}
+      <Warning
+        warning_message="This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
       />
     {:else if requires_structured_output}
       <Warning

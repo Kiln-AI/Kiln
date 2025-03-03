@@ -405,6 +405,7 @@ async def test_get_available_models(app, client):
                     "name": "Model 2",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
                 }
@@ -419,6 +420,7 @@ async def test_get_available_models(app, client):
                     "name": "Model 1",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
                 }
@@ -433,6 +435,7 @@ async def test_get_available_models(app, client):
                     "name": "Model 2",
                     "supports_structured_output": False,
                     "supports_data_gen": False,
+                    "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
                 }
@@ -495,6 +498,7 @@ async def test_get_available_models_ollama_exception(app, client):
                     "name": "Model 1",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
                 }
@@ -1214,6 +1218,7 @@ def test_openai_compatible_providers():
                             name="model1",
                             supports_structured_output=False,
                             supports_data_gen=False,
+                            supports_logprobs=False,
                             untested_model=True,
                         )
                     ],
@@ -1463,4 +1468,4 @@ async def test_disconnect_api_key_unsupported_provider(client, provider_id):
     )
 
     assert response.status_code == 400
-    assert response.json() == {"message": f"Provider not supported"}
+    assert response.json() == {"message": "Provider not supported"}

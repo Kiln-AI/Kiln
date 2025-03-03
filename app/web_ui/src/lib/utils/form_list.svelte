@@ -3,6 +3,7 @@
   export let content_label: string = "Item"
   export let start_with_one: boolean = true
   export let empty_content: unknown = {}
+  export let frozen: boolean = false
 
   // Unique ID for the list, for scrolling to top after removal
   let id = "form_list_" + Math.random().toString(36).substring(2, 15)
@@ -79,7 +80,7 @@
             {content_label} #{item_index + 1}
           </div>
           <button
-            class="link text-xs text-gray-500"
+            class="link text-xs text-gray-500 {frozen ? 'hidden' : ''}"
             on:click={() => remove_item(item_index)}
           >
             remove
@@ -93,7 +94,7 @@
 
 <div class="flex place-content-center">
   <button
-    class="btn btn-sm"
+    class="btn btn-sm {frozen ? 'hidden' : ''}"
     on:click={() => add_item(true)}
     id={id + "_add_button"}
   >

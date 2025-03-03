@@ -84,7 +84,7 @@ def task_run_setup(tmp_path):
                     "model_name": "gpt_4o",
                     "model_provider": "ollama",
                     "adapter_name": "kiln_langchain_adapter",
-                    "prompt_builder_name": "simple_prompt_builder",
+                    "prompt_id": "simple_prompt_builder",
                 },
             ),
         ),

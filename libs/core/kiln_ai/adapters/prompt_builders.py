@@ -2,8 +2,8 @@ import json
 from abc import ABCMeta, abstractmethod
 from typing import Dict
 
-from kiln_ai.datamodel import Task, TaskRun
-from kiln_ai.utils.formatting import snake_case
+from kiln_ai.datamodel import PromptGenerators, PromptId, Task, TaskRun
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class BasePromptBuilder(metaclass=ABCMeta):
@@ -52,17 +52,6 @@ class BasePromptBuilder(metaclass=ABCMeta):
             str: The constructed prompt.
         """
         pass
-
-    @classmethod
-    def prompt_builder_name(cls) -> str:
-        """Returns the name of the prompt builder, to be used for persisting into the datastore.
-
-        Default implementation gets the name of the prompt builder in snake case. If you change the class name, you should override this so prior saved data is compatible.
-
-        Returns:
-            str: The prompt builder name in snake_case format.
-        """
-        return snake_case(cls.__name__)
 
     def build_user_message(self, input: Dict | str) -> str:
         """Build a user message from the input.
@@ -300,6 +289,57 @@ class SavedPromptBuilder(BasePromptBuilder):
         return self.prompt_model.chain_of_thought_instructions
 
 
+class TaskRunConfigPromptBuilder(BasePromptBuilder):
+    """A prompt builder that looks up a static prompt in a task run config."""
+
+    def __init__(self, task: Task, run_config_prompt_id: str):
+        parts = run_config_prompt_id.split("::")
+        if len(parts) != 4:
+            raise ValueError(
+                f"Invalid task run config prompt ID: {run_config_prompt_id}. Expected format: 'task_run_config::[project_id]::[task_id]::[run_config_id]'."
+            )
+
+        task_id = parts[2]
+        if task_id != task.id:
+            raise ValueError(
+                f"Task run config prompt ID: {run_config_prompt_id}. Task ID mismatch. Expected: {task.id}, got: {task_id}."
+            )
+
+        run_config_id = parts[3]
+        run_config = next(
+            (
+                run_config
+                for run_config in task.run_configs(readonly=True)
+                if run_config.id == run_config_id
+            ),
+            None,
+        )
+        if not run_config:
+            raise ValueError(
+                f"Task run config ID not found: {run_config_id} for prompt id {run_config_prompt_id}"
+            )
+        if run_config.prompt is None:
+            raise ValueError(
+                f"Task run config ID {run_config_id} does not have a stored prompt. Used as prompt id {run_config_prompt_id}"
+            )
+
+        # Load the prompt from the model
+        self.prompt = run_config.prompt.prompt
+        self.cot_prompt = run_config.prompt.chain_of_thought_instructions
+        self.id = run_config_prompt_id
+
+        super().__init__(task)
+
+    def prompt_id(self) -> str | None:
+        return self.id
+
+    def build_base_prompt(self) -> str:
+        return self.prompt
+
+    def chain_of_thought_prompt(self) -> str | None:
+        return self.cot_prompt
+
+
 class FineTunePromptBuilder(BasePromptBuilder):
     """A prompt builder that looks up a fine-tune prompt."""
 
@@ -337,25 +377,12 @@ class FineTunePromptBuilder(BasePromptBuilder):
         return self.fine_tune_model.thinking_instructions
 
 
-# TODO P2: we end up with 2 IDs for these: the keys here (ui_name) and the prompt_builder_name from the class
-# We end up maintaining this in _prompt_generators as well.
-prompt_builder_registry = {
-    "simple_prompt_builder": SimplePromptBuilder,
-    "multi_shot_prompt_builder": MultiShotPromptBuilder,
-    "few_shot_prompt_builder": FewShotPromptBuilder,
-    "repairs_prompt_builder": RepairsPromptBuilder,
-    "simple_chain_of_thought_prompt_builder": SimpleChainOfThoughtPromptBuilder,
-    "few_shot_chain_of_thought_prompt_builder": FewShotChainOfThoughtPromptBuilder,
-    "multi_shot_chain_of_thought_prompt_builder": MultiShotChainOfThoughtPromptBuilder,
-}
-
-
 # Our UI has some names that are not the same as the class names, which also hint parameters.
-def prompt_builder_from_ui_name(ui_name: str, task: Task) -> BasePromptBuilder:
+def prompt_builder_from_id(prompt_id: PromptId, task: Task) -> BasePromptBuilder:
     """Convert a name used in the UI to the corresponding prompt builder class.
 
     Args:
-        ui_name (str): The UI name for the prompt builder type.
+        prompt_id (PromptId): The prompt ID.
 
     Returns:
         type[BasePromptBuilder]: The corresponding prompt builder class.
@@ -365,29 +392,40 @@ def prompt_builder_from_ui_name(ui_name: str, task: Task) -> BasePromptBuilder:
     """
 
     # Saved prompts are prefixed with "id::"
-    if ui_name.startswith("id::"):
-        prompt_id = ui_name[4:]
+    if prompt_id.startswith("id::"):
+        prompt_id = prompt_id[4:]
         return SavedPromptBuilder(task, prompt_id)
 
-    # Fine-tune prompts are prefixed with "fine_tune_prompt::"
-    if ui_name.startswith("fine_tune_prompt::"):
-        fine_tune_id = ui_name[18:]
-        return FineTunePromptBuilder(task, fine_tune_id)
+    # Task run config prompts are prefixed with "task_run_config::"
+    # task_run_config::[project_id]::[task_id]::[run_config_id]
+    if prompt_id.startswith("task_run_config::"):
+        return TaskRunConfigPromptBuilder(task, prompt_id)
 
-    match ui_name:
-        case "basic":
+    # Fine-tune prompts are prefixed with "fine_tune_prompt::"
+    if prompt_id.startswith("fine_tune_prompt::"):
+        prompt_id = prompt_id[18:]
+        return FineTunePromptBuilder(task, prompt_id)
+
+    # Check if the prompt_id matches any enum value
+    if prompt_id not in [member.value for member in PromptGenerators]:
+        raise ValueError(f"Unknown prompt generator: {prompt_id}")
+    typed_prompt_generator = PromptGenerators(prompt_id)
+
+    match typed_prompt_generator:
+        case PromptGenerators.SIMPLE:
             return SimplePromptBuilder(task)
-        case "few_shot":
+        case PromptGenerators.FEW_SHOT:
             return FewShotPromptBuilder(task)
-        case "many_shot":
+        case PromptGenerators.MULTI_SHOT:
             return MultiShotPromptBuilder(task)
-        case "repairs":
+        case PromptGenerators.REPAIRS:
             return RepairsPromptBuilder(task)
-        case "simple_chain_of_thought":
+        case PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT:
             return SimpleChainOfThoughtPromptBuilder(task)
-        case "few_shot_chain_of_thought":
+        case PromptGenerators.FEW_SHOT_CHAIN_OF_THOUGHT:
             return FewShotChainOfThoughtPromptBuilder(task)
-        case "multi_shot_chain_of_thought":
+        case PromptGenerators.MULTI_SHOT_CHAIN_OF_THOUGHT:
             return MultiShotChainOfThoughtPromptBuilder(task)
         case _:
-            raise ValueError(f"Unknown prompt builder: {ui_name}")
+            # Type checking will find missing cases
+            raise_exhaustive_enum_error(typed_prompt_generator)

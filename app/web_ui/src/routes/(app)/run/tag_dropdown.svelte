@@ -43,6 +43,7 @@
   <datalist id="tag_options">
     <option value="needs_rating"></option>
     <option value="golden"></option>
+    <option value="eval_set"></option>
     <option value="manual_run"></option>
     <option value="synthetic"></option>
   </datalist>

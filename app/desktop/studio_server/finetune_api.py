@@ -11,20 +11,24 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.adapters.prompt_builders import (
     chain_of_thought_prompt,
-    prompt_builder_from_ui_name,
+    prompt_builder_from_id,
 )
 from kiln_ai.adapters.provider_tools import (
     provider_enabled,
     provider_name_from_id,
 )
 from kiln_ai.datamodel import (
-    AllSplitDefinition,
-    DatasetFilterType,
     DatasetSplit,
     Finetune,
     FinetuneDataStrategy,
     FineTuneStatusType,
     Task,
+)
+from kiln_ai.datamodel.dataset_filters import (
+    DatasetFilterId,
+)
+from kiln_ai.datamodel.dataset_split import (
+    AllSplitDefinition,
     Train60Test20Val20SplitDefinition,
     Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
@@ -71,7 +75,7 @@ class CreateDatasetSplitRequest(BaseModel):
     """Request to create a dataset split"""
 
     dataset_split_type: DatasetSplitType
-    filter_type: DatasetFilterType
+    filter_id: DatasetFilterId
     name: str | None = None
     description: str | None = None
 
@@ -204,7 +208,7 @@ def connect_fine_tune_api(app: FastAPI):
             name,
             task,
             split_definitions,
-            filter_type=request.filter_type,
+            filter_id=request.filter_id,
             description=request.description,
         )
         dataset_split.save_to_file()
@@ -338,7 +342,7 @@ def system_message_from_request(
                 detail="System message generator is required when custom system message is not provided",
             )
         try:
-            prompt_builder = prompt_builder_from_ui_name(system_message_generator, task)
+            prompt_builder = prompt_builder_from_id(system_message_generator, task)
             system_message = prompt_builder.build_prompt(
                 include_json_instructions=False
             )

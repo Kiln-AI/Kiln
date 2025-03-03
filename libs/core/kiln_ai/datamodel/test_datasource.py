@@ -18,14 +18,14 @@ def test_valid_synthetic_data_source():
         properties={
             "model_name": "GPT-4",
             "model_provider": "OpenAI",
-            "prompt_builder_name": "completion",
+            "prompt_id": "simple_prompt_builder",
             "adapter_name": "langchain",
         },
     )
     assert data_source.type == DataSourceType.synthetic
     assert data_source.properties["model_name"] == "GPT-4"
     assert data_source.properties["model_provider"] == "OpenAI"
-    assert data_source.properties["prompt_builder_name"] == "completion"
+    assert data_source.properties["prompt_id"] == "simple_prompt_builder"
     assert data_source.properties["adapter_name"] == "langchain"
 
 
@@ -85,6 +85,7 @@ def test_prompt_type_optional_for_synthetic():
         },
     )
     assert "prompt_builder_name" not in data_source.properties
+    assert "prompt_id" not in data_source.properties
 
 
 def test_private_data_source_properties_not_serialized():

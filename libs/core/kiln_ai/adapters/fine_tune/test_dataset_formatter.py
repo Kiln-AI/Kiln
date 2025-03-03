@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock
@@ -26,6 +27,8 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -474,7 +477,7 @@ def test_generate_vertex_template_thinking():
 
     result = generate_vertex_gemini_1_5(training_data)
 
-    print(result)
+    logger.info(result)
 
     assert result == {
         "systemInstruction": {

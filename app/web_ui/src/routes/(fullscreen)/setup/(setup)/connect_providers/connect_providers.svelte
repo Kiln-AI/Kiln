@@ -5,7 +5,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { client } from "$lib/api_client"
+  import { client, base_url } from "$lib/api_client"
 
   type Provider = {
     name: string
@@ -309,19 +309,16 @@
     api_key_submitting = true
     try {
       const provider_id = api_key_provider ? api_key_provider.id : ""
-      let res = await fetch(
-        "http://localhost:8757/api/provider/connect_api_key",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            provider: provider_id,
-            key_data: apiKeyData,
-          }),
+      let res = await fetch(base_url + "/api/provider/connect_api_key", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      )
+        body: JSON.stringify({
+          provider: provider_id,
+          key_data: apiKeyData,
+        }),
+      })
       let data = await res.json()
 
       if (res.status !== 200) {
@@ -354,7 +351,7 @@
   let custom_openai_compatible_providers: CustomOpenAICompatibleProvider[] = []
   const check_existing_providers = async () => {
     try {
-      let res = await fetch("http://localhost:8757/api/settings")
+      let res = await fetch(base_url + "/api/settings")
       let data = await res.json()
       if (data["open_ai_api_key"]) {
         status.openai.connected = true

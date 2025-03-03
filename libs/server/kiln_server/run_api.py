@@ -5,8 +5,14 @@ from typing import Any, Dict
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
-from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.datamodel import (
+    PromptId,
+    Task,
+    TaskOutputRating,
+    TaskOutputRatingType,
+    TaskRun,
+)
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from pydantic import BaseModel, ConfigDict
 
@@ -38,7 +44,7 @@ class RunTaskRequest(BaseModel):
     provider: str
     plaintext_input: str | None = None
     structured_input: Dict[str, Any] | None = None
-    ui_prompt_method: str | None = None
+    ui_prompt_method: PromptId | None = None
     tags: list[str] | None = None
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
@@ -188,21 +194,12 @@ def connect_run_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        prompt_builder = prompt_builder_from_ui_name(
-            request.ui_prompt_method or "basic",
-            task,
-        )
-        if prompt_builder is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown prompt method: {request.ui_prompt_method}",
-            )
         adapter = adapter_for_task(
             task,
             model_name=request.model_name,
             provider=model_provider_from_string(request.provider),
-            prompt_builder=prompt_builder,
-            tags=request.tags,
+            prompt_id=request.ui_prompt_method or "simple_prompt_builder",
+            base_adapter_config=AdapterConfig(default_tags=request.tags),
         )
 
         input = request.plaintext_input

@@ -3,23 +3,27 @@ from pydantic import ValidationError
 
 # import datamodel first or we get circular import errors
 from kiln_ai.datamodel import (
-    AllDatasetFilter,
-    AllSplitDefinition,
-    DatasetFilterType,
     DatasetSplit,
     DatasetSplitDefinition,
     DataSource,
     DataSourceType,
-    HighRatingDatasetFilter,
     Task,
     TaskOutput,
     TaskOutputRating,
     TaskOutputRatingType,
     TaskRun,
-    ThinkingModelDatasetFilter,
-    ThinkingModelHighRatedFilter,
+)
+from kiln_ai.datamodel.dataset_split import (
+    AllSplitDefinition,
     Train60Test20Val20SplitDefinition,
     Train80Test20SplitDefinition,
+)
+from kiln_ai.datamodel.test_dataset_filters import (
+    AllDatasetFilter,
+    HighRatingDatasetFilter,
+    TagFilter,
+    ThinkingModelDatasetFilter,
+    ThinkingModelHighRatedFilter,
 )
 
 
@@ -42,6 +46,7 @@ def sample_task_runs(sample_task):
     task_runs = []
     for i in range(10):
         rating = 5 if i < 6 else 1  # 6 high, 4 low ratings
+        tags = ["tag1"] if i < 6 else []
         task_run = TaskRun(
             parent=sample_task,
             input=f"input_{i}",
@@ -59,6 +64,7 @@ def sample_task_runs(sample_task):
                     value=rating, type=TaskOutputRatingType.five_star
                 ),
             ),
+            tags=tags,
         )
         task_run.save_to_file()
         task_runs.append(task_run)
@@ -199,10 +205,10 @@ def test_dataset_split_with_high_rating_filter(sample_task, sample_task_runs):
         "Split Name",
         sample_task,
         Train80Test20SplitDefinition,
-        filter_type=DatasetFilterType.HIGH_RATING,
+        filter_id="high_rating",
     )
 
-    assert dataset.filter == DatasetFilterType.HIGH_RATING
+    assert dataset.filter == "high_rating"
 
     # Check that only high-rated task runs are included
     all_ids = []
@@ -329,3 +335,21 @@ def test_thinking_model_dataset_filter_high_rated(
     )
 
     assert ThinkingModelHighRatedFilter(task_run) is expected_result
+
+
+def test_tag_dataset_filter(sample_task_runs):
+    num_tagged = 0
+    num_untagged = 0
+    filter = TagFilter("tag1")
+    for task_run in sample_task_runs:
+        if "tag1" in task_run.tags:
+            num_tagged += 1
+            assert "tag1" in task_run.tags
+            assert filter(task_run) is True
+        else:
+            num_untagged += 1
+            assert "tag1" not in task_run.tags
+            assert filter(task_run) is False
+
+    assert num_tagged == 6
+    assert num_untagged == 4

@@ -1,3 +1,5 @@
+import { type EvalConfigType } from "$lib/types"
+
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
     return "Unknown"
@@ -39,4 +41,15 @@ export function formatDate(dateString: string | undefined): string {
     .replace(" AM", "am")
     .replace(" PM", "pm")
     .replace(",", "")
+}
+
+export function eval_config_to_ui_name(
+  eval_config_type: EvalConfigType,
+): string {
+  return (
+    {
+      g_eval: "G-Eval",
+      llm_as_judge: "LLM as Judge",
+    }[eval_config_type] || eval_config_type
+  )
 }

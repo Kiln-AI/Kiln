@@ -3,7 +3,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { page } from "$app/stores"
-  import { client } from "$lib/api_client"
+  import { client, base_url } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -26,12 +26,13 @@
   let dataset_id = disabled_header
   let new_dataset_split = disabled_header
   let new_dataset_filter = disabled_header
+  let custom_dataset_tag = ""
   let automatic_validation = disabled_header
   let data_strategy: FinetuneDataStrategy = "final_only"
   let finetune_custom_system_prompt = ""
   let finetune_custom_thinking_instructions =
     "Think step by step, explaining your reasoning."
-  let system_prompt_method = "basic"
+  let system_prompt_method = "simple_prompt_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -285,6 +286,12 @@
     try {
       create_dataset_split_loading = true
       create_dataset_split_error = null
+
+      let dataset_filter_id = new_dataset_filter
+      if (dataset_filter_id === "custom_tag") {
+        dataset_filter_id = "tag::" + custom_dataset_tag
+      }
+
       const { data: create_dataset_split_response, error: post_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
@@ -298,8 +305,7 @@
             body: {
               // @ts-expect-error types are validated by the server
               dataset_split_type: new_dataset_split,
-              // @ts-expect-error types are validated by the server
-              filter_type: new_dataset_filter,
+              filter_id: dataset_filter_id,
             },
           },
         )
@@ -474,9 +480,7 @@
       .map(([key, value]) => `${key}=${encodeURIComponent(value || "")}`)
       .join("&")
 
-    window.open(
-      "http://localhost:8757/api/download_dataset_jsonl?" + query_string,
-    )
+    window.open(base_url + "/api/download_dataset_jsonl?" + query_string)
   }
 </script>
 
@@ -801,9 +805,20 @@
               "thinking_model_high_rated",
               "Thinking + High Rated (4+ stars and thinking)",
             ],
+            ["custom_tag", "Custom Dataset Tag (eg 'training_set_v2')"],
           ]}
           bind:value={new_dataset_filter}
         />
+        {#if new_dataset_filter === "custom_tag"}
+          <FormElement
+            label="Custom Dataset Tag Filter"
+            description="The dataset split will only include examples with this tag."
+            inputType="input"
+            id="custom_dataset_tag"
+            bind:value={custom_dataset_tag}
+          />
+        {/if}
+
         <FormElement
           label="Dataset Splits"
           description="Select a splitting strategy for your dataset."

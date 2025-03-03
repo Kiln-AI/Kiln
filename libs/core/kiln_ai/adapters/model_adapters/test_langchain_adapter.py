@@ -18,8 +18,8 @@ from kiln_ai.adapters.model_adapters.langchain_adapters import (
     LangchainAdapter,
     langchain_model_from_provider,
 )
-from kiln_ai.adapters.prompt_builders import SimpleChainOfThoughtPromptBuilder
 from kiln_ai.adapters.test_prompt_adaptors import build_test_task
+from kiln_ai.datamodel.task import RunConfig
 
 
 @pytest.fixture
@@ -56,9 +56,8 @@ def test_langchain_adapter_infer_model_name(tmp_path):
 
     lca = LangchainAdapter(kiln_task=task, custom_model=custom)
 
-    model_info = lca.adapter_info()
-    assert model_info.model_name == "custom.langchain:llama-3.1-8b-instant"
-    assert model_info.model_provider == "custom.langchain:ChatGroq"
+    assert lca.run_config.model_name == "custom.langchain:llama-3.1-8b-instant"
+    assert lca.run_config.model_provider_name == "custom.langchain:ChatGroq"
 
 
 def test_langchain_adapter_info(tmp_path):
@@ -66,10 +65,9 @@ def test_langchain_adapter_info(tmp_path):
 
     lca = LangchainAdapter(kiln_task=task, model_name="llama_3_1_8b", provider="ollama")
 
-    model_info = lca.adapter_info()
-    assert model_info.adapter_name == "kiln_langchain_adapter"
-    assert model_info.model_name == "llama_3_1_8b"
-    assert model_info.model_provider == "ollama"
+    assert lca.adapter_name() == "kiln_langchain_adapter"
+    assert lca.run_config.model_name == "llama_3_1_8b"
+    assert lca.run_config.model_provider_name == "ollama"
 
 
 async def test_langchain_adapter_with_cot(tmp_path):
@@ -81,7 +79,7 @@ async def test_langchain_adapter_with_cot(tmp_path):
         kiln_task=task,
         model_name="llama_3_1_8b",
         provider="ollama",
-        prompt_builder=SimpleChainOfThoughtPromptBuilder(task),
+        prompt_id="simple_chain_of_thought_prompt_builder",
     )
 
     # Mock the base model and its invoke method
@@ -323,11 +321,6 @@ async def test_langchain_adapter_model_no_structured_output_support(tmp_path):
 
 
 import pytest
-
-from kiln_ai.adapters.ml_model_list import KilnModelProvider, ModelProviderName
-from kiln_ai.adapters.model_adapters.langchain_adapters import (
-    langchain_model_from_provider,
-)
 
 
 @pytest.mark.parametrize(

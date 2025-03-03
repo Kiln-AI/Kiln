@@ -1,0 +1,18 @@
+Kiln AI - License Information
+Copyright (c) 2024 Chesterfield Laboratories Inc.
+
+This repository contains components under different licenses:
+
+1. Python Libraries (/libs/core and /libs/server directories)
+   Licensed under the MIT License
+   See libs/core/LICENSE.txt and libs/server/LICENSE.txt for details
+
+2. Desktop Application (/app directory)
+   Free to download and use under the Kiln AI Desktop EULA
+   See app/EULA.md and app/LICENSE.txt for details
+
+3. Trademarks
+   The Kiln names and logos are trademarks of Chesterfield Laboratories Inc.
+   All rights reserved.
+
+For the full text of each license, please see the respective LICENSE.txt files in each directory.

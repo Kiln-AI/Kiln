@@ -49,7 +49,7 @@
       if (prompt.chain_of_thought_instructions && exclude_cot) {
         continue
       }
-      static_prompts.push(["id::" + prompt.id, prompt.name])
+      static_prompts.push([prompt.id, prompt.name])
     }
     if (static_prompts.length > 0) {
       grouped_options.push(["Saved Prompts", static_prompts])

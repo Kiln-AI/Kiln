@@ -20,7 +20,7 @@
 
   let input_form: RunInputForm
 
-  let prompt_method = "basic"
+  let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
@@ -107,7 +107,7 @@
     } else {
       if (prompt_method == "custom") {
         // Reset to basic, since custom is no longer available
-        prompt_method = "basic"
+        prompt_method = "simple_prompt_builder"
       }
     }
   }

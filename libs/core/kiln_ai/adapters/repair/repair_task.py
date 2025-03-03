@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from kiln_ai.adapters.prompt_builders import (
     BasePromptBuilder,
     SavedPromptBuilder,
-    prompt_builder_registry,
+    prompt_builder_from_id,
 )
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
@@ -49,28 +49,16 @@ feedback describing what should be improved. Your job is to understand the evalu
         if run.output.source is None or run.output.source.properties is None:
             raise ValueError("No source properties found")
 
-        # Try ID first, then builder name
-        prompt_id = run.output.source.properties.get("prompt_id", None)
+        # Get the prompt builder id. Need the second check because we used to store this in a prompt_builder_name field, so loading legacy runs will need this.
+        prompt_id = run.output.source.properties.get(
+            "prompt_id"
+        ) or run.output.source.properties.get("prompt_builder_name", None)
         if prompt_id is not None and isinstance(prompt_id, str):
-            static_prompt_builder = SavedPromptBuilder(task, prompt_id)
-            return static_prompt_builder.build_prompt(include_json_instructions=False)
+            prompt_builder = prompt_builder_from_id(prompt_id, task)
+            if isinstance(prompt_builder, BasePromptBuilder):
+                return prompt_builder.build_prompt(include_json_instructions=False)
 
-        prompt_builder_class: Type[BasePromptBuilder] | None = None
-        prompt_builder_name = run.output.source.properties.get(
-            "prompt_builder_name", None
-        )
-        if prompt_builder_name is not None and isinstance(prompt_builder_name, str):
-            prompt_builder_class = prompt_builder_registry.get(
-                prompt_builder_name, None
-            )
-        if prompt_builder_class is None:
-            raise ValueError(f"No prompt builder found for name: {prompt_builder_name}")
-        prompt_builder = prompt_builder_class(task=task)
-        if not isinstance(prompt_builder, BasePromptBuilder):
-            raise ValueError(
-                f"Prompt builder {prompt_builder_name} is not a valid prompt builder"
-            )
-        return prompt_builder.build_prompt(include_json_instructions=False)
+        raise ValueError(f"Prompt builder '{prompt_id}' is not a valid prompt builder")
 
     @classmethod
     def build_repair_task_input(

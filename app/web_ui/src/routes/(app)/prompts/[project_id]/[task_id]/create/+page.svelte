@@ -13,6 +13,7 @@
   $: task_name = $current_task?.id == task_id ? $current_task?.name : "unknown"
 
   let prompt_name = ""
+  let prompt_description = ""
   let prompt = ""
   let is_chain_of_thought = false
   let chain_of_thought_instructions =
@@ -35,6 +36,7 @@
           },
           body: {
             name: prompt_name,
+            description: prompt_description,
             prompt: prompt,
             chain_of_thought_instructions: is_chain_of_thought
               ? chain_of_thought_instructions
@@ -51,7 +53,7 @@
 
       // Success! Reload then navigate to the new prompt
       await load_available_prompts()
-      goto(`/prompts/${project_id}/${task_id}/saved/${data.id}`)
+      goto(`/prompts/${project_id}/${task_id}/saved/id::${data.id}`)
     } catch (e) {
       create_error = createKilnError(e)
     } finally {
@@ -75,6 +77,13 @@
           bind:value={prompt_name}
           description="A short name to uniquely identify this prompt."
           max_length={60}
+        />
+
+        <FormElement
+          label="Prompt Description"
+          id="prompt_description"
+          bind:value={prompt_description}
+          description="A description of the prompt for your reference."
         />
 
         <FormElement

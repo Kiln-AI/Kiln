@@ -1,6 +1,10 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { current_task, current_task_prompts } from "$lib/stores"
+  import {
+    current_task,
+    current_task_prompts,
+    prompt_name_from_id,
+  } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "../../../../../run/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -11,17 +15,22 @@
   $: prompt_model = $current_task_prompts?.prompts.find(
     (prompt) => prompt.id === prompt_id,
   )
-  let prompt_props = {}
+  let prompt_props: Record<string, string | undefined | null> = {}
   $: {
     prompt_props = Object.fromEntries(
       Object.entries({
         ID: prompt_model?.id,
+        Name: prompt_model?.name,
+        Description: prompt_model?.description,
         "Created By": prompt_model?.created_by,
-        "Created At": formatDate(prompt_model?.created_at),
+        "Created At": formatDate(prompt_model?.created_at || undefined),
         "Chain of Thought": prompt_model?.chain_of_thought_instructions
           ? "Yes"
           : "No",
-      }).filter(([_, value]) => value !== undefined),
+        "Source Generator": prompt_model?.generator_id
+          ? prompt_name_from_id(prompt_model?.generator_id)
+          : undefined,
+      }).filter(([_, value]) => value !== undefined && value !== null),
     )
   }
 </script>
@@ -29,9 +38,8 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Saved Prompt"
-    subtitle={prompt_model?.name
-      ? "Prompt Name: " + prompt_model.name
-      : undefined}
+    subtitle={prompt_model?.name}
+    sub_subtitle={prompt_model?.description || undefined}
   >
     {#if !$current_task_prompts}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -55,14 +63,16 @@
             <Output raw_output={prompt_model.chain_of_thought_instructions} />
           {/if}
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
+        <div class="w-[320px] 2xl:w-96 flex-none flex flex-col gap-4">
           <div class="text-xl font-bold">Details</div>
           <div
             class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
           >
             {#each Object.entries(prompt_props) as [key, value]}
               <div class="flex items-center">{key}</div>
-              <div class="flex items-center text-gray-500 truncate">
+              <div
+                class="flex items-center text-gray-500 break-words overflow-hidden"
+              >
                 {value}
               </div>
             {/each}

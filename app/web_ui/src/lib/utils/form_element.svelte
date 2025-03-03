@@ -12,6 +12,7 @@
   export let max_length: number | null = null
   export let error_message: string | null = null // start null because they haven't had a chance to edit it yet
   export let light_label: boolean = false // styling
+  export let hide_label: boolean = false
   export let select_options: [unknown, string][] = []
   export let select_options_grouped: [string, [unknown, string][]][] = []
   export let on_select: (e: Event) => void = () => {}
@@ -75,7 +76,7 @@
     for={id}
     class="text-sm font-medium text-left flex flex-col gap-1 pb-[4px]"
   >
-    <div class="flex flex-row items-center">
+    <div class="flex flex-row items-center {hide_label ? 'hidden' : ''}">
       <span class="grow {light_label ? 'text-xs text-gray-500' : ''}"
         >{label}</span
       >

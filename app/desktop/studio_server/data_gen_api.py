@@ -5,9 +5,10 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTaskInput,
     DataGenSampleTask,
     DataGenSampleTaskInput,
+    wrap_task_with_guidance,
 )
-from kiln_ai.adapters.prompt_builders import prompt_builder_from_ui_name
-from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.datamodel import DataSource, DataSourceType, PromptId, TaskRun
 from kiln_server.run_api import model_provider_from_string
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, ConfigDict, Field
@@ -60,8 +61,12 @@ class DataGenSaveSamplesApiInput(BaseModel):
     )
     output_model_name: str = Field(description="The name of the model to use")
     output_provider: str = Field(description="The provider of the model to use")
-    prompt_method: str = Field(
+    prompt_method: PromptId = Field(
         description="The prompt method used to generate the output"
+    )
+    human_guidance: str | None = Field(
+        description="Optional human guidance for generation",
+        default=None,
     )
 
 
@@ -122,7 +127,11 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        prompt_builder = prompt_builder_from_ui_name(sample.prompt_method, task)
+        # Wrap the task instuctions with human guidance, if provided
+        if sample.human_guidance is not None and sample.human_guidance.strip() != "":
+            task.instruction = wrap_task_with_guidance(
+                task.instruction, sample.human_guidance
+            )
 
         tags = ["synthetic"]
         if session_id:
@@ -132,8 +141,8 @@ def connect_data_gen_api(app: FastAPI):
             task,
             model_name=sample.output_model_name,
             provider=model_provider_from_string(sample.output_provider),
-            prompt_builder=prompt_builder,
-            tags=tags,
+            prompt_id=sample.prompt_method,
+            base_adapter_config=AdapterConfig(default_tags=tags),
         )
 
         properties: dict[str, str | int | float] = {

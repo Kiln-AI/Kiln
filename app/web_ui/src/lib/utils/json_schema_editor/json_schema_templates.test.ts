@@ -1,5 +1,5 @@
 import {
-  title_to_name,
+  string_to_json_key,
   schema_from_model,
   model_from_schema,
   typed_json_from_schema_model,
@@ -8,37 +8,41 @@ import type { SchemaModel, JsonSchema } from "./json_schema_templates"
 import { describe, it, expect } from "vitest"
 import { KilnError } from "$lib/utils/error_handlers"
 
-describe("title_to_name", () => {
+describe("string_to_json_key", () => {
   it("converts spaces to underscores", () => {
-    expect(title_to_name("Hello World")).toBe("hello_world")
+    expect(string_to_json_key("Hello World")).toBe("hello_world")
   })
 
   it("converts to lowercase", () => {
-    expect(title_to_name("UPPERCASE")).toBe("uppercase")
+    expect(string_to_json_key("UPPERCASE")).toBe("uppercase")
   })
 
   it("removes special characters", () => {
-    expect(title_to_name("Special@#$Characters!")).toBe("specialcharacters")
+    expect(string_to_json_key("Special@#$Characters!")).toBe(
+      "specialcharacters",
+    )
   })
 
   it("keeps alphanumeric characters, underscores, and dots", () => {
-    expect(title_to_name("alpha123_numeric.test")).toBe("alpha123_numeric.test")
+    expect(string_to_json_key("alpha123_numeric.test")).toBe(
+      "alpha123_numeric.test",
+    )
   })
 
   it("handles empty string", () => {
-    expect(title_to_name("")).toBe("")
+    expect(string_to_json_key("")).toBe("")
   })
 
   it("handles string with only special characters", () => {
-    expect(title_to_name("@#$%^&*")).toBe("")
+    expect(string_to_json_key("@#$%^&*")).toBe("")
   })
 
   it("handles mixed case and special characters", () => {
-    expect(title_to_name("User Name (Display)")).toBe("user_name_display")
+    expect(string_to_json_key("User Name (Display)")).toBe("user_name_display")
   })
 
   it("handles leading and trailing spaces", () => {
-    expect(title_to_name("  Trim Me  ")).toBe("trim_me")
+    expect(string_to_json_key("  Trim Me  ")).toBe("trim_me")
   })
 })
 

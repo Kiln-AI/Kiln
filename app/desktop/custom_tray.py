@@ -1,7 +1,10 @@
 import io
+import logging
 import sys
 
 import pystray
+
+logger = logging.getLogger(__name__)
 
 
 class KilnTray(pystray.Icon):
@@ -33,7 +36,7 @@ class KilnTray(pystray.Icon):
             self._icon_image.setTemplate_(True)
             # set the logical size of the image, which will be scaled for retina
             self._icon_image.setSize_(logical_size)
-        except Exception as e:
+        except Exception:
             # Continue, this shouldn't be fatal
-            print("Mac Tray Error", e)
+            logger.error("Mac Tray Error", exc_info=True)
         self._status_item.button().setImage_(self._icon_image)  # type: ignore

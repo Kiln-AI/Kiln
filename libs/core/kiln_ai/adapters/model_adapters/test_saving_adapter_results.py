@@ -3,7 +3,6 @@ from unittest.mock import patch
 import pytest
 
 from kiln_ai.adapters.model_adapters.base_adapter import (
-    AdapterInfo,
     BaseAdapter,
     RunOutput,
 )
@@ -13,6 +12,7 @@ from kiln_ai.datamodel import (
     Project,
     Task,
 )
+from kiln_ai.datamodel.task import RunConfig
 from kiln_ai.utils.config import Config
 
 
@@ -20,14 +20,8 @@ class MockAdapter(BaseAdapter):
     async def _run(self, input: dict | str) -> dict | str:
         return RunOutput(output="Test output", intermediate_outputs=None)
 
-    def adapter_info(self) -> AdapterInfo:
-        return AdapterInfo(
-            adapter_name="mock_adapter",
-            model_name="mock_model",
-            model_provider="mock_provider",
-            prompt_builder_name="mock_prompt_builder",
-            prompt_id="mock_prompt_id",
-        )
+    def adapter_name(self) -> str:
+        return "mock_adapter"
 
 
 @pytest.fixture
@@ -45,7 +39,14 @@ def test_task(tmp_path):
 
 @pytest.fixture
 def adapter(test_task):
-    return MockAdapter(test_task, model_name="phi_3_5", model_provider_name="ollama")
+    return MockAdapter(
+        run_config=RunConfig(
+            task=test_task,
+            model_name="phi_3_5",
+            model_provider_name="ollama",
+            prompt_id="simple_chain_of_thought_prompt_builder",
+        ),
+    )
 
 
 def test_save_run_isolation(test_task, adapter):
@@ -94,13 +95,12 @@ def test_save_run_isolation(test_task, adapter):
     assert reloaded_output.source.type == DataSourceType.synthetic
     assert reloaded_output.rating is None
     assert reloaded_output.source.properties["adapter_name"] == "mock_adapter"
-    assert reloaded_output.source.properties["model_name"] == "mock_model"
-    assert reloaded_output.source.properties["model_provider"] == "mock_provider"
+    assert reloaded_output.source.properties["model_name"] == "phi_3_5"
+    assert reloaded_output.source.properties["model_provider"] == "ollama"
     assert (
-        reloaded_output.source.properties["prompt_builder_name"]
-        == "mock_prompt_builder"
+        reloaded_output.source.properties["prompt_id"]
+        == "simple_chain_of_thought_prompt_builder"
     )
-    assert reloaded_output.source.properties["prompt_id"] == "mock_prompt_id"
     # Run again, with same input and different output. Should create a new TaskRun.
     different_run_output = RunOutput(
         output="Different output", intermediate_outputs=None
@@ -118,7 +118,7 @@ def test_save_run_isolation(test_task, adapter):
             properties={
                 "model_name": "mock_model",
                 "model_provider": "mock_provider",
-                "prompt_builder_name": "mock_prompt_builder",
+                "prompt_id": "mock_prompt_builder",
                 "adapter_name": "mock_adapter",
             },
         ),
@@ -179,6 +179,25 @@ async def test_autosave_false(test_task, adapter):
 
 
 @pytest.mark.asyncio
+async def test_autosave_true_with_disabled(test_task, adapter):
+    with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
+        mock_config = mock_shared.return_value
+        mock_config.autosave_runs = True
+        mock_config.user_id = "test_user"
+
+        input_data = "Test input"
+
+        adapter.base_adapter_config.allow_saving = False
+        run = await adapter.invoke(input_data)
+
+        # Check that no runs were saved
+        assert len(test_task.runs()) == 0
+
+        # Check that the run ID is not set
+        assert run.id is None
+
+
+@pytest.mark.asyncio
 async def test_autosave_true(test_task, adapter):
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
@@ -202,6 +221,9 @@ async def test_autosave_true(test_task, adapter):
         assert output.output == "Test output"
         assert output.source.type == DataSourceType.synthetic
         assert output.source.properties["adapter_name"] == "mock_adapter"
-        assert output.source.properties["model_name"] == "mock_model"
-        assert output.source.properties["model_provider"] == "mock_provider"
-        assert output.source.properties["prompt_builder_name"] == "mock_prompt_builder"
+        assert output.source.properties["model_name"] == "phi_3_5"
+        assert output.source.properties["model_provider"] == "ollama"
+        assert (
+            output.source.properties["prompt_id"]
+            == "simple_chain_of_thought_prompt_builder"
+        )

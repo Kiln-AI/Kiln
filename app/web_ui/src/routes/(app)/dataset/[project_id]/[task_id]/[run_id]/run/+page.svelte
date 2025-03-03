@@ -7,7 +7,7 @@
     current_task,
     model_name,
     model_info,
-    current_task_prompts,
+    prompt_name_from_id,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
@@ -30,27 +30,12 @@
 
   let model_props: Record<string, string | number | undefined> = {}
   $: {
-    // Attempt to lookup a nice name for the prompt
-    let prompt_name = $current_task_prompts?.prompts.find(
-      (prompt) => prompt.id === run?.output?.source?.properties?.prompt_id,
-    )?.name
-    let prompt_generator_name = $current_task_prompts?.generators.find(
-      (generator) =>
-        generator.ui_id ===
-        run?.output?.source?.properties?.prompt_builder_name,
-    )?.name
-
-    // Special case for fine-tuned prompts
-    if (
-      run?.output?.source?.properties?.prompt_builder_name ===
-      "fine_tune_prompt_builder"
-    ) {
-      prompt_generator_name = "Fine-Tune Prompt"
-      prompt_name = undefined
-    } else if (!prompt_generator_name && !prompt_name) {
-      prompt_generator_name =
-        "" + run?.output?.source?.properties?.prompt_builder_name
-    }
+    // Prompt ID previously was stored in the prompt_builder_name field
+    let prompt_id = (
+      run?.output?.source?.properties?.prompt_id ||
+      run?.output?.source?.properties?.prompt_builder_name ||
+      ""
+    ).toString()
 
     let topic_path: string | undefined = undefined
     if (
@@ -75,8 +60,7 @@
           $model_info,
         ),
         "Model Provider": run?.output?.source?.properties?.model_provider,
-        "Prompt Generator": prompt_generator_name,
-        Prompt: prompt_name,
+        Prompt: prompt_name_from_id(prompt_id),
         "Created By": run?.input_source?.properties?.created_by,
         "Created At": formatDate(run?.created_at),
         Topic: topic_path,

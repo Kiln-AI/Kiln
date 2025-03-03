@@ -2,7 +2,7 @@ import mimetypes
 import os
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,12 +25,20 @@ def studio_path():
         return os.path.join(base_path, "../../app/web_ui/build")
 
 
+def add_no_cache_headers(response: Response):
+    # This is already local, disable browser caching to prevent issues of old web-app trying to load old APIs and out of date web-ui
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+
 # File server that maps /foo/bar to /foo/bar.html (Starlette StaticFiles only does index.html)
 class HTMLStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
         try:
             response = await super().get_response(path, scope)
             if response.status_code != 404:
+                add_no_cache_headers(response)
                 return response
         except Exception as e:
             # catching HTTPException explicitly not working for some reason
@@ -39,8 +47,7 @@ class HTMLStaticFiles(StaticFiles):
                 raise e
         #  Try the .html version of the file if the .html version exists, for 404s
         response = await super().get_response(f"{path}.html", scope)
-        # This is already local, disable browser caching to prevent issues
-        response.headers["Cache-Control"] = "no-store"
+        add_no_cache_headers(response)
         return response
 
 

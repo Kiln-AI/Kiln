@@ -76,16 +76,17 @@
       </svg>
     </div>
     <div class="font-medium text-lg">
-      Fine tuning learns from your dataset to create custom models.
+      Fine-Tuning Learns from Your Dataset to Create Custom Models
     </div>
     <div>
-      Fine tunes can be faster, cheaper and more accurate than standard models.
+      Fine-tuned models can be faster, cheaper and more accurate than standard
+      models.
     </div>
     <a
       href={`/fine_tune/${project_id}/${task_id}/create_finetune`}
       class="btn btn-primary mt-2"
     >
-      Create Fine-Tune
+      Create a Fine-Tune
     </a>
     <a
       href="https://docs.getkiln.ai/docs/fine-tuning-guide"

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
     schema_from_json_str,
+    string_to_json_key,
     validate_schema,
 )
 
@@ -123,3 +124,25 @@ def test_triangle_schema():
     validate_schema({"a": 1, "b": 2, "c": 3}, json_triangle_schema)
     with pytest.raises(Exception):
         validate_schema({"a": 1, "b": 2, "c": "3"}, json_triangle_schema)
+
+
+@pytest.mark.parametrize(
+    "input_str,expected",
+    [
+        ("hello world", "hello_world"),
+        ("Hello World", "hello_world"),
+        ("hello_world", "hello_world"),
+        ("HELLO WORLD", "hello_world"),
+        ("hello123", "hello123"),
+        ("hello-world", "helloworld"),
+        ("hello!@#$%^&*()world", "helloworld"),
+        ("  hello  world  ", "hello__world"),
+        ("hello__world", "hello__world"),
+        ("", ""),
+        ("!@#$%", ""),
+        ("snake_case_string", "snake_case_string"),
+        ("camelCaseString", "camelcasestring"),
+    ],
+)
+def test_string_to_json_key(input_str: str, expected: str):
+    assert string_to_json_key(input_str) == expected

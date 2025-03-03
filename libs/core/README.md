@@ -39,6 +39,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Load an Existing Dataset into a Kiln Task Dataset](#load-an-existing-dataset-into-a-kiln-task-dataset)
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
+  - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
@@ -198,6 +199,41 @@ for file in glob.glob(dataitem_glob):
     dfs.append(df)
 final_df = pd.concat(dfs, ignore_index=True)
 print(final_df)
+```
+
+### Building and Running a Kiln Task from Code
+
+```python
+# Step 1: Create or Load a Task -- choose one of the following 1.A or 1.B
+
+# Step 1.A: Optionally load an existing task from disk
+# task = datamodel.Task.load_from_file("path/to/task.kiln")
+
+# Step 1.B: Create a new task in code, without saving to disk.
+task = datamodel.Task(
+    name="test task",
+    instruction="Tell a joke, given a subject.",
+)
+# replace with a valid JSON schema https://json-schema.org for your task (json string, not a python dict).
+# Or delete this line to use plaintext output
+task.output_json_schema = json_joke_schema
+
+# Step 2: Create an Adapter to run the task, with a specific model and provider
+adapter = adapter_for_task(task, model_name="llama_3_1_8b", provider="groq")
+
+# Step 3: Invoke the Adapter to run the task
+task_input = "cows"
+response = await adapter.invoke(task_input)
+print(f"Output: {response.output.output}")
+
+# Step 4 (optional): Load the task from disk and print the results.
+#  This will only work if the task was loaded from disk, or you called task.save_to_file() before invoking the adapter (epemerial tasks don't save their result to disk)
+task = datamodel.Task.load_from_file(tmp_path / "test_task.kiln")
+for run in task.runs():
+    print(f"Run: {run.id}")
+    print(f"Input: {run.input}")
+    print(f"Output: {run.output}")
+
 ```
 
 ## Full API Reference

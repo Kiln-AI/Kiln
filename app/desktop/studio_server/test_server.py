@@ -6,7 +6,7 @@ import pytest
 import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel import strict_mode
+from kiln_ai.datamodel.strict_mode import strict_mode
 
 from app.desktop.desktop_server import make_app
 from app.desktop.studio_server.webhost import HTMLStaticFiles

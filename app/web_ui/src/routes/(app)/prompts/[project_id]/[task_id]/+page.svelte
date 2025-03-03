@@ -72,16 +72,16 @@
       <div class="font-medium mt-8">Saved Prompts</div>
       {#if $current_task_prompts.prompts.length > 0}
         <div class="font-light text-gray-500 text-sm">
-          Manually created prompts.
           <a href={`/prompts/${project_id}/${task_id}/create`} class="link">
-            Create a new prompt.
+            Create a new prompt
           </a>
         </div>
         <div class="overflow-x-auto rounded-lg border mt-4">
           <table class="table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Name &amp; Description</th>
+                <th>Type</th>
                 <th>Prompt Preview</th>
               </tr>
             </thead>
@@ -94,10 +94,32 @@
                       `/prompts/${project_id}/${task_id}/saved/${prompt.id}`,
                     )}
                 >
-                  <td class="font-medium">{prompt.name}</td>
+                  <td class="font-medium">
+                    <div class="font-medium">
+                      {prompt.name}
+                    </div>
+                    <div
+                      class="max-w-[220px] font-light text-sm text-gray-500 overflow-hidden {prompt.description
+                        ? 'block'
+                        : 'hidden'}"
+                    >
+                      {prompt.description}
+                    </div>
+                  </td>
+                  <td class="min-w-[120px]">
+                    {#if prompt.id.startsWith("id::")}
+                      Custom
+                    {:else if prompt.id.startsWith("fine_tune_prompt::")}
+                      Fine Tuning Prompt
+                    {:else if prompt.id.startsWith("task_run_config::")}
+                      Eval Prompt
+                    {:else}
+                      Unknown
+                    {/if}
+                  </td>
                   <td>
                     {prompt.prompt.length > 100
-                      ? prompt.prompt.slice(0, 100) + "..."
+                      ? prompt.prompt.slice(0, 200) + "..."
                       : prompt.prompt}
                   </td>
                 </tr>

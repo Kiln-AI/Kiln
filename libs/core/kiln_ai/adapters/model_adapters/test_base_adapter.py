@@ -3,8 +3,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterInfo, BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.datamodel import Task
+from kiln_ai.datamodel.task import RunConfig
 
 
 class MockAdapter(BaseAdapter):
@@ -13,13 +14,8 @@ class MockAdapter(BaseAdapter):
     async def _run(self, input):
         return None
 
-    def adapter_info(self) -> AdapterInfo:
-        return AdapterInfo(
-            adapter_name="test",
-            model_name=self.model_name,
-            model_provider=self.model_provider_name,
-            prompt_builder_name="test",
-        )
+    def adapter_name(self) -> str:
+        return "test"
 
 
 @pytest.fixture
@@ -37,9 +33,12 @@ def base_task():
 @pytest.fixture
 def adapter(base_task):
     return MockAdapter(
-        kiln_task=base_task,
-        model_name="test_model",
-        model_provider_name="test_provider",
+        run_config=RunConfig(
+            task=base_task,
+            model_name="test_model",
+            model_provider_name="test_provider",
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
 
@@ -85,7 +84,12 @@ async def test_model_provider_missing_names(base_task):
     """Test error when model or provider name is missing"""
     # Test with missing model name
     adapter = MockAdapter(
-        kiln_task=base_task, model_name="", model_provider_name="test_provider"
+        run_config=RunConfig(
+            task=base_task,
+            model_name="",
+            model_provider_name="",
+            prompt_id="simple_prompt_builder",
+        ),
     )
     with pytest.raises(
         ValueError, match="model_name and model_provider_name must be provided"
@@ -94,7 +98,12 @@ async def test_model_provider_missing_names(base_task):
 
     # Test with missing provider name
     adapter = MockAdapter(
-        kiln_task=base_task, model_name="test_model", model_provider_name=""
+        run_config=RunConfig(
+            task=base_task,
+            model_name="test_model",
+            model_provider_name="",
+            prompt_id="simple_prompt_builder",
+        ),
     )
     with pytest.raises(
         ValueError, match="model_name and model_provider_name must be provided"

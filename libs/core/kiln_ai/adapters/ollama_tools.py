@@ -1,4 +1,3 @@
-import os
 from typing import Any, List
 
 import httpx

@@ -15,7 +15,7 @@ def make_app(lifespan=None):
     app = FastAPI(
         title="Kiln AI Server",
         summary="A REST API for the Kiln AI datamodel.",
-        description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln-ai",
+        description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln",
         lifespan=lifespan,
     )
 
