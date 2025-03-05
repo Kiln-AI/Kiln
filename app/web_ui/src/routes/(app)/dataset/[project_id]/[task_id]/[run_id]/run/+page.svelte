@@ -16,6 +16,7 @@
   import type { TaskRun } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
+  import DeleteDialog from "$lib/ui/delete_dialog.svelte"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -101,35 +102,11 @@
     }
   }
 
-  let deleted = false
-  async function deleteRun() {
-    if (
-      !confirm(
-        "Are you sure you want to delete this run?\n\nThis action cannot be undone.",
-      )
-    ) {
-      return
-    }
-    try {
-      loading = true
-      await client.DELETE(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              run_id,
-            },
-          },
-        },
-      )
-      deleted = true
-    } catch (error) {
-      load_error = createKilnError(error)
-    } finally {
-      loading = false
-    }
+  let delete_dialog: DeleteDialog | null = null
+  let deleted: Record<string, boolean> = {}
+  $: delete_url = `/api/projects/${project_id}/tasks/${task_id}/runs/${run_id}`
+  function after_delete() {
+    deleted[run_id] = true
   }
 
   function next_run() {
@@ -149,6 +126,7 @@
   }
 
   function load_run_by_id(new_run_id: string) {
+    load_error = null
     run_id = new_run_id
     run = null
     goto(`/dataset/${project_id}/${task_id}/${run_id}/run`, {
@@ -167,10 +145,10 @@
   let buttons: ActionButton[] = []
   $: {
     buttons = []
-    if (!deleted) {
+    if (!deleted[run_id]) {
       buttons.push({
         icon: "/images/delete.svg",
-        handler: deleteRun,
+        handler: () => delete_dialog?.show(),
         shortcut: isMac() ? "Backspace" : "Delete",
       })
     }
@@ -204,7 +182,7 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if deleted}
+    {:else if deleted[run_id] === true}
       <div class="badge badge-error badge-lg p-4">Run Deleted</div>
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
@@ -234,3 +212,10 @@
     {/if}
   </AppPage>
 </div>
+
+<DeleteDialog
+  name="Dataset Run"
+  bind:this={delete_dialog}
+  {delete_url}
+  {after_delete}
+/>

@@ -1,6 +1,8 @@
 import math
 from typing import Dict, List, Tuple
 
+from openai.types.chat import ChatCompletionTokenLogprob
+
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutput
@@ -8,7 +10,6 @@ from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
 from kiln_ai.datamodel.task import RunConfig
-from openai.types.chat import ChatCompletionTokenLogprob
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {

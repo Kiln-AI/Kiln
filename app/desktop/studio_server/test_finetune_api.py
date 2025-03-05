@@ -1029,3 +1029,36 @@ def test_thinking_instructions_default(mock_cot):
 
     mock_cot.assert_called_once_with(task)
     assert result == "Default COT instructions"
+
+
+async def test_update_finetune(client, mock_task_from_id_disk_backed, test_task):
+    """Test updating a finetune's name and description"""
+    # Get the original finetune to verify changes later
+    original_finetune = next(ft for ft in test_task.finetunes() if ft.id == "ft1")
+    original_name = original_finetune.name
+
+    # Prepare update data
+    update_data = {
+        "name": "Updated Finetune Name",
+        "description": "Updated finetune description",
+    }
+
+    # Send PATCH request
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/finetunes/ft1", json=update_data
+    )
+
+    # Verify response
+    assert response.status_code == 200
+    updated_finetune = response.json()
+    assert updated_finetune["id"] == "ft1"
+    assert updated_finetune["name"] == "Updated Finetune Name"
+    assert updated_finetune["description"] == "Updated finetune description"
+
+    mock_task_from_id_disk_backed.assert_called_with("project1", "task1")
+
+    # Verify save_to_file was called by checking if the finetune in the task was updated
+    updated_task_finetune = next(ft for ft in test_task.finetunes() if ft.id == "ft1")
+    assert updated_task_finetune.name == "Updated Finetune Name"
+    assert updated_task_finetune.description == "Updated finetune description"
+    assert updated_task_finetune.name != original_name

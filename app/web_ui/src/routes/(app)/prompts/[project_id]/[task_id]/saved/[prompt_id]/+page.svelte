@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import {
+    current_project,
     current_task,
     current_task_prompts,
     prompt_name_from_id,
@@ -8,6 +9,7 @@
   import AppPage from "../../../../../app_page.svelte"
   import Output from "../../../../../run/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: task_id = $page.params.task_id
   $: prompt_id = $page.params.prompt_id
@@ -33,6 +35,8 @@
       }).filter(([_, value]) => value !== undefined && value !== null),
     )
   }
+
+  let edit_dialog: EditDialog | null = null
 </script>
 
 <div class="max-w-[1400px]">
@@ -40,6 +44,16 @@
     title="Saved Prompt"
     subtitle={prompt_model?.name}
     sub_subtitle={prompt_model?.description || undefined}
+    action_buttons={prompt_model?.id.startsWith("id::")
+      ? [
+          {
+            label: "Edit",
+            handler: () => {
+              edit_dialog?.show()
+            },
+          },
+        ]
+      : []}
   >
     {#if !$current_task_prompts}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -78,8 +92,8 @@
             {/each}
           </div>
           <p class="mt-4 text-sm text-gray-500">
-            Note: Prompts can't be edited to ensure consistency with prior runs.
-            Instead, copy this prompt and create a new copy.
+            Note: Prompt content can't be edited to ensure consistency with
+            prior runs. Instead, copy this prompt and create a new copy.
           </p>
         </div>
       </div>
@@ -88,3 +102,27 @@
     {/if}
   </AppPage>
 </div>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Prompt"
+  patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
+  delete_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
+  fields={[
+    {
+      label: "Prompt Name",
+      description: "The name of the prompt",
+      api_name: "name",
+      value: prompt_model?.name || "",
+      input_type: "input",
+    },
+    {
+      label: "Description",
+      description: "The description of the prompt",
+      api_name: "description",
+      optional: true,
+      value: prompt_model?.description || "",
+      input_type: "textarea",
+    },
+  ]}
+/>

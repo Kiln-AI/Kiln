@@ -14,6 +14,7 @@
   let task: Task | null = null
   let loading = false
   let error: KilnError | null = null
+  export let saved: boolean = false
 
   onMount(async () => {
     get_task()
@@ -74,5 +75,6 @@
     redirect_on_created={clone_mode ? "/run" : null}
     hide_example_task={true}
     explicit_project_id={project_id}
+    bind:saved
   />
 {/if}

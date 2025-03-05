@@ -76,6 +76,11 @@ def connect_task_api(app: FastAPI):
 
         return updated_task
 
+    @app.delete("/api/projects/{project_id}/task/{task_id}")
+    async def delete_task(project_id: str, task_id: str) -> None:
+        task = task_from_id(project_id, task_id)
+        task.delete()
+
     @app.get("/api/projects/{project_id}/tasks")
     async def get_tasks(project_id: str) -> List[Task]:
         parent_project = project_from_id(project_id)

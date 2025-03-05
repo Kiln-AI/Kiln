@@ -209,6 +209,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Prompt */
+        patch: operations["update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -603,7 +620,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Finetune */
+        patch: operations["update_finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__patch"];
         trace?: never;
     };
     "/api/finetune_providers": {
@@ -705,7 +723,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Eval */
+        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -1358,7 +1377,7 @@ export interface components {
          * EvalConfig
          * @description A configuration for running an eval. This includes anything needed to run the eval on a dataset like the prompt, model, thresholds, etc.
          *
-         *     A eval might have many configs, example running the same eval with 2 different models. Comparing eval results is only valid when the same eval is run with the same config.
+         *     A eval might have many configs, example running the same eval with 2 different models. Comparing eval results is only valid within the scope of the same config.
          */
         EvalConfig: {
             /**
@@ -1436,7 +1455,7 @@ export interface components {
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
          *
-         *     Very similar to TaskRequirement, but conceptually different so separate models.
+         *     Very similar to TaskRequirement, but conceptually different keeping in a separate models.
          */
         EvalOutputScore: {
             /**
@@ -1469,7 +1488,13 @@ export interface components {
         };
         /**
          * EvalRun
-         * @description The results of running an eval on a single dataset item, with a specific TaskRunConfig and EvalConfig.
+         * @description The results of running an eval on a single dataset item.
+         *
+         *     This is a child of an EvalConfig, which specifies how the scores were generated.
+         *
+         *     Eval runs can be one of 2 types:
+         *     1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
+         *     2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
          */
         EvalRun: {
             /**
@@ -1490,7 +1515,7 @@ export interface components {
             created_by?: string;
             /**
              * Dataset Id
-             * @description The ID of the dataset item that was used for this run (we only use it's input). Must belong to the same Task as this eval.
+             * @description The ID of the dataset item that was used for this run. Must belong to the same Task as the grand-parent eval of this EvalRun.
              */
             dataset_id: string | null;
             /**
@@ -1516,14 +1541,14 @@ export interface components {
             output: string;
             /**
              * Intermediate Outputs
-             * @description The intermediate outputs of the task.
+             * @description The intermediate outputs of the task (example, eval thinking).
              */
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
             /**
              * Scores
-             * @description The scores of the evaluator (specifically the EvalConfig this object is a child of).
+             * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).
              */
             scores: {
                 [key: string]: number;
@@ -1818,7 +1843,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "phi_4" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_72b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "phi_4" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_72b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
@@ -1829,6 +1854,8 @@ export interface components {
         OllamaConnection: {
             /** Message */
             message: string;
+            /** Version */
+            version?: string | null;
             /** Supported Models */
             supported_models: string[];
             /** Untested Models */
@@ -1998,6 +2025,13 @@ export interface components {
             generators: components["schemas"]["PromptGenerator"][];
             /** Prompts */
             prompts: components["schemas"]["ApiPrompt"][];
+        };
+        /** PromptUpdateRequest */
+        PromptUpdateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
         };
         /** ProviderModel */
         ProviderModel: {
@@ -2530,6 +2564,23 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** UpdateEvalRequest */
+        UpdateEvalRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
+        /**
+         * UpdateFinetuneRequest
+         * @description Request to update a finetune
+         */
+        UpdateFinetuneRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2938,6 +2989,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PromptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                prompt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Prompt"];
                 };
             };
             /** @description Validation Error */
@@ -3899,6 +3987,43 @@ export interface operations {
             };
         };
     };
+    update_finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                finetune_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFinetuneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Finetune"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     finetune_providers_api_finetune_providers_get: {
         parameters: {
             query?: never;
@@ -4069,6 +4194,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEvalRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -10,7 +10,8 @@
 <p align="center">
   <a href="https://docs.getkiln.ai/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •
   <a href="https://docs.getkiln.ai/docs/synthetic-data-generation"><strong>Synthetic Data Generation</strong></a> • 
-  <a href="https://docs.getkiln.ai/docs/collaboration"><strong>Dataset Collaboration</strong></a> • 
+  <a href="https://docs.getkiln.ai/docs/evaluations"><strong>Evals</strong></a> • 
+  <a href="https://docs.getkiln.ai/docs/collaboration"><strong>Collaboration</strong></a> • 
   <a href="https://docs.getkiln.ai"><strong>Docs</strong></a>
 </p>
 

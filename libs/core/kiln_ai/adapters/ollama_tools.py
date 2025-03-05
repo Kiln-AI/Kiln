@@ -38,6 +38,7 @@ async def ollama_online() -> bool:
 
 class OllamaConnection(BaseModel):
     message: str
+    version: str | None = None
     supported_models: List[str]
     untested_models: List[str] = Field(default_factory=list)
 

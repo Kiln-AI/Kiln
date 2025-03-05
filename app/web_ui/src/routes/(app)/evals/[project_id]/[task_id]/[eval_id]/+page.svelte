@@ -30,6 +30,7 @@
   import RunEval from "./run_eval.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "./output_type_table_preview.svelte"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -341,6 +342,7 @@
   let task_run_config_model_name = ""
   let task_run_config_provider_name = ""
   let task_run_config_prompt_method = "simple_prompt_builder"
+  let task_run_config_long_prompt_name_provider = ""
 
   let add_task_config_dialog: Dialog | null = null
   let add_task_config_error: KilnError | null = null
@@ -400,12 +402,20 @@
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
+
+  let edit_dialog: EditDialog | null = null
 </script>
 
 <AppPage
   title="Evaluator"
   subtitle={evaluator?.name}
   action_buttons={[
+    {
+      label: "Edit",
+      handler: () => {
+        edit_dialog?.show()
+      },
+    },
     {
       label: "Compare Evaluation Methods",
       href: `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`,
@@ -698,8 +708,12 @@
     <AvailableModelsDropdown
       bind:model_name={task_run_config_model_name}
       bind:provider_name={task_run_config_provider_name}
+      bind:model={task_run_config_long_prompt_name_provider}
     />
-    <PromptTypeSelector bind:prompt_method={task_run_config_prompt_method} />
+    <PromptTypeSelector
+      bind:prompt_method={task_run_config_prompt_method}
+      bind:linked_model_selection={task_run_config_long_prompt_name_provider}
+    />
     {#if add_task_config_error}
       <div class="text-error text-sm">
         {add_task_config_error.getMessage() || "An unknown error occurred"}
@@ -707,3 +721,27 @@
     {/if}
   </div>
 </Dialog>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Eval"
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
+  delete_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
+  fields={[
+    {
+      label: "Eval Name",
+      description: "A name to identify this eval.",
+      api_name: "name",
+      value: evaluator?.name || "",
+      input_type: "input",
+    },
+    {
+      label: "Description",
+      description: "A description of the eval for you and your team.",
+      api_name: "description",
+      value: evaluator?.description || "",
+      input_type: "textarea",
+      optional: true,
+    },
+  ]}
+/>

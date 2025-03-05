@@ -6,9 +6,10 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { FinetuneWithStatus } from "$lib/types"
   import { provider_name_from_id, load_available_models } from "$lib/stores"
-  import { formatDate } from "$lib/utils/formatters"
+  import { formatDate, data_strategy_name } from "$lib/utils/formatters"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Output from "../../../../../run/output.svelte"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -93,9 +94,9 @@
       { name: "Created At", value: formatDate(finetune_data.created_at) },
       { name: "Created By", value: finetune_data.created_by },
       {
-        name: "Data Strategy",
+        name: "Type",
         value: data_strategy_name(finetune_data.data_strategy),
-        info: "The strategy used to build the training data for the fine tune. Final-only will only use the final output of the task run. Final-and-intermediate also trains on intermediate outputs (reasoning or chain of thought). You should typically call a fine-tune with the same strategy it was trained with.",
+        info: "The type of model, determined by the strategy used to build the training data for the fine tune. Standard will only learn from the final output of the task run. Reasoning also trains on intermediate outputs (reasoning or chain of thought). You should typically call a fine-tune with the same strategy it was trained with.",
       },
     ]
     properties = properties.filter((property) => !!property.value)
@@ -143,16 +144,7 @@
     return model_id
   }
 
-  function data_strategy_name(data_strategy: string): string {
-    switch (data_strategy) {
-      case "final_only":
-        return "Final answer only"
-      case "final_and_intermediate":
-        return "Final answer and intermediate reasoning"
-      default:
-        return data_strategy
-    }
-  }
+  let edit_dialog: EditDialog | null = null
 </script>
 
 <div class="max-w-[1400px]">
@@ -160,6 +152,12 @@
     title="Fine Tune"
     subtitle={finetune_loading ? undefined : `Name: ${finetune?.finetune.name}`}
     action_buttons={[
+      {
+        label: "Edit",
+        handler: () => {
+          edit_dialog?.show()
+        },
+      },
       {
         label: "Reload Status",
         handler: () => {
@@ -272,3 +270,26 @@
     {/if}
   </AppPage>
 </div>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Fine Tune"
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/finetunes/${finetune_id}`}
+  fields={[
+    {
+      label: "Fine Tune Name",
+      description: "A name to identify this fine tune.",
+      api_name: "name",
+      value: finetune?.finetune.name || "",
+      input_type: "input",
+    },
+    {
+      label: "Description",
+      description: "A description of the fine tune for you and your team.",
+      api_name: "description",
+      value: finetune?.finetune.description || "",
+      input_type: "textarea",
+      optional: true,
+    },
+  ]}
+/>

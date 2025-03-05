@@ -162,6 +162,11 @@ class EvalConfigCompareSummary(BaseModel):
     not_rated_count: int
 
 
+class UpdateEvalRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
 def dataset_ids_in_filter(task: Task, filter_id: DatasetFilterId) -> Set[ID_TYPE]:
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
@@ -252,6 +257,21 @@ def connect_evals_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
+    async def update_eval(
+        project_id: str, task_id: str, eval_id: str, request: UpdateEvalRequest
+    ) -> Eval:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        eval.name = request.name
+        eval.description = request.description
+        eval.save_to_file()
+        return eval
+
+    @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
+    async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        eval.delete()
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/evals")
     async def get_evals(project_id: str, task_id: str) -> list[Eval]:

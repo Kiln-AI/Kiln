@@ -31,7 +31,7 @@
 
   let error: KilnError | null = null
   let submitting = false
-  let saved: boolean = false
+  export let saved: boolean = false
 
   // Warn before unload if there's any user input
   $: warn_before_unload =

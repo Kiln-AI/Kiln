@@ -316,3 +316,23 @@ def test_update_task_unexpected_return_type(client, project_and_task):
 
     assert response.status_code == 500
     assert response.json()["message"] == "Failed to patch task."
+
+
+def test_delete_task_success(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        # First verify the task exists
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
+        assert response.status_code == 200
+
+        # Delete the task
+        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        assert response.status_code == 200
+
+        # Verify the task was deleted
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
+        assert response.status_code == 404
+        assert response.json()["message"] == f"Task not found. ID: {task.id}"

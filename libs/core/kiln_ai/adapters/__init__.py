@@ -12,10 +12,13 @@ The prompt_builders submodule contains classes that build prompts for use with t
 The repair submodule contains an adapter for the repair task.
 
 The parser submodule contains parsers for the output of the AI models.
+
+The eval submodule contains the code for evaluating the performance of a model.
 """
 
 from . import (
     data_gen,
+    eval,
     fine_tune,
     ml_model_list,
     model_adapters,
@@ -30,4 +33,5 @@ __all__ = [
     "ml_model_list",
     "prompt_builders",
     "repair",
+    "eval",
 ]

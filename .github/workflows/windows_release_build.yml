@@ -73,6 +73,12 @@ jobs:
       - name: Copy Windows Installer
         run: cp ./app/desktop/Output/kilnsetup.exe ./app/desktop/build/dist/Kiln.Windows.Installer.exe
 
+      - name: Checksums (Windows Signed Installer)
+        if: runner.os == 'Windows'
+        run: |
+          certutil -hashfile ./app/desktop/build/dist/Kiln.Windows.Installer.exe SHA256
+          certutil -hashfile ./app/desktop/build/dist/Kiln/Kiln.exe SHA256
+
       - name: Upload Build
         uses: actions/upload-artifact@v4
         with:

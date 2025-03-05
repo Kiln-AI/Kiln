@@ -216,7 +216,22 @@ export function model_name(
   // Could be a number, so convert to string
   model_id = "" + model_id
   const model = provider_models?.models[model_id]
-  return model?.name || model_id
+  if (model?.name) {
+    return model.name
+  }
+
+  // Find the model in the available models list which has fine-tunes and custom models
+  const available_model = get(available_models) || {}
+  for (const provider of available_model) {
+    const models = provider.models || []
+    for (const model of models) {
+      if (model.id === model_id && model.name) {
+        return model.name
+      }
+    }
+  }
+
+  return "Model ID: " + model_id
 }
 
 export function provider_name_from_id(provider_id: string): string {

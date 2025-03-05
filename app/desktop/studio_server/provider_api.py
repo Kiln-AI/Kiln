@@ -63,6 +63,13 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
             detail="Failed to parse Ollama data - unsure which models are installed.",
         )
 
+    # attempt to get the Ollama version
+    try:
+        version_body = requests.get(base_url + "/api/version", timeout=5).json()
+        ollama_connection.version = version_body.get("version", None)
+    except Exception:
+        pass
+
     # Save the custom Ollama URL if used to connect
     if custom_ollama_url and custom_ollama_url != Config.shared().ollama_base_url:
         Config.shared().save_setting("ollama_base_url", custom_ollama_url)

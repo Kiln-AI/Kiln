@@ -431,6 +431,9 @@
             >dataset tab</a
           > to review and manage.
         </div>
+        <div class="font-light text-xs mt-4 text-gray-500">
+          Set tagged with &quot;synthetic_session_{session_id}&quot;
+        </div>
         {#if save_all_sub_errors.length > 0}
           <div class="text-error font-light text-sm mt-4">
             {save_all_sub_errors.length} samples failed to save. Running again may

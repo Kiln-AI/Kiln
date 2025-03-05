@@ -9,6 +9,7 @@
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
   import { provider_name_from_id, load_available_models } from "$lib/stores"
+  import { data_strategy_name } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -107,8 +108,8 @@
       <table class="table">
         <thead>
           <tr>
-            <th> ID </th>
             <th> Name </th>
+            <th> Type </th>
             <th> Provider</th>
             <th> Base Model</th>
             <th> Status </th>
@@ -125,8 +126,10 @@
                 )
               }}
             >
-              <td> {finetune.id} </td>
               <td> {finetune.name} </td>
+              <td>
+                {data_strategy_name(finetune.data_strategy)}
+              </td>
               <td> {provider_name_from_id(finetune.provider)} </td>
               <td> {finetune.base_model_id} </td>
               <td> {format_status(finetune.latest_status)} </td>

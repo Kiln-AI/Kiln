@@ -656,16 +656,16 @@
           {/if}
           <div>
             <FormElement
-              label="Training Strategy"
-              description="Should the model be trained on the final response only, or also include intermediate thinking?"
-              info_description="If you select 'Final Response and Intermediate Thinking', the model will also be trained on the intermediate thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
+              label="Model Type / Training Strategy"
+              description="Should the model be trained on only the final response, or also include intermediate thinking?"
+              info_description="If you select 'Reasoning', the model will also be trained on the intermediate thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
               inputType="select"
               id="data_strategy"
               select_options={[
-                ["final_only", "Final Response Only"],
+                ["final_only", "Standard - Learn only from final response"],
                 [
                   "final_and_intermediate",
-                  "Final Response and Intermediate Thinking",
+                  "Reasoning - Learn intermediate thinking and final response",
                 ],
               ]}
               bind:value={data_strategy}

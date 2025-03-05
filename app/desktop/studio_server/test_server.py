@@ -41,15 +41,18 @@ def test_strict_mode(client):
 
 def test_connect_ollama_success(client):
     with patch("requests.get") as mock_get:
-        mock_get.return_value.json.return_value = {
-            "models": [{"model": "phi3.5:latest"}]
-        }
+        # Set up mock to return different values on consecutive calls
+        mock_get.return_value.json.side_effect = [
+            {"models": [{"model": "phi3.5:latest"}]},
+            {"version": "0.5.0"},
+        ]
         response = client.get("/api/provider/ollama/connect")
         assert response.status_code == 200
         assert response.json() == {
             "message": "Ollama connected",
             "supported_models": ["phi3.5:latest"],
             "untested_models": [],
+            "version": "0.5.0",
         }
 
 

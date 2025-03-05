@@ -53,3 +53,14 @@ export function eval_config_to_ui_name(
     }[eval_config_type] || eval_config_type
   )
 }
+
+export function data_strategy_name(data_strategy: string): string {
+  switch (data_strategy) {
+    case "final_only":
+      return "Standard"
+    case "final_and_intermediate":
+      return "Reasoning"
+    default:
+      return data_strategy
+  }
+}

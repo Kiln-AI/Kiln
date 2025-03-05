@@ -814,7 +814,10 @@ async def test_connect_ollama_uses_custom_url_when_provided():
 
         await connect_ollama("http://custom-url:11434")
 
-        mock_get.assert_called_once_with("http://custom-url:11434/api/tags", timeout=5)
+        assert mock_get.call_count == 2
+        assert mock_get.call_args_list[0][0][0] == "http://custom-url:11434/api/tags"
+        assert mock_get.call_args_list[0][1] == {"timeout": 5}
+        assert mock_get.call_args_list[1][0][0] == "http://custom-url:11434/api/version"
 
 
 @pytest.mark.asyncio
@@ -835,7 +838,12 @@ async def test_connect_ollama_uses_default_url_when_no_custom_url():
 
         await connect_ollama(None)
 
-        mock_get.assert_called_once_with("http://default-url:11434/api/tags", timeout=5)
+        assert mock_get.call_count == 2
+        assert mock_get.call_args_list[0][0][0] == "http://default-url:11434/api/tags"
+        assert mock_get.call_args_list[0][1] == {"timeout": 5}
+        assert (
+            mock_get.call_args_list[1][0][0] == "http://default-url:11434/api/version"
+        )
 
 
 @pytest.mark.asyncio

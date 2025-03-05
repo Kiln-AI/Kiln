@@ -82,6 +82,7 @@
         <FormElement
           label="Prompt Description"
           id="prompt_description"
+          optional={true}
           bind:value={prompt_description}
           description="A description of the prompt for your reference."
         />

@@ -104,6 +104,24 @@ class FinetuneWithStatus(BaseModel):
     status: FineTuneStatus
 
 
+class UpdateFinetuneRequest(BaseModel):
+    """Request to update a finetune"""
+
+    name: str
+    description: str | None = None
+
+
+def finetune_from_id(project_id: str, task_id: str, finetune_id: str) -> Finetune:
+    task = task_from_id(project_id, task_id)
+    finetune = Finetune.from_id_and_parent_path(finetune_id, task.path)
+    if finetune is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Finetune with ID '{finetune_id}' not found",
+        )
+    return finetune
+
+
 def connect_fine_tune_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
     async def dataset_splits(project_id: str, task_id: str) -> list[DatasetSplit]:
@@ -136,13 +154,7 @@ def connect_fine_tune_api(app: FastAPI):
     async def finetune(
         project_id: str, task_id: str, finetune_id: str
     ) -> FinetuneWithStatus:
-        task = task_from_id(project_id, task_id)
-        finetune = Finetune.from_id_and_parent_path(finetune_id, task.path)
-        if finetune is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Finetune with ID '{finetune_id}' not found",
-            )
+        finetune = finetune_from_id(project_id, task_id, finetune_id)
         if finetune.provider not in finetune_registry:
             raise HTTPException(
                 status_code=400,
@@ -151,6 +163,19 @@ def connect_fine_tune_api(app: FastAPI):
         finetune_adapter = finetune_registry[finetune.provider]
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}")
+    async def update_finetune(
+        project_id: str,
+        task_id: str,
+        finetune_id: str,
+        request: UpdateFinetuneRequest,
+    ) -> Finetune:
+        finetune = finetune_from_id(project_id, task_id, finetune_id)
+        finetune.name = request.name
+        finetune.description = request.description
+        finetune.save_to_file()
+        return finetune
 
     @app.get("/api/finetune_providers")
     async def finetune_providers() -> list[FinetuneProvider]:

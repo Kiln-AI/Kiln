@@ -254,6 +254,20 @@
     } finally {
       status.ollama.connecting = false
     }
+    // Check min version number. We require 0.5+ for structured output
+    if (data.version) {
+      const version_parts = data.version.split(".")
+      if (version_parts.length >= 2) {
+        const major = parseInt(version_parts[0])
+        const minor = parseInt(version_parts[1])
+        if (major < 0 || (major == 0 && minor < 5)) {
+          status.ollama.error =
+            "Ollama version must be 0.5.0 or higher. Please update Ollama."
+          status.ollama.connected = false
+          return
+        }
+      }
+    }
     if (
       data.supported_models.length === 0 &&
       (!data.untested_models || data.untested_models.length === 0)

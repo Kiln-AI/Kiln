@@ -136,3 +136,109 @@ def test_all_ids_are_covered():
     api_list = [g.id for g in _prompt_generators]
 
     assert set(api_list) == set(generators)
+
+
+def test_update_prompt_success(client, project_and_task):
+    project, task = project_and_task
+
+    # First create a prompt
+    test_prompt = Prompt(
+        name="Original Name",
+        prompt="This is a test prompt",
+        description="Original description",
+        parent=task,
+    )
+    test_prompt.save_to_file()
+
+    # Prepare update data
+    update_data = {"name": "Updated Name", "description": "Updated description"}
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/id::{test_prompt.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["name"] == "Updated Name"
+    assert res["description"] == "Updated description"
+
+    # Verify the prompt was updated in the task/file
+    updated_prompt = next((p for p in task.prompts() if p.id == test_prompt.id), None)
+    assert updated_prompt is not None
+    assert updated_prompt.name == "Updated Name"
+    assert updated_prompt.description == "Updated description"
+    # Ensure the prompt content wasn't changed
+    assert updated_prompt.prompt == "This is a test prompt"
+
+
+def test_update_prompt_not_found(client, project_and_task):
+    project, task = project_and_task
+
+    update_data = {"name": "Updated Name", "description": "Updated description"}
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/id::nonexistent_id",
+            json=update_data,
+        )
+
+    assert response.status_code == 404
+    assert "Prompt not found" in response.json()["message"]
+
+
+def test_update_prompt_non_custom(client, project_and_task):
+    project, task = project_and_task
+
+    update_data = {"name": "Updated Name", "description": "Updated description"}
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        # Try to update a non-custom prompt (doesn't start with "id::")
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/task_run_config::some_id",
+            json=update_data,
+        )
+
+    assert response.status_code == 400
+    assert "Only custom prompts can be updated" in response.json()["message"]
+
+
+def test_delete_prompt_success(client, project_and_task):
+    project, task = project_and_task
+
+    # First create a prompt
+    test_prompt = Prompt(
+        name="Test Prompt",
+        prompt="This is a test prompt",
+        description="This is a test prompt description",
+        parent=task,
+    )
+    test_prompt.save_to_file()
+
+    # Verify the prompt exists
+    prompts_before = task.prompts()
+    assert len(prompts_before) == 1
+    assert prompts_before[0].id == test_prompt.id
+
+    # Store the path to check if file is deleted
+    prompt_path = test_prompt.path
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/id::{test_prompt.id}"
+        )
+
+    assert response.status_code == 200
+
+    # Verify the prompt was deleted from the task
+    prompts_after = task.prompts()
+    assert len(prompts_after) == 0
+
+    # Verify the file was actually deleted, including the parent directory
+    assert not prompt_path.exists()
+    assert not prompt_path.parent.exists()

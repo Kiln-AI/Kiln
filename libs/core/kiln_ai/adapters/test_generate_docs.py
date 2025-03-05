@@ -58,8 +58,8 @@ def test_generate_model_table():
         table.append(row)
 
     # Print the table (useful for documentation)
-    logger.info("\nModel Capability Matrix:\n")
-    logger.info("\n".join(table))
+    print("\nModel Capability Matrix:\n")
+    print("\n".join(table))
 
     # Basic assertions to ensure the table is well-formed
     assert len(table) > 2, "Table should have header and at least one row"
