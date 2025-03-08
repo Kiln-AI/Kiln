@@ -171,6 +171,7 @@ class DataSourceType(str, Enum):
 
     human = "human"
     synthetic = "synthetic"
+    file_import = "file_import"
 
 
 class DataSourceProperty(BaseModel):

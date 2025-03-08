@@ -12,6 +12,7 @@
   import { replaceState } from "$app/navigation"
   import TagDropdown from "../../../run/tag_dropdown.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import UploadDatasetDialog from "$lib/ui/upload_dataset_dialog.svelte"
 
   let runs: RunSummary[] | null = null
   let filtered_runs: RunSummary[] | null = null
@@ -476,6 +477,17 @@
       await get_runs()
     }
   }
+
+  let upload_dataset_dialog: UploadDatasetDialog | null = null
+
+  function showUploadDialog() {
+    upload_dataset_dialog?.show()
+  }
+
+  async function handleImportCompleted() {
+    upload_dataset_dialog?.close()
+    await get_runs()
+  }
 </script>
 
 <AppPage
@@ -484,6 +496,11 @@
   sub_subtitle_link="https://docs.getkiln.ai/docs/organizing-datasets"
   no_y_padding
 >
+  <div class="flex flex-row justify-end">
+    <button class="btn btn-mid" on:click={() => showUploadDialog()}>
+      Upload Dataset
+    </button>
+  </div>
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
@@ -841,3 +858,8 @@
     {/if}
   </div>
 </Dialog>
+
+<UploadDatasetDialog
+  bind:this={upload_dataset_dialog}
+  onImportCompleted={handleImportCompleted}
+/>
