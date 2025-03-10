@@ -78,6 +78,48 @@
       api_key_fields: ["API Key", "Account ID"],
     },
     {
+      name: "Anthropic",
+      id: "anthropic",
+      description: "The home of Sonnet, Haiku, and Opus.",
+      image: "/images/anthropic.svg",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.anthropic.com/settings/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Gemini AI Studio",
+      id: "gemini_api",
+      description:
+        "Google's Gemini API. Not to be confused with Google Vertex AI.",
+      image: "/images/gemini.svg",
+      featured: false,
+      api_key_steps: [
+        "Go to https://aistudio.google.com/app/apikey",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Azure OpenAI",
+      id: "azure_openai",
+      description: "Microsoft's Azure OpenAI API.",
+      image: "/images/azure_openai.svg",
+      featured: false,
+      api_key_steps: [
+        "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use.",
+        "Open the Keys & Endpoint section. Find your API Key and Endpoint URL. The Endpoint URL will be a URL ending in openai.azure.com",
+        "Copy the API Key and Endpoint URL, paste them below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key", "Endpoint URL"],
+      api_key_warning:
+        "With Azure OpenAI, you must deploy each model. Kiln expects them to be deployed using default names (eg 'gpt-4o'). If you deploy a model with a custom deployment name, you'll need to add it as a custom model - see our docs for more details.",
+    },
+    {
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
@@ -140,6 +182,24 @@
       custom_description: null,
     },
     fireworks_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    anthropic: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    gemini_api: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    azure_openai: {
       connected: false,
       connecting: false,
       error: null,
@@ -384,6 +444,15 @@
       }
       if (data["ollama_base_url"]) {
         custom_ollama_url = data["ollama_base_url"]
+      }
+      if (data["anthropic_api_key"]) {
+        status.anthropic.connected = true
+      }
+      if (data["gemini_api_key"]) {
+        status.gemini_api.connected = true
+      }
+      if (data["azure_openai_api_key"] && data["azure_openai_endpoint"]) {
+        status.azure_openai.connected = true
       }
       if (
         data["openai_compatible_providers"] &&

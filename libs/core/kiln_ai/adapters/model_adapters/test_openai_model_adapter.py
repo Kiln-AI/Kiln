@@ -45,6 +45,7 @@ def config():
         model_name="test-model",
         provider_name="openrouter",
         default_headers={"X-Test": "test"},
+        litellm_provider_name="custom",
     )
 
 
@@ -56,13 +57,16 @@ def test_initialization(config, mock_task):
         base_adapter_config=AdapterConfig(default_tags=["test-tag"]),
     )
 
-    assert isinstance(adapter.client, AsyncOpenAI)
     assert adapter.config == config
     assert adapter.run_config.task == mock_task
     assert adapter.run_config.prompt_id == "simple_prompt_builder"
     assert adapter.base_adapter_config.default_tags == ["test-tag"]
     assert adapter.run_config.model_name == config.model_name
     assert adapter.run_config.model_provider_name == config.provider_name
+    assert adapter._litellm_provider_name == config.litellm_provider_name
+    assert adapter._api_key == config.api_key
+    assert adapter._api_base == config.base_url
+    assert adapter._headers == config.default_headers
 
 
 def test_adapter_info(config, mock_task):

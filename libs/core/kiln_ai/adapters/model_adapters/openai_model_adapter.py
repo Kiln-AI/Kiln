@@ -1,12 +1,7 @@
 from typing import Any, Dict
 
-from openai import AsyncOpenAI
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
-)
+import litellm
+from litellm.utils import ModelResponse
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.ml_model_list import (
@@ -38,11 +33,10 @@ class OpenAICompatibleAdapter(BaseAdapter):
         base_adapter_config: AdapterConfig | None = None,
     ):
         self.config = config
-        self.client = AsyncOpenAI(
-            api_key=config.api_key,
-            base_url=config.base_url,
-            default_headers=config.default_headers,
-        )
+        self._api_key = config.api_key
+        self._api_base = config.base_url
+        self._headers = config.default_headers
+        self._litellm_provider_name = config.litellm_provider_name
 
         run_config = RunConfig(
             task=kiln_task,
@@ -62,8 +56,8 @@ class OpenAICompatibleAdapter(BaseAdapter):
         prompt = self.build_prompt()
         user_msg = self.prompt_builder.build_user_message(input)
         messages = [
-            ChatCompletionSystemMessageParam(role="system", content=prompt),
-            ChatCompletionUserMessageParam(role="user", content=user_msg),
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_msg},
         ]
 
         run_strategy, cot_prompt = self.run_strategy()
@@ -71,20 +65,21 @@ class OpenAICompatibleAdapter(BaseAdapter):
         if run_strategy == "cot_as_message":
             if not cot_prompt:
                 raise ValueError("cot_prompt is required for cot_as_message strategy")
-            messages.append(
-                ChatCompletionSystemMessageParam(role="system", content=cot_prompt)
-            )
+            messages.append({"role": "system", "content": cot_prompt})
         elif run_strategy == "cot_two_call":
             if not cot_prompt:
                 raise ValueError("cot_prompt is required for cot_two_call strategy")
-            messages.append(
-                ChatCompletionSystemMessageParam(role="system", content=cot_prompt)
-            )
+            messages.append({"role": "system", "content": cot_prompt})
 
             # First call for chain of thought
-            cot_response = await self.client.chat.completions.create(
-                model=provider.provider_options["model"],
+            cot_response = await litellm.acompletion(
+                model=self._litellm_provider_name
+                + "/"
+                + provider.provider_options["model"],
                 messages=messages,
+                api_key=self._api_key,
+                api_base=self._api_base,
+                headers=self._headers,
             )
             cot_content = cot_response.choices[0].message.content
             if cot_content is not None:
@@ -92,13 +87,8 @@ class OpenAICompatibleAdapter(BaseAdapter):
 
             messages.extend(
                 [
-                    ChatCompletionAssistantMessageParam(
-                        role="assistant", content=cot_content
-                    ),
-                    ChatCompletionUserMessageParam(
-                        role="user",
-                        content=COT_FINAL_ANSWER_PROMPT,
-                    ),
+                    {"role": "assistant", "content": cot_content},
+                    {"role": "user", "content": COT_FINAL_ANSWER_PROMPT},
                 ]
             )
 
@@ -107,31 +97,47 @@ class OpenAICompatibleAdapter(BaseAdapter):
 
         # Main completion call
         response_format_options = await self.response_format_options()
-        response = await self.client.chat.completions.create(
-            model=provider.provider_options["model"],
-            messages=messages,
-            extra_body=extra_body,
-            logprobs=self.base_adapter_config.top_logprobs is not None,
-            top_logprobs=self.base_adapter_config.top_logprobs,
-            **response_format_options,
-        )
 
-        if not isinstance(response, ChatCompletion):
-            raise RuntimeError(
-                f"Expected ChatCompletion response, got {type(response)}."
-            )
+        # Merge all parameters into a single kwargs dict for litellm
+        # TODO P0 - make this shared
+        completion_kwargs = {
+            "model": self._litellm_provider_name
+            + "/"
+            + provider.provider_options["model"],
+            "messages": messages,
+            "api_key": self._api_key,
+            "api_base": self._api_base,
+            "headers": self._headers,
+            **extra_body,
+        }
 
-        if hasattr(response, "error") and response.error:  # pyright: ignore
-            raise RuntimeError(
-                f"OpenAI compatible API returned status code {response.error.get('code')}: {response.error.get('message') or 'Unknown error'}.\nError: {response.error}"  # pyright: ignore
-            )
+        # Add logprobs if requested
+        if self.base_adapter_config.top_logprobs is not None:
+            completion_kwargs["logprobs"] = True
+            completion_kwargs["top_logprobs"] = self.base_adapter_config.top_logprobs
+
+        # Add response format options
+        completion_kwargs.update(response_format_options)
+
+        # Make the API call using litellm
+        response = await litellm.acompletion(**completion_kwargs)
+
+        if not isinstance(response, ModelResponse):
+            raise RuntimeError(f"Expected ModelResponse, got {type(response)}.")
+
+        if hasattr(response, "error") and response.error:
+            raise RuntimeError(f"LLM API returned an error: {response.error}")
         if not response.choices or len(response.choices) == 0:
             raise RuntimeError(
-                "No message content returned in the response from OpenAI compatible API"
+                "No message content returned in the response from LLM API"
             )
 
         message = response.choices[0].message
-        logprobs = response.choices[0].logprobs
+        logprobs = (
+            response.choices[0].logprobs
+            if hasattr(response.choices[0], "logprobs")
+            else None
+        )
 
         # Check logprobs worked, if requested
         if self.base_adapter_config.top_logprobs is not None and logprobs is None:
@@ -139,10 +145,8 @@ class OpenAICompatibleAdapter(BaseAdapter):
 
         # Save reasoning if it exists (OpenRouter specific api response field)
         if provider.require_openrouter_reasoning:
-            if (
-                hasattr(message, "reasoning") and message.reasoning  # pyright: ignore
-            ):
-                intermediate_outputs["reasoning"] = message.reasoning  # pyright: ignore
+            if hasattr(message, "reasoning") and message.reasoning:
+                intermediate_outputs["reasoning"] = message.reasoning
             else:
                 raise RuntimeError(
                     "Reasoning is required for this model, but no reasoning was returned from OpenRouter."
@@ -152,7 +156,11 @@ class OpenAICompatibleAdapter(BaseAdapter):
         response_content = message.content
 
         # Fallback: Use args of first tool call to task_response if it exists
-        if not response_content and message.tool_calls:
+        if (
+            not response_content
+            and hasattr(message, "tool_calls")
+            and message.tool_calls
+        ):
             tool_call = next(
                 (
                     tool_call
