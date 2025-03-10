@@ -2,6 +2,24 @@
   export let warning_message: string | undefined | null = undefined
   export let warning_color: "error" | "warning" = "error"
   export let tight: boolean = false
+  export let trusted: boolean = false
+
+  function html_warning_message() {
+    let message = warning_message
+    if (!message) {
+      return ""
+    }
+    message = message.replace(
+      /https?:\/\/\S+/g,
+      '<a href="$&" class="link underline" target="_blank">$&</a>',
+    )
+    const paragraphs = message.split("\n")
+    return paragraphs
+      .map((paragraph: string) => {
+        return `<p>${paragraph}</p>`
+      })
+      .join("")
+  }
 </script>
 
 {#if warning_message}
@@ -22,8 +40,13 @@
       />
     </svg>
 
-    <div class={tight ? "pl-1" : "pl-4"}>
-      {warning_message}
+    <div class="{tight ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
+      {#if trusted}
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        {@html html_warning_message()}
+      {:else}
+        {warning_message}
+      {/if}
     </div>
   </div>
 {/if}

@@ -29,8 +29,7 @@ def adapter_for_task(
             return OpenAICompatibleAdapter(
                 kiln_task=kiln_task,
                 config=OpenAICompatibleConfig(
-                    base_url=getenv("OPENROUTER_BASE_URL")
-                    or "https://openrouter.ai/api/v1",
+                    litellm_provider_name="openrouter",
                     api_key=Config.shared().open_router_api_key,
                     model_name=model_name,
                     provider_name=provider,
@@ -46,6 +45,7 @@ def adapter_for_task(
             return OpenAICompatibleAdapter(
                 kiln_task=kiln_task,
                 config=OpenAICompatibleConfig(
+                    litellm_provider_name="openai",
                     api_key=Config.shared().open_ai_api_key,
                     model_name=model_name,
                     provider_name=provider,
@@ -54,6 +54,7 @@ def adapter_for_task(
                 base_adapter_config=base_adapter_config,
             )
         case ModelProviderName.openai_compatible:
+            # TODO P0 this is broken
             config = openai_compatible_config(model_name)
             return OpenAICompatibleAdapter(
                 kiln_task=kiln_task,
@@ -63,13 +64,106 @@ def adapter_for_task(
             )
         # Use LangchainAdapter for the rest
         case ModelProviderName.groq:
-            pass
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="groq",
+                    api_key=Config.shared().groq_api_key,
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
         case ModelProviderName.amazon_bedrock:
-            pass
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="bedrock",
+                    # TODO this should be optional, or someting
+                    api_key="asdf",
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
         case ModelProviderName.ollama:
-            pass
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="ollama",
+                    # TODO this should be optional, or someting
+                    api_key="asdf",
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
         case ModelProviderName.fireworks_ai:
-            pass
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="fireworks_ai",
+                    # TODO: account ID isn't passed. And "strict" isn't allowed for tools.
+                    api_key=Config.shared().fireworks_api_key,
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
+        case ModelProviderName.anthropic:
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="anthropic",
+                    api_key=Config.shared().anthropic_api_key,
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
+        case ModelProviderName.gemini_api:
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="gemini",
+                    api_key=Config.shared().gemini_api_key,
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
+        case ModelProviderName.azure:
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="azure_ai",
+                    api_key=Config.shared().azure_ai_api_key,
+                    # base_url=Config.shared().azure_ai_api_base,
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
+        case ModelProviderName.azure_openai:
+            return OpenAICompatibleAdapter(
+                kiln_task=kiln_task,
+                prompt_id=prompt_id,
+                base_adapter_config=base_adapter_config,
+                config=OpenAICompatibleConfig(
+                    litellm_provider_name="azure",
+                    api_key=Config.shared().azure_openai_api_key,
+                    base_url=Config.shared().azure_openai_endpoint,
+                    model_name=model_name,
+                    provider_name=provider,
+                ),
+            )
         # These are virtual providers that should have mapped to an actual provider in core_provider
         case ModelProviderName.kiln_fine_tune:
             raise ValueError(
@@ -81,12 +175,3 @@ def adapter_for_task(
             )
         case _:
             raise_exhaustive_enum_error(core_provider_name)
-
-    # We use langchain for all others right now, but moving off it as we touch anything.
-    return LangchainAdapter(
-        kiln_task,
-        model_name=model_name,
-        provider=provider,
-        prompt_id=prompt_id,
-        base_adapter_config=base_adapter_config,
-    )

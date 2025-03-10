@@ -26,6 +26,11 @@ class ModelProviderName(str, Enum):
     kiln_fine_tune = "kiln_fine_tune"
     kiln_custom_registry = "kiln_custom_registry"
     openai_compatible = "openai_compatible"
+    anthropic = "anthropic"
+    gemini_api = "gemini_api"
+    # They are going to change the name 16 times so don't include "ai studio" or "foundry" in the name :P
+    azure = "azure"
+    azure_openai = "azure_openai"
 
 
 class ModelFamily(str, Enum):
@@ -89,6 +94,7 @@ class ModelName(str, Enum):
     mixtral_8x7b = "mixtral_8x7b"
     qwen_2p5_7b = "qwen_2p5_7b"
     qwen_2p5_72b = "qwen_2p5_72b"
+    qwq_32b = "qwq_32b"
     deepseek_3 = "deepseek_3"
     deepseek_r1 = "deepseek_r1"
     mistral_small_3 = "mistral_small_3"
@@ -186,6 +192,10 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=True,
                 logprobs_openrouter_options=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                provider_options={"model": "gpt-4o-mini"},
+            ),
         ],
     ),
     # GPT 4o
@@ -207,6 +217,10 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 logprobs_openrouter_options=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                provider_options={"model": "gpt-4o"},
             ),
         ],
     ),
@@ -305,6 +319,10 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 provider_options={"model": "anthropic/claude-3-5-haiku"},
             ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                provider_options={"model": "claude-3-haiku-20240307"},
+            ),
         ],
     ),
     # Claude 3.5 Sonnet
@@ -318,6 +336,10 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 provider_options={"model": "anthropic/claude-3.5-sonnet"},
             ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                provider_options={"model": "claude-3-5-sonnet-20241022"},
+            ),
         ],
     ),
     # Claude 3.7 Sonnet
@@ -330,6 +352,10 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 provider_options={"model": "anthropic/claude-3.7-sonnet"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                provider_options={"model": "claude-3-7-sonnet-20250219"},
             ),
         ],
     ),
@@ -348,6 +374,7 @@ built_in_models: List[KilnModel] = [
                 require_openrouter_reasoning=True,
             ),
         ],
+        # TODO
     ),
     # Gemini 1.5 Pro
     KilnModel(
@@ -358,6 +385,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "google/gemini-pro-1.5"},
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                provider_options={"model": "gemini-1.5-pro"},
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
@@ -371,6 +403,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 provider_options={"model": "google/gemini-flash-1.5"},
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                provider_options={"model": "gemini-1.5-flash"},
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
@@ -387,6 +424,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                provider_options={"model": "gemini-1.5-flash-8b"},
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=False,
+            ),
         ],
     ),
     # Gemini 2.0 Flash
@@ -399,6 +442,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 provider_options={"model": "google/gemini-2.0-flash-001"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                provider_options={"model": "gemini-2.0-flash"},
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
     ),
@@ -732,6 +780,8 @@ built_in_models: List[KilnModel] = [
                 provider_options={
                     "model": "accounts/fireworks/models/llama-v3p3-70b-instruct"
                 },
+                # TODO P0
+                provider_finetune_id="accounts/fireworks/models/llama-v3p1-70b-instruct",
             ),
         ],
     ),
@@ -782,6 +832,10 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
                 provider_options={"model": "microsoft/phi-4"},
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure,
+                provider_options={"model": "Phi-4"},
             ),
         ],
     ),
@@ -858,6 +912,21 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 provider_options={"model": "mixtral"},
+            ),
+        ],
+    ),
+    # QwQ 32B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwq_32b,
+        friendly_name="QwQ 32B (Qwen Reasoning)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                provider_options={"model": "qwen/qwq-32b"},
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
     ),

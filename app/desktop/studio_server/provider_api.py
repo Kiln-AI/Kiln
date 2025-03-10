@@ -224,6 +224,23 @@ def connect_provider_api(app: FastAPI):
             )
         return api_key
 
+    def parse_url(key_data: dict, field_name: str) -> str:
+        url = key_data.get(field_name)
+        if not url or not isinstance(url, str):
+            raise HTTPException(
+                status_code=400,
+                detail="Endpoint URL not found",
+            )
+        if url.endswith("/"):
+            # remove last slash
+            url = url[:-1]
+        if not url.startswith("http"):
+            raise HTTPException(
+                status_code=400,
+                detail="Endpoint URL must start with http or https",
+            )
+        return url
+
     @app.post("/api/provider/connect_api_key")
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
@@ -253,6 +270,13 @@ def connect_provider_api(app: FastAPI):
                 return await connect_fireworks(key_data)
             case ModelProviderName.amazon_bedrock:
                 return await connect_bedrock(key_data)
+            case ModelProviderName.anthropic:
+                return await connect_anthropic(parse_api_key(key_data))
+            case ModelProviderName.gemini_api:
+                return await connect_gemini(parse_api_key(key_data))
+            case ModelProviderName.azure_openai:
+                endpoint = parse_url(key_data, "Endpoint URL")
+                return await connect_azure_openai(parse_api_key(key_data), endpoint)
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -288,6 +312,13 @@ def connect_provider_api(app: FastAPI):
             case ModelProviderName.amazon_bedrock:
                 Config.shared().bedrock_access_key = None
                 Config.shared().bedrock_secret_key = None
+            case ModelProviderName.anthropic:
+                Config.shared().anthropic_api_key = None
+            case ModelProviderName.gemini_api:
+                Config.shared().gemini_api_key = None
+            case ModelProviderName.azure_openai:
+                Config.shared().azure_openai_api_key = None
+                Config.shared().azure_openai_endpoint = None
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -466,6 +497,104 @@ async def connect_groq(key: str):
         status_code=200,
         content={"message": "Connected to Groq"},
     )
+
+
+async def connect_gemini(key: str):
+    try:
+        headers = {
+            "Content-Type": "application/json",
+        }
+        response = requests.get(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+        )
+
+        if "API_KEY_INVALID" in response.text:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Gemini. Invalid API key."},
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Gemini. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().gemini_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Gemini"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Gemini. Error: {str(e)}"},
+        )
+
+
+async def connect_anthropic(key: str):
+    try:
+        headers = {
+            "x-api-key": key,
+            "Content-Type": "application/json",
+        }
+        response = requests.get("https://api.anthropic.com/v1/models", headers=headers)
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Anthropic. Invalid API key."},
+            )
+        else:
+            Config.shared().anthropic_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Anthropic"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Anthropic. Error: {str(e)}"},
+        )
+
+
+async def connect_azure_openai(key: str, endpoint: str):
+    try:
+        headers = {
+            "api-key": key,
+            "Content-Type": "application/json",
+        }
+        response = requests.get(
+            f"{endpoint}/openai/files?api-version=2024-08-01-preview", headers=headers
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Azure OpenAI. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Azure OpenAI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().azure_openai_api_key = key
+            Config.shared().azure_openai_endpoint = endpoint
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Azure OpenAI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Azure OpenAI. Error: {str(e)}"},
+        )
 
 
 async def connect_bedrock(key_data: dict):

@@ -24,6 +24,7 @@ dependencies = [
     "langchain-groq>=0.2.0",
     "langchain-ollama>=0.2.2",
     "langchain>=0.3.5",
+    "litellm>=1.63.3",
     "openai>=1.53.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",

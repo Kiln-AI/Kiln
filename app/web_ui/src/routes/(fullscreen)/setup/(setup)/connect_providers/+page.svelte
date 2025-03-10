@@ -19,12 +19,14 @@
 </h3>
 
 <div
-  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 w-full max-w-lg mx-auto"
+  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 w-full mx-auto"
 >
   <ConnectProviders bind:has_connected_providers bind:intermediate_step />
 </div>
 
-<div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
+<div
+  class="flex-none flex flex-col place-content-center md:flex-row gap-4 pt-4"
+>
   <a
     href="/setup/create_project"
     class="flex-none {next_visible ? '' : 'hidden'}"
