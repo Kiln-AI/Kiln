@@ -71,7 +71,9 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="grow"></div>
-<div class="flex flex-col md:flex-row gap-12 place-items-center">
+<div
+  class="flex flex-col md:flex-row gap-12 place-items-center place-content-center"
+>
   <button
     class="size-10 text-gray-300 {section === 0 ? 'opacity-0' : ''}"
     on:click={() => set_section(section - 1)}

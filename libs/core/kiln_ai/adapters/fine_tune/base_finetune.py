@@ -4,7 +4,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 from kiln_ai.adapters.ml_model_list import built_in_models
-from kiln_ai.datamodel import DatasetSplit, FinetuneDataStrategy, FineTuneStatusType
+from kiln_ai.datamodel import (
+    DatasetSplit,
+    FinetuneDataStrategy,
+    FineTuneStatusType,
+    Task,
+)
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.utils.name_generator import generate_memorable_name
 
@@ -101,7 +106,7 @@ class BaseFinetuneAdapter(ABC):
             train_split_name=train_split_name,
             validation_split_name=validation_split_name,
             parameters=parameters,
-            system_message=system_message,
+            system_message=cls.augment_system_message(system_message, parent_task),
             thinking_instructions=thinking_instructions,
             parent=parent_task,
             data_strategy=data_strategy,
@@ -113,6 +118,15 @@ class BaseFinetuneAdapter(ABC):
         datamodel.save_to_file()
 
         return adapter, datamodel
+
+    @classmethod
+    def augment_system_message(cls, system_message: str, task: Task) -> str:
+        """
+        Augment the system message with additional instructions, such as JSON instructions.
+        """
+
+        # Base implementation does nothing, can be overridden by subclasses
+        return system_message
 
     @abstractmethod
     async def _start(self, dataset: DatasetSplit) -> None:

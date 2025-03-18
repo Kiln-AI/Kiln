@@ -507,6 +507,9 @@ def connect_evals_api(app: FastAPI):
             # Check if we should count this eval_run. Not every eval_run has to go into the stats:
             # - a dataset_id can be removed from the dataset filter (removed a tag)
             # - this dataset_id was already counted (not great there are dupes, but shouldn't be double counted if there are)
+            if run_config_id not in remaining_expected_dataset_ids:
+                # This run_config is not in the eval config, so we should not count it
+                continue
             if eval_run.dataset_id not in remaining_expected_dataset_ids[run_config_id]:
                 continue
             else:

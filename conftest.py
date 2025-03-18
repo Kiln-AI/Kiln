@@ -1,8 +1,14 @@
 from unittest.mock import patch
 
+import litellm
 import pytest
 from dotenv import load_dotenv
 from kiln_ai.utils.config import Config
+
+
+@pytest.fixture(autouse=True)
+def _clear_httpx_clients() -> None:
+    litellm.in_memory_llm_clients_cache.flush_cache()
 
 
 @pytest.fixture(scope="session", autouse=True)

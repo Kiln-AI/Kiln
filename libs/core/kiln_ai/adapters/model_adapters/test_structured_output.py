@@ -66,7 +66,8 @@ async def test_mock_unstructred_response(tmp_path):
 
     # don't error on valid response
     adapter = MockAdapter(task, response={"setup": "asdf", "punchline": "asdf"})
-    answer = await adapter.invoke_returning_raw("You are a mock, send me the response!")
+    run = await adapter.invoke("You are a mock, send me the response!")
+    answer = json.loads(run.output.output)
     assert answer["setup"] == "asdf"
     assert answer["punchline"] == "asdf"
 
@@ -76,9 +77,12 @@ async def test_mock_unstructred_response(tmp_path):
         answer = await adapter.invoke("You are a mock, send me the response!")
 
     adapter = MockAdapter(task, response="string instead of dict")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(
+        ValueError,
+        match="This task requires JSON output but the model didn't return valid JSON",
+    ):
         # Not a structed response so should error
-        answer = await adapter.invoke("You are a mock, send me the response!")
+        run = await adapter.invoke("You are a mock, send me the response!")
 
     # Should error, expecting a string, not a dict
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
@@ -143,7 +147,8 @@ async def run_structured_output_test(tmp_path: Path, model_name: str, provider: 
     task = build_structured_output_test_task(tmp_path)
     a = adapter_for_task(task, model_name=model_name, provider=provider)
     try:
-        parsed = await a.invoke_returning_raw("Cows")  # a joke about cows
+        run = await a.invoke("Cows")  # a joke about cows
+        parsed = json.loads(run.output.output)
     except ValueError as e:
         if str(e) == "Failed to connect to Ollama. Ensure Ollama is running.":
             pytest.skip(
@@ -161,6 +166,12 @@ async def run_structured_output_test(tmp_path: Path, model_name: str, provider: 
             rating = int(rating)
         assert rating >= 0
         assert rating <= 10
+
+    # Check reasoning models
+    assert a._model_provider is not None
+    if a._model_provider.reasoning_capable:
+        assert "reasoning" in run.intermediate_outputs
+        assert isinstance(run.intermediate_outputs["reasoning"], str)
 
 
 def build_structured_input_test_task(tmp_path: Path):
@@ -220,7 +231,8 @@ async def run_structured_input_task(
         await a.invoke({"a": 1, "b": 2, "d": 3})
 
     try:
-        response = await a.invoke_returning_raw({"a": 2, "b": 2, "c": 2})
+        run = await a.invoke({"a": 2, "b": 2, "c": 2})
+        response = run.output.output
     except ValueError as e:
         if str(e) == "Failed to connect to Ollama. Ensure Ollama is running.":
             pytest.skip(
@@ -240,6 +252,12 @@ async def run_structured_input_task(
 
     assert a.run_config.model_name == model_name
     assert a.run_config.model_provider_name == provider
+
+    # Check reasoning models
+    assert a._model_provider is not None
+    if a._model_provider.reasoning_capable:
+        assert "reasoning" in run.intermediate_outputs
+        assert isinstance(run.intermediate_outputs["reasoning"], str)
 
 
 @pytest.mark.paid

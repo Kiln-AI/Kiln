@@ -82,6 +82,7 @@
           finetune_data.fine_tune_model_id,
           finetune_data.provider,
         ),
+        link: model_link(),
       },
       {
         name: provider_name + " Job ID",
@@ -105,6 +106,8 @@
   function job_link(): string | undefined {
     if (finetune?.finetune.provider === "openai") {
       return `https://platform.openai.com/finetune/${finetune.finetune.provider_id}`
+    } else if (finetune?.finetune.provider === "together_ai") {
+      return `https://api.together.ai/jobs/${finetune.finetune.provider_id}`
     } else if (finetune?.finetune.provider === "fireworks_ai") {
       const url_id = finetune.finetune.provider_id?.split("/").pop()
       if (finetune.finetune.properties["endpoint_version"] === "v2") {
@@ -114,6 +117,13 @@
         // V1 style URL
         return `https://fireworks.ai/dashboard/fine-tuning/v1/${url_id}`
       }
+    }
+    return undefined
+  }
+
+  function model_link(): string | undefined {
+    if (finetune?.finetune.provider === "together_ai") {
+      return `https://api.together.ai/models/${finetune.finetune.fine_tune_model_id}`
     }
     return undefined
   }

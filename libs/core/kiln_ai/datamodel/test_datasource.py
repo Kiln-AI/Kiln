@@ -29,9 +29,28 @@ def test_valid_synthetic_data_source():
     assert data_source.properties["adapter_name"] == "langchain"
 
 
+def test_valid_file_import_data_source():
+    data_source = DataSource(
+        type=DataSourceType.file_import,
+        properties={"file_name": "test.txt"},
+    )
+    assert data_source.type == DataSourceType.file_import
+    assert data_source.properties["file_name"] == "test.txt"
+
+
 def test_missing_required_property():
     with pytest.raises(ValidationError, match="'created_by' is required for"):
         DataSource(type=DataSourceType.human)
+
+
+def test_missing_required_property_file_import():
+    with pytest.raises(ValidationError, match="'file_name' is required for"):
+        DataSource(type=DataSourceType.file_import)
+
+
+def test_not_allowed_property_file_import():
+    with pytest.raises(ValidationError, match="'model_name' is not allowed for"):
+        DataSource(type=DataSourceType.file_import, properties={"model_name": "GPT-4"})
 
 
 def test_wrong_property_type():

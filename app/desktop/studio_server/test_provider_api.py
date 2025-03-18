@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 
+import litellm
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -22,15 +23,22 @@ from app.desktop.studio_server.provider_api import (
     OpenAICompatibleProviderCache,
     all_fine_tuned_models,
     available_ollama_models,
+    connect_anthropic,
+    connect_azure_openai,
     connect_bedrock,
+    connect_gemini,
     connect_groq,
+    connect_huggingface,
     connect_ollama,
     connect_openrouter,
     connect_provider_api,
+    connect_together,
+    connect_vertex,
     custom_models,
     model_from_ollama_tag,
     openai_compatible_providers,
     openai_compatible_providers_load_cache,
+    parse_url,
 )
 
 
@@ -250,12 +258,11 @@ def mock_environ():
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
-async def test_connect_bedrock_success(mock_chat_bedrock, mock_environ):
-    mock_llm = MagicMock()
-    mock_chat_bedrock.return_value = mock_llm
-    mock_llm.invoke.side_effect = Exception("Some non-credential error")
-
+@patch("app.desktop.studio_server.provider_api.litellm.acompletion")
+async def test_connect_bedrock_success(mock_litellm_acompletion, mock_environ):
+    mock_litellm_acompletion.side_effect = litellm.exceptions.BadRequestError(
+        "msg", "model", "provider"
+    )
     result = await connect_bedrock(
         {"Access Key": "test_access_key", "Secret Key": "test_secret_key"}
     )
@@ -266,19 +273,17 @@ async def test_connect_bedrock_success(mock_chat_bedrock, mock_environ):
     assert Config.shared().bedrock_access_key == "test_access_key"
     assert Config.shared().bedrock_secret_key == "test_secret_key"
 
-    mock_chat_bedrock.assert_called_once_with(
-        model="fake_model",
-        region_name="us-west-2",
-    )
-    mock_llm.invoke.assert_called_once_with("Hello, how are you?")
+    mock_litellm_acompletion.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
-async def test_connect_bedrock_invalid_credentials(mock_chat_bedrock, mock_environ):
-    mock_llm = MagicMock()
-    mock_chat_bedrock.return_value = mock_llm
-    mock_llm.invoke.side_effect = Exception("UnrecognizedClientException")
+@patch("app.desktop.studio_server.provider_api.litellm.acompletion")
+async def test_connect_bedrock_invalid_credentials(
+    mock_litellm_acompletion, mock_environ
+):
+    mock_litellm_acompletion.side_effect = litellm.exceptions.AuthenticationError(
+        "msg", "model", "provider"
+    )
 
     result = await connect_bedrock(
         {"Access Key": "invalid_access_key", "Secret Key": "invalid_secret_key"}
@@ -296,38 +301,14 @@ async def test_connect_bedrock_invalid_credentials(mock_chat_bedrock, mock_envir
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
-async def test_connect_bedrock_unknown_error(mock_chat_bedrock, mock_environ):
-    mock_llm = MagicMock()
-    mock_chat_bedrock.return_value = mock_llm
-    mock_llm.invoke.side_effect = Exception("Some unexpected error")
+@patch("app.desktop.studio_server.provider_api.litellm.acompletion")
+async def test_connect_bedrock_unknown_error(mock_litellm_acompletion, mock_environ):
+    mock_litellm_acompletion.side_effect = Exception("Some unexpected error")
 
-    result = await connect_bedrock(
-        {"Access Key": "test_access_key", "Secret Key": "test_secret_key"}
-    )
-
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 200
-    assert result.body == b'{"message":"Connected to Bedrock"}'
-    assert Config.shared().bedrock_access_key == "test_access_key"
-    assert Config.shared().bedrock_secret_key == "test_secret_key"
-
-
-@pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.ChatBedrockConverse")
-async def test_connect_bedrock_environment_variables(mock_chat_bedrock, mock_environ):
-    mock_llm = MagicMock()
-    mock_chat_bedrock.return_value = mock_llm
-    mock_llm.invoke.side_effect = Exception("Some non-credential error")
-
-    await connect_bedrock(
-        {"Access Key": "test_access_key", "Secret Key": "test_secret_key"}
-    )
-
-    assert "AWS_ACCESS_KEY_ID" not in mock_environ
-    assert "AWS_SECRET_ACCESS_KEY" not in mock_environ
-
-    mock_chat_bedrock.assert_called_once()
+    with pytest.raises(Exception) as e:
+        result = await connect_bedrock(
+            {"Access Key": "test_access_key", "Secret Key": "test_secret_key"}
+        )
 
 
 @pytest.mark.asyncio
@@ -348,7 +329,9 @@ async def test_get_available_models(app, client):
             name="model1",
             friendly_name="Model 1",
             family="",
-            providers=[KilnModelProvider(name=ModelProviderName.openai)],
+            providers=[
+                KilnModelProvider(name=ModelProviderName.openai, model_id="oai1")
+            ],
         ),
         KilnModel(
             name="model2",
@@ -357,13 +340,19 @@ async def test_get_available_models(app, client):
             providers=[
                 KilnModelProvider(
                     name=ModelProviderName.amazon_bedrock,
+                    model_id="bedrock1",
                     supports_structured_output=False,
                     supports_data_gen=False,
                 ),
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
                     supports_structured_output=True,
-                    provider_options={"model": "ollama_model2"},
+                    model_id="ollama_model2",
+                ),
+                # Fine-tune only model should not appear in the list of available models
+                KilnModelProvider(
+                    name=ModelProviderName.together_ai,
+                    provider_finetune_id="together_model2",
                 ),
             ],
         ),
@@ -461,7 +450,9 @@ async def test_get_available_models_ollama_exception(app, client):
             name="model1",
             family="",
             friendly_name="Model 1",
-            providers=[KilnModelProvider(name=ModelProviderName.openai)],
+            providers=[
+                KilnModelProvider(name=ModelProviderName.openai, model_id="123")
+            ],
         ),
     ]
 
@@ -538,10 +529,8 @@ def test_model_from_ollama_tag():
             providers=[
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
-                    provider_options={
-                        "model": "llama2",
-                        "model_aliases": ["llama-2", "llama2-chat"],
-                    },
+                    model_id="llama2",
+                    ollama_model_aliases=["llama-2", "llama2-chat"],
                 )
             ],
         ),
@@ -550,9 +539,7 @@ def test_model_from_ollama_tag():
             friendly_name="Model 2",
             family="test",
             providers=[
-                KilnModelProvider(
-                    name=ModelProviderName.ollama, provider_options={"model": "mistral"}
-                )
+                KilnModelProvider(name=ModelProviderName.ollama, model_id="mistral")
             ],
         ),
         KilnModel(
@@ -560,9 +547,7 @@ def test_model_from_ollama_tag():
             friendly_name="Model 3",
             family="test",
             providers=[
-                KilnModelProvider(
-                    name=ModelProviderName.openai, provider_options={"model": "gpt-4"}
-                )
+                KilnModelProvider(name=ModelProviderName.openai, model_id="gpt-4")
             ],
         ),
     ]
@@ -613,7 +598,8 @@ async def test_available_ollama_models():
             providers=[
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
-                    provider_options={"model": "llama2", "model_aliases": ["llama-2"]},
+                    model_id="llama2",
+                    ollama_model_aliases=["llama-2"],
                     supports_structured_output=True,
                 )
             ],
@@ -625,7 +611,7 @@ async def test_available_ollama_models():
             providers=[
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
-                    provider_options={"model": "mistral"},
+                    model_id="mistral",
                     supports_structured_output=False,
                 )
             ],
@@ -1477,3 +1463,611 @@ async def test_disconnect_api_key_unsupported_provider(client, provider_id):
 
     assert response.status_code == 400
     assert response.json() == {"message": "Provider not supported"}
+
+
+def test_parse_url():
+    # Test successful case
+    key_data = {"endpoint": "https://api.example.com/"}
+    result = parse_url(key_data, "endpoint")
+    assert result == "https://api.example.com"
+
+    # Test with http
+    key_data = {"endpoint": "http://localhost:8080/"}
+    result = parse_url(key_data, "endpoint")
+    assert result == "http://localhost:8080"
+
+    # Test without trailing slash
+    key_data = {"endpoint": "https://api.example.com"}
+    result = parse_url(key_data, "endpoint")
+    assert result == "https://api.example.com"
+
+    # Test missing field
+    key_data = {"wrong_field": "https://api.example.com"}
+    with pytest.raises(HTTPException) as exc_info:
+        parse_url(key_data, "endpoint")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Endpoint URL not found"
+
+    # Test empty string
+    key_data = {"endpoint": ""}
+    with pytest.raises(HTTPException) as exc_info:
+        parse_url(key_data, "endpoint")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Endpoint URL not found"
+
+    # Test non-string value
+    key_data = {"endpoint": 123}
+    with pytest.raises(HTTPException) as exc_info:
+        parse_url(key_data, "endpoint")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Endpoint URL not found"
+
+    # Test invalid URL scheme
+    key_data = {"endpoint": "ftp://api.example.com"}
+    with pytest.raises(HTTPException) as exc_info:
+        parse_url(key_data, "endpoint")
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Endpoint URL must start with http or https"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_gemini_success(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"models": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_gemini("test_api_key")
+
+    # Verify
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Gemini"}'
+    mock_requests_get.assert_called_once_with(
+        "https://generativelanguage.googleapis.com/v1beta/models?key=test_api_key",
+    )
+    assert mock_config.gemini_api_key == "test_api_key"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_gemini_invalid_api_key(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.text = "API_KEY_INVALID"
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config.gemini_api_key = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_gemini("invalid_key")
+
+    # Verify
+    assert result.status_code == 401
+    assert result.body == b'{"message":"Failed to connect to Gemini. Invalid API key."}'
+    assert mock_config.gemini_api_key is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_gemini_non_200_response(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config.gemini_api_key = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_gemini("test_api_key")
+
+    # Verify
+    assert result.status_code == 400
+    assert result.body == b'{"message":"Failed to connect to Gemini. Error: [500]"}'
+    assert mock_config.gemini_api_key is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_gemini_request_exception(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    mock_config = MagicMock()
+    mock_config.gemini_api_key = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_gemini("test_api_key")
+
+    # Verify
+    assert result.status_code == 400
+    assert b"Failed to connect to Gemini. Error: Connection error" in result.body
+    assert mock_config.gemini_api_key is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_anthropic_success(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"models": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_anthropic("test_api_key")
+
+    # Verify
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Anthropic"}'
+    mock_requests_get.assert_called_once_with(
+        "https://api.anthropic.com/v1/models",
+        headers={
+            "x-api-key": "test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    assert mock_config.anthropic_api_key == "test_api_key"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_anthropic_invalid_api_key(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = "Invalid API key"
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config.anthropic_api_key = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_anthropic("invalid_key")
+
+    # Verify
+    assert result.status_code == 401
+    assert (
+        result.body == b'{"message":"Failed to connect to Anthropic. Invalid API key."}'
+    )
+    assert mock_config.anthropic_api_key is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_anthropic_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    mock_config = MagicMock()
+    mock_config.anthropic_api_key = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_anthropic("test_api_key")
+
+    # Verify
+    assert result.status_code == 400
+    assert b"Failed to connect to Anthropic. Error: Connection error" in result.body
+    assert mock_config.anthropic_api_key is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_azure_openai_success(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"files": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_azure_openai("test_api_key", "https://example.azure.com")
+
+    # Verify
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Azure OpenAI"}'
+    mock_requests_get.assert_called_once_with(
+        "https://example.azure.com/openai/files?api-version=2024-08-01-preview",
+        headers={
+            "api-key": "test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    assert mock_config.azure_openai_api_key == "test_api_key"
+    assert mock_config.azure_openai_endpoint == "https://example.azure.com"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_azure_openai_invalid_api_key(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = "Invalid API key"
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config.azure_openai_api_key = None
+    mock_config.azure_openai_endpoint = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_azure_openai("invalid_key", "https://example.azure.com")
+
+    # Verify
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Azure OpenAI. Invalid API key."}'
+    )
+    assert mock_config.azure_openai_api_key is None
+    assert mock_config.azure_openai_endpoint is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_azure_openai_non_200_response(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config.azure_openai_api_key = None
+    mock_config.azure_openai_endpoint = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_azure_openai("test_api_key", "https://example.azure.com")
+
+    # Verify
+    assert result.status_code == 400
+    assert (
+        result.body == b'{"message":"Failed to connect to Azure OpenAI. Error: [500]"}'
+    )
+    assert mock_config.azure_openai_api_key is None
+    assert mock_config.azure_openai_endpoint is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_azure_openai_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    mock_config = MagicMock()
+    mock_config.azure_openai_api_key = None
+    mock_config.azure_openai_endpoint = None
+    mock_config_shared.return_value = mock_config
+
+    # Test
+    result = await connect_azure_openai("test_api_key", "https://example.azure.com")
+
+    # Verify
+    assert result.status_code == 400
+    assert b"Failed to connect to Azure OpenAI. Error: Connection error" in result.body
+    assert mock_config.azure_openai_api_key is None
+    assert mock_config.azure_openai_endpoint is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_huggingface_success(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"data": "success"}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Execute
+    result = await connect_huggingface("test_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(
+        "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config.huggingface_api_key = "test_api_key"
+    assert result.status_code == 200
+    assert json.loads(result.body)["message"] == "Connected to Huggingface"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_huggingface_invalid_api_key(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = '{"error": "Unauthorized"}'
+    mock_requests_get.return_value = mock_response
+
+    # Execute
+    result = await connect_huggingface("invalid_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(
+        "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
+        headers={
+            "Authorization": "Bearer invalid_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        json.loads(result.body)["message"]
+        == "Failed to connect to Huggingface. Invalid API key."
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_huggingface_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    # Execute
+    result = await connect_huggingface("test_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(
+        "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        "Failed to connect to Huggingface. Error: Connection error"
+        in json.loads(result.body)["message"]
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_huggingface_non_401_response(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 404  # Any non-401 status code
+    mock_response.text = '{"error": "Not found"}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Execute
+    result = await connect_huggingface("test_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(
+        "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    # Even with a 404, we should save the key as the function considers any non-401 as valid auth
+    mock_config.huggingface_api_key = "test_api_key"
+    assert result.status_code == 200
+    assert json.loads(result.body)["message"] == "Connected to Huggingface"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.litellm.acompletion")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_vertex_success(mock_config_shared, mock_litellm_acompletion):
+    # Setup
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+    mock_litellm_acompletion.return_value = {
+        "choices": [{"message": {"content": "Hello!"}}]
+    }
+
+    # Execute
+    response = await connect_vertex("test-project-id", "us-central1")
+
+    # Verify
+    assert response.status_code == 200
+    assert "Connected to Vertex" in response.body.decode()
+    mock_litellm_acompletion.assert_called_once_with(
+        model="vertex_ai/gemini-1.5-flash",
+        messages=[{"content": "Hello, how are you?", "role": "user"}],
+        vertex_project="test-project-id",
+        vertex_location="us-central1",
+    )
+    assert mock_config.vertex_project_id == "test-project-id"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.litellm.acompletion")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompletion):
+    # Setup
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+    mock_litellm_acompletion.side_effect = Exception("Invalid project ID")
+
+    # Execute
+    response = await connect_vertex("invalid-project-id", "us-central1")
+
+    # Verify
+    assert response.status_code == 400
+    assert "Failed to connect to Vertex" in response.body.decode()
+    assert "Invalid project ID" in response.body.decode()
+    mock_litellm_acompletion.assert_called_once_with(
+        model="vertex_ai/gemini-1.5-flash",
+        messages=[{"content": "Hello, how are you?", "role": "user"}],
+        vertex_project="invalid-project-id",
+        vertex_location="us-central1",
+    )
+    # Verify project ID was not saved
+    assert (
+        not hasattr(mock_config, "vertex_project_id")
+        or mock_config.vertex_project_id != "invalid-project-id"
+    )
+    assert (
+        not hasattr(mock_config, "vertex_location")
+        or mock_config.vertex_location != "us-central1"
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_together_success(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"models": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Execute
+    result = await connect_together("test_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(
+        "https://api.together.xyz/v1/models",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config.together_api_key = "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Together.ai"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_together_invalid_api_key(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = '{"error": "Invalid API key"}'
+    mock_requests_get.return_value = mock_response
+
+    # Execute
+    result = await connect_together("invalid_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(
+        "https://api.together.xyz/v1/models",
+        headers={
+            "Authorization": "Bearer invalid_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config_shared.assert_not_called()  # Config should not be updated with invalid key
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Together.ai. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_together_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    # Setup
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    # Execute
+    result = await connect_together("test_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once()
+    mock_config_shared.assert_not_called()  # Config should not be updated on error
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Together.ai. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_together_non_401_response(mock_config_shared, mock_requests_get):
+    # Setup
+    mock_response = MagicMock()
+    mock_response.status_code = 500  # Any non-401 status code
+    mock_response.text = '{"error": "Server error"}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    # Execute
+    result = await connect_together("test_api_key")
+
+    # Assert
+    mock_requests_get.assert_called_once()
+    # Even with a 500 error, if it's not 401, we consider the key valid
+    mock_config.together_api_key = "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Together.ai"}'

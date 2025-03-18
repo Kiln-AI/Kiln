@@ -1,6 +1,6 @@
 [project]
 name = "kiln-server"
-version = "0.12.0"
+version = "0.13.0"
 requires-python = ">=3.10"
 description = 'Kiln AI Server'
 readme = "README.md"
@@ -23,6 +23,7 @@ dependencies = [
     "kiln-ai>=0.11.1",
     "pydantic>=2.9.2",
     "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.20",
     "uvicorn>=0.32.0",
 ]
 

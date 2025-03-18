@@ -6,6 +6,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client, base_url } from "$lib/api_client"
+  import Warning from "$lib/ui/warning.svelte"
 
   type Provider = {
     name: string
@@ -78,6 +79,92 @@
       api_key_fields: ["API Key", "Account ID"],
     },
     {
+      name: "Anthropic",
+      id: "anthropic",
+      description: "The home of Sonnet, Haiku, and Opus.",
+      image: "/images/anthropic.svg",
+      featured: false,
+      api_key_steps: [
+        "Go to https://console.anthropic.com/settings/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Gemini AI Studio",
+      id: "gemini_api",
+      description: "Google's Gemini API. Not to be confused with Vertex AI.",
+      image: "/images/gemini.svg",
+      featured: false,
+      api_key_steps: [
+        "Go to https://aistudio.google.com/app/apikey",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Azure OpenAI",
+      id: "azure_openai",
+      description: "Microsoft's Azure OpenAI API.",
+      image: "/images/azure_openai.svg",
+      featured: false,
+      api_key_steps: [
+        "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use.",
+        "Open the Keys & Endpoint section. Find your API Key and Endpoint URL. The Endpoint URL will be a URL ending in openai.azure.com",
+        "Copy the API Key and Endpoint URL, paste them below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key", "Endpoint URL"],
+      api_key_warning:
+        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#azure-openai-api",
+    },
+    {
+      name: "Hugging Face",
+      id: "huggingface",
+      description: "AI community hub, with many models.",
+      image: "/images/hugging_face.svg",
+      featured: false,
+      api_key_steps: [
+        "Go to https://huggingface.co/settings/tokens",
+        "Create a new Access Token",
+        "Copy the new Access Token, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Google Vertex AI",
+      id: "vertex",
+      description:
+        "Google's Vertex AI API. Not to be confused with Gemini AI Studio.",
+      image: "/images/google_logo.svg",
+      featured: false,
+      api_key_steps: [
+        "Create a Google Cloud account.",
+        "Install the glcoud CLI, then run `gcloud auth application-default login` in the terminal. This will add Google Vertex credentials to you environment.",
+        "Create a project in the console, enable Vertex AI for that project, and click 'Enable Recommended APIs' in the Vertex AI console.",
+        "Add the project ID below. Be sure to use the project ID, not the project name.",
+        "Add the project location below. This should match the location of the project you created. Example: 'us-central1'.",
+        "Click connect.",
+      ],
+      api_key_fields: ["Project ID", "Project Location"],
+      api_key_warning:
+        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#google-vertex-ai",
+    },
+    {
+      name: "Together.ai",
+      id: "together_ai",
+      description: "Inference service from Together.ai",
+      image: "/images/together_ai.svg",
+      featured: false,
+      api_key_steps: [
+        "Create a Together account.",
+        "Create an API Key (or user key) here: https://api.together.ai/settings/api-keys",
+        "Copy the API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
@@ -90,7 +177,7 @@
         "Get the access key ID and secret access key for the new user. Paste them below and click 'Connect'",
       ],
       api_key_warning:
-        "Bedrock is difficult to setup.\n\nWe suggest OpenRouter as it's easier to setup and has more models.",
+        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they easier to setup and have more models.",
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
@@ -140,6 +227,42 @@
       custom_description: null,
     },
     fireworks_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    anthropic: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    vertex: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    gemini_api: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    huggingface: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    azure_openai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    together_ai: {
       connected: false,
       connecting: false,
       error: null,
@@ -382,8 +505,26 @@
       if (data["fireworks_api_key"] && data["fireworks_account_id"]) {
         status.fireworks_ai.connected = true
       }
+      if (data["vertex_project_id"] && data["vertex_location"]) {
+        status.vertex.connected = true
+      }
       if (data["ollama_base_url"]) {
         custom_ollama_url = data["ollama_base_url"]
+      }
+      if (data["anthropic_api_key"]) {
+        status.anthropic.connected = true
+      }
+      if (data["gemini_api_key"]) {
+        status.gemini_api.connected = true
+      }
+      if (data["azure_openai_api_key"] && data["azure_openai_endpoint"]) {
+        status.azure_openai.connected = true
+      }
+      if (data["huggingface_api_key"]) {
+        status.huggingface.connected = true
+      }
+      if (data["together_api_key"]) {
+        status.together_ai.connected = true
       }
       if (
         data["openai_compatible_providers"] &&
@@ -512,31 +653,20 @@
   {#if api_key_provider}
     <div class="grow h-full max-w-[400px] flex flex-col place-content-center">
       <div class="grow"></div>
-      {#if api_key_provider.api_key_warning}
-        <div role="alert" class="alert alert-warning my-4">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-6 w-6 shrink-0 stroke-current"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-            />
-          </svg>
-          <span>
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html api_key_provider.api_key_warning.replace(/\n/g, "<br>")}
-          </span>
-        </div>
-      {/if}
 
       <h1 class="text-xl font-medium flex-none text-center">
-        Connect {api_key_provider.name} with API Key
+        Connect {api_key_provider.name}
       </h1>
+
+      {#if api_key_provider.api_key_warning}
+        <div class="pt-2">
+          <Warning
+            warning_color="warning"
+            warning_message={api_key_provider.api_key_warning}
+            trusted={true}
+          />
+        </div>
+      {/if}
 
       <ol class="flex-none my-2 text-gray-700">
         {#each api_key_provider.api_key_steps || [] as step}
@@ -586,7 +716,9 @@
       <div class="grow-[1.5]"></div>
     </div>
   {:else}
-    <div class="w-full flex flex-col gap-6 max-w-lg">
+    <div
+      class="w-full grid grid-cols-1 xl:grid-cols-2 gap-y-6 gap-x-24 max-w-lg xl:max-w-screen-xl"
+    >
       {#each providers as provider}
         {@const is_connected =
           status[provider.id] && status[provider.id].connected}

@@ -171,6 +171,7 @@ class DataSourceType(str, Enum):
 
     human = "human"
     synthetic = "synthetic"
+    file_import = "file_import"
 
 
 class DataSourceProperty(BaseModel):
@@ -206,37 +207,43 @@ class DataSource(BaseModel):
             name="created_by",
             type=str,
             required_for=[DataSourceType.human],
-            not_allowed_for=[DataSourceType.synthetic],
+            not_allowed_for=[DataSourceType.synthetic, DataSourceType.file_import],
         ),
         DataSourceProperty(
             name="model_name",
             type=str,
             required_for=[DataSourceType.synthetic],
-            not_allowed_for=[DataSourceType.human],
+            not_allowed_for=[DataSourceType.human, DataSourceType.file_import],
         ),
         DataSourceProperty(
             name="model_provider",
             type=str,
             required_for=[DataSourceType.synthetic],
-            not_allowed_for=[DataSourceType.human],
+            not_allowed_for=[DataSourceType.human, DataSourceType.file_import],
         ),
         DataSourceProperty(
             name="adapter_name",
             type=str,
             required_for=[DataSourceType.synthetic],
-            not_allowed_for=[DataSourceType.human],
+            not_allowed_for=[DataSourceType.human, DataSourceType.file_import],
         ),
         DataSourceProperty(
             # Legacy field -- allow loading from old runs, but we shouldn't be setting it.
             name="prompt_builder_name",
             type=str,
-            not_allowed_for=[DataSourceType.human],
+            not_allowed_for=[DataSourceType.human, DataSourceType.file_import],
         ),
         DataSourceProperty(
             # The PromptId of the prompt. Can be a saved prompt, fine-tune, generator name, etc. See PromptId type for more details.
             name="prompt_id",
             type=str,
-            not_allowed_for=[DataSourceType.human],
+            not_allowed_for=[DataSourceType.human, DataSourceType.file_import],
+        ),
+        DataSourceProperty(
+            name="file_name",
+            type=str,
+            required_for=[DataSourceType.file_import],
+            not_allowed_for=[DataSourceType.human, DataSourceType.synthetic],
         ),
     ]
 

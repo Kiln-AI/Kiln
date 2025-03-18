@@ -134,7 +134,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Task */
+        delete: operations["delete_task_api_projects__project_id__task__task_id__delete"];
         options?: never;
         head?: never;
         /** Update Task */
@@ -219,7 +220,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Prompt */
+        delete: operations["delete_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__delete"];
         options?: never;
         head?: never;
         /** Update Prompt */
@@ -324,6 +326,23 @@ export interface paths {
         put?: never;
         /** Edit Tags */
         post: operations["edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk Upload */
+        post: operations["bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -720,7 +739,8 @@ export interface paths {
         get: operations["get_eval_api_projects__project_id__tasks__task_id__eval__eval_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Eval */
+        delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
         options?: never;
         head?: never;
         /** Update Eval */
@@ -994,6 +1014,14 @@ export interface components {
              */
             chain_of_thought_instructions?: string | null;
         };
+        /** Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post */
+        Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
         Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
             /** Run Ids */
@@ -1002,6 +1030,15 @@ export interface components {
             add_tags?: string[] | null;
             /** Remove Tags */
             remove_tags?: string[] | null;
+        };
+        /** BulkUploadResponse */
+        BulkUploadResponse: {
+            /** Success */
+            success: boolean;
+            /** Filename */
+            filename: string;
+            /** Imported Count */
+            imported_count: number;
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -1235,7 +1272,7 @@ export interface components {
          *     Synthetic: a model created the data
          * @enum {string}
          */
-        DataSourceType: "human" | "synthetic";
+        DataSourceType: "human" | "synthetic" | "file_import";
         /**
          * DatasetSplit
          * @description A collection of task runs, with optional splits (train, test, validation).
@@ -2835,6 +2872,38 @@ export interface operations {
             };
         };
     };
+    delete_task_api_projects__project_id__task__task_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_task_api_projects__project_id__task__task_id__patch: {
         parameters: {
             query?: never;
@@ -2989,6 +3058,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PromptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                prompt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -3301,6 +3403,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkUploadResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4202,6 +4340,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

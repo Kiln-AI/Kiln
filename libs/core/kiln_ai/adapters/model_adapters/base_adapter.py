@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Literal, Tuple
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
+from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
@@ -85,17 +86,6 @@ class BaseAdapter(metaclass=ABCMeta):
             )
         return self._model_provider
 
-    async def invoke_returning_raw(
-        self,
-        input: Dict | str,
-        input_source: DataSource | None = None,
-    ) -> Dict | str:
-        result = await self.invoke(input, input_source)
-        if self.task().output_json_schema is None:
-            return result.output.output
-        else:
-            return json.loads(result.output.output)
-
     async def invoke(
         self,
         input: Dict | str,
@@ -127,6 +117,10 @@ class BaseAdapter(metaclass=ABCMeta):
 
         # validate output
         if self.output_schema is not None:
+            # Parse json to dict if we have structured output
+            if isinstance(parsed_output.output, str):
+                parsed_output.output = parse_json_string(parsed_output.output)
+
             if not isinstance(parsed_output.output, dict):
                 raise RuntimeError(
                     f"structured response is not a dict: {parsed_output.output}"
@@ -137,6 +131,15 @@ class BaseAdapter(metaclass=ABCMeta):
                 raise RuntimeError(
                     f"response is not a string for non-structured task: {parsed_output.output}"
                 )
+
+        # Validate reasoning content is present (if reasoning)
+        if provider.reasoning_capable and (
+            not parsed_output.intermediate_outputs
+            or "reasoning" not in parsed_output.intermediate_outputs
+        ):
+            raise RuntimeError(
+                "Reasoning is required for this model, but no reasoning was returned."
+            )
 
         # Generate the run and output
         run = self.generate_run(input, input_source, parsed_output)

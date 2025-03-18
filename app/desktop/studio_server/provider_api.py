@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+import litellm
 import openai
 import requests
 from fastapi import FastAPI, HTTPException
@@ -24,7 +25,6 @@ from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warn
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-from langchain_aws import ChatBedrockConverse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,9 @@ def connect_provider_api(app: FastAPI):
 
         for model in built_in_models:
             for provider in model.providers:
+                if not provider.model_id:
+                    # it's possible for models to not have an ID (fine-tune only model)
+                    continue
                 if provider.name in key_providers:
                     available_models = next(
                         (m for m in models if m.provider_id == provider.name), None
@@ -216,11 +219,14 @@ def connect_provider_api(app: FastAPI):
         )
 
     def parse_api_key(key_data: dict) -> str:
-        api_key = key_data.get("API Key")
+        return parse_api_field(key_data, "API Key")
+
+    def parse_api_field(key_data: dict, field_name: str) -> str:
+        api_key = key_data.get(field_name)
         if not api_key or not isinstance(api_key, str):
             raise HTTPException(
                 status_code=400,
-                detail="API Key not found",
+                detail=f"{field_name} not found",
             )
         return api_key
 
@@ -253,6 +259,22 @@ def connect_provider_api(app: FastAPI):
                 return await connect_fireworks(key_data)
             case ModelProviderName.amazon_bedrock:
                 return await connect_bedrock(key_data)
+            case ModelProviderName.anthropic:
+                return await connect_anthropic(parse_api_key(key_data))
+            case ModelProviderName.gemini_api:
+                return await connect_gemini(parse_api_key(key_data))
+            case ModelProviderName.azure_openai:
+                endpoint = parse_url(key_data, "Endpoint URL")
+                return await connect_azure_openai(parse_api_key(key_data), endpoint)
+            case ModelProviderName.huggingface:
+                return await connect_huggingface(parse_api_key(key_data))
+            case ModelProviderName.vertex:
+                return await connect_vertex(
+                    parse_api_field(key_data, "Project ID"),
+                    parse_api_field(key_data, "Project Location"),
+                )
+            case ModelProviderName.together_ai:
+                return await connect_together(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -288,6 +310,20 @@ def connect_provider_api(app: FastAPI):
             case ModelProviderName.amazon_bedrock:
                 Config.shared().bedrock_access_key = None
                 Config.shared().bedrock_secret_key = None
+            case ModelProviderName.anthropic:
+                Config.shared().anthropic_api_key = None
+            case ModelProviderName.gemini_api:
+                Config.shared().gemini_api_key = None
+            case ModelProviderName.azure_openai:
+                Config.shared().azure_openai_api_key = None
+                Config.shared().azure_openai_endpoint = None
+            case ModelProviderName.huggingface:
+                Config.shared().huggingface_api_key = None
+            case ModelProviderName.vertex:
+                Config.shared().vertex_project_id = None
+                Config.shared().vertex_location = None
+            case ModelProviderName.together_ai:
+                Config.shared().together_api_key = None
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -468,6 +504,195 @@ async def connect_groq(key: str):
     )
 
 
+async def connect_gemini(key: str):
+    try:
+        response = requests.get(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+        )
+
+        if "API_KEY_INVALID" in response.text:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Gemini. Invalid API key."},
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Gemini. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().gemini_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Gemini"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Gemini. Error: {str(e)}"},
+        )
+
+
+async def connect_vertex(project_id: str, project_location: str):
+    try:
+        await litellm.acompletion(
+            model="vertex_ai/gemini-1.5-flash",
+            messages=[{"content": "Hello, how are you?", "role": "user"}],
+            vertex_project=project_id,
+            vertex_location=project_location,
+        )
+
+        Config.shared().vertex_project_id = project_id
+        Config.shared().vertex_location = project_location
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Connected to Vertex"},
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Vertex. Error: {str(e)}"},
+        )
+
+
+async def connect_together(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get(
+            "https://api.together.xyz/v1/models",
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Together.ai. Invalid API key."
+                },
+            )
+        else:
+            # Any non-401 status code is okay - auth passed. We expect other errors, but we don't care.
+            Config.shared().together_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Together.ai"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Together.ai. Error: {str(e)}"},
+        )
+
+
+async def connect_huggingface(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get(
+            "https://huggingface.co/api/organizations/fake_org_for_auth_test/resource-groups",
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Huggingface. Invalid API key."
+                },
+            )
+        else:
+            # Any non-401 status code is okay - auth passed. We expect other errors, but we don't care.
+            Config.shared().huggingface_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Huggingface"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Huggingface. Error: {str(e)}"},
+        )
+
+
+async def connect_anthropic(key: str):
+    try:
+        headers = {
+            "x-api-key": key,
+            "Content-Type": "application/json",
+        }
+        response = requests.get("https://api.anthropic.com/v1/models", headers=headers)
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Anthropic. Invalid API key."},
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Anthropic. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().anthropic_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Anthropic"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Anthropic. Error: {str(e)}"},
+        )
+
+
+async def connect_azure_openai(key: str, endpoint: str):
+    try:
+        headers = {
+            "api-key": key,
+            "Content-Type": "application/json",
+        }
+        response = requests.get(
+            f"{endpoint}/openai/files?api-version=2024-08-01-preview", headers=headers
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Azure OpenAI. Invalid API key."
+                },
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Azure OpenAI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().azure_openai_api_key = key
+            Config.shared().azure_openai_endpoint = endpoint
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Azure OpenAI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Azure OpenAI. Error: {str(e)}"},
+        )
+
+
 async def connect_bedrock(key_data: dict):
     access_key = key_data.get("Access Key")
     secret_key = key_data.get("Secret Key")
@@ -482,42 +707,34 @@ async def connect_bedrock(key_data: dict):
             detail="Access Key or Secret Key not found",
         )
     try:
-        # Langchain API is not good... need to use env vars. Pop these in finally block
-        os.environ["AWS_ACCESS_KEY_ID"] = access_key
-        os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
-
-        # Fake model, but will get a credential error before AWS realizes it's wrong
-        # Ensures we don't spend money on a test call
-        llm = ChatBedrockConverse(
-            model="fake_model",
-            region_name="us-west-2",
+        # Test credentials request, but invalid model so we don't use tokens
+        await litellm.acompletion(
+            model="bedrock/ai21.jamba-1-5-mini-v9999.8888",
+            aws_region_name="us-west-2",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            messages=[{"role": "user", "content": "Hello, how are you?"}],
         )
-        llm.invoke("Hello, how are you?")
     except Exception as e:
-        # Check for specific error messages indicating invalid credentials
-        if "UnrecognizedClientException" in str(
-            e
-        ) or "InvalidSignatureException" in str(e):
+        # Improve error message if it's a confirmed authentication error
+        if isinstance(e, litellm.exceptions.AuthenticationError):
             return JSONResponse(
                 status_code=401,
                 content={
                     "message": "Failed to connect to Bedrock. Invalid credentials."
                 },
             )
-        else:
-            # We still expect an error (fake model), but not for invalid credentials which means success!
+        # If it's a bad request, it's a valid key (but the model is fake)
+        if isinstance(e, litellm.exceptions.BadRequestError):
             Config.shared().bedrock_access_key = access_key
             Config.shared().bedrock_secret_key = secret_key
             return JSONResponse(
                 status_code=200,
                 content={"message": "Connected to Bedrock"},
             )
+        # Unknown error, raise it
+        raise e
 
-    finally:
-        os.environ.pop("AWS_ACCESS_KEY_ID")
-        os.environ.pop("AWS_SECRET_ACCESS_KEY")
-
-    # we shouldn't get here, but if we do, something went wrong
     return JSONResponse(
         status_code=400,
         content={"message": "Unknown Bedrock Error"},
@@ -577,13 +794,12 @@ def model_from_ollama_tag(
         if not ollama_provider:
             continue
 
-        if "model" in ollama_provider.provider_options:
-            model_name = ollama_provider.provider_options["model"]
-            if tag in [model_name, f"{model_name}:latest"]:
-                return model, ollama_provider
-        if "model_aliases" in ollama_provider.provider_options:
+        model_name = ollama_provider.model_id
+        if tag in [model_name, f"{model_name}:latest"]:
+            return model, ollama_provider
+        if ollama_provider.ollama_model_aliases is not None:
             # all aliases (and :latest)
-            for alias in ollama_provider.provider_options["model_aliases"]:
+            for alias in ollama_provider.ollama_model_aliases:
                 if tag in [alias, f"{alias}:latest"]:
                     return model, ollama_provider
 
@@ -767,3 +983,21 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
     )
 
     return cache
+
+
+def parse_url(key_data: dict, field_name: str) -> str:
+    url = key_data.get(field_name)
+    if not url or not isinstance(url, str):
+        raise HTTPException(
+            status_code=400,
+            detail="Endpoint URL not found",
+        )
+    if url.endswith("/"):
+        # remove last slash
+        url = url[:-1]
+    if not url.startswith("http"):
+        raise HTTPException(
+            status_code=400,
+            detail="Endpoint URL must start with http or https",
+        )
+    return url

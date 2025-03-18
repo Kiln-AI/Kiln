@@ -19,6 +19,16 @@ def test_valid_response(parser):
     assert parsed.output == "This is the result"
 
 
+def test_already_parsed_response(parser):
+    response = RunOutput(
+        output="This is the result",
+        intermediate_outputs={"reasoning": "This is thinking content"},
+    )
+    parsed = parser.parse_output(response)
+    assert parsed.intermediate_outputs["reasoning"] == "This is thinking content"
+    assert parsed.output == "This is the result"
+
+
 def test_response_with_whitespace(parser):
     response = RunOutput(
         output="""
@@ -37,14 +47,16 @@ def test_response_with_whitespace(parser):
 
 
 def test_missing_start_tag(parser):
-    with pytest.raises(ValueError, match="Response must start with <think> tag"):
-        parser.parse_output(
-            RunOutput(output="Some content</think>result", intermediate_outputs=None)
-        )
+    parsed = parser.parse_output(
+        RunOutput(output="Some content</think>result", intermediate_outputs=None)
+    )
+
+    assert parsed.intermediate_outputs["reasoning"] == "Some content"
+    assert parsed.output == "result"
 
 
 def test_missing_end_tag(parser):
-    with pytest.raises(ValueError, match="Missing thinking tags"):
+    with pytest.raises(ValueError, match="Missing </think> tag"):
         parser.parse_output(
             RunOutput(output="<think>Some content", intermediate_outputs=None)
         )

@@ -1,13 +1,17 @@
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from litellm.utils import ModelResponse
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import built_in_models
-from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
+from kiln_ai.adapters.model_adapters.litellm_adapter import (
+    LiteLlmAdapter,
+    LiteLlmConfig,
+)
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.prompt_builders import (
     BasePromptBuilder,
@@ -20,6 +24,9 @@ def get_all_models_and_providers():
     model_provider_pairs = []
     for model in built_in_models:
         for provider in model.providers:
+            if not provider.model_id:
+                # it's possible for models to not have an ID (fine-tune only model)
+                continue
             model_provider_pairs.append((model.name, provider.name))
     return model_provider_pairs
 
@@ -106,23 +113,27 @@ async def test_amazon_bedrock(tmp_path):
     await run_simple_test(tmp_path, "llama_3_1_8b", "amazon_bedrock")
 
 
-async def test_mock(tmp_path):
-    task = build_test_task(tmp_path)
-    mockChatModel = FakeListChatModel(responses=["mock response"])
-    adapter = LangchainAdapter(
-        task,
-        custom_model=mockChatModel,
-        provider="ollama",
-    )
-    run = await adapter.invoke("You are a mock, send me the response!")
-    assert "mock response" in run.output.output
-
-
 async def test_mock_returning_run(tmp_path):
     task = build_test_task(tmp_path)
-    mockChatModel = FakeListChatModel(responses=["mock response"])
-    adapter = LangchainAdapter(task, custom_model=mockChatModel, provider="ollama")
-    run = await adapter.invoke("You are a mock, send me the response!")
+    with patch("litellm.acompletion") as mock_acompletion:
+        # Configure the mock to return a properly structured response
+        mock_acompletion.return_value = ModelResponse(
+            model="custom_model",
+            choices=[{"message": {"content": "mock response"}}],
+        )
+
+        adapter = LiteLlmAdapter(
+            config=LiteLlmConfig(
+                model_name="custom_model",
+                provider_name="ollama",
+                base_url="http://localhost:11434",
+                additional_body_options={"api_key": "test_key"},
+            ),
+            kiln_task=task,
+        )
+
+        run = await adapter.invoke("You are a mock, send me the response!")
+
     assert run.output.output == "mock response"
     assert run is not None
     assert run.id is not None
@@ -130,8 +141,8 @@ async def test_mock_returning_run(tmp_path):
     assert run.output.output == "mock response"
     assert "created_by" in run.input_source.properties
     assert run.output.source.properties == {
-        "adapter_name": "kiln_langchain_adapter",
-        "model_name": "custom.langchain:unknown_model",
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "custom_model",
         "model_provider": "ollama",
         "prompt_id": "simple_prompt_builder",
     }

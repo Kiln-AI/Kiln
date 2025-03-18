@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import RunOutput
-from kiln_ai.adapters.model_adapters.langchain_adapters import LangchainAdapter
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.repair.repair_task import (
     RepairTaskInput,
     RepairTaskRun,
@@ -217,7 +217,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "rating": 8,
     }
 
-    with patch.object(LangchainAdapter, "_run", new_callable=AsyncMock) as mock_run:
+    with patch.object(LiteLlmAdapter, "_run", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = RunOutput(
             output=mocked_output, intermediate_outputs=None
         )
@@ -235,7 +235,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
     parsed_output = json.loads(run.output.output)
     assert parsed_output == mocked_output
     assert run.output.source.properties == {
-        "adapter_name": "kiln_langchain_adapter",
+        "adapter_name": "kiln_openai_compatible_adapter",
         "model_name": "llama_3_1_8b",
         "model_provider": "ollama",
         "prompt_id": "simple_prompt_builder",

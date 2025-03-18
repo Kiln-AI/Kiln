@@ -1,7 +1,7 @@
 import math
 from typing import Dict, List, Tuple
 
-from openai.types.chat import ChatCompletionTokenLogprob
+from litellm.types.utils import ChatCompletionTokenLogprob
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval

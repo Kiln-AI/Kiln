@@ -49,7 +49,7 @@ def validate_schema(instance: Dict, schema_str: str) -> None:
         v.validate(instance)
     except jsonschema.exceptions.ValidationError as e:
         raise ValueError(
-            f"This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information. The error from the schema check was: {e.message}"
+            f"This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information. The error from the schema check was: {e.message}. The JSON was: \n```json\n{instance}\n```"
         ) from e
 
 

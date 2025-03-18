@@ -268,6 +268,8 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         )
         if parent_path is None:
             return None
+        if not parent_path.exists():
+            return None
         loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
         self.parent = loaded_parent
         return loaded_parent

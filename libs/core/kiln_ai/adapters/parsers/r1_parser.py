@@ -20,21 +20,33 @@ class R1ThinkingParser(BaseParser):
         Raises:
             ValueError: If response format is invalid (missing tags, multiple tags, or no content after closing tag)
         """
+
+        # The upstream providers (litellm, openrouter, fireworks) all keep changing their response formats, sometimes adding reasoning parsing where it didn't previously exist.
+        # If they do it already, great just return. If not we parse it ourselves. Not ideal, but better than upstream changes breaking the app.
+        if (
+            original_output.intermediate_outputs is not None
+            and "reasoning" in original_output.intermediate_outputs
+        ):
+            return original_output
+
         # This parser only works for strings
         if not isinstance(original_output.output, str):
             raise ValueError("Response must be a string for R1 parser")
 
         # Strip whitespace and validate basic structure
         cleaned_response = original_output.output.strip()
-        if not cleaned_response.startswith(self.START_TAG):
-            raise ValueError("Response must start with <think> tag")
 
         # Find the thinking tags
-        think_start = cleaned_response.find(self.START_TAG)
         think_end = cleaned_response.find(self.END_TAG)
+        if think_end == -1:
+            raise ValueError("Missing </think> tag")
 
-        if think_start == -1 or think_end == -1:
-            raise ValueError("Missing thinking tags")
+        think_tag_start = cleaned_response.find(self.START_TAG)
+        if think_tag_start == -1:
+            # We allow no start <think>, thinking starts on first char. QwQ does this.
+            think_start = 0
+        else:
+            think_start = think_tag_start + len(self.START_TAG)
 
         # Check for multiple tags
         if (
@@ -44,9 +56,7 @@ class R1ThinkingParser(BaseParser):
             raise ValueError("Multiple thinking tags found")
 
         # Extract thinking content
-        thinking_content = cleaned_response[
-            think_start + len(self.START_TAG) : think_end
-        ].strip()
+        thinking_content = cleaned_response[think_start:think_end].strip()
 
         # Extract result (everything after </think>)
         result = cleaned_response[think_end + len(self.END_TAG) :].strip()
@@ -54,16 +64,11 @@ class R1ThinkingParser(BaseParser):
         if not result or len(result) == 0:
             raise ValueError("No content found after </think> tag")
 
-        # Parse JSON if needed
-        output = result
-        if self.structured_output:
-            output = parse_json_string(result)
-
         # Add thinking content to intermediate outputs if it exists
         intermediate_outputs = original_output.intermediate_outputs or {}
         intermediate_outputs["reasoning"] = thinking_content
 
         return RunOutput(
-            output=output,
+            output=result,
             intermediate_outputs=intermediate_outputs,
         )

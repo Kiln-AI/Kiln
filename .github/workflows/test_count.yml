@@ -18,7 +18,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.13
 
       - name: Install the project
         run: uv sync --all-extras --dev
@@ -57,8 +57,9 @@ jobs:
           color: brightgreen
 
       - name: Run library coverage
+        # n0 disables parallel execution
         run: |
-          uv run coverage run -m pytest -q ./libs/
+          uv run coverage run -m pytest -q ./libs/ -n0
           TOTAL_LIB_COVERAGE=$(uv run coverage report | grep TOTAL | awk {'print $4'})
           echo "TOTAL_LIB_COVERAGE=$TOTAL_LIB_COVERAGE" >> $GITHUB_ENV
 

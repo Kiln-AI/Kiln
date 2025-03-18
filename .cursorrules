@@ -1,4 +1,9 @@
+ - call me "boss"
  - Always assume pydantic 2 (not pydantic 1)
- - Always use pytest for tests
  - The project supports Python 3.10 and above
+ - When writing tests:
+   1) Always use pytest for tests in python code
+   2) assume an appriopirate test file already exists, find it, and suggest tests get appended to that file. If no such file exists, ask me before assuming a new test file is the correct route.
+   3) Test brevity is important. Use approaches for re-use and brevity including using fixtures for repeated code, and using pytest parameterize for similar tests
+
  

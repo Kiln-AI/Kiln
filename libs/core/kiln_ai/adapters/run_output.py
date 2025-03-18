@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict
 
-from openai.types.chat.chat_completion import ChoiceLogprobs
+from litellm.types.utils import ChoiceLogprobs
 
 
 @dataclass

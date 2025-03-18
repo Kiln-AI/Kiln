@@ -56,11 +56,11 @@
     : selected_dataset?.split_contents["all"]
       ? "all"
       : null
-  // Only openai supports automatic validation
+  // Only openai and together support automatic validation
   $: show_automatic_validation_option =
     selected_dataset &&
     selected_dataset_has_val &&
-    model_provider_id === "openai"
+    (model_provider_id === "openai" || model_provider_id === "together_ai")
   $: step_3_visible =
     model_provider !== disabled_header &&
     !!selected_dataset &&

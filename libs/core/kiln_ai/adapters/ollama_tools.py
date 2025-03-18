@@ -50,7 +50,7 @@ class OllamaConnection(BaseModel):
 def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
     # Build a list of models we support for Ollama from the built-in model list
     supported_ollama_models = [
-        provider.provider_options["model"]
+        provider.model_id
         for model in built_in_models
         for provider in model.providers
         if provider.name == ModelProviderName.ollama
@@ -61,7 +61,7 @@ def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
             alias
             for model in built_in_models
             for provider in model.providers
-            for alias in provider.provider_options.get("model_aliases", [])
+            for alias in provider.ollama_model_aliases or []
         ]
     )
 

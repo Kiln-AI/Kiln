@@ -9,8 +9,8 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
-from kiln_ai.adapters.model_adapters.openai_compatible_config import (
-    OpenAICompatibleConfig,
+from kiln_ai.adapters.model_adapters.litellm_config import (
+    LiteLlmConfig,
 )
 from kiln_ai.adapters.ollama_tools import (
     get_ollama_connection,
@@ -153,7 +153,7 @@ def kiln_model_provider_from(
         return finetune_provider_model(name)
 
     if provider_name == ModelProviderName.openai_compatible:
-        return openai_compatible_provider_model(name)
+        return lite_llm_provider_model(name)
 
     built_in_model = builtin_model_from(name, provider_name)
     if built_in_model:
@@ -175,13 +175,13 @@ def kiln_model_provider_from(
         supports_structured_output=False,
         supports_data_gen=False,
         untested_model=True,
-        provider_options=provider_options_for_custom_model(name, provider_name),
+        model_id=name,
     )
 
 
-def openai_compatible_config(
+def lite_llm_config(
     model_id: str,
-) -> OpenAICompatibleConfig:
+) -> LiteLlmConfig:
     try:
         openai_provider_name, model_id = model_id.split("::")
     except Exception:
@@ -205,22 +205,23 @@ def openai_compatible_config(
             f"OpenAI compatible provider {openai_provider_name} has no base URL"
         )
 
-    return OpenAICompatibleConfig(
-        api_key=api_key,
+    return LiteLlmConfig(
+        # OpenAI compatible, with a custom base URL
         model_name=model_id,
         provider_name=ModelProviderName.openai_compatible,
         base_url=base_url,
+        additional_body_options={
+            "api_key": api_key,
+        },
     )
 
 
-def openai_compatible_provider_model(
+def lite_llm_provider_model(
     model_id: str,
 ) -> KilnModelProvider:
     return KilnModelProvider(
         name=ModelProviderName.openai_compatible,
-        provider_options={
-            "model": model_id,
-        },
+        model_id=model_id,
         supports_structured_output=False,
         supports_data_gen=False,
         untested_model=True,
@@ -264,9 +265,7 @@ def finetune_provider_model(
     provider = ModelProviderName[fine_tune.provider]
     model_provider = KilnModelProvider(
         name=provider,
-        provider_options={
-            "model": fine_tune.fine_tune_model_id,
-        },
+        model_id=fine_tune.fine_tune_model_id,
     )
 
     if fine_tune.structured_output_mode is not None:
@@ -331,54 +330,23 @@ def provider_name_from_id(id: str) -> str:
                 return "Custom Models"
             case ModelProviderName.openai_compatible:
                 return "OpenAI Compatible"
+            case ModelProviderName.azure_openai:
+                return "Azure OpenAI"
+            case ModelProviderName.gemini_api:
+                return "Gemini API"
+            case ModelProviderName.anthropic:
+                return "Anthropic"
+            case ModelProviderName.huggingface:
+                return "Hugging Face"
+            case ModelProviderName.vertex:
+                return "Google Vertex AI"
+            case ModelProviderName.together_ai:
+                return "Together AI"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
 
     return "Unknown provider: " + id
-
-
-def provider_options_for_custom_model(
-    model_name: str, provider_name: str
-) -> Dict[str, str]:
-    """
-    Generated model provider options for a custom model. Each has their own format/options.
-    """
-
-    if provider_name not in ModelProviderName.__members__:
-        raise ValueError(f"Invalid provider name: {provider_name}")
-
-    enum_id = ModelProviderName(provider_name)
-    match enum_id:
-        case ModelProviderName.amazon_bedrock:
-            # us-west-2 is the only region consistently supported by Bedrock
-            return {"model": model_name, "region_name": "us-west-2"}
-        case (
-            ModelProviderName.openai
-            | ModelProviderName.ollama
-            | ModelProviderName.fireworks_ai
-            | ModelProviderName.openrouter
-            | ModelProviderName.groq
-        ):
-            return {"model": model_name}
-        case ModelProviderName.kiln_custom_registry:
-            raise ValueError(
-                "Custom models from registry should be parsed into provider/model before calling this."
-            )
-        case ModelProviderName.kiln_fine_tune:
-            raise ValueError(
-                "Fine tuned models should populate provider options via another path"
-            )
-        case ModelProviderName.openai_compatible:
-            raise ValueError(
-                "OpenAI compatible models should populate provider options via another path"
-            )
-        case _:
-            # triggers pyright warning if I miss a case
-            raise_exhaustive_enum_error(enum_id)
-
-    # Won't reach this, type checking will catch missed values
-    return {"model": model_name}
 
 
 @dataclass
@@ -407,5 +375,29 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.fireworks_ai: ModelProviderWarning(
         required_config_keys=["fireworks_api_key", "fireworks_account_id"],
         message="Attempted to use Fireworks without an API key and account ID set. \nGet your API key from https://fireworks.ai/account/api-keys and your account ID from https://fireworks.ai/account/profile",
+    ),
+    ModelProviderName.anthropic: ModelProviderWarning(
+        required_config_keys=["anthropic_api_key"],
+        message="Attempted to use Anthropic without an API key set. \nGet your API key from https://console.anthropic.com/settings/keys",
+    ),
+    ModelProviderName.gemini_api: ModelProviderWarning(
+        required_config_keys=["gemini_api_key"],
+        message="Attempted to use Gemini without an API key set. \nGet your API key from https://aistudio.google.com/app/apikey",
+    ),
+    ModelProviderName.azure_openai: ModelProviderWarning(
+        required_config_keys=["azure_openai_api_key", "azure_openai_endpoint"],
+        message="Attempted to use Azure OpenAI without an API key and endpoint set. Configure these in settings.",
+    ),
+    ModelProviderName.huggingface: ModelProviderWarning(
+        required_config_keys=["huggingface_api_key"],
+        message="Attempted to use Hugging Face without an API key set. \nGet your API key from https://huggingface.co/settings/tokens",
+    ),
+    ModelProviderName.vertex: ModelProviderWarning(
+        required_config_keys=["vertex_project_id"],
+        message="Attempted to use Vertex without a project ID set. \nGet your project ID from the Vertex AI console.",
+    ),
+    ModelProviderName.together_ai: ModelProviderWarning(
+        required_config_keys=["together_api_key"],
+        message="Attempted to use Together without an API key set. \nGet your API key from https://together.ai/settings/keys",
     ),
 }

@@ -510,6 +510,7 @@ async def test_invoke_parsing_flow(adapter):
     # Mock dependencies
     mock_provider = MagicMock()
     mock_provider.parser = "test_parser"
+    mock_provider.reasoning_capable = False
 
     mock_parser = MagicMock()
     mock_parser.parse_output.return_value = RunOutput(
@@ -547,3 +548,11 @@ async def test_invoke_parsing_flow(adapter):
         assert result.output.output == "parsed test output"
         assert result.intermediate_outputs == {"key": "value"}
         assert result.input == "test input"
+
+        # Test with reasoning required, that we error if no reasoning is returned
+        mock_provider.reasoning_capable = True
+        with pytest.raises(
+            RuntimeError,
+            match="Reasoning is required for this model, but no reasoning was returned.",
+        ):
+            await adapter.invoke("test input")

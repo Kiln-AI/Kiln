@@ -78,9 +78,46 @@ class Config:
                 str,
                 env_var="FIREWORKS_ACCOUNT_ID",
             ),
+            "anthropic_api_key": ConfigProperty(
+                str,
+                env_var="ANTHROPIC_API_KEY",
+                sensitive=True,
+            ),
+            "gemini_api_key": ConfigProperty(
+                str,
+                env_var="GEMINI_API_KEY",
+                sensitive=True,
+            ),
             "projects": ConfigProperty(
                 list,
                 default_lambda=lambda: [],
+            ),
+            "azure_openai_api_key": ConfigProperty(
+                str,
+                env_var="AZURE_OPENAI_API_KEY",
+                sensitive=True,
+            ),
+            "azure_openai_endpoint": ConfigProperty(
+                str,
+                env_var="AZURE_OPENAI_ENDPOINT",
+            ),
+            "huggingface_api_key": ConfigProperty(
+                str,
+                env_var="HUGGINGFACE_API_KEY",
+                sensitive=True,
+            ),
+            "vertex_project_id": ConfigProperty(
+                str,
+                env_var="VERTEX_PROJECT_ID",
+            ),
+            "vertex_location": ConfigProperty(
+                str,
+                env_var="VERTEX_LOCATION",
+            ),
+            "together_api_key": ConfigProperty(
+                str,
+                env_var="TOGETHERAI_API_KEY",
+                sensitive=True,
             ),
             "custom_models": ConfigProperty(
                 list,
