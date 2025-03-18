@@ -1,11 +1,10 @@
 import json
-from typing import Type
 
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.prompt_builders import (
     BasePromptBuilder,
-    SavedPromptBuilder,
+    PromptGenerators,
     prompt_builder_from_id,
 )
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
@@ -45,15 +44,22 @@ feedback describing what should be improved. Your job is to understand the evalu
         )
 
     @classmethod
+    def _get_prompt_id(cls, source_properties: dict) -> str:
+        """Extract the prompt ID from source properties, falling back to simple if none provided."""
+        return (
+            source_properties.get("prompt_id")
+            or source_properties.get("prompt_builder_name")
+            or PromptGenerators.SIMPLE.value  # some sources can have no prompt_id or prompt_builder_name
+        )
+
+    @classmethod
     def _original_prompt(cls, run: TaskRun, task: Task) -> str:
         if run.output.source is None or run.output.source.properties is None:
             raise ValueError("No source properties found")
 
-        # Get the prompt builder id. Need the second check because we used to store this in a prompt_builder_name field, so loading legacy runs will need this.
-        prompt_id = run.output.source.properties.get(
-            "prompt_id"
-        ) or run.output.source.properties.get("prompt_builder_name", None)
-        if prompt_id is not None and isinstance(prompt_id, str):
+        prompt_id = cls._get_prompt_id(run.output.source.properties)
+
+        if isinstance(prompt_id, str):
             prompt_builder = prompt_builder_from_id(prompt_id, task)
             if isinstance(prompt_builder, BasePromptBuilder):
                 return prompt_builder.build_prompt(include_json_instructions=False)
