@@ -40,7 +40,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
   - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
-  - [Adding Custom Model or AI Provier from Code](#adding-custom-model-or-ai-provier-from-code)
+  - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provier-from-code)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
@@ -237,7 +237,7 @@ for run in task.runs():
 
 ```
 
-### Adding Custom Model or AI Provier from Code
+### Adding Custom Model or AI Provider from Code
 
 You can add additional AI models and providers to Kiln.
 
@@ -246,7 +246,7 @@ See our docs for more information, including how to add these from the UI:
 - [Custom Models From Existing Providers](https://docs.getkiln.ai/docs/models-and-ai-providers#custom-models-from-existing-providers)
 - [Custom OpenAI Compatible Servers](https://docs.getkiln.ai/docs/models-and-ai-providers#custom-openai-compatible-servers)
 
-You can also add these from code. The kiln_ai.utils.Config class helps you manage the Kiln config file (stored at `~/.kiln_settings/config.yaml`):
+You can also add these from code. The `kiln_ai.utils.Config` class helps you manage the Kiln config file (stored at `~/.kiln_settings/config.yaml`):
 
 ```python
 # Addding a OpenAI compatible provider
