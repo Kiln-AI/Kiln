@@ -40,7 +40,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
   - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
-  - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provier-from-code)
+  - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
