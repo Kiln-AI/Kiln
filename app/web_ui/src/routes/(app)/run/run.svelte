@@ -343,6 +343,25 @@
       }[name] || name
     )
   }
+
+  $: repair_edit_mode = false
+  let repair_output_edited = ""
+  function show_repair_edit() {
+    repair_edit_mode = true
+    repair_output_edited = repair_run?.output.output || ""
+  }
+
+  function hide_repair_edit() {
+    repair_edit_mode = false
+  }
+
+  function apply_manual_edit() {
+    if (!repair_run) {
+      return
+    }
+    repair_run.output.output = repair_output_edited
+    repair_edit_mode = false
+  }
 </script>
 
 <div>
@@ -433,7 +452,18 @@
                   'No instruction provided'}">your instructions</span
               >. Review the result.
             </p>
-            <Output raw_output={repair_run?.output.output || ""} />
+            {#if repair_edit_mode}
+              <FormElement
+                id={"repair_manual_output"}
+                label="Edit repair attempt"
+                info_description="Enter the repaired output here. This will override the automatic repair."
+                inputType="textarea"
+                tall={true}
+                bind:value={repair_output_edited}
+              />
+            {:else}
+              <Output raw_output={repair_run?.output.output || ""} />
+            {/if}
           {:else if repair_complete}
             <p class="text-sm text-gray-500 mb-4">
               The model has fixed the output given <span
@@ -460,21 +490,38 @@
           {/if}
         </div>
         {#if repair_review_available}
-          <div class="flex flex-row gap-4 mt-4 justify-end">
-            <button class="btn" on:click={() => (repair_run = null)}
-              >Retry Repair</button
-            >
-            <button
-              class="btn btn-primary"
-              on:click={accept_repair}
-              disabled={accept_repair_submitting}
-            >
-              {#if accept_repair_submitting}
-                <span class="loading loading-spinner loading-sm"></span>
-              {:else}
-                Accept Repair (5 Stars)
-              {/if}
-            </button>
+          <div class="mt-4">
+            {#if repair_edit_mode}
+              <div class="flex flex-row gap-4 justify-end">
+                <button class="btn btn-secondary" on:click={hide_repair_edit}
+                  >Cancel</button
+                >
+                <button class="btn btn-primary" on:click={apply_manual_edit}>
+                  Save
+                </button>
+              </div>
+            {:else}
+              <div class="flex flex-row gap-4 justify-between">
+                <button class="btn" on:click={show_repair_edit}>Edit</button>
+                <div class="flex flex-row gap-4">
+                  <button class="btn" on:click={() => (repair_run = null)}
+                    >Retry Repair</button
+                  >
+                  <button
+                    class="btn btn-primary"
+                    on:click={accept_repair}
+                    disabled={accept_repair_submitting}
+                  >
+                    {#if accept_repair_submitting}
+                      <span class="loading loading-spinner loading-sm"></span>
+                    {:else}
+                      Accept Repair (5 Stars)
+                    {/if}
+                  </button>
+                </div>
+              </div>
+            {/if}
+
             {#if accept_repair_error}
               <p class="text-error font-medium text-sm">
                 Error Accepting Repair<br />
