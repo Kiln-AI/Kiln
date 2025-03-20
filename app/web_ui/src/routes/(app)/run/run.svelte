@@ -523,7 +523,7 @@
             {/if}
 
             {#if accept_repair_error}
-              <p class="text-error font-medium text-sm">
+              <p class="mt-2 text-error font-medium text-sm">
                 Error Accepting Repair<br />
                 <span class="text-error text-xs font-normal">
                   {accept_repair_error.getMessage()}</span
