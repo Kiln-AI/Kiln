@@ -12,6 +12,7 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.repair_api import (
     RepairRunPost,
@@ -46,13 +47,17 @@ def data_source():
 
 
 @pytest.fixture
-def improvement_task(tmp_path) -> Task:
+def project(tmp_path) -> Project:
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
     project = Project(name="Test Project", path=str(project_path))
     project.save_to_file()
+    return project
 
+
+@pytest.fixture
+def improvement_task(project) -> Task:
     task = Task(name="Test Task", instruction="Test Instruction", parent=project)
     task.save_to_file()
     return task
@@ -77,6 +82,23 @@ def mock_repair_task_run(improvement_task, data_source):
         output=TaskOutput(
             output="Test Output",
             source=data_source,
+        ),
+        input="The input to the improvement task",
+        input_source=data_source,
+    )
+
+
+@pytest.fixture
+def mock_repair_task_run_human_edited(improvement_task, data_source):
+    return TaskRun(
+        output=TaskOutput(
+            output="Test Output",
+            source={
+                "type": "human",
+                "properties": {
+                    "created_by": "placeholder_user_id",
+                },
+            },
         ),
         input="The input to the improvement task",
         input_source=data_source,
@@ -180,3 +202,35 @@ def test_repair_run_missing_model_info(
     # Assert
     assert response.status_code == 400
     assert response.json()["detail"] == "Model name and provider must be specified."
+
+
+def test_repair_run_human_source(
+    mock_run_and_task,
+    mock_langchain_adapter,
+    client,
+    improvement_task,
+    mock_repair_task_run_human_edited,
+):
+    # Arrange
+    input_data = RepairRunPost(
+        repair_run=mock_repair_task_run_human_edited.model_dump(),
+        evaluator_feedback="Fix this issue",
+    )
+
+    # Act
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/repair",
+        json=json.loads(input_data.model_dump_json()),
+    )
+
+    # Assert
+    assert response.status_code == 200
+    res = response.json()
+
+    # source must be set and the created_by must be set to the user id
+    repaired_output = res["repaired_output"]
+    assert repaired_output["source"] is not None
+    assert repaired_output["source"]["properties"] is not None
+    assert (
+        repaired_output["source"]["properties"]["created_by"] == Config.shared().user_id
+    )

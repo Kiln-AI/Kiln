@@ -85,7 +85,8 @@ def connect_repair_api(app: FastAPI):
             validate_schema(json.loads(output), task.output_json_schema)
 
         # manually edited runs are human but the user id is not set
-        if input.repair_run.output.source.type == DataSourceType.human:
+        source = input.repair_run.output.source
+        if not source or source.type == DataSourceType.human:
             input.repair_run.output.source = DataSource(
                 type=DataSourceType.human,
                 properties={"created_by": Config.shared().user_id},
