@@ -5,6 +5,8 @@ from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.repair.repair_task import RepairTaskRun
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType
+from kiln_ai.utils.config import Config
 from kiln_server.run_api import model_provider_from_string, task_and_run_from_id
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -81,6 +83,13 @@ def connect_repair_api(app: FastAPI):
         if task.output_json_schema:
             output = input.repair_run.output.model_dump().get("output", "")
             validate_schema(json.loads(output), task.output_json_schema)
+
+        # manually edited runs are human but the user id is not set
+        if input.repair_run.output.source.type == DataSourceType.human:
+            input.repair_run.output.source = DataSource(
+                type=DataSourceType.human,
+                properties={"created_by": Config.shared().user_id},
+            )
 
         # Update the run object atomically, as validation will fail setting one at a time.
         updated_data = run.model_dump()
