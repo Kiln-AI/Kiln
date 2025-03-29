@@ -8,10 +8,8 @@ from pydantic import ValidationError
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import RunOutput
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.adapters.repair.repair_task import (
-    RepairTaskInput,
-    RepairTaskRun,
-)
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
+from kiln_ai.adapters.repair.repair_task import RepairTaskInput, RepairTaskRun
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -105,6 +103,56 @@ def sample_task_run(sample_task):
 
 
 @pytest.fixture
+def sample_task_run_no_prompt_id(sample_task):
+    task_run = TaskRun(
+        parent=sample_task,
+        input='{"topic": "chicken"}',
+        input_source=DataSource(
+            type=DataSourceType.file_import,
+            properties={
+                "file_name": "test_file.csv",
+            },
+        ),
+        output=TaskOutput(
+            output='{"setup": "Why did the chicken cross the road?", "punchline": "To get to the other side", "rating": null}',
+            source=DataSource(
+                type=DataSourceType.file_import,
+                properties={
+                    "file_name": "test_file.csv",
+                },
+            ),
+        ),
+    )
+    task_run.save_to_file()
+    return task_run
+
+
+@pytest.fixture
+def sample_task_run_invalid_prompt_id(sample_task):
+    task_run = TaskRun(
+        parent=sample_task,
+        input='{"topic": "chicken"}',
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Jane Doe"}
+        ),
+        output=TaskOutput(
+            output='{"setup": "Why did the chicken cross the road?", "punchline": "To get to the other side", "rating": null}',
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "openai",
+                    "adapter_name": "langchain_adapter",
+                    "prompt_id": "invalid_prompt_id",
+                },
+            ),
+        ),
+    )
+    task_run.save_to_file()
+    return task_run
+
+
+@pytest.fixture
 def sample_repair_data(sample_task, sample_task_run):
     return {
         "original_task": sample_task,
@@ -128,6 +176,40 @@ def test_build_repair_task_input(sample_repair_data):
         result.evaluator_feedback
         == "The joke is too cliché. Please come up with a more original chicken-related joke."
     )
+
+
+def test_build_repair_task_input_with_no_prompt_id(
+    sample_task, sample_task_run_no_prompt_id
+):
+    with patch(
+        "kiln_ai.adapters.repair.repair_task.prompt_builder_from_id",
+        wraps=prompt_builder_from_id,
+    ) as mock_prompt_builder_from_id:
+        result = RepairTaskRun.build_repair_task_input(
+            original_task=sample_task,
+            task_run=sample_task_run_no_prompt_id,
+            evaluator_feedback="The joke is too cliché. Please come up with a more original chicken-related joke.",
+        )
+
+    # verify we fallback to simple prompt builder
+    mock_prompt_builder_from_id.assert_called_once_with(
+        "simple_prompt_builder", sample_task
+    )
+    # verify we got a valid result
+    assert isinstance(result, RepairTaskInput)
+
+
+def test_build_repair_task_input_with_invalid_prompt_id(
+    sample_task, sample_task_run_invalid_prompt_id
+):
+    with pytest.raises(
+        ValueError,
+    ):
+        RepairTaskRun.build_repair_task_input(
+            original_task=sample_task,
+            task_run=sample_task_run_invalid_prompt_id,
+            evaluator_feedback="The joke is too cliché. Please come up with a more original chicken-related joke.",
+        )
 
 
 def test_repair_input_schema():
@@ -245,3 +327,25 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
 
     # Verify that the mock was called
     mock_run.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "properties,expected",
+    [
+        # Should use the prompt id if it is provided
+        ({"prompt_id": "multi_shot_prompt_builder"}, "multi_shot_prompt_builder"),
+        ({"prompt_builder_name": "legacy_prompt"}, "legacy_prompt"),
+        # Should fall back to SIMPLE if no prompt_id or prompt_builder_name is provided
+        ({}, "simple_prompt_builder"),
+        ({"some_other_field": "value"}, "simple_prompt_builder"),
+    ],
+)
+def test_get_prompt_id_fallbacks(properties, expected):
+    result = RepairTaskRun._get_prompt_id(properties)
+    assert result == expected
+
+
+def test_get_prompt_id_precedence():
+    properties = {"prompt_id": "new_prompt", "prompt_builder_name": "old_prompt"}
+    result = RepairTaskRun._get_prompt_id(properties)
+    assert result == "new_prompt"
