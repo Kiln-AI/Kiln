@@ -42,7 +42,7 @@ jobs:
 
       - name: Build Windows Installer
         if: matrix.os == 'windows-latest'
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        uses: scosman/Inno-Setup-Action-Back@v1.2.5
         with:
           path: ./app/desktop/WinInnoSetup.iss
 

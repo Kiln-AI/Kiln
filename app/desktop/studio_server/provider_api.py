@@ -644,6 +644,7 @@ async def connect_anthropic(key: str):
         headers = {
             "x-api-key": key,
             "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
         }
         response = requests.get("https://api.anthropic.com/v1/models", headers=headers)
 

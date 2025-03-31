@@ -1626,6 +1626,7 @@ async def test_connect_anthropic_success(mock_config_shared, mock_requests_get):
         headers={
             "x-api-key": "test_api_key",
             "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
         },
     )
     assert mock_config.anthropic_api_key == "test_api_key"
