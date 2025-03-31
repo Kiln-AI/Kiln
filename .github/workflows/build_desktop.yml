@@ -42,7 +42,7 @@ jobs:
 
       - name: Build Windows Installer
         if: matrix.os == 'windows-latest'
-        uses: scosman/Inno-Setup-Action-Back@main
+        uses: scosman/Inno-Setup-Action-Backup@v1.2.5
         with:
           path: ./app/desktop/WinInnoSetup.iss
 
