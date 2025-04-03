@@ -1,19 +1,21 @@
 {
-  "name": "",
-  "short_name": "",
+  "name": "Kiln",
+  "short_name": "Kiln",
+  "description": "The easiest way to built AI products",
+  "start_url": "/",
+  "display": "minimal-ui",
+  "theme_color": "#f5f5f5",
+  "background_color": "#f5f5f5",
   "icons": [
     {
-      "src": "/favicons/android-chrome-192x192.png",
+      "src": "/favicons/icon_192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/favicons/android-chrome-512x512.png",
+      "src": "/favicons/icon_512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
-  ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
-  "display": "standalone"
+  ]
 }
