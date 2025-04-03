@@ -12,6 +12,7 @@
   export let error: KilnError | null = null
   export let submitting = false
   export let saved = false
+  export let disabled = false
   export let keyboard_submit = true
   export let submit_visible = true
   export let gap: number = 6
@@ -136,7 +137,7 @@
   })
 
   function handleKeydown(event: KeyboardEvent) {
-    if (!keyboard_submit) {
+    if (!keyboard_submit || !submit_visible || disabled) {
       return
     }
     // Command+Enter (Mac) or Ctrl+Enter (Windows/Linux)
@@ -183,7 +184,7 @@
         ? 'btn-success'
         : ''} {submit_visible ? '' : 'hidden'}"
       on:click={validate_and_submit}
-      disabled={submitting}
+      disabled={submitting || disabled}
     >
       {#if ui_saved_indicator}
         ✔ Saved
