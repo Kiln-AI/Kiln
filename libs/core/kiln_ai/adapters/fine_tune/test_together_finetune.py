@@ -356,6 +356,8 @@ async def test_start_success(
             model=together_finetune.datamodel.base_model_id,
             lora=True,
             suffix=f"kiln_ai_{together_finetune.datamodel.id}"[:40],
+            wandb_api_key=Config.shared().wandb_api_key,
+            wandb_project_name="Kiln_AI",
         )
 
         # Check that datamodel was updated correctly

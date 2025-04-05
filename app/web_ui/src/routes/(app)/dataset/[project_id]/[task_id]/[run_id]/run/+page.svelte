@@ -49,6 +49,7 @@
       )
     }
 
+    const model_id = run?.output?.source?.properties?.model_name
     model_props = Object.fromEntries(
       Object.entries({
         ID: run?.id || undefined,
@@ -56,17 +57,13 @@
           "" +
           run?.input_source?.type.charAt(0).toUpperCase() +
           run?.input_source?.type.slice(1),
-        "Output Model": model_name(
-          "" + run?.output?.source?.properties?.model_name,
-          $model_info,
-        ),
+        "Output Model": model_name(model_id, $model_info),
         "Model Provider": run?.output?.source?.properties?.model_provider,
-        Prompt: prompt_name_from_id(prompt_id),
+        Prompt: prompt_id && prompt_name_from_id(prompt_id),
         "Created By": run?.input_source?.properties?.created_by,
         "Created At": formatDate(run?.created_at),
         Topic: topic_path,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      }).filter(([_, value]) => value !== undefined),
+      }).filter(([_, value]) => value !== undefined && value !== ""),
     )
   }
 

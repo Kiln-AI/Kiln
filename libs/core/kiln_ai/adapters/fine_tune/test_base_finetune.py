@@ -261,15 +261,6 @@ async def test_create_and_start_no_parent_task_path():
         )
 
 
-def test_check_valid_provider_model():
-    MockFinetune.check_valid_provider_model("openai", "gpt-4o-mini-2024-07-18")
-
-    with pytest.raises(
-        ValueError, match="Provider openai with base model gpt-99 is not available"
-    ):
-        MockFinetune.check_valid_provider_model("openai", "gpt-99")
-
-
 async def test_create_and_start_invalid_train_split(mock_dataset):
     # Test with an invalid train split name
     mock_dataset.split_contents = {"valid_train": [], "valid_test": []}

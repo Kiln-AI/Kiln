@@ -2,6 +2,7 @@ import unittest.mock
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -28,7 +29,9 @@ from app.desktop.studio_server.finetune_api import (
     CreateDatasetSplitRequest,
     CreateFinetuneRequest,
     DatasetSplitType,
+    FinetuneProviderModel,
     connect_fine_tune_api,
+    fetch_fireworks_finetune_models,
     thinking_instructions_from_request,
 )
 
@@ -190,32 +193,55 @@ def mock_provider_name_from_id():
         yield mock_name
 
 
+@pytest.mark.asyncio
 async def test_get_finetune_providers(
     client, mock_built_in_models, mock_provider_name_from_id, mock_provider_enabled
 ):
-    response = client.get("/api/finetune_providers")
+    # Mock the Fireworks API call
+    with patch(
+        "app.desktop.studio_server.finetune_api.fetch_fireworks_finetune_models",
+        new_callable=AsyncMock,
+    ) as mock_fetch:
+        # Set up mock return value with one model
+        mock_fetch.return_value = [
+            FinetuneProviderModel(name="Fireworks Model", id="fireworks/model-1")
+        ]
 
-    assert response.status_code == 200
-    providers = response.json()
-    assert len(providers) == 2
+        response = client.get("/api/finetune_providers")
 
-    # Check provider1
-    provider1 = next(p for p in providers if p["id"] == "groq")
-    assert provider1["name"] == "Provider groq"
-    assert provider1["enabled"] is True
-    assert len(provider1["models"]) == 2
-    assert provider1["models"][0]["name"] == "Model 1"
-    assert provider1["models"][0]["id"] == "ft_model1"
-    assert provider1["models"][1]["name"] == "Model 2"
-    assert provider1["models"][1]["id"] == "ft_model2"
+        # Verify the mock was called
+        mock_fetch.assert_called_once()
 
-    # Check provider2
-    provider2 = next(p for p in providers if p["id"] == "openai")
-    assert provider2["name"] == "Provider openai"
-    assert provider2["enabled"] is False
-    assert len(provider2["models"]) == 1
-    assert provider2["models"][0]["name"] == "Model 1"
-    assert provider2["models"][0]["id"] == "ft_model1_p2"
+        assert response.status_code == 200
+        providers = response.json()
+        assert len(providers) >= 3  # Now we expect at least 3 providers with Fireworks
+
+        # Check provider1 (groq)
+        provider1 = next(p for p in providers if p["id"] == "groq")
+        assert provider1["name"] == "Provider groq"
+        assert provider1["enabled"] is True
+        assert len(provider1["models"]) == 2
+        assert provider1["models"][0]["name"] == "Model 1"
+        assert provider1["models"][0]["id"] == "ft_model1"
+        assert provider1["models"][1]["name"] == "Model 2"
+        assert provider1["models"][1]["id"] == "ft_model2"
+
+        # Check provider2 (openai)
+        provider2 = next(p for p in providers if p["id"] == "openai")
+        assert provider2["name"] == "Provider openai"
+        assert provider2["enabled"] is False
+        assert len(provider2["models"]) == 1
+        assert provider2["models"][0]["name"] == "Model 1"
+        assert provider2["models"][0]["id"] == "ft_model1_p2"
+
+        # Check Fireworks provider
+        fireworks_provider = next(p for p in providers if p["id"] == "fireworks_ai")
+        assert (
+            fireworks_provider["name"] == "Provider fireworks_ai"
+        )  # Using mock_provider_name_from_id
+        assert len(fireworks_provider["models"]) == 1
+        assert fireworks_provider["models"][0]["name"] == "Fireworks Model"
+        assert fireworks_provider["models"][0]["id"] == "fireworks/model-1"
 
 
 @pytest.fixture
@@ -1062,3 +1088,175 @@ async def test_update_finetune(client, mock_task_from_id_disk_backed, test_task)
     assert updated_task_finetune.name == "Updated Finetune Name"
     assert updated_task_finetune.description == "Updated finetune description"
     assert updated_task_finetune.name != original_name
+
+
+@pytest.fixture
+def mock_httpx_client():
+    with patch("httpx.AsyncClient") as mock_client:
+        client_instance = AsyncMock()
+        mock_client.return_value.__aenter__.return_value = client_instance
+        yield client_instance
+
+
+@pytest.fixture
+def mock_config():
+    with patch("app.desktop.studio_server.finetune_api.Config") as mock_config:
+        config_instance = Mock()
+        mock_config.shared.return_value = config_instance
+        yield config_instance
+
+
+@pytest.mark.asyncio
+async def test_fetch_fireworks_finetune_models_no_api_key(mock_config):
+    """Test that an empty list is returned when no API key is available"""
+    mock_config.fireworks_api_key = None
+
+    result = await fetch_fireworks_finetune_models()
+
+    assert result == []
+    assert isinstance(result, list)
+
+
+@pytest.mark.asyncio
+async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_client):
+    """Test successful fetching of tunable models from Fireworks API"""
+    mock_config.fireworks_api_key = "test-api-key"
+
+    # Setup mock response for first page with next page token
+    first_response = Mock()
+    first_response.json.return_value = {
+        "models": [
+            {
+                "name": "accounts/fireworks/models/model1",
+                "displayName": "Model One",
+                "tunable": True,
+            },
+            {
+                "name": "accounts/fireworks/models/model2",
+                "displayName": "Model Two",
+                "tunable": False,  # This should be skipped
+            },
+        ],
+        "nextPageToken": "next-page-token",
+    }
+
+    # Setup mock response for second page with no next page token
+    second_response = Mock()
+    second_response.json.return_value = {
+        "models": [
+            {
+                "name": "accounts/fireworks/models/model3",
+                "displayName": "",  # Empty display name
+                "tunable": True,
+            },
+            {
+                "name": "accounts/fireworks/models/model4",
+                "displayName": "Model Four",
+                "tunable": True,
+            },
+        ]
+    }
+
+    # Set up the client to return the responses in sequence
+    mock_httpx_client.get.side_effect = [first_response, second_response]
+
+    result = await fetch_fireworks_finetune_models()
+
+    # Verify the API was called with the correct parameters
+    assert mock_httpx_client.get.call_count == 2
+
+    # First call should use initial parameters
+    first_call_args = mock_httpx_client.get.call_args_list[0]
+    assert (
+        first_call_args[0][0] == "https://api.fireworks.ai/v1/accounts/fireworks/models"
+    )
+    assert first_call_args[1]["params"] == {"pageSize": 200}
+    assert first_call_args[1]["headers"] == {"Authorization": "Bearer test-api-key"}
+
+    # Second call should include the page token
+    second_call_args = mock_httpx_client.get.call_args_list[1]
+    assert (
+        second_call_args[0][0]
+        == "https://api.fireworks.ai/v1/accounts/fireworks/models"
+    )
+    assert second_call_args[1]["params"] == {
+        "pageSize": 200,
+        "pageToken": "next-page-token",
+    }
+
+    # Check the resulting models - should be 3 tunable models
+    assert len(result) == 3
+
+    # Check model details
+    assert result[0].name == "Model One (model1)"
+    assert result[0].id == "accounts/fireworks/models/model1"
+
+    # Check that model2 (non-tunable) is not included
+    assert all(model.id != "accounts/fireworks/models/model2" for model in result)
+
+    # Check that empty display name is handled correctly
+    # Should use the last part of the id as the name
+    model3 = next(
+        model for model in result if model.id == "accounts/fireworks/models/model3"
+    )
+    assert model3.name == "model3"
+
+
+@pytest.mark.asyncio
+async def test_fetch_fireworks_finetune_models_empty_response(
+    mock_config, mock_httpx_client
+):
+    """Test handling of empty model list from API"""
+    mock_config.fireworks_api_key = "test-api-key"
+
+    # Setup mock response with empty models list
+    response = Mock()
+    response.json.return_value = {"models": []}
+
+    mock_httpx_client.get.return_value = response
+
+    result = await fetch_fireworks_finetune_models()
+
+    assert result == []
+    mock_httpx_client.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_fetch_fireworks_finetune_models_invalid_response(
+    mock_config, mock_httpx_client
+):
+    """Test handling of invalid response format from API"""
+    mock_config.fireworks_api_key = "test-api-key"
+
+    # Setup mock response with missing models key
+    response = Mock()
+    response.json.return_value = {"not_models": []}
+    response.status_code = 200
+    response.text = '{"not_models": []}'
+
+    mock_httpx_client.get.return_value = response
+
+    # Function should raise ValueError for invalid response
+    with pytest.raises(ValueError) as excinfo:
+        await fetch_fireworks_finetune_models()
+
+    assert "Invalid response from Fireworks" in str(excinfo.value)
+    assert "[200]" in str(excinfo.value)  # Should include status code
+    mock_httpx_client.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_fetch_fireworks_finetune_models_http_error(
+    mock_config, mock_httpx_client
+):
+    """Test handling of HTTP error from API"""
+    mock_config.fireworks_api_key = "test-api-key"
+
+    # Make the get request raise an exception
+    mock_httpx_client.get.side_effect = httpx.HTTPError("Connection error")
+
+    # Should propagate the error
+    with pytest.raises(httpx.HTTPError):
+        await fetch_fireworks_finetune_models()
+
+    mock_httpx_client.get.assert_called_once()

@@ -108,6 +108,10 @@ def adapter_for_task(
                     # 1. To use the correct base URL
                     # 2. We use Ollama's OpenAI compatible API (/v1), and don't just let litellm use the Ollama API. We use more advanced features like json_schema.
                     base_url=ollama_base_url + "/v1",
+                    additional_body_options={
+                        # LiteLLM errors without an api_key, even though Ollama doesn't support one.
+                        "api_key": "NA",
+                    },
                 ),
             )
         case ModelProviderName.fireworks_ai:

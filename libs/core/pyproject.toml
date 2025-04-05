@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.13.0"
+version = "0.13.2"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -29,7 +29,7 @@ dependencies = [
     "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
     "pyyaml>=6.0.2",
-    "together>=1.4.6",
+    "together",
     "typing-extensions>=4.12.2",
 ]
 
@@ -50,9 +50,13 @@ build-backend = "hatchling.build"
 [tool.hatch.metadata]
 requires-python = ">=3.10"
 
+[tool.uv.sources]
+together = { git = "https://github.com/scosman/together-python" }
+
 
 [project.urls]
 Homepage = "https://getkiln.ai"
 Repository = "https://github.com/Kiln-AI/kiln"
 Documentation = "https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html"
 Issues = "https://github.com/Kiln-AI/kiln/issues"
+

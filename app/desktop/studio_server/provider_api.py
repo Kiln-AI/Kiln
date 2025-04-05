@@ -240,6 +240,17 @@ def connect_provider_api(app: FastAPI):
                 content={"message": "Invalid key_data or provider"},
             )
 
+        # Wandb is not a typical AI provider, but it's a provider you can connect through this UI/API
+        if provider == "wandb":
+            # Load optional base URL
+            base_url = None
+            if "Base URL" in key_data:
+                base_url = parse_url(key_data, "Base URL")
+            return await connect_wandb(
+                parse_api_key(key_data),
+                base_url,
+            )
+
         if provider not in ModelProviderName.__members__:
             return JSONResponse(
                 status_code=400,
@@ -290,53 +301,59 @@ def connect_provider_api(app: FastAPI):
 
     @app.post("/api/provider/disconnect_api_key")
     async def disconnect_api_key(provider_id: str) -> JSONResponse:
-        if provider_id not in ModelProviderName.__members__:
-            return JSONResponse(
-                status_code=400,
-                content={"message": f"Invalid provider: {provider_id}"},
-            )
-        typed_provider_id = ModelProviderName(provider_id)
-
-        match typed_provider_id:
-            case ModelProviderName.openai:
-                Config.shared().open_ai_api_key = None
-            case ModelProviderName.groq:
-                Config.shared().groq_api_key = None
-            case ModelProviderName.openrouter:
-                Config.shared().open_router_api_key = None
-            case ModelProviderName.fireworks_ai:
-                Config.shared().fireworks_api_key = None
-                Config.shared().fireworks_account_id = None
-            case ModelProviderName.amazon_bedrock:
-                Config.shared().bedrock_access_key = None
-                Config.shared().bedrock_secret_key = None
-            case ModelProviderName.anthropic:
-                Config.shared().anthropic_api_key = None
-            case ModelProviderName.gemini_api:
-                Config.shared().gemini_api_key = None
-            case ModelProviderName.azure_openai:
-                Config.shared().azure_openai_api_key = None
-                Config.shared().azure_openai_endpoint = None
-            case ModelProviderName.huggingface:
-                Config.shared().huggingface_api_key = None
-            case ModelProviderName.vertex:
-                Config.shared().vertex_project_id = None
-                Config.shared().vertex_location = None
-            case ModelProviderName.together_ai:
-                Config.shared().together_api_key = None
-            case (
-                ModelProviderName.kiln_custom_registry
-                | ModelProviderName.kiln_fine_tune
-                | ModelProviderName.openai_compatible
-                | ModelProviderName.ollama
-            ):
+        if provider_id == "wandb":
+            # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API
+            Config.shared().wandb_api_key = None
+            Config.shared().wandb_base_url = None
+        else:
+            if provider_id not in ModelProviderName.__members__:
                 return JSONResponse(
                     status_code=400,
-                    content={"message": "Provider not supported"},
+                    content={"message": f"Invalid provider: {provider_id}"},
                 )
-            case _:
-                # Raises a pyright error if I miss a case
-                raise_exhaustive_enum_error(typed_provider_id)
+
+            typed_provider_id = ModelProviderName(provider_id)
+
+            match typed_provider_id:
+                case ModelProviderName.openai:
+                    Config.shared().open_ai_api_key = None
+                case ModelProviderName.groq:
+                    Config.shared().groq_api_key = None
+                case ModelProviderName.openrouter:
+                    Config.shared().open_router_api_key = None
+                case ModelProviderName.fireworks_ai:
+                    Config.shared().fireworks_api_key = None
+                    Config.shared().fireworks_account_id = None
+                case ModelProviderName.amazon_bedrock:
+                    Config.shared().bedrock_access_key = None
+                    Config.shared().bedrock_secret_key = None
+                case ModelProviderName.anthropic:
+                    Config.shared().anthropic_api_key = None
+                case ModelProviderName.gemini_api:
+                    Config.shared().gemini_api_key = None
+                case ModelProviderName.azure_openai:
+                    Config.shared().azure_openai_api_key = None
+                    Config.shared().azure_openai_endpoint = None
+                case ModelProviderName.huggingface:
+                    Config.shared().huggingface_api_key = None
+                case ModelProviderName.vertex:
+                    Config.shared().vertex_project_id = None
+                    Config.shared().vertex_location = None
+                case ModelProviderName.together_ai:
+                    Config.shared().together_api_key = None
+                case (
+                    ModelProviderName.kiln_custom_registry
+                    | ModelProviderName.kiln_fine_tune
+                    | ModelProviderName.openai_compatible
+                    | ModelProviderName.ollama
+                ):
+                    return JSONResponse(
+                        status_code=400,
+                        content={"message": "Provider not supported"},
+                    )
+                case _:
+                    # Raises a pyright error if I miss a case
+                    raise_exhaustive_enum_error(typed_provider_id)
 
         return JSONResponse(
             status_code=200,
@@ -627,6 +644,7 @@ async def connect_anthropic(key: str):
         headers = {
             "x-api-key": key,
             "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
         }
         response = requests.get("https://api.anthropic.com/v1/models", headers=headers)
 
@@ -652,6 +670,72 @@ async def connect_anthropic(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Anthropic. Error: {str(e)}"},
+        )
+
+
+async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
+    try:
+        api_url = base_url or "https://api.wandb.ai"
+        headers = {
+            "Content-Type": "application/json",
+        }
+        # Use GraphQL to validate API key with the viewer.id query
+        post_args = {
+            "query": "query { viewer { id } }",
+        }
+        response = requests.post(
+            f"{api_url}/graphql",
+            timeout=5,
+            json=post_args,
+            headers=headers,
+            auth=("api_key", key),
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to W&B. Invalid API key."},
+            )
+
+        json = response.json()
+        # Check for common error (invalid key returns 200, but viewer is None)
+        if (
+            "data" in json
+            and "viewer" in json["data"]
+            and json["data"]["viewer"] is None
+        ):
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to W&B. Invalid API key."},
+            )
+
+        # Check for valid response
+        if (
+            "data" in json
+            and "viewer" in json["data"]
+            and isinstance(json["data"]["viewer"], dict)
+            and "id" in json["data"]["viewer"]
+        ):
+            # Save the credentials if valid
+            Config.shared().wandb_api_key = key
+            Config.shared().wandb_base_url = base_url
+
+            return JSONResponse(
+                status_code=200, content={"message": "Connected to Weights & Biases"}
+            )
+
+        # Unknown error
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Failed to connect to W&B. Account request response: {response.text}"
+            },
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to W&B. Error: {str(e)}"},
         )
 
 

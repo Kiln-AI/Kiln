@@ -1,7 +1,7 @@
 import { createKilnError, KilnError } from "$lib/utils/error_handlers"
 import { writable } from "svelte/store"
 
-export const app_version = "0.12.1"
+export const app_version = "0.13.2"
 
 export type UpdateCheckResult = {
   has_update: boolean

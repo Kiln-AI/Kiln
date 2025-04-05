@@ -72,8 +72,6 @@ class BaseFinetuneAdapter(ABC):
         Create and start a fine-tune.
         """
 
-        cls.check_valid_provider_model(provider_id, provider_base_model_id)
-
         if not dataset.id:
             raise ValueError("Dataset must have an id")
 
@@ -184,21 +182,3 @@ class BaseFinetuneAdapter(ABC):
         for parameter_key in parameters:
             if parameter_key not in allowed_parameters:
                 raise ValueError(f"Parameter {parameter_key} is not available")
-
-    @classmethod
-    def check_valid_provider_model(
-        cls, provider_id: str, provider_base_model_id: str
-    ) -> None:
-        """
-        Check if the provider and base model are valid.
-        """
-        for model in built_in_models:
-            for provider in model.providers:
-                if (
-                    provider.name == provider_id
-                    and provider.provider_finetune_id == provider_base_model_id
-                ):
-                    return
-        raise ValueError(
-            f"Provider {provider_id} with base model {provider_base_model_id} is not available"
-        )

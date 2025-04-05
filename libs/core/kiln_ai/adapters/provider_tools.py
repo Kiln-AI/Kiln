@@ -197,8 +197,8 @@ def lite_llm_config(
     if provider is None:
         raise ValueError(f"OpenAI compatible provider {openai_provider_name} not found")
 
-    # API key optional some providers don't use it
-    api_key = provider.get("api_key")
+    # API key optional - some providers like Ollama don't use it, but LiteLLM errors without one
+    api_key = provider.get("api_key") or "NA"
     base_url = provider.get("base_url")
     if base_url is None:
         raise ValueError(

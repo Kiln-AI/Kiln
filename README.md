@@ -44,26 +44,33 @@
 
 The Kiln desktop app is completely free. Available on MacOS, Windows and Linux.
 
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://github.com/Kiln-AI/Kiln/releases/latest)
+
 
 ## Demo
 
-In this demo, I create 9 fine-tuned models (including Llama 3.x, Mixtral, and GPT-4o-mini) in just 18 minutes, achieving great results for less than $6 total cost. [See details](guides/Fine%20Tuning%20LLM%20Models%20Guide.md).
+[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/e5268dd9-8813-45fe-b091-0d9f4c1907f9">](https://getkiln.ai#demo)
 
-<a href="guides/Fine%20Tuning%20LLM%20Models%20Guide.md">
-<img alt="Kiln Preview" src="https://github.com/user-attachments/assets/51db632b-be98-4fc6-a31c-0ba6fd54dcbb">
+<kbd>
+<a href="https://getkiln.ai#demo">
+<img alt="Kiln Preview" src="guides/kiln_preview.gif">
 </a>
+</kbd>
 
 ## Docs & Guides
 
 Kiln is quite intuitive, so we suggest launching the desktop app and diving in. However if you have any questions or want to learn more, our [docs are here to help](https://docs.getkiln.ai).
 
-- [Quick Start](https://docs.getkiln.ai/getting-started/quickstart)
-- [How to use any AI model or provider in Kiln](https://docs.getkiln.ai/docs/models-and-ai-providers)
+### Video Guides
+
 - [Fine Tuning LLM Models](https://docs.getkiln.ai/docs/fine-tuning-guide)
 - [Guide: Train a Reasoning Model](https://docs.getkiln.ai/docs/guide-train-a-reasoning-model)
+- [LLM Evaluators](https://docs.getkiln.ai/docs/evaluators)
+
+### All Docs
+
+- [Quick Start](https://docs.getkiln.ai/getting-started/quickstart)
+- [How to use any AI model or provider in Kiln](https://docs.getkiln.ai/docs/models-and-ai-providers)
 - [Reasoning & Chain of Thought](https://docs.getkiln.ai/docs/reasoning-and-chain-of-thought)
-- [Evaluators](https://docs.getkiln.ai/docs/evaluators)
 - [Synthetic Data Generation](https://docs.getkiln.ai/docs/synthetic-data-generation)
 - [Collaborating with Kiln](https://docs.getkiln.ai/docs/collaboration)
 - [Rating and Labeling Data](https://docs.getkiln.ai/docs/reviewing-and-rating)

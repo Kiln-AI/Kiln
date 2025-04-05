@@ -550,14 +550,14 @@ def test_litellm_provider_model_success(mock_shared_config):
 
 
 def test_lite_llm_config_no_api_key(mock_shared_config):
-    """Test provider creation without API key (should work as some providers don't require it)"""
+    """Test provider creation without API key (should work as some providers don't require it, but should pass NA to LiteLLM as it requires one)"""
     model_id = "no_key_provider::gpt-4"
 
     config = lite_llm_config(model_id)
 
     assert config.provider_name == ModelProviderName.openai_compatible
     assert config.model_name == "gpt-4"
-    assert config.additional_body_options == {"api_key": None}
+    assert config.additional_body_options == {"api_key": "NA"}
     assert config.base_url == "https://api.nokey.com"
 
 

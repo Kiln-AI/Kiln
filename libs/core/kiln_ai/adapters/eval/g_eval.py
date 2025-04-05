@@ -297,9 +297,12 @@ The model produced the following output for the task:
 
         total_score = 0.0
         total_probability = 0.0
+        top_logprobs_contains_primary_token = False
 
-        # Process all valid scoring tokens
+        # Process all valid scoring tokens from alternatives
         for top_logprob in token_logprob.top_logprobs:
+            if top_logprob.token == token_logprob.token:
+                top_logprobs_contains_primary_token = True
             token_score = self.score_from_token_string(top_logprob.token)
             if token_score is not None:
                 # Convert logprob to probability
@@ -307,9 +310,21 @@ The model produced the following output for the task:
                 total_score += token_score * probability
                 total_probability += probability
 
+        # Weird OpenAI 4o bug - sometimes the primary token is included in the top logprobs, sometimes not.
+        # Add the primary token back in if excluded
+        if not top_logprobs_contains_primary_token:
+            if token_logprob.logprob == -9999.0:
+                # Another "bug" - sometimes the logprob is -9999.0. This seems to happen when the rest of the logprobs are tiny probability.
+                total_score += primary_token_score * 1.0
+                total_probability += 1.0
+            else:
+                probability = math.exp(token_logprob.logprob)
+                total_score += primary_token_score * probability
+                total_probability += probability
+
         if total_probability <= 0.0:
             raise RuntimeError(
-                f"No valid scoring tokens found for {token_logprob.token}. This should never happen. Please file a bug if you see this."
+                f"No valid scoring tokens found for {token_logprob.token}. This should never happen as the token has a valid score (so it must be excluded from top logprobs). Please file a bug if you see this."
             )
 
         # Normalize by total probability of valid tokens (LLM may have wanted to generate other non-rating tokens, these shouldn't lower score of rating tokens)

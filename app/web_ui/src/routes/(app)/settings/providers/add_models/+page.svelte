@@ -42,6 +42,27 @@
       if (settings["fireworks_api_key"] && settings["fireworks_account_id"]) {
         connected_providers.push(["fireworks_ai", "Fireworks AI"])
       }
+      if (settings["vertex_project_id"] && settings["vertex_location"]) {
+        connected_providers.push(["vertex", "Vertex AI"])
+      }
+      if (settings["anthropic_api_key"]) {
+        connected_providers.push(["anthropic", "Anthropic"])
+      }
+      if (settings["gemini_api_key"]) {
+        connected_providers.push(["gemini_api", "Gemini"])
+      }
+      if (
+        settings["azure_openai_api_key"] &&
+        settings["azure_openai_endpoint"]
+      ) {
+        connected_providers.push(["azure_openai", "Azure OpenAI"])
+      }
+      if (settings["huggingface_api_key"]) {
+        connected_providers.push(["huggingface", "Hugging Face"])
+      }
+      if (settings["together_api_key"]) {
+        connected_providers.push(["together_ai", "Together AI"])
+      }
       // Skipping Ollama -- we pull all models from it automatically
       if (connected_providers.length > 0) {
         new_model_provider = connected_providers[0][0] || null

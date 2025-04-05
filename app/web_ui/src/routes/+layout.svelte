@@ -65,8 +65,8 @@
 </script>
 
 <svelte:head>
-  <title>Kiln Studio</title>
-  <meta name="description" content="The open source ML product platform" />
+  <title>Kiln</title>
+  <meta name="description" content="The easiest way to built AI products" />
 
   <link
     rel="apple-touch-icon"

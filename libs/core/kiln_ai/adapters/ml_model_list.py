@@ -133,7 +133,7 @@ class KilnModelProvider(BaseModel):
         supports_structured_output: Whether the provider supports structured output formats
         supports_data_gen: Whether the provider supports data generation
         untested_model: Whether the model is untested (typically user added). The supports_ fields are not applicable.
-        provider_finetune_id: The finetune ID for the provider, if applicable
+        provider_finetune_id: The finetune ID for the provider, if applicable. Some providers like Fireworks load these from an API.
         structured_output_mode: The mode we should use to call the model for structured output, if it was trained with structured output.
         parser: A parser to use for the model, if applicable
         reasoning_capable: Whether the model is designed to output thinking in a structured format (eg <think></think>). If so we don't use COT across 2 calls, and ask for thinking and final response in the same call.
@@ -576,7 +576,6 @@ built_in_models: List[KilnModel] = [
                 # JSON mode not ideal (no schema), but tool calling doesn't work on 8b
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
-                provider_finetune_id="accounts/fireworks/models/llama-v3p1-8b-instruct",
                 model_id="accounts/fireworks/models/llama-v3p1-8b-instruct",
             ),
             KilnModelProvider(
@@ -618,7 +617,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.fireworks_ai,
                 # Tool calling forces schema -- fireworks doesn't support json_schema, just json_mode
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
-                provider_finetune_id="accounts/fireworks/models/llama-v3p1-70b-instruct",
                 model_id="accounts/fireworks/models/llama-v3p1-70b-instruct",
             ),
             KilnModelProvider(
@@ -764,7 +762,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                provider_finetune_id="accounts/fireworks/models/llama-v3p2-3b-instruct",
                 supports_structured_output=False,
                 supports_data_gen=False,
                 model_id="accounts/fireworks/models/llama-v3p2-3b-instruct",
@@ -890,8 +887,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                # Finetuning not live yet
-                # provider_finetune_id="accounts/fireworks/models/llama-v3p3-70b-instruct",
                 # Tool calling forces schema -- fireworks doesn't support json_schema, just json_mode
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 model_id="accounts/fireworks/models/llama-v3p3-70b-instruct",

@@ -12,6 +12,12 @@
   import { onMount } from "svelte"
   import TagDropdown from "./tag_dropdown.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import type { components } from "../../../lib/api_schema"
+  import Warning from "../../../lib/ui/warning.svelte"
+
+  const REPAIR_ENABLED_FOR_SOURCES: Array<
+    components["schemas"]["DataSourceType"]
+  > = ["human", "synthetic"]
 
   export let project_id: string
   export let task: Task
@@ -48,6 +54,9 @@
     !repair_run // repair generated, should show repair evaluation instead
   $: repair_review_available = !!repair_run && !run?.repaired_output
   $: repair_complete = !!run?.repaired_output?.output
+  $: repair_enabled_for_source = REPAIR_ENABLED_FOR_SOURCES.some(
+    (s) => s === run?.output?.source?.type,
+  )
 
   // Use for some animations on first mount
   let mounted = false
@@ -383,7 +392,18 @@
         </div>
       </div>
 
-      {#if should_offer_repair || repair_review_available || repair_complete}
+      {#if !repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
+        <div class="grow mt-10">
+          <Warning
+            warning_message="Repair is not available for runs from {run.output
+              .source?.type || 'unknown'} sources."
+            warning_color="warning"
+            tight={true}
+          />
+        </div>
+      {/if}
+
+      {#if repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
         <div class="grow mt-10">
           <div class="text-xl font-bold mb-2">Repair Output</div>
           {#if should_offer_repair}

@@ -1,4 +1,5 @@
-from typing import Tuple
+import logging
+from typing import List, Tuple
 from uuid import uuid4
 
 import httpx
@@ -12,6 +13,14 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
+
+logger = logging.getLogger(__name__)
+
+# https://docs.fireworks.ai/fine-tuning/fine-tuning-models#supported-base-models-loras-on-serverless
+serverless_models = [
+    "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    "accounts/fireworks/models/llama-v3p1-70b-instruct",
+]
 
 
 class FireworksFinetune(BaseFinetuneAdapter):
@@ -132,11 +141,18 @@ class FireworksFinetune(BaseFinetuneAdapter):
                 :60
             ]
         )
-        payload = {
+        payload: dict[str, str | dict[str, str | bool]] = {
             "dataset": f"accounts/{account_id}/datasets/{train_file_id}",
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
         }
+        # Add W&B config if API key is set
+        if Config.shared().wandb_api_key:
+            payload["wandbConfig"] = {
+                "enabled": True,
+                "project": "Kiln_AI",
+                "apiKey": Config.shared().wandb_api_key,
+            }
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
         payload.update(hyperparameters)
         headers = {
@@ -276,6 +292,35 @@ class FireworksFinetune(BaseFinetuneAdapter):
         return {k: v for k, v in payload.items() if v is not None}
 
     async def _deploy(self) -> bool:
+        if self.datamodel.base_model_id in serverless_models:
+            return await self._deploy_serverless()
+        else:
+            return await self._check_or_deploy_server()
+
+    def api_key_and_account_id(self) -> Tuple[str, str]:
+        api_key = Config.shared().fireworks_api_key
+        account_id = Config.shared().fireworks_account_id
+        if not api_key or not account_id:
+            raise ValueError("Fireworks API key or account ID not set")
+        return api_key, account_id
+
+    def deployment_display_name(self) -> str:
+        # Limit the display name to 60 characters
+        display_name = f"Kiln AI fine-tuned model [ID:{self.datamodel.id}][name:{self.datamodel.name}]"[
+            :60
+        ]
+        return display_name
+
+    async def model_id_checking_status(self) -> str | None:
+        # Model ID != fine tune ID on Fireworks. Model is the result of the tune job. Call status to get it.
+        status, model_id = await self._status()
+        if status.status != FineTuneStatusType.completed:
+            return None
+        if not model_id or not isinstance(model_id, str):
+            return None
+        return model_id
+
+    async def _deploy_serverless(self) -> bool:
         # Now we "deploy" the model using PEFT serverless.
         # A bit complicated: most fireworks deploys are server based.
         # However, a Lora can be serverless (PEFT).
@@ -283,25 +328,18 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # https://docs.fireworks.ai/models/deploying#deploying-to-serverless
         # This endpoint will return 400 if already deployed with code 9, so we consider that a success.
 
-        api_key = Config.shared().fireworks_api_key
-        account_id = Config.shared().fireworks_account_id
-        if not api_key or not account_id:
-            raise ValueError("Fireworks API key or account ID not set")
-
-        # Model ID != fine tune ID on Fireworks. Model is the result of the tune job. Call status to get it.
-        status, model_id = await self._status()
-        if status.status != FineTuneStatusType.completed:
-            return False
-        if not model_id or not isinstance(model_id, str):
-            return False
+        api_key, account_id = self.api_key_and_account_id()
 
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/deployedModels"
-        # Limit the display name to 60 characters
-        display_name = f"Kiln AI fine-tuned model [ID:{self.datamodel.id}][name:{self.datamodel.name}]"[
-            :60
-        ]
+        model_id = await self.model_id_checking_status()
+        if not model_id:
+            logger.error(
+                "Model ID not found - can't deploy model to Fireworks serverless"
+            )
+            return False
+
         payload = {
-            "displayName": display_name,
+            "displayName": self.deployment_display_name(),
             "model": model_id,
         }
         headers = {
@@ -320,4 +358,120 @@ class FireworksFinetune(BaseFinetuneAdapter):
                     self.datamodel.save_to_file()
             return True
 
+        logger.error(
+            f"Failed to deploy model to Fireworks serverless: [{response.status_code}] {response.text}"
+        )
         return False
+
+    async def _check_or_deploy_server(self) -> bool:
+        """
+        Check if the model is already deployed. If not, deploy it to a dedicated server.
+        """
+
+        # Check if the model is already deployed
+        # If it's fine_tune_model_id is set, it might be deployed. However, Fireworks deletes them over time so we need to check.
+        if self.datamodel.fine_tune_model_id:
+            deployments = await self._fetch_all_deployments()
+            for deployment in deployments:
+                if deployment[
+                    "baseModel"
+                ] == self.datamodel.fine_tune_model_id and deployment["state"] in [
+                    "READY",
+                    "CREATING",
+                ]:
+                    return True
+
+        # If the model is not deployed, deploy it
+        return await self._deploy_server()
+
+    async def _deploy_server(self) -> bool:
+        # For models that are not serverless, we just need to deploy the model to a server.
+        # We use a scale-to-zero on-demand deployment. If you stop using it, it
+        # will scale to zero and charges will stop.
+        model_id = await self.model_id_checking_status()
+        if not model_id:
+            logger.error("Model ID not found - can't deploy model to Fireworks server")
+            return False
+
+        api_key, account_id = self.api_key_and_account_id()
+        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/deployments"
+
+        payload = {
+            "displayName": self.deployment_display_name(),
+            "description": "Deployed by Kiln AI",
+            # Allow scale to zero
+            "minReplicaCount": 0,
+            "autoscalingPolicy": {
+                "scaleUpWindow": "30s",
+                "scaleDownWindow": "300s",
+                # Scale to zero after 5 minutes of inactivity - this is the minimum allowed
+                "scaleToZeroWindow": "300s",
+            },
+            "baseModel": model_id,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers)
+
+        if response.status_code == 200:
+            basemodel = response.json().get("baseModel")
+            if basemodel is not None and isinstance(basemodel, str):
+                self.datamodel.fine_tune_model_id = basemodel
+                if self.datamodel.path:
+                    self.datamodel.save_to_file()
+                return True
+
+        logger.error(
+            f"Failed to deploy model to Fireworks server: [{response.status_code}] {response.text}"
+        )
+        return False
+
+    async def _fetch_all_deployments(self) -> List[dict]:
+        """
+        Fetch all deployments for an account.
+        """
+        api_key, account_id = self.api_key_and_account_id()
+
+        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/deployments"
+
+        params = {
+            # Note: filter param does not work for baseModel, which would have been ideal, and ideally would have been documented. Instead we'll fetch all and filter.
+            # Max page size
+            "pageSize": 200,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        deployments = []
+
+        # Paginate through all deployments
+        async with httpx.AsyncClient() as client:
+            while True:
+                response = await client.get(url, params=params, headers=headers)
+                json = response.json()
+                if "deployments" not in json or not isinstance(
+                    json["deployments"], list
+                ):
+                    raise ValueError(
+                        f"Invalid response from Fireworks. Expected list of deployments in 'deployments' key: [{response.status_code}] {response.text}"
+                    )
+                deployments.extend(json["deployments"])
+                next_page_token = json.get("nextPageToken")
+                if (
+                    next_page_token
+                    and isinstance(next_page_token, str)
+                    and len(next_page_token) > 0
+                ):
+                    params = {
+                        "pageSize": 200,
+                        "pageToken": next_page_token,
+                    }
+                else:
+                    break
+
+        return deployments

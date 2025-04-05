@@ -17,6 +17,7 @@
     api_key_steps?: string[]
     api_key_warning?: string
     api_key_fields?: string[]
+    optional_fields?: string[]
   }
   const providers: Provider[] = [
     {
@@ -181,6 +182,21 @@
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
+      name: "Weights & Biases",
+      id: "wandb",
+      description: "Track and visualize your experiments.",
+      image: "/images/wandb.svg",
+      featured: false,
+      api_key_steps: [
+        "Create a Weights & Biases account at https://wandb.ai, or host your own instance.",
+        "If you host your own instance, set the base URL below. Then create an API key and entering it below.",
+        "If you use the hosted version, go to https://wandb.ai/settings#api, get your API key, and paste it below.",
+        "Click 'Connect'",
+      ],
+      api_key_fields: ["API Key", "Base URL"],
+      optional_fields: ["Base URL"],
+    },
+    {
       name: "Custom API",
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
@@ -269,6 +285,12 @@
       custom_description: null,
     },
     openai_compatible: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    wandb: {
       connected: false,
       connecting: false,
       error: null,
@@ -436,8 +458,12 @@
     for (const input of inputs) {
       apiKeyData[input.id] = input.value
       if (!input.value) {
-        api_key_issue = true
-        return
+        if (api_key_provider?.optional_fields?.includes(input.id)) {
+          delete apiKeyData[input.id]
+        } else {
+          api_key_issue = true
+          return
+        }
       }
     }
 
@@ -525,6 +551,9 @@
       }
       if (data["together_api_key"]) {
         status.together_ai.connected = true
+      }
+      if (data["wandb_api_key"]) {
+        status.wandb.connected = true
       }
       if (
         data["openai_compatible_providers"] &&

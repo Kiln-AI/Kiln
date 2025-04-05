@@ -393,12 +393,13 @@ def test_rating_token_to_score(test_eval_config, test_run_config):
             self.logprob = logprob
 
     class MockTokenLogprob:
-        def __init__(self, token, top_logprobs):
+        def __init__(self, token, top_logprobs, logprob):
             self.token = token
             self.top_logprobs = [MockTopLogprob(t, lp) for t, lp in top_logprobs]
+            self.logprob = logprob
 
     # Test single token case
-    token_logprob = MockTokenLogprob("5", [("5", 0.0)])  # log(1) = 0
+    token_logprob = MockTokenLogprob("5", [("5", 0.0)], logprob=1e-8)  # log(1) = 0
     score = g_eval.rating_token_to_score(token_logprob)
     assert score == 5.0
 
@@ -409,18 +410,22 @@ def test_rating_token_to_score(test_eval_config, test_run_config):
             ("4", math.log(0.6)),  # 60% probability
             ("5", math.log(0.4)),  # 40% probability
         ],
+        logprob=math.log(0.6),
     )
     score = g_eval.rating_token_to_score(token_logprob)
     assert pytest.approx(score) == 4.4  # (4 * 0.6 + 5 * 0.4)
 
     # Test invalid token
-    token_logprob = MockTokenLogprob(":", [(":", 0.0)])
+    token_logprob = MockTokenLogprob(":", [(":", 0.0)], logprob=1e-8)
     assert g_eval.rating_token_to_score(token_logprob) is None
 
-    # Test no valid scoring tokens
-    token_logprob = MockTokenLogprob("5", [])
-    with pytest.raises(RuntimeError, match="No valid scoring tokens found"):
-        g_eval.rating_token_to_score(token_logprob)
+    # Test missing from top logprobs
+    token_logprob = MockTokenLogprob("5", [], logprob=1e-8)
+    assert pytest.approx(g_eval.rating_token_to_score(token_logprob)) == 5.0
+
+    # Test missing from top logprobs, with special case logprob
+    token_logprob = MockTokenLogprob("5", [], logprob=-9999)
+    assert pytest.approx(g_eval.rating_token_to_score(token_logprob)) == 5.0
 
 
 def test_g_eval_system_instruction():

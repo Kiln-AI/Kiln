@@ -130,6 +130,8 @@ class TogetherFinetune(BaseFinetuneAdapter):
             training_file=train_file_id,
             validation_file=validation_file_id,
             model=self.datamodel.base_model_id,
+            wandb_api_key=Config.shared().wandb_api_key,
+            wandb_project_name="Kiln_AI" if Config.shared().wandb_api_key else None,
             **self._build_finetune_parameters(),
         )
 

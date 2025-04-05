@@ -1,5 +1,7 @@
+import logging
 from enum import Enum
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
@@ -33,9 +35,12 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
 )
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class FinetuneProviderModel(BaseModel):
@@ -184,6 +189,10 @@ def connect_fine_tune_api(app: FastAPI):
         # Collect models by provider
         for model in built_in_models:
             for provider in model.providers:
+                # Skip Fireworks models, as they are added separately
+                if provider.name == ModelProviderName.fireworks_ai:
+                    continue
+
                 if provider.provider_finetune_id:
                     if provider.name not in provider_models:
                         provider_models[provider.name] = []
@@ -192,6 +201,13 @@ def connect_fine_tune_api(app: FastAPI):
                             name=model.friendly_name, id=provider.provider_finetune_id
                         )
                     )
+
+        # Add models from Fireworks
+        try:
+            fireworks_models = await fetch_fireworks_finetune_models()
+            provider_models[ModelProviderName.fireworks_ai] = fireworks_models
+        except Exception as e:
+            logger.error(f"Error fetching Fireworks models: {e}")
 
         # Create provider entries
         providers: list[FinetuneProvider] = []
@@ -400,3 +416,64 @@ def thinking_instructions_from_request(
 
     # default for this task
     return chain_of_thought_prompt(task)
+
+
+async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
+    api_key = Config.shared().fireworks_api_key
+    if not api_key:
+        return []
+
+    url = "https://api.fireworks.ai/v1/accounts/fireworks/models"
+
+    params = {
+        "pageSize": 200,  # Max allowed
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    models = []
+
+    # Paginate through all models
+    async with httpx.AsyncClient() as client:
+        while True:
+            response = await client.get(url, params=params, headers=headers)
+            json = response.json()
+            if "models" not in json or not isinstance(json["models"], list):
+                raise ValueError(
+                    f"Invalid response from Fireworks. Expected list of models in 'models' key: [{response.status_code}] {response.text}"
+                )
+            models.extend(json["models"])
+            next_page_token = json.get("nextPageToken")
+            if (
+                next_page_token
+                and isinstance(next_page_token, str)
+                and len(next_page_token) > 0
+            ):
+                params = {
+                    "pageSize": 200,
+                    "pageToken": next_page_token,
+                }
+            else:
+                break
+
+    tuneable_models = []
+    for model in models:
+        if model.get("tunable", False) and "displayName" in model and "name" in model:
+            id = model["name"]
+            # Display name is sometimes empty, so use the name from the API name if needed
+            display_name = model["displayName"]
+            id_tail = id.split("/")[-1]
+            if display_name.strip() == "":
+                name = id_tail
+            else:
+                name = display_name + " (" + id_tail + ")"
+
+            tuneable_models.append(
+                FinetuneProviderModel(
+                    name=name,
+                    id=id,
+                )
+            )
+
+    return tuneable_models

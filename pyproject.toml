@@ -17,11 +17,18 @@ dev = [
     "pyright==1.1.376",
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
-    "pytest-xdist",
+    "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
     "ruff>=0.9.0",
 ]
 
+
+
+[tool.uv]
+# While Together depends on pyarrow, it doesn't need it, it's 80MB, and it doesn't work on MacOS 11
+override-dependencies = [
+    "pyarrow ; sys_platform == 'never'",
+]
 
 [tool.uv.workspace]
 members = ["libs/core", "libs/server", "app/desktop"]

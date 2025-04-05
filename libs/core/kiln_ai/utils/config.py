@@ -119,6 +119,15 @@ class Config:
                 env_var="TOGETHERAI_API_KEY",
                 sensitive=True,
             ),
+            "wandb_api_key": ConfigProperty(
+                str,
+                env_var="WANDB_API_KEY",
+                sensitive=True,
+            ),
+            "wandb_base_url": ConfigProperty(
+                str,
+                env_var="WANDB_BASE_URL",
+            ),
             "custom_models": ConfigProperty(
                 list,
                 default_lambda=lambda: [],
