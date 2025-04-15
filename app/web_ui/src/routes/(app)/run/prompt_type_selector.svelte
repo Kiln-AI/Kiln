@@ -3,6 +3,7 @@
   import { current_task_prompts } from "$lib/stores"
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
+  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 
   export let prompt_method: string
   export let linked_model_selection: string | undefined = undefined
@@ -12,6 +13,7 @@
   export let fine_tune_prompt_id: string | undefined = undefined
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
+
   $: options = build_prompt_options(
     $current_task_prompts,
     exclude_cot,
@@ -24,36 +26,58 @@
     exclude_cot: boolean,
     custom_prompt_name: string | undefined,
     fine_tune_prompt_id: string | undefined,
-  ): [string, [unknown, string][]][] {
+  ): OptionGroup[] {
     if (!current_task_prompts) {
-      return [["Loading...", []]]
+      return [
+        {
+          label: "Loading...",
+          options: [],
+        },
+      ]
     }
 
-    const grouped_options: [string, [unknown, string][]][] = []
+    const grouped_options: OptionGroup[] = []
 
-    const generators: [string, string][] = []
+    const generators: Option[] = []
     for (const generator of current_task_prompts.generators) {
       if (generator.chain_of_thought && exclude_cot) {
         continue
       }
-      generators.push([generator.id, generator.name])
+      generators.push({
+        value: generator.id,
+        label: generator.name,
+        description: generator.short_description,
+      })
     }
     if (generators.length > 0) {
-      grouped_options.push(["Prompt Generators", generators])
+      grouped_options.push({
+        label: "Prompt Generators",
+        options: generators,
+      })
     }
 
     if (fine_tune_prompt_id) {
-      grouped_options.push([
-        "Fine-Tune Prompt",
-        [[fine_tune_prompt_id, "Fine-Tune Specific Prompt"]],
-      ])
+      grouped_options.push({
+        label: "Fine-Tune Prompt",
+        options: [
+          {
+            value: fine_tune_prompt_id,
+            label: "Fine-Tune Specific Prompt",
+            description:
+              "Recommended: The prompt used to fine-tune this model.",
+          },
+        ],
+      })
     }
 
     if (custom_prompt_name) {
-      grouped_options.push(["Custom Prompt", [["custom", custom_prompt_name]]])
+      grouped_options.push({
+        label: "Custom Prompt",
+        options: [{ value: "custom", label: custom_prompt_name }],
+      })
     }
 
-    const static_prompts: [string, string][] = []
+    const static_prompts: Option[] = []
     for (const prompt of current_task_prompts.prompts) {
       if (!prompt.id) {
         continue
@@ -61,10 +85,13 @@
       if (prompt.chain_of_thought_instructions && exclude_cot) {
         continue
       }
-      static_prompts.push([prompt.id, prompt.name])
+      static_prompts.push({ value: prompt.id, label: prompt.name })
     }
     if (static_prompts.length > 0) {
-      grouped_options.push(["Saved Prompts", static_prompts])
+      grouped_options.push({
+        label: "Saved Prompts",
+        options: static_prompts,
+      })
     }
     return grouped_options
   }
@@ -101,13 +128,14 @@
 
 <FormElement
   label="Prompt Method"
-  inputType="select"
+  inputType="fancy_select"
   {description}
   {info_description}
   bind:value={prompt_method}
   id="prompt_method"
-  bind:select_options_grouped={options}
+  bind:fancy_select_options={options}
 />
+
 {#if is_fine_tune_model && prompt_method != fine_tune_prompt_id}
   <Warning
     warning_message="We strongly recommend using prompt the model was trained on when running a fine-tuned model."

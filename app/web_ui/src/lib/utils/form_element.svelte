@@ -1,7 +1,10 @@
 <script lang="ts">
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import FancySelect from "$lib/ui/fancy_select.svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
-  export let inputType: "input" | "textarea" | "select" = "input"
+  export let inputType: "input" | "textarea" | "select" | "fancy_select" =
+    "input"
   export let id: string
   export let label: string
   export let value: unknown
@@ -15,6 +18,7 @@
   export let hide_label: boolean = false
   export let select_options: [unknown, string][] = []
   export let select_options_grouped: [string, [unknown, string][]][] = []
+  export let fancy_select_options: OptionGroup[] = []
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
@@ -157,6 +161,8 @@
           {/each}
         {/if}
       </select>
+    {:else if inputType === "fancy_select"}
+      <FancySelect bind:options={fancy_select_options} bind:selected={value} />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

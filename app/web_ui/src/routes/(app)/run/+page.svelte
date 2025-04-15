@@ -117,7 +117,7 @@
         <div>
           <PromptTypeSelector
             bind:prompt_method
-            info_description="Choose a custom prompt, or an prompt auto-generated from your task and data. If you want a new custom prompt, you can create one in the 'Prompt' tab."
+            info_description="Choose a prompt. Learn more on the 'Prompts' tab."
             bind:linked_model_selection={model}
           />
         </div>
