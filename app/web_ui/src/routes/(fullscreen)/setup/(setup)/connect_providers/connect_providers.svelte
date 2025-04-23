@@ -40,10 +40,13 @@
       image: "/images/openai.svg",
       featured: false,
       api_key_steps: [
+        "Create an OpenAI Platform account at https://platform.openai.com/signup and add a payment method.",
         "Go to https://platform.openai.com/account/api-keys",
         "Click 'Create new secret key'",
         "Copy the new secret key, paste it below and click 'Connect'",
       ],
+      api_key_warning:
+        "Note: the OpenAI API requires a separate account from ChatGPT.",
     },
     {
       name: "Ollama",
@@ -112,8 +115,8 @@
       image: "/images/azure_openai.svg",
       featured: false,
       api_key_steps: [
-        "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use.",
-        "Open the Keys & Endpoint section. Find your API Key and Endpoint URL. The Endpoint URL will be a URL ending in openai.azure.com",
+        "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use. Create a new resource if you don't have one, we suggest 'East US2' for maximal model support.",
+        "Open the Keys & Endpoint section. Find your API Key and Endpoint URL. The Endpoint URL will look like https://<your-resource-name>.openai.azure.com",
         "Copy the API Key and Endpoint URL, paste them below and click 'Connect'",
       ],
       api_key_fields: ["API Key", "Endpoint URL"],
@@ -145,7 +148,7 @@
         "Install the glcoud CLI, then run `gcloud auth application-default login` in the terminal. This will add Google Vertex credentials to you environment.",
         "Create a project in the console, enable Vertex AI for that project, and click 'Enable Recommended APIs' in the Vertex AI console.",
         "Add the project ID below. Be sure to use the project ID, not the project name.",
-        "Add the project location below. This should match the location of the project you created. Example: 'us-central1'.",
+        "Add a Google Cloud location, example: 'us-central1'. We suggest 'us-central1' as it has the widest model support.",
         "Click connect.",
       ],
       api_key_fields: ["Project ID", "Project Location"],

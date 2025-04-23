@@ -198,7 +198,8 @@ class FireworksFinetune(BaseFinetuneAdapter):
         if not api_key or not account_id:
             raise ValueError("Fireworks API key or account ID not set")
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets"
-        dataset_id = str(uuid4())
+        # First char can't be a digit: https://discord.com/channels/1137072072808472616/1363214412395184350/1363214412395184350
+        dataset_id = "kiln-" + str(uuid4())
         payload = {
             "datasetId": dataset_id,
             "dataset": {

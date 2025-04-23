@@ -315,7 +315,7 @@ async def test_generate_and_upload_jsonl_success(
             "thinking_instructions": thinking_instructions,
         }
 
-        assert result == mock_dataset_id
+        assert result == "kiln-" + mock_dataset_id
         assert mock_client.post.call_count == 2
         assert mock_client.get.call_count == 1
 

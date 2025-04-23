@@ -136,7 +136,7 @@
   })
 
   function handleKeydown(event: KeyboardEvent) {
-    if (!keyboard_submit) {
+    if (!keyboard_submit || !submit_visible) {
       return
     }
     // Command+Enter (Mac) or Ctrl+Enter (Windows/Linux)

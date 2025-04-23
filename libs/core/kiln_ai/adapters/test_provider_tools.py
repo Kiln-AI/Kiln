@@ -791,3 +791,19 @@ def test_finetune_from_id_cache_hit(mock_project, mock_task, mock_finetune):
     mock_project.assert_not_called()
     mock_task.assert_not_called()
     mock_finetune.assert_not_called()
+
+
+def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetune):
+    """Test creation of provider for Vertex AI with endpoint ID transformation"""
+    finetune = Mock(spec=Finetune)
+    finetune.provider = ModelProviderName.vertex
+    finetune.fine_tune_model_id = "projects/123/locations/us-central1/endpoints/456"
+    finetune.structured_output_mode = StructuredOutputMode.json_mode
+    mock_finetune.return_value = finetune
+
+    provider = finetune_provider_model("project-123::task-456::finetune-789")
+
+    assert provider.name == ModelProviderName.vertex
+    # Verify the model_id is transformed into openai/endpoint_id format
+    assert provider.model_id == "openai/456"
+    assert provider.structured_output_mode == StructuredOutputMode.json_mode

@@ -967,7 +967,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.13.2"
+version = "0.14.0"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "boto3" },
@@ -983,6 +983,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "together" },
     { name = "typing-extensions" },
+    { name = "vertexai" },
 ]
 
 [package.dev-dependencies]
@@ -1001,7 +1002,7 @@ requires-dist = [
     { name = "coverage", specifier = ">=7.6.4" },
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
-    { name = "litellm", specifier = ">=1.63.5" },
+    { name = "litellm", specifier = ">=1.67.0" },
     { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
     { name = "pydantic", specifier = ">=2.9.2" },
@@ -1010,6 +1011,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "together", git = "https://github.com/scosman/together-python" },
     { name = "typing-extensions", specifier = ">=4.12.2" },
+    { name = "vertexai", specifier = ">=1.43.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1063,7 +1065,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "0.13.2"
+version = "0.14"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
@@ -1129,7 +1131,7 @@ requires-dist = [
 
 [[package]]
 name = "litellm"
-version = "1.63.5"
+version = "1.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1144,9 +1146,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/8f/96d3e388d43a2712b97fb7dc35e8e6849eca6ae7813dfa4819c6693b554f/litellm-1.63.5.tar.gz", hash = "sha256:c48a20ea147b07951c1244731a092f732bb15a94083b4dcd0e32a4b7532b688a", size = 6594191 }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/dc/d3d27a140b40398b103727f9b7689da545bc605ecf0edd79cfd14edb2126/litellm-1.67.0.tar.gz", hash = "sha256:18439db292d85b1d886bfa35de9d999600ecc6b4fc1137f12e6810d2133c8cec", size = 7238539 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/c4/656ab5fee9b86a6201a80757995885334218ee8e62c43464cde10fdc7680/litellm-1.63.5-py3-none-any.whl", hash = "sha256:638b098cdd883571362412199d67021d07c96635c39a023df724f1eff4cbb543", size = 6904075 },
+    { url = "https://files.pythonhosted.org/packages/ec/ee/745092a4acf931548eae4f442d366b5e0f7282fb4054d6989045c74bd2c2/litellm-1.67.0-py3-none-any.whl", hash = "sha256:d297126f45eea8d8a3df9c0de1d9491ff20e78dab5d1aa3820602082501ba89e", size = 7601690 },
 ]
 
 [[package]]
@@ -1385,7 +1387,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "1.65.4"
+version = "1.75.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1397,9 +1399,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/8d/1f7aace801afbbe4d6b8c7fa89b76eb9a3a8eeff38b84d4005d47b226b30/openai-1.65.4.tar.gz", hash = "sha256:0b08c58625d556f5c6654701af1023689c173eb0989ce8f73c7fd0eb22203c76", size = 359365 }
+sdist = { url = "https://files.pythonhosted.org/packages/99/b1/318f5d4c482f19c5fcbcde190801bfaaaec23413cda0b88a29f6897448ff/openai-1.75.0.tar.gz", hash = "sha256:fb3ea907efbdb1bcfd0c44507ad9c961afd7dce3147292b54505ecfd17be8fd1", size = 429492 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/db/7bab832be24631a793492c1c61ecbf029018b99696f435db3b63d690bf1c/openai-1.65.4-py3-none-any.whl", hash = "sha256:15566d46574b94eae3d18efc2f9a4ebd1366d1d44bfc1bdafeea7a5cf8271bcb", size = 473523 },
+    { url = "https://files.pythonhosted.org/packages/80/9a/f34f163294345f123673ed03e77c33dee2534f3ac1f9d18120384457304d/openai-1.75.0-py3-none-any.whl", hash = "sha256:fe6f932d2ded3b429ff67cc9ad118c71327db32eb9d32dd723de3acfca337125", size = 646972 },
 ]
 
 [[package]]
@@ -2543,6 +2545,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e0/fc/1d785078eefd6945f3e5bab5c076e4230698046231eb0f3747bc5c8fa992/uvicorn-0.32.0.tar.gz", hash = "sha256:f78b36b143c16f54ccdb8190d0a26b5f1901fe5a3c777e1ab29f26391af8551e", size = 77564 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/14/78bd0e95dd2444b6caacbca2b730671d4295ccb628ef58b81bee903629df/uvicorn-0.32.0-py3-none-any.whl", hash = "sha256:60b8f3a5ac027dcd31448f411ced12b5ef452c646f76f02f8cc3f25d8d26fd82", size = 63723 },
+]
+
+[[package]]
+name = "vertexai"
+version = "1.43.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-cloud-aiplatform" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/73/ce7e141c6b89ff9e1d09c4a278dba5883fee8a3d4d48a817609dc628be7e/vertexai-1.43.0.tar.gz", hash = "sha256:c3646d1cc6cc7af78daa62cac2aed0bce13a0eb35e8a27ab23d1fadfb6c57752", size = 8389 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/fc/e1bd1f4bc7e5853faa1ccf67a825cc6fc3fafc90db58a222dda7fb2e898c/vertexai-1.43.0-py3-none-any.whl", hash = "sha256:2f53bc3d4c4a6610f70f63fcbc07c41fc45ff29c4fde09d65328eedbef90b642", size = 6427 },
 ]
 
 [[package]]

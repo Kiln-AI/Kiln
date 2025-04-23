@@ -41,16 +41,33 @@ def validate_schema(instance: Dict, schema_str: str) -> None:
 
     Raises:
         jsonschema.exceptions.ValidationError: If validation fails
-        ValueError: If the schema is invalid
+    """
+    schema = schema_from_json_str(schema_str)
+    v = jsonschema.Draft202012Validator(schema)
+    v.validate(instance)
+
+
+def validate_schema_with_value_error(
+    instance: Dict, schema_str: str, error_prefix: str | None = None
+) -> None:
+    """Validate a dictionary against a JSON schema and raise a ValueError if the schema is invalid.
+
+    Args:
+        instance: Dictionary to validate
+        schema_str: JSON schema string to validate against
+        error_prefix: Error message prefix to include in the ValueError
+
+    Raises:
+        ValueError: If the instance does not match the schema
     """
     try:
-        schema = schema_from_json_str(schema_str)
-        v = jsonschema.Draft202012Validator(schema)
-        v.validate(instance)
+        validate_schema(instance, schema_str)
     except jsonschema.exceptions.ValidationError as e:
-        raise ValueError(
-            f"This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information. The error from the schema check was: {e.message}. The JSON was: \n```json\n{instance}\n```"
-        ) from e
+        msg = f"The error from the schema check was: {e.message}. The JSON was: \n```json\n{instance}\n```"
+        if error_prefix:
+            msg = f"{error_prefix} {msg}"
+
+        raise ValueError(msg) from e
 
 
 def schema_from_json_str(v: str) -> Dict:

@@ -8,6 +8,7 @@
   import { createEventDispatcher } from "svelte"
   import IncrementUi from "./increment_ui.svelte"
   import DataGenIntro from "./data_gen_intro.svelte"
+  import GenerateSamplesModal from "./generate_samples_modal.svelte"
 
   export let data: SampleDataNode
   export let path: string[]
@@ -174,120 +175,15 @@
   }
 
   let generate_samples_modal: boolean = false
-  async function open_generate_samples_modal() {
+  let generate_samples_cascade_mode: boolean = false
+  async function open_generate_samples_modal(cascade_mode: boolean = false) {
     // Avoid having a trillion of these hidden in the DOM
     generate_samples_modal = true
-    // Clear any previous error
-    sample_generation_error = null
+    generate_samples_cascade_mode = cascade_mode
     await tick()
     const modal = document.getElementById(`${id}-generate-samples`)
     // @ts-expect-error dialog is not a standard element
     modal?.showModal()
-  }
-
-  function add_synthetic_samples(
-    samples: unknown[],
-    model_name: string,
-    model_provider: string,
-  ) {
-    // Add ignoring dupes and empty strings
-    for (const sample of samples) {
-      if (!sample) {
-        continue
-      }
-      let input: string | null = null
-      if (typeof sample == "string") {
-        input = sample
-      } else if (typeof sample == "object" || Array.isArray(sample)) {
-        input = JSON.stringify(sample)
-      }
-      if (input) {
-        data.samples.push({
-          input: input,
-          saved_id: null,
-          model_name,
-          model_provider,
-        })
-      }
-    }
-
-    // trigger reactivity
-    data = data
-
-    // Close modal
-    const modal = document.getElementById(`${id}-generate-samples`)
-    // @ts-expect-error dialog is not a standard element
-    modal?.close()
-
-    // Optional: remove it from DOM
-    generate_samples_modal = false
-
-    // Scroll to bottom of added samples
-    scroll_to_bottom_of_element_by_id(`${id}-samples`)
-  }
-
-  let sample_generating: boolean = false
-  let sample_generation_error: KilnError | null = null
-  async function generate_samples() {
-    try {
-      sample_generating = true
-      sample_generation_error = null
-      if (!model) {
-        throw new KilnError("No model selected.", null)
-      }
-      const model_provider = model.split("/")[0]
-      const model_name = model.split("/").slice(1).join("/")
-      if (!model_name || !model_provider) {
-        throw new KilnError("Invalid model selected.", null)
-      }
-      const { data: generate_response, error: generate_error } =
-        await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/generate_samples",
-          {
-            body: {
-              topic: path,
-              num_samples: num_samples_to_generate,
-              model_name: model_name,
-              provider: model_provider,
-              human_guidance: human_guidance ? human_guidance : null, // clear empty string
-            },
-            params: {
-              path: {
-                project_id,
-                task_id,
-              },
-            },
-          },
-        )
-      if (generate_error) {
-        throw generate_error
-      }
-      const response = JSON.parse(generate_response.output.output)
-      if (
-        !response ||
-        !response.generated_samples ||
-        !Array.isArray(response.generated_samples)
-      ) {
-        throw new KilnError("No options returned.", null)
-      }
-      // Add new samples
-      add_synthetic_samples(
-        response.generated_samples,
-        model_name,
-        model_provider,
-      )
-    } catch (e) {
-      if (e instanceof Error && e.message.includes("Load failed")) {
-        sample_generation_error = new KilnError(
-          "Could not generate samples, unknown error. If it persists, try another model.",
-          null,
-        )
-      } else {
-        sample_generation_error = createKilnError(e)
-      }
-    } finally {
-      sample_generating = false
-    }
   }
 
   const dispatch = createEventDispatcher<{
@@ -319,6 +215,17 @@
   }
 
   $: is_empty = data.sub_topics.length == 0 && data.samples.length == 0
+
+  function handleGenerateSamplesCompleted() {
+    // Trigger reactivity
+    data = data
+
+    // close all modals
+    generate_samples_modal = false
+
+    // Scroll to bottom of added samples
+    scroll_to_bottom_of_element_by_id(`${id}-samples`)
+  }
 </script>
 
 {#if path.length == 0}
@@ -338,6 +245,9 @@
         </button>
         <button class="btn" on:click={() => open_generate_samples_modal()}>
           Add Top Level Data
+        </button>
+        <button class="btn" on:click={() => open_generate_samples_modal(true)}>
+          Add Data to All
         </button>
       </div>
     {/if}
@@ -363,6 +273,11 @@
       <button class="link" on:click={() => open_generate_samples_modal()}>
         Add data
       </button>
+      {#if data.sub_topics.length > 0}
+        <button class="link" on:click={() => open_generate_samples_modal(true)}>
+          Add data to all
+        </button>
+      {/if}
     </div>
   </div>
 {/if}
@@ -482,50 +397,19 @@
 {/if}
 
 {#if generate_samples_modal}
-  <dialog id={`${id}-generate-samples`} class="modal">
-    <div class="modal-box">
-      <form method="dialog">
-        <button
-          class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-          >✕</button
-        >
-      </form>
-      <h3 class="text-lg font-bold">Generate Samples</h3>
-      <p class="text-sm font-light mb-8">
-        Add synthetic data samples
-        {#if path.length > 0}
-          to {path.join(" → ")}
-        {/if}
-      </p>
-      {#if sample_generating}
-        <div class="flex flex-row justify-center">
-          <div class="loading loading-spinner loading-lg my-12"></div>
-        </div>
-      {:else}
-        <div class="flex flex-col gap-2">
-          {#if sample_generation_error}
-            <div class="alert alert-error">
-              {sample_generation_error.message}
-            </div>
-          {/if}
-          <div class="flex flex-row items-center gap-4 mt-4 mb-2">
-            <div class="flex-grow font-medium text-sm">Sample Count</div>
-            <IncrementUi bind:value={num_samples_to_generate} />
-          </div>
-          <AvailableModelsDropdown requires_data_gen={true} bind:model />
-          <button
-            class="btn mt-6 {custom_topics_string ? '' : 'btn-primary'}"
-            on:click={generate_samples}
-          >
-            Generate {num_samples_to_generate} Samples
-          </button>
-        </div>
-      {/if}
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button>close</button>
-    </form>
-  </dialog>
+  <GenerateSamplesModal
+    {id}
+    {data}
+    {path}
+    {project_id}
+    {task_id}
+    {human_guidance}
+    {model}
+    {num_samples_to_generate}
+    {custom_topics_string}
+    on_completed={handleGenerateSamplesCompleted}
+    cascade_mode={generate_samples_cascade_mode}
+  />
 {/if}
 
 <style>

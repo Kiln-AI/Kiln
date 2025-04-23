@@ -3,20 +3,16 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Literal, Tuple
 
+import jsonschema
+
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel import (
-    DataSource,
-    DataSourceType,
-    Task,
-    TaskOutput,
-    TaskRun,
-)
-from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfig
 from kiln_ai.utils.config import Config
 
@@ -103,7 +99,12 @@ class BaseAdapter(metaclass=ABCMeta):
         if self.input_schema is not None:
             if not isinstance(input, dict):
                 raise ValueError(f"structured input is not a dict: {input}")
-            validate_schema(input, self.input_schema)
+
+            validate_schema_with_value_error(
+                input,
+                self.input_schema,
+                "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            )
 
         # Run
         run_output = await self._run(input)
@@ -125,7 +126,11 @@ class BaseAdapter(metaclass=ABCMeta):
                 raise RuntimeError(
                     f"structured response is not a dict: {parsed_output.output}"
                 )
-            validate_schema(parsed_output.output, self.output_schema)
+            validate_schema_with_value_error(
+                parsed_output.output,
+                self.output_schema,
+                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            )
         else:
             if not isinstance(parsed_output.output, str):
                 raise RuntimeError(

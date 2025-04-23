@@ -15,7 +15,7 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_chat_message_toolcall,
     generate_huggingface_chat_template,
     generate_huggingface_chat_template_toolcall,
-    generate_vertex_gemini_1_5,
+    generate_vertex_gemini,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import COT_FINAL_ANSWER_PROMPT
 from kiln_ai.datamodel import (
@@ -447,7 +447,7 @@ def test_generate_vertex_template():
         final_output="test output",
     )
 
-    result = generate_vertex_gemini_1_5(training_data)
+    result = generate_vertex_gemini(training_data)
 
     assert result == {
         "systemInstruction": {
@@ -475,7 +475,7 @@ def test_generate_vertex_template_thinking():
         thinking_final_answer_prompt="thinking final answer prompt",
     )
 
-    result = generate_vertex_gemini_1_5(training_data)
+    result = generate_vertex_gemini(training_data)
 
     logger.info(result)
 

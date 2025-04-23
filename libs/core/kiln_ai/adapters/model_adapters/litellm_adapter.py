@@ -65,6 +65,7 @@ class LiteLlmAdapter(BaseAdapter):
         run_strategy, cot_prompt = self.run_strategy()
 
         if run_strategy == "cot_as_message":
+            # Used for reasoning-capable models that can output thinking and structured format
             if not cot_prompt:
                 raise ValueError("cot_prompt is required for cot_as_message strategy")
             messages.append({"role": "system", "content": cot_prompt})
@@ -73,9 +74,11 @@ class LiteLlmAdapter(BaseAdapter):
                 raise ValueError("cot_prompt is required for cot_two_call strategy")
             messages.append({"role": "system", "content": cot_prompt})
 
-            # First call for chain of thought - No logprobs as only needed for final answer
+            # First call for chain of thought
+            # No response format as this request is for "thinking" in plain text
+            # No logprobs as only needed for final answer
             completion_kwargs = await self.build_completion_kwargs(
-                provider, messages, None
+                provider, messages, None, skip_response_format=True
             )
             cot_response = await litellm.acompletion(**completion_kwargs)
             if (
@@ -367,6 +370,7 @@ class LiteLlmAdapter(BaseAdapter):
         provider: KilnModelProvider,
         messages: list[dict[str, Any]],
         top_logprobs: int | None,
+        skip_response_format: bool = False,
     ) -> dict[str, Any]:
         extra_body = self.build_extra_body(provider)
 
@@ -380,9 +384,10 @@ class LiteLlmAdapter(BaseAdapter):
             **self._additional_body_options,
         }
 
-        # Response format: json_schema, json_instructions, json_mode, function_calling, etc
-        response_format_options = await self.response_format_options()
-        completion_kwargs.update(response_format_options)
+        if not skip_response_format:
+            # Response format: json_schema, json_instructions, json_mode, function_calling, etc
+            response_format_options = await self.response_format_options()
+            completion_kwargs.update(response_format_options)
 
         if top_logprobs is not None:
             completion_kwargs["logprobs"] = True

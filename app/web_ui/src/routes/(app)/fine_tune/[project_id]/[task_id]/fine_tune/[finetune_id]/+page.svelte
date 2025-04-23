@@ -108,6 +108,15 @@
       return `https://platform.openai.com/finetune/${finetune.finetune.provider_id}`
     } else if (finetune?.finetune.provider === "together_ai") {
       return `https://api.together.ai/jobs/${finetune.finetune.provider_id}`
+    } else if (finetune?.finetune.provider === "vertex") {
+      const parts = finetune.finetune.provider_id?.split("/") || []
+      const project = parts.length > 1 ? parts[1] : undefined
+      let locationPath = parts.length > 2 ? parts.slice(2).join("/") : undefined
+      if (!locationPath) {
+        return undefined
+      }
+      locationPath = locationPath.replace("/tuningJobs/", "/tuningJob/")
+      return `https://console.cloud.google.com/vertex-ai/studio/tuning/${locationPath}/detail?project=${project}`
     } else if (finetune?.finetune.provider === "fireworks_ai") {
       const url_id = finetune.finetune.provider_id?.split("/").pop()
       if (finetune.finetune.properties["endpoint_version"] === "v2") {

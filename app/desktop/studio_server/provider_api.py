@@ -555,7 +555,7 @@ async def connect_gemini(key: str):
 async def connect_vertex(project_id: str, project_location: str):
     try:
         await litellm.acompletion(
-            model="vertex_ai/gemini-1.5-flash",
+            model="vertex_ai/gemini-2.0-flash",
             messages=[{"content": "Hello, how are you?", "role": "user"}],
             vertex_project=project_id,
             vertex_location=project_location,

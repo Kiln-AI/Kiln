@@ -14,6 +14,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { components } from "../../../lib/api_schema"
   import Warning from "../../../lib/ui/warning.svelte"
+  import OutputRepairEditForm from "./output_repair_edit_form.svelte"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -57,6 +58,13 @@
   $: repair_enabled_for_source = REPAIR_ENABLED_FOR_SOURCES.some(
     (s) => s === run?.output?.source?.type,
   )
+
+  $: repair_source =
+    run?.repaired_output?.source?.type === "human"
+      ? { type: "user", name: run.repaired_output.source.properties.created_by }
+      : run?.repaired_output?.source?.type === "synthetic"
+        ? { type: "synthetic" }
+        : null
 
   // Use for some animations on first mount
   let mounted = false
@@ -343,6 +351,27 @@
       }[name] || name
     )
   }
+
+  function retry_repair() {
+    repair_run = null
+    accept_repair_error = null
+  }
+
+  let repair_edit_mode = false
+  function show_repair_edit() {
+    repair_edit_mode = true
+  }
+
+  function handle_manual_edit_cancel() {
+    repair_edit_mode = false
+  }
+
+  function handle_manual_edit_submit(repair_run_edited: TaskRun) {
+    repair_run = repair_run_edited
+    repair_edit_mode = false
+    updated_run = repair_run_edited
+    repair_run = null
+  }
 </script>
 
 <div>
@@ -425,6 +454,19 @@
                 bind:value={repair_instructions}
               />
             </FormContainer>
+          {:else if repair_edit_mode && repair_run}
+            <p class="text-sm text-gray-500 mb-4">
+              Manually improve or correct the response.
+            </p>
+            <OutputRepairEditForm
+              {task}
+              {run}
+              {repair_run}
+              {project_id}
+              repair_instructions={repair_instructions || ""}
+              on_submit={handle_manual_edit_submit}
+              on_cancel={handle_manual_edit_cancel}
+            />
           {:else if repair_review_available}
             <p class="text-sm text-gray-500 mb-4">
               The model has attempted to fix the output given <span
@@ -435,13 +477,19 @@
             </p>
             <Output raw_output={repair_run?.output.output || ""} />
           {:else if repair_complete}
-            <p class="text-sm text-gray-500 mb-4">
-              The model has fixed the output given <span
-                class="tooltip link"
-                data-tip="The instructions you provided to the model: {repair_instructions ||
-                  'No instruction provided'}">your instructions</span
-              >.
-            </p>
+            {#if repair_source?.type === "user"}
+              <p class="text-sm text-gray-500 mb-4">
+                This repaired output was provided by {repair_source.name}.
+              </p>
+            {:else}
+              <p class="text-sm text-gray-500 mb-4">
+                The model has fixed the output given <span
+                  class="tooltip link"
+                  data-tip="The instructions you provided to the model: {repair_instructions ||
+                    'No instruction provided'}">your instructions</span
+                >.
+              </p>
+            {/if}
             <Output raw_output={run?.repaired_output?.output || ""} />
             <div class="mt-2 text-xs text-gray-500 text-right">
               {#if delete_repair_submitting}
@@ -459,24 +507,29 @@
             </div>
           {/if}
         </div>
-        {#if repair_review_available}
-          <div class="flex flex-row gap-4 mt-4 justify-end">
-            <button class="btn" on:click={() => (repair_run = null)}
-              >Retry Repair</button
-            >
-            <button
-              class="btn btn-primary"
-              on:click={accept_repair}
-              disabled={accept_repair_submitting}
-            >
-              {#if accept_repair_submitting}
-                <span class="loading loading-spinner loading-sm"></span>
-              {:else}
-                Accept Repair (5 Stars)
-              {/if}
-            </button>
+        {#if repair_review_available && !repair_edit_mode}
+          <div class="mt-4">
+            <div class="flex flex-row gap-4 justify-between">
+              <button class="btn" on:click={show_repair_edit}>Edit</button>
+              <div class="flex flex-row gap-4">
+                <button class="btn" on:click={retry_repair}>Retry Repair</button
+                >
+                <button
+                  class="btn btn-primary"
+                  on:click={accept_repair}
+                  disabled={accept_repair_submitting}
+                >
+                  {#if accept_repair_submitting}
+                    <span class="loading loading-spinner loading-sm"></span>
+                  {:else}
+                    Accept Repair (5 Stars)
+                  {/if}
+                </button>
+              </div>
+            </div>
+
             {#if accept_repair_error}
-              <p class="text-error font-medium text-sm">
+              <p class="mt-2 text-error font-medium text-sm">
                 Error Accepting Repair<br />
                 <span class="text-error text-xs font-normal">
                   {accept_repair_error.getMessage()}</span

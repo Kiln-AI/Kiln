@@ -7,7 +7,7 @@ from pydantic import Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
-from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
 
@@ -87,14 +87,19 @@ class TaskRun(KilnParentedModel):
             # don't validate this relationship until we have a path or parent. Give them time to build it (but will catch it before saving)
             return self
 
-        # validate output
+        # validate input
         if task.input_json_schema is not None:
             try:
-                validate_schema(json.loads(self.input), task.input_json_schema)
+                input_parsed = json.loads(self.input)
             except json.JSONDecodeError:
                 raise ValueError("Input is not a valid JSON object")
-            except jsonschema.exceptions.ValidationError as e:
-                raise ValueError(f"Input does not match task input schema: {e}")
+
+            validate_schema_with_value_error(
+                input_parsed,
+                task.input_json_schema,
+                "Input does not match task input schema.",
+            )
+
         self._last_validated_input = self.input
         return self
 
@@ -131,6 +136,24 @@ class TaskRun(KilnParentedModel):
                 raise ValueError(
                     "Repaired output rating must be None. Repaired outputs are assumed to have a perfect rating, as they have been fixed."
                 )
+
+            task = self.parent_task()
+            if (
+                task is not None
+                and self.repaired_output.output is not None
+                and task.output_json_schema is not None
+            ):
+                try:
+                    output_parsed = json.loads(self.repaired_output.output)
+                except json.JSONDecodeError:
+                    raise ValueError("Repaired output is not a valid JSON object")
+
+                validate_schema_with_value_error(
+                    output_parsed,
+                    task.output_json_schema,
+                    "Repaired output does not match task output schema.",
+                )
+
         if self.repair_instructions is None and self.repaired_output is not None:
             raise ValueError(
                 "Repair instructions are required if providing a repaired output."
@@ -139,6 +162,7 @@ class TaskRun(KilnParentedModel):
             raise ValueError(
                 "A repaired output is required if providing repair instructions."
             )
+
         return self
 
     @model_validator(mode="after")

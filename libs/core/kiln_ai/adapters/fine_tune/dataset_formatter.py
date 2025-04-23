@@ -30,8 +30,8 @@ class DatasetFormat(str, Enum):
         "huggingface_chat_template_toolcall_jsonl"
     )
 
-    """Vertex Gemini 1.5 format (flash and pro)"""
-    VERTEX_GEMINI_1_5 = "vertex_gemini_1_5"
+    """Vertex Gemini format"""
+    VERTEX_GEMINI = "vertex_gemini"
 
 
 @dataclass
@@ -288,7 +288,7 @@ def generate_huggingface_chat_template_toolcall(
     return {"conversations": conversations}
 
 
-def generate_vertex_gemini_1_5(
+def generate_vertex_gemini(
     training_data: ModelTrainingData,
 ) -> Dict[str, Any]:
     """Generate Vertex Gemini 1.5 format (flash and pro)"""
@@ -346,7 +346,7 @@ FORMAT_GENERATORS: Dict[DatasetFormat, FormatGenerator] = {
     DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL: generate_chat_message_toolcall,
     DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL: generate_huggingface_chat_template,
     DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL: generate_huggingface_chat_template_toolcall,
-    DatasetFormat.VERTEX_GEMINI_1_5: generate_vertex_gemini_1_5,
+    DatasetFormat.VERTEX_GEMINI: generate_vertex_gemini,
 }
 
 

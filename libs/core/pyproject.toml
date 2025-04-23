@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.13.2"
+version = "0.15.0"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -22,7 +22,7 @@ dependencies = [
     "coverage>=7.6.4",
     "google-cloud-aiplatform>=1.84.0",
     "jsonschema>=4.23.0",
-    "litellm>=1.63.5",
+    "litellm>=1.67.0",
     "openai>=1.53.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",
@@ -31,6 +31,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "together",
     "typing-extensions>=4.12.2",
+    "vertexai>=1.43.0",
 ]
 
 [dependency-groups]

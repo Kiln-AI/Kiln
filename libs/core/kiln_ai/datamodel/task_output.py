@@ -9,7 +9,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnBaseModel
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -308,11 +308,15 @@ class TaskOutput(KilnBaseModel):
         # validate output
         if task.output_json_schema is not None:
             try:
-                validate_schema(json.loads(self.output), task.output_json_schema)
-            except json.JSONDecodeError:
+                output_parsed = json.loads(self.output)
+            except json.JSONDecodeError as e:
                 raise ValueError("Output is not a valid JSON object")
-            except jsonschema.exceptions.ValidationError as e:
-                raise ValueError(f"Output does not match task output schema: {e}")
+
+            validate_schema_with_value_error(
+                output_parsed,
+                task.output_json_schema,
+                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            )
         return self
 
     @model_validator(mode="after")

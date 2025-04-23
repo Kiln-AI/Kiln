@@ -9,7 +9,8 @@ export type JsonSchema = {
 export type JsonSchemaProperty = {
   title: string
   description: string
-  type: "number" | "string" | "integer" | "boolean"
+  type: "number" | "string" | "integer" | "boolean" | "array" | "object"
+  items?: JsonSchemaProperty | JsonSchema
 }
 
 // We have our own model type.
@@ -18,9 +19,10 @@ export type SchemaModelProperty = {
   id: string
   title: string
   description: string
-  type: "number" | "string" | "integer" | "boolean"
+  type: "number" | "string" | "integer" | "boolean" | "array" | "object"
   required: boolean
 }
+
 export type SchemaModel = {
   properties: SchemaModelProperty[]
 }
@@ -146,6 +148,39 @@ export function typed_json_from_schema_model(
         )
       }
       parsed_data[prop_id] = parsedValue
+    } else if (property.type === "array") {
+      try {
+        const parsed_value = JSON.parse(prop_value)
+        if (!Array.isArray(parsed_value)) {
+          errors.push(
+            `Property ${prop_id} must be an array, got: ${prop_value}`,
+          )
+        }
+        parsed_data[prop_id] = parsed_value
+      } catch (e) {
+        errors.push(
+          `Property ${prop_id} must be a valid JSON array, got: ${prop_value}`,
+        )
+      }
+    } else if (property.type === "object") {
+      try {
+        const parsed_value = JSON.parse(prop_value)
+        // Check if it's an object but not an array, null, or other primitive
+        if (
+          typeof parsed_value !== "object" ||
+          parsed_value === null ||
+          Array.isArray(parsed_value)
+        ) {
+          errors.push(
+            `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
+          )
+        }
+        parsed_data[prop_id] = parsed_value
+      } catch (e) {
+        errors.push(
+          `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
+        )
+      }
     } else {
       errors.push(
         "Unsupported property type: " +

@@ -209,6 +209,42 @@ describe("model_from_schema", () => {
           type: "integer",
           description: "User's age in years",
         },
+        contact_emails: {
+          title: "Contact Emails",
+          type: "array",
+          description: "The user's contact emails",
+          items: {
+            type: "string",
+            title: "Contact Email",
+            description: "The user's contact email",
+            items: {
+              type: "string",
+              title: "Email",
+              description: "The user's email",
+            },
+          },
+        },
+        siblings: {
+          title: "Siblings",
+          type: "array",
+          description: "The user's siblings",
+          items: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                title: "Name",
+                description: "The user's name",
+              },
+              age: {
+                type: "integer",
+                title: "Age",
+                description: "The user's age",
+              },
+            },
+            required: ["name", "age"],
+          },
+        },
       },
       required: ["user_name"],
     }
@@ -227,6 +263,20 @@ describe("model_from_schema", () => {
           title: "Age",
           description: "User's age in years",
           type: "integer",
+          required: false,
+        },
+        {
+          id: "contact_emails",
+          title: "Contact Emails",
+          description: "The user's contact emails",
+          type: "array",
+          required: false,
+        },
+        {
+          id: "siblings",
+          title: "Siblings",
+          description: "The user's siblings",
+          type: "array",
           required: false,
         },
       ],
@@ -268,6 +318,11 @@ describe("model_from_schema", () => {
           type: "boolean",
           description: "Description 3",
         },
+        field4: {
+          title: "Field4",
+          type: "array",
+          description: "Description 4",
+        },
       },
       required: ["field1", "field3"],
     }
@@ -293,6 +348,28 @@ describe("model_from_schema", () => {
 
     const result = model_from_schema(schema)
     expect(result.properties[0].title).toBe("user_name")
+  })
+
+  it("handles array types", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: {
+        ingredients: {
+          title: "Ingredients",
+          description: "The ingredients to be used",
+          type: "array",
+          items: {
+            type: "string",
+            description: "The name of the ingredient to be used",
+            title: "Ingredient",
+          },
+        },
+      },
+      required: ["ingredients"],
+    }
+
+    const result = model_from_schema(schema)
+    expect(result.properties[0].type).toBe("array")
   })
 })
 
@@ -327,6 +404,13 @@ describe("typed_json_from_schema_model", () => {
         type: "boolean",
         required: false,
       },
+      {
+        id: "contact_emails",
+        title: "Contact Emails",
+        description: "The user's contact emails",
+        type: "array",
+        required: true,
+      },
     ],
   }
 
@@ -336,6 +420,7 @@ describe("typed_json_from_schema_model", () => {
       age: "30",
       height: "1.75",
       is_active: "true",
+      contact_emails: JSON.stringify(["john.doe@example.com"]),
     }
 
     const result = typed_json_from_schema_model(testSchema, inputData)
@@ -345,6 +430,7 @@ describe("typed_json_from_schema_model", () => {
       age: 30,
       height: 1.75,
       is_active: true,
+      contact_emails: ["john.doe@example.com"],
     })
   })
 
@@ -352,6 +438,7 @@ describe("typed_json_from_schema_model", () => {
     const inputData = {
       name: "Jane Doe",
       age: "25",
+      contact_emails: JSON.stringify(["jane.doe@example.com"]),
     }
 
     const result = typed_json_from_schema_model(testSchema, inputData)
@@ -359,6 +446,7 @@ describe("typed_json_from_schema_model", () => {
     expect(result).toEqual({
       name: "Jane Doe",
       age: 25,
+      contact_emails: ["jane.doe@example.com"],
     })
   })
 
@@ -385,6 +473,30 @@ describe("typed_json_from_schema_model", () => {
     )
   })
 
+  it("throws error for invalid JSON input for array property", () => {
+    const inputData = {
+      name: "Alice",
+      age: "30",
+      contact_emails: "[123", // invalid JSON
+    }
+
+    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
+      KilnError,
+    )
+  })
+
+  it("throws error for non-array input for array property", () => {
+    const inputData = {
+      name: "Alice",
+      age: "30",
+      contact_emails: JSON.stringify({ value: 123 }), // valid JSON, but not an array
+    }
+
+    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
+      KilnError,
+    )
+  })
+
   it("throws error for unknown property", () => {
     const inputData = {
       name: "Charlie",
@@ -402,6 +514,7 @@ describe("typed_json_from_schema_model", () => {
       name: "Zero",
       age: "0",
       height: "0",
+      contact_emails: JSON.stringify([]),
     }
 
     const result = typed_json_from_schema_model(testSchema, inputData)
@@ -410,6 +523,7 @@ describe("typed_json_from_schema_model", () => {
       name: "Zero",
       age: 0,
       height: 0,
+      contact_emails: [],
     })
   })
 

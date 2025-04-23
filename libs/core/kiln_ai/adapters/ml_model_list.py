@@ -70,9 +70,18 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     gpt_4o_mini = "gpt_4o_mini"
     gpt_4o = "gpt_4o"
+    gpt_4_1 = "gpt_4_1"
+    gpt_4_1_mini = "gpt_4_1_mini"
+    gpt_4_1_nano = "gpt_4_1_nano"
+    gpt_o3_low = "gpt_o3_low"
+    gpt_o3_medium = "gpt_o3_medium"
+    gpt_o3_high = "gpt_o3_high"
     gpt_o1_low = "gpt_o1_low"
     gpt_o1_medium = "gpt_o1_medium"
     gpt_o1_high = "gpt_o1_high"
+    gpt_o4_mini_low = "gpt_o4_mini_low"
+    gpt_o4_mini_medium = "gpt_o4_mini_medium"
+    gpt_o4_mini_high = "gpt_o4_mini_high"
     gpt_o3_mini_low = "gpt_o3_mini_low"
     gpt_o3_mini_medium = "gpt_o3_mini_medium"
     gpt_o3_mini_high = "gpt_o3_mini_high"
@@ -97,6 +106,9 @@ class ModelName(str, Enum):
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
     gemini_2_0_flash = "gemini_2_0_flash"
+    gemini_2_0_flash_lite = "gemini_2_0_flash_lite"
+    gemini_2_5_pro = "gemini_2_5_pro"
+    gemini_2_5_flash = "gemini_2_5_flash"
     nemotron_70b = "nemotron_70b"
     mixtral_8x7b = "mixtral_8x7b"
     qwen_2p5_7b = "qwen_2p5_7b"
@@ -181,29 +193,77 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
-    # GPT 4o Mini
+    # GPT 4.1
     KilnModel(
         family=ModelFamily.gpt,
-        name=ModelName.gpt_4o_mini,
-        friendly_name="GPT 4o Mini",
+        name=ModelName.gpt_4_1,
+        friendly_name="GPT 4.1",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
-                model_id="gpt-4o-mini",
-                provider_finetune_id="gpt-4o-mini-2024-07-18",
+                model_id="gpt-4.1",
+                provider_finetune_id="gpt-4.1-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="openai/gpt-4o-mini",
+                model_id="openai/gpt-4.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                logprobs_openrouter_options=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
-                model_id="gpt-4o-mini",
+                model_id="gpt-4.1",
+            ),
+        ],
+    ),
+    # GPT 4.1 Mini
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4_1_mini,
+        friendly_name="GPT 4.1 Mini",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4.1-mini",
+                provider_finetune_id="gpt-4.1-mini-2025-04-14",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-4.1-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="gpt-4.1-mini",
+            ),
+        ],
+    ),
+    # GPT 4.1 Nano
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4_1_nano,
+        friendly_name="GPT 4.1 Nano",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4.1-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-4.1-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="gpt-4.1-nano",
             ),
         ],
     ),
@@ -230,6 +290,102 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4o",
+            ),
+        ],
+    ),
+    # GPT 4o Mini
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4o_mini,
+        friendly_name="GPT 4o Mini",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4o-mini",
+                provider_finetune_id="gpt-4o-mini-2024-07-18",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-4o-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+                logprobs_openrouter_options=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="gpt-4o-mini",
+            ),
+        ],
+    ),
+    # GPT o4 Mini Low
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_o4_mini_low,
+        friendly_name="GPT o4 Mini - Low",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="o4-mini",
+                thinking_level="low",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="o4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="low",
+            ),
+        ],
+    ),
+    # GPT o4 Mini Medium
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_o4_mini_medium,
+        friendly_name="GPT o4 Mini - Medium",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="o4-mini",
+                thinking_level="medium",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="o4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/o4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # GPT o4 Mini High
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_o4_mini_high,
+        friendly_name="GPT o4 Mini - High",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="o4-mini",
+                thinking_level="high",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="o4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="high",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/o4-mini-high",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
@@ -288,6 +444,66 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="high",
+            ),
+        ],
+    ),
+    # GPT o3 Low
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_o3_low,
+        friendly_name="GPT o3 - Low",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="o3",
+                thinking_level="low",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="o3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="low",
+            ),
+        ],
+    ),
+    # GPT o3 Medium
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_o3_medium,
+        friendly_name="GPT o3 - Medium",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="o3",
+                thinking_level="medium",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="o3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="medium",
+            ),
+        ],
+    ),
+    # GPT o3 High
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_o3_high,
+        friendly_name="GPT o3 - High",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="o3",
+                thinking_level="high",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="o3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 thinking_level="high",
             ),
@@ -440,6 +656,100 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 2.5 Pro
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_2_5_pro,
+        friendly_name="Gemini 2.5 Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-2.5-pro-preview-03-25",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-2.5-pro-preview-03-25",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-2.5-pro-preview-03-25",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Gemini 2.5 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_2_5_flash,
+        friendly_name="Gemini 2.5 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-2.5-flash-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-2.5-flash-preview-04-17",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-2.5-flash-preview-04-17",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Gemini 2.0 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_2_0_flash,
+        friendly_name="Gemini 2.0 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-2.0-flash-001",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-2.0-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-2.0-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                provider_finetune_id="gemini-2.0-flash-001",
+            ),
+        ],
+    ),
+    # Gemini 2.0 Flash Lite
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_2_0_flash_lite,
+        friendly_name="Gemini 2.0 Flash Lite",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-2.0-flash-lite-001",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-2.0-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-2.0-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                provider_finetune_id="gemini-2.0-flash-lite-001",
+            ),
+        ],
+    ),
     # Gemini 1.5 Pro
     KilnModel(
         family=ModelFamily.gemini,
@@ -503,29 +813,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-1.5-flash-8b",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=False,
-            ),
-        ],
-    ),
-    # Gemini 2.0 Flash
-    KilnModel(
-        family=ModelFamily.gemini,
-        name=ModelName.gemini_2_0_flash,
-        friendly_name="Gemini 2.0 Flash",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="google/gemini-2.0-flash-001",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.gemini_api,
-                model_id="gemini-2.0-flash",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.vertex,
-                model_id="gemini-2.0-flash",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
     ),
@@ -759,12 +1046,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.ollama,
                 supports_data_gen=False,
                 model_id="llama3.2",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                supports_structured_output=False,
-                supports_data_gen=False,
-                model_id="accounts/fireworks/models/llama-v3p2-3b-instruct",
             ),
             KilnModelProvider(
                 name=ModelProviderName.huggingface,

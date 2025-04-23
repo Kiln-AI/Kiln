@@ -166,9 +166,12 @@ class BaseFinetuneAdapter(ABC):
 
                 # Strict type checking for numeric types
                 if expected_type is float and not isinstance(value, float):
-                    raise ValueError(
-                        f"Parameter {parameter.name} must be a float, got {type(value)}"
-                    )
+                    if isinstance(value, int):
+                        value = float(value)
+                    else:
+                        raise ValueError(
+                            f"Parameter {parameter.name} must be a float, got {type(value)}"
+                        )
                 elif expected_type is int and not isinstance(value, int):
                     raise ValueError(
                         f"Parameter {parameter.name} must be an integer, got {type(value)}"

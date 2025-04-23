@@ -4,6 +4,13 @@
 
   let sections = [
     {
+      name: "Edit Task",
+      description:
+        "Edit the currently task, including the prompt and requirements.",
+      button_text: "Edit Current Task",
+      href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+    },
+    {
       name: "AI Providers & Models",
       description:
         "Connect to AI providers like OpenAI, OpenRouter, or Ollama.",
@@ -11,22 +18,16 @@
       button_text: "Manage Providers & Models",
     },
     {
-      name: "Projects",
+      name: "Manage Projects",
       description: "Add, remove or edit projects.",
       href: "/settings/manage_projects",
-      button_text: "All Projects",
+      button_text: "Manage Projects",
     },
     {
       name: "Edit Project",
       description: "Edit the currently selected project.",
       button_text: "Edit Current Project",
       href: "/settings/edit_project/" + $ui_state.current_project_id,
-    },
-    {
-      name: "Edit Task",
-      description: "Edit the currently selected task.",
-      button_text: "Edit Current Task",
-      href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
     },
     {
       name: "App Updates",

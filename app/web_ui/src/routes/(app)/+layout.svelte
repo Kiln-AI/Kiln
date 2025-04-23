@@ -426,6 +426,14 @@
         >
         {#if settingsSections.includes(section)}
           <ul class="py-2 ml-6">
+            <li class="menu-nested-sm {$current_task?.id ? '' : 'hidden'}">
+              <a
+                class={section == Section.SettingsEditTask ? "active" : ""}
+                href={`/settings/edit_task/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+              >
+                Edit Task
+              </a>
+            </li>
             <li class="menu-nested-sm">
               <a
                 class={section == Section.SettingsProviders ? "active" : ""}
@@ -441,7 +449,7 @@
                   : ""}
                 href="/settings/manage_projects"
               >
-                Projects
+                Manage Projects
               </a>
             </li>
             <li class="menu-nested-sm {$current_project?.id ? '' : 'hidden'}">
@@ -450,14 +458,6 @@
                 href="/settings/edit_project/{$current_project?.id}"
               >
                 Edit Project
-              </a>
-            </li>
-            <li class="menu-nested-sm {$current_task?.id ? '' : 'hidden'}">
-              <a
-                class={section == Section.SettingsEditTask ? "active" : ""}
-                href={`/settings/edit_task/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-              >
-                Edit Task
               </a>
             </li>
             <li class="menu-nested-sm">

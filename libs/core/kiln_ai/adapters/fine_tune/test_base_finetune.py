@@ -98,6 +98,13 @@ def test_validate_parameters_valid():
     }
     MockFinetune.validate_parameters(valid_params)  # Should not raise
 
+    # Test valid parameters (float as int)
+    valid_params = {
+        "learning_rate": 1,
+        "epochs": 10,
+    }
+    MockFinetune.validate_parameters(valid_params)  # Should not raise
+
 
 def test_validate_parameters_missing_required():
     # Test missing required parameter

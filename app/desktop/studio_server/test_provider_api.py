@@ -1930,7 +1930,7 @@ async def test_connect_vertex_success(mock_config_shared, mock_litellm_acompleti
     assert response.status_code == 200
     assert "Connected to Vertex" in response.body.decode()
     mock_litellm_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-1.5-flash",
+        model="vertex_ai/gemini-2.0-flash",
         messages=[{"content": "Hello, how are you?", "role": "user"}],
         vertex_project="test-project-id",
         vertex_location="us-central1",
@@ -1955,7 +1955,7 @@ async def test_connect_vertex_failure(mock_config_shared, mock_litellm_acompleti
     assert "Failed to connect to Vertex" in response.body.decode()
     assert "Invalid project ID" in response.body.decode()
     mock_litellm_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-1.5-flash",
+        model="vertex_ai/gemini-2.0-flash",
         messages=[{"content": "Hello, how are you?", "role": "user"}],
         vertex_project="invalid-project-id",
         vertex_location="us-central1",

@@ -1,6 +1,6 @@
 [project]
 name = "kiln-server"
-version = "0.13.2"
+version = "0.15.0"
 requires-python = ">=3.10"
 description = 'Kiln AI Server'
 readme = "README.md"

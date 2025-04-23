@@ -51,6 +51,10 @@
       base_description = "Integer"
     } else if (property.type === "boolean") {
       base_description = "'true' or 'false'"
+    } else if (property.type === "array") {
+      base_description = "JSON Array"
+    } else if (property.type === "object") {
+      base_description = "JSON Object"
     } else {
       base_description = "Unknown type"
     }
@@ -59,6 +63,26 @@
       return base_description + " (required)"
     }
     return base_description + " (optional)"
+  }
+
+  function get_input_type(property: SchemaModelProperty): "textarea" | "input" {
+    const types = ["string", "array", "object"]
+    if (types.includes(property.type)) {
+      return "textarea"
+    }
+    return "input"
+  }
+
+  function get_info_description(
+    property: SchemaModelProperty,
+  ): string | undefined {
+    if (property.type === "array") {
+      return "A list of items in JSON format. For example: [item_1, item_2]"
+    }
+    if (property.type === "object") {
+      return 'A JSON object. For example: {"key_1": "value_1", "key_2": "value_2"}'
+    }
+    return undefined
   }
 </script>
 
@@ -74,7 +98,8 @@
     <FormElement
       id={id + "_" + property.id}
       label={property.title}
-      inputType={property.type === "string" ? "textarea" : "input"}
+      inputType={get_input_type(property)}
+      info_description={get_info_description(property)}
       info_msg={describe_type(property)}
       description={property.description}
       optional={!property.required}
