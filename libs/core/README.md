@@ -237,6 +237,122 @@ for run in task.runs():
 
 ```
 
+### Generating Synthetic Data Programmatically
+
+You can use the Kiln library to generate synthetic input data for your tasks. This is useful for quickly creating diverse datasets.
+
+**Note:** This requires a model and provider that supports data generation capabilities. Check the provider's capabilities or documentation (e.g., using `provider_tools.get_provider_capabilities`).
+
+```python
+import asyncio
+import json
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.adapters.data_gen.data_gen_task import DataGenSampleTask, DataGenSampleTaskInput
+from kiln_ai.adapters.adapter_registry import adapter_for_task
+
+async def generate_data():
+    # --- 1. Define the Target Task ---
+    # This is the task for which you want to generate input data.
+    # Using an ephemeral Project/Task here for simplicity, no need to save.
+    project = Project(name="DemoProject")
+    target_task = Task(
+        parent=project,
+        name="Cowboy Speaker",
+        instruction="Reply like a cowboy about the given topic.",
+        # Set input_json_schema=None for plain text input, or provide a schema for structured input.
+        input_json_schema=None # Example: Generates plain text inputs
+    )
+
+    # --- 2. Create the Data Generation Task ---
+    data_gen_task = DataGenSampleTask(target_task=target_task)
+
+    # --- 3. Define Generation Inputs ---
+    # Specify the target task, number of samples, and optional topic guidance.
+    data_gen_input = DataGenSampleTaskInput.from_task(
+        task=target_task,
+        num_samples=3,
+        topic=["horses"] # Optional: Guide generation towards this topic
+    )
+
+    # --- 4. Get an Adapter ---
+    # Choose a model and provider that supports data generation.
+    # Check provider documentation or capabilities.
+    # Example using Groq (replace with your configured provider/model if needed)
+    try:
+        # Ensure you have a provider like 'groq' configured with an appropriate model
+        adapter = adapter_for_task(
+            data_gen_task,
+            model_name="llama3-8b-8192", # Or another capable model like "mixtral-8x7b-32768"
+            provider="groq"
+            # Or try a local Ollama model if 'ollama' provider is running and configured:
+            # model_name="llama3", # Or mistral, etc.
+            # provider="ollama"
+        )
+        print(f"Using adapter: {adapter.model_name} on {adapter.provider}")
+    except ValueError as e:
+        print(f"Error getting adapter: {e}")
+        print("Please ensure the specified model/provider is configured in ~/.kiln_settings/config.yaml and supports data generation.")
+        return
+    except ImportError as e:
+        print(f"Import error, required library might be missing: {e}")
+        return
+
+    # --- 5. Invoke the Adapter ---
+    print("\nGenerating synthetic data (this might take a moment)...")
+    try:
+        # Pass the input definition as a dictionary
+        run_result = await adapter.invoke(data_gen_input.model_dump())
+    except Exception as e:
+        # Catch potential API errors, network issues, etc.
+        print(f"\nError during data generation: {e}")
+        print("Check your API key, network connection, and model availability.")
+        return
+
+    # --- 6. Parse and Print Results ---
+    if run_result and run_result.output and run_result.output.output:
+        try:
+            # The output from DataGenSampleTask is expected to be a JSON string
+            output_data = json.loads(run_result.output.output)
+            generated_samples = output_data.get("generated_samples", [])
+
+            print("\nGenerated Samples:")
+            if generated_samples:
+                for i, sample in enumerate(generated_samples):
+                    # The sample itself might be JSON (if target_task has input schema) or plain text
+                    print(f"  {i+1}. {sample}")
+            else:
+                print("No samples were generated.")
+                print(f"Raw output: {run_result.output.output}") # Show raw output for debugging
+
+        except json.JSONDecodeError:
+            print("\nError: Could not parse the output JSON.")
+            print(f"Raw output received: {run_result.output.output}")
+        except Exception as e:
+             print(f"\nAn unexpected error occurred processing results: {e}")
+             print(f"Raw output: {run_result.output.output}")
+
+    else:
+        print("\nNo valid output received from the generation task.")
+        if run_result and run_result.output:
+             print(f"Raw output status: {run_result.output.status}")
+             print(f"Raw output error: {run_result.output.error}")
+
+
+# --- Run the async function ---
+if __name__ == "__main__":
+    # Basic check for configuration to guide the user
+    try:
+        from kiln_ai.utils.config import Config
+        if not Config.shared().get_provider_config('groq'): # Example check
+             print("Warning: 'groq' provider not found in config. The example might fail.")
+             print("Ensure providers are configured in ~/.kiln_settings/config.yaml or via the Kiln UI.")
+    except Exception as e:
+        print(f"Could not check config: {e}")
+
+    asyncio.run(generate_data())
+
+```
+
 ### Adding Custom Model or AI Provider from Code
 
 You can add additional AI models and providers to Kiln.
