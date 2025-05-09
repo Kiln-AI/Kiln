@@ -1,11 +1,14 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from google import genai
 from google.genai import types
 
 from kiln_ai.adapters.extractors.base_extractor import (
     ExtractionFormat,
     ExtractionOutput,
+    FileInfo,
     FileInfoInternal,
 )
 from kiln_ai.adapters.extractors.gemini_extractor import (
@@ -13,6 +16,7 @@ from kiln_ai.adapters.extractors.gemini_extractor import (
     GeminiExtractorConfig,
     Kind,
 )
+from kiln_ai.utils.config import Config
 
 PROMPTS_FOR_KIND = {
     Kind.DOCUMENT: "prompt for documents",
@@ -60,6 +64,12 @@ def mock_gemini_extractor_no_kind_prompts(
     return GeminiExtractor(
         mock_gemini_client, mock_gemini_extractor_config_no_kind_prompts
     )
+
+
+@pytest.fixture
+def test_data_dir():
+    """Return the path to the test data directory."""
+    return Path(__file__).parent.parent.parent / "tests" / "data"
 
 
 @pytest.mark.parametrize(
@@ -225,4 +235,93 @@ def test_extract_failure_from_file_utils(mock_gemini_extractor_with_kind_prompts
         mock_gemini_extractor_with_kind_prompts.extract(
             FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
             "custom prompt",
+        )
+
+
+SUPPORTED_MODELS = ["gemini-2.0-flash"]
+
+
+def paid_gemini_extractor(model_name: str):
+    return GeminiExtractor(
+        config=GeminiExtractorConfig(
+            model=model_name,
+            output_format=ExtractionFormat.MARKDOWN,
+            prompt_for_kind={
+                Kind.DOCUMENT: "Return a short paragraph summarizing the document. Start your answer with the word 'Document summary:'.",
+                Kind.IMAGE: "Return a short paragraph summarizing the image. Start your answer with the word 'Image summary:'.",
+                Kind.VIDEO: "Return a short paragraph summarizing the video. Start your answer with the word 'Video summary:'.",
+                Kind.AUDIO: "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
+            },
+            default_prompt="Return a short paragraph summarizing the document. Start your answer with the word 'Default summary:'.",
+            passthrough_mimetypes=[
+                "text/plain",
+                "text/markdown",
+            ],
+        ),
+        gemini_client=genai.Client(
+            api_key=Config.shared().gemini_api_key,
+        ),
+    )
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_document(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = extractor.extract(
+        file_info=FileInfo(path=str(test_data_dir / "1706.03762v7.pdf")),
+    )
+    assert output.is_passthrough == False
+    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert "Document summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_image(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = extractor.extract(
+        file_info=FileInfo(path=str(test_data_dir / "lenna.png")),
+    )
+    assert output.is_passthrough == False
+    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert "Image summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_video(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = extractor.extract(
+        file_info=FileInfo(path=str(test_data_dir / "big_buck_bunny_sample.mp4")),
+    )
+    assert output.is_passthrough == False
+    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert "Video summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_audio(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = extractor.extract(
+        file_info=FileInfo(path=str(test_data_dir / "poacher.ogg")),
+    )
+    assert output.is_passthrough == False
+    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert "Audio summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_provider_bad_request(tmp_path, model_name):
+    # write corrupted PDF file to temp files
+    temp_file = tmp_path / "corrupted_file.pdf"
+    temp_file.write_bytes(b"invalid file")
+
+    extractor = paid_gemini_extractor(model_name=model_name)
+
+    with pytest.raises(ValueError):
+        extractor.extract(
+            file_info=FileInfo(path=temp_file.as_posix()),
         )
