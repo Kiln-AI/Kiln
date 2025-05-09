@@ -68,6 +68,10 @@ class DataGenSaveSamplesApiInput(BaseModel):
         description="Optional human guidance for generation",
         default=None,
     )
+    tags: list[str] | None = Field(
+        description="Tags to add to the sample",
+        default=None,
+    )
 
 
 def connect_data_gen_api(app: FastAPI):
@@ -133,16 +137,11 @@ def connect_data_gen_api(app: FastAPI):
                 task.instruction, sample.human_guidance
             )
 
-        tags = ["synthetic"]
-        if session_id:
-            tags.append(f"synthetic_session_{session_id}")
-
         adapter = adapter_for_task(
             task,
             model_name=sample.output_model_name,
             provider=model_provider_from_string(sample.output_provider),
             prompt_id=sample.prompt_method,
-            base_adapter_config=AdapterConfig(default_tags=tags),
         )
 
         properties: dict[str, str | int | float] = {
@@ -161,6 +160,14 @@ def connect_data_gen_api(app: FastAPI):
                 properties=properties,
             ),
         )
+
+        tags = ["synthetic"]
+        if session_id:
+            tags.append(f"synthetic_session_{session_id}")
+
+        if sample.tags:
+            tags.extend(sample.tags)
+        run.tags = tags
 
         run.save_to_file()
         return run

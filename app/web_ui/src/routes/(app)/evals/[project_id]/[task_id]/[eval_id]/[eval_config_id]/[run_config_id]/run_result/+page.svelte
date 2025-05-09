@@ -21,6 +21,7 @@
     model_name,
     provider_name_from_id,
     prompt_name_from_id,
+    current_task_prompts,
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
@@ -90,7 +91,10 @@
       Provider: provider_name_from_id(
         run_config.run_config_properties?.model_provider_name,
       ),
-      Prompt: prompt_name_from_id(run_config.run_config_properties?.prompt_id),
+      Prompt: prompt_name_from_id(
+        run_config.run_config_properties?.prompt_id,
+        $current_task_prompts,
+      ),
       "Task Inputs From Dataset": evaluator.eval_set_filter_id,
     }
   }

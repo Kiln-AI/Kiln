@@ -79,14 +79,16 @@
 
 {#if eval_state === "not_started"}
   <button
-    class="btn {btn_size === 'mid' ? 'btn-mid' : ''} btn-primary"
+    class="btn {btn_size === 'mid'
+      ? 'btn-mid'
+      : ''} btn-primary whitespace-nowrap"
     on:click={() => {
       run_dialog?.show()
     }}>Run Eval</button
   >
 {:else}
   <button
-    class="btn {btn_size === 'mid' ? 'btn-mid' : ''}"
+    class="btn {btn_size === 'mid' ? 'btn-mid' : ''} whitespace-nowrap"
     on:click={() => {
       running_progress_dialog?.show()
     }}

@@ -4,6 +4,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
 
   export let onImportCompleted: () => void
+  export let tag_splits: Record<string, number> | null = null
 
   let selected_file: File | null = null
 
@@ -24,12 +25,16 @@
 
     const formData = new FormData()
     formData.append("file", selected_file)
+    if (tag_splits) {
+      formData.append("splits", JSON.stringify(tag_splits))
+    }
 
     const { error } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload",
       {
-        params: { path: { project_id, task_id } },
-
+        params: {
+          path: { project_id, task_id },
+        },
         // todo: a transform must be set up to determine how to serialize multipart file uploads
         // see: https://github.com/openapi-ts/openapi-typescript/issues/1214
         body: formData as unknown as { file: string },

@@ -747,6 +747,23 @@ export interface paths {
         patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Eval Favourite */
+        patch: operations["update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
         parameters: {
             query?: never;
@@ -866,6 +883,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Default Run Config */
+        post: operations["set_default_run_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_run_config__run_config_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval": {
         parameters: {
             query?: never;
@@ -892,6 +926,23 @@ export interface paths {
         };
         /** Get Eval Run Results */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Progress */
+        get: operations["get_eval_progress_api_projects__project_id__tasks__task_id__eval__eval_id__progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1021,6 +1072,8 @@ export interface components {
              * Format: binary
              */
             file: string;
+            /** Splits */
+            splits?: string | null;
         };
         /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
         Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
@@ -1245,6 +1298,11 @@ export interface components {
              * @description Optional human guidance for generation
              */
             human_guidance?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to the sample
+             */
+            tags?: string[] | null;
         };
         /**
          * DataSource
@@ -1393,6 +1451,11 @@ export interface components {
              */
             current_config_id?: string | null;
             /**
+             * Current Run Config Id
+             * @description The id of the a run config which was selected as the best run config for this eval. The run config must belong to the parent Task.
+             */
+            current_run_config_id?: string | null;
+            /**
              * Eval Set Filter Id
              * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id.
              */
@@ -1407,6 +1470,12 @@ export interface components {
              * @description The scores this evaluator should produce.
              */
             output_scores: components["schemas"]["EvalOutputScore"][];
+            /**
+             * Favourite
+             * @description Whether this eval is a favourite of the user. Rendered as a star icon in the UI.
+             * @default false
+             */
+            favourite: boolean;
             /** Model Type */
             readonly model_type: string;
         };
@@ -1507,6 +1576,21 @@ export interface components {
             instruction?: string | null;
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
             type: components["schemas"]["TaskOutputRatingType"];
+        };
+        /** EvalProgress */
+        EvalProgress: {
+            /** Dataset Size */
+            dataset_size: number;
+            /** Golden Dataset Size */
+            golden_dataset_size: number;
+            /** Golden Dataset Not Rated Count */
+            golden_dataset_not_rated_count: number;
+            /** Golden Dataset Partially Rated Count */
+            golden_dataset_partially_rated_count: number;
+            /** Golden Dataset Fully Rated Count */
+            golden_dataset_fully_rated_count: number;
+            current_eval_method: components["schemas"]["EvalConfig"] | null;
+            current_run_method: components["schemas"]["TaskRunConfig"] | null;
         };
         /** EvalResultSummary */
         EvalResultSummary: {
@@ -2617,6 +2701,11 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+        };
+        /** UpdateFavouriteRequest */
+        UpdateFavouriteRequest: {
+            /** Favourite */
+            favourite: boolean;
         };
         /**
          * UpdateFinetuneRequest
@@ -4433,6 +4522,43 @@ export interface operations {
             };
         };
     };
+    update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFavouriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_evals_api_projects__project_id__tasks__task_id__evals_get: {
         parameters: {
             query?: never;
@@ -4650,7 +4776,41 @@ export interface operations {
                 project_id: string;
                 task_id: string;
                 eval_id: string;
-                eval_config_id: string;
+                eval_config_id: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_run_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_run_config__run_config_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+                run_config_id: string | null;
             };
             cookie?: never;
         };
@@ -4731,6 +4891,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_progress_api_projects__project_id__tasks__task_id__eval__eval_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalProgress"];
                 };
             };
             /** @description Validation Error */

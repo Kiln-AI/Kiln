@@ -18,11 +18,10 @@
     </span>
   {:else if output_score_type === "pass_fail_critical"}
     pass/fail/critical
-    <span class="ml-[-5px]">
-      <InfoTooltip
-        tooltip_text="-1 is critical failure, 0 is fail, and 1 is pass"
-      />
-    </span>
+    <InfoTooltip
+      tooltip_text="-1 is critical failure, 0 is fail, and 1 is pass"
+      no_pad={true}
+    />
   {:else}
     {output_score_type}
   {/if}

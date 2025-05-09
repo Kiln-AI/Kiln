@@ -244,7 +244,14 @@ export function provider_name_from_id(provider_id: string): string {
   return provider?.provider_name || provider_id
 }
 
-export function prompt_name_from_id(prompt_id: string): string {
+export function prompt_name_from_id(
+  prompt_id: string,
+  prompt_response: PromptResponse | null,
+): string {
+  // Dispatch a request to load the prompts if we don't have them yet
+  if (!prompt_response) {
+    load_available_prompts()
+  }
   // Attempt to lookup a nice name for the prompt. First from named prompts, then from generators
   // Special case for fine-tuned prompts
   let prompt_name: string | undefined = undefined
@@ -252,12 +259,12 @@ export function prompt_name_from_id(prompt_id: string): string {
     prompt_name = "Fine-Tune Prompt"
   }
   if (!prompt_name) {
-    prompt_name = get(current_task_prompts)?.prompts.find(
+    prompt_name = prompt_response?.prompts.find(
       (prompt) => prompt.id === prompt_id,
     )?.name
   }
   if (!prompt_name) {
-    prompt_name = get(current_task_prompts)?.generators.find(
+    prompt_name = prompt_response?.generators.find(
       (generator) => generator.id === prompt_id,
     )?.name
   }
@@ -267,7 +274,8 @@ export function prompt_name_from_id(prompt_id: string): string {
   return prompt_name
 }
 
-// Available prompts for the current
+// Available prompts for the current task. Lock to avoid parallel requests.
+let is_loading_prompts = false
 export async function load_available_prompts() {
   const project = get(current_project)
   const task = get(current_task)
@@ -275,7 +283,13 @@ export async function load_available_prompts() {
     current_task_prompts.set(null)
     return
   }
+
   try {
+    // Return early if already loading
+    if (is_loading_prompts) {
+      return
+    }
+    is_loading_prompts = true
     const { data, error } = await client.GET(
       "/api/projects/{project_id}/task/{task_id}/prompts",
       {
@@ -294,5 +308,7 @@ export async function load_available_prompts() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     current_task_prompts.set(null)
+  } finally {
+    is_loading_prompts = false
   }
 }

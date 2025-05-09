@@ -55,6 +55,103 @@
   $: error = eval_error || eval_configs_error || score_summary_error
   $: run_eval_url = `${base_url}/api/projects/${$page.params.project_id}/tasks/${$page.params.task_id}/eval/${$page.params.eval_id}/run_eval_config_eval`
 
+  // Update sorting when score_type or score_summary changes
+  $: if (eval_configs && score_summary && evaluator) {
+    sortEvalConfigs()
+  }
+
+  // Sort eval_configs whenever score_type changes
+  $: if (score_type && eval_configs && score_summary && evaluator) {
+    sortEvalConfigs()
+  }
+
+  function sortEvalConfigs() {
+    if (!eval_configs) return
+    if (!evaluator) return
+    const nonNullEvaluator = evaluator
+
+    eval_configs = [...eval_configs].sort((a, b) => {
+      // Always put default (current) config on top
+      if (a.id === nonNullEvaluator.current_config_id) return -1
+      if (b.id === nonNullEvaluator.current_config_id) return 1
+
+      // If no score summary, keep original order
+      if (
+        !score_summary ||
+        !nonNullEvaluator.output_scores ||
+        nonNullEvaluator.output_scores.length === 0
+      ) {
+        return 0
+      }
+
+      // Get the last output score for sorting
+      const lastOutputScore =
+        nonNullEvaluator.output_scores[
+          nonNullEvaluator.output_scores.length - 1
+        ]
+      const scoreNameKey = string_to_json_key(lastOutputScore.name)
+
+      const aScores = score_summary?.results?.["" + a.id]?.[scoreNameKey]
+      const bScores = score_summary?.results?.["" + b.id]?.[scoreNameKey]
+
+      // Handle missing scores (put them at the end)
+      if (!aScores && !bScores) return 0
+      if (!aScores) return 1
+      if (!bScores) return -1
+
+      let aValue, bValue
+
+      // Get the appropriate score based on score_type
+      if (score_type === "mae") {
+        aValue = aScores.mean_absolute_error
+        bValue = bScores.mean_absolute_error
+        // Lower is better for MAE, so sort ascending
+        return (aValue ?? Infinity) - (bValue ?? Infinity)
+      } else if (score_type === "mse") {
+        aValue = aScores.mean_squared_error
+        bValue = bScores.mean_squared_error
+        // Lower is better for MSE, so sort ascending
+        return (aValue ?? Infinity) - (bValue ?? Infinity)
+      } else if (score_type === "norm_mse") {
+        aValue = aScores.mean_normalized_squared_error
+        bValue = bScores.mean_normalized_squared_error
+        // Lower is better for normalized MSE, so sort ascending
+        return (aValue ?? Infinity) - (bValue ?? Infinity)
+      } else if (score_type === "norm_mae") {
+        aValue = aScores.mean_normalized_absolute_error
+        bValue = bScores.mean_normalized_absolute_error
+        // Lower is better for normalized MAE, so sort ascending
+        return (aValue ?? Infinity) - (bValue ?? Infinity)
+      } else if (score_type === "spearman") {
+        aValue = aScores.spearman_correlation
+        bValue = bScores.spearman_correlation
+        // Higher is better for correlation, so sort descending
+        // Handle null/undefined values
+        if (aValue === null || aValue === undefined) return 1
+        if (bValue === null || bValue === undefined) return -1
+        return bValue - aValue
+      } else if (score_type === "pearson") {
+        aValue = aScores.pearson_correlation
+        bValue = bScores.pearson_correlation
+        // Higher is better for correlation, so sort descending
+        // Handle null/undefined values
+        if (aValue === null || aValue === undefined) return 1
+        if (bValue === null || bValue === undefined) return -1
+        return bValue - aValue
+      } else if (score_type === "kendalltau") {
+        aValue = aScores.kendalltau_correlation
+        bValue = bScores.kendalltau_correlation
+        // Higher is better for correlation, so sort descending
+        // Handle null/undefined values
+        if (aValue === null || aValue === undefined) return 1
+        if (bValue === null || bValue === undefined) return -1
+        return bValue - aValue
+      }
+
+      return 0
+    })
+  }
+
   onMount(async () => {
     // Wait for page params to load
     await tick()
@@ -115,12 +212,9 @@
       if (error) {
         throw error
       }
-      // sort with current on top
-      eval_configs = data.sort((a, b) => {
-        if (evaluator && a.id === evaluator.current_config_id) return -1
-        if (evaluator && b.id === evaluator.current_config_id) return 1
-        return 0
-      })
+
+      eval_configs = data
+      // Initial sort will be handled by the reactive statement
     } catch (error) {
       eval_configs_error = createKilnError(error)
     } finally {
@@ -228,8 +322,11 @@
   async function set_current_eval_config(
     eval_config_id: string | null | undefined,
   ) {
-    if (!eval_config_id) {
+    if (eval_config_id === undefined) {
       return
+    }
+    if (eval_config_id === null) {
+      eval_config_id = "None"
     }
     try {
       const { data, error } = await client.POST(
@@ -416,14 +513,13 @@
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
-                    <span class="ml-[-5px]">
-                      <InfoTooltip
-                        tooltip_text={info_tooltip_text(
-                          output_score.type,
-                          score_type,
-                        )}
-                      />
-                    </span>
+                    <InfoTooltip
+                      tooltip_text={info_tooltip_text(
+                        output_score.type,
+                        score_type,
+                      )}
+                      no_pad={true}
+                    />
                   </th>
                 {/each}
               </tr>
@@ -437,31 +533,38 @@
                 <tr>
                   <td>
                     <div class="font-medium">
-                      {eval_config.name}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      {eval_config_to_ui_name(eval_config.config_type)}
-                    </div>
-                    <div class="text-sm text-gray-500">
                       {model_name(eval_config?.model_name, $model_info)}
                     </div>
                     <div class="text-sm text-gray-500">
-                      {provider_name_from_id(eval_config?.model_provider)}
+                      Method: {eval_config_to_ui_name(eval_config.config_type)}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      Provider: {provider_name_from_id(
+                        eval_config?.model_provider,
+                      )}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      Name: {eval_config.name}
                     </div>
                     {#if percent_complete}
-                      <div
-                        class="text-sm {percent_complete < 1.0
-                          ? 'text-error'
-                          : 'text-gray-500'}"
-                      >
-                        {(percent_complete * 100.0).toFixed(1)}% complete
-                      </div>
+                      {#if percent_complete < 1.0}
+                        <div class="text-sm text-error">
+                          Progress: {(percent_complete * 100.0).toFixed(1)}%
+                        </div>
+                      {/if}
                     {:else if score_summary}
                       <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">0% complete</div>
+                      <div class="text-sm text-error">Progress: 0%</div>
                     {/if}
                     {#if eval_config.id == evaluator.current_config_id}
-                      <div class="badge badge-primary mt-2">Default</div>
+                      <button
+                        class="badge badge-primary mt-2"
+                        on:click={() => {
+                          set_current_eval_config(null)
+                        }}
+                      >
+                        Default
+                      </button>
                     {:else}
                       <button
                         class="link text-sm text-gray-500"
@@ -519,6 +622,7 @@
                           {:else}
                             N/A <InfoTooltip
                               tooltip_text="There wasn't enough data, or variation in the data, to calculate a Spearman correlation. Add more data to your eval method dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
+                              no_pad={true}
                             />
                           {/if}
                         {:else if score_type === "pearson"}
@@ -527,6 +631,7 @@
                           {:else}
                             N/A <InfoTooltip
                               tooltip_text="There wasn't enough data, or variation in the data, to calculate a Pearson correlation. Add more data to your eval method dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
+                              no_pad={true}
                             />
                           {/if}
                         {:else if score_type === "kendalltau"}
@@ -535,6 +640,7 @@
                           {:else}
                             N/A <InfoTooltip
                               tooltip_text="There wasn't enough data, or variation in the data, to calculate a Kendall's Tau correlation. Add more data to your eval method dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
+                              no_pad={true}
                             />
                           {/if}
                         {/if}
@@ -542,6 +648,7 @@
                         None
                         <InfoTooltip
                           tooltip_text="No scores were found for this eval method. Click 'Run Eval' to generate scores."
+                          no_pad={true}
                         />
                       {/if}
                     </td>

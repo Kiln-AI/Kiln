@@ -140,6 +140,25 @@ class EvalRunResult(BaseModel):
     run_config: TaskRunConfig
 
 
+class UpdateFavouriteRequest(BaseModel):
+    favourite: bool
+
+
+class EvalProgress(BaseModel):
+    # The total size of the dataset used for the eval
+    dataset_size: int
+    # The total size of the golden dataset used for the eval
+    golden_dataset_size: int
+    # The number of golden dataset items, by rating progress
+    golden_dataset_not_rated_count: int
+    golden_dataset_partially_rated_count: int
+    golden_dataset_fully_rated_count: int
+    # The current selected eval method
+    current_eval_method: EvalConfig | None
+    # The current selected run method
+    current_run_method: TaskRunConfig | None
+
+
 class EvalResultSummary(BaseModel):
     # run_config_id -> output_score_id -> ScoreSummary
     results: Dict[ID_TYPE, Dict[str, ScoreSummary]]
@@ -167,10 +186,29 @@ class UpdateEvalRequest(BaseModel):
     description: str | None = None
 
 
-def dataset_ids_in_filter(task: Task, filter_id: DatasetFilterId) -> Set[ID_TYPE]:
+def dataset_ids_in_filter(
+    task: Task, filter_id: DatasetFilterId, readonly: bool
+) -> Set[ID_TYPE]:
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
-    return {run.id for run in task.runs() if filter(run)}
+    return {run.id for run in task.runs(readonly=readonly) if filter(run)}
+
+
+def runs_in_filter(
+    task: Task, filter_id: DatasetFilterId, readonly: bool
+) -> list[TaskRun]:
+    # Fetch all the dataset items IDs in a filter
+    filter = dataset_filter_from_id(filter_id)
+    return [run for run in task.runs(readonly=readonly) if filter(run)]
+
+
+def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
+    # Create a map of score_key -> Task requirement ID
+    score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {}
+    for task_requirement in task.requirements:
+        score_key = string_to_json_key(task_requirement.name)
+        score_key_to_task_requirement_id[score_key] = task_requirement.id
+    return score_key_to_task_requirement_id
 
 
 def human_score_from_task_run(
@@ -265,6 +303,15 @@ def connect_evals_api(app: FastAPI):
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.name = request.name
         eval.description = request.description
+        eval.save_to_file()
+        return eval
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav")
+    async def update_eval_favourite(
+        project_id: str, task_id: str, eval_id: str, request: UpdateFavouriteRequest
+    ) -> Eval:
+        eval = eval_from_id(project_id, task_id, eval_id)
+        eval.favourite = request.favourite
         eval.save_to_file()
         return eval
 
@@ -410,10 +457,63 @@ def connect_evals_api(app: FastAPI):
         project_id: str,
         task_id: str,
         eval_id: str,
-        eval_config_id: str,
+        eval_config_id: str | None,
     ) -> Eval:
         eval = eval_from_id(project_id, task_id, eval_id)
+
+        if eval_config_id == "None":
+            eval_config_id = None
+        else:
+            eval_config = next(
+                (
+                    eval_config
+                    for eval_config in eval.configs()
+                    if eval_config.id == eval_config_id
+                ),
+                None,
+            )
+            if eval_config is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Eval config not found.",
+                )
+
         eval.current_config_id = eval_config_id
+        eval.save_to_file()
+
+        return eval
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}"
+    )
+    async def set_default_run_config(
+        project_id: str,
+        task_id: str,
+        eval_id: str,
+        run_config_id: str | None,
+    ) -> Eval:
+        task = task_from_id(project_id, task_id)
+
+        # Confirm the run config exists, unless the user is clearing the default run config
+        if run_config_id == "none":
+            run_config_id = None
+        else:
+            run_config = next(
+                (
+                    run_config
+                    for run_config in task.run_configs()
+                    if run_config.id == run_config_id
+                ),
+                None,
+            )
+            if run_config is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Run config not found.",
+                )
+
+        eval = eval_from_id(project_id, task_id, eval_id)
+        eval.current_run_config_id = run_config_id
         eval.save_to_file()
 
         return eval
@@ -462,6 +562,57 @@ def connect_evals_api(app: FastAPI):
             run_config=run_config,
         )
 
+    # Overview of the eval progress
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress")
+    async def get_eval_progress(
+        project_id: str,
+        task_id: str,
+        eval_id: str,
+    ) -> EvalProgress:
+        task = task_from_id(project_id, task_id)
+        eval = eval_from_id(project_id, task_id, eval_id)
+        dataset_ids = dataset_ids_in_filter(
+            task, eval.eval_set_filter_id, readonly=True
+        )
+        golden_dataset_runs = runs_in_filter(
+            task, eval.eval_configs_filter_id, readonly=True
+        )
+
+        # Count how many dataset items have human evals
+        fully_rated_count, partially_rated_count, not_rated_count = count_human_evals(
+            golden_dataset_runs,
+            eval,
+            build_score_key_to_task_requirement_id(task),
+        )
+
+        current_eval_method = next(
+            (
+                eval_config
+                for eval_config in eval.configs()
+                if eval_config.id == eval.current_config_id
+            ),
+            None,
+        )
+
+        current_run_method = next(
+            (
+                run_config
+                for run_config in task.run_configs()
+                if run_config.id == eval.current_run_config_id
+            ),
+            None,
+        )
+
+        return EvalProgress(
+            dataset_size=len(dataset_ids),
+            golden_dataset_size=len(golden_dataset_runs),
+            golden_dataset_not_rated_count=not_rated_count,
+            golden_dataset_partially_rated_count=partially_rated_count,
+            golden_dataset_fully_rated_count=fully_rated_count,
+            current_eval_method=current_eval_method,
+            current_run_method=current_run_method,
+        )
+
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary"
@@ -478,7 +629,9 @@ def connect_evals_api(app: FastAPI):
         task_runs_configs = task.run_configs()
 
         # Build a set of all the dataset items IDs we expect to have scores for
-        expected_dataset_ids = dataset_ids_in_filter(task, eval.eval_set_filter_id)
+        expected_dataset_ids = dataset_ids_in_filter(
+            task, eval.eval_set_filter_id, readonly=True
+        )
         if len(expected_dataset_ids) == 0:
             raise HTTPException(
                 status_code=400,
@@ -576,11 +729,7 @@ def connect_evals_api(app: FastAPI):
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_configs = eval.configs(readonly=True)
 
-        # Create a map of score_key -> Task requirement ID
-        score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {}
-        for task_requirement in task.requirements:
-            score_key = string_to_json_key(task_requirement.name)
-            score_key_to_task_requirement_id[score_key] = task_requirement.id
+        score_key_to_task_requirement_id = build_score_key_to_task_requirement_id(task)
 
         # Build a set of all the dataset items IDs we expect to have scores for
         # Fetch all the dataset items in a filter, and return a map of dataset_id -> TaskRun

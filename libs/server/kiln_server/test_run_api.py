@@ -22,6 +22,7 @@ from kiln_server.run_api import (
     connect_run_api,
     deep_update,
     model_provider_from_string,
+    parse_splits,
     run_from_id,
 )
 
@@ -1225,3 +1226,43 @@ def test_model_provider_from_string():
 
     with pytest.raises(ValueError, match="Unsupported provider: unknown"):
         model_provider_from_string("unknown")
+
+
+@pytest.mark.parametrize(
+    "input_str,expected",
+    [
+        (None, None),  # None input returns None
+        ("", None),  # Empty string returns None
+        ('{"train": 0.8, "test": 0.2}', {"train": 0.8, "test": 0.2}),  # Valid JSON dict
+        ('{"train": 0.8}', {"train": 0.8}),  # Single key-value pair
+    ],
+)
+def test_parse_splits_valid(input_str, expected):
+    assert parse_splits(input_str) == expected
+
+
+@pytest.mark.parametrize(
+    "input_str,expected_error",
+    [
+        # Invalid JSON
+        (
+            "{invalid json}",
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # JSON array instead of dict
+        (
+            "[1, 2, 3]",
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # JSON string instead of dict
+        (
+            '"not a dict"',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+    ],
+)
+def test_parse_splits_invalid(input_str, expected_error):
+    with pytest.raises(HTTPException) as exc_info:
+        parse_splits(input_str)
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == expected_error

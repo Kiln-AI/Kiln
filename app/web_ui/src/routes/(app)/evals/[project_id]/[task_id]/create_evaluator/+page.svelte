@@ -102,7 +102,7 @@
       // Redirect to add an eval config to this new eval
       complete = true
       goto(
-        `/evals/${$page.params.project_id}/${$page.params.task_id}/${create_evaluator_response.id}/create_eval_config?new=true`,
+        `/evals/${$page.params.project_id}/${$page.params.task_id}/${create_evaluator_response.id}`,
       )
     } catch (e) {
       create_evaluator_error = createKilnError(e)

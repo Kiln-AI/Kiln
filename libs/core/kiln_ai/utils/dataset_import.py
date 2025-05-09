@@ -1,11 +1,12 @@
 import csv
 import logging
+import random
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Protocol
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError
 
 from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, TaskRun
 
@@ -20,14 +21,36 @@ class DatasetImportFormat(str, Enum):
     CSV = "csv"
 
 
+@dataclass
+class ImportConfig:
+    """Configuration for importing a dataset"""
+
+    dataset_type: DatasetImportFormat
+    dataset_path: str
+    dataset_name: str
+    """
+    A set of splits to assign to the import (as dataset tags).
+    The keys are the names of the splits (tag name), and the values are the proportions of the dataset to include in each split (should sum to 1).
+    """
+    tag_splits: Dict[str, float] | None = None
+
+    def validate_tag_splits(self) -> None:
+        if self.tag_splits:
+            EPSILON = 0.001  # Allow for small floating point errors
+            if abs(sum(self.tag_splits.values()) - 1) > EPSILON:
+                raise ValueError(
+                    "Splits must sum to 1. The following splits do not: "
+                    + ", ".join(f"{k}: {v}" for k, v in self.tag_splits.items())
+                )
+
+
 class Importer(Protocol):
     """Protocol for dataset importers"""
 
     def __call__(
         self,
         task: Task,
-        dataset_path: str,
-        dataset_name: str,
+        config: ImportConfig,
     ) -> int: ...
 
 
@@ -90,6 +113,44 @@ def without_none_values(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
+def add_tag_splits(runs: list[TaskRun], tag_splits: Dict[str, float] | None) -> None:
+    """Assign split tags to runs according to configured proportions.
+
+    Args:
+        runs: List of TaskRun objects to assign tags to
+        tag_splits: Dictionary mapping tag names to their desired proportions
+
+    The assignment is random but ensures the proportions match the configured splits
+    as closely as possible given the number of runs.
+    """
+    if not tag_splits:
+        return
+
+    # Calculate exact number of runs for each split
+    total_runs = len(runs)
+    split_counts = {
+        tag: int(proportion * total_runs) for tag, proportion in tag_splits.items()
+    }
+
+    # Handle rounding errors by adjusting the largest split
+    remaining = total_runs - sum(split_counts.values())
+    if remaining != 0:
+        largest_split = max(split_counts.items(), key=lambda x: x[1])
+        split_counts[largest_split[0]] += remaining
+
+    # Create a list of tags with the correct counts
+    tags_to_assign = []
+    for tag, count in split_counts.items():
+        tags_to_assign.extend([tag] * count)
+
+    # Shuffle the tags to randomize assignment
+    random.shuffle(tags_to_assign)
+
+    # Assign tags to runs
+    for run, tag in zip(runs, tags_to_assign):
+        run.tags.append(tag)
+
+
 def create_task_run_from_csv_row(
     task: Task,
     row: dict[str, str],
@@ -143,12 +204,18 @@ def create_task_run_from_csv_row(
     return run
 
 
-def import_csv(task: Task, dataset_path: str, dataset_name: str) -> int:
+def import_csv(
+    task: Task,
+    config: ImportConfig,
+) -> int:
     """Import a CSV dataset.
 
     All rows are validated before any are persisted to files to avoid partial imports."""
 
     session_id = str(int(time.time()))
+    dataset_path = config.dataset_path
+    dataset_name = config.dataset_name
+    tag_splits = config.tag_splits
 
     required_headers = {"input", "output"}  # minimum required headers
     optional_headers = {"reasoning", "tags", "chain_of_thought"}  # optional headers
@@ -197,6 +264,8 @@ def import_csv(task: Task, dataset_path: str, dataset_name: str) -> int:
                 ) from e
             rows.append(run)
 
+    add_tag_splits(rows, tag_splits)
+
     # now that we know all rows are valid, we can save them
     for run in rows:
         run.save_to_file()
@@ -209,24 +278,17 @@ DATASET_IMPORTERS: Dict[DatasetImportFormat, Importer] = {
 }
 
 
-@dataclass
-class ImportConfig:
-    """Configuration for importing a dataset"""
-
-    dataset_type: DatasetImportFormat
-    dataset_path: str
-    dataset_name: str
-
-
 class DatasetFileImporter:
     """Import a dataset from a file"""
 
     def __init__(self, task: Task, config: ImportConfig):
         self.task = task
-        self.dataset_type = config.dataset_type
-        self.dataset_path = config.dataset_path
-        self.dataset_name = config.dataset_name
+        config.validate_tag_splits()
+        self.config = config
 
     def create_runs_from_file(self) -> int:
-        fn = DATASET_IMPORTERS[self.dataset_type]
-        return fn(self.task, self.dataset_path, self.dataset_name)
+        fn = DATASET_IMPORTERS[self.config.dataset_type]
+        return fn(
+            self.task,
+            self.config,
+        )
