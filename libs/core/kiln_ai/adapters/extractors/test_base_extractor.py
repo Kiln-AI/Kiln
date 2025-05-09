@@ -17,6 +17,16 @@ class MockBaseExtractor(BaseExtractor):
     def _extract(
         self, file_info: FileInfo, custom_prompt: str | None
     ) -> ExtractionOutput:
+        """
+        Returns a fixed extraction output for testing purposes.
+        
+        Args:
+            file_info: Information about the file to extract from.
+            custom_prompt: Optional custom prompt for extraction.
+        
+        Returns:
+            An ExtractionOutput with mock content and Markdown format.
+        """
         return ExtractionOutput(
             is_passthrough=False,
             content="mock concrete extractor output",
@@ -26,12 +36,25 @@ class MockBaseExtractor(BaseExtractor):
 
 @pytest.fixture
 def mock_extractor():
+    """
+    Pytest fixture that returns a MockBaseExtractor instance with default configuration.
+    """
     return MockBaseExtractor(BaseExtractorConfig())
 
 
 def mock_extractor_with_passthroughs(
     mimetypes: list[str], output_format: ExtractionFormat
 ):
+    """
+    Creates a mock extractor instance configured with specified passthrough MIME types and output format.
+    
+    Args:
+        mimetypes: List of MIME types to be treated as passthrough.
+        output_format: The output format to use for passthrough extraction.
+    
+    Returns:
+        An instance of MockBaseExtractor with the given configuration.
+    """
     return MockBaseExtractor(
         BaseExtractorConfig(
             passthrough_mimetypes=mimetypes, output_format=output_format
@@ -41,6 +64,9 @@ def mock_extractor_with_passthroughs(
 
 def test_load_file_bytes(mock_extractor):
     # write a test file to the temp directory
+    """
+    Tests that _load_file_bytes correctly reads and returns the contents of a file as bytes.
+    """
     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
         temp_file.write(b"test")
         temp_file_path = temp_file.name
@@ -48,6 +74,9 @@ def test_load_file_bytes(mock_extractor):
 
 
 def test_load_file_bytes_failure(mock_extractor):
+    """
+    Tests that _load_file_bytes raises ValueError when file loading fails.
+    """
     with patch(
         "kiln_ai.adapters.extractors.base_extractor.file_utils.load_file_bytes",
         side_effect=Exception,
@@ -58,6 +87,9 @@ def test_load_file_bytes_failure(mock_extractor):
 
 def test_load_file_text(mock_extractor):
     # write a test file to the temp directory
+    """
+    Tests that the _load_file_text method correctly reads and returns file contents as a string.
+    """
     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
         temp_file.write(b"test")
         temp_file_path = temp_file.name
@@ -65,6 +97,9 @@ def test_load_file_text(mock_extractor):
 
 
 def test_load_file_text_failure(mock_extractor):
+    """
+    Tests that _load_file_text raises ValueError when file reading fails.
+    """
     with patch(
         "kiln_ai.adapters.extractors.base_extractor.file_utils.load_file_text",
         side_effect=Exception,
@@ -83,10 +118,20 @@ def test_load_file_text_failure(mock_extractor):
     ],
 )
 def test_get_mime_type(mock_extractor, path: str, expected_mime_type: str):
+    """
+    Tests that the extractor correctly determines the MIME type for a given file path.
+    
+    Args:
+        path: The file path whose MIME type is to be detected.
+        expected_mime_type: The expected MIME type string.
+    """
     assert mock_extractor._get_mime_type(path) == expected_mime_type
 
 
 def test_get_mime_type_failure(mock_extractor):
+    """
+    Tests that _get_mime_type raises ValueError when MIME type detection fails.
+    """
     with patch(
         "kiln_ai.adapters.extractors.base_extractor.file_utils.get_mime_type",
         side_effect=Exception,
@@ -117,7 +162,11 @@ def test_should_passthrough():
 
 
 def test_extract_passthrough():
-    """Test that passthrough files skip _extract() and return file contents directly"""
+    """
+    Tests that when a file's MIME type is configured for passthrough, the extractor skips
+    the concrete extraction method and returns the file's contents directly with the
+    correct passthrough output format.
+    """
     extractor = mock_extractor_with_passthroughs(
         ["text/plain", "text/markdown"], ExtractionFormat.TEXT
     )
@@ -155,7 +204,13 @@ def test_extract_passthrough():
     ],
 )
 def test_extract_passthrough_output_format(output_format: ExtractionFormat):
-    """Test the passthrough returns the same output format as the config"""
+    """
+    Tests that passthrough extraction returns content with the configured output format.
+    
+    Verifies that when a file's MIME type is set for passthrough, the extractor bypasses
+    the concrete extraction method and returns the file content with the specified output
+    format.
+    """
     extractor = mock_extractor_with_passthroughs(
         ["text/plain", "text/markdown"], output_format
     )
@@ -200,7 +255,11 @@ def test_extract_passthrough_output_format(output_format: ExtractionFormat):
 def test_extract_non_passthrough(
     path: str, mime_type: str, output_format: ExtractionFormat
 ):
-    """Test that non-passthrough files call _extract() on the subclass and return the result"""
+    """
+    Verifies that files with non-passthrough MIME types invoke the subclass's _extract method and return its output.
+    
+    Ensures the extract method calls the concrete _extract implementation with the correct file info and returns the expected ExtractionOutput for non-passthrough files.
+    """
     extractor = MockBaseExtractor(BaseExtractorConfig(output_format=output_format))
 
     with (
@@ -237,7 +296,9 @@ def test_extract_non_passthrough(
     ],
 )
 def test_validate_passthrough_mime_types(passthrough_mimetypes: list[str]):
-    """Test that validate_passthrough_mime_types() accepts text mime types"""
+    """
+    Tests that BaseExtractorConfig accepts text-based passthrough MIME types without error.
+    """
     config = BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
     assert config.passthrough_mimetypes == passthrough_mimetypes
 
@@ -252,19 +313,25 @@ def test_validate_passthrough_mime_types(passthrough_mimetypes: list[str]):
     ],
 )
 def test_validate_passthrough_mime_types_failure(passthrough_mimetypes: list[str]):
-    """Test that validate_passthrough_mime_types() rejects non-text mime types"""
+    """
+    Tests that BaseExtractorConfig raises ValueError when configured with non-text passthrough MIME types.
+    """
     with pytest.raises(ValueError):
         BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
 
 
 def test_default_output_format():
-    """Test that the default output format is markdown"""
+    """
+    Verifies that the default output format in BaseExtractorConfig is MARKDOWN.
+    """
     config = BaseExtractorConfig()
     assert config.output_format == ExtractionFormat.MARKDOWN
 
 
 def test_extract_failure_from_concrete_extractor(mock_extractor):
-    """Test that the extract method fails if the concrete extractor fails"""
+    """
+    Tests that the extract method raises a ValueError when the concrete extractor implementation fails.
+    """
     with patch.object(
         mock_extractor,
         "_extract",
