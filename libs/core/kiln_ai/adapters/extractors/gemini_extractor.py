@@ -129,10 +129,6 @@ class GeminiExtractor(BaseExtractor):
         kind = self._get_kind_from_mime_type(file_info.mime_type)
         custom_prompt = custom_prompt or self._get_prompt_for_kind(kind)
 
-        # TODO:
-        # - seems to be a way to upload the file and reuse later - need to check if this is suitable or useful
-        #   - https://ai.google.dev/api/files
-        # - also nice if we could pass in a stream instead of loading the file into memory, maybe do if trivial
         response = self.gemini_client.models.generate_content(
             model=self.config.model,
             contents=[

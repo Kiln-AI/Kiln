@@ -15,7 +15,7 @@ from kiln_ai.adapters.extractors.base_extractor import (
 
 class MockBaseExtractor(BaseExtractor):
     def _extract(
-        self, file_info: FileInfo, custom_prompt: str | None
+        self, file_info: FileInfoInternal, custom_prompt: str | None
     ) -> ExtractionOutput:
         return ExtractionOutput(
             is_passthrough=False,
