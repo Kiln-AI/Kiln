@@ -144,7 +144,7 @@ def test_extract_passthrough():
         mock_extract.assert_not_called()
 
         # Verify correct passthrough result
-        assert result.is_passthrough == True
+        assert result.is_passthrough
         assert result.content == "test content"
         assert result.content_format == ExtractionFormat.TEXT
 
@@ -181,7 +181,7 @@ def test_extract_passthrough_output_format(output_format: ExtractionFormat):
         mock_extract.assert_not_called()
 
         # Verify correct passthrough result
-        assert result.is_passthrough == True
+        assert result.is_passthrough
         assert result.content == "test content"
         assert result.content_format == output_format
 
@@ -223,7 +223,7 @@ def test_extract_non_passthrough(
             FileInfoInternal(path=path, mime_type=mime_type), None
         )
 
-        assert result.is_passthrough == False
+        assert not result.is_passthrough
         assert result.content == "mock concrete extractor output"
         assert result.content_format == output_format
 

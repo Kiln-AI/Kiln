@@ -67,7 +67,7 @@ def test_files(tmp_path):
 
     # Text file
     text_path = tmp_path / "test.txt"
-    text_path.write_text("Hello, World!")
+    text_path.write_text("Hello, World! 你好👋")
     files["text"] = text_path
 
     # Markdown file
@@ -96,7 +96,9 @@ def test_files(tmp_path):
 
 
 def test_load_file_bytes(test_files):
-    assert load_file_bytes(str(test_files["text"])) == b"Hello, World!"
+    assert load_file_bytes(str(test_files["text"])) == "Hello, World! 你好👋".encode(
+        "utf-8"
+    )
 
     # Test markdown file
     assert (
@@ -118,7 +120,7 @@ def test_load_file_bytes(test_files):
 
 
 def test_load_file_text(test_files):
-    assert load_file_text(str(test_files["text"])) == "Hello, World!"
+    assert load_file_text(str(test_files["text"])) == "Hello, World! 你好👋"
 
     # Test markdown file
     assert (
@@ -141,6 +143,13 @@ def test_get_mime_type(test_files):
     assert get_mime_type(str(test_files["csv"])) == "text/csv"
     assert get_mime_type(str(test_files["json"])) == "application/json"
     assert get_mime_type(str(test_files["pdf"])) == "application/pdf"
+
+
+def test_get_mime_type_nonexistent_file():
+    """Test mime type detection for non-existent files."""
+    # The function should attempt to determine mime type by extension
+    # even if the file doesn't exist, so it shouldn't raise an error
+    assert get_mime_type("nonexistent_file.txt") == "text/plain"
 
 
 def test_file_not_found():

@@ -92,8 +92,10 @@ class GeminiExtractorConfig(BaseExtractorConfig):
 class GeminiExtractor(BaseExtractor):
     def __init__(self, gemini_client: genai.Client, config: GeminiExtractorConfig):
         super().__init__(config)
-        self.config = config
         self.gemini_client = gemini_client
+
+        # hack to access the concrete config subclass here without failing type checking
+        self.config = config
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind:
         """
