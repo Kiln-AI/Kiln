@@ -44,8 +44,9 @@ class BaseExtractorConfig(BaseModel):
         ]
 
         for mime_type in self.passthrough_mimetypes:
-            if not any(
-                mime_type.startswith(prefix) for prefix in allowed_mime_type_prefixes
+            if any(
+                not mime_type.lower().startswith(prefix.lower())
+                for prefix in allowed_mime_type_prefixes
             ):
                 raise ValueError(
                     f"Mime type {mime_type} is not allowed for passthrough. Allowed mime type prefixes are {', '.join(allowed_mime_type_prefixes)}."
@@ -131,7 +132,9 @@ class BaseExtractor(ABC):
         Returns:
             True if the MIME type is in the passthrough list; otherwise, False.
         """
-        return mime_type in self.config.passthrough_mimetypes
+        return mime_type.lower() in {
+            mt.lower() for mt in self.config.passthrough_mimetypes
+        }
 
     def _load_file_bytes(self, path: str) -> bytes:
         """
