@@ -1,6 +1,13 @@
 import mimetypes
 import pathlib
 
+"""
+Utility functions for file operations used by the extractors framework.
+
+This module provides common functionality for loading files as bytes or text,
+and for determining MIME types.
+"""
+
 
 def load_file_bytes(path: str) -> bytes:
     """
@@ -25,7 +32,7 @@ def load_file_text(path: str) -> str:
     Returns:
         The contents of the file as a string.
     """
-    return pathlib.Path(path).read_text()
+    return pathlib.Path(path).read_text(encoding="utf-8")
 
 
 def get_mime_type(path: str) -> str:
