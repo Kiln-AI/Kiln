@@ -44,13 +44,11 @@ class BaseExtractorConfig(BaseModel):
         ]
 
         for mime_type in self.passthrough_mimetypes:
-            if any(
-                not mime_type.lower().startswith(prefix.lower())
-                for prefix in allowed_mime_type_prefixes
-            ):
-                raise ValueError(
-                    f"Mime type {mime_type} is not allowed for passthrough. Allowed mime type prefixes are {', '.join(allowed_mime_type_prefixes)}."
-                )
+            for prefix in allowed_mime_type_prefixes:
+                if not mime_type.lower().startswith(prefix.lower()):
+                    raise ValueError(
+                        f"Mime type {mime_type} is not allowed for passthrough. Allowed mime type prefixes are {', '.join(allowed_mime_type_prefixes)}."
+                    )
         return self
 
 
@@ -99,8 +97,8 @@ class BaseExtractor(ABC):
 
     def extract(
         self,
-        file_info: FileInfoInternal,
-        custom_prompt: str | None,
+        file_info: FileInfo,
+        custom_prompt: str | None = None,
     ) -> ExtractionOutput:
         """
         Extracts content from a file, applying passthrough or extraction logic based on MIME type.
@@ -123,7 +121,7 @@ class BaseExtractor(ABC):
                 custom_prompt,
             )
         except Exception as e:
-            raise ValueError(f"Error extracting {file_info.path}: {e}")
+            raise ValueError(f"Error extracting {file_info.path}: {e}") from e
 
     def _should_passthrough(self, mime_type: str) -> bool:
         """
@@ -149,7 +147,7 @@ class BaseExtractor(ABC):
         try:
             return file_utils.load_file_bytes(path)
         except Exception as e:
-            raise ValueError(f"Error loading file bytes for {path}: {e}")
+            raise ValueError(f"Error loading file bytes for {path}: {e}") from e
 
     def _load_file_text(self, path: str) -> str:
         """
@@ -164,7 +162,7 @@ class BaseExtractor(ABC):
         try:
             return file_utils.load_file_text(path)
         except Exception as e:
-            raise ValueError(f"Error loading file text for {path}: {e}")
+            raise ValueError(f"Error loading file text for {path}: {e}") from e
 
     def _get_mime_type(self, path: str) -> str:
         """
@@ -182,4 +180,4 @@ class BaseExtractor(ABC):
         try:
             return file_utils.get_mime_type(path)
         except Exception as e:
-            raise ValueError(f"Error getting mime type for {path}: {e}")
+            raise ValueError(f"Error getting mime type for {path}: {e}") from e
