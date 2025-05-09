@@ -146,7 +146,6 @@ def test_get_prompt_for_kind(mock_gemini_extractor_with_kind_prompts, kind: Kind
 def test_get_prompt_for_kind_no_kind_prompts(
     mock_gemini_extractor_no_kind_prompts, kind: Kind
 ):
-    """Test we fallback to the default prompt if no kind prompts are provided."""
     assert (
         mock_gemini_extractor_no_kind_prompts._get_prompt_for_kind(kind)
         == "default prompt"
@@ -154,8 +153,6 @@ def test_get_prompt_for_kind_no_kind_prompts(
 
 
 def test_extract_success(mock_gemini_extractor_with_kind_prompts):
-    """Test that the extract method works."""
-
     # mock the gemini client call
     mock_gemini_client = MagicMock()
     mock_gemini_client.models.generate_content.return_value = MagicMock(
@@ -189,8 +186,6 @@ def test_extract_success(mock_gemini_extractor_with_kind_prompts):
 
 
 def test_extract_failure_from_gemini(mock_gemini_extractor_with_kind_prompts):
-    """Test that the extract method works."""
-
     # mock the gemini client call
     mock_gemini_client = MagicMock()
     mock_gemini_client.models.generate_content.side_effect = Exception(

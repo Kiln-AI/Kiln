@@ -63,7 +63,6 @@ startxref
 
 @pytest.fixture
 def test_files(tmp_path):
-    """Create test files of different types."""
     files = {}
 
     # Text file
@@ -97,8 +96,6 @@ def test_files(tmp_path):
 
 
 def test_load_file_bytes(test_files):
-    """Test loading different file types as bytes."""
-    # Test text file
     assert load_file_bytes(str(test_files["text"])) == b"Hello, World!"
 
     # Test markdown file
@@ -121,8 +118,6 @@ def test_load_file_bytes(test_files):
 
 
 def test_load_file_text(test_files):
-    """Test loading different file types as text."""
-    # Test text file
     assert load_file_text(str(test_files["text"])) == "Hello, World!"
 
     # Test markdown file
@@ -149,7 +144,6 @@ def test_get_mime_type(test_files):
 
 
 def test_file_not_found():
-    """Test handling of non-existent files."""
     with pytest.raises(FileNotFoundError):
         load_file_bytes("nonexistent.txt")
 
@@ -158,6 +152,5 @@ def test_file_not_found():
 
 
 def test_get_mime_type_unknown():
-    """Test mime type detection for unknown files."""
     with pytest.raises(ValueError):
         get_mime_type("unknown.some-non-existent-file-type")
