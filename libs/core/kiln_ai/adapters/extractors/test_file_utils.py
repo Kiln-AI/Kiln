@@ -12,12 +12,6 @@ from kiln_ai.adapters.extractors.file_utils import (
 
 
 def create_test_pdf(path: str) -> None:
-    """
-    Creates a minimal valid PDF file at the specified path for testing purposes.
-    
-    Args:
-        path: The file path where the PDF will be created.
-    """
     pdf_path = Path(path).expanduser()
 
     pdf = b"""%PDF-1.4
@@ -69,12 +63,6 @@ startxref
 
 @pytest.fixture
 def test_files(tmp_path):
-    """
-    Creates a set of test files in a temporary directory for use in file utility tests.
-    
-    The generated files include plain text, markdown, CSV, JSON, and a minimal PDF file.
-    Returns a dictionary mapping file type keys to their respective file paths.
-    """
     files = {}
 
     # Text file
@@ -108,10 +96,6 @@ def test_files(tmp_path):
 
 
 def test_load_file_bytes(test_files):
-    """
-    Tests that load_file_bytes correctly reads various file types as bytes and validates their content.
-    """
-    # Test text file
     assert load_file_bytes(str(test_files["text"])) == b"Hello, World!"
 
     # Test markdown file
@@ -134,10 +118,6 @@ def test_load_file_bytes(test_files):
 
 
 def test_load_file_text(test_files):
-    """
-    Tests that the load_file_text function correctly reads and returns text content from various file types, including plain text, markdown, CSV, and JSON files.
-    """
-    # Test text file
     assert load_file_text(str(test_files["text"])) == "Hello, World!"
 
     # Test markdown file
@@ -164,9 +144,6 @@ def test_get_mime_type(test_files):
 
 
 def test_file_not_found():
-    """
-    Tests that loading a non-existent file raises FileNotFoundError.
-    """
     with pytest.raises(FileNotFoundError):
         load_file_bytes("nonexistent.txt")
 
@@ -175,8 +152,5 @@ def test_file_not_found():
 
 
 def test_get_mime_type_unknown():
-    """
-    Tests that get_mime_type raises a ValueError for files with unsupported extensions.
-    """
     with pytest.raises(ValueError):
         get_mime_type("unknown.some-non-existent-file-type")
