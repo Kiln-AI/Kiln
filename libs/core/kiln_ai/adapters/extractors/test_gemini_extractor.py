@@ -35,7 +35,7 @@ def mock_gemini_client():
 def mock_gemini_extractor_config_with_kind_prompts():
     """
     Creates a GeminiExtractorConfig with a default prompt, kind-specific prompts, and a fake model name.
-    
+
     Returns:
         GeminiExtractorConfig: Configuration containing a default prompt, a dictionary of prompts for each Kind, and a model identifier.
     """
@@ -50,7 +50,7 @@ def mock_gemini_extractor_config_with_kind_prompts():
 def mock_gemini_extractor_config_no_kind_prompts():
     """
     Provides a GeminiExtractorConfig with only a default prompt and model, without kind-specific prompts.
-    
+
     Returns:
         GeminiExtractorConfig: Configuration containing a default prompt and model name.
     """

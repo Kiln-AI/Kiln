@@ -32,11 +32,10 @@ class BaseExtractorConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_passthrough_mime_types(self) -> Self:
-        # we keep a whitelist here because some mimetypes would not make sense as passthrough
-        # e.g. image/png is not a text format
         """
-        Validates that all passthrough MIME types are text-based.
-        
+        Validates that all passthrough MIME types are text-based, because some
+        mime-types do not make sense as passthrough (e.g. image/png is not a text format).
+
         Raises:
             ValueError: If any MIME type in passthrough_mimetypes does not start with "text/".
         """
@@ -82,12 +81,6 @@ class BaseExtractor(ABC):
     """
 
     def __init__(self, config: BaseExtractorConfig):
-        """
-        Initializes the extractor with the provided configuration.
-        
-        Args:
-            config: Configuration specifying passthrough MIME types and output format.
-        """
         self.config = config
 
     @abstractmethod
@@ -95,17 +88,11 @@ class BaseExtractor(ABC):
         self, file_info: FileInfoInternal, custom_prompt: str | None
     ) -> ExtractionOutput:
         """
-        Performs file content extraction for the given file and optional custom prompt.
-        
-        This method must be implemented by subclasses to define how content is extracted
-        from the specified file, using the provided file metadata and an optional prompt.
-        
-        Args:
-            file_info: Metadata and MIME type of the file to extract from.
-            custom_prompt: Optional custom prompt to guide extraction.
-        
-        Returns:
-            An ExtractionOutput containing the extracted content and format.
+        Performs file content extraction.
+
+        This method must be implemented by subclasses to define how content is extracted.
+        The optional custom prompt is provided by the user if they want to override the
+        default prompt for this extractor.
         """
         pass
 
@@ -116,15 +103,8 @@ class BaseExtractor(ABC):
     ) -> ExtractionOutput:
         """
         Extracts content from a file, applying passthrough or extraction logic based on MIME type.
-        
+
         If the file's MIME type matches a configured passthrough type, returns the raw text content as-is. Otherwise, delegates extraction to the subclass implementation. Raises a ValueError if extraction fails.
-        
-        Args:
-            file_info: File metadata including path (and optionally MIME type).
-            custom_prompt: Optional custom prompt to guide extraction.
-        
-        Returns:
-            An ExtractionOutput containing the extracted or passthrough content.
         """
         try:
             mime_type = self._get_mime_type(file_info.path)
@@ -147,10 +127,7 @@ class BaseExtractor(ABC):
     def _should_passthrough(self, mime_type: str) -> bool:
         """
         Determines if the file should be returned without extraction based on its MIME type.
-        
-        Args:
-            mime_type: The MIME type of the file.
-        
+
         Returns:
             True if the MIME type is in the passthrough list; otherwise, False.
         """
@@ -159,13 +136,10 @@ class BaseExtractor(ABC):
     def _load_file_bytes(self, path: str) -> bytes:
         """
         Loads the contents of a file as bytes.
-        
-        Args:
-            path: The path to the file.
-        
+
         Returns:
             The file's contents as a bytes object.
-        
+
         Raises:
             ValueError: If the file cannot be read.
         """
@@ -177,13 +151,10 @@ class BaseExtractor(ABC):
     def _load_file_text(self, path: str) -> str:
         """
         Loads the content of a file as text.
-        
-        Args:
-            path: The path to the file.
-        
+
         Returns:
             The file's content as a string.
-        
+
         Raises:
             ValueError: If the file cannot be read as text.
         """
@@ -193,20 +164,18 @@ class BaseExtractor(ABC):
             raise ValueError(f"Error loading file text for {path}: {e}")
 
     def _get_mime_type(self, path: str) -> str:
-        # NOTE: maybe we will already have the mimetype from the datamodel? but not sure
-        # we would trust it anyway in the extractor, will need to check
         """
         Retrieves the MIME type of a file at the specified path.
-        
-        Args:
-            path: The file system path to the file.
-        
+
         Returns:
             The MIME type string of the file.
-        
+
         Raises:
             ValueError: If the MIME type cannot be determined.
         """
+
+        # NOTE: maybe we will already have the mimetype from the datamodel? but not sure
+        # we would trust it anyway in the extractor, will need to check
         try:
             return file_utils.get_mime_type(path)
         except Exception as e:
