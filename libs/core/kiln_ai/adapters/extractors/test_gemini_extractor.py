@@ -25,20 +25,11 @@ PROMPTS_FOR_KIND = {
 
 @pytest.fixture
 def mock_gemini_client():
-    """
-    Provides a MagicMock instance simulating a Gemini client for testing purposes.
-    """
     return MagicMock()
 
 
 @pytest.fixture
 def mock_gemini_extractor_config_with_kind_prompts():
-    """
-    Creates a GeminiExtractorConfig with a default prompt, kind-specific prompts, and a fake model name.
-
-    Returns:
-        GeminiExtractorConfig: Configuration containing a default prompt, a dictionary of prompts for each Kind, and a model identifier.
-    """
     return GeminiExtractorConfig(
         default_prompt="default prompt",
         prompt_for_kind=PROMPTS_FOR_KIND,
@@ -48,12 +39,6 @@ def mock_gemini_extractor_config_with_kind_prompts():
 
 @pytest.fixture
 def mock_gemini_extractor_config_no_kind_prompts():
-    """
-    Provides a GeminiExtractorConfig with only a default prompt and model, without kind-specific prompts.
-
-    Returns:
-        GeminiExtractorConfig: Configuration containing a default prompt and model name.
-    """
     return GeminiExtractorConfig(
         default_prompt="default prompt",
         model="fake-model",
@@ -64,9 +49,6 @@ def mock_gemini_extractor_config_no_kind_prompts():
 def mock_gemini_extractor_with_kind_prompts(
     mock_gemini_client, mock_gemini_extractor_config_with_kind_prompts
 ):
-    """
-    Pytest fixture that provides a GeminiExtractor instance configured with kind-specific prompts.
-    """
     return GeminiExtractor(
         mock_gemini_client, mock_gemini_extractor_config_with_kind_prompts
     )
@@ -76,9 +58,6 @@ def mock_gemini_extractor_with_kind_prompts(
 def mock_gemini_extractor_no_kind_prompts(
     mock_gemini_client, mock_gemini_extractor_config_no_kind_prompts
 ):
-    """
-    Pytest fixture that provides a GeminiExtractor instance configured without kind-specific prompts.
-    """
     return GeminiExtractor(
         mock_gemini_client, mock_gemini_extractor_config_no_kind_prompts
     )
@@ -167,9 +146,6 @@ def test_get_prompt_for_kind(mock_gemini_extractor_with_kind_prompts, kind: Kind
 def test_get_prompt_for_kind_no_kind_prompts(
     mock_gemini_extractor_no_kind_prompts, kind: Kind
 ):
-    """
-    Tests that the default prompt is used when no kind-specific prompts are configured.
-    """
     assert (
         mock_gemini_extractor_no_kind_prompts._get_prompt_for_kind(kind)
         == "default prompt"
@@ -177,10 +153,6 @@ def test_get_prompt_for_kind_no_kind_prompts(
 
 
 def test_extract_success(mock_gemini_extractor_with_kind_prompts):
-    """
-    Tests that the extract method returns the expected ExtractionOutput and calls the Gemini client with the correct arguments when extraction succeeds.
-    """
-
     # mock the gemini client call
     mock_gemini_client = MagicMock()
     mock_gemini_client.models.generate_content.return_value = MagicMock(
@@ -214,10 +186,6 @@ def test_extract_success(mock_gemini_extractor_with_kind_prompts):
 
 
 def test_extract_failure_from_gemini(mock_gemini_extractor_with_kind_prompts):
-    """
-    Tests that the extract method raises an exception when the Gemini client fails during content generation.
-    """
-
     # mock the gemini client call
     mock_gemini_client = MagicMock()
     mock_gemini_client.models.generate_content.side_effect = Exception(
