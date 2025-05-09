@@ -91,13 +91,6 @@ class GeminiExtractorConfig(BaseExtractorConfig):
 
 class GeminiExtractor(BaseExtractor):
     def __init__(self, gemini_client: genai.Client, config: GeminiExtractorConfig):
-        """
-        Initializes the GeminiExtractor with a Gemini API client and configuration.
-        
-        Args:
-            gemini_client: The Gemini API client used for content extraction.
-            config: Configuration settings for the extractor, including prompts, model, and output format.
-        """
         super().__init__(config)
         self.config = config
         self.gemini_client = gemini_client
@@ -105,13 +98,10 @@ class GeminiExtractor(BaseExtractor):
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind:
         """
         Determines the file kind based on its MIME type.
-        
-        Args:
-            mime_type: The MIME type of the file.
-        
+
         Returns:
             The corresponding Kind enum value for the given MIME type.
-        
+
         Raises:
             ValueError: If the MIME type is not supported.
         """
@@ -123,8 +113,8 @@ class GeminiExtractor(BaseExtractor):
     def _get_prompt_for_kind(self, kind: Kind) -> str:
         """
         Returns the prompt string for the specified file kind.
-        
-        If a custom prompt is configured for the given kind, it is returned; otherwise, the default prompt is used.
+
+        If a custom prompt is configured for the given kind, it is returned; otherwise, the extractor's default prompt is used.
         """
         return self.config.prompt_for_kind.get(kind, self.config.default_prompt)
 
@@ -133,16 +123,6 @@ class GeminiExtractor(BaseExtractor):
     ) -> ExtractionOutput:
         """
         Extracts content from a file using the Gemini API and returns the result.
-        
-        Args:
-            file_info: Information about the file to extract content from, including its path and MIME type.
-            custom_prompt: Optional custom prompt to guide the extraction; if not provided, a default or kind-specific prompt is used.
-        
-        Returns:
-            ExtractionOutput containing the extracted content, its format, and passthrough status.
-        
-        Raises:
-            ValueError: If the file's MIME type is unsupported or if the Gemini API returns no text.
         """
         kind = self._get_kind_from_mime_type(file_info.mime_type)
         custom_prompt = custom_prompt or self._get_prompt_for_kind(kind)
