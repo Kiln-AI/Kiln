@@ -330,7 +330,11 @@
       )
       return
     }
-    const url = `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${eval_tag}:0.8,${golden_tag}:0.2&eval_link=${window.location.pathname}`
+    const url = `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${encodeURIComponent(
+      eval_tag,
+    )}:0.8,${encodeURIComponent(golden_tag)}:0.2&eval_link=${encodeURIComponent(
+      window.location.pathname,
+    )}`
     goto(url)
   }
 </script>

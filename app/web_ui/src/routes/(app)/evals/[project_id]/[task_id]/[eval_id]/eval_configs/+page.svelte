@@ -70,7 +70,7 @@
     if (!evaluator) return
     const nonNullEvaluator = evaluator
 
-    eval_configs = [...eval_configs].sort((a, b) => {
+    const sorted = [...eval_configs].sort((a, b) => {
       // Always put default (current) config on top
       if (a.id === nonNullEvaluator.current_config_id) return -1
       if (b.id === nonNullEvaluator.current_config_id) return 1
@@ -150,6 +150,11 @@
 
       return 0
     })
+
+    // Only assign when the ordering really changed
+    if (!sorted.every((v, i) => v === (eval_configs || [])[i])) {
+      eval_configs = sorted
+    }
   }
 
   onMount(async () => {

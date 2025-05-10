@@ -6,6 +6,8 @@ import type {
   AvailableModels,
   ProviderModels,
   PromptResponse,
+  RatingOptionResponse,
+  TaskRequirement,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
@@ -36,6 +38,10 @@ export const projects = writable<AllProjects | null>(null)
 export const current_project = writable<Project | null>(null)
 export const current_task = writable<Task | null>(null)
 export const current_task_prompts = writable<PromptResponse | null>(null)
+
+// Rating options for the current task
+export const current_task_rating_options =
+  writable<RatingOptionResponse | null>(null)
 
 let previous_ui_state: UIState = default_ui_state
 
@@ -311,4 +317,67 @@ export async function load_available_prompts() {
   } finally {
     is_loading_prompts = false
   }
+}
+
+// Lock to avoid parallel requests for rating options
+let is_loading_rating_options = false
+
+export async function load_rating_options() {
+  const project = get(current_project)
+  const task = get(current_task)
+  if (!project || !task || !project.id || !task.id) {
+    current_task_rating_options.set(null)
+    return
+  }
+
+  try {
+    // Return early if already loading
+    if (is_loading_rating_options) {
+      return
+    }
+    is_loading_rating_options = true
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/rating_options",
+      {
+        params: {
+          path: {
+            project_id: project.id,
+            task_id: task.id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    current_task_rating_options.set(data)
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    current_task_rating_options.set(null)
+  } finally {
+    is_loading_rating_options = false
+  }
+}
+
+export function rating_options_for_sample(
+  rating_options: RatingOptionResponse | null,
+  tags: string[],
+): TaskRequirement[] {
+  // Dispatch a request to load the rating options if we don't have them yet
+  if (!rating_options) {
+    load_rating_options()
+    return []
+  }
+
+  // Filter rating options based on tags and return just the requirements
+  return rating_options.options
+    .filter((option) => {
+      // Show if it's marked for all items
+      if (option.show_for_all) {
+        return true
+      }
+      // Show if any of the item's tags match the option's tags
+      return option.show_for_tags.some((tag: string) => tags.includes(tag))
+    })
+    .map((option) => option.requirement)
 }

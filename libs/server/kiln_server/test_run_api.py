@@ -1235,6 +1235,12 @@ def test_model_provider_from_string():
         ("", None),  # Empty string returns None
         ('{"train": 0.8, "test": 0.2}', {"train": 0.8, "test": 0.2}),  # Valid JSON dict
         ('{"train": 0.8}', {"train": 0.8}),  # Single key-value pair
+        ('{"train": 1.0, "test": 0.0}', {"train": 1.0, "test": 0.0}),  # Boundary values
+        (
+            '{"train": 0.75, "test": 0.25}',
+            {"train": 0.75, "test": 0.25},
+        ),  # Decimal values
+        ('{"train": 1, "test": 0}', {"train": 1, "test": 0}),  # Integer values
     ],
 )
 def test_parse_splits_valid(input_str, expected):
@@ -1257,6 +1263,41 @@ def test_parse_splits_valid(input_str, expected):
         # JSON string instead of dict
         (
             '"not a dict"',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Non-string keys
+        (
+            '{"train": 0.8, 123: 0.2}',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Non-numeric values
+        (
+            '{"train": "0.8", "test": "0.2"}',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Values out of range (> 1)
+        (
+            '{"train": 1.2, "test": 0.2}',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Values out of range (< 0)
+        (
+            '{"train": -0.2, "test": 0.2}',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Mixed valid/invalid values
+        (
+            '{"train": 0.8, "test": 1.5}',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Boolean values
+        (
+            '{"train": true, "test": false}',
+            "Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        ),
+        # Null values
+        (
+            '{"train": null, "test": 0.5}',
             "Invalid splits format. Must be a valid JSON object with string keys and float values.",
         ),
     ],

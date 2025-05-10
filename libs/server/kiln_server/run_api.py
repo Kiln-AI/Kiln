@@ -367,7 +367,16 @@ def parse_splits(splits: str | None) -> Dict[str, float] | None:
             status_code=422,
             detail="Invalid splits format. Must be a valid JSON object with string keys and float values.",
         )
-    if not isinstance(splits_dict, dict):
+
+    if (
+        not isinstance(splits_dict, dict)
+        or not all(isinstance(k, str) for k in splits_dict.keys())
+        or not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for v in splits_dict.values()
+        )
+        or not all(0 <= float(v) <= 1 for v in splits_dict.values())
+    ):
         raise HTTPException(
             status_code=422,
             detail="Invalid splits format. Must be a valid JSON object with string keys and float values.",

@@ -1447,7 +1447,7 @@ async def test_set_default_run_config_none(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_run_config/none"
+            "/api/projects/project1/tasks/task1/eval/eval1/set_current_run_config/None"
         )
         assert response.status_code == 200
         updated_eval = response.json()
@@ -1509,3 +1509,65 @@ async def test_set_current_eval_config_not_found(
     # Verify the response
     assert response.status_code == 400
     assert response.json()["detail"] == "Eval config not found."
+
+
+@pytest.mark.parametrize(
+    "score_name,expected_score,has_overall_rating,has_requirement_rating,has_named_rating",
+    [
+        # Test overall rating
+        ("overall_rating", 5.0, True, False, False),
+        ("overall_rating", None, False, False, False),
+        # Test task requirement rating
+        ("score1", 3.0, False, True, False),
+        ("score1", None, False, False, False),
+        # Test named rating
+        ("Named Score", 4.0, False, False, True),
+        ("Named Score", None, False, False, False),
+    ],
+)
+def test_human_score_from_task_run(
+    score_name,
+    expected_score,
+    has_overall_rating,
+    has_requirement_rating,
+    has_named_rating,
+):
+    # Create a mock task run with the specified ratings
+    task_run = Mock(spec=TaskRun)
+    task_run.output = Mock(spec=TaskOutput)
+
+    # Set up the rating object
+    rating = Mock(spec=TaskOutputRating)
+    rating.value = 5.0 if has_overall_rating else None
+
+    # Set up requirement ratings
+    requirement_ratings = {}
+    if has_requirement_rating:
+        requirement_ratings["req_id"] = RequirementRating(value=3.0, type="five_star")
+    if has_named_rating:
+        requirement_ratings["named::Named Score"] = RequirementRating(
+            value=4.0, type="five_star"
+        )
+    rating.requirement_ratings = requirement_ratings
+
+    task_run.output.rating = (
+        rating
+        if (has_overall_rating or has_requirement_rating or has_named_rating)
+        else None
+    )
+
+    # Create the score object
+    score = EvalOutputScore(name=score_name, description="Test score", type="five_star")
+
+    # Create the score key to requirement ID mapping
+    score_key_to_task_requirement_id = {"score1": "req_id"}
+
+    # Call the function
+    from app.desktop.studio_server.eval_api import human_score_from_task_run
+
+    result = human_score_from_task_run(
+        task_run, score, score_key_to_task_requirement_id
+    )
+
+    # Verify the result
+    assert result == expected_score

@@ -205,6 +205,7 @@ def runs_in_filter(
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
     # Create a map of score_key -> Task requirement ID
     score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {}
+
     for task_requirement in task.requirements:
         score_key = string_to_json_key(task_requirement.name)
         score_key_to_task_requirement_id[score_key] = task_requirement.id
@@ -213,24 +214,31 @@ def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
 
 def human_score_from_task_run(
     task_run: TaskRun,
-    score_key: str,
+    score: EvalOutputScore,
     score_key_to_task_requirement_id: Dict[str, ID_TYPE],
 ) -> float | None:
     if not task_run.output.rating:
         return None
+    score_key = score.json_key()
 
-    human_score: float | None = None
+    # Overall rating
     if score_key == "overall_rating":
-        human_score = task_run.output.rating.value
-    else:
-        req_id = score_key_to_task_requirement_id.get(score_key, None)
-        if req_id is None:
-            return None
+        return task_run.output.rating.value
+
+    # Task requirement ratings
+    req_id = score_key_to_task_requirement_id.get(score_key, None)
+    if req_id:
         req_rating = task_run.output.rating.requirement_ratings.get(req_id, None)
         if req_rating is not None:
-            human_score = req_rating.value
+            return req_rating.value
+        return None
 
-    return human_score
+    # Named ratings
+    named_score_id = f"named::{score.name}"
+    named_rating = task_run.output.rating.requirement_ratings.get(named_score_id, None)
+    if named_rating is not None:
+        return named_rating.value
+    return None
 
 
 def count_human_evals(
@@ -246,9 +254,8 @@ def count_human_evals(
         has_all_scores = True
         has_any_scores = False
         for output_score in eval.output_scores:
-            score_key = output_score.json_key()
             score = human_score_from_task_run(
-                dataset_item, score_key, score_key_to_task_requirement_id
+                dataset_item, output_score, score_key_to_task_requirement_id
             )
             if score is None:
                 has_all_scores = False
@@ -495,7 +502,7 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         # Confirm the run config exists, unless the user is clearing the default run config
-        if run_config_id == "none":
+        if run_config_id == "None":
             run_config_id = None
         else:
             run_config = next(
@@ -780,7 +787,7 @@ def connect_evals_api(app: FastAPI):
 
                     # Fetch the human eval score from the dataset item
                     human_score = human_score_from_task_run(
-                        dataset_item, score_key, score_key_to_task_requirement_id
+                        dataset_item, output_score, score_key_to_task_requirement_id
                     )
 
                     if human_score is None or eval_score is None:

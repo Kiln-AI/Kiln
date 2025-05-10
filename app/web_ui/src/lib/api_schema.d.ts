@@ -176,6 +176,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/rating_options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rating Options
+         * @description Generates an object which determines which rating options should be shown for a given dataset item.
+         */
+        get: operations["get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/task/{task_id}/prompt": {
         parameters: {
             query?: never;
@@ -2168,6 +2188,19 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
         };
+        /** RatingOption */
+        RatingOption: {
+            requirement: components["schemas"]["TaskRequirement"];
+            /** Show For All */
+            show_for_all: boolean;
+            /** Show For Tags */
+            show_for_tags: string[];
+        };
+        /** RatingOptionResponse */
+        RatingOptionResponse: {
+            /** Options */
+            options: components["schemas"]["RatingOption"][];
+        };
         /** RepairRunPost */
         RepairRunPost: {
             repair_run: components["schemas"]["TaskRun-Input"];
@@ -3080,6 +3113,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingOptionResponse"];
                 };
             };
             /** @description Validation Error */

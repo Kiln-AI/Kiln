@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { RatingType } from "$lib/types"
+  import { createEventDispatcher } from "svelte"
+  const dispatch = createEventDispatcher()
   export let rating: number | null = null
   export let type: RatingType
   let hover_rating: number | null = null
@@ -12,9 +14,10 @@
     // click current to remove rating
     if (new_rating === rating) {
       rating = null
-      return
+    } else {
+      rating = new_rating
     }
-    rating = new_rating
+    dispatch("rating_changed", { rating: new_rating })
   }
 </script>
 

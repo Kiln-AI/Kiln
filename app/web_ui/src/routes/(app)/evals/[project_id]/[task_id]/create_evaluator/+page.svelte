@@ -7,7 +7,7 @@
   import type { Task } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
-  import { load_task } from "$lib/stores"
+  import { load_task, load_rating_options } from "$lib/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -99,6 +99,8 @@
       if (post_error) {
         throw post_error
       }
+      // Reload the rating options since the new eval may have added new options
+      load_rating_options()
       // Redirect to add an eval config to this new eval
       complete = true
       goto(

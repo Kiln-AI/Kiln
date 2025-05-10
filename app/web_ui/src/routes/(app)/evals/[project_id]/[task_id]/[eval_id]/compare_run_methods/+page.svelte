@@ -670,7 +670,7 @@
                         class="badge badge-primary mt-2"
                         on:click={(event) => {
                           event.stopPropagation()
-                          set_current_run_config("none")
+                          set_current_run_config("None")
                         }}
                       >
                         Default

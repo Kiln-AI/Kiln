@@ -3,7 +3,12 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Rating from "./rating.svelte"
   let repair_instructions: string | null = null
-  import type { TaskRun, Task, RequirementRating } from "$lib/types"
+  import type {
+    TaskRun,
+    Task,
+    RequirementRating,
+    TaskRequirement,
+  } from "$lib/types"
   import { client } from "$lib/api_client"
   import Output from "./output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -15,6 +20,10 @@
   import type { components } from "../../../lib/api_schema"
   import Warning from "../../../lib/ui/warning.svelte"
   import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import {
+    rating_options_for_sample,
+    current_task_rating_options,
+  } from "$lib/stores"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -29,6 +38,12 @@
   export let provider: string | null = null
   export let run_complete: boolean = false
   export let focus_repair_on_appear: boolean = false
+
+  // Dynamic rating requirements based on tags
+  $: rating_requirements = rating_options_for_sample(
+    $current_task_rating_options,
+    run?.tags || [],
+  )
 
   // note: this run is NOT the main run, but a repair run TaskRun
   let repair_run: TaskRun | null = null
@@ -74,18 +89,25 @@
     }, 50) // Short delay to ensure component is fully mounted
   })
 
-  function load_server_ratings(new_run: TaskRun | null) {
+  function load_server_ratings(
+    new_run: TaskRun | null,
+    reqs: TaskRequirement[],
+  ) {
+    // Skip if run or requirements are missing
+    if (!reqs || !new_run) {
+      return
+    }
     // Fill ratings with nulls
-    requirement_ratings = Array(task.requirements.length).fill(null)
+    requirement_ratings = Array(reqs.length).fill(null)
     if (!new_run) {
       return
     }
     overall_rating = (new_run.output.rating?.value || null) as RatingValue
     Object.entries(new_run.output.rating?.requirement_ratings || {}).forEach(
       ([req_id, rating]) => {
-        let index = task.requirements.findIndex((req) => req.id === req_id)
+        let index = reqs.findIndex((req) => req.id === req_id)
         if (index !== -1) {
-          const task_req = task.requirements[index]
+          const task_req = reqs[index]
           // Only load if the task requirement type matches the rating type. Technically users can switch the rating type, and we don't want to assume a 1 star rating is a "pass"
           if (task_req.type === rating.type) {
             requirement_ratings[index] = rating.value
@@ -94,7 +116,8 @@
       },
     )
   }
-  load_server_ratings(initial_run)
+  // Load ratings anytime the run or rating requirements change
+  $: load_server_ratings(run, rating_requirements)
 
   async function patch_run(
     patch_body: Record<string, unknown>,
@@ -152,11 +175,14 @@
   async function save_ratings() {
     try {
       let requirement_ratings_obj: Record<string, RequirementRating | null> = {}
-      task.requirements.forEach((req, index) => {
+      rating_requirements.forEach((req, index) => {
         if (!req.id) {
           return
         }
-        if (requirement_ratings[index] !== null) {
+        if (
+          requirement_ratings[index] !== null &&
+          requirement_ratings[index] !== undefined
+        ) {
           requirement_ratings_obj[req.id] = {
             value: requirement_ratings[index],
             type: req.type,
@@ -175,7 +201,6 @@
         },
       }
       updated_run = await patch_run(patch_body)
-      load_server_ratings(updated_run)
       save_rating_error = null
     } catch (err) {
       save_rating_error = createKilnError(err)
@@ -231,25 +256,6 @@
     } finally {
       repair_submitting = false
     }
-  }
-
-  // Watch for changes to ratings and save them if they change
-  let prior_overall_rating: RatingValue = overall_rating
-  let prior_requirement_ratings: RatingValue[] = requirement_ratings
-  $: {
-    if (
-      overall_rating !== prior_overall_rating ||
-      !areArraysEqual(requirement_ratings, prior_requirement_ratings)
-    ) {
-      save_ratings()
-    }
-    prior_overall_rating = overall_rating
-    prior_requirement_ratings = [...requirement_ratings]
-  }
-
-  function areArraysEqual(arr1: unknown[], arr2: unknown[]): boolean {
-    if (arr1.length !== arr2.length) return false
-    return arr1.every((value, index) => value === arr2[index])
   }
 
   function toggle_raw_data() {
@@ -578,8 +584,8 @@
         {/if}
       </div>
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">
-        {#if task.requirements}
-          {#each task.requirements as requirement, index}
+        {#if rating_requirements}
+          {#each rating_requirements as requirement, index}
             <div class="flex items-center">
               {requirement.name}:
               <InfoTooltip
@@ -591,6 +597,7 @@
                 bind:rating={requirement_ratings[index]}
                 type={requirement.type}
                 size={6}
+                on:rating_changed={save_ratings}
               />
             </div>
           {/each}
@@ -599,7 +606,12 @@
           Overall Rating:
         </div>
         <div class="flex items-center">
-          <Rating bind:rating={overall_rating} type="five_star" size={7} />
+          <Rating
+            bind:rating={overall_rating}
+            type="five_star"
+            size={7}
+            on:rating_changed={save_ratings}
+          />
         </div>
       </div>
       <div class="mt-8 mb-4">
