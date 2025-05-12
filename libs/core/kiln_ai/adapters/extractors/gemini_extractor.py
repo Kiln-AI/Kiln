@@ -77,7 +77,10 @@ class GeminiExtractorConfig(BaseExtractorConfig):
         default_factory=dict,
         description="A dictionary of prompts for each kind of file.",
     )
-    model: str = Field(description="The model to use for the extractor.")
+    model_id: str = Field(
+        description="The model to use for the extractor.",
+        examples=["gemini-2.0-flash"],
+    )
     output_format: ExtractionFormat = Field(
         default=ExtractionFormat.MARKDOWN,
         description="The format to use for the output.",
@@ -108,7 +111,7 @@ class GeminiExtractor(BaseExtractor):
             raise ValueError(f"No prompt found for kind: {kind}")
 
         response = self.gemini_client.models.generate_content(
-            model=self.config.model,
+            model=self.config.model_id,
             contents=[
                 types.Part.from_bytes(
                     data=file_utils.load_file_bytes(file_info.path),
