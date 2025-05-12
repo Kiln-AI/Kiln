@@ -1,10 +1,10 @@
 import logging
+import mimetypes
+import pathlib
 from abc import ABC, abstractmethod
 from enum import Enum
 
 from pydantic import BaseModel, Field
-
-import kiln_ai.adapters.extractors.file_utils as file_utils
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,14 @@ class BaseExtractor(ABC):
         Extracts content from a file by delegating to the concrete extractor implementation.
         """
         try:
-            mime_type = file_utils.get_mime_type(file_info.path)
+            mime_type, _ = mimetypes.guess_type(file_info.path)
             if mime_type is None:
                 raise ValueError(f"Could not guess mime type for {file_info.path}")
 
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
                     is_passthrough=True,
-                    content=file_utils.load_file_text(file_info.path),
+                    content=pathlib.Path(file_info.path).read_text(encoding="utf-8"),
                     content_format=self.config.output_format,
                 )
 

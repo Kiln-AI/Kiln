@@ -77,12 +77,12 @@ def test_extract_passthrough():
             ),
         ) as mock_extract,
         patch(
-            "kiln_ai.adapters.extractors.base_extractor.file_utils.load_file_text",
+            "pathlib.Path.read_text",
             return_value=b"test content",
         ),
         patch(
-            "kiln_ai.adapters.extractors.base_extractor.file_utils.get_mime_type",
-            return_value="text/plain",
+            "mimetypes.guess_type",
+            return_value=("text/plain", None),
         ),
     ):
         result = extractor.extract(file_info=FileInfo(path="test.txt"))
@@ -118,12 +118,12 @@ def test_extract_passthrough_output_format(output_format: ExtractionFormat):
             ),
         ) as mock_extract,
         patch(
-            "kiln_ai.adapters.extractors.file_utils.load_file_text",
+            "pathlib.Path.read_text",
             return_value="test content",
         ),
         patch(
-            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
-            return_value="text/plain",
+            "mimetypes.guess_type",
+            return_value=("text/plain", None),
         ),
     ):
         result = extractor.extract(file_info=FileInfo(path="test.txt"))
@@ -165,8 +165,8 @@ def test_extract_non_passthrough(
             ),
         ) as mock_extract,
         patch(
-            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
-            return_value=mime_type,
+            "mimetypes.guess_type",
+            return_value=(mime_type, None),
         ),
     ):
         # first we call the base class extract method
@@ -227,10 +227,10 @@ def test_extract_failure_from_concrete_extractor(mock_extractor):
 def test_extract_failure_from_mime_type_guess():
     extractor = MockBaseExtractor(BaseExtractorConfig())
     with patch(
-        "kiln_ai.adapters.extractors.file_utils.get_mime_type",
-        return_value=None,
-    ) as get_mime_type:
+        "mimetypes.guess_type",
+        return_value=(None, None),
+    ) as mock_guess_type:
         with pytest.raises(ValueError, match="Could not guess mime type for"):
             extractor.extract(file_info=FileInfo(path="test-xyz"))
 
-        get_mime_type.assert_called_once_with("test-xyz")
+        mock_guess_type.assert_called_once_with("test-xyz")

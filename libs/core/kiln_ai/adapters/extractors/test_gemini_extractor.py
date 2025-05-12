@@ -98,11 +98,11 @@ def test_get_kind_from_mime_type_unsupported(mock_gemini_extractor):
 def test_extract_success(mock_gemini_extractor):
     with (
         patch(
-            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
-            return_value="application/pdf",
+            "mimetypes.guess_type",
+            return_value=("application/pdf", None),
         ),
         patch(
-            "kiln_ai.adapters.extractors.file_utils.load_file_bytes",
+            "pathlib.Path.read_bytes",
             return_value=b"test content",
         ),
     ):
@@ -135,9 +135,8 @@ def test_extract_success(mock_gemini_extractor):
 
 
 def test_extract_failure_from_gemini(mock_gemini_extractor):
-    # mock file_utils.load_file_bytes
     with patch(
-        "kiln_ai.adapters.extractors.file_utils.load_file_bytes",
+        "pathlib.Path.read_bytes",
         return_value=b"test content",
     ):
         # mock the gemini client call
@@ -165,19 +164,16 @@ def test_extract_failure_from_gemini(mock_gemini_extractor):
         )
 
 
-def test_extract_failure_from_file_utils(mock_gemini_extractor):
-    """Test that the extract method works."""
-
-    # patch the get mime type
+def test_extract_failure_from_bytes_read(mock_gemini_extractor):
     with (
         patch(
-            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
-            return_value="application/pdf",
+            "mimetypes.guess_type",
+            return_value=("application/pdf", None),
         ),
         patch(
-            "kiln_ai.adapters.extractors.file_utils.load_file_bytes",
+            "pathlib.Path.read_bytes",
             side_effect=Exception("error from file_utils"),
-        ) as mock_load_file_bytes,
+        ) as mock_read_bytes,
     ):
         # mock the gemini client call
         mock_gemini_client = MagicMock()
@@ -192,20 +188,18 @@ def test_extract_failure_from_file_utils(mock_gemini_extractor):
                 FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
             )
 
-        # check the gemini client was not called
-        mock_gemini_client.models.generate_content.assert_not_called()
+        mock_read_bytes.assert_called_once_with()
 
-        # check the file utils was called
-        mock_load_file_bytes.assert_called_once_with("test.pdf")
+        mock_gemini_client.models.generate_content.assert_not_called()
 
 
 def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
     # spy on the get mime type
     with (
         patch(
-            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
-            return_value=None,
-        ) as mock_get_mime_type,
+            "mimetypes.guess_type",
+            return_value=(None, None),
+        ) as mock_guess_type,
     ):
         with pytest.raises(ValueError):
             mock_gemini_extractor.extract(
@@ -215,7 +209,7 @@ def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
             )
 
         # check the get mime type was called
-        mock_get_mime_type.assert_called_once_with("test.unsupported")
+        mock_guess_type.assert_called_once_with("test.unsupported")
 
 
 SUPPORTED_MODELS = ["gemini-2.0-flash"]
