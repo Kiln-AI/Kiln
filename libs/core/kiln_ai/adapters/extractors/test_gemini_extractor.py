@@ -250,7 +250,7 @@ def test_extract_document(model_name, test_data_dir):
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "1706.03762v7.pdf")),
     )
-    assert output.is_passthrough == False
+    assert not output.is_passthrough
     assert output.content_format == ExtractionFormat.MARKDOWN
     assert "Document summary:" in output.content
 
@@ -262,7 +262,7 @@ def test_extract_image(model_name, test_data_dir):
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "kodim23.png")),
     )
-    assert output.is_passthrough == False
+    assert not output.is_passthrough
     assert output.content_format == ExtractionFormat.MARKDOWN
     assert "Image summary:" in output.content
 
@@ -274,7 +274,7 @@ def test_extract_video(model_name, test_data_dir):
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "big_buck_bunny_sample.mp4")),
     )
-    assert output.is_passthrough == False
+    assert not output.is_passthrough
     assert output.content_format == ExtractionFormat.MARKDOWN
     assert "Video summary:" in output.content
 
@@ -286,7 +286,7 @@ def test_extract_audio(model_name, test_data_dir):
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "poacher.ogg")),
     )
-    assert output.is_passthrough == False
+    assert not output.is_passthrough
     assert output.content_format == ExtractionFormat.MARKDOWN
     assert "Audio summary:" in output.content
 
