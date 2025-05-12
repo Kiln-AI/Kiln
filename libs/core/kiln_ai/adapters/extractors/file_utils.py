@@ -16,8 +16,6 @@ def load_file_text(path: str) -> str:
         raise ValueError(f"Error loading file text for {path}: {e}") from e
 
 
-def get_mime_type(path: str) -> str:
+def get_mime_type(path: str) -> str | None:
     mimetype, _ = mimetypes.guess_type(path)
-    if mimetype is None:
-        raise ValueError(f"Could not guess mime type for {path}")
     return mimetype
