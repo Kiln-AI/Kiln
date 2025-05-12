@@ -245,7 +245,7 @@ def test_validate_passthrough_mime_types(passthrough_mimetypes: list[str]):
     "passthrough_mimetypes",
     [
         ["image/png"],
-        ["image/png", "text/html"],
+        ["image/png", "text/markdown"],
         ["audio/mpeg"],
         ["video/mp4"],
     ],
