@@ -73,13 +73,6 @@ MIME_TYPES_SUPPORTED = {
 
 
 class GeminiExtractorConfig(BaseExtractorConfig):
-    default_prompt: str = Field(
-        description="The default prompt to use for the extractor."
-    )
-    custom_prompt: str | None = Field(
-        default=None,
-        description="A custom prompt provided by the user to use for the extractor. It takes precedence over the prompt_for_kind and default_prompt.",
-    )
     prompt_for_kind: dict[Kind, str] = Field(
         default_factory=dict,
         description="A dictionary of prompts for each kind of file.",
@@ -105,15 +98,14 @@ class GeminiExtractor(BaseExtractor):
                 return kind
         return None
 
-    def _get_prompt_for_kind(self, kind: Kind) -> str:
-        return self.config.prompt_for_kind.get(kind, self.config.default_prompt)
-
     def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
         kind = self._get_kind_from_mime_type(file_info.mime_type)
         if kind is None:
             raise ValueError(f"Unsupported MIME type: {file_info.mime_type}")
 
-        prompt = self.config.custom_prompt or self._get_prompt_for_kind(kind)
+        prompt = self.config.prompt_for_kind.get(kind)
+        if prompt is None:
+            raise ValueError(f"No prompt found for kind: {kind}")
 
         response = self.gemini_client.models.generate_content(
             model=self.config.model,
