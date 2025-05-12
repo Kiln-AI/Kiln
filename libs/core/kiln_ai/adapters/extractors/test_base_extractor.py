@@ -220,5 +220,5 @@ def test_extract_failure_from_concrete_extractor(mock_extractor):
         "_extract",
         side_effect=Exception("error from concrete extractor"),
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="error from concrete extractor"):
             mock_extractor.extract(file_info=FileInfo(path="test.txt"))
