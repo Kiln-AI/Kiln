@@ -67,6 +67,19 @@ def mock_gemini_extractor_no_kind_prompts(
 
 
 @pytest.fixture
+def mock_gemini_extractor_with_kind_prompts_default_and_custom_prompt(
+    mock_gemini_client, mock_gemini_extractor_config_with_kind_prompts
+):
+    config = mock_gemini_extractor_config_with_kind_prompts
+    config.default_prompt = "default prompt"
+    config.custom_prompt = "custom prompt"
+    return GeminiExtractor(
+        mock_gemini_client,
+        config,
+    )
+
+
+@pytest.fixture
 def test_data_dir():
     """Return the path to the test data directory."""
     return Path(__file__).parent.parent.parent / "tests" / "data"
@@ -161,7 +174,7 @@ def test_get_prompt_for_kind_no_kind_prompts(
     )
 
 
-def test_extract_success(mock_gemini_extractor_with_kind_prompts):
+def test_extract_success_no_custom_prompt(mock_gemini_extractor_with_kind_prompts):
     # mock the gemini client call
     mock_gemini_client = MagicMock()
     mock_gemini_client.models.generate_content.return_value = MagicMock(
@@ -177,7 +190,41 @@ def test_extract_success(mock_gemini_extractor_with_kind_prompts):
     # test the extract method
     assert mock_gemini_extractor_with_kind_prompts.extract(
         FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
-        "custom prompt",
+    ) == ExtractionOutput(
+        is_passthrough=False,
+        content="extracted content",
+        content_format=ExtractionFormat.MARKDOWN,
+    )
+
+    # check the gemini client was called with the correct arguments
+    mock_gemini_client.models.generate_content.assert_called_once_with(
+        model="fake-model",
+        contents=[
+            types.Part.from_bytes(data=b"test content", mime_type="application/pdf"),
+            PROMPTS_FOR_KIND[Kind.DOCUMENT],
+        ],
+    )
+
+
+def test_extract_success_with_custom_prompt(
+    mock_gemini_extractor_with_kind_prompts_default_and_custom_prompt,
+):
+    extractor = mock_gemini_extractor_with_kind_prompts_default_and_custom_prompt
+    # mock the gemini client call
+    mock_gemini_client = MagicMock()
+    mock_gemini_client.models.generate_content.return_value = MagicMock(
+        text="extracted content"
+    )
+    extractor.gemini_client = mock_gemini_client
+
+    # mock the bytes loading
+    mock_load_file_bytes = MagicMock()
+    mock_load_file_bytes.return_value = b"test content"
+    extractor._load_file_bytes = mock_load_file_bytes
+
+    # test the extract method
+    assert extractor.extract(
+        FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
     ) == ExtractionOutput(
         is_passthrough=False,
         content="extracted content",
@@ -211,7 +258,6 @@ def test_extract_failure_from_gemini(mock_gemini_extractor_with_kind_prompts):
     with pytest.raises(Exception):
         mock_gemini_extractor_with_kind_prompts.extract(
             FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
-            "custom prompt",
         )
 
 
@@ -234,7 +280,6 @@ def test_extract_failure_from_file_utils(mock_gemini_extractor_with_kind_prompts
     with pytest.raises(Exception):
         mock_gemini_extractor_with_kind_prompts.extract(
             FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
-            "custom prompt",
         )
 
 
