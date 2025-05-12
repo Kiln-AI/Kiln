@@ -136,13 +136,20 @@ def test_load_file_text(test_files):
     assert load_file_text(str(test_files["json"])) == '{"test": "value"}'
 
 
-def test_get_mime_type(test_files):
-    """Test mime type detection for different file types."""
-    assert get_mime_type(str(test_files["text"])) == "text/plain"
-    assert get_mime_type(str(test_files["markdown"])) == "text/markdown"
-    assert get_mime_type(str(test_files["csv"])) == "text/csv"
-    assert get_mime_type(str(test_files["json"])) == "application/json"
-    assert get_mime_type(str(test_files["pdf"])) == "application/pdf"
+@pytest.mark.parametrize(
+    "path, expected_mime_type",
+    [
+        ("test.txt", "text/plain"),
+        ("test.md", "text/markdown"),
+        ("test.csv", "text/csv"),
+        ("test.json", "application/json"),
+        ("test.pdf", "application/pdf"),
+        ("test.png", "image/png"),
+        ("test.jpg", "image/jpeg"),
+    ],
+)
+def test_get_mime_type(path: str, expected_mime_type: str):
+    assert get_mime_type(path) == expected_mime_type
 
 
 def test_get_mime_type_nonexistent_file():
@@ -151,11 +158,16 @@ def test_get_mime_type_nonexistent_file():
     assert get_mime_type("nonexistent_file.txt") == "text/plain"
 
 
+def test_get_mime_type_empty_path():
+    with pytest.raises(ValueError):
+        get_mime_type("")
+
+
 def test_file_not_found():
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValueError):
         load_file_bytes("nonexistent.txt")
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValueError):
         load_file_text("nonexistent.txt")
 
 
