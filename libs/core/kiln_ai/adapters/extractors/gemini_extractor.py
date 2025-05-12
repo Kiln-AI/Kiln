@@ -15,9 +15,6 @@ from kiln_ai.adapters.extractors.base_extractor import (
 
 class Kind(Enum):
     DOCUMENT = "document"
-
-    # NOTE: maybe remove the these ones for now as we don't use them and the mimetypes list for them
-    # might evolve by the time we do add support for them
     IMAGE = "image"
     VIDEO = "video"
     AUDIO = "audio"
@@ -102,32 +99,15 @@ class GeminiExtractor(BaseExtractor):
         self.config = config
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind:
-        """
-        Determines the file kind based on its MIME type.
-
-        Returns:
-            The corresponding Kind enum value for the given MIME type.
-
-        Raises:
-            ValueError: If the MIME type is not supported.
-        """
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
             if mime_type in mime_types:
                 return kind
         raise ValueError(f"Unsupported MIME type: {mime_type}")
 
     def _get_prompt_for_kind(self, kind: Kind) -> str:
-        """
-        Returns the prompt string for the specified file kind.
-
-        If a prompt is configured for the given kind, it is returned; otherwise, the extractor's default prompt is used.
-        """
         return self.config.prompt_for_kind.get(kind, self.config.default_prompt)
 
     def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
-        """
-        Extracts content from a file using the Gemini API and returns the result.
-        """
         kind = self._get_kind_from_mime_type(file_info.mime_type)
         prompt = self.config.custom_prompt or self._get_prompt_for_kind(kind)
 
