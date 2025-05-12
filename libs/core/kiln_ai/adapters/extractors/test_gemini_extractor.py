@@ -227,8 +227,8 @@ def paid_gemini_extractor(model_id: str):
                 Kind.AUDIO: "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
             },
             passthrough_mimetypes=[
-                "text/plain",
-                "text/markdown",
+                ExtractionFormat.TEXT,
+                ExtractionFormat.MARKDOWN,
             ],
         ),
         gemini_client=genai.Client(
