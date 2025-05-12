@@ -92,6 +92,7 @@ class GeminiExtractor(BaseExtractor):
         super().__init__(config)
         self.gemini_client = gemini_client
 
+        # TODO: the hack below will go away once we have ExtractorConfig as a dict anyway
         # hack to access the concrete config subclass here without failing type checking
         self.config = config
 
