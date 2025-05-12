@@ -72,11 +72,11 @@ class BaseExtractor(ABC):
         Extracts content from a file by delegating to the concrete extractor implementation.
         """
         try:
-            mime_type = self._get_mime_type(file_info.path)
+            mime_type = file_utils.get_mime_type(file_info.path)
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
                     is_passthrough=True,
-                    content=self._load_file_text(file_info.path),
+                    content=file_utils.load_file_text(file_info.path),
                     content_format=self.config.output_format,
                 )
             return self._extract(
@@ -92,21 +92,3 @@ class BaseExtractor(ABC):
         return mime_type.lower() in {
             mt.lower() for mt in self.config.passthrough_mimetypes
         }
-
-    def _load_file_bytes(self, path: str) -> bytes:
-        try:
-            return file_utils.load_file_bytes(path)
-        except Exception as e:
-            raise ValueError(f"Error loading file bytes for {path}: {e}") from e
-
-    def _load_file_text(self, path: str) -> str:
-        try:
-            return file_utils.load_file_text(path)
-        except Exception as e:
-            raise ValueError(f"Error loading file text for {path}: {e}") from e
-
-    def _get_mime_type(self, path: str) -> str:
-        try:
-            return file_utils.get_mime_type(path)
-        except Exception as e:
-            raise ValueError(f"Error getting mime type for {path}: {e}") from e
