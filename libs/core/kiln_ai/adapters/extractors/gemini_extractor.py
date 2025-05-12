@@ -78,6 +78,10 @@ class GeminiExtractorConfig(BaseExtractorConfig):
     default_prompt: str = Field(
         description="The default prompt to use for the extractor."
     )
+    custom_prompt: str | None = Field(
+        default=None,
+        description="A custom prompt provided by the user to use for the extractor. It takes precedence over the prompt_for_kind and default_prompt.",
+    )
     prompt_for_kind: dict[Kind, str] = Field(
         default_factory=dict,
         description="A dictionary of prompts for each kind of file.",
@@ -116,18 +120,16 @@ class GeminiExtractor(BaseExtractor):
         """
         Returns the prompt string for the specified file kind.
 
-        If a custom prompt is configured for the given kind, it is returned; otherwise, the extractor's default prompt is used.
+        If a prompt is configured for the given kind, it is returned; otherwise, the extractor's default prompt is used.
         """
         return self.config.prompt_for_kind.get(kind, self.config.default_prompt)
 
-    def _extract(
-        self, file_info: FileInfoInternal, custom_prompt: str | None
-    ) -> ExtractionOutput:
+    def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
         """
         Extracts content from a file using the Gemini API and returns the result.
         """
         kind = self._get_kind_from_mime_type(file_info.mime_type)
-        custom_prompt = custom_prompt or self._get_prompt_for_kind(kind)
+        prompt = self.config.custom_prompt or self._get_prompt_for_kind(kind)
 
         response = self.gemini_client.models.generate_content(
             model=self.config.model,
@@ -136,7 +138,7 @@ class GeminiExtractor(BaseExtractor):
                     data=self._load_file_bytes(file_info.path),
                     mime_type=file_info.mime_type,
                 ),
-                custom_prompt,
+                prompt,
             ],
         )
 
