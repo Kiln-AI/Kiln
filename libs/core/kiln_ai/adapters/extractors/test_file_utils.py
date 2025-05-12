@@ -146,6 +146,9 @@ def test_load_file_text(test_files):
         ("test.pdf", "application/pdf"),
         ("test.png", "image/png"),
         ("test.jpg", "image/jpeg"),
+        ("test", None),
+        ("", None),
+        ("unknown.some-non-existent-file-type", None),
     ],
 )
 def test_get_mime_type(path: str, expected_mime_type: str):
@@ -158,19 +161,9 @@ def test_get_mime_type_nonexistent_file():
     assert get_mime_type("nonexistent_file.txt") == "text/plain"
 
 
-def test_get_mime_type_empty_path():
-    with pytest.raises(ValueError):
-        get_mime_type("")
-
-
 def test_file_not_found():
     with pytest.raises(ValueError):
         load_file_bytes("nonexistent.txt")
 
     with pytest.raises(ValueError):
         load_file_text("nonexistent.txt")
-
-
-def test_get_mime_type_unknown():
-    with pytest.raises(ValueError):
-        get_mime_type("unknown.some-non-existent-file-type")

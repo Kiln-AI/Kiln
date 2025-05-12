@@ -73,12 +73,16 @@ class BaseExtractor(ABC):
         """
         try:
             mime_type = file_utils.get_mime_type(file_info.path)
+            if mime_type is None:
+                raise ValueError(f"Could not guess mime type for {file_info.path}")
+
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
                     is_passthrough=True,
                     content=file_utils.load_file_text(file_info.path),
                     content_format=self.config.output_format,
                 )
+
             return self._extract(
                 FileInfoInternal(
                     path=file_info.path,
