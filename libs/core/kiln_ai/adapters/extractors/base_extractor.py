@@ -54,7 +54,7 @@ class BaseExtractor(ABC):
     """
     Base class for all extractors.
 
-    Should be subclassed, and the _extract method implemented.
+    Should be subclassed by each extractor.
     """
 
     def __init__(self, config: BaseExtractorConfig):
@@ -62,11 +62,6 @@ class BaseExtractor(ABC):
 
     @abstractmethod
     def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
-        """
-        Performs file content extraction.
-
-        This method must be implemented by subclasses to define how content is extracted.
-        """
         pass
 
     def extract(
@@ -74,9 +69,7 @@ class BaseExtractor(ABC):
         file_info: FileInfo,
     ) -> ExtractionOutput:
         """
-        Extracts content from a file, applying passthrough or extraction logic based on MIME type.
-
-        If the file's MIME type matches a configured passthrough type, returns the raw text content as-is. Otherwise, delegates extraction to the subclass implementation. Raises a ValueError if extraction fails.
+        Extracts content from a file by delegating to the concrete extractor implementation.
         """
         try:
             mime_type = self._get_mime_type(file_info.path)
@@ -96,59 +89,23 @@ class BaseExtractor(ABC):
             raise ValueError(f"Error extracting {file_info.path}: {e}") from e
 
     def _should_passthrough(self, mime_type: str) -> bool:
-        """
-        Determines if the file should be returned without extraction based on its MIME type.
-
-        Returns:
-            True if the MIME type is in the passthrough list; otherwise, False.
-        """
         return mime_type.lower() in {
             mt.lower() for mt in self.config.passthrough_mimetypes
         }
 
     def _load_file_bytes(self, path: str) -> bytes:
-        """
-        Loads the contents of a file as bytes.
-
-        Returns:
-            The file's contents as a bytes object.
-
-        Raises:
-            ValueError: If the file cannot be read.
-        """
         try:
             return file_utils.load_file_bytes(path)
         except Exception as e:
             raise ValueError(f"Error loading file bytes for {path}: {e}") from e
 
     def _load_file_text(self, path: str) -> str:
-        """
-        Loads the content of a file as text.
-
-        Returns:
-            The file's content as a string.
-
-        Raises:
-            ValueError: If the file cannot be read as text.
-        """
         try:
             return file_utils.load_file_text(path)
         except Exception as e:
             raise ValueError(f"Error loading file text for {path}: {e}") from e
 
     def _get_mime_type(self, path: str) -> str:
-        """
-        Retrieves the MIME type of a file at the specified path.
-
-        Returns:
-            The MIME type string of the file.
-
-        Raises:
-            ValueError: If the MIME type cannot be determined.
-        """
-
-        # NOTE: maybe we will already have the mimetype from the datamodel? but not sure
-        # we would trust it anyway in the extractor, will need to check
         try:
             return file_utils.get_mime_type(path)
         except Exception as e:
