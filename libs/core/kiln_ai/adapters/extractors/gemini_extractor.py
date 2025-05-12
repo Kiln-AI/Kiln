@@ -1,10 +1,10 @@
+import pathlib
 from enum import Enum
 
 from google import genai
 from google.genai import types
 from pydantic import Field
 
-import kiln_ai.adapters.extractors.file_utils as file_utils
 from kiln_ai.adapters.extractors.base_extractor import (
     BaseExtractor,
     BaseExtractorConfig,
@@ -115,7 +115,7 @@ class GeminiExtractor(BaseExtractor):
             model=self.config.model_id,
             contents=[
                 types.Part.from_bytes(
-                    data=file_utils.load_file_bytes(file_info.path),
+                    data=pathlib.Path(file_info.path).read_bytes(),
                     mime_type=file_info.mime_type,
                 ),
                 prompt,
