@@ -99,17 +99,20 @@ class GeminiExtractor(BaseExtractor):
         # hack to access the concrete config subclass here without failing type checking
         self.config = config
 
-    def _get_kind_from_mime_type(self, mime_type: str) -> Kind:
+    def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
             if mime_type in mime_types:
                 return kind
-        raise ValueError(f"Unsupported MIME type: {mime_type}")
+        return None
 
     def _get_prompt_for_kind(self, kind: Kind) -> str:
         return self.config.prompt_for_kind.get(kind, self.config.default_prompt)
 
     def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
         kind = self._get_kind_from_mime_type(file_info.mime_type)
+        if kind is None:
+            raise ValueError(f"Unsupported MIME type: {file_info.mime_type}")
+
         prompt = self.config.custom_prompt or self._get_prompt_for_kind(kind)
 
         response = self.gemini_client.models.generate_content(
