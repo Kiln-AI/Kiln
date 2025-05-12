@@ -14,9 +14,7 @@ from kiln_ai.adapters.extractors.base_extractor import (
 
 
 class MockBaseExtractor(BaseExtractor):
-    def _extract(
-        self, file_info: FileInfoInternal, custom_prompt: str | None
-    ) -> ExtractionOutput:
+    def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
         return ExtractionOutput(
             is_passthrough=False,
             content="mock concrete extractor output",
@@ -136,9 +134,7 @@ def test_extract_passthrough():
         patch.object(extractor, "_load_file_text", return_value="test content"),
         patch.object(extractor, "_get_mime_type", return_value="text/plain"),
     ):
-        result = extractor.extract(
-            file_info=FileInfo(path="test.txt"), custom_prompt=None
-        )
+        result = extractor.extract(file_info=FileInfo(path="test.txt"))
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -173,9 +169,7 @@ def test_extract_passthrough_output_format(output_format: ExtractionFormat):
         patch.object(extractor, "_load_file_text", return_value="test content"),
         patch.object(extractor, "_get_mime_type", return_value="text/plain"),
     ):
-        result = extractor.extract(
-            file_info=FileInfo(path="test.txt"), custom_prompt=None
-        )
+        result = extractor.extract(file_info=FileInfo(path="test.txt"))
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -216,11 +210,11 @@ def test_extract_non_passthrough(
         patch.object(extractor, "_get_mime_type", return_value=mime_type),
     ):
         # first we call the base class extract method
-        result = extractor.extract(file_info=FileInfo(path=path), custom_prompt=None)
+        result = extractor.extract(file_info=FileInfo(path=path))
 
         # then we call the subclass _extract method and add validated mime_type
         mock_extract.assert_called_once_with(
-            FileInfoInternal(path=path, mime_type=mime_type), None
+            FileInfoInternal(path=path, mime_type=mime_type)
         )
 
         assert not result.is_passthrough
@@ -267,6 +261,4 @@ def test_extract_failure_from_concrete_extractor(mock_extractor):
         side_effect=Exception("error from concrete extractor"),
     ):
         with pytest.raises(ValueError):
-            mock_extractor.extract(
-                file_info=FileInfo(path="test.txt"), custom_prompt=None
-            )
+            mock_extractor.extract(file_info=FileInfo(path="test.txt"))

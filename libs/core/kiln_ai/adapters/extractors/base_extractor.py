@@ -61,22 +61,17 @@ class BaseExtractor(ABC):
         self.config = config
 
     @abstractmethod
-    def _extract(
-        self, file_info: FileInfoInternal, custom_prompt: str | None
-    ) -> ExtractionOutput:
+    def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
         """
         Performs file content extraction.
 
         This method must be implemented by subclasses to define how content is extracted.
-        The optional custom prompt is provided by the user if they want to override the
-        default prompt for this extractor.
         """
         pass
 
     def extract(
         self,
         file_info: FileInfo,
-        custom_prompt: str | None = None,
     ) -> ExtractionOutput:
         """
         Extracts content from a file, applying passthrough or extraction logic based on MIME type.
@@ -96,7 +91,6 @@ class BaseExtractor(ABC):
                     path=file_info.path,
                     mime_type=mime_type,
                 ),
-                custom_prompt,
             )
         except Exception as e:
             raise ValueError(f"Error extracting {file_info.path}: {e}") from e
