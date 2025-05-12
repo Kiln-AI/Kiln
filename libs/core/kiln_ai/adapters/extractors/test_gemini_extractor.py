@@ -132,11 +132,12 @@ def test_get_kind_from_mime_type(
 
 
 def test_get_kind_from_mime_type_unsupported(mock_gemini_extractor_with_kind_prompts):
-    """Test that an error is raised for unsupported mime types."""
-    with pytest.raises(ValueError):
+    assert (
         mock_gemini_extractor_with_kind_prompts._get_kind_from_mime_type(
             "unsupported/mimetype"
         )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
