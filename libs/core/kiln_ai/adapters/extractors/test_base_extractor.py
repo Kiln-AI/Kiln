@@ -1,4 +1,3 @@
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -35,60 +34,6 @@ def mock_extractor_with_passthroughs(
             passthrough_mimetypes=mimetypes, output_format=output_format
         )
     )
-
-
-def test_load_file_bytes(mock_extractor):
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file.write(b"test")
-        temp_file_path = temp_file.name
-    assert mock_extractor._load_file_bytes(temp_file_path) == b"test"
-
-
-def test_load_file_bytes_failure(mock_extractor):
-    with patch(
-        "kiln_ai.adapters.extractors.base_extractor.file_utils.load_file_bytes",
-        side_effect=Exception,
-    ):
-        with pytest.raises(ValueError):
-            mock_extractor._load_file_bytes("nonexistent.txt")
-
-
-def test_load_file_text(mock_extractor):
-    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file.write(b"test")
-        temp_file_path = temp_file.name
-    assert mock_extractor._load_file_text(temp_file_path) == "test"
-
-
-def test_load_file_text_failure(mock_extractor):
-    with patch(
-        "kiln_ai.adapters.extractors.base_extractor.file_utils.load_file_text",
-        side_effect=Exception,
-    ):
-        with pytest.raises(ValueError):
-            mock_extractor._load_file_text("nonexistent.txt")
-
-
-# parametrize for txt -> text/plain, png -> image/png, etc.
-@pytest.mark.parametrize(
-    "path, expected_mime_type",
-    [
-        ("test.txt", "text/plain"),
-        ("test.png", "image/png"),
-        ("test.pdf", "application/pdf"),
-    ],
-)
-def test_get_mime_type(mock_extractor, path: str, expected_mime_type: str):
-    assert mock_extractor._get_mime_type(path) == expected_mime_type
-
-
-def test_get_mime_type_failure(mock_extractor):
-    with patch(
-        "kiln_ai.adapters.extractors.base_extractor.file_utils.get_mime_type",
-        side_effect=Exception,
-    ):
-        with pytest.raises(ValueError):
-            mock_extractor._get_mime_type("nonexistent.some-unknown-file-type")
 
 
 def test_should_passthrough():
@@ -131,8 +76,14 @@ def test_extract_passthrough():
                 content_format=ExtractionFormat.TEXT,
             ),
         ) as mock_extract,
-        patch.object(extractor, "_load_file_text", return_value="test content"),
-        patch.object(extractor, "_get_mime_type", return_value="text/plain"),
+        patch(
+            "kiln_ai.adapters.extractors.base_extractor.file_utils.load_file_text",
+            return_value=b"test content",
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.base_extractor.file_utils.get_mime_type",
+            return_value="text/plain",
+        ),
     ):
         result = extractor.extract(file_info=FileInfo(path="test.txt"))
 
@@ -166,8 +117,14 @@ def test_extract_passthrough_output_format(output_format: ExtractionFormat):
                 content_format=output_format,
             ),
         ) as mock_extract,
-        patch.object(extractor, "_load_file_text", return_value="test content"),
-        patch.object(extractor, "_get_mime_type", return_value="text/plain"),
+        patch(
+            "kiln_ai.adapters.extractors.file_utils.load_file_text",
+            return_value="test content",
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
+            return_value="text/plain",
+        ),
     ):
         result = extractor.extract(file_info=FileInfo(path="test.txt"))
 
@@ -207,7 +164,10 @@ def test_extract_non_passthrough(
                 content_format=output_format,
             ),
         ) as mock_extract,
-        patch.object(extractor, "_get_mime_type", return_value=mime_type),
+        patch(
+            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
+            return_value=mime_type,
+        ),
     ):
         # first we call the base class extract method
         result = extractor.extract(file_info=FileInfo(path=path))
