@@ -146,7 +146,6 @@ def test_get_mime_type(test_files):
 
 
 def test_get_mime_type_nonexistent_file():
-    """Test mime type detection for non-existent files."""
     # The function should attempt to determine mime type by extension
     # even if the file doesn't exist, so it shouldn't raise an error
     assert get_mime_type("nonexistent_file.txt") == "text/plain"
