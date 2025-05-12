@@ -123,7 +123,7 @@ class GeminiExtractor(BaseExtractor):
         )
 
         if response.text is None:
-            raise ValueError("No text returned from Gemini")
+            raise ValueError("No text returned from Gemini when extracting document")
 
         return ExtractionOutput(
             is_passthrough=False,
