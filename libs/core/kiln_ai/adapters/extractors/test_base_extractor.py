@@ -27,7 +27,7 @@ def mock_extractor():
 
 
 def mock_extractor_with_passthroughs(
-    mimetypes: list[str], output_format: ExtractionFormat
+    mimetypes: list[ExtractionFormat], output_format: ExtractionFormat
 ):
     return MockBaseExtractor(
         BaseExtractorConfig(
@@ -40,8 +40,8 @@ def test_should_passthrough():
     extractor = MockBaseExtractor(
         BaseExtractorConfig(
             passthrough_mimetypes=[
-                "text/plain",
-                "text/markdown",
+                ExtractionFormat.TEXT,
+                ExtractionFormat.MARKDOWN,
             ]
         )
     )
@@ -64,7 +64,7 @@ def test_extract_passthrough():
     correct passthrough output format.
     """
     extractor = mock_extractor_with_passthroughs(
-        ["text/plain", "text/markdown"], ExtractionFormat.TEXT
+        [ExtractionFormat.TEXT, ExtractionFormat.MARKDOWN], ExtractionFormat.TEXT
     )
     with (
         patch.object(
@@ -105,7 +105,7 @@ def test_extract_passthrough():
 )
 def test_extract_passthrough_output_format(output_format: ExtractionFormat):
     extractor = mock_extractor_with_passthroughs(
-        ["text/plain", "text/markdown"], output_format
+        [ExtractionFormat.TEXT, ExtractionFormat.MARKDOWN], output_format
     )
     with (
         patch.object(
@@ -190,7 +190,7 @@ def test_extract_non_passthrough(
         ["text/plain", "text/markdown"],
     ],
 )
-def test_validate_passthrough_mime_types(passthrough_mimetypes: list[str]):
+def test_validate_passthrough_mime_types(passthrough_mimetypes: list[ExtractionFormat]):
     config = BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
     assert config.passthrough_mimetypes == passthrough_mimetypes
 
@@ -204,7 +204,9 @@ def test_validate_passthrough_mime_types(passthrough_mimetypes: list[str]):
         ["video/mp4"],
     ],
 )
-def test_validate_passthrough_mime_types_failure(passthrough_mimetypes: list[str]):
+def test_validate_passthrough_mime_types_failure(
+    passthrough_mimetypes: list[ExtractionFormat],
+):
     with pytest.raises(ValueError):
         BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
 
