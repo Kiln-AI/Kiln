@@ -32,50 +32,13 @@ def mock_gemini_client():
 
 
 @pytest.fixture
-def mock_gemini_extractor_config_with_kind_prompts():
-    return GeminiExtractorConfig(
-        default_prompt="default prompt",
-        prompt_for_kind=PROMPTS_FOR_KIND,
-        model="fake-model",
-    )
-
-
-@pytest.fixture
-def mock_gemini_extractor_config_no_kind_prompts():
-    return GeminiExtractorConfig(
-        default_prompt="default prompt",
-        model="fake-model",
-    )
-
-
-@pytest.fixture
-def mock_gemini_extractor_with_kind_prompts(
-    mock_gemini_client, mock_gemini_extractor_config_with_kind_prompts
-):
-    return GeminiExtractor(
-        mock_gemini_client, mock_gemini_extractor_config_with_kind_prompts
-    )
-
-
-@pytest.fixture
-def mock_gemini_extractor_no_kind_prompts(
-    mock_gemini_client, mock_gemini_extractor_config_no_kind_prompts
-):
-    return GeminiExtractor(
-        mock_gemini_client, mock_gemini_extractor_config_no_kind_prompts
-    )
-
-
-@pytest.fixture
-def mock_gemini_extractor_with_kind_prompts_default_and_custom_prompt(
-    mock_gemini_client, mock_gemini_extractor_config_with_kind_prompts
-):
-    config = mock_gemini_extractor_config_with_kind_prompts
-    config.default_prompt = "default prompt"
-    config.custom_prompt = "custom prompt"
+def mock_gemini_extractor(mock_gemini_client):
     return GeminiExtractor(
         mock_gemini_client,
-        config,
+        GeminiExtractorConfig(
+            prompt_for_kind=PROMPTS_FOR_KIND,
+            model="fake-model",
+        ),
     )
 
 
@@ -121,61 +84,18 @@ def test_data_dir():
         ("audio/flac", Kind.AUDIO),
     ],
 )
-def test_get_kind_from_mime_type(
-    mock_gemini_extractor_with_kind_prompts, mime_type, kind
-):
+def test_get_kind_from_mime_type(mock_gemini_extractor, mime_type, kind):
     """Test that the kind is correctly inferred from the mime type."""
+    assert mock_gemini_extractor._get_kind_from_mime_type(mime_type) == kind
+
+
+def test_get_kind_from_mime_type_unsupported(mock_gemini_extractor):
     assert (
-        mock_gemini_extractor_with_kind_prompts._get_kind_from_mime_type(mime_type)
-        == kind
+        mock_gemini_extractor._get_kind_from_mime_type("unsupported/mimetype") is None
     )
 
 
-def test_get_kind_from_mime_type_unsupported(mock_gemini_extractor_with_kind_prompts):
-    assert (
-        mock_gemini_extractor_with_kind_prompts._get_kind_from_mime_type(
-            "unsupported/mimetype"
-        )
-        is None
-    )
-
-
-@pytest.mark.parametrize(
-    "kind",
-    [
-        Kind.DOCUMENT,
-        Kind.IMAGE,
-        Kind.VIDEO,
-        Kind.AUDIO,
-    ],
-)
-def test_get_prompt_for_kind(mock_gemini_extractor_with_kind_prompts, kind: Kind):
-    """Test that the prompt is correctly inferred from the kind."""
-    assert (
-        mock_gemini_extractor_with_kind_prompts._get_prompt_for_kind(kind)
-        == PROMPTS_FOR_KIND[kind]
-    )
-
-
-@pytest.mark.parametrize(
-    "kind",
-    [
-        Kind.DOCUMENT,
-        Kind.IMAGE,
-        Kind.VIDEO,
-        Kind.AUDIO,
-    ],
-)
-def test_get_prompt_for_kind_no_kind_prompts(
-    mock_gemini_extractor_no_kind_prompts, kind: Kind
-):
-    assert (
-        mock_gemini_extractor_no_kind_prompts._get_prompt_for_kind(kind)
-        == "default prompt"
-    )
-
-
-def test_extract_success_no_custom_prompt(mock_gemini_extractor_with_kind_prompts):
+def test_extract_success(mock_gemini_extractor):
     with (
         patch(
             "kiln_ai.adapters.extractors.file_utils.get_mime_type",
@@ -191,10 +111,10 @@ def test_extract_success_no_custom_prompt(mock_gemini_extractor_with_kind_prompt
         mock_gemini_client.models.generate_content.return_value = MagicMock(
             text="extracted content"
         )
-        mock_gemini_extractor_with_kind_prompts.gemini_client = mock_gemini_client
+        mock_gemini_extractor.gemini_client = mock_gemini_client
 
         # test the extract method
-        assert mock_gemini_extractor_with_kind_prompts.extract(
+        assert mock_gemini_extractor.extract(
             FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
         ) == ExtractionOutput(
             is_passthrough=False,
@@ -214,9 +134,41 @@ def test_extract_success_no_custom_prompt(mock_gemini_extractor_with_kind_prompt
         )
 
 
-def test_extract_success_with_custom_prompt(
-    mock_gemini_extractor_with_kind_prompts_default_and_custom_prompt,
-):
+def test_extract_failure_from_gemini(mock_gemini_extractor):
+    # mock file_utils.load_file_bytes
+    with patch(
+        "kiln_ai.adapters.extractors.file_utils.load_file_bytes",
+        return_value=b"test content",
+    ):
+        # mock the gemini client call
+        mock_models = MagicMock()
+        mock_models.generate_content.side_effect = Exception("error from gemini")
+
+        mock_gemini_client = MagicMock()
+        mock_gemini_client.models = mock_models
+
+        mock_gemini_extractor.gemini_client = mock_gemini_client
+
+        file_info = FileInfoInternal(path="test.pdf", mime_type="application/pdf")
+
+        with pytest.raises(Exception, match="error from gemini"):
+            mock_gemini_extractor.extract(file_info)
+
+        mock_models.generate_content.assert_called_once_with(
+            model="fake-model",
+            contents=[
+                types.Part.from_bytes(
+                    data=b"test content", mime_type="application/pdf"
+                ),
+                PROMPTS_FOR_KIND[Kind.DOCUMENT],
+            ],
+        )
+
+
+def test_extract_failure_from_file_utils(mock_gemini_extractor):
+    """Test that the extract method works."""
+
+    # patch the get mime type
     with (
         patch(
             "kiln_ai.adapters.extractors.file_utils.get_mime_type",
@@ -224,79 +176,46 @@ def test_extract_success_with_custom_prompt(
         ),
         patch(
             "kiln_ai.adapters.extractors.file_utils.load_file_bytes",
-            return_value=b"test content",
-        ),
+            side_effect=Exception("error from file_utils"),
+        ) as mock_load_file_bytes,
     ):
-        extractor = mock_gemini_extractor_with_kind_prompts_default_and_custom_prompt
-
         # mock the gemini client call
         mock_gemini_client = MagicMock()
         mock_gemini_client.models.generate_content.return_value = MagicMock(
             text="extracted content"
         )
-        extractor.gemini_client = mock_gemini_client
+        mock_gemini_extractor.gemini_client = mock_gemini_client
 
         # test the extract method
-        assert extractor.extract(
-            FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
-        ) == ExtractionOutput(
-            is_passthrough=False,
-            content="extracted content",
-            content_format=ExtractionFormat.MARKDOWN,
-        )
+        with pytest.raises(ValueError):
+            mock_gemini_extractor.extract(
+                FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
+            )
 
-        # check the gemini client was called with the correct arguments
-        mock_gemini_client.models.generate_content.assert_called_once_with(
-            model="fake-model",
-            contents=[
-                types.Part.from_bytes(
-                    data=b"test content", mime_type="application/pdf"
+        # check the gemini client was not called
+        mock_gemini_client.models.generate_content.assert_not_called()
+
+        # check the file utils was called
+        mock_load_file_bytes.assert_called_once_with("test.pdf")
+
+
+def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
+    # spy on the get mime type
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.file_utils.get_mime_type",
+            return_value=None,
+        ) as mock_get_mime_type,
+    ):
+        with pytest.raises(ValueError):
+            mock_gemini_extractor.extract(
+                FileInfoInternal(
+                    path="test.unsupported", mime_type="unsupported/mimetype"
                 ),
-                "custom prompt",
-            ],
-        )
+            )
 
-
-def test_extract_failure_from_gemini(mock_gemini_extractor_with_kind_prompts):
-    # mock the gemini client call
-    mock_gemini_client = MagicMock()
-    mock_gemini_client.models.generate_content.side_effect = Exception(
-        "error from gemini"
-    )
-    mock_gemini_extractor_with_kind_prompts.gemini_client = mock_gemini_client
-
-    # mock the bytes loading
-    mock_load_file_bytes = MagicMock()
-    mock_load_file_bytes.return_value = b"test content"
-    mock_gemini_extractor_with_kind_prompts._load_file_bytes = mock_load_file_bytes
-
-    # test the extract method
-    with pytest.raises(Exception):
-        mock_gemini_extractor_with_kind_prompts.extract(
-            FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
-        )
-
-
-def test_extract_failure_from_file_utils(mock_gemini_extractor_with_kind_prompts):
-    """Test that the extract method works."""
-
-    # mock the gemini client call
-    mock_gemini_client = MagicMock()
-    mock_gemini_client.models.generate_content.return_value = MagicMock(
-        text="extracted content"
-    )
-    mock_gemini_extractor_with_kind_prompts.gemini_client = mock_gemini_client
-
-    # mock the bytes loading
-    mock_load_file_bytes = MagicMock()
-    mock_load_file_bytes.side_effect = Exception("error from file_utils")
-    mock_gemini_extractor_with_kind_prompts._load_file_bytes = mock_load_file_bytes
-
-    # test the extract method
-    with pytest.raises(Exception):
-        mock_gemini_extractor_with_kind_prompts.extract(
-            FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
-        )
+        # check the get mime type was called
+        mock_get_mime_type.assert_called_once_with("test.unsupported")
 
 
 SUPPORTED_MODELS = ["gemini-2.0-flash"]
@@ -313,7 +232,6 @@ def paid_gemini_extractor(model_name: str):
                 Kind.VIDEO: "Return a short paragraph summarizing the video. Start your answer with the word 'Video summary:'.",
                 Kind.AUDIO: "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
             },
-            default_prompt="Return a short paragraph summarizing the document. Start your answer with the word 'Default summary:'.",
             passthrough_mimetypes=[
                 "text/plain",
                 "text/markdown",
