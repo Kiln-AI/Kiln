@@ -222,3 +222,15 @@ def test_extract_failure_from_concrete_extractor(mock_extractor):
     ):
         with pytest.raises(ValueError, match="error from concrete extractor"):
             mock_extractor.extract(file_info=FileInfo(path="test.txt"))
+
+
+def test_extract_failure_from_mime_type_guess():
+    extractor = MockBaseExtractor(BaseExtractorConfig())
+    with patch(
+        "kiln_ai.adapters.extractors.file_utils.get_mime_type",
+        return_value=None,
+    ) as get_mime_type:
+        with pytest.raises(ValueError, match="Could not guess mime type for"):
+            extractor.extract(file_info=FileInfo(path="test-xyz"))
+
+        get_mime_type.assert_called_once_with("test-xyz")
