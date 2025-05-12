@@ -281,7 +281,7 @@ def test_extract_document(model_name, test_data_dir):
 def test_extract_image(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
-        file_info=FileInfo(path=str(test_data_dir / "lenna.png")),
+        file_info=FileInfo(path=str(test_data_dir / "kodim23.png")),
     )
     assert output.is_passthrough == False
     assert output.content_format == ExtractionFormat.MARKDOWN
