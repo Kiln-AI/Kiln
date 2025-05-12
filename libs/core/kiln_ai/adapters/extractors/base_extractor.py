@@ -2,8 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from pydantic import BaseModel, Field, model_validator
-from typing_extensions import Self
+from pydantic import BaseModel, Field
 
 import kiln_ai.adapters.extractors.file_utils as file_utils
 
@@ -20,36 +19,15 @@ class BaseExtractorConfig(BaseModel):
     Base class for all extractor configs.
     """
 
-    passthrough_mimetypes: list[str] = Field(
+    passthrough_mimetypes: list[ExtractionFormat] = Field(
         default_factory=list,
-        description="If the mimetype is in this list, the extractor will not be used and the text content of the file will be returned as is. Only text mime types are supported for passthrough.",
+        description="If the mimetype is in this list, the extractor will not be used and the text content of the file will be returned as is.",
     )
 
     output_format: ExtractionFormat = Field(
         default=ExtractionFormat.MARKDOWN,
         description="The format to use for the output.",
     )
-
-    @model_validator(mode="after")
-    def validate_passthrough_mime_types(self) -> Self:
-        """
-        Validates that all passthrough MIME types are text-based, because some
-        mime-types do not make sense as passthrough (e.g. image/png is not a text format).
-
-        Raises:
-            ValueError: If any MIME type in passthrough_mimetypes does not start with "text/".
-        """
-        allowed_mime_type_prefixes = [
-            "text/",
-        ]
-
-        for mime_type in self.passthrough_mimetypes:
-            for prefix in allowed_mime_type_prefixes:
-                if not mime_type.lower().startswith(prefix.lower()):
-                    raise ValueError(
-                        f"Mime type {mime_type} is not allowed for passthrough. Allowed mime type prefixes are {', '.join(allowed_mime_type_prefixes)}."
-                    )
-        return self
 
 
 # TODO: take in the file/document datamodel instead once we have it
