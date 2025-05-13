@@ -74,7 +74,7 @@ class BaseExtractor(ABC):
         try:
             mime_type, _ = mimetypes.guess_type(file_info.path)
             if mime_type is None:
-                raise ValueError(f"Could not guess mime type for {file_info.path}")
+                raise ValueError("Unable to guess file mime type")
 
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
