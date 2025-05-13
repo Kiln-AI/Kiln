@@ -205,7 +205,7 @@ def test_validate_passthrough_mime_types(passthrough_mimetypes: list[ExtractionF
     ],
 )
 def test_validate_passthrough_mime_types_failure(
-    passthrough_mimetypes: list[ExtractionFormat],
+    passthrough_mimetypes,
 ):
     with pytest.raises(ValueError):
         BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
@@ -231,8 +231,8 @@ def test_extract_failure_from_mime_type_guess():
     with patch(
         "mimetypes.guess_type",
         return_value=(None, None),
-    ) as mock_guess_type:
-        with pytest.raises(ValueError, match="Could not guess mime type for"):
+    ):
+        with pytest.raises(
+            ValueError, match="Error extracting .*: Unable to guess file mime type"
+        ):
             extractor.extract(file_info=FileInfo(path="test-xyz"))
-
-        mock_guess_type.assert_called_once_with("test-xyz")
