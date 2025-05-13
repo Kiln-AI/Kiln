@@ -172,8 +172,8 @@ def test_extract_failure_from_bytes_read(mock_gemini_extractor):
         ),
         patch(
             "pathlib.Path.read_bytes",
-            side_effect=Exception("error from file_utils"),
-        ) as mock_read_bytes,
+            side_effect=Exception("error from read_bytes"),
+        ),
     ):
         # mock the gemini client call
         mock_gemini_client = MagicMock()
@@ -183,33 +183,26 @@ def test_extract_failure_from_bytes_read(mock_gemini_extractor):
         mock_gemini_extractor.gemini_client = mock_gemini_client
 
         # test the extract method
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="error from read_bytes"):
             mock_gemini_extractor.extract(
                 FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
             )
-
-        mock_read_bytes.assert_called_once_with()
 
         mock_gemini_client.models.generate_content.assert_not_called()
 
 
 def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
     # spy on the get mime type
-    with (
-        patch(
-            "mimetypes.guess_type",
-            return_value=(None, None),
-        ) as mock_guess_type,
+    with patch(
+        "mimetypes.guess_type",
+        return_value=(None, None),
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Unable to guess file mime type"):
             mock_gemini_extractor.extract(
                 FileInfoInternal(
                     path="test.unsupported", mime_type="unsupported/mimetype"
                 ),
             )
-
-        # check the get mime type was called
-        mock_guess_type.assert_called_once_with("test.unsupported")
 
 
 SUPPORTED_MODELS = ["gemini-2.0-flash"]
@@ -294,7 +287,7 @@ def test_provider_bad_request(tmp_path, model_id):
 
     extractor = paid_gemini_extractor(model_id=model_id)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
         extractor.extract(
             file_info=FileInfo(path=temp_file.as_posix()),
         )
