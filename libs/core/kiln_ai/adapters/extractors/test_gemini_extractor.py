@@ -238,9 +238,9 @@ def paid_gemini_extractor(model_id: str):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_document(model_name, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_name)
+@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
+def test_extract_document(model_id, test_data_dir):
+    extractor = paid_gemini_extractor(model_id=model_id)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "1706.03762v7.pdf")),
     )
@@ -250,9 +250,9 @@ def test_extract_document(model_name, test_data_dir):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_image(model_name, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_name)
+@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
+def test_extract_image(model_id, test_data_dir):
+    extractor = paid_gemini_extractor(model_id=model_id)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "kodim23.png")),
     )
@@ -262,9 +262,9 @@ def test_extract_image(model_name, test_data_dir):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_video(model_name, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_name)
+@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
+def test_extract_video(model_id, test_data_dir):
+    extractor = paid_gemini_extractor(model_id=model_id)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "big_buck_bunny_sample.mp4")),
     )
@@ -274,9 +274,9 @@ def test_extract_video(model_name, test_data_dir):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_audio(model_name, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_name)
+@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
+def test_extract_audio(model_id, test_data_dir):
+    extractor = paid_gemini_extractor(model_id=model_id)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "poacher.ogg")),
     )
@@ -286,13 +286,13 @@ def test_extract_audio(model_name, test_data_dir):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_provider_bad_request(tmp_path, model_name):
+@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
+def test_provider_bad_request(tmp_path, model_id):
     # write corrupted PDF file to temp files
     temp_file = tmp_path / "corrupted_file.pdf"
     temp_file.write_bytes(b"invalid file")
 
-    extractor = paid_gemini_extractor(model_id=model_name)
+    extractor = paid_gemini_extractor(model_id=model_id)
 
     with pytest.raises(ValueError):
         extractor.extract(
