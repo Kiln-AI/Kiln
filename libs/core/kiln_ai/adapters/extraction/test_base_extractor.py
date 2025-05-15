@@ -1,15 +1,16 @@
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.extractors.base_extractor import (
+from kiln_ai.adapters.extraction.base_extractor import (
     BaseExtractor,
-    BaseExtractorConfig,
-    ExtractionFormat,
     ExtractionOutput,
     FileInfo,
     FileInfoInternal,
+    OutputFormat,
 )
+from kiln_ai.datamodel.extraction import ExtractorConfig
 
 
 class MockBaseExtractor(BaseExtractor):
@@ -17,33 +18,54 @@ class MockBaseExtractor(BaseExtractor):
         return ExtractionOutput(
             is_passthrough=False,
             content="mock concrete extractor output",
-            content_format=ExtractionFormat.MARKDOWN,
+            content_format=OutputFormat.MARKDOWN,
         )
 
 
 @pytest.fixture
-def mock_extractor():
-    return MockBaseExtractor(BaseExtractorConfig())
+def mock_gemini_properties():
+    return {
+        "prompt_for_kind": {
+            "document": "mock prompt for document",
+            "image": "mock prompt for image",
+            "video": "mock prompt for video",
+            "audio": "mock prompt for audio",
+        },
+        "model_name": "mock",
+    }
 
 
-def mock_extractor_with_passthroughs(
-    mimetypes: list[ExtractionFormat], output_format: ExtractionFormat
-):
+@pytest.fixture
+def mock_extractor(mock_gemini_properties):
     return MockBaseExtractor(
-        BaseExtractorConfig(
-            passthrough_mimetypes=mimetypes, output_format=output_format
+        ExtractorConfig(
+            name="mock",
+            output_format=OutputFormat.MARKDOWN,
+            properties=mock_gemini_properties,
         )
     )
 
 
-def test_should_passthrough():
-    extractor = MockBaseExtractor(
-        BaseExtractorConfig(
-            passthrough_mimetypes=[
-                ExtractionFormat.TEXT,
-                ExtractionFormat.MARKDOWN,
-            ]
+def mock_extractor_with_passthroughs(
+    properties: dict[str, Any],
+    mimetypes: list[OutputFormat],
+    output_format: OutputFormat,
+):
+    return MockBaseExtractor(
+        ExtractorConfig(
+            name="mock",
+            passthrough_mimetypes=mimetypes,
+            output_format=output_format,
+            properties=properties,
         )
+    )
+
+
+def test_should_passthrough(mock_gemini_properties):
+    extractor = mock_extractor_with_passthroughs(
+        mock_gemini_properties,
+        [OutputFormat.TEXT, OutputFormat.MARKDOWN],
+        OutputFormat.TEXT,
     )
 
     # should passthrough
@@ -57,14 +79,16 @@ def test_should_passthrough():
     assert not extractor._should_passthrough("image/jpeg")
 
 
-def test_extract_passthrough():
+def test_extract_passthrough(mock_gemini_properties):
     """
     Tests that when a file's MIME type is configured for passthrough, the extractor skips
     the concrete extraction method and returns the file's contents directly with the
     correct passthrough output format.
     """
     extractor = mock_extractor_with_passthroughs(
-        [ExtractionFormat.TEXT, ExtractionFormat.MARKDOWN], ExtractionFormat.TEXT
+        mock_gemini_properties,
+        [OutputFormat.TEXT, OutputFormat.MARKDOWN],
+        OutputFormat.TEXT,
     )
     with (
         patch.object(
@@ -73,7 +97,7 @@ def test_extract_passthrough():
             return_value=ExtractionOutput(
                 is_passthrough=False,
                 content="mock concrete extractor output",
-                content_format=ExtractionFormat.TEXT,
+                content_format=OutputFormat.TEXT,
             ),
         ) as mock_extract,
         patch(
@@ -93,19 +117,21 @@ def test_extract_passthrough():
         # Verify correct passthrough result
         assert result.is_passthrough
         assert result.content == "test content"
-        assert result.content_format == ExtractionFormat.TEXT
+        assert result.content_format == OutputFormat.TEXT
 
 
 @pytest.mark.parametrize(
     "output_format",
     [
-        ExtractionFormat.TEXT,
-        ExtractionFormat.MARKDOWN,
+        "text/plain",
+        "text/markdown",
     ],
 )
-def test_extract_passthrough_output_format(output_format: ExtractionFormat):
+def test_extract_passthrough_output_format(mock_gemini_properties, output_format):
     extractor = mock_extractor_with_passthroughs(
-        [ExtractionFormat.TEXT, ExtractionFormat.MARKDOWN], output_format
+        mock_gemini_properties,
+        [OutputFormat.TEXT, OutputFormat.MARKDOWN],
+        output_format,
     )
     with (
         patch.object(
@@ -140,23 +166,21 @@ def test_extract_passthrough_output_format(output_format: ExtractionFormat):
 @pytest.mark.parametrize(
     "path, mime_type, output_format",
     [
-        ("test.mp3", "audio/mpeg", ExtractionFormat.TEXT),
-        ("test.png", "image/png", ExtractionFormat.TEXT),
-        ("test.pdf", "application/pdf", ExtractionFormat.TEXT),
-        ("test.txt", "text/plain", ExtractionFormat.MARKDOWN),
-        ("test.txt", "text/markdown", ExtractionFormat.MARKDOWN),
-        ("test.html", "text/html", ExtractionFormat.MARKDOWN),
-        ("test.csv", "text/csv", ExtractionFormat.MARKDOWN),
+        ("test.mp3", "audio/mpeg", OutputFormat.TEXT),
+        ("test.png", "image/png", OutputFormat.TEXT),
+        ("test.pdf", "application/pdf", OutputFormat.TEXT),
+        ("test.txt", "text/plain", OutputFormat.MARKDOWN),
+        ("test.txt", "text/markdown", OutputFormat.MARKDOWN),
+        ("test.html", "text/html", OutputFormat.MARKDOWN),
+        ("test.csv", "text/csv", OutputFormat.MARKDOWN),
     ],
 )
 def test_extract_non_passthrough(
-    path: str, mime_type: str, output_format: ExtractionFormat
+    mock_extractor, path: str, mime_type: str, output_format: OutputFormat
 ):
-    extractor = MockBaseExtractor(BaseExtractorConfig(output_format=output_format))
-
     with (
         patch.object(
-            extractor,
+            mock_extractor,
             "_extract",
             return_value=ExtractionOutput(
                 is_passthrough=False,
@@ -170,7 +194,7 @@ def test_extract_non_passthrough(
         ),
     ):
         # first we call the base class extract method
-        result = extractor.extract(file_info=FileInfo(path=path))
+        result = mock_extractor.extract(file_info=FileInfo(path=path))
 
         # then we call the subclass _extract method and add validated mime_type
         mock_extract.assert_called_once_with(
@@ -185,13 +209,19 @@ def test_extract_non_passthrough(
 @pytest.mark.parametrize(
     "passthrough_mimetypes",
     [
-        ["text/plain"],
-        ["text/markdown"],
-        ["text/plain", "text/markdown"],
+        [OutputFormat.TEXT],
+        [OutputFormat.MARKDOWN],
+        [OutputFormat.TEXT, OutputFormat.MARKDOWN],
     ],
 )
-def test_validate_passthrough_mime_types(passthrough_mimetypes: list[ExtractionFormat]):
-    config = BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
+def test_validate_passthrough_mime_types(
+    mock_gemini_properties, passthrough_mimetypes: list[OutputFormat]
+):
+    config = ExtractorConfig(
+        name="mock",
+        passthrough_mimetypes=passthrough_mimetypes,
+        properties=mock_gemini_properties,
+    )
     assert config.passthrough_mimetypes == passthrough_mimetypes
 
 
@@ -205,15 +235,22 @@ def test_validate_passthrough_mime_types(passthrough_mimetypes: list[ExtractionF
     ],
 )
 def test_validate_passthrough_mime_types_failure(
-    passthrough_mimetypes,
+    mock_gemini_properties, passthrough_mimetypes: list[OutputFormat]
 ):
     with pytest.raises(ValueError):
-        BaseExtractorConfig(passthrough_mimetypes=passthrough_mimetypes)
+        ExtractorConfig(
+            name="mock",
+            passthrough_mimetypes=passthrough_mimetypes,
+            properties=mock_gemini_properties,
+        )
 
 
-def test_default_output_format():
-    config = BaseExtractorConfig()
-    assert config.output_format == ExtractionFormat.MARKDOWN
+def test_default_output_format(mock_gemini_properties):
+    config = ExtractorConfig(
+        name="mock",
+        properties=mock_gemini_properties,
+    )
+    assert config.output_format == OutputFormat.MARKDOWN
 
 
 def test_extract_failure_from_concrete_extractor(mock_extractor):
@@ -226,8 +263,13 @@ def test_extract_failure_from_concrete_extractor(mock_extractor):
             mock_extractor.extract(file_info=FileInfo(path="test.txt"))
 
 
-def test_extract_failure_from_mime_type_guess():
-    extractor = MockBaseExtractor(BaseExtractorConfig())
+def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
+    extractor = MockBaseExtractor(
+        ExtractorConfig(
+            name="mock",
+            properties=mock_gemini_properties,
+        )
+    )
     with patch(
         "mimetypes.guess_type",
         return_value=(None, None),

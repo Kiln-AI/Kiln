@@ -1,25 +1,14 @@
 import pathlib
-from enum import Enum
 
 from google import genai
 from google.genai import types
-from pydantic import Field
 
-from kiln_ai.adapters.extractors.base_extractor import (
+from kiln_ai.adapters.extraction.base_extractor import (
     BaseExtractor,
-    BaseExtractorConfig,
-    ExtractionFormat,
     ExtractionOutput,
     FileInfoInternal,
 )
-
-
-class Kind(Enum):
-    DOCUMENT = "document"
-    IMAGE = "image"
-    VIDEO = "video"
-    AUDIO = "audio"
-
+from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 
 # docs list out supported formats:
 # - https://ai.google.dev/gemini-api/docs/document-processing#supported-formats
@@ -72,29 +61,16 @@ MIME_TYPES_SUPPORTED = {
 }
 
 
-class GeminiExtractorConfig(BaseExtractorConfig):
-    prompt_for_kind: dict[Kind, str] = Field(
-        default_factory=dict,
-        description="A dictionary of prompts for each kind of file.",
-    )
-    model_id: str = Field(
-        description="The model to use for the extractor.",
-        examples=["gemini-2.0-flash"],
-    )
-    output_format: ExtractionFormat = Field(
-        default=ExtractionFormat.MARKDOWN,
-        description="The format to use for the output.",
-    )
-
-
 class GeminiExtractor(BaseExtractor):
-    def __init__(self, gemini_client: genai.Client, config: GeminiExtractorConfig):
-        super().__init__(config)
-        self.gemini_client = gemini_client
+    def __init__(self, gemini_client: genai.Client, extractor_config: ExtractorConfig):
+        if extractor_config.extractor_type != ExtractorType.gemini:
+            raise ValueError(
+                f"GeminiExtractor must be initialized with a gemini extractor_type config. Got {extractor_config.extractor_type}"
+            )
 
-        # TODO: the hack below will go away once we have ExtractorConfig as a dict anyway
-        # hack to access the concrete config subclass here without failing type checking
-        self.config = config
+        super().__init__(extractor_config)
+        self.gemini_client = gemini_client
+        self.gemini_config = extractor_config.gemini_properties()
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
@@ -107,12 +83,12 @@ class GeminiExtractor(BaseExtractor):
         if kind is None:
             raise ValueError(f"Unsupported MIME type: {file_info.mime_type}")
 
-        prompt = self.config.prompt_for_kind.get(kind)
+        prompt = self.gemini_config.prompt_for_kind.get(kind)
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
 
         response = self.gemini_client.models.generate_content(
-            model=self.config.model_id,
+            model=self.gemini_config.model_name,
             contents=[
                 types.Part.from_bytes(
                     data=pathlib.Path(file_info.path).read_bytes(),
@@ -128,5 +104,5 @@ class GeminiExtractor(BaseExtractor):
         return ExtractionOutput(
             is_passthrough=False,
             content=response.text,
-            content_format=self.config.output_format,
+            content_format=self.extractor_config.output_format,
         )

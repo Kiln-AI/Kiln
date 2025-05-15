@@ -2,32 +2,12 @@ import logging
 import mimetypes
 import pathlib
 from abc import ABC, abstractmethod
-from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from kiln_ai.datamodel.extraction import ExtractorConfig, OutputFormat
+
 logger = logging.getLogger(__name__)
-
-
-class ExtractionFormat(str, Enum):
-    TEXT = "text/plain"
-    MARKDOWN = "text/markdown"
-
-
-class BaseExtractorConfig(BaseModel):
-    """
-    Base class for all extractor configs.
-    """
-
-    passthrough_mimetypes: list[ExtractionFormat] = Field(
-        default_factory=list,
-        description="If the mimetype is in this list, the extractor will not be used and the text content of the file will be returned as is.",
-    )
-
-    output_format: ExtractionFormat = Field(
-        default=ExtractionFormat.MARKDOWN,
-        description="The format to use for the output.",
-    )
 
 
 # TODO: take in the file/document datamodel instead once we have it
@@ -44,7 +24,7 @@ class ExtractionOutput(BaseModel):
     is_passthrough: bool = Field(
         default=False, description="Whether the extractor returned the file as is."
     )
-    content_format: ExtractionFormat = Field(
+    content_format: OutputFormat = Field(
         description="The format of the extracted data."
     )
     content: str = Field(description="The extracted data.")
@@ -57,8 +37,8 @@ class BaseExtractor(ABC):
     Should be subclassed by each extractor.
     """
 
-    def __init__(self, config: BaseExtractorConfig):
-        self.config = config
+    def __init__(self, extractor_config: ExtractorConfig):
+        self.extractor_config = extractor_config
 
     @abstractmethod
     def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
@@ -80,7 +60,7 @@ class BaseExtractor(ABC):
                 return ExtractionOutput(
                     is_passthrough=True,
                     content=pathlib.Path(file_info.path).read_text(encoding="utf-8"),
-                    content_format=self.config.output_format,
+                    content_format=self.extractor_config.output_format,
                 )
 
             return self._extract(
@@ -94,5 +74,5 @@ class BaseExtractor(ABC):
 
     def _should_passthrough(self, mime_type: str) -> bool:
         return mime_type.lower() in {
-            mt.lower() for mt in self.config.passthrough_mimetypes
+            mt.lower() for mt in self.extractor_config.passthrough_mimetypes
         }
