@@ -19,6 +19,7 @@ The eval submodule contains the code for evaluating the performance of a model.
 from . import (
     data_gen,
     eval,
+    extraction,
     fine_tune,
     ml_model_list,
     model_adapters,
@@ -34,4 +35,5 @@ __all__ = [
     "prompt_builders",
     "repair",
     "eval",
+    "extraction",
 ]

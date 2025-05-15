@@ -5,9 +5,10 @@ This package provides a framework for extracting content from files
 using different extraction methods.
 """
 
-from . import base_extractor, gemini_extractor
+from . import base_extractor, gemini_extractor, registry
 
 __all__ = [
     "base_extractor",
     "gemini_extractor",
+    "registry",
 ]
