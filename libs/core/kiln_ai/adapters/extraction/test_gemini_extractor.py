@@ -5,24 +5,24 @@ import pytest
 from google import genai
 from google.genai import types
 
-from kiln_ai.adapters.extractors.base_extractor import (
-    ExtractionFormat,
+from kiln_ai.adapters.extraction.base_extractor import (
     ExtractionOutput,
     FileInfo,
     FileInfoInternal,
+    OutputFormat,
 )
-from kiln_ai.adapters.extractors.gemini_extractor import (
+from kiln_ai.adapters.extraction.gemini_extractor import (
+    ExtractorConfig,
     GeminiExtractor,
-    GeminiExtractorConfig,
     Kind,
 )
 from kiln_ai.utils.config import Config
 
-PROMPTS_FOR_KIND = {
-    Kind.DOCUMENT: "prompt for documents",
-    Kind.IMAGE: "prompt for images",
-    Kind.VIDEO: "prompt for videos",
-    Kind.AUDIO: "prompt for audio",
+PROMPTS_FOR_KIND: dict[str, str] = {
+    "document": "prompt for documents",
+    "image": "prompt for images",
+    "video": "prompt for videos",
+    "audio": "prompt for audio",
 }
 
 
@@ -35,9 +35,12 @@ def mock_gemini_client():
 def mock_gemini_extractor(mock_gemini_client):
     return GeminiExtractor(
         mock_gemini_client,
-        GeminiExtractorConfig(
-            prompt_for_kind=PROMPTS_FOR_KIND,
-            model_id="fake-model",
+        ExtractorConfig(
+            name="mock",
+            properties={
+                "prompt_for_kind": PROMPTS_FOR_KIND,
+                "model_name": "fake-model",
+            },
         ),
     )
 
@@ -119,7 +122,7 @@ def test_extract_success(mock_gemini_extractor):
         ) == ExtractionOutput(
             is_passthrough=False,
             content="extracted content",
-            content_format=ExtractionFormat.MARKDOWN,
+            content_format=OutputFormat.MARKDOWN,
         )
 
         # check the gemini client was called with the correct arguments
@@ -208,20 +211,22 @@ def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
 SUPPORTED_MODELS = ["gemini-2.0-flash"]
 
 
-def paid_gemini_extractor(model_id: str):
+def paid_gemini_extractor(model_name: str):
     return GeminiExtractor(
-        config=GeminiExtractorConfig(
-            model_id=model_id,
-            output_format=ExtractionFormat.MARKDOWN,
-            prompt_for_kind={
-                Kind.DOCUMENT: "Return a short paragraph summarizing the document. Start your answer with the word 'Document summary:'.",
-                Kind.IMAGE: "Return a short paragraph summarizing the image. Start your answer with the word 'Image summary:'.",
-                Kind.VIDEO: "Return a short paragraph summarizing the video. Start your answer with the word 'Video summary:'.",
-                Kind.AUDIO: "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
+        extractor_config=ExtractorConfig(
+            name="paid-gemini",
+            properties={
+                "model_name": model_name,
+                "prompt_for_kind": {
+                    "document": "Return a short paragraph summarizing the document. Start your answer with the word 'Document summary:'.",
+                    "image": "Return a short paragraph summarizing the image. Start your answer with the word 'Image summary:'.",
+                    "video": "Return a short paragraph summarizing the video. Start your answer with the word 'Video summary:'.",
+                    "audio": "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
+                },
             },
             passthrough_mimetypes=[
-                ExtractionFormat.TEXT,
-                ExtractionFormat.MARKDOWN,
+                OutputFormat.TEXT,
+                OutputFormat.MARKDOWN,
             ],
         ),
         gemini_client=genai.Client(
@@ -231,61 +236,61 @@ def paid_gemini_extractor(model_id: str):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
-def test_extract_document(model_id, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_id)
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_document(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "1706.03762v7.pdf")),
     )
     assert not output.is_passthrough
-    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert output.content_format == OutputFormat.MARKDOWN
     assert "Document summary:" in output.content
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
-def test_extract_image(model_id, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_id)
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_image(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "kodim23.png")),
     )
     assert not output.is_passthrough
-    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert output.content_format == OutputFormat.MARKDOWN
     assert "Image summary:" in output.content
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
-def test_extract_video(model_id, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_id)
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_video(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "big_buck_bunny_sample.mp4")),
     )
     assert not output.is_passthrough
-    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert output.content_format == OutputFormat.MARKDOWN
     assert "Video summary:" in output.content
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
-def test_extract_audio(model_id, test_data_dir):
-    extractor = paid_gemini_extractor(model_id=model_id)
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_extract_audio(model_name, test_data_dir):
+    extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
         file_info=FileInfo(path=str(test_data_dir / "poacher.ogg")),
     )
     assert not output.is_passthrough
-    assert output.content_format == ExtractionFormat.MARKDOWN
+    assert output.content_format == OutputFormat.MARKDOWN
     assert "Audio summary:" in output.content
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id", SUPPORTED_MODELS)
-def test_provider_bad_request(tmp_path, model_id):
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+def test_provider_bad_request(tmp_path, model_name):
     # write corrupted PDF file to temp files
     temp_file = tmp_path / "corrupted_file.pdf"
     temp_file.write_bytes(b"invalid file")
 
-    extractor = paid_gemini_extractor(model_id=model_id)
+    extractor = paid_gemini_extractor(model_name=model_name)
 
     with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
         extractor.extract(
