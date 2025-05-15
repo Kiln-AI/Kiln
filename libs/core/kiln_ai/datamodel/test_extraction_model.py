@@ -1,6 +1,13 @@
 import pytest
+from pydantic import BaseModel, Field, ValidationError, model_validator
+from typing_extensions import Self
 
-from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
+from kiln_ai.datamodel.extraction import (
+    ExtractorConfig,
+    ExtractorType,
+    Kind,
+    format_properties_errors,
+)
 
 
 @pytest.fixture
@@ -23,6 +30,17 @@ def valid_extractor_config_data():
 @pytest.fixture
 def valid_extractor_config(valid_extractor_config_data):
     return ExtractorConfig(**valid_extractor_config_data)
+
+
+def test_extractor_config_kind_coercion(valid_extractor_config):
+    # check that the string values are coerced to the correct kind
+    gemini_config = valid_extractor_config.gemini_properties()
+    assert (
+        gemini_config.prompt_for_kind.get(Kind.DOCUMENT) == "Transcribe the document."
+    )
+    assert gemini_config.prompt_for_kind.get(Kind.AUDIO) == "Transcribe the audio."
+    assert gemini_config.prompt_for_kind.get(Kind.VIDEO) == "Transcribe the video."
+    assert gemini_config.prompt_for_kind.get(Kind.IMAGE) == "Describe the image."
 
 
 def test_extractor_config_valid(valid_extractor_config):
@@ -88,7 +106,88 @@ def test_extractor_config_invalid_prompt_for_kind(valid_extractor_config):
         }
 
 
+def test_extractor_config_incomplete_prompt_for_kind(valid_extractor_config):
+    with pytest.raises(
+        ValueError,
+        match="Prompt for kind image is required.",
+    ):
+        valid_extractor_config.properties = {
+            "prompt_for_kind": {
+                "document": "Transcribe the document.",
+                "audio": "Transcribe the audio.",
+                "video": "Transcribe the video.",
+                # missing image
+            },
+            "model_name": "gemini-2.0-flash",
+        }
+
+
 def test_extractor_config_invalid_config_type(valid_extractor_config):
     # Create an invalid config type using string
     with pytest.raises(ValueError):
         valid_extractor_config.extractor_type = "invalid_type"
+
+
+def test_format_properties_errors():
+    class SomeModel(BaseModel):
+        name: str = Field(description="The name of the user.")
+        city: str = Field(description="The city of the user.")
+        age: int = Field(description="The age of the user.")
+
+        @model_validator(mode="after")
+        def validate_city(self) -> Self:
+            if self.city == "New York City":
+                raise ValueError("Cannot be New York City")
+            return self
+
+    # errors raised from inside a custom validator
+    try:
+        SomeModel.model_validate(
+            {
+                "name": "John",
+                "city": "New York City",
+                "age": 30,
+            }
+        )
+    except ValidationError as e:
+        s = format_properties_errors(e)
+        assert s == "Value error, Cannot be New York City."
+
+    # missing required field
+    try:
+        SomeModel.model_validate(
+            {
+                "name": "John",
+                "age": 30,
+            }
+        )
+    except ValidationError as e:
+        s = format_properties_errors(e)
+        assert s == "city: Field required."
+
+    # invalid type
+    try:
+        SomeModel.model_validate(
+            {
+                "name": "John",
+                "city": "Pittsburgh",
+                "age": "30",
+            }
+        )  # type: ignore
+    except ValidationError as e:
+        s = format_properties_errors(e)
+        assert (
+            s
+            == "age: Input should be a valid integer, unable to parse string as an integer."
+        )
+
+    # multiple errors
+    try:
+        SomeModel.model_validate(
+            {
+                "name": "John",
+            }
+        )
+    except ValidationError as e:
+        s = format_properties_errors(e)
+        assert s == "city: Field required.\nage: Field required."
