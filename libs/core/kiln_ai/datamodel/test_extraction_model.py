@@ -6,6 +6,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
     ExtractorType,
     Kind,
+    OutputFormat,
     format_properties_errors,
 )
 
@@ -191,3 +192,37 @@ def test_format_properties_errors():
     except ValidationError as e:
         s = format_properties_errors(e)
         assert s == "city: Field required.\nage: Field required."
+
+
+@pytest.mark.parametrize(
+    "passthrough_mimetypes",
+    [
+        [OutputFormat.TEXT],
+        [OutputFormat.MARKDOWN],
+        [OutputFormat.TEXT, OutputFormat.MARKDOWN],
+    ],
+)
+def test_valid_passthrough_mimetypes(
+    valid_extractor_config_data, passthrough_mimetypes
+):
+    config_data = valid_extractor_config_data.copy()
+    config_data["passthrough_mimetypes"] = passthrough_mimetypes
+    config = ExtractorConfig(**config_data)
+    assert config.passthrough_mimetypes == passthrough_mimetypes
+
+
+@pytest.mark.parametrize(
+    "passthrough_mimetypes",
+    [
+        ["invalid_format"],
+        ["another_invalid"],
+        [OutputFormat.TEXT, "invalid_format"],
+    ],
+)
+def test_invalid_passthrough_mimetypes(
+    valid_extractor_config_data, passthrough_mimetypes
+):
+    config_data = valid_extractor_config_data.copy()
+    config_data["passthrough_mimetypes"] = passthrough_mimetypes
+    with pytest.raises(ValueError):
+        ExtractorConfig(**config_data)
