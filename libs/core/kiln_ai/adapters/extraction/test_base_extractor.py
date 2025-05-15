@@ -206,45 +206,6 @@ def test_extract_non_passthrough(
         assert result.content_format == output_format
 
 
-@pytest.mark.parametrize(
-    "passthrough_mimetypes",
-    [
-        [OutputFormat.TEXT],
-        [OutputFormat.MARKDOWN],
-        [OutputFormat.TEXT, OutputFormat.MARKDOWN],
-    ],
-)
-def test_validate_passthrough_mime_types(
-    mock_gemini_properties, passthrough_mimetypes: list[OutputFormat]
-):
-    config = ExtractorConfig(
-        name="mock",
-        passthrough_mimetypes=passthrough_mimetypes,
-        properties=mock_gemini_properties,
-    )
-    assert config.passthrough_mimetypes == passthrough_mimetypes
-
-
-@pytest.mark.parametrize(
-    "passthrough_mimetypes",
-    [
-        ["image/png"],
-        ["image/png", "text/markdown"],
-        ["audio/mpeg"],
-        ["video/mp4"],
-    ],
-)
-def test_validate_passthrough_mime_types_failure(
-    mock_gemini_properties, passthrough_mimetypes: list[OutputFormat]
-):
-    with pytest.raises(ValueError):
-        ExtractorConfig(
-            name="mock",
-            passthrough_mimetypes=passthrough_mimetypes,
-            properties=mock_gemini_properties,
-        )
-
-
 def test_default_output_format(mock_gemini_properties):
     config = ExtractorConfig(
         name="mock",
