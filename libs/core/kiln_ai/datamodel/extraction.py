@@ -11,9 +11,13 @@ from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel
 def format_properties_errors(e: ValidationError) -> str:
     errors: List[str] = []
     for error in e.errors():
-        loc = error["loc"][0]
-        msg = error["msg"]
-        errors.append(f"{loc}: {msg}.")
+        if "loc" in error and len(error["loc"]) > 0:
+            loc = error["loc"][0]
+            msg = error["msg"]
+            errors.append(f"{loc}: {msg}.")
+        else:
+            # ValueError raised from custom validator does not have a loc
+            errors.append(f"{error['msg']}.")
     return "\n".join(errors)
 
 
@@ -41,6 +45,13 @@ class GeminiProperties(BaseModel):
     model_name: str = Field(
         description="The name of the model to use for this extractor config. ",
     )
+
+    @model_validator(mode="after")
+    def validate_model_name(self) -> Self:
+        for kind in Kind:
+            if kind not in self.prompt_for_kind:
+                raise ValueError(f"Prompt for kind {kind.value} is required.")
+        return self
 
 
 class ExtractorConfig(KilnBaseModel):
