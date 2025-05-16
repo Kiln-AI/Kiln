@@ -68,9 +68,20 @@ class GeminiExtractor(BaseExtractor):
                 f"GeminiExtractor must be initialized with a gemini extractor_type config. Got {extractor_config.extractor_type}"
             )
 
+        model_name = extractor_config.model_name()
+        if model_name is None:
+            raise ValueError("properties.model_name is required for GeminiExtractor")
+
+        prompt_for_kind = extractor_config.prompt_for_kind()
+        if prompt_for_kind is None:
+            raise ValueError(
+                "properties.prompt_for_kind is required for GeminiExtractor"
+            )
+
         super().__init__(extractor_config)
         self.gemini_client = gemini_client
-        self.gemini_config = extractor_config.gemini_properties()
+        self.model_name = model_name
+        self.prompt_for_kind = prompt_for_kind
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
@@ -83,12 +94,12 @@ class GeminiExtractor(BaseExtractor):
         if kind is None:
             raise ValueError(f"Unsupported MIME type: {file_info.mime_type}")
 
-        prompt = self.gemini_config.prompt_for_kind.get(kind)
+        prompt = self.prompt_for_kind.get(kind)
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
 
         response = self.gemini_client.models.generate_content(
-            model=self.gemini_config.model_name,
+            model=self.model_name,
             contents=[
                 types.Part.from_bytes(
                     data=pathlib.Path(file_info.path).read_bytes(),
