@@ -1,10 +1,11 @@
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentModel
+from kiln_ai.datamodel.document import Document
 from kiln_ai.datamodel.task import Task
 
 
-class Project(KilnParentModel, parent_of={"tasks": Task}):
+class Project(KilnParentModel, parent_of={"tasks": Task, "documents": Document}):
     """
     A collection of related tasks.
 
@@ -21,3 +22,6 @@ class Project(KilnParentModel, parent_of={"tasks": Task}):
     # Needed for typechecking. TODO P2: fix this in KilnParentModel
     def tasks(self) -> list[Task]:
         return super().tasks()  # type: ignore
+
+    def documents(self) -> list[Document]:
+        return super().documents()  # type: ignore
