@@ -11,7 +11,7 @@ User docs: https://docs.getkiln.ai/developers/kiln-datamodel
 
 from __future__ import annotations
 
-from kiln_ai.datamodel import dataset_split, eval, strict_mode
+from kiln_ai.datamodel import dataset_split, eval, extraction, strict_mode
 from kiln_ai.datamodel.datamodel_enums import (
     FinetuneDataStrategy,
     FineTuneStatusType,
@@ -19,13 +19,8 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
     TaskOutputRatingType,
 )
-from kiln_ai.datamodel.dataset_split import (
-    DatasetSplit,
-    DatasetSplitDefinition,
-)
-from kiln_ai.datamodel.finetune import (
-    Finetune,
-)
+from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
+from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -42,15 +37,13 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import (
-    TaskRun,
-    Usage,
-)
+from kiln_ai.datamodel.task_run import TaskRun, Usage
 
 __all__ = [
     "strict_mode",
     "dataset_split",
     "eval",
+    "extraction",
     "Task",
     "Project",
     "TaskRun",
