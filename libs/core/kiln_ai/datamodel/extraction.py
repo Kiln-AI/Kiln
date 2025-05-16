@@ -5,7 +5,7 @@ from typing import Any, List
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel
+from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel, KilnParentedModel
 
 
 def format_properties_errors(e: ValidationError) -> str:
@@ -97,3 +97,22 @@ class ExtractorConfig(KilnBaseModel):
 
     def gemini_properties(self) -> GeminiProperties:
         return GeminiProperties(**self.properties)
+
+
+class ExtractionSource(str, Enum):
+    PROCESSED = "processed"
+    PASSTHROUGH = "passthrough"
+
+
+class Extraction(KilnParentedModel):
+    source: ExtractionSource = Field(
+        description="The source of the extraction.",
+    )
+    extractor_config_id: str = Field(
+        description="The ID of the extractor config that was used to extract the data.",
+    )
+
+    # TODO: add extracted data as attachment
+    # output: KilnModelAttachment = Field(
+    #     description="The attachment that was used to extract the data.",
+    # )
