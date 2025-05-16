@@ -1,10 +1,13 @@
 from enum import Enum
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, Union, cast
 
 from pydantic import Field, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel, KilnParentedModel
+from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.project import Project
 
 
 class OutputFormat(str, Enum):
@@ -55,7 +58,7 @@ def validate_model_name(model_name: Any):
         raise ValueError("model_name cannot be empty.")
 
 
-class ExtractorConfig(KilnBaseModel):
+class ExtractorConfig(KilnParentedModel):
     name: str = NAME_FIELD
     description: str | None = Field(
         default=None, description="The description of the extractor config"
@@ -90,6 +93,12 @@ class ExtractorConfig(KilnBaseModel):
 
     def prompt_for_kind(self) -> dict[Kind, str] | None:
         return cast(dict[Kind, str], self.properties.get("prompt_for_kind"))
+
+    # Workaround to return typed parent without importing Project
+    def parent_project(self) -> Union["Project", None]:
+        if self.parent is None or self.parent.__class__.__name__ != "Project":
+            return None
+        return self.parent  # type: ignore
 
 
 class ExtractionSource(str, Enum):

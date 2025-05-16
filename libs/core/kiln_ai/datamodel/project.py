@@ -2,10 +2,18 @@ from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentModel
 from kiln_ai.datamodel.document import Document
+from kiln_ai.datamodel.extraction import ExtractorConfig
 from kiln_ai.datamodel.task import Task
 
 
-class Project(KilnParentModel, parent_of={"tasks": Task, "documents": Document}):
+class Project(
+    KilnParentModel,
+    parent_of={
+        "tasks": Task,
+        "documents": Document,
+        "extractor_configs": ExtractorConfig,
+    },
+):
     """
     A collection of related tasks.
 
@@ -25,3 +33,6 @@ class Project(KilnParentModel, parent_of={"tasks": Task, "documents": Document})
 
     def documents(self) -> list[Document]:
         return super().documents()  # type: ignore
+
+    def extractor_configs(self) -> list[ExtractorConfig]:
+        return super().extractor_configs()  # type: ignore
