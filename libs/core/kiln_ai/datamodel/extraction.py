@@ -4,7 +4,7 @@ from typing import Any, cast
 from pydantic import Field, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel
+from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel, KilnParentedModel
 
 
 class OutputFormat(str, Enum):
@@ -90,3 +90,22 @@ class ExtractorConfig(KilnBaseModel):
 
     def prompt_for_kind(self) -> dict[Kind, str] | None:
         return cast(dict[Kind, str], self.properties.get("prompt_for_kind"))
+
+
+class ExtractionSource(str, Enum):
+    PROCESSED = "processed"
+    PASSTHROUGH = "passthrough"
+
+
+class Extraction(KilnParentedModel):
+    source: ExtractionSource = Field(
+        description="The source of the extraction.",
+    )
+    extractor_config_id: str = Field(
+        description="The ID of the extractor config that was used to extract the data.",
+    )
+
+    # TODO: add extracted data as attachment
+    # output: KilnModelAttachment = Field(
+    #     description="The attachment that was used to extract the data.",
+    # )
