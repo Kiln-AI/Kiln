@@ -1,11 +1,14 @@
 import json
 from enum import Enum
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List, Union
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel, KilnParentedModel
+from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.project import Project
 
 
 def format_properties_errors(e: ValidationError) -> str:
@@ -54,7 +57,7 @@ class GeminiProperties(BaseModel):
         return self
 
 
-class ExtractorConfig(KilnBaseModel):
+class ExtractorConfig(KilnParentedModel):
     name: str = NAME_FIELD
 
     output_format: OutputFormat = Field(
@@ -97,6 +100,12 @@ class ExtractorConfig(KilnBaseModel):
 
     def gemini_properties(self) -> GeminiProperties:
         return GeminiProperties(**self.properties)
+
+    # Workaround to return typed parent without importing Project
+    def parent_project(self) -> Union["Project", None]:
+        if self.parent is None or self.parent.__class__.__name__ != "Project":
+            return None
+        return self.parent  # type: ignore
 
 
 class ExtractionSource(str, Enum):
