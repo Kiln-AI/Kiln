@@ -1,13 +1,12 @@
 import pytest
-from pydantic import BaseModel, Field, ValidationError, model_validator
-from typing_extensions import Self
 
 from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
     ExtractorType,
     Kind,
     OutputFormat,
-    format_properties_errors,
+    validate_model_name,
+    validate_prompt_for_kind,
 )
 
 
@@ -35,13 +34,11 @@ def valid_extractor_config(valid_extractor_config_data):
 
 def test_extractor_config_kind_coercion(valid_extractor_config):
     # check that the string values are coerced to the correct kind
-    gemini_config = valid_extractor_config.gemini_properties()
-    assert (
-        gemini_config.prompt_for_kind.get(Kind.DOCUMENT) == "Transcribe the document."
-    )
-    assert gemini_config.prompt_for_kind.get(Kind.AUDIO) == "Transcribe the audio."
-    assert gemini_config.prompt_for_kind.get(Kind.VIDEO) == "Transcribe the video."
-    assert gemini_config.prompt_for_kind.get(Kind.IMAGE) == "Describe the image."
+    prompt_for_kind = valid_extractor_config.prompt_for_kind()
+    assert prompt_for_kind.get(Kind.DOCUMENT) == "Transcribe the document."
+    assert prompt_for_kind.get(Kind.AUDIO) == "Transcribe the audio."
+    assert prompt_for_kind.get(Kind.VIDEO) == "Transcribe the video."
+    assert prompt_for_kind.get(Kind.IMAGE) == "Describe the image."
 
 
 def test_extractor_config_valid(valid_extractor_config):
@@ -57,14 +54,14 @@ def test_extractor_config_valid(valid_extractor_config):
 
 
 def test_extractor_config_empty_properties(valid_extractor_config):
-    with pytest.raises(ValueError, match="prompt_for_kind: Field required."):
+    with pytest.raises(ValueError, match="prompt_for_kind must be a dictionary"):
         valid_extractor_config.properties = {}
 
 
 def test_extractor_config_missing_model_name(
     valid_extractor_config, valid_extractor_config_data
 ):
-    with pytest.raises(ValueError, match="model_name: Field required."):
+    with pytest.raises(ValueError, match="model_name must be a string"):
         valid_extractor_config.properties = {
             "prompt_for_kind": valid_extractor_config_data["properties"][
                 "prompt_for_kind"
@@ -72,10 +69,22 @@ def test_extractor_config_missing_model_name(
         }
 
 
+def test_extractor_config_empty_model_name(
+    valid_extractor_config, valid_extractor_config_data
+):
+    with pytest.raises(ValueError, match="model_name cannot be empty"):
+        valid_extractor_config.properties = {
+            "prompt_for_kind": valid_extractor_config_data["properties"][
+                "prompt_for_kind"
+            ],
+            "model_name": "",
+        }
+
+
 def test_extractor_config_missing_prompt_for_kind(valid_extractor_config):
     with pytest.raises(
         ValueError,
-        match="prompt_for_kind: Field required.",
+        match="prompt_for_kind must be a dictionary",
     ):
         valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
 
@@ -99,7 +108,7 @@ def test_extractor_config_invalid_json(
 def test_extractor_config_invalid_prompt_for_kind(valid_extractor_config):
     with pytest.raises(
         ValueError,
-        match="prompt_for_kind: Input should be a valid dictionary.",
+        match="prompt_for_kind must be a dictionary",
     ):
         valid_extractor_config.properties = {
             "prompt_for_kind": "not a dict",
@@ -110,7 +119,7 @@ def test_extractor_config_invalid_prompt_for_kind(valid_extractor_config):
 def test_extractor_config_incomplete_prompt_for_kind(valid_extractor_config):
     with pytest.raises(
         ValueError,
-        match="Prompt for kind image is required.",
+        match="Missing prompt for kind: image",
     ):
         valid_extractor_config.properties = {
             "prompt_for_kind": {
@@ -127,71 +136,6 @@ def test_extractor_config_invalid_config_type(valid_extractor_config):
     # Create an invalid config type using string
     with pytest.raises(ValueError):
         valid_extractor_config.extractor_type = "invalid_type"
-
-
-def test_format_properties_errors():
-    class SomeModel(BaseModel):
-        name: str = Field(description="The name of the user.")
-        city: str = Field(description="The city of the user.")
-        age: int = Field(description="The age of the user.")
-
-        @model_validator(mode="after")
-        def validate_city(self) -> Self:
-            if self.city == "New York City":
-                raise ValueError("Cannot be New York City")
-            return self
-
-    # errors raised from inside a custom validator
-    try:
-        SomeModel.model_validate(
-            {
-                "name": "John",
-                "city": "New York City",
-                "age": 30,
-            }
-        )
-    except ValidationError as e:
-        s = format_properties_errors(e)
-        assert s == "Value error, Cannot be New York City."
-
-    # missing required field
-    try:
-        SomeModel.model_validate(
-            {
-                "name": "John",
-                "age": 30,
-            }
-        )
-    except ValidationError as e:
-        s = format_properties_errors(e)
-        assert s == "city: Field required."
-
-    # invalid type
-    try:
-        SomeModel.model_validate(
-            {
-                "name": "John",
-                "city": "Pittsburgh",
-                "age": "30",
-            }
-        )  # type: ignore
-    except ValidationError as e:
-        s = format_properties_errors(e)
-        assert (
-            s
-            == "age: Input should be a valid integer, unable to parse string as an integer."
-        )
-
-    # multiple errors
-    try:
-        SomeModel.model_validate(
-            {
-                "name": "John",
-            }
-        )
-    except ValidationError as e:
-        s = format_properties_errors(e)
-        assert s == "city: Field required.\nage: Field required."
 
 
 @pytest.mark.parametrize(
@@ -226,3 +170,67 @@ def test_invalid_passthrough_mimetypes(
     config_data["passthrough_mimetypes"] = passthrough_mimetypes
     with pytest.raises(ValueError):
         ExtractorConfig(**config_data)
+
+
+def test_validate_prompt_for_kind_valid():
+    # check should not raise an error
+    validate_prompt_for_kind(
+        {
+            "document": "string",
+            "audio": "string",
+            "video": "string",
+            "image": "string",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt_for_kind, expected_error_message",
+    [
+        ("not a dict", "prompt_for_kind must be a dictionary"),
+        ({"invalid_kind": "not a prompt"}, "'invalid_kind' is not a valid Kind"),
+        (
+            {"document": 123},
+            "Invalid prompt for kind: document. Prompt must be a string.",
+        ),
+        (
+            {
+                "document": "string",
+                "audio": "string",
+                "video": "string",
+                # missing image
+            },
+            "Missing prompt for kind: image",
+        ),
+        (
+            {
+                "document": "string",
+                "audio": "string",
+                "video": "string",
+                "image": "string",
+                "invalid_kind": "string",
+            },
+            "'invalid_kind' is not a valid Kind",
+        ),
+    ],
+)
+def test_validate_prompt_for_kind_errors(prompt_for_kind, expected_error_message):
+    with pytest.raises(ValueError, match=expected_error_message):
+        validate_prompt_for_kind(prompt_for_kind)
+
+
+def test_validate_model_name_valid():
+    # check should not raise an error
+    validate_model_name("gemini-2.0-flash")
+
+
+@pytest.mark.parametrize(
+    "model_name, expected_error_message",
+    [
+        ("", "model_name cannot be empty"),
+        (123, "model_name must be a string"),
+    ],
+)
+def test_validate_model_name_invalid(model_name, expected_error_message):
+    with pytest.raises(ValueError, match=expected_error_message):
+        validate_model_name(model_name)

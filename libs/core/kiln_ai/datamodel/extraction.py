@@ -1,24 +1,11 @@
 import json
 from enum import Enum
-from typing import Any, List
+from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import Field, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnBaseModel
-
-
-def format_properties_errors(e: ValidationError) -> str:
-    errors: List[str] = []
-    for error in e.errors():
-        if "loc" in error and len(error["loc"]) > 0:
-            loc = error["loc"][0]
-            msg = error["msg"]
-            errors.append(f"{loc}: {msg}.")
-        else:
-            # ValueError raised from custom validator does not have a loc
-            errors.append(f"{error['msg']}.")
-    return "\n".join(errors)
 
 
 class OutputFormat(str, Enum):
@@ -37,21 +24,33 @@ class Kind(str, Enum):
     AUDIO = "audio"
 
 
-class GeminiProperties(BaseModel):
-    prompt_for_kind: dict[Kind, str] = Field(
-        description="A dictionary of prompts for each kind of content to extract.",
-    )
+def validate_prompt_for_kind(prompt_for_kind: Any):
+    # check prompt_for_kind is a dictionary
+    if not isinstance(prompt_for_kind, dict):
+        raise ValueError("prompt_for_kind must be a dictionary.")
+    # check all keys are valid kinds
+    for key, value in prompt_for_kind.items():
+        # type the key to a kind
+        Kind(key)
+        # if not isinstance(typed_key, Kind):
+        #     raise ValueError(f"Invalid kind in prompt_for_kind: {key}")
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Invalid prompt for kind: {key}. Prompt must be a string."
+            )
+    # check all kinds are present
+    for kind in Kind:
+        if kind not in prompt_for_kind:
+            raise ValueError(
+                f"Missing prompt for kind: {kind.value}. All kinds must be present in prompt_for_kind."
+            )
 
-    model_name: str = Field(
-        description="The name of the model to use for this extractor config. ",
-    )
 
-    @model_validator(mode="after")
-    def validate_model_name(self) -> Self:
-        for kind in Kind:
-            if kind not in self.prompt_for_kind:
-                raise ValueError(f"Prompt for kind {kind.value} is required.")
-        return self
+def validate_model_name(model_name: Any):
+    if not isinstance(model_name, str):
+        raise ValueError("model_name must be a string.")
+    if model_name == "":
+        raise ValueError("model_name cannot be empty.")
 
 
 class ExtractorConfig(KilnBaseModel):
@@ -77,11 +76,8 @@ class ExtractorConfig(KilnBaseModel):
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
         if self.extractor_type == ExtractorType.gemini:
-            # This will raise an error if the properties are invalid
-            try:
-                GeminiProperties(**self.properties)
-            except ValidationError as e:
-                raise ValueError(format_properties_errors(e))
+            validate_prompt_for_kind(self.properties.get("prompt_for_kind"))
+            validate_model_name(self.properties.get("model_name"))
             return self
         else:
             raise ValueError(f"Invalid extractor type: {self.extractor_type}")
@@ -95,5 +91,8 @@ class ExtractorConfig(KilnBaseModel):
             raise ValueError(f"Properties must be JSON serializable: {str(e)}")
         return self
 
-    def gemini_properties(self) -> GeminiProperties:
-        return GeminiProperties(**self.properties)
+    def model_name(self) -> str | None:
+        return self.properties.get("model_name")
+
+    def prompt_for_kind(self) -> dict[Kind, str] | None:
+        return self.properties.get("prompt_for_kind")
