@@ -3,7 +3,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
-from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.adapters.parsers.request_formatters import request_formatter_from_id
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.task import RunConfig
 
@@ -12,7 +13,7 @@ class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
     async def _run(self, input):
-        return None
+        return None, None
 
     def adapter_name(self) -> str:
         return "test"
@@ -40,6 +41,22 @@ def adapter(base_task):
             prompt_id="simple_prompt_builder",
         ),
     )
+
+
+@pytest.fixture
+def mock_formatter():
+    formatter = MagicMock()
+    formatter.format_input.return_value = {"formatted": "input"}
+    return formatter
+
+
+@pytest.fixture
+def mock_parser():
+    parser = MagicMock()
+    parser.parse_output.return_value = RunOutput(
+        output="test output", intermediate_outputs={}
+    )
+    return parser
 
 
 async def test_model_provider_uses_cache(adapter, mock_provider):
@@ -197,3 +214,58 @@ async def test_run_strategy(
     # Test
     result = adapter.run_strategy()
     assert result == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "formatter_id,expected_input,expected_calls",
+    [
+        (None, {"original": "input"}, 0),  # No formatter
+        ("test_formatter", {"formatted": "input"}, 1),  # With formatter
+    ],
+)
+async def test_input_formatting(
+    adapter, mock_formatter, mock_parser, formatter_id, expected_input, expected_calls
+):
+    """Test that input formatting is handled correctly based on formatter configuration"""
+    # Mock the model provider to return our formatter ID and parser
+    provider = MagicMock()
+    provider.formatter = formatter_id
+    provider.parser = "test_parser"
+    provider.reasoning_capable = False
+    adapter.model_provider = MagicMock(return_value=provider)
+
+    # Mock the formatter factory and parser factory
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+        ) as mock_factory,
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+        ) as mock_parser_factory,
+    ):
+        mock_factory.return_value = mock_formatter
+        mock_parser_factory.return_value = mock_parser
+
+        # Mock the _run method to capture the input
+        captured_input = None
+
+        async def mock_run(input):
+            nonlocal captured_input
+            captured_input = input
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Run the adapter
+        original_input = {"original": "input"}
+        await adapter.invoke_returning_run_output(original_input)
+
+        # Verify formatter was called correctly
+        assert captured_input == expected_input
+        assert mock_factory.call_count == (1 if formatter_id else 0)
+        assert mock_formatter.format_input.call_count == expected_calls
+
+        # Verify original input was preserved in the run
+        if formatter_id:
+            mock_formatter.format_input.assert_called_once_with(original_input)

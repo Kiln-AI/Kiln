@@ -56,5 +56,19 @@ class FineTuneStatusType(str, Enum):
 
 
 class FinetuneDataStrategy(str, Enum):
+    """Strategy for what data to include when fine-tuning a model."""
+
+    # Only train on the final response, ignoring any intermediate steps or chain of thought
     final_only = "final_only"
+
+    # Train on both the final response and any intermediate steps/chain of thought
     final_and_intermediate = "final_and_intermediate"
+
+    # Train using R1-style thinking format, which includes the reasoning in <think> tags in the message
+    final_and_intermediate_r1_compatible = "final_and_intermediate_r1_compatible"
+
+
+THINKING_DATA_STRATEGIES: list[FinetuneDataStrategy] = [
+    FinetuneDataStrategy.final_and_intermediate,
+    FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+]

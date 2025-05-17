@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.adapters.model_adapters.test_structured_output import (
     build_structured_output_test_task,
 )
@@ -15,6 +15,7 @@ from kiln_ai.adapters.prompt_builders import (
     MultiShotPromptBuilder,
     RepairsPromptBuilder,
     SavedPromptBuilder,
+    ShortPromptBuilder,
     SimpleChainOfThoughtPromptBuilder,
     SimplePromptBuilder,
     TaskRunConfigPromptBuilder,
@@ -33,6 +34,7 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskOutputRating,
     TaskRun,
+    Usage,
 )
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 
@@ -58,9 +60,28 @@ def test_simple_prompt_builder(tmp_path):
     assert input not in prompt
 
 
+def test_short_prompt_builder(tmp_path):
+    task = build_test_task(tmp_path)
+    builder = ShortPromptBuilder(task=task)
+    prompt = builder.build_prompt(include_json_instructions=False)
+
+    # Should only include the instruction, not requirements
+    assert task.instruction == prompt
+    assert task.requirements[0].instruction not in prompt
+    assert task.requirements[1].instruction not in prompt
+    assert task.requirements[2].instruction not in prompt
+
+    # Should handle JSON instructions correctly
+    prompt_with_json = builder.build_prompt(include_json_instructions=True)
+    assert task.instruction in prompt_with_json
+    if task.output_schema():
+        assert "# Format Instructions" in prompt_with_json
+        assert task.output_schema() in prompt_with_json
+
+
 class MockAdapter(BaseAdapter):
-    def _run(self, input: str) -> str:
-        return "mock response"
+    async def _run(self, input: str) -> tuple[RunOutput, Usage | None]:
+        return RunOutput(output="mock response", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
         return "mock_adapter"

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
@@ -10,6 +9,7 @@ from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +21,6 @@ class EvalJob:
     # If type == "task_run_eval", both of these should be set. If type == "eval_config_eval", only eval_config should be set.
     eval_config: EvalConfig
     task_run_config: TaskRunConfig | None = None
-
-
-@dataclass
-class EvalProgress:
-    complete: int | None = None
-    total: int | None = None
-    errors: int | None = None
 
 
 class EvalRunner:
@@ -161,67 +154,15 @@ class EvalRunner:
             if task_run.id not in already_run[eval_config.id][run_config.id]
         ]
 
-    async def run(self, concurrency: int = 25) -> AsyncGenerator[EvalProgress, None]:
+    async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
         """
         jobs = self.collect_tasks()
 
-        complete = 0
-        errors = 0
-        total = len(jobs)
-
-        # Send initial status
-        yield EvalProgress(complete=complete, total=total, errors=errors)
-
-        worker_queue: asyncio.Queue[EvalJob] = asyncio.Queue()
-        for job in jobs:
-            worker_queue.put_nowait(job)
-
-        # simple status queue to return progress. True=success, False=error
-        status_queue: asyncio.Queue[bool] = asyncio.Queue()
-
-        workers = []
-        for i in range(concurrency):
-            task = asyncio.create_task(self.run_worker(worker_queue, status_queue))
-            workers.append(task)
-
-        # Send status updates until workers are done, and they are all sent
-        while not status_queue.empty() or not all(worker.done() for worker in workers):
-            try:
-                # Use timeout to prevent hanging if all workers complete
-                # between our while condition check and get()
-                success = await asyncio.wait_for(status_queue.get(), timeout=0.1)
-                if success:
-                    complete += 1
-                else:
-                    errors += 1
-
-                yield EvalProgress(complete=complete, total=total, errors=errors)
-            except asyncio.TimeoutError:
-                # Timeout is expected, just continue to recheck worker status
-                # Don't love this but beats sentinels for reliability
-                continue
-
-        # These are redundant, but keeping them will catch async errors
-        await asyncio.gather(*workers)
-        await worker_queue.join()
-
-    async def run_worker(
-        self, worker_queue: asyncio.Queue[EvalJob], status_queue: asyncio.Queue[bool]
-    ):
-        while True:
-            try:
-                job = worker_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                # worker can end when the queue is empty
-                break
-            try:
-                success = await self.run_job(job)
-                await status_queue.put(success)
-            finally:
-                # Always mark the dequeued task as done, even on exceptions
-                worker_queue.task_done()
+        runner = AsyncJobRunner(concurrency=concurrency)
+        async for progress in runner.run(jobs, self.run_job):
+            yield progress
 
     async def run_job(self, job: EvalJob) -> bool:
         try:

@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppPage from "../../app_page.svelte"
   import ConnectProviders from "../../../(fullscreen)/setup/(setup)/connect_providers/connect_providers.svelte"
+  import { page } from "$app/stores"
 </script>
 
 <AppPage
@@ -15,5 +16,7 @@
     },
   ]}
 >
-  <ConnectProviders />
+  <ConnectProviders
+    highlight_finetune={$page.url.searchParams.get("highlight") === "finetune"}
+  />
 </AppPage>

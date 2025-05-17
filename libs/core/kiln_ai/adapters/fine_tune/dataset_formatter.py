@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from kiln_ai.adapters.model_adapters.base_adapter import COT_FINAL_ANSWER_PROMPT
 from kiln_ai.datamodel import DatasetSplit, FinetuneDataStrategy, TaskRun
+from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES
 
 
 class DatasetFormat(str, Enum):
@@ -43,8 +44,12 @@ class ModelTrainingData:
     thinking_instructions: str | None = None
     thinking: str | None = None
     thinking_final_answer_prompt: str | None = None
+    thinking_r1_style: bool = False
 
     def supports_cot(self) -> bool:
+        if self.thinking_r1_style:
+            raise ValueError("R1 style does not support COT")
+
         return (
             self.thinking_instructions is not None
             and self.thinking is not None
@@ -64,7 +69,7 @@ class FormatGenerator(Protocol):
 def build_training_data(
     task_run: TaskRun,
     system_message: str,
-    include_cot: bool,
+    data_strategy: FinetuneDataStrategy,
     thinking_instructions: str | None = None,
 ) -> ModelTrainingData:
     """
@@ -80,27 +85,41 @@ def build_training_data(
 
     thinking = None
     thinking_final_answer_prompt = None
+    thinking_r1_style = False
     parent_task = task_run.parent_task()
 
-    if include_cot and task_run.has_thinking_training_data():
-        if not parent_task:
-            raise ValueError(
-                "TaskRuns for training required a parent Task for building a chain of thought prompts. Train without COT, or save this TaskRun to a parent Task."
-            )
-
+    if data_strategy in THINKING_DATA_STRATEGIES:
         # Prefer reasoning to cot if both are present
-        intermediate_outputs = task_run.intermediate_outputs or {}
-        thinking = intermediate_outputs.get("reasoning") or intermediate_outputs.get(
-            "chain_of_thought"
-        )
+        thinking = task_run.thinking_training_data()
 
-        thinking_final_answer_prompt = COT_FINAL_ANSWER_PROMPT
+        if data_strategy == FinetuneDataStrategy.final_and_intermediate_r1_compatible:
+            if not task_run.has_thinking_training_data() or not thinking:
+                raise ValueError(
+                    "Thinking data is required when fine-tuning thinking models (R1, QwQ, etc). Please ensure your fine-tuning dataset contains reasoning or chain of thought output for every entry."
+                )
+            if thinking_instructions:
+                raise ValueError(
+                    "Thinking instructions are not supported when fine-tuning thinking models (R1, QwQ, etc). Please remove the thinking instructions."
+                )
+            thinking_r1_style = True
+        elif (
+            data_strategy == FinetuneDataStrategy.final_and_intermediate
+            and task_run.has_thinking_training_data()
+        ):
+            if not parent_task:
+                raise ValueError(
+                    "TaskRuns for training required a parent Task for building a chain of thought prompts. Train without COT, or save this TaskRun to a parent Task."
+                )
 
-        # Always use the passed thinking instructions, but check they are present for COT
-        if not thinking_instructions:
-            raise ValueError(
-                "Thinking instructions are required when data_strategy is final_and_intermediate"
-            )
+            thinking_final_answer_prompt = COT_FINAL_ANSWER_PROMPT
+
+            # Always use the passed thinking instructions, but check they are present for COT
+            if not thinking_instructions:
+                raise ValueError(
+                    "Thinking instructions are required when data_strategy is final_and_intermediate"
+                )
+        else:
+            raise ValueError(f"Unsupported data strategy: {data_strategy}")
 
     return ModelTrainingData(
         input=task_run.input,
@@ -109,7 +128,17 @@ def build_training_data(
         thinking=thinking,
         thinking_instructions=thinking_instructions,
         thinking_final_answer_prompt=thinking_final_answer_prompt,
+        thinking_r1_style=thinking_r1_style,
     )
+
+
+def serialize_r1_style_message(thinking: str | None, final_output: str):
+    if thinking is None or len(thinking.strip()) == 0:
+        raise ValueError(
+            "Thinking data is required when fine-tuning thinking models (R1, QwQ, etc). Please ensure your fine-tuning dataset contains reasoning or chain of thought output for every entry."
+        )
+
+    return f"<think>\n{thinking}\n</think>\n\n{final_output}"
 
 
 def generate_chat_message_response(
@@ -122,7 +151,21 @@ def generate_chat_message_response(
         {"role": "user", "content": training_data.input},
     ]
 
-    if training_data.supports_cot():
+    if training_data.thinking_r1_style:
+        messages.extend(
+            [
+                {
+                    "role": "assistant",
+                    "content": serialize_r1_style_message(
+                        thinking=training_data.thinking,
+                        final_output=training_data.final_output,
+                    ),
+                }
+            ]
+        )
+
+        return {"messages": messages}
+    elif training_data.supports_cot():
         messages.extend(
             [
                 {"role": "user", "content": training_data.thinking_instructions},
@@ -157,7 +200,21 @@ def generate_json_schema_message(
         {"role": "user", "content": training_data.input},
     ]
 
-    if training_data.supports_cot():
+    if training_data.thinking_r1_style:
+        messages.extend(
+            [
+                {
+                    "role": "assistant",
+                    "content": serialize_r1_style_message(
+                        thinking=training_data.thinking,
+                        final_output=training_data.final_output,
+                    ),
+                }
+            ]
+        )
+
+        return {"messages": messages}
+    elif training_data.supports_cot():
         messages.extend(
             [
                 {"role": "user", "content": training_data.thinking_instructions},
@@ -188,7 +245,11 @@ def generate_chat_message_toolcall(
         {"role": "user", "content": training_data.input},
     ]
 
-    if training_data.supports_cot():
+    if training_data.thinking_r1_style:
+        raise ValueError(
+            "R1 style thinking is not supported for tool call downloads. Please use a different training strategy."
+        )
+    elif training_data.supports_cot():
         messages.extend(
             [
                 {"role": "user", "content": training_data.thinking_instructions},
@@ -231,12 +292,29 @@ def generate_huggingface_chat_template(
         {"role": "user", "content": training_data.input},
     ]
 
+    if training_data.thinking_r1_style:
+        conversations.extend(
+            [
+                {
+                    "role": "assistant",
+                    "content": serialize_r1_style_message(
+                        thinking=training_data.thinking,
+                        final_output=training_data.final_output,
+                    ),
+                }
+            ]
+        )
+        return {"conversations": conversations}
+
     if training_data.supports_cot():
         conversations.extend(
             [
                 {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
-                {"role": "user", "content": training_data.thinking_final_answer_prompt},
+                {
+                    "role": "user",
+                    "content": training_data.thinking_final_answer_prompt,
+                },
             ]
         )
 
@@ -260,12 +338,19 @@ def generate_huggingface_chat_template_toolcall(
         {"role": "user", "content": training_data.input},
     ]
 
-    if training_data.supports_cot():
+    if training_data.thinking_r1_style:
+        raise ValueError(
+            "R1 style thinking is not supported for tool call downloads. Please use a different training strategy."
+        )
+    elif training_data.supports_cot():
         conversations.extend(
             [
                 {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
-                {"role": "user", "content": training_data.thinking_final_answer_prompt},
+                {
+                    "role": "user",
+                    "content": training_data.thinking_final_answer_prompt,
+                },
             ]
         )
 
@@ -294,6 +379,14 @@ def generate_vertex_gemini(
     """Generate Vertex Gemini 1.5 format (flash and pro)"""
     # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning-prepare
 
+    system_instruction = {
+        "role": "system",
+        "parts": [
+            {
+                "text": training_data.system_message,
+            }
+        ],
+    }
     contents = [
         {
             "role": "user",
@@ -305,7 +398,11 @@ def generate_vertex_gemini(
         }
     ]
 
-    if training_data.supports_cot():
+    if training_data.thinking_r1_style:
+        raise ValueError(
+            "R1 style thinking is not supported for Vertex Gemini. Please use a different training strategy."
+        )
+    elif training_data.supports_cot():
         contents.extend(
             [
                 {
@@ -328,14 +425,7 @@ def generate_vertex_gemini(
     )
 
     return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": training_data.system_message,
-                }
-            ],
-        },
+        "systemInstruction": system_instruction,
         "contents": contents,
     }
 
@@ -397,7 +487,7 @@ class DatasetFormatter:
 
         generator = FORMAT_GENERATORS[format_type]
 
-        include_cot = data_strategy == FinetuneDataStrategy.final_and_intermediate
+        include_cot = data_strategy in THINKING_DATA_STRATEGIES
 
         # Write to a temp file if no path is provided
         output_path = (
@@ -421,7 +511,7 @@ class DatasetFormatter:
                 training_data = build_training_data(
                     task_run=task_run,
                     system_message=self.system_message,
-                    include_cot=include_cot,
+                    data_strategy=data_strategy,
                     thinking_instructions=self.thinking_instructions,
                 )
                 example = generator(training_data)

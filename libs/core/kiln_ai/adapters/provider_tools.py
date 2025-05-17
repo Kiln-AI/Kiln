@@ -5,6 +5,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
     ModelName,
+    ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
@@ -15,7 +16,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import (
 from kiln_ai.adapters.ollama_tools import (
     get_ollama_connection,
 )
-from kiln_ai.datamodel import Finetune, Task
+from kiln_ai.datamodel import Finetune, FinetuneDataStrategy, Task
 from kiln_ai.datamodel.registry import project_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -257,6 +258,14 @@ def finetune_from_id(model_id: str) -> Finetune:
     return fine_tune
 
 
+def parser_from_data_strategy(
+    data_strategy: FinetuneDataStrategy,
+) -> ModelParserID | None:
+    if data_strategy == FinetuneDataStrategy.final_and_intermediate_r1_compatible:
+        return ModelParserID.r1_thinking
+    return None
+
+
 def finetune_provider_model(
     model_id: str,
 ) -> KilnModelProvider:
@@ -266,6 +275,14 @@ def finetune_provider_model(
     model_provider = KilnModelProvider(
         name=provider,
         model_id=fine_tune.fine_tune_model_id,
+        parser=parser_from_data_strategy(fine_tune.data_strategy),
+        reasoning_capable=(
+            fine_tune.data_strategy
+            in [
+                FinetuneDataStrategy.final_and_intermediate,
+                FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            ]
+        ),
     )
 
     if provider == ModelProviderName.vertex and fine_tune.fine_tune_model_id:

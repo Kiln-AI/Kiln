@@ -64,3 +64,16 @@ export function data_strategy_name(data_strategy: string): string {
       return data_strategy
   }
 }
+
+export function rating_name(rating_type: string): string {
+  switch (rating_type) {
+    case "five_star":
+      return "5 star"
+    case "pass_fail":
+      return "Pass/Fail"
+    case "pass_fail_critical":
+      return "Pass/Fail/Critical"
+    default:
+      return rating_type
+  }
+}

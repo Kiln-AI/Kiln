@@ -5,6 +5,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import (
+    THINKING_DATA_STRATEGIES,
     FinetuneDataStrategy,
     FineTuneStatusType,
     StructuredOutputMode,

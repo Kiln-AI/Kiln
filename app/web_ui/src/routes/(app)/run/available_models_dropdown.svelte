@@ -2,6 +2,7 @@
   import {
     available_models,
     load_available_models,
+    available_model_details,
     ui_state,
   } from "$lib/stores"
   import type { AvailableModels } from "$lib/types"
@@ -14,6 +15,7 @@
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
   export let error_message: string | null = null
+  export let suggested_mode: "data_gen" | "evals" | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || {},
@@ -81,7 +83,13 @@
           unsupported_models.push([id, long_label])
           continue
         }
-        model_list.push([id, model.name])
+        let model_name = model.name
+        if (suggested_mode === "data_gen" && model.suggested_for_data_gen) {
+          model_name = model.name + "  —  Recommended"
+        } else if (suggested_mode === "evals" && model.suggested_for_evals) {
+          model_name = model.name + "  —  Recommended"
+        }
+        model_list.push([id, model_name])
       }
       if (model_list.length > 0) {
         options.push([provider.provider_name, model_list])
@@ -120,6 +128,14 @@
 
   $: selected_model_untested = untested_models.find((m) => m[0] === model)
   $: selected_model_unsupported = unsupported_models.find((m) => m[0] === model)
+
+  $: selected_model_suggested_data_gen =
+    available_model_details(model_name, provider_name, $available_models)
+      ?.suggested_for_data_gen || false
+
+  $: selected_model_suggested_evals =
+    available_model_details(model_name, provider_name, $available_models)
+      ?.suggested_for_evals || false
 </script>
 
 <div>
@@ -150,5 +166,33 @@
         warning_message="This model is not recommended for use with tasks requiring structured output. It fails to consistently return structured data."
       />
     {/if}
+  {:else if suggested_mode === "data_gen"}
+    <Warning
+      warning_icon={!model
+        ? "info"
+        : selected_model_suggested_data_gen
+          ? "check"
+          : "exclaim"}
+      warning_color={!model
+        ? "gray"
+        : selected_model_suggested_data_gen
+          ? "success"
+          : "warning"}
+      warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+    />
+  {:else if suggested_mode === "evals"}
+    <Warning
+      warning_icon={!model
+        ? "info"
+        : selected_model_suggested_evals
+          ? "check"
+          : "exclaim"}
+      warning_color={!model
+        ? "gray"
+        : selected_model_suggested_evals
+          ? "success"
+          : "warning"}
+      warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+    />
   {/if}
 </div>

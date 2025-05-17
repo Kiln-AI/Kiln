@@ -36,7 +36,7 @@ from app.desktop.studio_server.provider_api import (
     connect_vertex,
     connect_wandb,
     custom_models,
-    model_from_ollama_tag,
+    models_from_ollama_tag,
     openai_compatible_providers,
     openai_compatible_providers_load_cache,
     parse_url,
@@ -395,6 +395,8 @@ async def test_get_available_models(app, client):
                     "name": "Model 2",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "suggested_for_data_gen": False,
+                    "suggested_for_evals": False,
                     "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
@@ -413,6 +415,8 @@ async def test_get_available_models(app, client):
                     "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
+                    "suggested_for_data_gen": False,
+                    "suggested_for_evals": False,
                 }
             ],
         },
@@ -428,6 +432,8 @@ async def test_get_available_models(app, client):
                     "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
+                    "suggested_for_data_gen": False,
+                    "suggested_for_evals": False,
                 }
             ],
         },
@@ -493,6 +499,8 @@ async def test_get_available_models_ollama_exception(app, client):
                     "supports_logprobs": False,
                     "task_filter": None,
                     "untested_model": False,
+                    "suggested_for_data_gen": False,
+                    "suggested_for_evals": False,
                 }
             ],
         },
@@ -555,37 +563,60 @@ def test_model_from_ollama_tag():
 
     with patch("app.desktop.studio_server.provider_api.built_in_models", test_models):
         # Test direct model match
-        result, provider = model_from_ollama_tag("llama2")
+        result, provider = models_from_ollama_tag("llama2")[0]
         assert result is not None
         assert result.name == "model1"
         assert provider.name == ModelProviderName.ollama
 
         # Test with :latest suffix
-        result, provider = model_from_ollama_tag("mistral:latest")
+        result, provider = models_from_ollama_tag("mistral:latest")[0]
         assert result is not None
         assert result.name == "model2"
         assert provider.name == ModelProviderName.ollama
 
         # Test model alias match
-        result, provider = model_from_ollama_tag("llama-2")
+        result, provider = models_from_ollama_tag("llama-2")[0]
         assert result is not None
         assert result.name == "model1"
 
         # Test model alias with :latest
-        result, provider = model_from_ollama_tag("llama2-chat:latest")
+        result, provider = models_from_ollama_tag("llama2-chat:latest")[0]
         assert result is not None
         assert result.name == "model1"
         assert provider.name == ModelProviderName.ollama
 
         # Test no match found
-        result, provider = model_from_ollama_tag("nonexistent-model")
-        assert result is None
-        assert provider is None
+        results = models_from_ollama_tag("nonexistent-model")
+        assert len(results) == 0
 
         # Test model without Ollama provider
-        result, provider = model_from_ollama_tag("gpt-4")
-        assert result is None
-        assert provider is None
+        results = models_from_ollama_tag("gpt-4")
+        assert len(results) == 0
+
+        test_models.append(
+            KilnModel(
+                name="model1v2",
+                friendly_name="Model 1v2",
+                family="test",
+                providers=[
+                    KilnModelProvider(
+                        name=ModelProviderName.ollama,
+                        model_id="llama2",
+                        ollama_model_aliases=["llama-2", "llama2-chat"],
+                    )
+                ],
+            ),
+        )
+
+        # Test two models under one tag
+        results = models_from_ollama_tag("llama-2")
+        assert len(results) == 2
+        model, provider = results[0]
+        assert model.name == "model1"
+        assert provider.name == ModelProviderName.ollama
+        model, provider = results[1]
+        assert model.name == "model1v2"
+        assert provider.name == ModelProviderName.ollama
 
 
 @pytest.mark.asyncio
@@ -1215,6 +1246,8 @@ def test_openai_compatible_providers():
                             supports_data_gen=False,
                             supports_logprobs=False,
                             untested_model=True,
+                            suggested_for_data_gen=False,
+                            suggested_for_evals=False,
                         )
                     ],
                 ),

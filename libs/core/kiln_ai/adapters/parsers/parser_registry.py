@@ -6,14 +6,16 @@ from kiln_ai.adapters.parsers.r1_parser import R1ThinkingParser
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
-def model_parser_from_id(parser_id: ModelParserID | None) -> Type[BaseParser]:
+def model_parser_from_id(parser_id: ModelParserID | None) -> BaseParser:
     """
     Get a model parser from its ID.
     """
     match parser_id:
         case None:
-            return BaseParser
+            return BaseParser()
         case ModelParserID.r1_thinking:
-            return R1ThinkingParser
+            return R1ThinkingParser()
+        case ModelParserID.optional_r1_thinking:
+            return R1ThinkingParser(allow_missing_thinking=True)
         case _:
             raise_exhaustive_enum_error(parser_id)

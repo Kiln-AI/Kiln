@@ -139,7 +139,7 @@
               <button
                 class="btn btn-sm h-10 min-w-24 {button.isPrimary
                   ? 'btn-primary'
-                  : 'btn-secondary'}
+                  : ''}
                   {button.isError ? 'btn-error' : ''}"
                 disabled={button.disabled}
                 on:click={() => perform_button_action(button)}

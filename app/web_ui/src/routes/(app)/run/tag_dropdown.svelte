@@ -44,8 +44,7 @@
     <option value="needs_rating"></option>
     <option value="golden"></option>
     <option value="eval_set"></option>
-    <option value="manual_run"></option>
-    <option value="synthetic"></option>
+    <option value="fine_tune_data"></option>
   </datalist>
   {#if error}
     <div class="text-error text-sm mt-1">{error}</div>

@@ -3,16 +3,25 @@ import json
 import logging
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import (
+    DataSource,
+    DataSourceType,
+    Project,
+    Task,
+    TaskOutput,
+    TaskRun,
+)
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
     DatasetImportFormat,
     ImportConfig,
     KilnInvalidImportFormat,
+    add_tag_splits,
     deserialize_tags,
     format_validation_error,
     generate_import_tags,
@@ -144,16 +153,20 @@ def test_import_csv_plain_text(base_task: Task, tmp_path):
 
     file_path = dicts_to_file_as_csv(row_data, "test.csv", tmp_path)
 
-    importer = DatasetFileImporter(
-        base_task,
-        ImportConfig(
-            dataset_type=DatasetImportFormat.CSV,
-            dataset_path=file_path,
-            dataset_name="test.csv",
-        ),
-    )
+    with patch("kiln_ai.utils.dataset_import.add_tag_splits") as mock_add_tag_splits:
+        importer = DatasetFileImporter(
+            base_task,
+            ImportConfig(
+                dataset_type=DatasetImportFormat.CSV,
+                dataset_path=file_path,
+                dataset_name="test.csv",
+            ),
+        )
 
-    importer.create_runs_from_file()
+        importer.create_runs_from_file()
+
+        # Verify add_tag_splits was called
+        mock_add_tag_splits.assert_called_once()
 
     assert len(base_task.runs()) == 4
 
@@ -594,3 +607,222 @@ def test_format_validation_error():
 
 def test_generate_import_tags():
     assert generate_import_tags("123") == ["imported", "imported_123"]
+
+
+def test_add_tag_splits(base_task: Task):
+    """Test that tag splits are assigned correctly with exact proportions."""
+    # Create some test runs
+    runs = []
+    for i in range(10):
+        run = TaskRun(
+            parent=base_task,
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.file_import,
+                properties={"file_name": "test.csv"},
+            ),
+            output=TaskOutput(
+                output=f"output {i}",
+                source=DataSource(
+                    type=DataSourceType.file_import,
+                    properties={"file_name": "test.csv"},
+                ),
+            ),
+        )
+        runs.append(run)
+
+    # Test with 70/30 split
+    tag_splits = {"train": 0.7, "test": 0.3}
+    add_tag_splits(runs, tag_splits)
+
+    # Count the tags
+    train_count = sum(1 for run in runs if "train" in run.tags)
+    test_count = sum(1 for run in runs if "test" in run.tags)
+
+    # With 10 runs, we should get exactly 7 train and 3 test
+    assert train_count == 7
+    assert test_count == 3
+    assert len(runs) == train_count + test_count
+
+
+def test_add_tag_splits_rounding(base_task: Task):
+    """Test that tag splits handle rounding correctly."""
+    # Test a 33/33/34 split
+    runs = []
+    for i in range(34):
+        run = TaskRun(
+            parent=base_task,
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.file_import,
+                properties={"file_name": "test.csv"},
+            ),
+            output=TaskOutput(
+                output=f"output {i}",
+                source=DataSource(
+                    type=DataSourceType.file_import,
+                    properties={"file_name": "test.csv"},
+                ),
+            ),
+        )
+        runs.append(run)
+
+    # Test with three equal splits
+    tag_splits = {"train": 0.33, "val": 0.33, "test": 0.34}
+    add_tag_splits(runs, tag_splits)
+
+    # Count the tags
+    train_count = sum(1 for run in runs if "train" in run.tags)
+    val_count = sum(1 for run in runs if "val" in run.tags)
+    test_count = sum(1 for run in runs if "test" in run.tags)
+
+    # Should have one of each
+    assert train_count in [11, 12]
+    assert val_count in [11, 12]
+    assert test_count in [11, 12]
+    assert len(runs) == train_count + val_count + test_count
+
+
+def test_add_tag_splits_none(base_task: Task):
+    """Test that None tag_splits is handled correctly."""
+    runs = []
+    for i in range(5):
+        run = TaskRun(
+            parent=base_task,
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.file_import,
+                properties={"file_name": "test.csv"},
+            ),
+            output=TaskOutput(
+                output=f"output {i}",
+                source=DataSource(
+                    type=DataSourceType.file_import,
+                    properties={"file_name": "test.csv"},
+                ),
+            ),
+        )
+        runs.append(run)
+
+    # Should not modify any tags
+    original_tags = [run.tags.copy() for run in runs]
+    add_tag_splits(runs, None)
+    for run, original in zip(runs, original_tags):
+        assert run.tags == original
+
+
+def test_add_tag_splits_randomness(base_task: Task):
+    """Test that tag assignment is random but maintains proportions."""
+    # Create 100 runs for better statistical significance
+    runs = []
+    for i in range(100):
+        run = TaskRun(
+            parent=base_task,
+            input=f"input {i}",
+            input_source=DataSource(
+                type=DataSourceType.file_import,
+                properties={"file_name": "test.csv"},
+            ),
+            output=TaskOutput(
+                output=f"output {i}",
+                source=DataSource(
+                    type=DataSourceType.file_import,
+                    properties={"file_name": "test.csv"},
+                ),
+            ),
+        )
+        runs.append(run)
+
+    # Test with 60/40 split
+    tag_splits = {"train": 0.6, "test": 0.4}
+    add_tag_splits(runs, tag_splits)
+
+    # Count the tags
+    train_count = sum(1 for run in runs if "train" in run.tags)
+    test_count = sum(1 for run in runs if "test" in run.tags)
+
+    # Should have exactly 60 train and 40 test
+    assert train_count == 60
+    assert test_count == 40
+    assert len(runs) == train_count + test_count
+
+    # Check that the assignment is not just sequential
+    # by looking at the first few runs
+    first_few_runs = runs[:35]
+    train_tags = sum(1 for run in first_few_runs if "train" in run.tags)
+    test_tags = sum(1 for run in first_few_runs if "test" in run.tags)
+
+    # If assignment was sequential, we'd expect all first 35 to be train
+    # This test might occasionally fail if we get unlucky with random assignment
+    # but it's very unlikely
+    assert train_tags < 35
+    assert test_tags > 0
+
+
+def test_validate_tag_splits():
+    """Test that validate_tag_splits correctly validates tag split proportions."""
+    # Test valid splits
+    config = ImportConfig(
+        dataset_type=DatasetImportFormat.CSV,
+        dataset_path="test.csv",
+        dataset_name="test.csv",
+        tag_splits={"train": 0.7, "test": 0.3},
+    )
+    config.validate_tag_splits()  # Should not raise
+
+    # Test valid splits with small floating point errors
+    config = ImportConfig(
+        dataset_type=DatasetImportFormat.CSV,
+        dataset_path="test.csv",
+        dataset_name="test.csv",
+        tag_splits={"train": 0.7, "test": 0.3000001},
+    )
+    config.validate_tag_splits()  # Should not raise
+
+    # Test invalid splits that don't sum to 1
+    config = ImportConfig(
+        dataset_type=DatasetImportFormat.CSV,
+        dataset_path="test.csv",
+        dataset_name="test.csv",
+        tag_splits={"train": 0.7, "test": 0.4},
+    )
+    with pytest.raises(ValueError) as e:
+        config.validate_tag_splits()
+    assert "Splits must sum to 1" in str(e.value)
+
+    # Test None tag_splits
+    config = ImportConfig(
+        dataset_type=DatasetImportFormat.CSV,
+        dataset_path="test.csv",
+        dataset_name="test.csv",
+        tag_splits=None,
+    )
+    config.validate_tag_splits()  # Should not raise
+
+
+def test_dataset_file_importer_validates_tag_splits(base_task: Task, tmp_path):
+    """Test that DatasetFileImporter validates tag splits on initialization."""
+    # Test with invalid splits
+    with pytest.raises(ValueError) as e:
+        DatasetFileImporter(
+            base_task,
+            ImportConfig(
+                dataset_type=DatasetImportFormat.CSV,
+                dataset_path="test.csv",
+                dataset_name="test.csv",
+                tag_splits={"train": 0.7, "test": 0.4},  # Sums to 1.1
+            ),
+        )
+    assert "Splits must sum to 1" in str(e.value)
+
+    # Test with valid splits
+    importer = DatasetFileImporter(
+        base_task,
+        ImportConfig(
+            dataset_type=DatasetImportFormat.CSV,
+            dataset_path="test.csv",
+            dataset_name="test.csv",
+            tag_splits={"train": 0.7, "test": 0.3},
+        ),
+    )
+    assert importer.config.tag_splits == {"train": 0.7, "test": 0.3}

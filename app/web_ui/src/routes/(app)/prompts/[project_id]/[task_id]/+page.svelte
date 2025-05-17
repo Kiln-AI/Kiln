@@ -36,8 +36,15 @@
       <div class="font-medium">Prompt Generators</div>
       {#if $current_task_prompts.generators.length > 0}
         <div class="font-light text-gray-500 text-sm">
-          Generators build prompts dynamically based on the task's dataset. For
-          example, building multi-shot prompts from highly rated samples.
+          Generators build prompts dynamically based on the
+          <a href={`/settings/edit_task/${project_id}/${task_id}`} class="link"
+            >task's default prompt</a
+          >
+          and the
+          <a href={`/dataset/${project_id}/${task_id}`} class="link"
+            >task's dataset</a
+          >. For example, the multi-shot prompt appends highly rated dataset
+          samples to the prompt.
         </div>
         <div class="overflow-x-auto rounded-lg border mt-4">
           <table class="table">

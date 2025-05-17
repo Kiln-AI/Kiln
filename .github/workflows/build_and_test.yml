@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+    name: Build, Typecheck, and Test Python
     runs-on: ubuntu-latest
     strategy:
       matrix:

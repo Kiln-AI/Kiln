@@ -56,3 +56,27 @@ To confirm everything works locally, run:
 ```bash
 ./checks.sh
 ```
+
+## Optional Setup
+
+### IDE Extensions
+
+We suggest the following extensions for VSCode/Cursor. With them, you'll get compliant formatting and linting in your IDE.
+
+- Prettier
+- Pylance
+- Python
+- Python Debugger
+- Ruff
+- Svelte for VS Code
+- Vitest
+- ESLint
+- Cursor Pyright
+
+### llms.txt
+
+Vibing? Here are some [llms.txt](https://llmstxt.org) you may want to add.
+
+Usage: `@docs Svelte` in cursor lets the LLM read the docs of the specified library. Most popular libraries added by Cursor automatically, but here are some to add manually:
+
+- daisyUI’s: https://daisyui.com/docs/editor/cursor/

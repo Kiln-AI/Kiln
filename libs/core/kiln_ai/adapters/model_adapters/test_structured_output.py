@@ -12,6 +12,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.model_adapters.base_adapter import (
     BaseAdapter,
     RunOutput,
+    Usage,
 )
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
@@ -54,8 +55,8 @@ class MockAdapter(BaseAdapter):
         )
         self.response = response
 
-    async def _run(self, input: str) -> RunOutput:
-        return RunOutput(output=self.response, intermediate_outputs=None)
+    async def _run(self, input: str) -> tuple[RunOutput, Usage | None]:
+        return RunOutput(output=self.response, intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
         return "mock_adapter"
@@ -223,10 +224,7 @@ async def run_structured_input_task(
     with pytest.raises(ValueError):
         # not structured input in dictionary
         await a.invoke("a=1, b=2, c=3")
-    with pytest.raises(
-        ValueError,
-        match="This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema.",
-    ):
+    with pytest.raises(ValueError, match="This task requires a specific input"):
         # invalid structured input
         await a.invoke({"a": 1, "b": 2, "d": 3})
 

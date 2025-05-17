@@ -176,6 +176,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/rating_options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rating Options
+         * @description Generates an object which determines which rating options should be shown for a given dataset item.
+         */
+        get: operations["get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/task/{task_id}/prompt": {
         parameters: {
             query?: never;
@@ -677,6 +697,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetune Dataset Info */
+        get: operations["finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/download_dataset_jsonl": {
         parameters: {
             query?: never;
@@ -745,6 +782,23 @@ export interface paths {
         head?: never;
         /** Update Eval */
         patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Eval Favourite */
+        patch: operations["update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -866,6 +920,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Default Run Config */
+        post: operations["set_default_run_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_run_config__run_config_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval": {
         parameters: {
             query?: never;
@@ -892,6 +963,23 @@ export interface paths {
         };
         /** Get Eval Run Results */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Progress */
+        get: operations["get_eval_progress_api_projects__project_id__tasks__task_id__eval__eval_id__progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1021,6 +1109,8 @@ export interface components {
              * Format: binary
              */
             file: string;
+            /** Splits */
+            splits?: string | null;
         };
         /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
         Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
@@ -1245,6 +1335,11 @@ export interface components {
              * @description Optional human guidance for generation
              */
             human_guidance?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to the sample
+             */
+            tags?: string[] | null;
         };
         /**
          * DataSource
@@ -1356,7 +1451,7 @@ export interface components {
          * @description Dataset split types used in the API. Any split type can be created in code.
          * @enum {string}
          */
-        DatasetSplitType: "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
         /** Eval */
         Eval: {
             /**
@@ -1393,6 +1488,11 @@ export interface components {
              */
             current_config_id?: string | null;
             /**
+             * Current Run Config Id
+             * @description The id of the a run config which was selected as the best run config for this eval. The run config must belong to the parent Task.
+             */
+            current_run_config_id?: string | null;
+            /**
              * Eval Set Filter Id
              * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id.
              */
@@ -1407,6 +1507,12 @@ export interface components {
              * @description The scores this evaluator should produce.
              */
             output_scores: components["schemas"]["EvalOutputScore"][];
+            /**
+             * Favourite
+             * @description Whether this eval is a favourite of the user. Rendered as a star icon in the UI.
+             * @default false
+             */
+            favourite: boolean;
             /** Model Type */
             readonly model_type: string;
         };
@@ -1507,6 +1613,21 @@ export interface components {
             instruction?: string | null;
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
             type: components["schemas"]["TaskOutputRatingType"];
+        };
+        /** EvalProgress */
+        EvalProgress: {
+            /** Dataset Size */
+            dataset_size: number;
+            /** Golden Dataset Size */
+            golden_dataset_size: number;
+            /** Golden Dataset Not Rated Count */
+            golden_dataset_not_rated_count: number;
+            /** Golden Dataset Partially Rated Count */
+            golden_dataset_partially_rated_count: number;
+            /** Golden Dataset Fully Rated Count */
+            golden_dataset_fully_rated_count: number;
+            current_eval_method: components["schemas"]["EvalConfig"] | null;
+            current_run_method: components["schemas"]["TaskRunConfig"] | null;
         };
         /** EvalResultSummary */
         EvalResultSummary: {
@@ -1754,9 +1875,38 @@ export interface components {
         };
         /**
          * FinetuneDataStrategy
+         * @description Strategy for what data to include when fine-tuning a model.
          * @enum {string}
          */
-        FinetuneDataStrategy: "final_only" | "final_and_intermediate";
+        FinetuneDataStrategy: "final_only" | "final_and_intermediate" | "final_and_intermediate_r1_compatible";
+        /**
+         * FinetuneDatasetInfo
+         * @description Finetune dataset info
+         */
+        FinetuneDatasetInfo: {
+            /** Existing Datasets */
+            existing_datasets: components["schemas"]["DatasetSplit"][];
+            /** Existing Finetunes */
+            existing_finetunes: components["schemas"]["Finetune"][];
+            /** Finetune Tags */
+            finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+        };
+        /**
+         * FinetuneDatasetTagInfo
+         * @description Finetune dataset tag info
+         */
+        FinetuneDatasetTagInfo: {
+            /** Tag */
+            tag: string;
+            /** Count */
+            count: number;
+            /** Reasoning Count */
+            reasoning_count: number;
+            /** High Quality Count */
+            high_quality_count: number;
+            /** Reasoning And High Quality Count */
+            reasoning_and_high_quality_count: number;
+        };
         /**
          * FinetuneProvider
          * @description Finetune provider: list of models a provider supports for fine-tuning
@@ -1780,6 +1930,8 @@ export interface components {
             name: string;
             /** Id */
             id: string;
+            /** Data Strategies Supported */
+            data_strategies_supported?: components["schemas"]["FinetuneDataStrategy"][];
         };
         /**
          * FinetuneWithStatus
@@ -1864,8 +2016,12 @@ export interface components {
             supports_structured_output: boolean;
             /** Supports Data Gen */
             supports_data_gen: boolean;
+            /** Suggested For Data Gen */
+            suggested_for_data_gen: boolean;
             /** Supports Logprobs */
             supports_logprobs: boolean;
+            /** Suggested For Evals */
+            suggested_for_evals: boolean;
             /**
              * Untested Model
              * @default false
@@ -1880,13 +2036,13 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "phi_3_5" | "phi_4" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_72b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -2084,6 +2240,19 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
         };
+        /** RatingOption */
+        RatingOption: {
+            requirement: components["schemas"]["TaskRequirement"];
+            /** Show For All */
+            show_for_all: boolean;
+            /** Show For Tags */
+            show_for_tags: string[];
+        };
+        /** RatingOptionResponse */
+        RatingOptionResponse: {
+            /** Options */
+            options: components["schemas"]["RatingOption"][];
+        };
         /** RepairRunPost */
         RepairRunPost: {
             repair_run: components["schemas"]["TaskRun-Input"];
@@ -2197,9 +2366,10 @@ export interface components {
          *     - json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema
          *     - json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.
          *     - json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).
+         *     - json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.
          * @enum {string}
          */
-        StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object";
+        StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions";
         /**
          * Task
          * @description Represents a specific task to be performed, with associated requirements and validation rules.
@@ -2364,7 +2534,7 @@ export interface components {
             value?: number | null;
             /**
              * Requirement Ratings
-             * @description The ratings of the requirements of the task.
+             * @description The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').
              * @default {}
              */
             requirement_ratings: {
@@ -2409,7 +2579,7 @@ export interface components {
             value?: number | null;
             /**
              * Requirement Ratings
-             * @description The ratings of the requirements of the task.
+             * @description The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').
              * @default {}
              */
             requirement_ratings: {
@@ -2502,6 +2672,8 @@ export interface components {
              * @default []
              */
             tags: string[];
+            /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
+            usage?: components["schemas"]["Usage"] | null;
         };
         /**
          * TaskRun
@@ -2556,6 +2728,8 @@ export interface components {
              * @default []
              */
             tags: string[];
+            /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
+            usage?: components["schemas"]["Usage"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -2608,6 +2782,11 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** UpdateFavouriteRequest */
+        UpdateFavouriteRequest: {
+            /** Favourite */
+            favourite: boolean;
+        };
         /**
          * UpdateFinetuneRequest
          * @description Request to update a finetune
@@ -2617,6 +2796,29 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+        };
+        /** Usage */
+        Usage: {
+            /**
+             * Input Tokens
+             * @description The number of input tokens used in the task run.
+             */
+            input_tokens?: number | null;
+            /**
+             * Output Tokens
+             * @description The number of output tokens used in the task run.
+             */
+            output_tokens?: number | null;
+            /**
+             * Total Tokens
+             * @description The total number of tokens used in the task run.
+             */
+            total_tokens?: number | null;
+            /**
+             * Cost
+             * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
+             */
+            cost?: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2990,6 +3192,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingOptionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4213,6 +4447,38 @@ export interface operations {
             };
         };
     };
+    finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinetuneDatasetInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_dataset_jsonl_api_download_dataset_jsonl_get: {
         parameters: {
             query: {
@@ -4400,6 +4666,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateEvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFavouriteRequest"];
             };
         };
         responses: {
@@ -4640,7 +4943,41 @@ export interface operations {
                 project_id: string;
                 task_id: string;
                 eval_id: string;
-                eval_config_id: string;
+                eval_config_id: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_run_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_run_config__run_config_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+                run_config_id: string | null;
             };
             cookie?: never;
         };
@@ -4721,6 +5058,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_progress_api_projects__project_id__tasks__task_id__eval__eval_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalProgress"];
                 };
             };
             /** @description Validation Error */

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Dict, List, Union
 
 import jsonschema
 import jsonschema.exceptions
-from pydantic import Field, ValidationInfo, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
@@ -13,6 +13,29 @@ from kiln_ai.datamodel.task_output import DataSource, TaskOutput
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
+
+
+class Usage(BaseModel):
+    input_tokens: int | None = Field(
+        default=None,
+        description="The number of input tokens used in the task run.",
+        ge=0,
+    )
+    output_tokens: int | None = Field(
+        default=None,
+        description="The number of output tokens used in the task run.",
+        ge=0,
+    )
+    total_tokens: int | None = Field(
+        default=None,
+        description="The total number of tokens used in the task run.",
+        ge=0,
+    )
+    cost: float | None = Field(
+        default=None,
+        description="The cost of the task run in US dollars, saved at runtime (prices can change over time).",
+        ge=0,
+    )
 
 
 class TaskRun(KilnParentedModel):
@@ -47,17 +70,26 @@ class TaskRun(KilnParentedModel):
         default=[],
         description="Tags for the task run. Tags are used to categorize task runs for filtering and reporting.",
     )
+    usage: Usage | None = Field(
+        default=None,
+        description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
+    )
+
+    def thinking_training_data(self) -> str | None:
+        """
+        Get the thinking training data from the task run.
+        """
+        if self.intermediate_outputs is None:
+            return None
+        return self.intermediate_outputs.get(
+            "reasoning"
+        ) or self.intermediate_outputs.get("chain_of_thought")
 
     def has_thinking_training_data(self) -> bool:
         """
         Does this run have thinking data that we can use to train a thinking model?
         """
-        if self.intermediate_outputs is None:
-            return False
-        return (
-            "chain_of_thought" in self.intermediate_outputs
-            or "reasoning" in self.intermediate_outputs
-        )
+        return self.thinking_training_data() is not None
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:

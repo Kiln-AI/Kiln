@@ -28,5 +28,5 @@ def test_model_parser_from_id_invalid():
 )
 def test_model_parser_from_id_parametrized(parser_id, expected_class):
     """Test all valid parser IDs using parametrize."""
-    parser_class = model_parser_from_id(parser_id)
-    assert parser_class == expected_class
+    parser = model_parser_from_id(parser_id)
+    assert isinstance(parser, expected_class)

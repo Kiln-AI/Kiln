@@ -52,7 +52,7 @@
         value={true}
         bind:group={plaintext}
       />
-      <span class="label-text text-left grow">Plaintext</span>
+      <span class="label-text text-left grow">Plain Text</span>
     </label>
   </div>
   <div class="form-control">

@@ -45,6 +45,10 @@ Train80Test20SplitDefinition: list[DatasetSplitDefinition] = [
     DatasetSplitDefinition(name="train", percentage=0.8),
     DatasetSplitDefinition(name="test", percentage=0.2),
 ]
+Train80Val20SplitDefinition: list[DatasetSplitDefinition] = [
+    DatasetSplitDefinition(name="train", percentage=0.8),
+    DatasetSplitDefinition(name="val", percentage=0.2),
+]
 Train60Test20Val20SplitDefinition: list[DatasetSplitDefinition] = [
     DatasetSplitDefinition(name="train", percentage=0.6),
     DatasetSplitDefinition(name="test", percentage=0.2),

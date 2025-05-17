@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock
@@ -16,6 +17,7 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_huggingface_chat_template,
     generate_huggingface_chat_template_toolcall,
     generate_vertex_gemini,
+    serialize_r1_style_message,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import COT_FINAL_ANSWER_PROMPT
 from kiln_ai.datamodel import (
@@ -42,6 +44,7 @@ def mock_task():
                 "input": '{"test": "input 你好"}',
                 "repaired_output": None,
                 "intermediate_outputs": {},
+                "thinking_training_data": Mock(return_value=None),
                 "input_source": Mock(
                     spec=DataSource,
                     **{
@@ -83,6 +86,7 @@ def mock_task():
 def mock_intermediate_outputs(mock_task):
     for run in mock_task.runs():
         run.intermediate_outputs = {"reasoning": "thinking output"}
+        run.thinking_training_data.return_value = "thinking output"
     mock_task.thinking_instruction = "thinking instructions"
     return mock_task
 
@@ -134,6 +138,31 @@ def test_generate_chat_message_response_thinking():
             {"role": "assistant", "content": "thinking output"},
             {"role": "user", "content": "thinking final answer prompt"},
             {"role": "assistant", "content": "test output"},
+        ]
+    }
+
+
+def test_generate_chat_message_response_thinking_r1_style():
+    thinking_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output="test output",
+        thinking="thinking output",
+        thinking_instructions=None,
+        thinking_final_answer_prompt=None,
+        thinking_r1_style=True,
+    )
+
+    result = generate_chat_message_response(thinking_data)
+
+    assert result == {
+        "messages": [
+            {"role": "system", "content": "system message"},
+            {"role": "user", "content": "test input"},
+            {
+                "role": "assistant",
+                "content": "<think>\nthinking output\n</think>\n\ntest output",
+            },
         ]
     }
 
@@ -204,6 +233,24 @@ def test_generate_chat_message_toolcall_thinking():
             },
         ]
     }
+
+
+def test_generate_chat_message_toolcall_thinking_r1_style():
+    training_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output='{"key": "value"}',
+        thinking="thinking output",
+        thinking_instructions=None,
+        thinking_final_answer_prompt=None,
+        thinking_r1_style=True,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="R1 style thinking is not supported for tool call downloads",
+    ):
+        generate_chat_message_toolcall(training_data)
 
 
 def test_generate_chat_message_toolcall_invalid_json():
@@ -368,6 +415,37 @@ def test_dataset_formatter_dump_with_intermediate_data(
             assert "thinking instructions" in line
 
 
+def test_dataset_formatter_dump_with_intermediate_data_r1_style(
+    mock_dataset, mock_intermediate_outputs
+):
+    formatter = DatasetFormatter(
+        mock_dataset,
+        "system message 你好",
+        thinking_instructions=None,
+    )
+
+    result_path = formatter.dump_to_file(
+        "train",
+        DatasetFormat.OPENAI_CHAT_JSONL,
+        data_strategy=FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+    )
+
+    assert result_path.exists()
+    assert result_path.parent == Path(tempfile.gettempdir())
+    # Test our nice naming, with cot
+    assert (
+        result_path.name
+        == "test_dataset -- split-train -- format-openai_chat_jsonl -- cot.jsonl"
+    )
+    # Verify file contents
+    with open(result_path) as f:
+        lines = f.readlines()
+        assert len(lines) == 2
+        for line in lines:
+            assert "<think>" in line
+            assert "</think>" in line
+
+
 def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
     mock_dataset, mock_intermediate_outputs
 ):
@@ -440,6 +518,31 @@ def test_generate_huggingface_chat_template_thinking():
     }
 
 
+def test_generate_huggingface_chat_template_thinking_r1_style():
+    training_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output="test output",
+        thinking="thinking output",
+        thinking_instructions=None,
+        thinking_final_answer_prompt=None,
+        thinking_r1_style=True,
+    )
+
+    result = generate_huggingface_chat_template(training_data)
+
+    assert result == {
+        "conversations": [
+            {"role": "system", "content": "system message"},
+            {"role": "user", "content": "test input"},
+            {
+                "role": "assistant",
+                "content": "<think>\nthinking output\n</think>\n\ntest output",
+            },
+        ]
+    }
+
+
 def test_generate_vertex_template():
     training_data = ModelTrainingData(
         input="test input",
@@ -477,8 +580,6 @@ def test_generate_vertex_template_thinking():
 
     result = generate_vertex_gemini(training_data)
 
-    logger.info(result)
-
     assert result == {
         "systemInstruction": {
             "role": "system",
@@ -496,6 +597,23 @@ def test_generate_vertex_template_thinking():
             {"role": "model", "parts": [{"text": "test output"}]},
         ],
     }
+
+
+def test_generate_vertex_template_thinking_r1_style():
+    training_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output="test output",
+        thinking="thinking output",
+        thinking_instructions=None,
+        thinking_final_answer_prompt=None,
+        thinking_r1_style=True,
+    )
+
+    with pytest.raises(
+        ValueError, match="R1 style thinking is not supported for Vertex Gemini"
+    ):
+        generate_vertex_gemini(training_data)
 
 
 def test_generate_huggingface_chat_template_toolcall():
@@ -558,6 +676,24 @@ def test_generate_huggingface_chat_template_toolcall_thinking():
     assert tool_call["function"]["arguments"] == {"key": "value"}
 
 
+def test_generate_huggingface_chat_template_toolcall_thinking_r1_style():
+    training_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output='{"key": "value"}',
+        thinking="thinking output",
+        thinking_instructions=None,
+        thinking_final_answer_prompt=None,
+        thinking_r1_style=True,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="R1 style thinking is not supported for tool call downloads",
+    ):
+        generate_huggingface_chat_template_toolcall(training_data)
+
+
 def test_generate_huggingface_chat_template_toolcall_invalid_json():
     training_data = ModelTrainingData(
         input="test input",
@@ -572,7 +708,11 @@ def test_generate_huggingface_chat_template_toolcall_invalid_json():
 def test_build_training_data(mock_task):
     # Non repaired should use original output
     mock_task_run = mock_task.runs()[0]
-    training_data_output = build_training_data(mock_task_run, "system message", False)
+    training_data_output = build_training_data(
+        mock_task_run,
+        "system message",
+        data_strategy=FinetuneDataStrategy.final_only,
+    )
     assert training_data_output.final_output == '{"test":   "output 你好"}'
     assert training_data_output.thinking is None
     assert training_data_output.thinking_instructions is None
@@ -587,11 +727,12 @@ def test_build_training_data_with_COT(mock_task):
     mock_task_run = mock_task.runs()[0]
     assert mock_task_run.parent_task() == mock_task
     mock_task_run.intermediate_outputs = {"chain_of_thought": "cot output"}
+    mock_task_run.thinking_training_data.return_value = "cot output"
 
     training_data_output = build_training_data(
         mock_task_run,
         "system message",
-        True,
+        data_strategy=FinetuneDataStrategy.final_and_intermediate,
         thinking_instructions="thinking instructions",
     )
     assert training_data_output.final_output == '{"test":   "output 你好"}'
@@ -600,7 +741,57 @@ def test_build_training_data_with_COT(mock_task):
     assert training_data_output.thinking_final_answer_prompt == COT_FINAL_ANSWER_PROMPT
     assert training_data_output.input == '{"test": "input 你好"}'
     assert training_data_output.system_message == "system message"
+    assert training_data_output.thinking_r1_style == False
     assert training_data_output.supports_cot()
+
+
+def test_model_training_data_supports_cot(mock_task):
+    training_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output="test output",
+        thinking="thinking output",
+        thinking_instructions="thinking instructions",
+        thinking_final_answer_prompt=COT_FINAL_ANSWER_PROMPT,
+        thinking_r1_style=False,
+    )
+    assert training_data.supports_cot() == True
+
+
+def test_model_training_data_supports_cot_r1_style(mock_task):
+    training_data = ModelTrainingData(
+        input="test input",
+        system_message="system message",
+        final_output="test output",
+        thinking="thinking output",
+        thinking_instructions="thinking instructions",
+        thinking_r1_style=True,
+    )
+
+    with pytest.raises(ValueError, match="R1 style does not support COT"):
+        training_data.supports_cot()
+
+
+def test_build_training_data_with_COT_r1_style(mock_task):
+    # Setup with needed fields for thinking
+    mock_task_run = mock_task.runs()[0]
+    assert mock_task_run.parent_task() == mock_task
+    mock_task_run.intermediate_outputs = {"chain_of_thought": "cot output"}
+    mock_task_run.thinking_training_data.return_value = "cot output"
+
+    training_data_output = build_training_data(
+        mock_task_run,
+        "system message",
+        data_strategy=FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+        thinking_instructions=None,
+    )
+    assert training_data_output.final_output == '{"test":   "output 你好"}'
+    assert training_data_output.thinking == "cot output"
+    assert training_data_output.thinking_instructions == None
+    assert training_data_output.thinking_final_answer_prompt == None
+    assert training_data_output.input == '{"test": "input 你好"}'
+    assert training_data_output.system_message == "system message"
+    assert training_data_output.thinking_r1_style == True
 
 
 def test_build_training_data_with_thinking(mock_task):
@@ -612,13 +803,14 @@ def test_build_training_data_with_thinking(mock_task):
         "reasoning": "thinking output",
         "chain_of_thought": "cot output",
     }
+    mock_task_run.thinking_training_data.return_value = "thinking output"
     mock_task.thinking_instruction = "thinking instructions"
     assert mock_task.thinking_instruction == "thinking instructions"
 
     training_data_output = build_training_data(
         mock_task_run,
         "system message",
-        True,
+        FinetuneDataStrategy.final_and_intermediate,
         thinking_instructions="thinking instructions",
     )
     assert training_data_output.final_output == '{"test":   "output 你好"}'
@@ -627,7 +819,36 @@ def test_build_training_data_with_thinking(mock_task):
     assert training_data_output.thinking_final_answer_prompt == COT_FINAL_ANSWER_PROMPT
     assert training_data_output.input == '{"test": "input 你好"}'
     assert training_data_output.system_message == "system message"
-    assert training_data_output.supports_cot()
+    assert training_data_output.thinking_r1_style == False
+
+
+def test_build_training_data_with_thinking_r1_style(mock_task):
+    # Setup with needed fields for thinking
+    mock_task_run = mock_task.runs()[0]
+    assert mock_task_run.parent_task() == mock_task
+    # It should just use the reasoning output if both thinking and chain_of_thought are present
+    mock_task_run.intermediate_outputs = {
+        "reasoning": "thinking output",
+        "chain_of_thought": "cot output",
+    }
+    mock_task_run.thinking_training_data.return_value = "thinking output"
+    mock_task.thinking_instruction = "thinking instructions"
+
+    assert mock_task.thinking_instruction == "thinking instructions"
+
+    training_data_output = build_training_data(
+        mock_task_run,
+        "system message",
+        FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+        thinking_instructions=None,
+    )
+    assert training_data_output.final_output == '{"test":   "output 你好"}'
+    assert training_data_output.thinking == "thinking output"
+    assert training_data_output.thinking_instructions == None
+    assert training_data_output.thinking_final_answer_prompt == None
+    assert training_data_output.input == '{"test": "input 你好"}'
+    assert training_data_output.system_message == "system message"
+    assert training_data_output.thinking_r1_style == True
 
 
 def test_build_training_data_with_repaired_output(mock_task):
@@ -642,7 +863,11 @@ def test_build_training_data_with_repaired_output(mock_task):
         ),
     )
 
-    training_data_output = build_training_data(mock_task_run, "system message", False)
+    training_data_output = build_training_data(
+        mock_task_run,
+        "system message",
+        data_strategy=FinetuneDataStrategy.final_only,
+    )
     assert training_data_output.final_output == '{"test": "repaired output"}'
     assert training_data_output.thinking is None
     assert training_data_output.thinking_instructions is None
@@ -683,3 +908,35 @@ def test_dataset_formatter_dump_to_file_json_schema_format(mock_dataset, tmp_pat
             assert assistant_msg["content"] == '{"test": "output 你好"}'
             json_content = json.loads(assistant_msg["content"])
             assert json_content == {"test": "output 你好"}
+
+
+@pytest.mark.parametrize(
+    "thinking,final_output,expected_output",
+    [
+        ("thinking", "final output", "<think>\nthinking\n</think>\n\nfinal output"),
+        ("thinking", '{"name":"joe"}', '<think>\nthinking\n</think>\n\n{"name":"joe"}'),
+    ],
+)
+def test_serialize_r1_style_message(thinking, final_output, expected_output):
+    assert (
+        serialize_r1_style_message(thinking=thinking, final_output=final_output)
+        == expected_output
+    )
+
+
+@pytest.mark.parametrize(
+    "thinking,final_output",
+    [
+        (None, "final output"),
+        ("", "final output"),
+        (" ", "final output"),
+    ],
+)
+def test_serialize_r1_style_message_missing_thinking(thinking, final_output):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Thinking data is required when fine-tuning thinking models (R1, QwQ, etc). Please ensure your fine-tuning dataset contains reasoning or chain of thought output for every entry."
+        ),
+    ):
+        serialize_r1_style_message(thinking=thinking, final_output=final_output)

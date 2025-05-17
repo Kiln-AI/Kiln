@@ -5,6 +5,7 @@ import pytest
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     ModelName,
+    ModelParserID,
     ModelProviderName,
 )
 from kiln_ai.adapters.ollama_tools import OllamaConnection
@@ -24,7 +25,12 @@ from kiln_ai.adapters.provider_tools import (
     provider_name_from_id,
     provider_warnings,
 )
-from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
+from kiln_ai.datamodel import (
+    Finetune,
+    FinetuneDataStrategy,
+    StructuredOutputMode,
+    Task,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -65,6 +71,33 @@ def mock_finetune():
         finetune.provider = ModelProviderName.openai
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
+        finetune.data_strategy = FinetuneDataStrategy.final_only
+        mock.return_value = finetune
+        yield mock
+
+
+@pytest.fixture
+def mock_finetune_final_and_intermediate():
+    with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
+        finetune = Mock(spec=Finetune)
+        finetune.provider = ModelProviderName.openai
+        finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
+        finetune.structured_output_mode = StructuredOutputMode.json_schema
+        finetune.data_strategy = FinetuneDataStrategy.final_and_intermediate
+        mock.return_value = finetune
+        yield mock
+
+
+@pytest.fixture
+def mock_finetune_r1_compatible():
+    with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
+        finetune = Mock(spec=Finetune)
+        finetune.provider = ModelProviderName.ollama
+        finetune.fine_tune_model_id = "ft:deepseek-r1:671b:custom:model-123"
+        finetune.structured_output_mode = StructuredOutputMode.json_schema
+        finetune.data_strategy = (
+            FinetuneDataStrategy.final_and_intermediate_r1_compatible
+        )
         mock.return_value = finetune
         yield mock
 
@@ -426,6 +459,38 @@ def test_finetune_provider_model_success(mock_project, mock_task, mock_finetune)
     assert provider.name == ModelProviderName.openai
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
+    assert provider.reasoning_capable is False
+    assert provider.parser == None
+
+
+def test_finetune_provider_model_success_final_and_intermediate(
+    mock_project, mock_task, mock_finetune_final_and_intermediate
+):
+    """Test successful creation of a fine-tuned model provider"""
+    model_id = "project-123::task-456::finetune-789"
+
+    provider = finetune_provider_model(model_id)
+
+    assert provider.name == ModelProviderName.openai
+    assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
+    assert provider.structured_output_mode == StructuredOutputMode.json_schema
+    assert provider.reasoning_capable is True
+    assert provider.parser == None
+
+
+def test_finetune_provider_model_success_r1_compatible(
+    mock_project, mock_task, mock_finetune_r1_compatible
+):
+    """Test successful creation of a fine-tuned model provider"""
+    model_id = "project-123::task-456::finetune-789"
+
+    provider = finetune_provider_model(model_id)
+
+    assert provider.name == ModelProviderName.ollama
+    assert provider.model_id == "ft:deepseek-r1:671b:custom:model-123"
+    assert provider.structured_output_mode == StructuredOutputMode.json_schema
+    assert provider.reasoning_capable is True
+    assert provider.parser == ModelParserID.r1_thinking
 
 
 def test_finetune_provider_model_invalid_id():
@@ -515,6 +580,7 @@ def test_finetune_provider_model_structured_mode(
     finetune.provider = provider_name
     finetune.fine_tune_model_id = "fireworks-model-123"
     finetune.structured_output_mode = structured_output_mode
+    finetune.data_strategy = FinetuneDataStrategy.final_only
     mock_finetune.return_value = finetune
 
     provider = finetune_provider_model("project-123::task-456::finetune-789")
@@ -522,6 +588,8 @@ def test_finetune_provider_model_structured_mode(
     assert provider.name == provider_name
     assert provider.model_id == "fireworks-model-123"
     assert provider.structured_output_mode == expected_mode
+    assert provider.reasoning_capable is False
+    assert provider.parser == None
 
 
 def test_openai_compatible_provider_config(mock_shared_config):
@@ -799,6 +867,7 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     finetune.provider = ModelProviderName.vertex
     finetune.fine_tune_model_id = "projects/123/locations/us-central1/endpoints/456"
     finetune.structured_output_mode = StructuredOutputMode.json_mode
+    finetune.data_strategy = FinetuneDataStrategy.final_only
     mock_finetune.return_value = finetune
 
     provider = finetune_provider_model("project-123::task-456::finetune-789")

@@ -1,6 +1,13 @@
 <script lang="ts">
+  import { page } from "$app/stores"
+
   export let generate_subtopics: () => void
   export let generate_samples: () => void
+  export let project_id: string
+  export let task_id: string
+
+  let let_me_in: boolean = false
+  $: reason = $page.url.searchParams.get("reason")
 </script>
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
@@ -26,42 +33,61 @@
         />
       </svg>
     </div>
-    <div class="font-medium text-lg">
-      Generate synthetic data for training and evaluations.
-    </div>
-    <div>
-      Add <a
-        href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
-        target="_blank"
-        class="link">human guidance</a
-      >
-      to shape and improve the AI-generated data.
-    </div>
-    <div>
-      Building a <a
-        href="https://docs.getkiln.ai/docs/synthetic-data-generation#topic-tree-data-generation"
-        target="_blank"
-        class="link">tree of topics</a
-      >
-      can help generate data across diverse subjects. For example:
-      <div class="mt-2 mb-2 text-center">
-        <span class="font-mono font-medium text-xs bg-base-200 py-1 px-2">
-          Animals ➜ Pets ➜ [Cats, Dogs]
-        </span>
+
+    {#if let_me_in || reason}
+      <div class="font-medium text-lg">Synthetic Data Tips</div>
+      <div>
+        1. Adding topics will help generate diverse data. They can be nested,
+        forming a topic tree. <a
+          href="https://docs.getkiln.ai/docs/synthetic-data-generation#topic-tree-data-generation"
+          target="_blank"
+          class="link">Guide</a
+        >.
       </div>
-    </div>
-    <button class="btn btn-primary" on:click={() => generate_subtopics()}>
-      Add Top Level Topics
-    </button>
-    <button class="btn" on:click={() => generate_samples()}>
-      Add Top Level Data
-    </button>
-    <a
-      href="https://docs.getkiln.ai/docs/synthetic-data-generation"
-      target="_blank"
-      class="btn"
-    >
-      Read the Docs
-    </a>
+      <div>
+        2. Adding human guidance can shape and improve the AI-generated data.
+        <a
+          href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
+          target="_blank"
+          class="link">Guide</a
+        >.
+      </div>
+      <button class="btn btn-primary" on:click={() => generate_subtopics()}>
+        Add Top Level Topics
+      </button>
+      <button class="btn" on:click={() => generate_samples()}>
+        Add Top Level Data
+      </button>
+      <a
+        href="https://docs.getkiln.ai/docs/synthetic-data-generation"
+        target="_blank"
+        class="btn"
+      >
+        Read the Docs
+      </a>
+    {:else}
+      <div class="font-medium text-lg">
+        Generate Synthetic Data for Training or Evaluations
+      </div>
+      <div>
+        We suggest adding synthetic data as part of creating an eval or creating
+        a fine-tuning training set.
+      </div>
+      <a
+        class="btn btn-primary"
+        href={`/evals/${project_id}/${task_id}/create_evaluator`}
+      >
+        Create an Eval
+      </a>
+      <a
+        class="btn btn-primary"
+        href={`/fine_tune/${project_id}/${task_id}/create_finetune`}
+      >
+        Create a Fine-Tune
+      </a>
+      <button class="btn" on:click={() => (let_me_in = true)}
+        >Proceed to Generator</button
+      >
+    {/if}
   </div>
 </div>

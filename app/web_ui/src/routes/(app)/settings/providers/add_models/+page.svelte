@@ -218,6 +218,7 @@
       label: "Add Model",
       asyncAction: add_model,
       disabled: !new_model_provider || !new_model_name,
+      isPrimary: true,
     },
   ]}
 >

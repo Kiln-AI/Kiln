@@ -11,14 +11,15 @@ from kiln_ai.datamodel import (
     DataSourceType,
     Project,
     Task,
+    Usage,
 )
 from kiln_ai.datamodel.task import RunConfig
 from kiln_ai.utils.config import Config
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(self, input: dict | str) -> dict | str:
-        return RunOutput(output="Test output", intermediate_outputs=None)
+    async def _run(self, input: dict | str) -> tuple[RunOutput, Usage | None]:
+        return RunOutput(output="Test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
         return "mock_adapter"

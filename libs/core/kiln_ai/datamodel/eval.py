@@ -263,6 +263,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=None,
         description="The id of the current config to use for this eval. This can be changed over time to run the same eval with different configs.",
     )
+    current_run_config_id: ID_TYPE = Field(
+        default=None,
+        description="The id of the a run config which was selected as the best run config for this eval. The run config must belong to the parent Task.",
+    )
     eval_set_filter_id: DatasetFilterId = Field(
         description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
     )
@@ -271,6 +275,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
+    )
+    favourite: bool = Field(
+        default=False,
+        description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
 
     # Workaround to return typed parent without importing Task

@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import tempfile
@@ -5,7 +6,7 @@ from asyncio import Lock
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -279,8 +280,13 @@ def connect_run_api(app: FastAPI):
         project_id: str,
         task_id: str,
         file: UploadFile = File(...),
+        # JSON string since multipart/form-data doesn't support dictionary types
+        splits: str | None = Form(None),
     ) -> BulkUploadResponse:
         task = task_from_id(project_id, task_id)
+
+        # Parse splits from json form data
+        splits_dict = parse_splits(splits)
 
         # store the file in temp directory
         file_name = file.filename if file.filename else "untitled"
@@ -300,6 +306,7 @@ def connect_run_api(app: FastAPI):
                     dataset_type=DatasetImportFormat.CSV,
                     dataset_path=file_path,
                     dataset_name=file_name,
+                    tag_splits=splits_dict,
                 ),
             )
             imported_count = importer.create_runs_from_file()
@@ -347,3 +354,32 @@ def model_provider_from_string(provider: str) -> ModelProviderName:
     if not provider or provider not in ModelProviderName.__members__:
         raise ValueError(f"Unsupported provider: {provider}")
     return ModelProviderName(provider)
+
+
+def parse_splits(splits: str | None) -> Dict[str, float] | None:
+    # Parse splits from form data
+    if not splits:
+        return None
+    try:
+        splits_dict = json.loads(splits)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        )
+
+    if (
+        not isinstance(splits_dict, dict)
+        or not all(isinstance(k, str) for k in splits_dict.keys())
+        or not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool)
+            for v in splits_dict.values()
+        )
+        or not all(0 <= float(v) <= 1 for v in splits_dict.values())
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid splits format. Must be a valid JSON object with string keys and float values.",
+        )
+
+    return splits_dict

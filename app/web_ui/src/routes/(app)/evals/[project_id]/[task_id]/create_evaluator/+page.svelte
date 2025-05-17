@@ -7,7 +7,7 @@
   import type { Task } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
-  import { load_task } from "$lib/stores"
+  import { load_task, load_rating_options } from "$lib/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -99,10 +99,12 @@
       if (post_error) {
         throw post_error
       }
+      // Reload the rating options since the new eval may have added new options
+      load_rating_options()
       // Redirect to add an eval config to this new eval
       complete = true
       goto(
-        `/evals/${$page.params.project_id}/${$page.params.task_id}/${create_evaluator_response.id}/create_eval_config?new=true`,
+        `/evals/${$page.params.project_id}/${$page.params.task_id}/${create_evaluator_response.id}`,
       )
     } catch (e) {
       create_evaluator_error = createKilnError(e)
@@ -257,8 +259,8 @@
           </div>
           <div class="text-xs text-gray-500">
             Specify which which part of your dataset is used when evaluating
-            different methods of running your task (various prompts, models,
-            fine-tunes, etc).
+            various methods of running your task. You can create this data
+            later.
           </div>
         </div>
         <FormElement
@@ -297,9 +299,8 @@
           </div>
           <div class="text-xs text-gray-500">
             Specify which which part of your dataset is used when trying to find
-            the best evaluation method for this task. You'll rate these dataset
-            items, so we can compare the evaluator's ratings to your human
-            preferences.
+            the best evaluation method for this task. You can create and rate
+            this data later.
           </div>
         </div>
         <FormElement

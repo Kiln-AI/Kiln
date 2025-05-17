@@ -6,6 +6,7 @@
   import { ui_state } from "$lib/stores"
   import { update_update_store, update_info } from "$lib/utils/update"
   import { onMount } from "svelte"
+  import ProgressWidget from "$lib/ui/progress_widget.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -118,7 +119,7 @@
     ></label>
 
     <ul
-      class="menu bg-base-200 text-base-content min-h-full w-72 lg:w-72 p-4 pt-1 lg:pt-4"
+      class="menu bg-base-200 text-base-content w-72 lg:w-72 p-4 pt-1 lg:pt-4 min-h-full"
     >
       <li class="hover:bg-transparent flex flex-row justify-end">
         <label
@@ -479,6 +480,9 @@
           >
         </li>
       {/if}
+      <li class="mt-auto pt-2 bg-transparent">
+        <ProgressWidget />
+      </li>
     </ul>
   </div>
 </div>

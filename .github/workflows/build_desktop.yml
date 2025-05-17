@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+    name: Build Desktop Apps
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

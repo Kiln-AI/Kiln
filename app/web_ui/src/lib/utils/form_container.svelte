@@ -155,11 +155,19 @@
       navigator.platform.toLowerCase().includes("mac")
     )
   }
+
+  function handleFormSubmit(event: SubmitEvent) {
+    // Only allow submission from the submit button. Without this, all buttons in the form become submit buttons.
+    const submitter = event.submitter as HTMLElement
+    if (!submitter || submitter.getAttribute("type") !== "submit") {
+      event.preventDefault()
+    }
+  }
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
 
-<form class="flex flex-col gap-{gap} w-full" {id}>
+<form class="flex flex-col gap-{gap} w-full" {id} on:submit={handleFormSubmit}>
   <slot />
 
   <div class="flex flex-col gap-2">

@@ -1,7 +1,9 @@
 <p align="center">
-    <picture>
-        <img width="205" alt="Kiln AI Logo" src="https://github.com/user-attachments/assets/5fbcbdf7-1feb-45c9-bd73-99a46dd0a47f">
-    </picture>
+    <a href="https://getkiln.ai">
+        <picture>
+            <img width="205" alt="Kiln AI Logo" src="https://github.com/user-attachments/assets/5fbcbdf7-1feb-45c9-bd73-99a46dd0a47f">
+        </picture>
+    </a>
 </p>
 <h3 align="center">
     Rapid AI Prototyping and Dataset Collaboration Tool

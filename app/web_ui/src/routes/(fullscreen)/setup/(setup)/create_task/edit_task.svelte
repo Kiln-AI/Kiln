@@ -25,6 +25,10 @@
     requirements: [],
   }
 
+  $: creating = !task.id
+  $: editing = !creating
+  $: show_requirements = editing || task.requirements.length > 0
+
   // These have their own custom VM, which is translated back to the model on save
   let outputSchemaSection: SchemaSection
   let inputSchemaSection: SchemaSection
@@ -56,7 +60,6 @@
 
   async function create_task() {
     try {
-      const creating = !task.id
       saved = false
       if (!target_project_id) {
         error = new KilnError(
@@ -169,29 +172,7 @@
       description: "An example task from the KilnAI team.",
       instruction:
         "Generate a joke, given a theme. The theme will be provided as a word or phrase as the input to the model. The assistant should output a joke that is funny and relevant to the theme. If a style is provided, the joke should be in that style. The output should include a setup and punchline.",
-      requirements: [
-        {
-          name: "Keep on topic",
-          instruction:
-            "Keep the joke on topic. If the user specifies a theme, the joke must be related to that theme.",
-          priority: 1,
-          type: "five_star",
-        },
-        {
-          name: "Keep it clean",
-          instruction:
-            "Avoid any jokes that are offensive or inappropriate. Keep the joke clean and appropriate for all audiences.",
-          priority: 2,
-          type: "pass_fail",
-        },
-        {
-          name: "Be funny",
-          instruction:
-            "Make the joke funny and engaging. It should be something that someone would want to tell to their friends. Something clever, not just a simple pun.",
-          priority: 1,
-          type: "five_star",
-        },
-      ],
+      requirements: [],
       input_json_schema: JSON.stringify({
         type: "object",
         properties: {
@@ -227,11 +208,21 @@
       }),
     }
   }
+
+  function prompt_description() {
+    if (!editing) {
+      return "The prompt for the model to follow."
+    }
+    if (task.requirements.length > 0) {
+      return "The base prompt used by prompt generators (Basic, Multi-shot, etc). The task requirements below are appended to this. You can create additional prompts in the 'Prompts' tab to compare prompt performance."
+    }
+    return "The base prompt used by prompt generators (Basic, Multi-shot, etc). You can create additional prompts in the 'Prompts' tab to compare prompt performance."
+  }
 </script>
 
 <div class="flex flex-col gap-2 w-full">
   <FormContainer
-    submit_label={task.id ? "Save Task" : "Create Task"}
+    submit_label={editing ? "Save Task" : "Create Task"}
     on:submit={create_task}
     bind:warn_before_unload
     bind:error
@@ -240,7 +231,7 @@
   >
     <div>
       <div class="text-xl font-bold">Part 1: Overview</div>
-      {#if !task.id && !hide_example_task}
+      {#if creating && !hide_example_task}
         <h3 class="text-sm mt-1">
           Just exploring?
           <button class="link text-primary" on:click={example_task}
@@ -258,20 +249,20 @@
     />
 
     <FormElement
+      label="Prompt / Task Instructions"
+      inputType="textarea"
+      id="task_instructions"
+      description={prompt_description()}
+      bind:value={task.instruction}
+    />
+
+    <FormElement
       label="Task Description"
       inputType="textarea"
       id="task_description"
       description="A description for you and your team, not used by the model."
       optional={true}
       bind:value={task.description}
-    />
-
-    <FormElement
-      label="Task Instructions"
-      inputType="textarea"
-      id="task_instructions"
-      description="This will form the basis of the model's prompt. Keep this high level, and define any details in the 'Requirements' section below."
-      bind:value={task.instruction}
     />
 
     <FormElement
@@ -284,85 +275,94 @@
       bind:value={task.thinking_instruction}
     />
 
-    <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold" id="requirements_part">
-        Part 2: Requirements
+    {#if show_requirements}
+      <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+        <div class="text-xl font-bold" id="requirements_part">
+          Part 2: Requirements
+        </div>
+        <div class="text-xs text-gray-500">
+          Define requirements you can use to rate the results of the model.
+          These are used in the prompt, ratings, evals and training.
+          <a
+            href="https://docs.getkiln.ai/docs/reviewing-and-rating"
+            target="_blank"
+            class="link">Learn more</a
+          >.
+        </div>
       </div>
-      <div class="text-xs text-gray-500">
-        Define any requirements for the task. These will become part of the
-        prompt, but are also broken out for model evals and training.
-      </div>
-    </div>
 
-    <!-- Requirements Section -->
-    <FormList
-      content={task.requirements}
-      content_label="Requirement"
-      start_with_one={true}
-      empty_content={{
-        name: "",
-        description: "",
-        instructions: "",
-        priority: 1,
-      }}
-      let:item_index
-    >
-      <div class="flex flex-col gap-3">
-        <div class="flex flex-row gap-1">
+      <!-- Requirements Section -->
+      <FormList
+        content={task.requirements}
+        content_label="Requirement"
+        start_with_one={false}
+        empty_content={{
+          name: "",
+          description: "",
+          instructions: "",
+          priority: 1,
+        }}
+        let:item_index
+      >
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-row gap-1">
+            <div class="grow flex flex-col gap-1">
+              <FormElement
+                label="Requirement Name"
+                info_description="A short name to uniquely identify the requirement. This will appear in the rating UI. It's not used by the model."
+                id="requirement_name_{item_index}"
+                light_label={true}
+                bind:value={task.requirements[item_index].name}
+                max_length={32}
+              />
+            </div>
+            <div class="flex flex-col gap-1">
+              <FormElement
+                label="Rating Type"
+                inputType="select"
+                id="requirement_type_{item_index}"
+                light_label={true}
+                select_options={[
+                  ["five_star", "5 Star"],
+                  ["pass_fail", "Pass / Fail"],
+                  ["pass_fail_critical", "Pass / Fail / Critical"],
+                ]}
+                bind:value={task.requirements[item_index].type}
+              />
+            </div>
+            <div class="flex flex-col gap-1">
+              <FormElement
+                label="Priority"
+                inputType="select"
+                id="requirement_priority_{item_index}"
+                light_label={true}
+                select_options={[
+                  [0, "P0 - Critical"],
+                  [1, "P1 - High"],
+                  [2, "P2 - Medium"],
+                  [3, "P3 - Low"],
+                ]}
+                bind:value={task.requirements[item_index].priority}
+              />
+            </div>
+          </div>
           <div class="grow flex flex-col gap-1">
             <FormElement
-              label="Requirement Name"
-              id="requirement_name_{item_index}"
+              label="Instructions: a few sentences describing this requirement for the model"
+              info_description="These instructions will be appended to the prompt and using during evals. It should be written with the model in mind. Example requirement: Name='Be Succinct' and Instruction='Use short sentences and simple language. Don't repeat yourself.'"
+              inputType="textarea"
+              id="requirement_instructions_{item_index}"
               light_label={true}
-              bind:value={task.requirements[item_index].name}
-              max_length={32}
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <FormElement
-              label="Rating Type"
-              inputType="select"
-              id="requirement_type_{item_index}"
-              light_label={true}
-              select_options={[
-                ["five_star", "5 Star"],
-                ["pass_fail", "Pass / Fail"],
-                ["pass_fail_critical", "Pass / Fail / Critical"],
-              ]}
-              bind:value={task.requirements[item_index].type}
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <FormElement
-              label="Priority"
-              inputType="select"
-              id="requirement_priority_{item_index}"
-              light_label={true}
-              select_options={[
-                [0, "P0 - Critical"],
-                [1, "P1 - High"],
-                [2, "P2 - Medium"],
-                [3, "P3 - Low"],
-              ]}
-              bind:value={task.requirements[item_index].priority}
+              bind:value={task.requirements[item_index].instruction}
             />
           </div>
         </div>
-        <div class="grow flex flex-col gap-1">
-          <FormElement
-            label="Instructions"
-            inputType="textarea"
-            id="requirement_instructions_{item_index}"
-            light_label={true}
-            bind:value={task.requirements[item_index].instruction}
-          />
-        </div>
-      </div>
-    </FormList>
+      </FormList>
+    {/if}
 
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold" id="requirements_part">
-        Part 3: Input Schema
+      <div class="text-xl font-bold">
+        Part {show_requirements ? "3" : "2"}: Input Schema
       </div>
       <div class="text-xs text-gray-500">
         What kind of input will the model receive?
@@ -370,7 +370,7 @@
     </div>
 
     <div>
-      {#if task.id}
+      {#if editing}
         <div>
           <div class="text-sm mb-2 flex flex-col gap-1">
             <p>
@@ -400,8 +400,8 @@
     </div>
 
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold" id="requirements_part">
-        Part 4: Output Schema
+      <div class="text-xl font-bold">
+        Part {show_requirements ? "4" : "3"}: Output Schema
       </div>
       <div class="text-xs text-gray-500">
         What kind of output will the model produce?
@@ -409,7 +409,7 @@
     </div>
 
     <div>
-      {#if task.id}
+      {#if editing}
         <div>
           <div class="text-sm mb-2 flex flex-col gap-1">
             <p>

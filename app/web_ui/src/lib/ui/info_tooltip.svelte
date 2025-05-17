@@ -1,14 +1,29 @@
 <script lang="ts">
   export let tooltip_text: string
+  export let position: "left" | "right" | "bottom" | "top" = "left"
+  export let no_pad = false
+
+  function get_position_class() {
+    switch (position) {
+      case "right":
+        return "tooltip-right"
+      case "bottom":
+        return "tooltip-bottom"
+      case "top":
+        return "tooltip-top"
+      default:
+        return "tooltip-left"
+    }
+  }
 </script>
 
 <button
-  class="tooltip tooltip-left before:whitespace-normal"
+  class="tooltip before:z-50 {get_position_class()} before:whitespace-normal"
   data-tip={tooltip_text}
 >
   <svg
     fill="currentColor"
-    class="w-6 h-6 inline"
+    class="w-6 h-6 inline {no_pad ? 'mt-[-3px] ml-[-3px]' : ''}"
     viewBox="0 0 1024 1024"
     version="1"
     xmlns="http://www.w3.org/2000/svg"

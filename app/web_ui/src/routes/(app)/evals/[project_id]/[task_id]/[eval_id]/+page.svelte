@@ -1,35 +1,25 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
-  import FormElement from "$lib/utils/form_element.svelte"
-  import type {
-    EvalConfig,
-    ProviderModels,
-    TaskRunConfig,
-    EvalResultSummary,
-  } from "$lib/types"
-  import { goto } from "$app/navigation"
+  import type { EvalProgress } from "$lib/types"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import {
     model_info,
     load_model_info,
     model_name,
-    provider_name_from_id,
     prompt_name_from_id,
-    load_available_prompts,
-    load_available_models,
+    current_task_prompts,
   } from "$lib/stores"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../run/prompt_type_selector.svelte"
-  import Warning from "$lib/ui/warning.svelte"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import RunEval from "./run_eval.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
-  import OutputTypeTablePreview from "./output_type_table_preview.svelte"
+  import type { ProviderModels, PromptResponse } from "$lib/types"
+  import { goto } from "$app/navigation"
+  import { prompt_link } from "$lib/utils/link_builder"
+  import { progress_ui_state } from "$lib/stores/progress_ui_store"
+
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: project_id = $page.params.project_id
@@ -40,37 +30,20 @@
   let eval_error: KilnError | null = null
   let eval_loading = true
 
-  let eval_configs: EvalConfig[] | null = null
-  let eval_configs_error: KilnError | null = null
-  let eval_configs_loading = true
-  let current_eval_config_id: string | null = null
+  let eval_progress_loading = true
+  let eval_progress: EvalProgress | null = null
+  let eval_progress_error: KilnError | null = null
 
-  let task_run_configs: TaskRunConfig[] | null = null
-  let task_run_configs_error: KilnError | null = null
-  let task_run_configs_loading = true
-
-  let score_summary: EvalResultSummary | null = null
-  let score_summary_error: KilnError | null = null
-
-  // Note: not including score_summary_error, because it's not a critical error we should block the UI for
-  $: loading = eval_loading || eval_configs_loading || task_run_configs_loading
-  $: error = eval_error || eval_configs_error || task_run_configs_error
+  $: loading = eval_loading || eval_progress_loading
+  $: error = eval_error || eval_progress_error
 
   onMount(async () => {
     // Wait for page params to load
     await tick()
-    // Wait for these 3 to load, as they are needed for better labels. Usually already cached and instant.
-    await Promise.all([
-      load_model_info(),
-      load_available_prompts(),
-      load_available_models(),
-    ])
-    // Get the eval first (want it to set the current config id before the other two load)
-    await get_eval()
-    // These two can be parallel
-    await Promise.all([get_eval_configs(), get_task_run_configs()])
-    // This needs the selected eval config id, set from above requests
-    get_score_summary()
+    // can be async
+    load_model_info()
+    // Load data in parallel
+    await Promise.all([get_eval(), get_eval_progress()])
   })
 
   async function get_eval() {
@@ -92,11 +65,6 @@
         throw error
       }
       evaluator = data
-      // Set the selected eval config: prefer query params, then eval's default, then first eval config (set below in load_eval_configs)
-      current_eval_config_id =
-        $page.url.searchParams.get("selected_eval_config") ||
-        evaluator.current_config_id ||
-        null
     } catch (error) {
       eval_error = createKilnError(error)
     } finally {
@@ -104,11 +72,13 @@
     }
   }
 
-  async function get_eval_configs() {
+  async function get_eval_progress() {
+    eval_progress = null
+    eval_progress_loading = true
     try {
-      eval_configs_loading = true
+      eval_progress = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
         {
           params: {
             path: {
@@ -122,112 +92,26 @@
       if (error) {
         throw error
       }
-      eval_configs = data
-      // Fallback to first eval config if no current eval config id is set from load_eval()
-      if (
-        !current_eval_config_id &&
-        eval_configs.length > 0 &&
-        eval_configs[0].id
-      ) {
-        current_eval_config_id = eval_configs[0].id
-      }
+      eval_progress = data
     } catch (error) {
-      eval_configs_error = createKilnError(error)
+      eval_progress_error = createKilnError(error)
     } finally {
-      eval_configs_loading = false
-    }
-  }
-
-  async function get_task_run_configs() {
-    try {
-      task_run_configs_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      task_run_configs = data
-    } catch (error) {
-      task_run_configs_error = createKilnError(error)
-    } finally {
-      task_run_configs_loading = false
-    }
-  }
-
-  async function get_score_summary() {
-    score_summary = null
-    if (!current_eval_config_id) {
-      score_summary_error = new KilnError("No evaluation method selected", null)
-      return
-    }
-    try {
-      score_summary = null
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              eval_id,
-              eval_config_id: current_eval_config_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      score_summary = data
-    } catch (error) {
-      score_summary_error = createKilnError(error)
-    }
-  }
-
-  // Watches the current eval config id, performing actions based on it
-  $: watch_selected_eval_config(current_eval_config_id)
-  function watch_selected_eval_config(selected_id: string | null) {
-    if (selected_id === "add_config") {
-      // if it's the "add_config" special value, navigate to the create eval config page
-      goto(`/evals/${project_id}/${task_id}/${eval_id}/create_eval_config`)
-      return
-    }
-    // If the selected id is not null, then get the score summary
-    score_summary = null
-    if (selected_id) {
-      get_score_summary()
+      eval_progress_loading = false
     }
   }
 
   type UiProperty = {
     name: string
     value: string
-  }
-
-  // A dropdown name for the eval config that is human readable and helpful
-  // Combine's it's name with it's properties
-  function get_eval_config_name(
-    eval_config: EvalConfig,
-    model_info: ProviderModels | null,
-  ): string {
-    let parts = []
-    parts.push(eval_config_to_ui_name(eval_config.config_type))
-    parts.push(model_name(eval_config.model_name, model_info))
-    return eval_config.name + " — " + parts.join(", ")
+    tooltip?: string
+    link?: string
   }
 
   function get_eval_properties(
     evaluator: Eval,
-    score_summary: EvalResultSummary | null,
+    eval_progress: EvalProgress | null,
+    modelInfo: ProviderModels | null,
+    taskPrompts: PromptResponse | null,
   ): UiProperty[] {
     const properties: UiProperty[] = []
 
@@ -245,482 +129,463 @@
       name: "ID",
       value: evaluator.id || "unknown",
     })
-    let outputs = []
-    for (const output of evaluator.output_scores) {
-      outputs.push(output.name + " (" + output.type + ")")
-    }
-    if (outputs.length > 0) {
-      properties.push({
-        name: "Output Scores",
-        value: outputs.join(", "),
-      })
-    }
+
     let eval_set_size = ""
-    if (score_summary) {
-      eval_set_size = " (" + score_summary.dataset_size + " items)"
+    if (eval_progress) {
+      eval_set_size = " (" + eval_progress.dataset_size + " items)"
     }
     properties.push({
       name: "Eval Dataset",
       value: evaluator.eval_set_filter_id + eval_set_size,
+      link: link_from_filter_id(evaluator.eval_set_filter_id),
     })
-    properties.push({
-      name: "Eval Method Dataset",
-      value: evaluator.eval_configs_filter_id,
-    })
-    return properties
-  }
-
-  $: current_eval_config = eval_configs?.find(
-    (config) => config.id === current_eval_config_id,
-  )
-
-  function get_eval_config_properties(
-    eval_config_id: string | null,
-    model_info: ProviderModels | null,
-  ): UiProperty[] {
-    const eval_config = eval_configs?.find(
-      (config) => config.id === eval_config_id,
-    )
-    if (!eval_config) {
-      return [
-        {
-          name: "No Config Selected",
-          value: "Select a config from dropdown above",
-        },
-      ]
+    let golden_dataset_size = ""
+    if (eval_progress) {
+      golden_dataset_size = " (" + eval_progress.golden_dataset_size + " items)"
     }
+    properties.push({
+      name: "Golden Dataset",
+      value: evaluator.eval_configs_filter_id + golden_dataset_size,
+      tooltip:
+        "This is the dataset that we use to evaluate the quality of the evaluation method. Also called the 'Eval Method Dataset'. It needs to have human ratings.",
+      link: link_from_filter_id(evaluator.eval_configs_filter_id),
+    })
 
-    const properties: UiProperty[] = []
-
-    properties.push({
-      name: "Algorithm",
-      value: eval_config_to_ui_name(eval_config.config_type),
-    })
-    properties.push({
-      name: "Eval Model",
-      value: model_name(eval_config.model_name, model_info),
-    })
-    properties.push({
-      name: "Model Provider",
-      value: provider_name_from_id(eval_config.model_provider),
-    })
-    const task_description = eval_config.properties["task_description"]
-    if (task_description) {
+    if (eval_progress?.current_eval_method) {
       properties.push({
-        name: "Task Description",
-        value: task_description,
+        name: "Eval Algorithm",
+        value: eval_config_to_ui_name(
+          eval_progress.current_eval_method.config_type,
+        ),
+        tooltip: "The evaluation algorithm used by your selected eval method.",
+      })
+      properties.push({
+        name: "Eval Model",
+        value: model_name(
+          eval_progress.current_eval_method.model_name,
+          modelInfo,
+        ),
+        tooltip: "The model used by your selected eval method.",
       })
     }
+
+    if (eval_progress?.current_run_method) {
+      properties.push({
+        name: "Run Model",
+        value: model_name(
+          eval_progress.current_run_method.run_config_properties.model_name,
+          modelInfo,
+        ),
+        tooltip: "The model used by your selected run method.",
+      })
+      properties.push({
+        name: "Run Prompt",
+        value:
+          eval_progress.current_run_method.prompt?.name ||
+          prompt_name_from_id(
+            eval_progress.current_run_method.run_config_properties.prompt_id,
+            taskPrompts,
+          ),
+        tooltip: "The prompt used by your selected run method.",
+        link: prompt_link(
+          project_id,
+          task_id,
+          eval_progress.current_run_method.run_config_properties.prompt_id,
+        ),
+      })
+    }
+
     return properties
-  }
-
-  function get_eval_config_select_options(
-    configs: EvalConfig[] | null,
-  ): [string, [unknown, string][]][] {
-    const configs_options: [string, string][] = []
-    for (const c of configs || []) {
-      if (c.id) {
-        configs_options.push([c.id, get_eval_config_name(c, $model_info)])
-      }
-    }
-
-    const results: [string, [unknown, string][]][] = []
-    if (configs_options.length > 0) {
-      results.push(["Select Eval Method", configs_options])
-    }
-    results.push(["Manage Eval Methods", [["add_config", "Add Eval Method"]]])
-    return results
-  }
-
-  let eval_state:
-    | "not_started"
-    | "running"
-    | "complete"
-    | "complete_with_errors" = "not_started"
-  $: run_eval_url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
-
-  let task_run_config_model_name = ""
-  let task_run_config_provider_name = ""
-  let task_run_config_prompt_method = "simple_prompt_builder"
-  let task_run_config_long_prompt_name_provider = ""
-
-  let add_task_config_dialog: Dialog | null = null
-  let add_task_config_error: KilnError | null = null
-  async function add_task_config(): Promise<boolean> {
-    if (
-      !task_run_config_model_name ||
-      !task_run_config_provider_name ||
-      !task_run_config_prompt_method
-    ) {
-      add_task_config_error = new KilnError("Missing required fields", null)
-      return false
-    }
-
-    try {
-      const { error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-          body: {
-            model_name: task_run_config_model_name,
-            // @ts-expect-error not checking types here, server will check them
-            model_provider_name: task_run_config_provider_name,
-            prompt_id: task_run_config_prompt_method,
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      // Load the updated list of task run configs after success
-      get_task_run_configs()
-    } catch (error) {
-      add_task_config_error = createKilnError(error)
-      return false
-    }
-    return true
-  }
-
-  function show_incomplete_warning(
-    score_summary: EvalResultSummary | null,
-  ): boolean {
-    if (!score_summary?.run_config_percent_complete) {
-      return false
-    }
-
-    const values = Object.values(score_summary.run_config_percent_complete)
-    const minComplete =
-      values.length > 0
-        ? values.reduce((min, val) => Math.min(min, val), 1.0)
-        : 1.0
-    return minComplete < 1.0
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
+  $: has_default_run_config = evaluator && evaluator.current_run_config_id
 
   let edit_dialog: EditDialog | null = null
+
+  const MIN_DATASET_SIZE = 25
+  let current_step: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 0
+  let required_more_eval_data = false
+  let required_more_golden_data = false
+  let goals: string[] = []
+  let golden_dataset_explanation = ""
+  const step_titles: string[] = [
+    "Define Goals",
+    "Create Eval Data",
+    "Human Ratings",
+    "Find the Best Evaluator",
+    "Find the Best Way to Run this Task",
+  ]
+  const step_tooltips: Record<number, string> = {
+    1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
+    2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
+    3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the evaluator is working by checking how well it aligns to human preferences. ",
+    4: "Benchmark different evaluation methods (models, prompts, algorithms). We'll compare to your golden dataset to find the evaluator which best matches human preferences.",
+    5: "This tool will help your compare a variety of options for running this task and find the best one. You can compare different models, prompts, or fine-tunes.",
+  }
+  function update_eval_progress(
+    progress: EvalProgress | null,
+    evaluator: Eval | null,
+  ) {
+    update_golden_dataset_explanation(progress)
+    current_step = 1
+    if (!progress || !evaluator) {
+      return
+    }
+
+    // Goals are setup. Generate friendly names for them.
+    goals = []
+    for (const output of evaluator.output_scores) {
+      goals.push(output.name + " (" + output.type + ")")
+    }
+
+    current_step = 2
+    required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
+    required_more_golden_data = progress.golden_dataset_size < MIN_DATASET_SIZE
+    if (required_more_eval_data || required_more_golden_data) {
+      return
+    }
+
+    current_step = 3
+    if (golden_dataset_explanation) {
+      return
+    }
+
+    current_step = 4
+    if (!has_default_eval_config) {
+      return
+    }
+
+    current_step = 5
+    if (!has_default_run_config) {
+      return
+    }
+
+    // Everything is setup!
+    current_step = 6
+  }
+  $: update_eval_progress(eval_progress, evaluator)
+
+  function update_golden_dataset_explanation(progress: EvalProgress | null) {
+    if (!progress) {
+      return
+    }
+    if (progress.golden_dataset_size == 0) {
+      golden_dataset_explanation =
+        "Your golden dataset is empty. Add data to your golden dataset to get started."
+      return
+    }
+    let golden_dataset_rating_issues: string[] = []
+    if (progress.golden_dataset_not_rated_count > 0) {
+      golden_dataset_rating_issues.push(
+        `${progress.golden_dataset_not_rated_count} item${progress.golden_dataset_not_rated_count == 1 ? " is" : "s are"} unrated`,
+      )
+    }
+    if (progress.golden_dataset_partially_rated_count > 0) {
+      golden_dataset_rating_issues.push(
+        `${progress.golden_dataset_partially_rated_count} item${progress.golden_dataset_partially_rated_count == 1 ? " is" : "s are"} partially unrated`,
+      )
+    }
+    if (golden_dataset_rating_issues.length > 0) {
+      // Some golden dataset items are not fully rated.
+      golden_dataset_explanation = `In your golden dataset ${golden_dataset_rating_issues.join(" and ")}. Fully rate all items to to get the best results from your eval.`
+    } else {
+      golden_dataset_explanation = ""
+    }
+  }
+
+  function tag_from_filter_id(filter_id: string): string | undefined {
+    if (filter_id.startsWith("tag::")) {
+      return filter_id.replace("tag::", "")
+    }
+    return undefined
+  }
+
+  function link_from_filter_id(filter_id: string): string | undefined {
+    const tag = tag_from_filter_id(filter_id)
+    if (tag) {
+      return `/dataset/${project_id}/${task_id}?tags=${tag}`
+    }
+    return undefined
+  }
+
+  $: properties =
+    evaluator &&
+    get_eval_properties(
+      evaluator,
+      eval_progress,
+      $model_info,
+      $current_task_prompts,
+    )
+
+  function add_eval_data() {
+    if (!evaluator) {
+      alert("Unable to add eval data. Please try again later.")
+      return
+    }
+    const eval_tag = tag_from_filter_id(evaluator?.eval_set_filter_id)
+    const golden_tag = tag_from_filter_id(evaluator?.eval_configs_filter_id)
+    if (!eval_tag || !golden_tag) {
+      alert(
+        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+      )
+      return
+    }
+    const url = `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${encodeURIComponent(
+      eval_tag,
+    )}:0.8,${encodeURIComponent(golden_tag)}:0.2&eval_link=${encodeURIComponent(
+      window.location.pathname,
+    )}`
+    show_progress_ui("When you're done adding data, ", 2)
+    goto(url)
+  }
+
+  function show_progress_ui(body: string, step: number) {
+    progress_ui_state.set({
+      title: "Creating Eval",
+      body,
+      link: $page.url.pathname,
+      cta: "return to the eval",
+      progress: null,
+      step_count: 5,
+      current_step: step,
+    })
+  }
+
+  function show_golden_dataset() {
+    if (!evaluator) {
+      return
+    }
+    const url = link_from_filter_id(evaluator.eval_configs_filter_id)
+    if (!url) {
+      return
+    }
+
+    show_progress_ui("When you're done rating, ", 3)
+    goto(url)
+  }
+
+  function compare_eval_methods() {
+    let url = `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`
+    show_progress_ui("When you're done comparing eval methods, ", 4)
+    goto(url)
+  }
+
+  function compare_run_methods() {
+    let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_methods`
+    show_progress_ui("When you're done comparing run methods, ", 5)
+    goto(url)
+  }
 </script>
 
-<AppPage
-  title="Evaluator"
-  subtitle={evaluator?.name}
-  action_buttons={[
-    {
-      label: "Edit",
-      handler: () => {
-        edit_dialog?.show()
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Eval: {evaluator?.name || ''}"
+    subtitle="Follow these steps to find the best way to evaluate and run your task"
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
+    action_buttons={[
+      {
+        label: "Edit",
+        handler: () => {
+          edit_dialog?.show()
+        },
       },
-    },
-    {
-      label: "Compare Evaluation Methods",
-      href: `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`,
-      primary: !has_default_eval_config,
-    },
-  ]}
->
-  {#if loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Evaluator</div>
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+    ]}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-    </div>
-  {:else if evaluator}
-    <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
-      <div class="grow basis-1/2">
-        <div class="text-xl font-bold mb-4">Evaluator Properties</div>
-        <div
-          class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
-        >
-          {#each get_eval_properties(evaluator, score_summary) as property}
-            <div class="flex items-center">{property.name}</div>
-            <div class="flex items-center text-gray-500 overflow-x-hidden">
-              {property.value}
-            </div>
-          {/each}
-        </div>
-        {#if score_summary && score_summary.dataset_size > 0 && score_summary.dataset_size < 25}
-          <div class="mt-4">
-            <Warning
-              warning_message={`There are only ${score_summary.dataset_size} item(s) in your eval dataset. This is generally too small to get a good sense of how well your task run methods perform.`}
-              warning_color="warning"
-              tight={true}
-            />
-          </div>
-        {/if}
-      </div>
-      <div class="grow basis-1/2 flex flex-col gap-4">
-        <div>
-          <div class="text-xl font-bold">Evaluation Method</div>
-          <div class="text-sm text-gray-500 mb-2">
-            How the task outputs will be evaluated.
-          </div>
-
-          <FormElement
-            hide_label={true}
-            id="eval_config_select"
-            label="Eval Method"
-            inputType="select"
-            bind:value={current_eval_config_id}
-            select_options_grouped={get_eval_config_select_options(
-              eval_configs,
-            )}
-          />
-          {#if !has_default_eval_config}
-            <Warning
-              warning_message="No default evaluation method selected. We recommend using 'Compare Evaluation Methods' and selecting the best performing method as the default."
-              warning_color="warning"
-              tight={true}
-            />
-          {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
-            <Warning
-              warning_message="The currently selected evaluation method is not the default. You can change the default in 'Compare Evaluation Methods'."
-              warning_color="warning"
-              tight={true}
-            />
-          {/if}
-        </div>
-        <div
-          class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
-        >
-          {#each get_eval_config_properties(current_eval_config_id, $model_info) as property}
-            <div class="flex items-center">{property.name}</div>
-            <div class="flex items-center text-gray-500 overflow-x-hidden">
-              {property.value}
-            </div>
-          {/each}
-          <div class="flex items-center">Eval Method Quality</div>
-          <div class="flex items-center text-gray-500 overflow-x-hidden">
-            <a
-              href={`/evals/${project_id}/${task_id}/${eval_id}/eval_configs`}
-              class="link"
-            >
-              Compare and optimize
-            </a>
-          </div>
+    {:else if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Evaluator</div>
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
-    </div>
-    <div class="mt-16">
-      {#if task_run_configs?.length}
-        <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
-          <div class="grow">
-            <div class="text-xl font-bold">Compare Run Methods</div>
-            <div class="text-xs text-gray-500">
-              Find the best method of running your task comparing various
-              prompts, models, fine-tunes, and more.
-            </div>
-            <div class="text-xs text-gray-500 pt-2">
-              Scores are generated by running the 'run method' on each item of
-              your eval dataset, generating task outputs, then evaluating those
-              outputs with the selected evaluation method{current_eval_config
-                ? ` (${current_eval_config.name})`
-                : ""}.
-            </div>
-            {#if score_summary_error}
-              <div class="text-error text-sm">
-                {score_summary_error.getMessage() ||
-                  "An unknown error occurred fetching scores."}
-              </div>
-            {/if}
-          </div>
-          <div class="shrink-0">
-            {#if eval_state === "not_started"}
-              <button
-                class="btn btn-mid mr-2"
-                on:click={() => {
-                  add_task_config_dialog?.show()
-                }}>Add Run Method</button
+    {:else if evaluator}
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
+        <div class="grow">
+          <ul class="steps steps-vertical ml-4 overflow-x-hidden">
+            {#each [1, 2, 3, 4, 5] as step}
+              <li
+                class="step {current_step >= step ? 'step-primary' : ''}"
+                data-content={current_step == step
+                  ? "●"
+                  : current_step > step
+                    ? "✓"
+                    : ""}
               >
-            {/if}
-            <RunEval
-              bind:eval_state
-              bind:run_url={run_eval_url}
-              on_run_complete={() => {
-                get_score_summary()
-              }}
-            />
-          </div>
-        </div>
-
-        <!-- Warn the user if some evals are incomplete -->
-        {#if show_incomplete_warning(score_summary)}
-          <div class="mt-6 mb-4">
-            <button
-              class="tooltip tooltip-top cursor-pointer"
-              data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
-            >
-              <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run Eval' to generate missing results.`}
-                tight={true}
-              />
-            </button>
-          </div>
-        {/if}
-
-        <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>
-                  <div>Run Method</div>
-                  <div class="font-normal">How task output is generated</div>
-                </th>
-                {#each evaluator.output_scores as output_score}
-                  <th class="text-center">
-                    {output_score.name}
-                    <OutputTypeTablePreview
-                      output_score_type={output_score.type}
-                    />
-                  </th>
-                {/each}
-              </tr>
-            </thead>
-            <tbody>
-              {#each task_run_configs || [] as task_run_config}
-                {@const percent_complete =
-                  score_summary?.run_config_percent_complete?.[
-                    "" + task_run_config.id
-                  ]}
-                <tr
-                  class="hover cursor-pointer"
-                  on:click={() => {
-                    goto(
-                      `/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`,
-                    )
-                  }}
+                <div
+                  class="text-left py-3 min-h-[100px] flex flex-col place-content-center pl-4"
                 >
-                  <td>
-                    <div class="font-medium">
-                      {task_run_config.name}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      {model_name(
-                        task_run_config?.run_config_properties?.model_name,
-                        $model_info,
-                      )}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      {provider_name_from_id(
-                        task_run_config?.run_config_properties
-                          ?.model_provider_name,
-                      )}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Prompt Name:
-                      {task_run_config.prompt?.name ||
-                        prompt_name_from_id(
-                          task_run_config?.run_config_properties?.prompt_id,
-                        )}
-                    </div>
-                    {#if task_run_config?.prompt?.generator_id && task_run_config?.run_config_properties?.prompt_id?.startsWith("task_run_config::")}
-                      <!-- Special description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
-                      <div class="text-sm text-gray-500">
-                        Prompt Source: {prompt_name_from_id(
-                          task_run_config?.prompt?.generator_id,
-                        )}
+                  <div class="font-medium">
+                    {step_titles[step - 1]}
+                    {#if step_tooltips[step]}
+                      <InfoTooltip
+                        tooltip_text={step_tooltips[step]}
+                        position={step < 4 ? "bottom" : "top"}
+                        no_pad={true}
+                      />
+                    {/if}
+                  </div>
+                  <div class="text-sm text-gray-500">
+                    {#if step == 1 && goals.length > 0}
+                      This eval has {goals.length} goals: {goals.join(", ")}.
+                    {:else if step == 2}
+                      <div>
+                        <div class="mb-1">
+                          {#if eval_progress && !required_more_eval_data && !required_more_golden_data}
+                            You have {eval_progress?.dataset_size} eval items and
+                            {eval_progress?.golden_dataset_size} golden items.
+                          {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0}
+                            Create data for this eval.
+                          {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}
+                            You require additional eval data. You only have
+                            {#if required_more_eval_data && required_more_golden_data}
+                              {eval_progress?.dataset_size} eval items and {eval_progress?.golden_dataset_size}
+                              golden items. We suggest at least {MIN_DATASET_SIZE}
+                              items in each set.
+                            {:else if required_more_eval_data}
+                              {eval_progress?.dataset_size} eval items. We suggest
+                              at least {MIN_DATASET_SIZE} items.
+                            {:else if required_more_golden_data}
+                              {eval_progress?.golden_dataset_size} golden items.
+                              We suggest at least {MIN_DATASET_SIZE} items.
+                            {/if}
+                          {/if}
+                        </div>
+                        <button
+                          class="btn btn-sm {current_step == 2
+                            ? 'btn-primary'
+                            : ''}"
+                          on:click={add_eval_data}
+                        >
+                          Add Eval Data
+                        </button>
+                      </div>
+                    {:else if step == 3}
+                      <div class="mb-1">
+                        {#if golden_dataset_explanation}
+                          {golden_dataset_explanation}
+                        {:else}
+                          All items in your golden dataset are fully rated.
+                        {/if}
+                      </div>
+                      <div>
+                        {#if link_from_filter_id(evaluator.eval_configs_filter_id)}
+                          <button
+                            class="btn btn-sm {current_step == 3
+                              ? 'btn-primary'
+                              : ''}"
+                            on:click={show_golden_dataset}
+                          >
+                            {golden_dataset_explanation ? "Rate" : "View"} Golden
+                            Dataset
+                          </button>
+                        {:else}
+                          <!-- We always use "tag::" so this shouldn't happen unless it's created by code. -->
+                          Your golden dataset is filtered by
+                          <span class="font-mono bg-gray-100 p-1"
+                            >{evaluator.eval_configs_filter_id}</span
+                          >. Please rate these entries in the
+                          <a
+                            class="link"
+                            href={`/dataset/${project_id}/${task_id}`}
+                            >dataset tab</a
+                          >.
+                        {/if}
+                      </div>
+                    {:else if step == 4}
+                      <div class="mb-1">
+                        {#if eval_progress?.current_eval_method}
+                          You've selected the eval method '{eval_config_to_ui_name(
+                            eval_progress.current_eval_method.config_type,
+                          )}' using the model '{model_name(
+                            eval_progress.current_eval_method.model_name,
+                            $model_info,
+                          )}'.
+                        {:else}
+                          Compare automated evals to find one that aligns with
+                          your human preferences.
+                        {/if}
+                      </div>
+                      <div>
+                        <button
+                          class="btn btn-sm {current_step == 4
+                            ? 'btn-primary'
+                            : ''}"
+                          on:click={compare_eval_methods}
+                        >
+                          Compare Eval Methods
+                        </button>
+                      </div>
+                    {:else if step == 5}
+                      <div class="mb-1">
+                        {#if eval_progress?.current_run_method}
+                          You've selected the model '{model_name(
+                            eval_progress.current_run_method
+                              .run_config_properties.model_name,
+                            $model_info,
+                          )}' with the prompt '{eval_progress.current_run_method
+                            .prompt?.name ||
+                            prompt_name_from_id(
+                              eval_progress.current_run_method
+                                .run_config_properties.prompt_id,
+                              $current_task_prompts,
+                            )}'.
+                        {:else}
+                          Compare models, prompts and fine-tunes to find the
+                          most effective.
+                        {/if}
+                      </div>
+                      <div>
+                        <button
+                          class="btn btn-sm {current_step == 5
+                            ? 'btn-primary'
+                            : ''}"
+                          on:click={compare_run_methods}
+                        >
+                          Compare Run Methods
+                        </button>
                       </div>
                     {/if}
-                    {#if percent_complete}
-                      <div
-                        class="text-sm {percent_complete < 1.0
-                          ? 'text-error'
-                          : 'text-gray-500'}"
-                      >
-                        {(percent_complete * 100.0).toFixed(1)}% complete
-                      </div>
-                    {:else if score_summary}
-                      <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">0% complete</div>
-                    {/if}
-                  </td>
-                  {#each evaluator.output_scores as output_score}
-                    {@const score =
-                      score_summary?.results?.["" + task_run_config.id]?.[
-                        string_to_json_key(output_score.name)
-                      ]?.mean_score}
-                    <td class="text-center">
-                      {score != null ? score.toFixed(2) : "unknown"}
-                    </td>
-                  {/each}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <div class="text-xl font-bold">Compare Run Methods</div>
-        <div class="text-sm text-gray-500">
-          Find the best method of running your task comparing various prompts,
-          models, fine-tunes, and more. Add one or more task run methods to get
-          started.
+                  </div>
+                </div>
+              </li>
+            {/each}
+          </ul>
         </div>
 
-        <button
-          class="btn min-w-[200px] mt-4 {has_default_eval_config
-            ? 'btn-primary'
-            : ''}"
-          on:click={() => {
-            add_task_config_dialog?.show()
-          }}
-        >
-          Add Run Method
-        </button>
-      {/if}
-    </div>
-  {/if}
-</AppPage>
-
-<Dialog
-  bind:this={add_task_config_dialog}
-  title="Add a Task Run Method"
-  action_buttons={[
-    {
-      label: "Cancel",
-      isCancel: true,
-    },
-    {
-      label: "Create",
-      isPrimary: true,
-      asyncAction: add_task_config,
-    },
-  ]}
->
-  <h4 class="text-sm text-gray-500">
-    Define a method of running this task (model+prompt).
-  </h4>
-  <h4 class="text-sm text-gray-500 mt-1">
-    Your evaluator can compare multiple run methods to find which one produces
-    the highest scores on your eval dataset.
-  </h4>
-  <div class="flex flex-col gap-2 pt-6">
-    <AvailableModelsDropdown
-      bind:model_name={task_run_config_model_name}
-      bind:provider_name={task_run_config_provider_name}
-      bind:model={task_run_config_long_prompt_name_provider}
-    />
-    <PromptTypeSelector
-      bind:prompt_method={task_run_config_prompt_method}
-      bind:linked_model_selection={task_run_config_long_prompt_name_provider}
-    />
-    {#if add_task_config_error}
-      <div class="text-error text-sm">
-        {add_task_config_error.getMessage() || "An unknown error occurred"}
+        <div class="w-72 2xl:w-96 flex-none">
+          <div class="text-xl font-bold mb-4">Evaluator Properties</div>
+          <div
+            class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
+          >
+            {#each properties || [] as property}
+              <div class="flex items-center">
+                {property.name}
+                {#if property.tooltip}
+                  <InfoTooltip tooltip_text={property.tooltip} />
+                {/if}
+              </div>
+              <div class="flex items-center text-gray-500 overflow-x-hidden">
+                {#if property.link}
+                  <a href={property.link} class="link">{property.value}</a>
+                {:else}
+                  {property.value}
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
       </div>
     {/if}
-  </div>
-</Dialog>
+  </AppPage>
+</div>
 
 <EditDialog
   bind:this={edit_dialog}

@@ -236,7 +236,8 @@
   <AppPage
     title="Add an Evaluation Method"
     subtitle="An evaluation method specifies how an eval is run (algorithm, model, instructions, etc)."
-    sub_subtitle="Multiple evaluation methods can be added to the same evaluator, then compared to find the most accurate."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -314,6 +315,7 @@
             bind:provider_name
             requires_structured_output={selected_algo !== "g_eval"}
             requires_logprobs={selected_algo === "g_eval"}
+            suggested_mode="evals"
           />
         {/if}
 

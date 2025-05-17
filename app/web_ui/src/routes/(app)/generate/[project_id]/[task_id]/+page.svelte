@@ -16,11 +16,15 @@
   import { type SampleData } from "./gen_model"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import Splits from "$lib/ui/splits.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
-  let guidance_enabled = false
   let human_guidance = ""
+  let splits: Record<string, number> = {}
+  let splits_subtitle: string | undefined = undefined
+  let split_object: Splits | null = null
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -36,28 +40,28 @@
   let num_subtopics_to_generate: number = 8
   let num_samples_to_generate: number = 8
 
-  const save_action_button = {
-    label: "Save All",
-    handler: show_save_all_modal,
+  function show_human_guidance_dialog() {
+    human_guidance_dialog?.show()
+    const text_area = document.getElementById(
+      "human_guidance",
+    ) as HTMLTextAreaElement
+    if (text_area) {
+      text_area.focus()
+    }
   }
-  $: action_buttons = guidance_enabled
-    ? [
-        {
-          label: "Remove Guidance",
-          handler: () => {
-            guidance_enabled = false
-            human_guidance = ""
-          },
-        },
-        save_action_button,
-      ]
-    : [
-        {
-          label: "Add Guidance",
-          handler: () => (guidance_enabled = true),
-        },
-        save_action_button,
-      ]
+
+  let human_guidance_dialog: Dialog | null = null
+  $: action_buttons = [
+    {
+      label: human_guidance.length > 0 ? "Edit Guidance" : "Add Guidance",
+      notice: human_guidance.length > 0,
+      handler: show_human_guidance_dialog,
+    },
+    {
+      label: "Save All",
+      handler: show_save_all_modal,
+    },
+  ]
 
   let root_node: SampleDataNode = {
     topic: "",
@@ -286,9 +290,10 @@
         ? JSON.parse(sample.input)
         : sample.input
       const save_sample_guidance =
-        guidance_enabled && human_guidance.length > 0
-          ? human_guidance
-          : undefined
+        human_guidance.length > 0 ? human_guidance : undefined
+      // Get a random split tag, if splits are defined
+      const split_tag = split_object?.get_random_split_tag()
+      const tags = split_tag ? [split_tag] : []
       const {
         error: post_error,
         data,
@@ -314,6 +319,7 @@
             prompt_method,
             topic_path: topic_path || [],
             human_guidance: save_sample_guidance,
+            tags,
           },
         },
       )
@@ -330,32 +336,22 @@
       return { saved_id: null, error }
     }
   }
+
+  function clear_human_guidance() {
+    human_guidance = ""
+    return true
+  }
 </script>
 
+<Splits bind:splits bind:subtitle={splits_subtitle} bind:this={split_object} />
 <div class="max-w-[1400px]">
   <AppPage
     title="Synthetic Data Generation"
+    subtitle={splits_subtitle}
     sub_subtitle_link="https://docs.getkiln.ai/docs/synthetic-data-generation"
     sub_subtitle="Read the Docs"
     {action_buttons}
   >
-    <div
-      class="flex flex-row mb-4 justify-center {guidance_enabled
-        ? ''
-        : 'hidden'}"
-    >
-      <div class="flex flex-col gap-2 w-full md:w-[500px]">
-        <label for="human_guidance" class="label font-medium p-0 text-sm"
-          >Guidance to help the model generate relevant data:</label
-        >
-        <textarea
-          id="human_guidance"
-          bind:value={human_guidance}
-          class="input input-bordered"
-        />
-      </div>
-    </div>
-
     {#if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -494,7 +490,7 @@
             {/if}
           </div>
         </div>
-        {#if guidance_enabled && human_guidance.length > 0}
+        {#if human_guidance.length > 0}
           {#if prompt_method.includes("::")}
             <Warning
               warning_message="Human guidance is enabled, but you've selected a custom prompt with a fixed string. Human guidance will not be applied."
@@ -529,3 +525,41 @@
     <button>close</button>
   </form>
 </dialog>
+
+<Dialog
+  bind:this={human_guidance_dialog}
+  title="Human Guidance"
+  action_buttons={[
+    {
+      label: "Clear",
+      action: clear_human_guidance,
+      disabled: human_guidance.length == 0,
+    },
+    {
+      label: "Done",
+      isPrimary: true,
+    },
+  ]}
+>
+  <div>
+    <div class="text-sm text-gray-500">
+      Add human guidance to improve or steer the AI-generated data. Learn more
+      and see examples <a
+        href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
+        target="_blank"
+        class="link">in the docs</a
+      >.
+    </div>
+
+    <div class="flex flex-col gap-2 w-full mt-4">
+      <label for="human_guidance" class="label font-medium p-0 text-sm"
+        >Guidance to help the model generate relevant data:</label
+      >
+      <textarea
+        id="human_guidance"
+        bind:value={human_guidance}
+        class="input input-bordered h-[200px] py-2"
+      />
+    </div>
+  </div>
+</Dialog>

@@ -162,6 +162,7 @@ def test_save_sample_success_paid_run(
         output_provider="openai",
         prompt_method="simple_prompt_builder",
         topic_path=[],  # No topic path
+        tags=["test_tag"],
     )
 
     # Act
@@ -191,9 +192,7 @@ def test_save_sample_success_paid_run(
     assert saved_run.output.source.type == DataSourceType.synthetic
     assert saved_run.output.source.properties["model_name"] == "gpt_4o_mini"
     assert saved_run.output.source.properties["model_provider"] == "openai"
-    assert (
-        saved_run.output.source.properties["adapter_name"] == "kiln_langchain_adapter"
-    )
+    assert "test_tag" in saved_run.tags
 
     # Confirm the response contains same run
     assert response.json()["id"] == saved_run.id
@@ -217,12 +216,13 @@ def test_save_sample_success_with_mock_invoke(
         output_provider="openai",
         prompt_method="simple_prompt_builder",
         topic_path=["AI", "Machine Learning", "Deep Learning"],
+        tags=["test_tag"],
     )
 
     # Act
 
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/save_sample",
+        "/api/projects/proj-ID/tasks/task-ID/save_sample?session_id=1234",
         json=input_data.model_dump(),
     )
 
@@ -249,6 +249,9 @@ def test_save_sample_success_with_mock_invoke(
     # Not checking values since we mock them. We check it's called with correct properties above
     assert saved_run.output == mock_task_run.output
     assert saved_run.output.source.type == DataSourceType.synthetic
+    assert "test_tag" in saved_run.tags
+    assert "synthetic" in saved_run.tags
+    assert "synthetic_session_1234" in saved_run.tags
 
     assert saved_run.output.source.properties == mock_task_run.input_source.properties
 

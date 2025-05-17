@@ -8,6 +8,7 @@
     model_name,
     model_info,
     prompt_name_from_id,
+    current_task_prompts,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
@@ -59,7 +60,10 @@
           run?.input_source?.type.slice(1),
         "Output Model": model_name(model_id, $model_info),
         "Model Provider": run?.output?.source?.properties?.model_provider,
-        Prompt: prompt_id && prompt_name_from_id(prompt_id),
+        Prompt:
+          prompt_id && prompt_name_from_id(prompt_id, $current_task_prompts),
+        Cost: run?.usage?.cost ? `$${run?.usage?.cost.toFixed(6)}` : undefined,
+        Tokens: run?.usage?.total_tokens ? run?.usage?.total_tokens : undefined,
         "Created By": run?.input_source?.properties?.created_by,
         "Created At": formatDate(run?.created_at),
         Topic: topic_path,

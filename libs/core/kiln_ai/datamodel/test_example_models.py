@@ -16,6 +16,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRequirement,
     TaskRun,
+    Usage,
 )
 
 
@@ -743,3 +744,56 @@ def test_task_run_validate_repaired_output_structured(tmp_path):
                 ),
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "input_tokens,output_tokens,total_tokens,cost,should_raise",
+    [
+        # Valid cases
+        (100, 50, 150, 0.002, False),  # All fields
+        (None, None, None, None, False),  # All None (defaults)
+        # Invalid cases
+        (-100, 50, 150, 0.002, True),  # Negative input_tokens
+        (100, -50, 150, 0.002, True),  # Negative output_tokens
+        (100, 50, -150, 0.002, True),  # Negative total_tokens
+        (100, 50, 150, -0.002, True),  # Negative cost
+    ],
+)
+def test_usage_model(input_tokens, output_tokens, total_tokens, cost, should_raise):
+    """Test the Usage model with various input combinations."""
+    if should_raise:
+        with pytest.raises(ValidationError):
+            Usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cost=cost,
+            )
+    else:
+        usage = Usage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost=cost,
+        )
+        assert usage.input_tokens == input_tokens
+        assert usage.output_tokens == output_tokens
+        assert usage.total_tokens == total_tokens
+        assert usage.cost == cost
+
+
+def test_usage_model_in_task_run(valid_task_run):
+    """Test that Usage can be properly set in a TaskRun."""
+    usage = Usage(
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
+        cost=0.002,
+    )
+    task_run = valid_task_run.model_copy(deep=True)
+    task_run.usage = usage
+    assert task_run.usage == usage
+    assert task_run.usage.input_tokens == 100
+    assert task_run.usage.output_tokens == 50
+    assert task_run.usage.total_tokens == 150
+    assert task_run.usage.cost == 0.002

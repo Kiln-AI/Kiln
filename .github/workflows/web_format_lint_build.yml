@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   webui_checks:
-    name: Code Format, Lint, Typecheck, Test, and Build
+    name: Web UI Code Format, Lint, Typecheck, Test, and Build
     runs-on: ubuntu-latest
     defaults:
       run:

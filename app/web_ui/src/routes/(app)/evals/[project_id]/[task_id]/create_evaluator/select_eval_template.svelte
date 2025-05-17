@@ -1,11 +1,19 @@
 <script lang="ts">
   import type { EvalTemplateResult } from "./eval_template"
   import type { Task, EvalTemplateId } from "$lib/types"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import { goto } from "$app/navigation"
+  import { rating_name } from "$lib/utils/formatters"
+  import { current_project, current_task } from "$lib/stores"
+  import { progress_ui_state } from "$lib/stores/progress_ui_store"
+  import { page } from "$app/stores"
+
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
+  let overall_task_performance_dialog: Dialog | undefined
 
   interface EvaluatorTemplateDescription {
-    id: EvalTemplateId | "none"
+    id: EvalTemplateId | "none" | "kiln_requirements_preview"
     name: string
     description: string
     recommended?: boolean
@@ -15,10 +23,10 @@
 
   const evaluator_template_descriptions: EvaluatorTemplateDescription[] = [
     {
-      id: "kiln_requirements",
-      name: "Overall Score and Task Requirements",
+      id: "kiln_requirements_preview",
+      name: "Overall Task Performance",
       description:
-        "Generate scores for the requirements you setup when you created this task, plus an overall-score. These can be compared to human ratings from the dataset UI.",
+        "Evaluate overall task performance via the overall score and custom task goals.",
       recommended: true,
     },
     {
@@ -138,11 +146,17 @@
   ]
 
   function select_template(
-    template_id: EvalTemplateId | "none",
+    template_id: EvalTemplateId | "none" | "kiln_requirements_preview",
     template: EvalTemplateResult | undefined,
   ) {
     // No op
     if (!selected_template_callback) {
+      return
+    }
+
+    // Overall template shows more information
+    if (template_id === "kiln_requirements_preview") {
+      overall_task_performance_dialog?.show()
       return
     }
 
@@ -180,6 +194,22 @@
       })
       return
     }
+  }
+
+  function edit_requirements() {
+    goto(
+      `/settings/edit_task/${$current_project?.id}/${$current_task?.id}#requirements_part`,
+    )
+    progress_ui_state.set({
+      title: "Creating Eval",
+      body: "When you're done editing requirements, ",
+      link: $page.url.pathname,
+      cta: "return to the eval",
+      progress: null,
+      step_count: 5,
+      current_step: 1,
+    })
+    return true
   }
 </script>
 
@@ -221,3 +251,54 @@
     </button>
   {/each}
 </div>
+
+<Dialog
+  bind:this={overall_task_performance_dialog}
+  title="Overall Performance Eval"
+  action_buttons={[
+    {
+      label: "Edit Requirements",
+      action: edit_requirements,
+    },
+    {
+      label: "Create Eval",
+      isPrimary: true,
+      action: () => {
+        select_template("kiln_requirements", undefined)
+        return true
+      },
+    },
+  ]}
+>
+  <div class="font-light text-sm">
+    <div>This eval will evaluate the following goals:</div>
+    <ul class="list-disc list-inside mt-2">
+      <li>Overall Rating - {rating_name("five_star")}</li>
+      {#each $current_task?.requirements || [] as requirement}
+        <li>
+          {requirement.name} - {rating_name(requirement.type)}
+        </li>
+      {/each}
+    </ul>
+    <div role="alert" class="alert mt-4">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        class="stroke-secondary h-6 w-6 shrink-0"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        ></path>
+      </svg>
+      <span class="text-sm">
+        To add or remove goals, 'Edit Requirements' <strong>before</strong>
+        creating your eval.
+      </span>
+    </div>
+    <div class="mt-2"></div>
+  </div>
+</Dialog>

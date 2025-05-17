@@ -7,6 +7,7 @@ on:
 
 jobs:
   count_tests:
+    name: Count Tests
     runs-on: ubuntu-latest
 
     steps:

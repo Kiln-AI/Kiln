@@ -547,19 +547,33 @@ def test_prompt_parent_task():
             False,
             None,
         ),
-        # Test 3: Invalid case - thinking instructions with final_only
+        # Test 3: Valid case - no thinking instructions with final_and_intermediate_r1_compatible
+        (
+            None,
+            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            False,
+            None,
+        ),
+        # Test 4: Invalid case - thinking instructions with final_only
         (
             "Think step by step",
             FinetuneDataStrategy.final_only,
             True,
             "Thinking instructions can only be used when data_strategy is final_and_intermediate",
         ),
-        # Test 4: Invalid case - no thinking instructions with final_and_intermediate
+        # Test 5: Invalid case - no thinking instructions with final_and_intermediate
         (
             None,
             FinetuneDataStrategy.final_and_intermediate,
             True,
             "Thinking instructions are required when data_strategy is final_and_intermediate",
+        ),
+        # Test 6: Invalid case - thinking instructions with final_and_intermediate_r1_compatible
+        (
+            "Think step by step",
+            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            True,
+            "Thinking instructions can only be used when data_strategy is final_and_intermediate",
         ),
     ],
 )
@@ -617,3 +631,37 @@ def test_task_run_has_thinking_training_data(intermediate_outputs, expected):
         intermediate_outputs=intermediate_outputs,
     )
     assert task_run.has_thinking_training_data() == expected
+
+
+@pytest.mark.parametrize(
+    "intermediate_outputs,expected",
+    [
+        # No intermediate outputs
+        (None, None),
+        # Empty intermediate outputs
+        ({}, None),
+        # Only chain_of_thought
+        ({"chain_of_thought": "thinking process"}, "thinking process"),
+        # Only reasoning
+        ({"reasoning": "reasoning process"}, "reasoning process"),
+        # Both chain_of_thought and reasoning (should return reasoning as it's checked first)
+        (
+            {"chain_of_thought": "thinking process", "reasoning": "reasoning process"},
+            "reasoning process",
+        ),
+        # Other intermediate outputs but no thinking data
+        ({"other_output": "some data"}, None),
+        # Mixed other outputs with thinking data
+        (
+            {"chain_of_thought": "thinking process", "other_output": "some data"},
+            "thinking process",
+        ),
+    ],
+)
+def test_task_run_thinking_training_data(intermediate_outputs, expected):
+    task_run = TaskRun(
+        input="test input",
+        output=TaskOutput(output="test output"),
+        intermediate_outputs=intermediate_outputs,
+    )
+    assert task_run.thinking_training_data() == expected

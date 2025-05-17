@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel import (
     Project,
     Task,
+    TaskRequirement,
 )
 
 from kiln_server.custom_errors import connect_custom_errors
@@ -336,3 +337,176 @@ def test_delete_task_success(client, project_and_task):
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
         assert response.status_code == 404
         assert response.json()["message"] == f"Task not found. ID: {task.id}"
+
+
+def test_get_rating_options_empty_task(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["options"] == []
+
+
+def test_get_rating_options_with_requirements(client, project_and_task):
+    project, task = project_and_task
+
+    # Add a requirement to the task
+    requirement = TaskRequirement(
+        id="req1",
+        name="Test Requirement",
+        instruction="Test instruction",
+        type="five_star",
+    )
+    task.requirements = [requirement]
+    task.save_to_file()
+
+    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert len(res["options"]) == 1
+    option = res["options"][0]
+    assert option["requirement"]["name"] == "Test Requirement"
+    assert option["show_for_all"] is True
+    assert option["show_for_tags"] == []
+
+
+def test_get_rating_options_with_evals(client, project_and_task):
+    project, task = project_and_task
+
+    # Create a mock eval with output scores
+    eval_mock = MagicMock()
+    eval_mock.eval_configs_filter_id = "tag::golden_set"
+
+    # Create score mocks with proper name attributes
+    score1 = MagicMock()
+    score1.name = "Score 1"
+    score1.instruction = "Score 1 instruction"
+    score1.type = "five_star"
+
+    score2 = MagicMock()
+    score2.name = "Overall Rating"
+    score2.instruction = "Overall instruction"
+    score2.type = "five_star"
+
+    eval_mock.output_scores = [score1, score2]
+
+    # Create secong mock eval with duplicate output scores
+    eval_mock_2 = MagicMock()
+    eval_mock_2.eval_configs_filter_id = "tag::golden_set"
+
+    # Create score mocks with proper name attributes
+    score3 = MagicMock()
+    score3.name = "Score 1"
+    score3.instruction = "Score 1 instruction"
+    score3.type = "five_star"
+
+    eval_mock_2.output_scores = [score3]
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.Task.evals") as mock_evals,
+    ):
+        mock_project_from_id.return_value = project
+        mock_evals.return_value = [eval_mock, eval_mock_2]
+
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert len(res["options"]) == 1  # Only Score 1, Overall Rating is skipped
+    option = res["options"][0]
+    assert option["requirement"]["name"] == "Score 1"
+    assert option["show_for_all"] is False
+    # Note: we're checking it's not added twice with the dupe
+    assert option["show_for_tags"] == ["golden_set"]
+
+
+def test_get_rating_options_with_non_tag_filter(client, project_and_task, caplog):
+    project, task = project_and_task
+
+    # Create a mock eval with non-tag filter
+    eval_mock = MagicMock()
+    eval_mock.id = "test_eval"
+    eval_mock.eval_configs_filter_id = "filter::some_filter"
+
+    # Create score mock with proper attributes
+    score = MagicMock()
+    score.name = "Score 1"
+    score.instruction = "Score 1 instruction"
+    score.type = "five_star"
+
+    eval_mock.output_scores = [score]
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.Task.evals") as mock_evals,
+    ):
+        mock_project_from_id.return_value = project
+        mock_evals.return_value = [eval_mock]
+
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["options"] == []  # No options should be added for non-tag filter
+
+    # Verify warning was logged
+    assert "non-tag filter" in caplog.text
+    assert "test_eval" in caplog.text
+
+
+def test_get_rating_options_duplicate_requirements(client, project_and_task):
+    project, task = project_and_task
+
+    # Create two evals with the same requirement name
+    eval1 = MagicMock()
+    eval1.eval_configs_filter_id = "tag::golden_set1"
+
+    score1 = MagicMock()
+    score1.name = "Duplicate Score"
+    score1.instruction = "Score 1 instruction"
+    score1.type = "five_star"
+    eval1.output_scores = [score1]
+
+    eval2 = MagicMock()
+    eval2.eval_configs_filter_id = "tag::golden_set2"
+
+    score2 = MagicMock()
+    score2.name = "Duplicate Score"  # Same name as eval1
+    score2.instruction = "Score 2 instruction"
+    score2.type = "five_star"
+    eval2.output_scores = [score2]
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.Task.evals") as mock_evals,
+    ):
+        mock_project_from_id.return_value = project
+        mock_evals.return_value = [eval1, eval2]
+
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/rating_options"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert len(res["options"]) == 1  # Should be merged into one option
+    option = res["options"][0]
+    assert option["requirement"]["name"] == "Duplicate Score"
+    assert option["show_for_all"] is False
+    assert set(option["show_for_tags"]) == {"golden_set1", "golden_set2"}

@@ -44,6 +44,7 @@ from kiln_ai.datamodel.task_output import (
 )
 from kiln_ai.datamodel.task_run import (
     TaskRun,
+    Usage,
 )
 
 __all__ = [
@@ -74,4 +75,5 @@ __all__ = [
     "PromptId",
     "PromptGenerators",
     "prompt_generator_values",
+    "Usage",
 ]

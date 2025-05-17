@@ -1,6 +1,7 @@
 import json
 from unittest.mock import Mock, patch
 
+import litellm
 import pytest
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
@@ -9,7 +10,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import (
     LiteLlmConfig,
 )
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import Project, Task, Usage
 
 
 @pytest.fixture
@@ -405,3 +406,66 @@ async def test_build_completion_kwargs(
     # Verify extra body is included
     for key, value in extra_body.items():
         assert kwargs[key] == value
+
+
+@pytest.mark.parametrize(
+    "litellm_usage,cost,expected_usage",
+    [
+        # No usage data
+        (None, None, None),
+        # Only cost
+        (None, 0.5, Usage(cost=0.5)),
+        # Only token counts
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=10,
+                completion_tokens=20,
+                total_tokens=30,
+            ),
+            None,
+            Usage(input_tokens=10, output_tokens=20, total_tokens=30),
+        ),
+        # Both cost and token counts
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=10,
+                completion_tokens=20,
+                total_tokens=30,
+            ),
+            0.5,
+            Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.5),
+        ),
+        # Invalid usage type (should be ignored)
+        ({"prompt_tokens": 10}, None, None),
+        # Invalid cost type (should be ignored)
+        (None, "0.5", None),
+    ],
+)
+def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_usage):
+    """Test usage_from_response with various combinations of usage data and cost"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a mock response
+    response = Mock(spec=litellm.types.utils.ModelResponse)
+    response.get.return_value = litellm_usage
+    response._hidden_params = {"response_cost": cost}
+
+    # Call the method
+    result = adapter.usage_from_response(response)
+
+    # Verify the result
+    if expected_usage is None:
+        if result is not None:
+            assert result.input_tokens is None
+            assert result.output_tokens is None
+            assert result.total_tokens is None
+            assert result.cost is None
+    else:
+        assert result is not None
+        assert result.input_tokens == expected_usage.input_tokens
+        assert result.output_tokens == expected_usage.output_tokens
+        assert result.total_tokens == expected_usage.total_tokens
+        assert result.cost == expected_usage.cost
+
+    # Verify the response was queried correctly
+    response.get.assert_called_once_with("usage", None)

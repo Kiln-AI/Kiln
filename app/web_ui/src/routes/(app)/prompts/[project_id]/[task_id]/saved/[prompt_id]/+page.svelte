@@ -30,7 +30,10 @@
           ? "Yes"
           : "No",
         "Source Generator": prompt_model?.generator_id
-          ? prompt_name_from_id(prompt_model?.generator_id)
+          ? prompt_name_from_id(
+              prompt_model?.generator_id,
+              $current_task_prompts,
+            )
           : undefined,
       }).filter(([_, value]) => value !== undefined && value !== null),
     )

@@ -218,8 +218,9 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
     }
 
     with patch.object(LiteLlmAdapter, "_run", new_callable=AsyncMock) as mock_run:
-        mock_run.return_value = RunOutput(
-            output=mocked_output, intermediate_outputs=None
+        mock_run.return_value = (
+            RunOutput(output=mocked_output, intermediate_outputs=None),
+            None,
         )
 
         adapter = adapter_for_task(

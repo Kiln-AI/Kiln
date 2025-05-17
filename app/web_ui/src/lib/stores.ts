@@ -6,9 +6,14 @@ import type {
   AvailableModels,
   ProviderModels,
   PromptResponse,
+  RatingOptionResponse,
+  TaskRequirement,
+  ModelDetails,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
+import type { Writable } from "svelte/store"
+import type { ProviderModel } from "./types"
 
 export type AllProjects = {
   projects: Project[]
@@ -36,6 +41,14 @@ export const projects = writable<AllProjects | null>(null)
 export const current_project = writable<Project | null>(null)
 export const current_task = writable<Task | null>(null)
 export const current_task_prompts = writable<PromptResponse | null>(null)
+
+// UI Stores we want persisted across page loads
+export const fine_tune_target_model: Writable<string | null> =
+  localStorageStore("fine_tune_target_model", null)
+
+// Rating options for the current task
+export const current_task_rating_options =
+  writable<RatingOptionResponse | null>(null)
 
 let previous_ui_state: UIState = default_ui_state
 
@@ -101,7 +114,7 @@ export async function load_projects() {
 }
 
 // Custom function to create a localStorage-backed store
-function localStorageStore<T>(key: string, initialValue: T) {
+export function localStorageStore<T>(key: string, initialValue: T) {
   // Check if localStorage is available
   const isBrowser = typeof window !== "undefined" && window.localStorage
 
@@ -173,17 +186,28 @@ export async function load_current_task(project: Project | null) {
 
 // Available models for each provider
 export const available_models = writable<AvailableModels[]>([])
+let available_models_loaded: "not_loaded" | "loading" | "loaded" = "not_loaded"
 
 export async function load_available_models() {
   try {
+    if (
+      available_models_loaded === "loading" ||
+      available_models_loaded === "loaded"
+    ) {
+      // Block parallel requests or if already loaded
+      return
+    }
+    available_models_loaded = "loading"
     const { data, error } = await client.GET("/api/available_models")
     if (error) {
       throw error
     }
     available_models.set(data)
+    available_models_loaded = "loaded"
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     available_models.set([])
+    available_models_loaded = "not_loaded"
   }
 }
 
@@ -206,6 +230,60 @@ export async function load_model_info() {
   }
 }
 
+export function available_model_details(
+  model_id: string | null,
+  provider_id: string | null,
+  available_models: AvailableModels[],
+): ModelDetails | null {
+  // No-op if already loaded
+  load_available_models()
+
+  if (!model_id || !provider_id) {
+    return null
+  }
+
+  // Find the model in the available models list which has fine-tunes and custom models
+  for (const provider of available_models) {
+    if (provider.provider_id !== provider_id) {
+      continue
+    }
+    const models = provider.models || []
+    for (const model of models) {
+      if (model.id === model_id) {
+        return model
+      }
+    }
+  }
+  return null
+}
+
+export function get_model_info(
+  model_id: string | number | undefined,
+  provider_models: ProviderModels | null,
+): ProviderModel | null {
+  if (!model_id) {
+    return null
+  }
+  // Could be a number, so convert to string
+  model_id = "" + model_id
+  const model = provider_models?.models[model_id]
+  if (model) {
+    return model
+  }
+
+  // Or find the model in the available models list which has fine-tunes and custom models
+  for (const provider of get(available_models)) {
+    // No filter on provider_id, as we want to find the model in any provider
+    const models = provider.models || []
+    for (const model of models) {
+      if (model.id === model_id) {
+        return model
+      }
+    }
+  }
+  return null
+}
+
 export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
@@ -213,24 +291,11 @@ export function model_name(
   if (!model_id) {
     return "Unknown"
   }
-  // Could be a number, so convert to string
-  model_id = "" + model_id
-  const model = provider_models?.models[model_id]
+
+  const model = get_model_info(model_id, provider_models)
   if (model?.name) {
     return model.name
   }
-
-  // Find the model in the available models list which has fine-tunes and custom models
-  const available_model = get(available_models) || {}
-  for (const provider of available_model) {
-    const models = provider.models || []
-    for (const model of models) {
-      if (model.id === model_id && model.name) {
-        return model.name
-      }
-    }
-  }
-
   return "Model ID: " + model_id
 }
 
@@ -244,7 +309,14 @@ export function provider_name_from_id(provider_id: string): string {
   return provider?.provider_name || provider_id
 }
 
-export function prompt_name_from_id(prompt_id: string): string {
+export function prompt_name_from_id(
+  prompt_id: string,
+  prompt_response: PromptResponse | null,
+): string {
+  // Dispatch a request to load the prompts if we don't have them yet
+  if (!prompt_response) {
+    load_available_prompts()
+  }
   // Attempt to lookup a nice name for the prompt. First from named prompts, then from generators
   // Special case for fine-tuned prompts
   let prompt_name: string | undefined = undefined
@@ -252,12 +324,12 @@ export function prompt_name_from_id(prompt_id: string): string {
     prompt_name = "Fine-Tune Prompt"
   }
   if (!prompt_name) {
-    prompt_name = get(current_task_prompts)?.prompts.find(
+    prompt_name = prompt_response?.prompts.find(
       (prompt) => prompt.id === prompt_id,
     )?.name
   }
   if (!prompt_name) {
-    prompt_name = get(current_task_prompts)?.generators.find(
+    prompt_name = prompt_response?.generators.find(
       (generator) => generator.id === prompt_id,
     )?.name
   }
@@ -267,7 +339,8 @@ export function prompt_name_from_id(prompt_id: string): string {
   return prompt_name
 }
 
-// Available prompts for the current
+// Available prompts for the current task. Lock to avoid parallel requests.
+let is_loading_prompts = false
 export async function load_available_prompts() {
   const project = get(current_project)
   const task = get(current_task)
@@ -275,7 +348,13 @@ export async function load_available_prompts() {
     current_task_prompts.set(null)
     return
   }
+
   try {
+    // Return early if already loading
+    if (is_loading_prompts) {
+      return
+    }
+    is_loading_prompts = true
     const { data, error } = await client.GET(
       "/api/projects/{project_id}/task/{task_id}/prompts",
       {
@@ -294,5 +373,70 @@ export async function load_available_prompts() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     current_task_prompts.set(null)
+  } finally {
+    is_loading_prompts = false
   }
+}
+
+// Lock to avoid parallel requests for rating options
+let is_loading_rating_options = false
+
+export async function load_rating_options() {
+  const project = get(current_project)
+  const task = get(current_task)
+  if (!project || !task || !project.id || !task.id) {
+    current_task_rating_options.set(null)
+    return
+  }
+
+  try {
+    // Return early if already loading
+    if (is_loading_rating_options) {
+      return
+    }
+    is_loading_rating_options = true
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/rating_options",
+      {
+        params: {
+          path: {
+            project_id: project.id,
+            task_id: task.id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    current_task_rating_options.set(data)
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    current_task_rating_options.set(null)
+  } finally {
+    is_loading_rating_options = false
+  }
+}
+
+export function rating_options_for_sample(
+  rating_options: RatingOptionResponse | null,
+  tags: string[],
+): TaskRequirement[] {
+  // Dispatch a request to load the rating options if we don't have them yet
+  if (!rating_options) {
+    load_rating_options()
+    return []
+  }
+
+  // Filter rating options based on tags and return just the requirements
+  return rating_options.options
+    .filter((option) => {
+      // Show if it's marked for all items
+      if (option.show_for_all) {
+        return true
+      }
+      // Show if any of the item's tags match the option's tags
+      return option.show_for_tags.some((tag: string) => tags.includes(tag))
+    })
+    .map((option) => option.requirement)
 }

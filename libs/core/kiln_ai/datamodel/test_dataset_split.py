@@ -17,6 +17,7 @@ from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
     Train60Test20Val20SplitDefinition,
     Train80Test20SplitDefinition,
+    Train80Val20SplitDefinition,
 )
 from kiln_ai.datamodel.test_dataset_filters import (
     AllDatasetFilter,
@@ -174,6 +175,7 @@ def test_high_rating_dataset_filter(sample_task_runs):
     [
         (Train80Test20SplitDefinition, {"train": 8, "test": 2}),
         (AllSplitDefinition, {"all": 10}),
+        (Train80Val20SplitDefinition, {"train": 8, "val": 2}),
         (Train60Test20Val20SplitDefinition, {"train": 6, "test": 2, "val": 2}),
         (
             [

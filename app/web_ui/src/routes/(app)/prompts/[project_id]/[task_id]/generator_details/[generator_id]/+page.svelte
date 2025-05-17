@@ -80,16 +80,23 @@
         <p class="mb-6 text-sm text-gray-500">
           To improve the quality of this prompt, <a
             href={`/settings/edit_task/${project_id}/${task_id}`}
-            class="link">edit the task instructions or requirements</a
+            class="link"
+            >edit the task's prompt/instructions{generator_id !==
+            "short_prompt_builder"
+              ? " or requirements"
+              : ""}</a
           ><span
-            class={generator_id === "simple_prompt_builder" ? "hidden" : ""}
-            >, or add more data to your dataset by <a class="link" href="/run"
-              >running the task</a
-            >, or add ratings and repairs to your
-            <a class="link" href={`/dataset/${project_id}/${task_id}`}
-              >existing dataset</a
-            ></span
-          >.
+            class={["simple_prompt_builder", "short_prompt_builder"].includes(
+              generator_id,
+            )
+              ? "hidden"
+              : ""}
+            >, or add more high quality samples to your dataset by <a
+              class="link"
+              href="/run">running the task</a
+            >
+            and rating/repairing the output.
+          </span>
         </p>
 
         <h2 class="text-sm font-medium mt-4 mb-1">Generated Prompt</h2>

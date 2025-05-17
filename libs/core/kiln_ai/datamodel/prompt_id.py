@@ -13,6 +13,7 @@ class PromptGenerators(str, Enum):
     SIMPLE_CHAIN_OF_THOUGHT = "simple_chain_of_thought_prompt_builder"
     FEW_SHOT_CHAIN_OF_THOUGHT = "few_shot_chain_of_thought_prompt_builder"
     MULTI_SHOT_CHAIN_OF_THOUGHT = "multi_shot_chain_of_thought_prompt_builder"
+    SHORT = "short_prompt_builder"
 
 
 prompt_generator_values = [pg.value for pg in PromptGenerators]

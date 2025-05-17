@@ -8,10 +8,18 @@ import jsonschema
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
+from kiln_ai.adapters.parsers.request_formatters import request_formatter_from_id
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel import (
+    DataSource,
+    DataSourceType,
+    Task,
+    TaskOutput,
+    TaskRun,
+    Usage,
+)
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfig
 from kiln_ai.utils.config import Config
@@ -106,14 +114,19 @@ class BaseAdapter(metaclass=ABCMeta):
                 "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
             )
 
+        # Format model input for model call (we save the original input in the task without formatting)
+        formatted_input = input
+        formatter_id = self.model_provider().formatter
+        if formatter_id is not None:
+            formatter = request_formatter_from_id(formatter_id)
+            formatted_input = formatter.format_input(input)
+
         # Run
-        run_output = await self._run(input)
+        run_output, usage = await self._run(formatted_input)
 
         # Parse
         provider = self.model_provider()
-        parser = model_parser_from_id(provider.parser)(
-            structured_output=self.has_structured_output()
-        )
+        parser = model_parser_from_id(provider.parser)
         parsed_output = parser.parse_output(original_output=run_output)
 
         # validate output
@@ -147,7 +160,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         # Generate the run and output
-        run = self.generate_run(input, input_source, parsed_output)
+        run = self.generate_run(input, input_source, parsed_output, usage)
 
         # Save the run if configured to do so, and we have a path to save to
         if (
@@ -170,7 +183,7 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: Dict | str) -> RunOutput:
+    async def _run(self, input: Dict | str) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:
@@ -209,7 +222,11 @@ class BaseAdapter(metaclass=ABCMeta):
 
     # create a run and task output
     def generate_run(
-        self, input: Dict | str, input_source: DataSource | None, run_output: RunOutput
+        self,
+        input: Dict | str,
+        input_source: DataSource | None,
+        run_output: RunOutput,
+        usage: Usage | None = None,
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
         input_str = (
@@ -242,6 +259,7 @@ class BaseAdapter(metaclass=ABCMeta):
             ),
             intermediate_outputs=run_output.intermediate_outputs,
             tags=self.base_adapter_config.default_tags or [],
+            usage=usage,
         )
 
         return new_task_run

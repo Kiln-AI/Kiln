@@ -236,6 +236,8 @@
         <DataGenIntro
           generate_subtopics={open_generate_subtopics_modal}
           generate_samples={open_generate_samples_modal}
+          {project_id}
+          {task_id}
         />
       </div>
     {:else}
@@ -366,9 +368,13 @@
             <div class="flex-grow font-medium text-sm">Topic Count</div>
             <IncrementUi bind:value={num_subtopics_to_generate} />
           </div>
-          <AvailableModelsDropdown requires_data_gen={true} bind:model />
+          <AvailableModelsDropdown
+            requires_data_gen={true}
+            suggested_mode="data_gen"
+            bind:model
+          />
           <button
-            class="btn btn-sm {custom_topics_string ? '' : 'btn-primary'}"
+            class="btn btn-sm mt-2 {custom_topics_string ? '' : 'btn-primary'}"
             on:click={generate_topics}
           >
             Generate {num_subtopics_to_generate} Topics

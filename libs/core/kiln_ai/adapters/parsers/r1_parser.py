@@ -7,6 +7,9 @@ class R1ThinkingParser(BaseParser):
     START_TAG = "<think>"
     END_TAG = "</think>"
 
+    def __init__(self, allow_missing_thinking: bool = False):
+        self.allow_missing_thinking = allow_missing_thinking
+
     def parse_output(self, original_output: RunOutput) -> RunOutput:
         """
         Parse the <think> </think> tags from the response into the intermediate and final outputs.
@@ -27,6 +30,14 @@ class R1ThinkingParser(BaseParser):
             original_output.intermediate_outputs is not None
             and "reasoning" in original_output.intermediate_outputs
         ):
+            # sometimes the output and reasoning are wrapped in newlines
+            if isinstance(original_output.output, str):
+                original_output.output = original_output.output.strip()
+
+            original_output.intermediate_outputs["reasoning"] = (
+                original_output.intermediate_outputs["reasoning"].strip()
+            )
+
             return original_output
 
         # This parser only works for strings
@@ -39,7 +50,10 @@ class R1ThinkingParser(BaseParser):
         # Find the thinking tags
         think_end = cleaned_response.find(self.END_TAG)
         if think_end == -1:
-            raise ValueError("Missing </think> tag")
+            if self.allow_missing_thinking:
+                return original_output
+            else:
+                raise ValueError("Missing </think> tag")
 
         think_tag_start = cleaned_response.find(self.START_TAG)
         if think_tag_start == -1:
@@ -66,7 +80,8 @@ class R1ThinkingParser(BaseParser):
 
         # Add thinking content to intermediate outputs if it exists
         intermediate_outputs = original_output.intermediate_outputs or {}
-        intermediate_outputs["reasoning"] = thinking_content
+        if thinking_content is not None and len(thinking_content) > 0:
+            intermediate_outputs["reasoning"] = thinking_content
 
         return RunOutput(
             output=result,

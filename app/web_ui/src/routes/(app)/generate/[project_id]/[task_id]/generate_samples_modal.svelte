@@ -259,7 +259,11 @@
           <div class="flex-grow font-medium text-sm">Sample Count</div>
           <IncrementUi bind:value={num_samples_to_generate} />
         </div>
-        <AvailableModelsDropdown requires_data_gen={true} bind:model />
+        <AvailableModelsDropdown
+          requires_data_gen={true}
+          bind:model
+          suggested_mode="data_gen"
+        />
         {#if cascade_mode}
           <!-- parallelization only makes sense in cascade mode -->
           <FormElement

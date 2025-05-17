@@ -64,7 +64,7 @@ class TaskOutputRating(KilnBaseModel):
     )
     requirement_ratings: Dict[ID_TYPE, RequirementRating] = Field(
         default={},
-        description="The ratings of the requirements of the task.",
+        description="The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').",
     )
 
     # Previously we stored rating values as a dict of floats, but now we store them as RequirementRating objects.
