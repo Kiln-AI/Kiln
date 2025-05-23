@@ -102,6 +102,8 @@ class ModelName(str, Enum):
     claude_3_5_sonnet = "claude_3_5_sonnet"
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
+    claude_sonnet_4 = "claude_sonnet_4"
+    claude_opus_4 = "claude_opus_4"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -666,14 +668,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.7-sonnet",
                 suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-3-7-sonnet-20250219",
                 structured_output_mode=StructuredOutputMode.function_calling,
                 suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
@@ -697,6 +697,46 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-7-sonnet-20250219",
                 anthropic_extended_thinking=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+        ],
+    ),
+    # Claude Sonnet 4
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_4,
+        friendly_name="Claude Sonnet 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-sonnet-4",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-sonnet-4-20250514",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # Claude Opus 4
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4,
+        friendly_name="Claude Opus 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4",
+                structured_output_mode=StructuredOutputMode.function_calling,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-20250514",
+                structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
     ),
