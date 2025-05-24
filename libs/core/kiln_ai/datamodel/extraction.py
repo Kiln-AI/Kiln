@@ -67,7 +67,6 @@ class ExtractorConfig(KilnBaseModel):
         description="If the mimetype is in this list, the extractor will not be used and the text content of the file will be returned as is.",
     )
     extractor_type: ExtractorType = Field(
-        default=ExtractorType.gemini,
         description="This is used to determine the type of extractor to use.",
     )
     properties: dict[str, Any] = Field(
