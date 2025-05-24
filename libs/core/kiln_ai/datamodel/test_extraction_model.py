@@ -14,6 +14,7 @@ from kiln_ai.datamodel.extraction import (
 def valid_extractor_config_data():
     return {
         "name": "Test Extractor Config",
+        "description": "Test description",
         "extractor_type": ExtractorType.gemini,
         "properties": {
             "prompt_for_kind": {
@@ -41,8 +42,16 @@ def test_extractor_config_kind_coercion(valid_extractor_config):
     assert prompt_for_kind.get(Kind.IMAGE) == "Describe the image."
 
 
+def test_extractor_config_description_empty(valid_extractor_config_data):
+    # should not raise an error when description is None
+    valid_extractor_config_data["description"] = None
+    valid_extractor_config = ExtractorConfig(**valid_extractor_config_data)
+    assert valid_extractor_config.description is None
+
+
 def test_extractor_config_valid(valid_extractor_config):
     assert valid_extractor_config.name == "Test Extractor Config"
+    assert valid_extractor_config.description == "Test description"
     assert valid_extractor_config.extractor_type == ExtractorType.gemini
     assert valid_extractor_config.properties["prompt_for_kind"] == {
         "document": "Transcribe the document.",
