@@ -1,6 +1,5 @@
-import json
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from pydantic import Field, model_validator
 from typing_extensions import Self
@@ -69,7 +68,7 @@ class ExtractorConfig(KilnBaseModel):
     extractor_type: ExtractorType = Field(
         description="This is used to determine the type of extractor to use.",
     )
-    properties: dict[str, Any] = Field(
+    properties: dict[str, str | int | float | bool | dict[str, str]] = Field(
         default={},
         description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
     )
@@ -83,17 +82,8 @@ class ExtractorConfig(KilnBaseModel):
         else:
             raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
-    @model_validator(mode="after")
-    def validate_json_serializable(self) -> Self:
-        try:
-            # This will raise a TypeError if the dict contains non-JSON-serializable objects
-            json.dumps(self.properties)
-        except TypeError as e:
-            raise ValueError(f"Properties must be JSON serializable: {str(e)}")
-        return self
-
     def model_name(self) -> str | None:
-        return self.properties.get("model_name")
+        return cast(str, self.properties.get("model_name"))
 
     def prompt_for_kind(self) -> dict[Kind, str] | None:
-        return self.properties.get("prompt_for_kind")
+        return cast(dict[Kind, str], self.properties.get("prompt_for_kind"))
