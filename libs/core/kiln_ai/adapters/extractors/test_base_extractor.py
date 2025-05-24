@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.extraction.base_extractor import (
+from kiln_ai.adapters.extractors.base_extractor import (
     BaseExtractor,
     ExtractionOutput,
     FileInfo,

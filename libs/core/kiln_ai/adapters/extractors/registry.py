@@ -1,5 +1,5 @@
-from kiln_ai.adapters.extraction.base_extractor import BaseExtractor
-from kiln_ai.adapters.extraction.gemini_extractor import GeminiExtractor
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
+from kiln_ai.adapters.extractors.gemini_extractor import GeminiExtractor
 from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
