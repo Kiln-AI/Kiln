@@ -71,7 +71,7 @@ class ExtractorConfig(KilnBaseModel):
     )
     properties: dict[str, Any] = Field(
         default={},
-        description="Properties to be used to execute the extractor config. This is config_type specific and should serialize to a json dict.",
+        description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
     )
 
     @model_validator(mode="after")
