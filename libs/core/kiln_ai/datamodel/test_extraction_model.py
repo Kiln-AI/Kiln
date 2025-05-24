@@ -128,7 +128,7 @@ def test_extractor_config_invalid_prompt_for_kind(valid_extractor_config):
 def test_extractor_config_incomplete_prompt_for_kind(valid_extractor_config):
     with pytest.raises(
         ValueError,
-        match="Missing prompt for kind: image",
+        match="Missing prompt for kind: 'image'",
     ):
         valid_extractor_config.properties = {
             "prompt_for_kind": {
@@ -197,10 +197,13 @@ def test_validate_prompt_for_kind_valid():
     "prompt_for_kind, expected_error_message",
     [
         ("not a dict", "prompt_for_kind must be a dictionary"),
-        ({"invalid_kind": "not a prompt"}, "'invalid_kind' is not a valid Kind"),
+        (
+            {"invalid_kind": "not a prompt"},
+            "Invalid kind in prompt_for_kind: 'invalid_kind'",
+        ),
         (
             {"document": 123},
-            "Invalid prompt for kind: document. Prompt must be a string.",
+            "Invalid prompt for kind: 'document'. Prompt must be a string.",
         ),
         (
             {
@@ -209,7 +212,7 @@ def test_validate_prompt_for_kind_valid():
                 "video": "string",
                 # missing image
             },
-            "Missing prompt for kind: image",
+            "Missing prompt for kind: 'image'",
         ),
         (
             {
@@ -219,7 +222,7 @@ def test_validate_prompt_for_kind_valid():
                 "image": "string",
                 "invalid_kind": "string",
             },
-            "'invalid_kind' is not a valid Kind",
+            "Invalid kind in prompt_for_kind: 'invalid_kind'",
         ),
     ],
 )
