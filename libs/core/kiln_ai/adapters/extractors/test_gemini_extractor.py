@@ -16,6 +16,7 @@ from kiln_ai.adapters.extractors.gemini_extractor import (
     GeminiExtractor,
     Kind,
 )
+from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.utils.config import Config
 
 PROMPTS_FOR_KIND: dict[str, str] = {
@@ -37,6 +38,7 @@ def mock_gemini_extractor(mock_gemini_client):
         mock_gemini_client,
         ExtractorConfig(
             name="mock",
+            extractor_type=ExtractorType.gemini,
             properties={
                 "prompt_for_kind": PROMPTS_FOR_KIND,
                 "model_name": "fake-model",
@@ -215,6 +217,7 @@ def paid_gemini_extractor(model_name: str):
     return GeminiExtractor(
         extractor_config=ExtractorConfig(
             name="paid-gemini",
+            extractor_type=ExtractorType.gemini,
             properties={
                 "model_name": model_name,
                 "prompt_for_kind": {

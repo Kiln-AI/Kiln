@@ -10,7 +10,7 @@ from kiln_ai.adapters.extractors.base_extractor import (
     FileInfoInternal,
     OutputFormat,
 )
-from kiln_ai.datamodel.extraction import ExtractorConfig
+from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
 
 
 class MockBaseExtractor(BaseExtractor):
@@ -40,6 +40,7 @@ def mock_extractor(mock_gemini_properties):
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
+            extractor_type=ExtractorType.gemini,
             output_format=OutputFormat.MARKDOWN,
             properties=mock_gemini_properties,
         )
@@ -54,6 +55,7 @@ def mock_extractor_with_passthroughs(
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
+            extractor_type=ExtractorType.gemini,
             passthrough_mimetypes=mimetypes,
             output_format=output_format,
             properties=properties,
@@ -209,6 +211,7 @@ def test_extract_non_passthrough(
 def test_default_output_format(mock_gemini_properties):
     config = ExtractorConfig(
         name="mock",
+        extractor_type=ExtractorType.gemini,
         properties=mock_gemini_properties,
     )
     assert config.output_format == OutputFormat.MARKDOWN
@@ -228,6 +231,7 @@ def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
     extractor = MockBaseExtractor(
         ExtractorConfig(
             name="mock",
+            extractor_type=ExtractorType.gemini,
             properties=mock_gemini_properties,
         )
     )
