@@ -104,7 +104,7 @@ def test_extractor_config_invalid_json(
     class InvalidClass:
         pass
 
-    with pytest.raises(ValueError, match="Properties must be JSON serializable"):
+    with pytest.raises(ValueError, match="validation errors for ExtractorConfig"):
         valid_extractor_config.properties = {
             "prompt_for_kind": valid_extractor_config_data["properties"][
                 "prompt_for_kind"
