@@ -1,7 +1,7 @@
 import pytest
 
-from kiln_ai.adapters.extraction.gemini_extractor import GeminiExtractor
-from kiln_ai.adapters.extraction.registry import extractor_adapter_from_type
+from kiln_ai.adapters.extractors.gemini_extractor import GeminiExtractor
+from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
 from kiln_ai.datamodel.extraction import ExtractorType
 
 
