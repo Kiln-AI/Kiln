@@ -55,7 +55,9 @@ def validate_model_name(model_name: Any):
 
 class ExtractorConfig(KilnBaseModel):
     name: str = NAME_FIELD
-
+    description: str | None = Field(
+        default=None, description="The description of the extractor config"
+    )
     output_format: OutputFormat = Field(
         default=OutputFormat.MARKDOWN,
         description="The format to use for the output.",
