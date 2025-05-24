@@ -3,7 +3,7 @@ import pathlib
 from google import genai
 from google.genai import types
 
-from kiln_ai.adapters.extraction.base_extractor import (
+from kiln_ai.adapters.extractors.base_extractor import (
     BaseExtractor,
     ExtractionOutput,
     FileInfoInternal,

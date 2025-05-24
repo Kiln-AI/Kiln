@@ -20,7 +20,7 @@ from . import (
     chat,
     data_gen,
     eval,
-    extraction,
+    extractors,
     fine_tune,
     ml_model_list,
     model_adapters,
@@ -37,5 +37,5 @@ __all__ = [
     "prompt_builders",
     "repair",
     "eval",
-    "extraction",
+    "extractors",
 ]

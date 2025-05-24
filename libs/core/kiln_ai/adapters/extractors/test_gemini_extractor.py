@@ -5,13 +5,13 @@ import pytest
 from google import genai
 from google.genai import types
 
-from kiln_ai.adapters.extraction.base_extractor import (
+from kiln_ai.adapters.extractors.base_extractor import (
     ExtractionOutput,
     FileInfo,
     FileInfoInternal,
     OutputFormat,
 )
-from kiln_ai.adapters.extraction.gemini_extractor import (
+from kiln_ai.adapters.extractors.gemini_extractor import (
     ExtractorConfig,
     GeminiExtractor,
     Kind,
