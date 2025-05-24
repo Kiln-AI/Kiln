@@ -29,19 +29,22 @@ def validate_prompt_for_kind(prompt_for_kind: Any):
         raise ValueError("prompt_for_kind must be a dictionary.")
     # check all keys are valid kinds
     for key, value in prompt_for_kind.items():
+        # raise an error if the key is not a valid kind
+        try:
+            Kind(key)
+        except ValueError:
+            raise ValueError(f"Invalid kind in prompt_for_kind: '{key}'")
         # type the key to a kind
-        Kind(key)
-        # if not isinstance(typed_key, Kind):
-        #     raise ValueError(f"Invalid kind in prompt_for_kind: {key}")
         if not isinstance(value, str):
             raise ValueError(
-                f"Invalid prompt for kind: {key}. Prompt must be a string."
+                f"Invalid prompt for kind: '{key}'. Prompt must be a string."
             )
+
     # check all kinds are present
     for kind in Kind:
         if kind not in prompt_for_kind:
             raise ValueError(
-                f"Missing prompt for kind: {kind.value}. All kinds must be present in prompt_for_kind."
+                f"Missing prompt for kind: '{kind.value}'. All kinds must be present in prompt_for_kind."
             )
 
 
