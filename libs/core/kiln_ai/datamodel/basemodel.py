@@ -7,14 +7,7 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Type,
-    TypeVar,
-)
+from typing import Any, Dict, List, Optional, Type, TypeVar, get_args, get_origin
 
 from pydantic import (
     BaseModel,
@@ -69,6 +62,48 @@ def string_to_valid_name(name: str) -> str:
     valid_name = re.sub(r"_+", "_", valid_name)
     # Remove leading and trailing underscores or whitespace
     return valid_name.strip("_").strip()
+
+
+class KilnAttachmentModel(BaseModel):
+    path: Path = Field(description="The path to the attachment")
+
+    @model_validator(mode="after")
+    def check_file_exists(self) -> Self:
+        if not os.path.exists(self.path):
+            raise ValueError(f"File does not exist: {self.path}")
+        if not os.path.isfile(self.path):
+            raise ValueError(f"File is not a file: {self.path}")
+        return self
+
+    def copy_to_parent_and_update_path(self, parent_folder: str | Path) -> Path:
+        if isinstance(parent_folder, str):
+            parent_folder = Path(parent_folder)
+
+        # the attachment is already in the parent folder, so we don't need to copy it
+        if self.path.parent == parent_folder:
+            return self.path
+
+        # the file is not in the target folder, so we copy it there
+        filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
+        target_path = parent_folder / filename
+        shutil.copy(self.path, target_path)
+
+        # update the path to be relative to the parent that we saved it to
+        self.path = target_path.relative_to(parent_folder)
+
+        return self.path
+
+    @classmethod
+    def is_attachment_type(cls, annotation: type[Any] | None) -> bool:
+        """Recursively check if KilnAttachmentModel is used anywhere in the type annotation."""
+        if annotation is KilnAttachmentModel:
+            return True
+
+        args = get_args(annotation)
+        if not args:
+            return False
+
+        return any(cls.is_attachment_type(arg) for arg in args)
 
 
 class KilnBaseModel(BaseModel):
@@ -184,6 +219,41 @@ class KilnBaseModel(BaseModel):
             return True
         return False
 
+    def collect_attachments_from_fields(self) -> List[KilnAttachmentModel]:
+        attachments = []
+        for field_name, field in self.model_fields.items():
+            # case for single attachment
+            if (
+                field.annotation == KilnAttachmentModel
+                or field.annotation == Optional[KilnAttachmentModel]
+            ):
+                attachment: KilnAttachmentModel = getattr(self, field_name)
+                if attachment is not None:
+                    attachments.append(attachment)
+
+            # case for list of attachments
+            elif (
+                field.annotation == List[KilnAttachmentModel]
+                or field.annotation == Optional[List[KilnAttachmentModel]]
+            ):
+                for attachment in getattr(self, field_name) or []:
+                    attachments.append(attachment)
+
+            # case for dict of attachments
+            elif (
+                field.annotation == Dict[str, KilnAttachmentModel]
+                or field.annotation == Optional[Dict[str, KilnAttachmentModel]]
+            ):
+                for attachment in (getattr(self, field_name) or {}).values():
+                    attachments.append(attachment)
+
+            # any other (more complex) typing using the attachment type, we don't support
+            else:
+                if KilnAttachmentModel.is_attachment_type(field.annotation):
+                    raise ValueError(f"Unsupported attachment type: {field.annotation}")
+
+        return attachments
+
     def save_to_file(self) -> None:
         """Save the model instance to a file.
 
@@ -197,6 +267,12 @@ class KilnBaseModel(BaseModel):
                 f"id: {getattr(self, 'id', None)}, path: {path}"
             )
         path.parent.mkdir(parents=True, exist_ok=True)
+
+        # save the attachments to the same folder as the model
+        attachments = self.collect_attachments_from_fields()
+        for attachment in attachments:
+            attachment.copy_to_parent_and_update_path(path.parent)
+
         json_data = self.model_dump_json(indent=2, exclude={"path"})
         with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)
