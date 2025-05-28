@@ -365,7 +365,8 @@
         Part {show_requirements ? "3" : "2"}: Input Schema
       </div>
       <div class="text-xs text-gray-500">
-        What kind of input will the model receive?
+        What kind of input will the model receive? This is a description for you
+        and your team, not used by the model.
       </div>
     </div>
 
@@ -404,7 +405,8 @@
         Part {show_requirements ? "4" : "3"}: Output Schema
       </div>
       <div class="text-xs text-gray-500">
-        What kind of output will the model produce?
+        What kind of output will the model produce? This is a description for
+        you and your team, not used by the model.
       </div>
     </div>
 
