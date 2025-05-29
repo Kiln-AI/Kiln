@@ -6,9 +6,15 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pytest
-from pydantic import Field
 
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
+from kiln_ai.datamodel.basemodel import (
+    ATTACHMENT_DICT_FIELD,
+    ATTACHMENT_FIELD,
+    ATTACHMENT_LIST_FIELD,
+    KilnAttachmentModel,
+    KilnBaseModel,
+    KilnPath,
+)
 
 
 def hash_file(p: Path) -> str:
@@ -59,9 +65,9 @@ def test_media_file(tmp_path) -> Path:
 
 
 class ModelWithAttachment(KilnBaseModel):
-    attachment: Optional[KilnAttachmentModel] = Field(default=None)
-    attachments_list: Optional[List[KilnAttachmentModel]] = Field(default=None)
-    attachments_dict: Optional[Dict[str, KilnAttachmentModel]] = Field(default=None)
+    attachment: Optional[KilnAttachmentModel] = ATTACHMENT_FIELD
+    attachments_list: Optional[List[KilnAttachmentModel]] = ATTACHMENT_LIST_FIELD
+    attachments_dict: Optional[Dict[str, KilnAttachmentModel]] = ATTACHMENT_DICT_FIELD
 
 
 def test_collect_attachments_from_fields_none(test_base_kiln_file):
@@ -74,11 +80,11 @@ def test_collect_attachments_from_fields_none(test_base_kiln_file):
 def test_collect_attachments_from_fields_single(test_base_kiln_file):
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_base_kiln_file),
+        attachment=KilnAttachmentModel(path=KilnPath(test_base_kiln_file)),
     )
     attachments = model.collect_attachments_from_fields()
     assert len(attachments) == 1
-    assert attachments[0].path == test_base_kiln_file
+    assert attachments[0]["path"] == test_base_kiln_file
 
 
 def test_collect_attachments_from_fields_list(test_base_kiln_file, test_media_files):
@@ -90,7 +96,7 @@ def test_collect_attachments_from_fields_list(test_base_kiln_file, test_media_fi
     attachments = model.collect_attachments_from_fields()
     assert len(attachments) == len(test_files)
     for attachment, test_file in zip(attachments, test_files):
-        assert attachment.path == test_file.path
+        assert attachment["path"] == test_file["path"]
 
 
 def test_collect_attachments_from_fields_dict(test_base_kiln_file, test_media_files):
@@ -102,94 +108,7 @@ def test_collect_attachments_from_fields_dict(test_base_kiln_file, test_media_fi
     attachments = model.collect_attachments_from_fields()
     assert len(attachments) == len(test_files)
     for attachment, test_file in zip(attachments, test_files):
-        assert attachment.path == test_file.path
-
-
-def test_collect_attachments_from_fields_unsupported_type(test_base_kiln_file):
-    # example of a model that uses a more complex typing, that we don't support right now
-    class UnsupportedModel(KilnBaseModel):
-        unsupported_field: Optional[List[Dict[str, KilnAttachmentModel]]] = Field(
-            default=None
-        )
-
-    model = UnsupportedModel(path=test_base_kiln_file)
-    with pytest.raises(ValueError, match="Unsupported attachment type"):
-        model.collect_attachments_from_fields()
-
-
-def test_is_attachment_type(test_media_file_document):
-    class TestModel(KilnBaseModel):
-        # attachment fields, non-optional
-        attachment_non_optional: KilnAttachmentModel = Field(
-            default=KilnAttachmentModel(path=Path(test_media_file_document))
-        )
-        attachment_list_non_optional: List[KilnAttachmentModel] = Field(
-            default=[KilnAttachmentModel(path=Path(test_media_file_document))]
-        )
-        attachment_dict_non_optional: Dict[str, KilnAttachmentModel] = Field(default={})
-        attachment_list_of_dicts_non_optional: List[Dict[str, KilnAttachmentModel]] = (
-            Field(default=[])
-        )
-        attachment_dict_of_lists_non_optional: Dict[str, List[KilnAttachmentModel]] = (
-            Field(default={})
-        )
-        attachment_dict_of_dicts_non_optional: Dict[
-            str, Dict[str, KilnAttachmentModel]
-        ] = Field(default={})
-
-        # attachment fields, optional
-        attachment_optional: Optional[KilnAttachmentModel] = Field(default=None)
-        attachment_list_optional: Optional[List[KilnAttachmentModel]] = Field(
-            default=None
-        )
-        attachment_dict_optional: Optional[Dict[str, KilnAttachmentModel]] = Field(
-            default=None
-        )
-        attachment_list_of_dicts_optional: Optional[
-            List[Dict[str, KilnAttachmentModel]]
-        ] = Field(default=None)
-        attachment_dict_of_lists_optional: Optional[
-            Dict[str, List[KilnAttachmentModel]]
-        ] = Field(default=None)
-        attachment_dict_of_dicts_optional: Optional[
-            Dict[str, Dict[str, KilnAttachmentModel]]
-        ] = Field(default=None)
-
-        # non-attachment fields, non-optional
-        other_field: str = Field(default="")
-        other_field_list: List[str] = Field(default=[])
-        other_field_dict: Dict[str, str] = Field(default={})
-        other_field_list_of_dicts: List[Dict[str, str]] = Field(default=[])
-        other_field_dict_of_lists: Dict[str, List[str]] = Field(default={})
-        other_field_dict_of_dicts: Dict[str, Dict[str, str]] = Field(default={})
-        other_model: Optional[KilnBaseModel] = Field(default=None)
-
-        # non-attachment fields, optional
-        other_field_optional: Optional[str] = Field(default=None)
-        other_field_list_optional: Optional[List[str]] = Field(default=None)
-        other_field_dict_optional: Optional[Dict[str, str]] = Field(default=None)
-        other_field_list_of_dicts_optional: Optional[List[Dict[str, str]]] = Field(
-            default=None
-        )
-
-    # attachment fields start with attachment_
-    attachment_fields = [
-        field
-        for name, field in TestModel().model_fields.items()
-        if name.startswith("attachment_")
-    ]
-    assert len(attachment_fields) == 12
-
-    # check that all the attachment fields are detected
-    for field in attachment_fields:
-        assert KilnAttachmentModel.is_attachment_type(field.annotation)
-
-    non_attachment_fields = [
-        field
-        for name, field in TestModel().model_fields.items()
-        if not name.startswith("attachment_")
-    ]
-    assert len(non_attachment_fields) == 16
+        assert attachment["path"] == test_file["path"]
 
 
 def test_save_to_file_with_attachment_single(
@@ -261,11 +180,12 @@ def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_
 
 
 def test_attachment_file_does_not_exist(test_base_kiln_file):
-    not_found_file = Path(f"/not/found/{str(uuid.uuid4())}.txt")
-
     # should raise when we assign a file that does not exist
-    with pytest.raises(ValueError):
-        KilnAttachmentModel(path=not_found_file)
+    with pytest.raises(ValueError, match="File does not exist"):
+        ModelWithAttachment(
+            path=test_base_kiln_file,
+            attachment=KilnAttachmentModel(path=f"/not/found/{str(uuid.uuid4())}.txt"),
+        )
 
 
 def test_attachment_is_folder(test_base_kiln_file, tmp_path):
@@ -278,7 +198,7 @@ def test_attachment_is_folder(test_base_kiln_file, tmp_path):
     file.touch()
 
     # should raise when we assign a folder
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="File is not a file"):
         ModelWithAttachment(
             path=test_base_kiln_file,
             attachment=KilnAttachmentModel(path=folder),
