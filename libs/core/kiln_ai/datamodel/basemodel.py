@@ -7,7 +7,7 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, TypeVar, get_args, get_origin
+from typing import Any, Dict, List, Optional, Type, TypeVar, get_args
 
 from pydantic import (
     BaseModel,
@@ -75,23 +75,20 @@ class KilnAttachmentModel(BaseModel):
             raise ValueError(f"File is not a file: {self.path}")
         return self
 
-    def copy_to_parent_and_update_path(self, parent_folder: str | Path) -> Path:
-        if isinstance(parent_folder, str):
-            parent_folder = Path(parent_folder)
+    def copy_to(self, dest_folder: str | Path) -> Path:
+        if isinstance(dest_folder, str):
+            dest_folder = Path(dest_folder)
 
         # the attachment is already in the parent folder, so we don't need to copy it
-        if self.path.parent == parent_folder:
+        if self.path.parent == dest_folder:
             return self.path
 
         # the file is not in the target folder, so we copy it there
         filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
-        target_path = parent_folder / filename
+        target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
 
-        # update the path to be relative to the parent that we saved it to
-        self.path = target_path.relative_to(parent_folder)
-
-        return self.path
+        return target_path
 
     @classmethod
     def is_attachment_type(cls, annotation: type[Any] | None) -> bool:
@@ -271,7 +268,8 @@ class KilnBaseModel(BaseModel):
         # save the attachments to the same folder as the model
         attachments = self.collect_attachments_from_fields()
         for attachment in attachments:
-            attachment.copy_to_parent_and_update_path(path.parent)
+            new_path = attachment.copy_to(path.parent)
+            attachment.path = new_path.relative_to(path.parent)
 
         json_data = self.model_dump_json(indent=2, exclude={"path"})
         with open(path, "w", encoding="utf-8") as file:
@@ -626,4 +624,5 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             new_loc.extend(list(orig_loc))
         elif isinstance(orig_loc, list):
             new_loc.extend(orig_loc)
+        error["loc"] = tuple(new_loc)
         error["loc"] = tuple(new_loc)
