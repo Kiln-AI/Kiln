@@ -7,7 +7,7 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, TypeVar, get_args
+from typing import Any, Dict, List, Optional, Type, TypeVar, cast, get_args
 
 from pydantic import (
     BaseModel,
@@ -75,20 +75,76 @@ class KilnAttachmentModel(BaseModel):
             raise ValueError(f"File is not a file: {self.path}")
         return self
 
-    def copy_to(self, dest_folder: str | Path) -> Path:
+
+# NOTE: needed to extract it out into a mixin during development to attach it to other stuff,
+# but now could bring back into KilnBaseModel if we prefer
+class AttachmentSupportMixin:
+    def collect_attachments_from_fields(self) -> List[KilnAttachmentModel]:
+        # if not (isinstance(self, BaseModel) or issubclass(self.__class__, BaseModel)):
+        #     raise ValueError(
+        #         "collect_attachments_from_fields can only be called on a BaseModel"
+        #     )
+        typed_self = cast(BaseModel, self)
+
+        # traverse the model down to its leaves to collect all the attachments
+        queue: List[BaseModel] = [typed_self]
+        attachments: List[KilnAttachmentModel] = []
+        while queue:
+            current = queue.pop(0)
+            for field_name, field in current.model_fields.items():
+                # case for single attachment
+                if (
+                    field.annotation == KilnAttachmentModel
+                    or field.annotation == Optional[KilnAttachmentModel]
+                ):
+                    attachment: KilnAttachmentModel = getattr(current, field_name)
+                    if attachment is not None:
+                        attachments.append(attachment)
+
+                # case for list of attachments
+                elif (
+                    field.annotation == List[KilnAttachmentModel]
+                    or field.annotation == Optional[List[KilnAttachmentModel]]
+                ):
+                    for attachment in getattr(current, field_name) or []:
+                        attachments.append(attachment)
+
+                # case for dict of attachments
+                elif (
+                    field.annotation == Dict[str, KilnAttachmentModel]
+                    or field.annotation == Optional[Dict[str, KilnAttachmentModel]]
+                ):
+                    for attachment in (getattr(current, field_name) or {}).values():
+                        attachments.append(attachment)
+
+                # case for nested model - we need to traverse it
+                elif (
+                    isinstance(field.annotation, type) and field.annotation == BaseModel
+                ):
+                    queue.append(getattr(current, field_name))
+
+                # any other (more complex) typing using the attachment type, we don't support
+                elif AttachmentSupportMixin.is_attachment_type(field.annotation):
+                    raise ValueError(f"Unsupported attachment type: {field.annotation}")
+
+        return attachments
+
+    def save_attachments_to(self, dest_folder: str | Path) -> None:
         if isinstance(dest_folder, str):
             dest_folder = Path(dest_folder)
 
-        # the attachment is already in the parent folder, so we don't need to copy it
-        if self.path.parent == dest_folder:
-            return self.path
+        attachments = self.collect_attachments_from_fields()
+        for attachment in attachments:
+            # the attachment is already in the parent folder, so we don't need to copy it
+            if attachment.path.parent == dest_folder:
+                continue
 
-        # the file is not in the target folder, so we copy it there
-        filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
-        target_path = dest_folder / filename
-        shutil.copy(self.path, target_path)
+            # the file is not in the target folder, so we copy it there (and keep the original extension - e.g. .pdf)
+            filename = f"{str(uuid.uuid4().int)[:12]}{attachment.path.suffix}"
+            target_path = dest_folder / filename
+            shutil.copy(attachment.path, target_path)
 
-        return target_path
+            attachment.path = target_path.relative_to(dest_folder)
 
     @classmethod
     def is_attachment_type(cls, annotation: type[Any] | None) -> bool:
@@ -103,7 +159,7 @@ class KilnAttachmentModel(BaseModel):
         return any(cls.is_attachment_type(arg) for arg in args)
 
 
-class KilnBaseModel(BaseModel):
+class KilnBaseModel(BaseModel, AttachmentSupportMixin):
     """Base model for all Kiln data models with common functionality for persistence and versioning.
 
     Attributes:
@@ -216,41 +272,6 @@ class KilnBaseModel(BaseModel):
             return True
         return False
 
-    def collect_attachments_from_fields(self) -> List[KilnAttachmentModel]:
-        attachments = []
-        for field_name, field in self.model_fields.items():
-            # case for single attachment
-            if (
-                field.annotation == KilnAttachmentModel
-                or field.annotation == Optional[KilnAttachmentModel]
-            ):
-                attachment: KilnAttachmentModel = getattr(self, field_name)
-                if attachment is not None:
-                    attachments.append(attachment)
-
-            # case for list of attachments
-            elif (
-                field.annotation == List[KilnAttachmentModel]
-                or field.annotation == Optional[List[KilnAttachmentModel]]
-            ):
-                for attachment in getattr(self, field_name) or []:
-                    attachments.append(attachment)
-
-            # case for dict of attachments
-            elif (
-                field.annotation == Dict[str, KilnAttachmentModel]
-                or field.annotation == Optional[Dict[str, KilnAttachmentModel]]
-            ):
-                for attachment in (getattr(self, field_name) or {}).values():
-                    attachments.append(attachment)
-
-            # any other (more complex) typing using the attachment type, we don't support
-            else:
-                if KilnAttachmentModel.is_attachment_type(field.annotation):
-                    raise ValueError(f"Unsupported attachment type: {field.annotation}")
-
-        return attachments
-
     def save_to_file(self) -> None:
         """Save the model instance to a file.
 
@@ -266,10 +287,8 @@ class KilnBaseModel(BaseModel):
         path.parent.mkdir(parents=True, exist_ok=True)
 
         # save the attachments to the same folder as the model
-        attachments = self.collect_attachments_from_fields()
-        for attachment in attachments:
-            new_path = attachment.copy_to(path.parent)
-            attachment.path = new_path.relative_to(path.parent)
+        if isinstance(self, AttachmentSupportMixin):
+            self.save_attachments_to(path.parent)
 
         json_data = self.model_dump_json(indent=2, exclude={"path"})
         with open(path, "w", encoding="utf-8") as file:

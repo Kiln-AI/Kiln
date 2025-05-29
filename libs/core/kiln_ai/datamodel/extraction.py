@@ -4,7 +4,12 @@ from typing import TYPE_CHECKING, Any, Union, cast
 from pydantic import Field, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import (
+    ID_TYPE,
+    NAME_FIELD,
+    KilnAttachmentModel,
+    KilnParentedModel,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -122,11 +127,9 @@ class Extraction(KilnParentedModel):
     source: ExtractionSource = Field(
         description="The source of the extraction.",
     )
-    extractor_config_id: str = Field(
+    extractor_config_id: ID_TYPE = Field(
         description="The ID of the extractor config that was used to extract the data.",
     )
-
-    # TODO: add extracted data as attachment
-    # output: KilnModelAttachment = Field(
-    #     description="The attachment that was used to extract the data.",
-    # )
+    output: KilnAttachmentModel = Field(
+        description="The extraction output.",
+    )

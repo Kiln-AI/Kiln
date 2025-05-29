@@ -8,7 +8,11 @@ from typing import Dict, List, Optional
 import pytest
 from pydantic import Field
 
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
+from kiln_ai.datamodel.basemodel import (
+    AttachmentSupportMixin,
+    KilnAttachmentModel,
+    KilnBaseModel,
+)
 
 
 def hash_file(p: Path) -> str:
@@ -182,7 +186,7 @@ def test_is_attachment_type(test_media_file_document):
 
     # check that all the attachment fields are detected
     for field in attachment_fields:
-        assert KilnAttachmentModel.is_attachment_type(field.annotation)
+        assert AttachmentSupportMixin.is_attachment_type(field.annotation)
 
     non_attachment_fields = [
         field

@@ -3,7 +3,12 @@ from typing import TYPE_CHECKING, List, Union
 from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel, KilnParentModel
+from kiln_ai.datamodel.basemodel import (
+    NAME_FIELD,
+    KilnAttachmentModel,
+    KilnParentedModel,
+    KilnParentModel,
+)
 from kiln_ai.datamodel.extraction import Extraction, Kind
 
 if TYPE_CHECKING:
@@ -17,10 +22,9 @@ class FileInfo(BaseModel):
 
     mime_type: str = Field(description="The MIME type of the file")
 
-    # TODO: add attachment
-    # attachment: KilnModelAttachment = Field(
-    #     description="The attachment to the file",
-    # )
+    attachment: KilnAttachmentModel = Field(
+        description="The attachment to the file",
+    )
 
 
 class Document(
