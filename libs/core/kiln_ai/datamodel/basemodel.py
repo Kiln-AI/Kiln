@@ -7,15 +7,17 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, TypeVar, get_args, get_origin
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializationInfo,
     ValidationError,
     ValidationInfo,
     computed_field,
+    model_serializer,
     model_validator,
 )
 from pydantic_core import ErrorDetails
@@ -75,35 +77,44 @@ class KilnAttachmentModel(BaseModel):
             raise ValueError(f"File is not a file: {self.path}")
         return self
 
-    def copy_to_parent_and_update_path(self, parent_folder: str | Path) -> Path:
-        if isinstance(parent_folder, str):
-            parent_folder = Path(parent_folder)
+    @model_serializer
+    def serialize(self, info: SerializationInfo) -> Path | None:
+        # when the attachment is optional on the model, we get None here
+        if self is None:
+            return None
 
-        # the attachment is already in the parent folder, so we don't need to copy it
-        if self.path.parent == parent_folder:
+        context = info.context or {}
+
+        # serialization may also be called by other parts of the system, the callers should
+        # explicitly set save_attachments to True if they want to save attachments
+        save_attachments: bool = context.get("save_attachments", False)
+        if not save_attachments:
             return self.path
 
-        # the file is not in the target folder, so we copy it there
-        filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
-        target_path = parent_folder / filename
-        shutil.copy(self.path, target_path)
+        dest_path: Path | None = context.get("dest_path", None)
+        if not dest_path or not isinstance(dest_path, Path):
+            raise ValueError(
+                f"dest_path must be a valid Path object when saving attachments, got: {dest_path}"
+            )
+        if not dest_path.is_dir():
+            raise ValueError("dest_path must be a directory when saving attachments")
 
-        # update the path to be relative to the parent that we saved it to
-        self.path = target_path.relative_to(parent_folder)
+        # the attachment is already in the parent folder, so we don't need to copy it
+        if self.path.parent == dest_path:
+            return self.path
+
+        # copy file and update the path to be relative to the dest_path
+        new_path = self.copy_file_to(dest_path)
+        self.path = new_path.relative_to(dest_path)
 
         return self.path
 
-    @classmethod
-    def is_attachment_type(cls, annotation: type[Any] | None) -> bool:
-        """Recursively check if KilnAttachmentModel is used anywhere in the type annotation."""
-        if annotation is KilnAttachmentModel:
-            return True
-
-        args = get_args(annotation)
-        if not args:
-            return False
-
-        return any(cls.is_attachment_type(arg) for arg in args)
+    def copy_file_to(self, dest_folder: Path) -> Path:
+        # the file is not in the target folder, so we copy it there (and keep the original extension - e.g. .pdf)
+        filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
+        target_path = dest_folder / filename
+        shutil.copy(self.path, target_path)
+        return target_path
 
 
 class KilnBaseModel(BaseModel):
@@ -219,41 +230,6 @@ class KilnBaseModel(BaseModel):
             return True
         return False
 
-    def collect_attachments_from_fields(self) -> List[KilnAttachmentModel]:
-        attachments = []
-        for field_name, field in self.model_fields.items():
-            # case for single attachment
-            if (
-                field.annotation == KilnAttachmentModel
-                or field.annotation == Optional[KilnAttachmentModel]
-            ):
-                attachment: KilnAttachmentModel = getattr(self, field_name)
-                if attachment is not None:
-                    attachments.append(attachment)
-
-            # case for list of attachments
-            elif (
-                field.annotation == List[KilnAttachmentModel]
-                or field.annotation == Optional[List[KilnAttachmentModel]]
-            ):
-                for attachment in getattr(self, field_name) or []:
-                    attachments.append(attachment)
-
-            # case for dict of attachments
-            elif (
-                field.annotation == Dict[str, KilnAttachmentModel]
-                or field.annotation == Optional[Dict[str, KilnAttachmentModel]]
-            ):
-                for attachment in (getattr(self, field_name) or {}).values():
-                    attachments.append(attachment)
-
-            # any other (more complex) typing using the attachment type, we don't support
-            else:
-                if KilnAttachmentModel.is_attachment_type(field.annotation):
-                    raise ValueError(f"Unsupported attachment type: {field.annotation}")
-
-        return attachments
-
     def save_to_file(self) -> None:
         """Save the model instance to a file.
 
@@ -268,12 +244,16 @@ class KilnBaseModel(BaseModel):
             )
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # save the attachments to the same folder as the model
-        attachments = self.collect_attachments_from_fields()
-        for attachment in attachments:
-            attachment.copy_to_parent_and_update_path(path.parent)
-
-        json_data = self.model_dump_json(indent=2, exclude={"path"})
+        json_data = self.model_dump_json(
+            indent=2,
+            exclude={"path"},
+            # dest_path is used by the attachment serializer to save attachments to the correct location
+            # and update the paths to be relative to path.parent
+            context={
+                "save_attachments": True,
+                "dest_path": path.parent,
+            },
+        )
         with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
@@ -626,4 +606,5 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             new_loc.extend(list(orig_loc))
         elif isinstance(orig_loc, list):
             new_loc.extend(orig_loc)
+        error["loc"] = tuple(new_loc)
         error["loc"] = tuple(new_loc)

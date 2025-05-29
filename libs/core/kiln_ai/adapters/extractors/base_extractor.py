@@ -1,7 +1,7 @@
 import logging
 import mimetypes
-import pathlib
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 # TODO: take in the file/document datamodel instead once we have it
 class FileInfo(BaseModel):
-    # TODO: check if works with relative paths or needs to be absolute
-    path: str = Field(description="The path to the file to extract from.")
+    # TODO: could remove altogether, and take in `path: Path, mime_type: str` from the caller
+    path: Path | str = Field(description="The path to the file to extract from.")
 
 
 class FileInfoInternal(FileInfo):
@@ -59,7 +59,7 @@ class BaseExtractor(ABC):
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
                     is_passthrough=True,
-                    content=pathlib.Path(file_info.path).read_text(encoding="utf-8"),
+                    content=Path(file_info.path).read_text(encoding="utf-8"),
                     content_format=self.extractor_config.output_format,
                 )
 

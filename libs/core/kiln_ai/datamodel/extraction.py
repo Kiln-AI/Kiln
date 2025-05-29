@@ -4,7 +4,12 @@ from typing import TYPE_CHECKING, Any, Union, cast
 from pydantic import Field, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import (
+    ID_TYPE,
+    NAME_FIELD,
+    KilnAttachmentModel,
+    KilnParentedModel,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -89,10 +94,22 @@ class ExtractorConfig(KilnParentedModel):
             raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
     def model_name(self) -> str | None:
-        return cast(str, self.properties.get("model_name"))
+        model_name = self.properties.get("model_name")
+        if model_name is None:
+            return None
+        if not isinstance(model_name, str):
+            raise ValueError("Invalid model_name. model_name must be a string.")
+        return model_name
 
     def prompt_for_kind(self) -> dict[Kind, str] | None:
-        return cast(dict[Kind, str], self.properties.get("prompt_for_kind"))
+        prompt_for_kind = self.properties.get("prompt_for_kind")
+        if prompt_for_kind is None:
+            return None
+        if not isinstance(prompt_for_kind, dict):
+            raise ValueError(
+                "Invalid prompt_for_kind. prompt_for_kind must be a dictionary."
+            )
+        return cast(dict[Kind, str], prompt_for_kind)
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:
@@ -110,11 +127,9 @@ class Extraction(KilnParentedModel):
     source: ExtractionSource = Field(
         description="The source of the extraction.",
     )
-    extractor_config_id: str = Field(
+    extractor_config_id: ID_TYPE = Field(
         description="The ID of the extractor config that was used to extract the data.",
     )
-
-    # TODO: add extracted data as attachment
-    # output: KilnModelAttachment = Field(
-    #     description="The attachment that was used to extract the data.",
-    # )
+    output: KilnAttachmentModel = Field(
+        description="The extraction output.",
+    )
