@@ -79,35 +79,29 @@ class KilnAttachmentModel(BaseModel):
 
     @model_serializer
     def serialize(self, info: SerializationInfo) -> Path | None:
+        # when the attachment is optional on the model, we get None here
         if self is None:
             return None
 
-        context = info.context
-        if not context:
-            context = {}
-
-        if "save_attachments" not in context or not context.get(
-            "save_attachments", True
-        ):
-            return self.path
-
-        path_parent = context.get("path_parent", None)
-        if not path_parent:
+        dest_path: Path | None = (info.context or {}).get("dest_path", None)
+        if not dest_path or not isinstance(dest_path, Path):
             raise ValueError(
-                "path_parent must be set in serialization context when saving attachments"
+                "dest_path must be a valid Path object when saving attachments"
             )
+        if not dest_path.is_dir():
+            raise ValueError("dest_path must be a directory when saving attachments")
 
         # the attachment is already in the parent folder, so we don't need to copy it
-        if self.path.parent == path_parent:
+        if self.path.parent == dest_path:
             return self.path
 
-        permanent_path = self.copy_to(path_parent)
-
-        self.path = permanent_path.relative_to(path_parent)
+        # copy file and update the path to be relative to the dest_path
+        new_path = self.copy_file_to(dest_path)
+        self.path = new_path.relative_to(dest_path)
 
         return self.path
 
-    def copy_to(self, dest_folder: Path) -> Path:
+    def copy_file_to(self, dest_folder: Path) -> Path:
         # the file is not in the target folder, so we copy it there (and keep the original extension - e.g. .pdf)
         filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
         target_path = dest_folder / filename
@@ -245,9 +239,9 @@ class KilnBaseModel(BaseModel):
         json_data = self.model_dump_json(
             indent=2,
             exclude={"path"},
-            # path_parent and save_attachments are used by the attachment serializer to save attachments to the correct location
+            # dest_path is used by the attachment serializer to save attachments to the correct location
             # and update the paths to be relative to path.parent
-            context={"path_parent": path.parent, "save_attachments": True},
+            context={"dest_path": path.parent},
         )
         with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)

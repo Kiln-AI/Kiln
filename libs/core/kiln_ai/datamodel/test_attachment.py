@@ -240,7 +240,7 @@ def test_save_to_file_with_indirect_attachment_optional(
 
 def test_save_to_file_with_indirect_attachment_optional_none(test_base_kiln_file):
     # check we don't copy the attachment if it is None
-    with patch.object(KilnAttachmentModel, "copy_to") as mock_save_to_file:
+    with patch.object(KilnAttachmentModel, "copy_file_to") as mock_save_to_file:
         mock_save_to_file.return_value = Path("fake.txt")
         model = ModelWithIndirectAttachment(
             path=test_base_kiln_file,
@@ -256,6 +256,37 @@ def test_save_to_file_with_indirect_attachment_optional_none(test_base_kiln_file
 
         # check KilnAttachmentModel.copy_to() not called
         mock_save_to_file.assert_not_called()
+
+
+def test_dump_dest_path(test_base_kiln_file, test_media_file):
+    model = ModelWithAttachment(
+        path=test_base_kiln_file,
+        attachment=KilnAttachmentModel(path=test_media_file),
+    )
+
+    # should raise when no dest_path is set
+    with pytest.raises(
+        ValueError,
+        match="dest_path must be a valid Path object when saving attachments",
+    ):
+        model.model_dump()
+
+    # should raise when dest_path is not a Path object
+    with pytest.raises(
+        ValueError,
+        match="dest_path must be a valid Path object when saving attachments",
+    ):
+        model.model_dump(context={"dest_path": str(test_media_file)})
+
+    # should raise when dest_path is not a directory
+    with pytest.raises(
+        ValueError,
+        match="dest_path must be a directory when saving attachments",
+    ):
+        model.model_dump(context={"dest_path": test_media_file})
+
+    # should not raise when dest_path is set
+    model.model_dump(context={"dest_path": test_base_kiln_file.parent})
 
 
 def test_attachment_file_does_not_exist(test_base_kiln_file):
