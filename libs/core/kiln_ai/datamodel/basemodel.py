@@ -78,7 +78,10 @@ class KilnAttachmentModel(BaseModel):
         return self
 
     @model_serializer
-    def serialize(self, info: SerializationInfo) -> Path:
+    def serialize(self, info: SerializationInfo) -> Path | None:
+        if self is None:
+            return None
+
         context = info.context
         if not context:
             context = {}
@@ -94,21 +97,21 @@ class KilnAttachmentModel(BaseModel):
                 "path_parent must be set in serialization context when saving attachments"
             )
 
-        permanent_path = self.save_to(path_parent)
-        self.path = permanent_path.relative_to(path_parent)
-
-        return permanent_path
-
-    def save_to(self, dest_folder: Path) -> Path:
         # the attachment is already in the parent folder, so we don't need to copy it
-        if self.path.parent == dest_folder:
+        if self.path.parent == path_parent:
             return self.path
 
+        permanent_path = self.copy_to(path_parent)
+
+        self.path = permanent_path.relative_to(path_parent)
+
+        return self.path
+
+    def copy_to(self, dest_folder: Path) -> Path:
         # the file is not in the target folder, so we copy it there (and keep the original extension - e.g. .pdf)
         filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
         target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
-
         return target_path
 
 
