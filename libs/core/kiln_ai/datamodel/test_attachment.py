@@ -264,29 +264,32 @@ def test_dump_dest_path(test_base_kiln_file, test_media_file):
         attachment=KilnAttachmentModel(path=test_media_file),
     )
 
-    # should raise when no dest_path is set
     with pytest.raises(
         ValueError,
         match="dest_path must be a valid Path object when saving attachments",
     ):
-        model.model_dump()
+        model.model_dump_json(context={"save_attachments": True})
 
     # should raise when dest_path is not a Path object
     with pytest.raises(
         ValueError,
         match="dest_path must be a valid Path object when saving attachments",
     ):
-        model.model_dump(context={"dest_path": str(test_media_file)})
+        model.model_dump_json(
+            context={"save_attachments": True, "dest_path": str(test_media_file)}
+        )
 
     # should raise when dest_path is not a directory
     with pytest.raises(
         ValueError,
         match="dest_path must be a directory when saving attachments",
     ):
-        model.model_dump(context={"dest_path": test_media_file})
+        model.model_dump_json(
+            context={"save_attachments": True, "dest_path": test_media_file}
+        )
 
     # should not raise when dest_path is set
-    model.model_dump(context={"dest_path": test_base_kiln_file.parent})
+    model.model_dump_json(context={"dest_path": test_base_kiln_file.parent})
 
 
 def test_attachment_file_does_not_exist(test_base_kiln_file):

@@ -83,10 +83,18 @@ class KilnAttachmentModel(BaseModel):
         if self is None:
             return None
 
-        dest_path: Path | None = (info.context or {}).get("dest_path", None)
+        context = info.context or {}
+
+        # serialization may also be called by other parts of the system, the callers should
+        # explicitly set save_attachments to True if they want to save attachments
+        save_attachments: bool = context.get("save_attachments", False)
+        if not save_attachments:
+            return self.path
+
+        dest_path: Path | None = context.get("dest_path", None)
         if not dest_path or not isinstance(dest_path, Path):
             raise ValueError(
-                "dest_path must be a valid Path object when saving attachments"
+                f"dest_path must be a valid Path object when saving attachments, got: {dest_path}"
             )
         if not dest_path.is_dir():
             raise ValueError("dest_path must be a directory when saving attachments")
@@ -241,7 +249,10 @@ class KilnBaseModel(BaseModel):
             exclude={"path"},
             # dest_path is used by the attachment serializer to save attachments to the correct location
             # and update the paths to be relative to path.parent
-            context={"dest_path": path.parent},
+            context={
+                "save_attachments": True,
+                "dest_path": path.parent,
+            },
         )
         with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)
