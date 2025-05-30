@@ -80,24 +80,24 @@ class KilnAttachmentModel(BaseModel):
 # but now could bring back into KilnBaseModel if we prefer
 class AttachmentSupportMixin:
     def collect_attachments_from_fields(self) -> List[KilnAttachmentModel]:
-        # if not (isinstance(self, BaseModel) or issubclass(self.__class__, BaseModel)):
-        #     raise ValueError(
-        #         "collect_attachments_from_fields can only be called on a BaseModel"
-        #     )
-        typed_self = cast(BaseModel, self)
+        if not (isinstance(self, BaseModel) or issubclass(self.__class__, BaseModel)):
+            raise ValueError(
+                "collect_attachments_from_fields can only be called on a BaseModel"
+            )
 
         # traverse the model down to its leaves to collect all the attachments
-        queue: List[BaseModel] = [typed_self]
+        queue: List[BaseModel] = [cast(BaseModel, self)]
         attachments: List[KilnAttachmentModel] = []
         while queue:
-            current = queue.pop(0)
-            for field_name, field in current.model_fields.items():
+            current_model = queue.pop(0)
+            for field_name, field in current_model.model_fields.items():
+                field_value = getattr(current_model, field_name)
                 # case for single attachment
                 if (
                     field.annotation == KilnAttachmentModel
                     or field.annotation == Optional[KilnAttachmentModel]
                 ):
-                    attachment: KilnAttachmentModel = getattr(current, field_name)
+                    attachment: KilnAttachmentModel = field_value
                     if attachment is not None:
                         attachments.append(attachment)
 
@@ -106,7 +106,7 @@ class AttachmentSupportMixin:
                     field.annotation == List[KilnAttachmentModel]
                     or field.annotation == Optional[List[KilnAttachmentModel]]
                 ):
-                    for attachment in getattr(current, field_name) or []:
+                    for attachment in field_value or []:
                         attachments.append(attachment)
 
                 # case for dict of attachments
@@ -114,16 +114,14 @@ class AttachmentSupportMixin:
                     field.annotation == Dict[str, KilnAttachmentModel]
                     or field.annotation == Optional[Dict[str, KilnAttachmentModel]]
                 ):
-                    for attachment in (getattr(current, field_name) or {}).values():
+                    for attachment in (field_value or {}).values():
                         attachments.append(attachment)
 
-                # case for nested model - we need to traverse it
-                elif (
-                    isinstance(field.annotation, type) and field.annotation == BaseModel
-                ):
-                    queue.append(getattr(current, field_name))
+                # queue if field is a nested BaseModel or subclass of BaseModel and skip functions
+                elif field_value is not None and isinstance(field_value, BaseModel):
+                    queue.append(field_value)
 
-                # any other (more complex) typing using the attachment type, we don't support
+                # other (more complex) typing using the attachment type, we don't support
                 elif AttachmentSupportMixin.is_attachment_type(field.annotation):
                     raise ValueError(f"Unsupported attachment type: {field.annotation}")
 
@@ -287,8 +285,7 @@ class KilnBaseModel(BaseModel, AttachmentSupportMixin):
         path.parent.mkdir(parents=True, exist_ok=True)
 
         # save the attachments to the same folder as the model
-        if isinstance(self, AttachmentSupportMixin):
-            self.save_attachments_to(path.parent)
+        self.save_attachments_to(path.parent)
 
         json_data = self.model_dump_json(indent=2, exclude={"path"})
         with open(path, "w", encoding="utf-8") as file:

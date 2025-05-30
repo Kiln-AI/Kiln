@@ -6,13 +6,33 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import pytest
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.basemodel import (
     AttachmentSupportMixin,
     KilnAttachmentModel,
     KilnBaseModel,
 )
+
+
+class ModelWithAttachment(KilnBaseModel):
+    attachment: Optional[KilnAttachmentModel] = Field(default=None)
+    attachments_list: Optional[List[KilnAttachmentModel]] = Field(default=None)
+    attachments_dict: Optional[Dict[str, KilnAttachmentModel]] = Field(default=None)
+
+
+class ContainerModel(BaseModel):
+    indirect_attachment: Optional[KilnAttachmentModel] = Field(default=None)
+    indirect_attachment_list: Optional[List[KilnAttachmentModel]] = Field(default=None)
+    indirect_attachment_dict: Optional[Dict[str, KilnAttachmentModel]] = Field(
+        default=None
+    )
+
+
+class ModelWithIndirectAttachment(KilnBaseModel):
+    # this nested model contains an attachment field
+    container: ContainerModel = Field(default=ContainerModel())
+    container_optional: Optional[ContainerModel] = Field(default=None)
 
 
 def hash_file(p: Path) -> str:
@@ -62,12 +82,6 @@ def test_media_file(tmp_path) -> Path:
     return test_file_path
 
 
-class ModelWithAttachment(KilnBaseModel):
-    attachment: Optional[KilnAttachmentModel] = Field(default=None)
-    attachments_list: Optional[List[KilnAttachmentModel]] = Field(default=None)
-    attachments_dict: Optional[Dict[str, KilnAttachmentModel]] = Field(default=None)
-
-
 def test_collect_attachments_from_fields_none(test_base_kiln_file):
     model = ModelWithAttachment(path=test_base_kiln_file)
     attachments = model.collect_attachments_from_fields()
@@ -83,6 +97,22 @@ def test_collect_attachments_from_fields_single(test_base_kiln_file):
     attachments = model.collect_attachments_from_fields()
     assert len(attachments) == 1
     assert attachments[0].path == test_base_kiln_file
+
+
+def test_collect_attachments_from_fields_single_nested(test_base_kiln_file):
+    model = ModelWithIndirectAttachment(
+        path=test_base_kiln_file,
+        container=ContainerModel(
+            indirect_attachment=KilnAttachmentModel(path=test_base_kiln_file)
+        ),
+        container_optional=ContainerModel(
+            indirect_attachment=KilnAttachmentModel(path=test_base_kiln_file)
+        ),
+    )
+    attachments = model.collect_attachments_from_fields()
+    assert len(attachments) == 2
+    assert attachments[0].path == test_base_kiln_file
+    assert attachments[1].path == test_base_kiln_file
 
 
 def test_collect_attachments_from_fields_list(test_base_kiln_file, test_media_files):
