@@ -1,8 +1,7 @@
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentModel
-from kiln_ai.datamodel.document import Document
-from kiln_ai.datamodel.extraction import ExtractorConfig
+from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.task import Task
 
 

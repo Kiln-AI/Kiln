@@ -8,11 +8,11 @@ from kiln_ai.utils.config import Config
 
 def test_extractor_adapter_from_type():
     Config.shared().gemini_api_key = "test-api-key"
-    extractor_factory = extractor_adapter_from_type(ExtractorType.gemini)
+    extractor_factory = extractor_adapter_from_type(ExtractorType.GEMINI)
     extractor = extractor_factory(
         ExtractorConfig(
             name="test-extractor",
-            extractor_type=ExtractorType.gemini,
+            extractor_type=ExtractorType.GEMINI,
             properties={
                 "model_name": "gemini-2.0-flash",
                 "prompt_for_kind": {
