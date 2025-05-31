@@ -72,15 +72,20 @@ class KilnAttachmentModel(BaseModel):
     path: Path = Field(description="The path to the attachment")
 
     @model_validator(mode="after")
-    def check_file_exists(self) -> Self:
+    def check_file_exists(self, info: ValidationInfo) -> Self:
+        context = info.context or {}
+        if context.get("loading_from_file", False):
+            return self
+        if isinstance(self.path, str):
+            self.path = Path(self.path)
         if not os.path.exists(self.path):
             raise ValueError(f"File does not exist: {self.path}")
         if not os.path.isfile(self.path):
-            raise ValueError(f"File is not a file: {self.path}")
+            raise ValueError(f"Path is not a file: {self.path}")
         return self
 
     @model_serializer
-    def serialize(self, info: SerializationInfo) -> Path | None:
+    def serialize(self, info: SerializationInfo) -> dict[str, Path] | None:
         # when the attachment is optional on the model, we get None here
         if self is None:
             return None
@@ -91,7 +96,7 @@ class KilnAttachmentModel(BaseModel):
         # explicitly set save_attachments to True if they want to save attachments
         save_attachments: bool = context.get("save_attachments", False)
         if not save_attachments:
-            return self.path
+            return {"path": self.path}
 
         dest_path: Path | None = context.get("dest_path", None)
         if not dest_path or not isinstance(dest_path, Path):
@@ -103,16 +108,15 @@ class KilnAttachmentModel(BaseModel):
 
         # the attachment is already in the parent folder, so we don't need to copy it
         if self.path.parent == dest_path:
-            return self.path
+            return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
         new_path = self.copy_file_to(dest_path)
         self.path = new_path.relative_to(dest_path)
 
-        return self.path
+        return {"path": self.path}
 
     def copy_file_to(self, dest_folder: Path) -> Path:
-        # the file is not in the target folder, so we copy it there (and keep the original extension - e.g. .pdf)
         filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
         target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
@@ -121,11 +125,11 @@ class KilnAttachmentModel(BaseModel):
     @classmethod
     def from_data(
         cls, data: str | bytes, mime_type: str, suffix: str | None = None
-    ) -> "KilnAttachmentModel":
-        # mimetype to extension
+    ) -> Self:
+        """Create an attachment from str or byte data, in a temp file. The attachment is persisted to
+        its permanent location when the model is saved.
+        """
         extension = suffix or mimetypes.guess_extension(mime_type) or ".unknown"
-
-        # write to temp file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
         if isinstance(data, str):
             temp_file.write(data.encode("utf-8"))
@@ -135,6 +139,14 @@ class KilnAttachmentModel(BaseModel):
         return cls(path=Path(temp_file.name))
 
     def resolve_path(self, parent_path: Path) -> Path:
+        """
+        Resolve the path of the attachment relative to the parent path. The attachment does not know
+        its parent, so we need to call this to get the full path.
+        Args:
+            parent_path (Path): The path to the parent folder
+        Returns:
+            Path: The resolved path of the attachment
+        """
         return parent_path / self.path
 
 

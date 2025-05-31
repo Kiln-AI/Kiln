@@ -93,7 +93,7 @@ def test_save_to_file_with_attachment_single(
         data = json.load(file)
 
     # the path after saving
-    attachment_path = data["attachment"]
+    attachment_path = data["attachment"]["path"]
 
     # check it is a string, and not an absolute path
     assert isinstance(attachment_path, str)
@@ -121,7 +121,8 @@ def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_
         data = json.load(file)
 
     # check the paths are relative to model.path.parent
-    for attachment_path in data["attachment_list"]:
+    for attachment in data["attachment_list"]:
+        attachment_path = attachment["path"]
         assert isinstance(attachment_path, str)
         assert not Path(attachment_path).is_absolute()
 
@@ -130,7 +131,8 @@ def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_
     assert len(attachment_list) == len(test_media_file_paths)
 
     # check the files are present and correct in model.path.parent
-    for attachment_path in attachment_list:
+    for attachment in attachment_list:
+        attachment_path = attachment["path"]
         # check the path is a string, and not an absolute path
         assert isinstance(attachment_path, str)
         assert not Path(attachment_path).is_absolute()
@@ -163,7 +165,8 @@ def test_save_to_file_with_attachment_dict(test_base_kiln_file, test_media_file_
         data = json.load(file)
 
     # check the paths are relative to model.path.parent
-    for attachment_path in data["attachment_dict"].values():
+    for attachment in data["attachment_dict"].values():
+        attachment_path = attachment["path"]
         assert isinstance(attachment_path, str)
         assert not Path(attachment_path).is_absolute()
 
@@ -172,7 +175,8 @@ def test_save_to_file_with_attachment_dict(test_base_kiln_file, test_media_file_
     assert len(attachment_dict) == len(test_media_file_paths)
 
     # check the files are present and correct in model.path.parent
-    for attachment_path in attachment_dict.values():
+    for attachment in attachment_dict.values():
+        attachment_path = attachment["path"]
         # check the path is a string, and not an absolute path
         assert isinstance(attachment_path, str)
         assert not Path(attachment_path).is_absolute()
@@ -202,12 +206,14 @@ def test_save_to_file_with_indirect_attachment(
         data = json.load(file)
 
     # check the path is relative to model.path.parent
-    assert isinstance(data["container"]["indirect_attachment"], str)
-    assert not Path(data["container"]["indirect_attachment"]).is_absolute()
+    assert isinstance(data["container"]["indirect_attachment"]["path"], str)
+    assert not Path(data["container"]["indirect_attachment"]["path"]).is_absolute()
 
     # check the file is the same as the original
     assert model.path is not None
-    expected_full_path = model.path.parent / data["container"]["indirect_attachment"]
+    expected_full_path = (
+        model.path.parent / data["container"]["indirect_attachment"]["path"]
+    )
     assert expected_full_path.exists()
     assert filecmp.cmp(expected_full_path, test_media_file_document)
 
@@ -232,7 +238,7 @@ def test_save_to_file_with_indirect_attachment_optional(
     # check the file is the same as the original
     assert model.path is not None
     expected_full_path = (
-        model.path.parent / data["container_optional"]["indirect_attachment"]
+        model.path.parent / data["container_optional"]["indirect_attachment"]["path"]
     )
     assert expected_full_path.exists()
     assert filecmp.cmp(expected_full_path, test_media_file_document)
@@ -290,6 +296,36 @@ def test_dump_dest_path(test_base_kiln_file, test_media_file):
 
     # should not raise when dest_path is set
     model.model_dump_json(context={"dest_path": test_base_kiln_file.parent})
+
+
+def test_resolve_path(test_base_kiln_file, test_media_file):
+    model = ModelWithAttachment(
+        path=test_base_kiln_file,
+        attachment=KilnAttachmentModel(path=test_media_file),
+    )
+    assert model.attachment.resolve_path(test_base_kiln_file.parent) == test_media_file
+
+
+def test_create_from_data(test_base_kiln_file, test_media_file_document):
+    with open(test_media_file_document, "rb") as file:
+        data = file.read()
+
+    attachment = KilnAttachmentModel.from_data(data, "application/pdf")
+    assert attachment.path.exists()
+
+    model = ModelWithAttachment(
+        path=test_base_kiln_file,
+        attachment=attachment,
+    )
+    model.save_to_file()
+
+    with open(test_base_kiln_file, "r") as file:
+        data = json.load(file)
+
+    assert str(data["attachment"]["path"]) == str(attachment.path)
+    assert filecmp.cmp(
+        test_media_file_document, attachment.resolve_path(test_base_kiln_file.parent)
+    )
 
 
 def test_attachment_file_does_not_exist(test_base_kiln_file):
