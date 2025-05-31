@@ -2,7 +2,7 @@ import logging
 import tempfile
 from asyncio import Lock
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
@@ -58,10 +58,10 @@ def connect_document_api(app: FastAPI):
                 properties={
                     "model_name": "gemini-2.0-flash",
                     "prompt_for_kind": {
-                        Kind.DOCUMENT: "Extract the text from the document.",
-                        Kind.IMAGE: "Extract the text from the image.",
-                        Kind.VIDEO: "Extract the text from the video.",
-                        Kind.AUDIO: "Extract the text from the audio.",
+                        Kind.DOCUMENT: "Transcribe the document into markdown.",
+                        Kind.IMAGE: "Describe the image.",
+                        Kind.VIDEO: "Describe the video.",
+                        Kind.AUDIO: "Describe the audio.",
                     },
                 },
             )
@@ -90,3 +90,17 @@ def connect_document_api(app: FastAPI):
                 pass
 
             return document
+
+    @app.get("/api/projects/{project_id}/documents")
+    async def get_documents(
+        project_id: str,
+    ) -> List[Document] | None:
+        project = project_from_id(project_id)
+        if not project:
+            raise HTTPException(
+                status_code=404, detail=f"Project not found: {project_id}"
+            )
+
+        documents = project.documents()
+
+        return documents
