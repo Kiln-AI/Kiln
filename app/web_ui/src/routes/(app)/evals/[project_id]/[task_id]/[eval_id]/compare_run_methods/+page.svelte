@@ -32,6 +32,7 @@
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import { _ } from "svelte-i18n"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -173,7 +174,10 @@
   async function get_score_summary() {
     score_summary = null
     if (!current_eval_config_id) {
-      score_summary_error = new KilnError("No evaluation method selected", null)
+      score_summary_error = new KilnError(
+        $_("errors.no_evaluation_method_selected"),
+        null,
+      )
       return
     }
     try {
@@ -294,8 +298,10 @@
     if (!eval_config) {
       return [
         {
-          name: "No Config Selected",
-          value: "Select a config from dropdown above",
+          name: $_("errors.no_evaluation_method_selected"),
+          value: $_(
+            "evaluation.compare_run_methods.select_config_from_dropdown",
+          ),
         },
       ]
     }
@@ -303,15 +309,15 @@
     const properties: UiProperty[] = []
 
     properties.push({
-      name: "Algorithm",
+      name: $_("evaluation.results.properties.algorithm"),
       value: eval_config_to_ui_name(eval_config.config_type),
     })
     properties.push({
-      name: "Eval Model",
+      name: $_("evaluation.compare_run_methods.eval_model"),
       value: model_name(eval_config.model_name, model_info),
     })
     properties.push({
-      name: "Model Provider",
+      name: $_("evaluation.results.properties.model_provider"),
       value: provider_name_from_id(eval_config.model_provider),
     })
     return properties
@@ -329,9 +335,15 @@
 
     const results: [string, [unknown, string][]][] = []
     if (configs_options.length > 0) {
-      results.push(["Select Eval Method", configs_options])
+      results.push([
+        $_("evaluation.compare_run_methods.select_eval_method"),
+        configs_options,
+      ])
     }
-    results.push(["Manage Eval Methods", [["add_config", "Add Eval Method"]]])
+    results.push([
+      $_("evaluation.compare_run_methods.manage_eval_methods"),
+      [["add_config", $_("evaluation.add_eval_method")]],
+    ])
     return results
   }
 
@@ -355,7 +367,10 @@
       !task_run_config_provider_name ||
       !task_run_config_prompt_method
     ) {
-      add_task_config_error = new KilnError("Missing required fields", null)
+      add_task_config_error = new KilnError(
+        $_("errors.missing_required_fields"),
+        null,
+      )
       return false
     }
 
@@ -438,13 +453,13 @@
 </script>
 
 <AppPage
-  title="Compare Run Methods"
-  subtitle="Find the best method of running your task."
-  sub_subtitle="Read the Docs"
+  title={$_("evaluation.compare_run_methods.title")}
+  subtitle={$_("evaluation.compare_run_methods.subtitle")}
+  sub_subtitle={$_("evaluation.compare_run_methods.sub_subtitle")}
   sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-run-method"
   action_buttons={[
     {
-      label: "Compare Evaluation Methods",
+      label: $_("evaluation.compare_run_methods.compare_eval_methods_button"),
       href: `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`,
       primary: !has_default_eval_config,
     },
@@ -458,24 +473,26 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Evaluator</div>
+      <div class="font-medium">{$_("errors.loading_task")}</div>
       <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+        {error.getMessage() || $_("errors.unknown_error")}
       </div>
     </div>
   {:else if evaluator}
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
       <div class="grow flex flex-col gap-4">
         <div>
-          <div class="text-xl font-bold">Evaluation Method</div>
+          <div class="text-xl font-bold">
+            {$_("evaluation.compare_run_methods.evaluation_method_section")}
+          </div>
           <div class="text-sm text-gray-500 mb-2">
-            How the task outputs will be evaluated for the comparison.
+            {$_("evaluation.compare_run_methods.evaluation_method_desc")}
           </div>
 
           <FormElement
             hide_label={true}
             id="eval_config_select"
-            label="Eval Method"
+            label={$_("evaluation.add_eval_method")}
             inputType="select"
             bind:value={current_eval_config_id}
             select_options_grouped={get_eval_config_select_options(
@@ -484,13 +501,17 @@
           />
           {#if !has_default_eval_config}
             <Warning
-              warning_message="No default evaluation method selected. We recommend using 'Compare Evaluation Methods' and selecting the best performing method as the default."
+              warning_message={$_(
+                "evaluation.compare_run_methods.no_default_warning",
+              )}
               warning_color="warning"
               tight={true}
             />
           {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
             <Warning
-              warning_message="The currently selected evaluation method is not the default. You can change the default in 'Compare Evaluation Methods'."
+              warning_message={$_(
+                "evaluation.compare_run_methods.not_default_warning",
+              )}
               warning_color="warning"
               tight={true}
             />
@@ -505,13 +526,15 @@
               {property.value}
             </div>
           {/each}
-          <div class="flex items-center">Eval Method Quality</div>
+          <div class="flex items-center">
+            {$_("evaluation.compare_run_methods.eval_method_quality")}
+          </div>
           <div class="flex items-center text-gray-500 overflow-x-hidden">
             <a
               href={`/evals/${project_id}/${task_id}/${eval_id}/eval_configs`}
               class="link"
             >
-              Compare and optimize
+              {$_("evaluation.compare_run_methods.compare_and_optimize")}
             </a>
           </div>
         </div>
@@ -521,20 +544,29 @@
       {#if task_run_configs?.length}
         <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
           <div class="grow">
-            <div class="text-xl font-bold">Run Methods</div>
+            <div class="text-xl font-bold">
+              {$_("evaluation.compare_run_methods.run_methods_section")}
+            </div>
             <div class="text-xs text-gray-500">
-              Find the best method of running your task comparing various
-              prompts, models, fine-tunes, and more.
+              {$_("evaluation.compare_run_methods.run_methods_desc")}
               <InfoTooltip
-                tooltip_text={`Scores are generated by running each 'run method' on each item of your eval dataset, generating task outputs. Then those outputs are evaluated with the selected evaluation method (${current_eval_config?.name || "select above"}).`}
+                tooltip_text={$_(
+                  "evaluation.compare_run_methods.run_methods_tooltip",
+                  {
+                    values: {
+                      eval_name:
+                        current_eval_config?.name ||
+                        $_("evaluation.compare_run_methods.select_above"),
+                    },
+                  },
+                )}
                 position="left"
                 no_pad={true}
               />
             </div>
             {#if score_summary_error}
               <div class="text-error text-sm">
-                {score_summary_error.getMessage() ||
-                  "An unknown error occurred fetching scores."}
+                {score_summary_error.getMessage() || $_("errors.unknown_error")}
               </div>
             {/if}
           </div>
@@ -543,7 +575,7 @@
               class="btn btn-mid mr-2"
               on:click={() => {
                 add_task_config_dialog?.show()
-              }}>Add Run Method</button
+              }}>{$_("evaluation.compare_run_methods.add_run_method")}</button
             >
             <RunEval
               bind:eval_state
@@ -560,10 +592,12 @@
           <div class="mt-6 mb-4">
             <button
               class="tooltip tooltip-top cursor-pointer"
-              data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
+              data-tip={$_("evaluation.compare_run_methods.incomplete_tooltip")}
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run Eval' to generate missing results.`}
+                warning_message={$_(
+                  "evaluation.compare_run_methods.incomplete_warning",
+                )}
                 tight={true}
               />
             </button>
@@ -571,7 +605,9 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as default' below to select a winner."
+              warning_message={$_(
+                "evaluation.compare_run_methods.select_winner_warning",
+              )}
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon="info"
               large_icon={focus_select_eval_config}
@@ -585,8 +621,14 @@
             <thead>
               <tr>
                 <th>
-                  <div>Run Method</div>
-                  <div class="font-normal">How task output is generated</div>
+                  <div>
+                    {$_("evaluation.compare_run_methods.run_method_column")}
+                  </div>
+                  <div class="font-normal">
+                    {$_(
+                      "evaluation.compare_run_methods.run_method_column_desc",
+                    )}
+                  </div>
                 </th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
@@ -626,7 +668,7 @@
                     </div>
 
                     <div class="text-sm text-gray-500">
-                      Prompt:
+                      {$_("evaluation.compare_run_methods.prompt_label")}
                       {#if task_run_config?.prompt?.generator_id && task_run_config?.run_config_properties?.prompt_id?.startsWith("task_run_config::")}
                         <!-- Special description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
                         {prompt_name_from_id(
@@ -634,9 +676,10 @@
                           $current_task_prompts,
                         )}
                         <InfoTooltip
-                          tooltip_text={'The exact prompt was saved under the name "' +
-                            prompt_name +
-                            '". See the Prompt tab for details.'}
+                          tooltip_text={$_(
+                            "evaluation.compare_run_methods.prompt_frozen_tooltip",
+                            { values: { prompt_name } },
+                          )}
                           position="right"
                           no_pad={true}
                         />
@@ -645,23 +688,30 @@
                       {/if}
                     </div>
                     <div class="text-sm text-gray-500">
-                      Provider: {provider_name_from_id(
+                      {$_("evaluation.compare_run_methods.provider_label")}
+                      {provider_name_from_id(
                         task_run_config?.run_config_properties
                           ?.model_provider_name,
                       )}
                     </div>
                     <div class="text-sm text-gray-500">
-                      Run Method Name: {task_run_config.name}
+                      {$_(
+                        "evaluation.compare_run_methods.run_method_name_label",
+                      )}
+                      {task_run_config.name}
                     </div>
                     {#if percent_complete}
                       {#if percent_complete < 1.0}
                         <div class="text-sm 'text-error'">
-                          Progress: {(percent_complete * 100.0).toFixed(1)}%
+                          {$_("evaluation.compare_run_methods.progress_label")}
+                          {(percent_complete * 100.0).toFixed(1)}%
                         </div>
                       {/if}
                     {:else if score_summary}
                       <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">Progress: 0%</div>
+                      <div class="text-sm text-error">
+                        {$_("evaluation.compare_run_methods.progress_label")} 0%
+                      </div>
                     {/if}
                     {#if task_run_config.id == evaluator.current_run_config_id}
                       <button
@@ -671,7 +721,8 @@
                           set_current_run_config("None")
                         }}
                       >
-                        Default <span class="pl-2">&#x2715;</span>
+                        {$_("evaluation.compare_run_methods.default_badge")}
+                        <span class="pl-2">&#x2715;</span>
                       </button>
                     {:else}
                       <button
@@ -683,7 +734,7 @@
                           set_current_run_config(task_run_config.id)
                         }}
                       >
-                        Set as default
+                        {$_("evaluation.compare_run_methods.set_as_default")}
                       </button>
                     {/if}
                   </td>
@@ -693,7 +744,9 @@
                         string_to_json_key(output_score.name)
                       ]?.mean_score}
                     <td class="text-center">
-                      {score != null ? score.toFixed(2) : "unknown"}
+                      {score != null
+                        ? score.toFixed(2)
+                        : $_("formatters.unknown").toLowerCase()}
                     </td>
                   {/each}
                 </tr>
@@ -702,11 +755,11 @@
           </table>
         </div>
       {:else}
-        <div class="text-xl font-bold">Compare Run Methods</div>
+        <div class="text-xl font-bold">
+          {$_("evaluation.compare_run_methods.no_run_methods_title")}
+        </div>
         <div class="text-sm text-gray-500">
-          Find the best method of running your task comparing various prompts,
-          models, fine-tunes, and more. Add one or more task run methods to get
-          started.
+          {$_("evaluation.compare_run_methods.no_run_methods_desc")}
         </div>
 
         <button
@@ -717,7 +770,7 @@
             add_task_config_dialog?.show()
           }}
         >
-          Add Run Method
+          {$_("evaluation.compare_run_methods.add_run_method")}
         </button>
       {/if}
     </div>
@@ -726,25 +779,24 @@
 
 <Dialog
   bind:this={add_task_config_dialog}
-  title="Add a Task Run Method"
+  title={$_("evaluation.compare_run_methods.add_task_config_dialog.title")}
   action_buttons={[
     {
-      label: "Cancel",
+      label: $_("common.cancel"),
       isCancel: true,
     },
     {
-      label: "Create",
+      label: $_("common.create"),
       isPrimary: true,
       asyncAction: add_task_config,
     },
   ]}
 >
   <h4 class="text-sm text-gray-500">
-    Define a method of running this task (model+prompt).
+    {$_("evaluation.compare_run_methods.add_task_config_dialog.description")}
   </h4>
   <h4 class="text-sm text-gray-500 mt-1">
-    Your evaluator can compare multiple run methods to find which one produces
-    the highest scores on your eval dataset.
+    {$_("evaluation.compare_run_methods.add_task_config_dialog.description2")}
   </h4>
   <div class="flex flex-col gap-2 pt-6">
     <AvailableModelsDropdown
@@ -758,7 +810,7 @@
     />
     {#if add_task_config_error}
       <div class="text-error text-sm">
-        {add_task_config_error.getMessage() || "An unknown error occurred"}
+        {add_task_config_error.getMessage() || $_("errors.unknown_error")}
       </div>
     {/if}
   </div>

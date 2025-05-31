@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
+
   export let project_id: string
   export let task_id: string
 </script>
@@ -47,28 +49,25 @@
       </svg>
     </div>
     <div class="font-medium text-lg">
-      Improve Quality and Move Faster with Evaluations
+      {$_("evaluation.improve_quality")}
     </div>
-    <div>Create powerful evaluators using LLMs to judge performance.</div>
+    <div>{$_("evaluation.create_powerful_evaluators")}</div>
     <div>
-      Quickly compare many approaches to find what works best for your task.
+      {$_("evaluation.compare_approaches")}
     </div>
     <div>
-      Ensure quality over time, back testing prior bugs and benchmarking new
-      approaches.
+      {$_("evaluation.ensure_quality")}
     </div>
     <a
       href={`/evals/${project_id}/${task_id}/create_evaluator`}
-      class="btn btn-primary mt-2"
+      class="btn btn-primary mt-2">{$_("evaluation.create_eval")}</a
     >
-      Create an Evaluator
-    </a>
     <a
       href="https://docs.getkiln.ai/docs/evaluations"
       class="btn"
       target="_blank"
     >
-      Evals Guide
+      {$_("evaluation.evals_guide")}
     </a>
   </div>
 </div>

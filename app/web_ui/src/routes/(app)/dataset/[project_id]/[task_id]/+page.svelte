@@ -12,6 +12,7 @@
   import { replaceState } from "$app/navigation"
   import TagDropdown from "../../../run/tag_dropdown.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { _ } from "svelte-i18n"
 
   let runs: RunSummary[] | null = null
   let filtered_runs: RunSummary[] | null = null
@@ -51,13 +52,13 @@
   $: task_id = $page.params.task_id
 
   const columns = [
-    { key: "rating", label: "Rating" },
-    { key: "repairState", label: "Repair State" },
-    { key: "source", label: "Source" },
-    { key: "model", label: "Model" },
-    { key: "created_at", label: "Created At" },
-    { key: "inputPreview", label: "Input Preview" },
-    { key: "outputPreview", label: "Output Preview" },
+    { key: "rating", label: $_("dataset.rating") },
+    { key: "repairState", label: $_("dataset.repair_state") },
+    { key: "source", label: $_("dataset.source") },
+    { key: "model", label: $_("dataset.model") },
+    { key: "created_at", label: $_("dataset.created_at") },
+    { key: "inputPreview", label: $_("dataset.input_preview") },
+    { key: "outputPreview", label: $_("dataset.output_preview") },
   ]
 
   onMount(async () => {
@@ -89,10 +90,7 @@
       sortRuns()
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
-        error = new KilnError(
-          "Could not load dataset. It may belong to a project you don't have access to.",
-          null,
-        )
+        error = new KilnError($_("dataset.error_loading"), null)
       } else {
         error = createKilnError(e)
       }
@@ -479,13 +477,13 @@
 </script>
 
 <AppPage
-  title="Dataset"
-  sub_subtitle="Read the Docs"
+  title={$_("dataset.title")}
+  sub_subtitle={$_("dataset.read_the_docs")}
   sub_subtitle_link="https://docs.getkiln.ai/docs/organizing-datasets"
   no_y_padding
   action_buttons={[
     {
-      label: "Add Data",
+      label: $_("dataset.add_data"),
       href: `/dataset/${project_id}/${task_id}/add_data`,
     },
   ]}
@@ -519,7 +517,7 @@
               >
                 <li>
                   <button tabindex="0" on:click={() => show_add_tags_modal()}>
-                    Add Tags
+                    {$_("dataset.add_tags_to_runs")}
                   </button>
                 </li>
                 <li>
@@ -527,7 +525,7 @@
                     tabindex="0"
                     on:click={() => show_remove_tags_modal()}
                   >
-                    Remove Tags
+                    {$_("dataset.remove_tags_from_runs")}
                   </button>
                 </li>
               </ul>
@@ -540,11 +538,12 @@
             </button>
           {/if}
           <button class="btn btn-mid" on:click={() => (select_mode = false)}>
-            Cancel Selection
+            {$_("common.cancel")}
+            {$_("common.select")}
           </button>
         {:else}
           <button class="btn btn-mid" on:click={() => (select_mode = true)}>
-            Select
+            {$_("common.select")}
           </button>
           <button
             class="btn btn-mid !px-3"
@@ -618,8 +617,8 @@
                   {run.rating && run.rating.value
                     ? run.rating.type === "five_star"
                       ? "★".repeat(run.rating.value)
-                      : run.rating.value + "(custom score)"
-                    : "Unrated"}
+                      : run.rating.value + " ({$_('rating.custom_score')})"
+                    : $_("rating.unrated")}
                 </td>
                 <td>{run.repair_state}</td>
                 <td>{run.input_source}</td>
@@ -628,10 +627,10 @@
                 </td>
                 <td>{formatDate(run.created_at)}</td>
                 <td class="break-words max-w-48">
-                  {run.input_preview || "No input"}
+                  {run.input_preview || $_("dataset.no_input")}
                 </td>
                 <td class="break-words max-w-48">
-                  {run.output_preview || "No output"}
+                  {run.output_preview || $_("dataset.no_output")}
                 </td>
               </tr>
             {/each}
@@ -658,9 +657,9 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Dataset</div>
+      <div class="font-medium">{$_("dataset.error_loading")}</div>
       <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+        {error.getMessage() || $_("errors.unknown_error")}
       </div>
     </div>
   {/if}
@@ -668,11 +667,11 @@
 
 <Dialog
   bind:this={filter_tags_dialog}
-  title="Filter Dataset by Tags"
-  action_buttons={[{ label: "Close", isCancel: true }]}
+  title={$_("dataset.filter_by_tags")}
+  action_buttons={[{ label: $_("common.close"), isCancel: true }]}
 >
   {#if filter_tags.length > 0}
-    <div class="text-sm mb-2 font-medium">Current Filters:</div>
+    <div class="text-sm mb-2 font-medium">{$_("dataset.current_filters")}</div>
   {/if}
   <div class="flex flex-row gap-2 flex-wrap">
     {#each filter_tags as tag}
@@ -686,10 +685,10 @@
     {/each}
   </div>
 
-  <div class="text-sm mt-4 mb-2 font-medium">Add a filter:</div>
+  <div class="text-sm mt-4 mb-2 font-medium">{$_("dataset.add_filter")}</div>
   {#if Object.keys(available_filter_tags).length == 0}
     <p class="text-sm text-gray-500">
-      Any further filters would show zero results.
+      {$_("dataset.no_more_filters")}
     </p>
   {/if}
   <div class="flex flex-row gap-2 flex-wrap">
@@ -705,25 +704,31 @@
 <Dialog
   bind:this={delete_dialog}
   title={selected_runs.size > 1
-    ? "Delete " + selected_runs.size + " Runs"
-    : "Delete Run"}
+    ? $_("dataset.delete_runs")
+    : $_("dataset.delete_run")}
   action_buttons={[
-    { label: "Cancel", isCancel: true },
-    { label: "Delete", asyncAction: () => delete_runs(), isError: true },
+    { label: $_("common.cancel"), isCancel: true },
+    {
+      label: $_("common.delete"),
+      asyncAction: () => delete_runs(),
+      isError: true,
+    },
   ]}
 >
-  <div class="text-sm font-light text-gray-500">This cannot be undone.</div>
+  <div class="text-sm font-light text-gray-500">
+    {$_("dataset.cannot_undo")}
+  </div>
 </Dialog>
 
 <Dialog
   bind:this={add_tags_dialog}
   title={selected_runs.size > 1
-    ? "Add Tags to " + selected_runs.size + " Runs"
-    : "Add Tags to Run"}
+    ? $_("dataset.add_tags_to_runs")
+    : $_("dataset.add_tags_to_run")}
   action_buttons={[
-    { label: "Cancel", isCancel: true },
+    { label: $_("common.cancel"), isCancel: true },
     {
-      label: "Add Tags",
+      label: $_("common.add") + " " + $_("common.tags"),
       asyncAction: add_selected_tags,
       disabled: add_tags.size == 0 && !current_tag,
       isPrimary: true,
@@ -732,7 +737,7 @@
 >
   <div>
     <div class="text-sm font-light text-gray-500 mb-2">
-      Tags can be used to organize you dataset.
+      {$_("dataset.tags_organize")}
     </div>
     <div class="flex flex-row flex-wrap gap-2 mt-2">
       {#each Array.from(add_tags).sort() as tag}
@@ -785,12 +790,12 @@
 <Dialog
   bind:this={remove_tags_dialog}
   title={selected_runs.size > 1
-    ? "Remove Tags from " + selected_runs.size + " Runs"
-    : "Remove Tags from Run"}
+    ? $_("dataset.remove_tags_from_runs")
+    : $_("dataset.remove_tags_from_run")}
   action_buttons={[
-    { label: "Cancel", isCancel: true },
+    { label: $_("common.cancel"), isCancel: true },
     {
-      label: "Remove Tags",
+      label: $_("dataset.remove_tags_from_runs"),
       asyncAction: () => remove_selected_tags(),
       disabled: remove_tags.size == 0,
       isError: true,
@@ -799,10 +804,10 @@
 >
   <div>
     <div class="text-sm font-light text-gray-500 mt-6">
-      Selected tags to remove:
+      {$_("dataset.selected_tags_remove")}
     </div>
     {#if remove_tags.size == 0}
-      <div class="text-xs font-medium">No tags selected.</div>
+      <div class="text-xs font-medium">{$_("dataset.no_tags_selected")}</div>
     {:else}
       <div class="flex flex-row flex-wrap gap-2 mt-2">
         {#each Array.from(remove_tags).sort() as tag}
@@ -820,12 +825,14 @@
         {/each}
       </div>
     {/if}
-    <div class="text-sm font-light text-gray-500 mt-6">Available tags:</div>
+    <div class="text-sm font-light text-gray-500 mt-6">
+      {$_("dataset.available_tags")}
+    </div>
     {#if Object.keys(removeable_tags).length == 0 && remove_tags.size == 0}
-      <div class="text-xs font-medium">No tags on selected runs.</div>
+      <div class="text-xs font-medium">{$_("dataset.no_tags_on_runs")}</div>
     {:else if Object.keys(removeable_tags).length == 0}
       <div class="text-xs font-medium">
-        All available tags already selected.
+        {$_("dataset.all_tags_selected")}
       </div>
     {:else}
       <div class="flex flex-row flex-wrap gap-2 mt-2">

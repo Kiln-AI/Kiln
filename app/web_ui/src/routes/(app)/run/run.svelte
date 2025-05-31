@@ -24,6 +24,7 @@
     rating_options_for_sample,
     current_task_rating_options,
   } from "$lib/stores"
+  import { _ } from "svelte-i18n"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -213,13 +214,13 @@
     try {
       repair_submitting = true
       if (!repair_instructions) {
-        throw new KilnError("Repair instructions are required", null)
-      }
-      if (!task.id || !run?.id) {
         throw new KilnError(
-          "This task run isn't saved. Enable Auto-save. You can't repair unsaved runs.",
+          $_("run.repair_instructions") + " " + $_("forms.required"),
           null,
         )
+      }
+      if (!task.id || !run?.id) {
+        throw new KilnError($_("forms.unsaved_changes_warning"), null)
       }
       const {
         data: repair_data, // only present if 2XX response
@@ -278,13 +279,10 @@
       accept_repair_error = null
       accept_repair_submitting = true
       if (!repair_run) {
-        throw new KilnError("No repair to accept", null)
+        throw new KilnError($_("common.error"), null)
       }
       if (!task.id || !run?.id) {
-        throw new KilnError(
-          "This task run isn't saved. Enable Auto-save. You can't accept repairs for unsaved runs.",
-          null,
-        )
+        throw new KilnError($_("forms.unsaved_changes_warning"), null)
       }
       const {
         data, // only present if 2XX response
@@ -320,11 +318,7 @@
   let delete_repair_error: KilnError | null = null
   let delete_repair_submitting = false
   async function delete_repair() {
-    if (
-      !confirm(
-        "Are you sure you want to delete this repair?\n\nThis action cannot be undone.",
-      )
-    ) {
+    if (!confirm($_("run.delete_repair_confirm"))) {
       return
     }
     try {
@@ -352,8 +346,8 @@
   function get_intermediate_output_title(name: string): string {
     return (
       {
-        reasoning: "Model Reasoning Output",
-        chain_of_thought: "Chain of Thought Output",
+        reasoning: $_("run.intermediate_outputs.reasoning"),
+        chain_of_thought: $_("run.intermediate_outputs.chain_of_thought"),
       }[name] || name
     )
   }
@@ -383,7 +377,7 @@
 <div>
   <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
     <div class="grow">
-      <div class="text-xl font-bold mb-1">Output</div>
+      <div class="text-xl font-bold mb-1">{$_("run.output")}</div>
       {#if task.output_json_schema}
         <div class="text-xs font-medium text-gray-500 flex flex-row mb-2">
           <svg
@@ -395,7 +389,7 @@
               d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 24.7655 40.0234 C 23.9687 40.0234 23.3593 39.6719 22.6796 38.8750 L 15.9296 30.5312 C 15.5780 30.0859 15.3671 29.5234 15.3671 29.0078 C 15.3671 27.9063 16.2343 27.0625 17.2655 27.0625 C 17.9452 27.0625 18.5077 27.3203 19.0702 28.0469 L 24.6718 35.2890 L 35.5702 17.8281 C 36.0155 17.1016 36.6249 16.75 37.2343 16.75 C 38.2655 16.75 39.2733 17.4297 39.2733 18.5547 C 39.2733 19.0703 38.9687 19.6328 38.6640 20.1016 L 26.7577 38.8750 C 26.2421 39.6484 25.5858 40.0234 24.7655 40.0234 Z"
             /></svg
           >
-          Structure Valid
+          {$_("run.structure_valid")}
         </div>
       {/if}
       <Output raw_output={run.output.output} />
@@ -405,9 +399,7 @@
             class="text-xs font-bold text-gray-500 mt-4 mb-1 flex flex-row items-center gap-1"
           >
             {get_intermediate_output_title(name)}
-            <InfoTooltip
-              tooltip_text={`This is intermediate output from the model, and not considered part of the final answer. This thinking helped formulate the final answer above. This is known as 'chain of thought', 'thinking output', or 'inference time compute'.`}
-            />
+            <InfoTooltip tooltip_text={$_("run.intermediate_output_tooltip")} />
           </div>
           <Output raw_output={intermediate_output} />
         {/each}
@@ -415,12 +407,16 @@
       <div>
         <div class="mt-2">
           <button class="text-xs link" on:click={toggle_raw_data}
-            >{show_raw_data ? "Hide" : "Show"} Raw Data</button
+            >{show_raw_data
+              ? $_("run.hide_raw_data")
+              : $_("run.show_raw_data")}</button
           >
         </div>
 
         <div class={show_raw_data ? "" : "hidden"}>
-          <h1 class="text-xl font-bold mt-2 mb-2" id="raw_data">Raw Data</h1>
+          <h1 class="text-xl font-bold mt-2 mb-2" id="raw_data">
+            {$_("run.raw_data")}
+          </h1>
           <div class="text-sm">
             <Output raw_output={JSON.stringify(run, null, 2)} />
           </div>
@@ -430,8 +426,9 @@
       {#if !repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
         <div class="grow mt-10">
           <Warning
-            warning_message="Repair is not available for runs from {run.output
-              .source?.type || 'unknown'} sources."
+            warning_message={$_("run.repair_not_available", {
+              values: { source: run.output.source?.type || "unknown" },
+            })}
             warning_color="warning"
             tight={true}
           />
@@ -440,14 +437,13 @@
 
       {#if repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
         <div class="grow mt-10">
-          <div class="text-xl font-bold mb-2">Repair Output</div>
+          <div class="text-xl font-bold mb-2">{$_("run.repair_output")}</div>
           {#if should_offer_repair}
             <p class="text-sm text-gray-500 mb-4">
-              Since the output isn't 5-star, provide instructions for the model
-              on how to fix it.
+              {$_("run.repair_instructions_description")}
             </p>
             <FormContainer
-              submit_label="Attempt Repair"
+              submit_label={$_("run.attempt_repair")}
               on:submit={attempt_repair}
               bind:submitting={repair_submitting}
               bind:error={repair_error}
@@ -455,14 +451,14 @@
             >
               <FormElement
                 id="repair_instructions"
-                label="Repair Instructions"
+                label={$_("run.repair_instructions")}
                 inputType="textarea"
                 bind:value={repair_instructions}
               />
             </FormContainer>
           {:else if repair_edit_mode && repair_run}
             <p class="text-sm text-gray-500 mb-4">
-              Manually improve or correct the response.
+              {$_("run.manual_edit_description")}
             </p>
             <OutputRepairEditForm
               {task}
@@ -475,24 +471,32 @@
             />
           {:else if repair_review_available}
             <p class="text-sm text-gray-500 mb-4">
-              The model has attempted to fix the output given <span
+              {$_("run.repair_review_description")}
+              <span
                 class="tooltip link"
-                data-tip="The instructions you provided to the model: {repair_instructions ||
-                  'No instruction provided'}">your instructions</span
-              >. Review the result.
+                data-tip={$_("run.your_instructions") +
+                  ": " +
+                  (repair_instructions || $_("run.no_instruction_provided"))}
+                >{$_("run.your_instructions")}</span
+              >.
             </p>
             <Output raw_output={repair_run?.output.output || ""} />
           {:else if repair_complete}
             {#if repair_source?.type === "user"}
               <p class="text-sm text-gray-500 mb-4">
-                This repaired output was provided by {repair_source.name}.
+                {$_("run.repair_complete_user", {
+                  values: { name: repair_source.name },
+                })}
               </p>
             {:else}
               <p class="text-sm text-gray-500 mb-4">
-                The model has fixed the output given <span
+                {$_("run.repair_complete_model")}
+                <span
                   class="tooltip link"
-                  data-tip="The instructions you provided to the model: {repair_instructions ||
-                    'No instruction provided'}">your instructions</span
+                  data-tip={$_("run.your_instructions") +
+                    ": " +
+                    (repair_instructions || $_("run.no_instruction_provided"))}
+                  >{$_("run.your_instructions")}</span
                 >.
               </p>
             {/if}
@@ -502,12 +506,12 @@
                 <span class="loading loading-spinner loading-sm"></span>
               {:else if delete_repair_error}
                 <p class="text-error">
-                  Error Deleting Repair:
+                  {$_("run.error_deleting_repair")}
                   {delete_repair_error.getMessage()}
                 </p>
               {:else}
                 <button class="link" on:click={delete_repair}
-                  >Delete Repair</button
+                  >{$_("run.delete_repair")}</button
                 >
               {/if}
             </div>
@@ -516,9 +520,12 @@
         {#if repair_review_available && !repair_edit_mode}
           <div class="mt-4">
             <div class="flex flex-row gap-4 justify-between">
-              <button class="btn" on:click={show_repair_edit}>Edit</button>
+              <button class="btn" on:click={show_repair_edit}
+                >{$_("common.edit")}</button
+              >
               <div class="flex flex-row gap-4">
-                <button class="btn" on:click={retry_repair}>Retry Repair</button
+                <button class="btn" on:click={retry_repair}
+                  >{$_("run.retry_repair")}</button
                 >
                 <button
                   class="btn btn-primary"
@@ -528,7 +535,7 @@
                   {#if accept_repair_submitting}
                     <span class="loading loading-spinner loading-sm"></span>
                   {:else}
-                    Accept Repair (5 Stars)
+                    {$_("run.accept_repair")}
                   {/if}
                 </button>
               </div>
@@ -536,7 +543,7 @@
 
             {#if accept_repair_error}
               <p class="mt-2 text-error font-medium text-sm">
-                Error Accepting Repair<br />
+                {$_("run.error_accepting_repair")}<br />
                 <span class="text-error text-xs font-normal">
                   {accept_repair_error.getMessage()}</span
                 >
@@ -549,7 +556,7 @@
 
     <div class="w-72 2xl:w-96 flex-none">
       <div class="text-xl font-bold mt-10 lg:mt-0 mb-6">
-        Output Rating
+        {$_("run.output_rating")}
         {#if save_rating_error}
           <button class="tooltip" data-tip={save_rating_error.getMessage()}>
             <svg
@@ -589,7 +596,7 @@
             <div class="flex items-center">
               {requirement.name}:
               <InfoTooltip
-                tooltip_text={`Requirement #${index + 1} - ${requirement.instruction || "No instruction provided"}${requirement.type === "pass_fail_critical" ? " Use 'critical' rating for responses which are never tolerable, beyond a typical failure." : ""}`}
+                tooltip_text={`${$_("forms.required_field")} #${index + 1} - ${requirement.instruction || $_("run.no_instruction_provided")}${requirement.type === "pass_fail_critical" ? " " + $_("rating.critical") + " rating for responses which are never tolerable, beyond a typical failure." : ""}`}
               />
             </div>
             <div class="flex items-center">
@@ -603,7 +610,7 @@
           {/each}
         {/if}
         <div class="font-medium flex items-center text-nowrap 2xl:min-w-32">
-          Overall Rating:
+          {$_("run.overall_rating")}
         </div>
         <div class="flex items-center">
           <Rating
@@ -615,7 +622,7 @@
         </div>
       </div>
       <div class="mt-8 mb-4">
-        <div class="text-xl font-bold">Tags</div>
+        <div class="text-xl font-bold">{$_("common.tags")}</div>
         {#if tags_error}
           <p class="text-error text-sm">
             {tags_error.getMessage()}

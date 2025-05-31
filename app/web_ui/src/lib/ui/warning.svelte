@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
+
   export let warning_message: string | undefined | null = undefined
   export let warning_color:
     | "error"
@@ -65,6 +67,10 @@
         viewBox="0 0 256 256"
         id="Flat"
         xmlns="http://www.w3.org/2000/svg"
+        aria-label={warning_icon === "info"
+          ? $_("ui.warning.info_icon_alt")
+          : $_("ui.warning.exclamation_icon_alt")}
+        role="img"
       >
         <path
           d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
@@ -79,6 +85,8 @@
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        aria-label={$_("ui.warning.check_icon_alt")}
+        role="img"
       >
         <path
           d="M16 9L10 15.5L7.5 13M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"

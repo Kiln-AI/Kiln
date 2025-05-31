@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest"
 import { check_for_update, semantic_version_compare } from "./update"
+import { _, init, waitLocale } from "svelte-i18n"
+import { KilnError } from "./error_handlers"
+
+import "../i18n"
 
 // Mock the app_version
 vi.mock("./update", async (importOriginal) => {
@@ -11,6 +15,11 @@ vi.mock("./update", async (importOriginal) => {
 })
 
 describe("update utilities", () => {
+  beforeAll(async () => {
+    // Wait for i18n to be initialized
+    await waitLocale()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -56,8 +65,11 @@ describe("update utilities", () => {
       global.fetch = vi.fn().mockRejectedValue(new Error("Network error"))
 
       const result = await check_for_update()
-      expect(result).toHaveProperty("message")
-      expect(result).toHaveProperty("name", "KilnError")
+      expect(result).toBeInstanceOf(KilnError)
+      if (result instanceof KilnError) {
+        expect(result).toHaveProperty("message")
+        expect(result).toHaveProperty("name")
+      }
     })
 
     it("should handle invalid response data", async () => {
@@ -69,8 +81,15 @@ describe("update utilities", () => {
       })
 
       const result = await check_for_update()
-      expect(result).toHaveProperty("message", "Failed to fetch update data")
-      expect(result).toHaveProperty("name", "KilnError")
+      expect(result).toBeInstanceOf(KilnError)
+      if (result instanceof KilnError) {
+        expect(result).toHaveProperty("message")
+        expect(result).toHaveProperty("name")
+        // The error message should be the translated version
+        expect(result.message).toMatch(
+          /Failed to fetch update data|获取更新数据失败/,
+        )
+      }
     })
   })
 

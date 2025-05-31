@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { _ } from "svelte-i18n"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -35,58 +36,59 @@
     </div>
 
     {#if let_me_in || reason}
-      <div class="font-medium text-lg">Synthetic Data Tips</div>
+      <div class="font-medium text-lg">
+        {$_("data_generation.intro.synthetic_data_tips")}
+      </div>
       <div>
-        1. Adding topics will help generate diverse data. They can be nested,
-        forming a topic tree. <a
+        1. {$_("data_generation.intro.tip_1")}
+        <a
           href="https://docs.getkiln.ai/docs/synthetic-data-generation#topic-tree-data-generation"
           target="_blank"
-          class="link">Guide</a
+          class="link">{$_("data_generation.intro.guide")}</a
         >.
       </div>
       <div>
-        2. Adding human guidance can shape and improve the AI-generated data.
+        2. {$_("data_generation.intro.tip_2")}
         <a
           href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
           target="_blank"
-          class="link">Guide</a
+          class="link">{$_("data_generation.intro.guide")}</a
         >.
       </div>
       <button class="btn btn-primary" on:click={() => generate_subtopics()}>
-        Add Top Level Topics
+        {$_("data_generation.add_top_level_topics")}
       </button>
       <button class="btn" on:click={() => generate_samples()}>
-        Add Top Level Data
+        {$_("data_generation.add_top_level_data")}
       </button>
       <a
         href="https://docs.getkiln.ai/docs/synthetic-data-generation"
         target="_blank"
         class="btn"
       >
-        Read the Docs
+        {$_("data_generation.intro.read_the_docs")}
       </a>
     {:else}
       <div class="font-medium text-lg">
-        Generate Synthetic Data for Training or Evaluations
+        {$_("data_generation.intro.generate_title")}
       </div>
       <div>
-        We suggest adding synthetic data as part of creating an eval or creating
-        a fine-tuning training set.
+        {$_("data_generation.intro.generate_description")}
       </div>
       <a
         class="btn btn-primary"
         href={`/evals/${project_id}/${task_id}/create_evaluator`}
       >
-        Create an Eval
+        {$_("data_generation.intro.create_eval")}
       </a>
       <a
         class="btn btn-primary"
         href={`/fine_tune/${project_id}/${task_id}/create_finetune`}
       >
-        Create a Fine-Tune
+        {$_("data_generation.intro.create_finetune")}
       </a>
       <button class="btn" on:click={() => (let_me_in = true)}
-        >Proceed to Generator</button
+        >{$_("data_generation.intro.proceed_to_generator")}</button
       >
     {/if}
   </div>

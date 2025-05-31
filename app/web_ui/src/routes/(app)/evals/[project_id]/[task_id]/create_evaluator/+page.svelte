@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   import AppPage from "../../../../app_page.svelte"
   import SelectEvalTemplate from "./select_eval_template.svelte"
   import type { EvalOutputScore, EvalTemplateId } from "$lib/types"
@@ -64,7 +65,7 @@
     create_evaluator_loading = true
     try {
       if (!eval_dataset || !config_dataset) {
-        throw new Error("Please select both evaluation and config datasets")
+        throw new Error($_("evaluation.create_evaluator.select_datasets_error"))
       }
       // Validate the dataset filters
       let eval_configs_filter_id =
@@ -140,8 +141,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Create a New Evaluator"
-    subtitle="Evaluators judge task performance and help you find the best method of running your task."
+    title={$_("evaluation.create_evaluator.title")}
+    subtitle={$_("evaluation.create_evaluator.subtitle")}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -151,9 +152,12 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">Error Loading Task Information</div>
+        <div class="font-medium">
+          {$_("evaluation.create_evaluator.error_loading_task")}
+        </div>
         <div class="text-error text-sm">
-          {loading_error?.getMessage() || "An unknown error occurred"}
+          {loading_error?.getMessage() ||
+            $_("evaluation.create_evaluator.unknown_error")}
         </div>
       </div>
     {:else if !selected_template}
@@ -163,7 +167,7 @@
       />
     {:else}
       <FormContainer
-        submit_label="Create Evaluator"
+        submit_label={$_("evaluation.create_evaluator.create_evaluator")}
         on:submit={create_evaluator}
         bind:error={create_evaluator_error}
         bind:submitting={create_evaluator_loading}
@@ -174,17 +178,23 @@
             (output_scores.length > 0 && output_scores[0].name))
         )}
       >
-        <div class="text-xl font-bold">Part 1: Evaluator Details</div>
+        <div class="text-xl font-bold">
+          {$_("evaluation.create_evaluator.part1_title")}
+        </div>
         <FormElement
-          label="Evaluator Name"
-          description="Give your evaluator a name that will help you identify it later."
+          label={$_("evaluation.create_evaluator.evaluator_name")}
+          description={$_(
+            "evaluation.create_evaluator.evaluator_name_description",
+          )}
           inputType="input"
           id="name"
           bind:value={name}
         />
         <FormElement
-          label="Evaluator Description"
-          description="Give your evaluator a description."
+          label={$_("evaluation.create_evaluator.evaluator_description")}
+          description={$_(
+            "evaluation.create_evaluator.evaluator_description_description",
+          )}
           inputType="textarea"
           id="description"
           bind:value={description}
@@ -192,14 +202,16 @@
 
         <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
           <div class="text-xl font-bold" id="requirements_part">
-            Part 2: Evaluator Output Scores
+            {$_("evaluation.create_evaluator.part2_title")}
           </div>
           <div class="text-xs text-gray-500">
-            Define the scores that the evaluator will output.
+            {$_("evaluation.create_evaluator.output_scores_description")}
           </div>
           {#if selected_template !== "none"}
             <Warning
-              warning_message="Since you selected a template, you can't edit these. Use the 'Custom' template to create your own scores."
+              warning_message={$_(
+                "evaluation.create_evaluator.template_warning",
+              )}
               warning_color="warning"
               tight={true}
             />
@@ -208,7 +220,7 @@
 
         <FormList
           bind:content={output_scores}
-          content_label="Output Score"
+          content_label={$_("evaluation.create_evaluator.output_score")}
           let:item_index
           frozen={selected_template !== "none"}
         >
@@ -216,7 +228,7 @@
             <div class="flex flex-row gap-1">
               <div class="grow flex flex-col gap-1">
                 <FormElement
-                  label="Score Name"
+                  label={$_("evaluation.create_evaluator.score_name")}
                   id="score_name_{item_index}"
                   light_label={true}
                   bind:value={output_scores[item_index].name}
@@ -226,14 +238,17 @@
               </div>
               <div class="flex flex-col gap-1">
                 <FormElement
-                  label="Rating Type"
+                  label={$_("evaluation.create_evaluator.rating_type")}
                   inputType="select"
                   id="score_type_{item_index}"
                   light_label={true}
                   select_options={[
-                    ["five_star", "5 Star"],
-                    ["pass_fail", "Pass / Fail"],
-                    ["pass_fail_critical", "Pass / Fail / Critical"],
+                    ["five_star", $_("evaluation.create_evaluator.five_star")],
+                    ["pass_fail", $_("evaluation.create_evaluator.pass_fail")],
+                    [
+                      "pass_fail_critical",
+                      $_("evaluation.create_evaluator.pass_fail_critical"),
+                    ],
                   ]}
                   bind:value={output_scores[item_index].type}
                   disabled={selected_template !== "none"}
@@ -242,7 +257,7 @@
             </div>
             <div class="grow flex flex-col gap-1">
               <FormElement
-                label="Instructions"
+                label={$_("evaluation.create_evaluator.instructions")}
                 inputType="textarea"
                 id="score_instructions_{item_index}"
                 light_label={true}
@@ -255,39 +270,38 @@
 
         <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
           <div class="text-xl font-bold" id="requirements_part">
-            Part 3: Task Evaluation Dataset
+            {$_("evaluation.create_evaluator.part3_title")}
           </div>
           <div class="text-xs text-gray-500">
-            Specify which which part of your dataset is used when evaluating
-            various methods of running your task. You can create this data
-            later.
+            {$_("evaluation.create_evaluator.evaluation_dataset_description")}
           </div>
         </div>
         <FormElement
-          label="Evaluation Dataset"
+          label={$_("evaluation.create_evaluator.evaluation_dataset")}
           inputType="select"
-          info_description="You can populate this dataset later by adding this tag to samples in your dataset."
+          info_description={$_(
+            "evaluation.create_evaluator.evaluation_dataset_info",
+          )}
           id="automatic_validation"
           select_options={[
             [
               "tag::" + suggested_eval_set_tag,
-              "Filter dataset to the '" +
-                suggested_eval_set_tag +
-                "' tag (recommended)",
+              $_("evaluation.create_evaluator.filter_recommended", {
+                values: { tag: suggested_eval_set_tag },
+              }),
             ],
-            ["custom_tag", "Filter dataset by a custom tag"],
-            [
-              "all",
-              "Use every dataset item in the evaluation (not recommended)",
-            ],
+            ["custom_tag", $_("evaluation.create_evaluator.filter_custom")],
+            ["all", $_("evaluation.create_evaluator.use_all_data")],
           ]}
           bind:value={eval_dataset}
         />
 
         {#if eval_dataset === "custom_tag"}
           <FormElement
-            label="Evaluation Dataset Filter Tag"
-            description="Your dataset will be filtered to only include items with this tag."
+            label={$_("evaluation.create_evaluator.custom_tag_label")}
+            description={$_(
+              "evaluation.create_evaluator.custom_tag_description",
+            )}
             id="custom_tag_eval_set"
             bind:value={eval_dataset_custom_tag}
           />
@@ -295,39 +309,38 @@
 
         <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
           <div class="text-xl font-bold" id="requirements_part">
-            Part 4: Dataset to Compare Evaluation Methods
+            {$_("evaluation.create_evaluator.part4_title")}
           </div>
           <div class="text-xs text-gray-500">
-            Specify which which part of your dataset is used when trying to find
-            the best evaluation method for this task. You can create and rate
-            this data later.
+            {$_("evaluation.create_evaluator.eval_method_dataset_description")}
           </div>
         </div>
         <FormElement
-          label="Evaluation Method Dataset"
-          info_description="You can populate this dataset later. We recommend you have a person rate all of the samples in this dataset, so you can compare evaluation methods to human ratings."
+          label={$_("evaluation.create_evaluator.eval_method_dataset")}
+          info_description={$_(
+            "evaluation.create_evaluator.eval_method_dataset_info",
+          )}
           inputType="select"
           id="automatic_validation"
           select_options={[
             [
               "tag::" + suggested_config_set_tag,
-              "Filter dataset to the '" +
-                suggested_config_set_tag +
-                "' tag (recommended)",
+              $_("evaluation.create_evaluator.filter_recommended", {
+                values: { tag: suggested_config_set_tag },
+              }),
             ],
-            ["custom_tag", "Filter dataset by a custom tag"],
-            [
-              "all",
-              "Use every dataset item in the evaluation (not recommended)",
-            ],
+            ["custom_tag", $_("evaluation.create_evaluator.filter_custom")],
+            ["all", $_("evaluation.create_evaluator.use_all_data")],
           ]}
           bind:value={config_dataset}
         />
 
         {#if config_dataset === "custom_tag"}
           <FormElement
-            label="Evaluation Config Dataset Filter Tag"
-            description="Your dataset will be filtered to only include items with this tag."
+            label={$_("evaluation.create_evaluator.config_tag_label")}
+            description={$_(
+              "evaluation.create_evaluator.config_tag_description",
+            )}
             id="custom_tag_eval_set"
             bind:value={config_dataset_custom_tag}
           />

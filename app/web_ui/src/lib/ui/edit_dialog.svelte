@@ -5,6 +5,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { base_url } from "$lib/api_client"
+  import { _ } from "svelte-i18n"
 
   export let name: string
   export let patch_url: string
@@ -53,7 +54,9 @@
         try {
           error_body = await response.json()
         } catch (e) {
-          throw new Error("Failed to save edit. Invalid JSON response.")
+          throw new Error(
+            $_("dialog.save_error") + ". " + $_("errors.invalid_json_response"),
+          )
         }
         throw createKilnError(error_body)
       }
@@ -83,13 +86,13 @@
 </script>
 
 <Dialog
-  title={"Edit " + name}
+  title={$_("dialog.edit_title", { values: { name } })}
   bind:this={dialog}
   header_buttons={delete_url
     ? [
         {
           image_path: "/images/delete.svg",
-          alt_text: "Delete",
+          alt_text: $_("common.delete"),
           action: () => showDeleteDialog(),
         },
       ]
@@ -97,7 +100,7 @@
 >
   <div class="mt-6">
     <FormContainer
-      submit_label="Save"
+      submit_label={$_("common.save")}
       {error}
       on:submit={save}
       submitting={loading}

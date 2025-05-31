@@ -4,6 +4,7 @@
   import FormContainer from "../../../lib/utils/form_container.svelte"
   import { createKilnError, KilnError } from "../../../lib/utils/error_handlers"
   import { client } from "../../../lib/api_client"
+  import { _ } from "svelte-i18n"
 
   export let on_submit: (run: TaskRun) => void
   export let on_cancel: () => void
@@ -95,14 +96,14 @@
 
 <div>
   <FormContainer
-    submit_label="Save Repair (5 stars)"
+    submit_label={$_("run.save_repair")}
     on:submit={handle_submit}
     submitting={post_repair_submitting}
   >
     <FormElement
       id={"repair_manual_output"}
-      label="Manual Repair"
-      info_description="Provide a improvement or correction to the task's output"
+      label={$_("run.manual_repair")}
+      info_description={$_("run.manual_repair_description")}
       inputType="textarea"
       tall={true}
       bind:value={repair_output_edited}
@@ -110,7 +111,7 @@
 
     {#if post_repair_error}
       <p class="text-error font-medium text-sm">
-        Error Saving Repair<br />
+        {$_("run.error_saving_repair")}<br />
         <span class="text-error text-xs font-normal">
           {post_repair_error.getMessage()}</span
         >
@@ -119,7 +120,7 @@
 
     <button
       class="link text-gray-500 text-sm text-right"
-      on:click={handle_cancel}>Cancel</button
+      on:click={handle_cancel}>{$_("common.cancel")}</button
     >
   </FormContainer>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   export let project_id: string
   export let task_id: string
 </script>
@@ -42,13 +43,13 @@
         />
       </svg>
     </div>
-    <div class="font-medium text-lg">Your dataset for this task is empty.</div>
-    <div>Adding data will allow the model to improve at it's task.</div>
-    <div>To get started, generate some synthetic data or add data manually</div>
+    <div class="font-medium text-lg">{$_("dataset.empty_dataset_title")}</div>
+    <div>{$_("dataset.empty_dataset_description")}</div>
+    <div>{$_("dataset.empty_dataset_instruction")}</div>
 
-    <a href="/run" class="btn btn-primary"> Manually Add Data </a>
+    <a href="/run" class="btn btn-primary">{$_("dataset.manually_add_data")}</a>
     <a href={`/generate/${project_id}/${task_id}`} class="btn">
-      Generate Synthetic Data
+      {$_("dataset.generate_synthetic_data")}
     </a>
   </div>
 </div>

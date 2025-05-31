@@ -10,6 +10,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import { provider_name_from_id, load_available_models } from "$lib/stores"
   import { data_strategy_name } from "$lib/utils/formatters"
+  import { _ } from "svelte-i18n"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -57,7 +58,7 @@
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         finetunes_error = new KilnError(
-          "Could not load finetunes. This task may belong to a project you don't have access to.",
+          $_("finetune.details.could_not_load_finetunes"),
           null,
         )
       } else {
@@ -68,28 +69,22 @@
     }
   }
 
-  const status_map: Record<string, string> = {
-    pending: "Pending",
-    running: "Running",
-    completed: "Completed",
-    failed: "Failed",
-    unknown: "Unknown",
-  }
   function format_status(status: string) {
-    return status_map[status] || status
+    const statusKey = `finetune.details.status_values.${status}`
+    return $_(`${statusKey}`) !== statusKey ? $_(`${statusKey}`) : status
   }
 </script>
 
 <AppPage
-  title="Fine Tune"
-  subtitle="Fine-tune models for the current task."
-  sub_subtitle="Read the Docs"
+  title={$_("finetune.details.title")}
+  subtitle={$_("finetune.details.subtitle")}
+  sub_subtitle={$_("finetune.details.read_docs")}
   sub_subtitle_link="https://docs.getkiln.ai/docs/fine-tuning-guide"
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "Create Fine Tune",
+          label: $_("finetune.details.create_fine_tune"),
           href: `/fine_tune/${project_id}/${task_id}/create_finetune`,
           primary: true,
         },
@@ -108,12 +103,12 @@
       <table class="table">
         <thead>
           <tr>
-            <th> Name </th>
-            <th> Type </th>
-            <th> Provider</th>
-            <th> Base Model</th>
-            <th> Status </th>
-            <th> Created At </th>
+            <th> {$_("finetune.details.table_headers.name")} </th>
+            <th> {$_("finetune.details.table_headers.type")} </th>
+            <th> {$_("finetune.details.table_headers.provider")}</th>
+            <th> {$_("finetune.details.table_headers.base_model")}</th>
+            <th> {$_("finetune.details.table_headers.status")} </th>
+            <th> {$_("finetune.details.table_headers.created_at")} </th>
           </tr>
         </thead>
         <tbody>
@@ -143,9 +138,12 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Fine Tunes</div>
+      <div class="font-medium">
+        {$_("finetune.details.error_loading_finetunes")}
+      </div>
       <div class="text-error text-sm">
-        {finetunes_error.getMessage() || "An unknown error occurred"}
+        {finetunes_error.getMessage() ||
+          $_("finetune.details.unknown_error_occurred")}
       </div>
     </div>
   {/if}

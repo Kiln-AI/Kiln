@@ -9,6 +9,7 @@
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { _ } from "svelte-i18n"
 
   export let model: string = $ui_state.selected_model
   export let requires_structured_output: boolean = false
@@ -85,9 +86,9 @@
         }
         let model_name = model.name
         if (suggested_mode === "data_gen" && model.suggested_for_data_gen) {
-          model_name = model.name + "  —  Recommended"
+          model_name = model.name + "  —  " + $_("models.recommended")
         } else if (suggested_mode === "evals" && model.suggested_for_evals) {
-          model_name = model.name + "  —  Recommended"
+          model_name = model.name + "  —  " + $_("models.recommended")
         }
         model_list.push([id, model_name])
       }
@@ -97,17 +98,17 @@
     }
 
     if (untested_models.length > 0) {
-      options.push(["Untested Models", untested_models])
+      options.push([$_("models.untested_models"), untested_models])
     }
 
     if (unsupported_models.length > 0) {
-      let not_recommended_label = "Not Recommended"
+      let not_recommended_label = $_("models.not_recommended")
       if (requires_data_gen) {
-        not_recommended_label = "Not Recommended - Data Gen Not Supported"
+        not_recommended_label = $_("models.not_recommended_data_gen_label")
       } else if (requires_structured_output) {
-        not_recommended_label = "Not Recommended - Structured Output Fails"
+        not_recommended_label = $_("models.not_recommended_structured_label")
       } else if (requires_logprobs) {
-        not_recommended_label = "Not Recommended - Logprobs Not Supported"
+        not_recommended_label = $_("models.not_recommended_logprobs_label")
       }
       options.push([not_recommended_label, unsupported_models])
     }
@@ -140,7 +141,7 @@
 
 <div>
   <FormElement
-    label="Model"
+    label={$_("models.model_label")}
     bind:value={model}
     id="model"
     inputType="select"
@@ -149,22 +150,14 @@
   />
 
   {#if selected_model_untested}
-    <Warning
-      warning_message="This model has not been tested with Kiln. It may not work as expected."
-    />
+    <Warning warning_message={$_("models.not_tested")} />
   {:else if selected_model_unsupported}
     {#if requires_data_gen}
-      <Warning
-        warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."
-      />
+      <Warning warning_message={$_("models.not_recommended_data_gen")} />
     {:else if requires_logprobs}
-      <Warning
-        warning_message="This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
-      />
+      <Warning warning_message={$_("models.no_logprobs")} />
     {:else if requires_structured_output}
-      <Warning
-        warning_message="This model is not recommended for use with tasks requiring structured output. It fails to consistently return structured data."
-      />
+      <Warning warning_message={$_("models.not_recommended_structured")} />
     {/if}
   {:else if suggested_mode === "data_gen"}
     <Warning
@@ -178,7 +171,7 @@
         : selected_model_suggested_data_gen
           ? "success"
           : "warning"}
-      warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+      warning_message={$_("models.suggest_data_gen")}
     />
   {:else if suggested_mode === "evals"}
     <Warning
@@ -192,7 +185,7 @@
         : selected_model_suggested_evals
           ? "success"
           : "warning"}
-      warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+      warning_message={$_("models.suggest_evals")}
     />
   {/if}
 </div>

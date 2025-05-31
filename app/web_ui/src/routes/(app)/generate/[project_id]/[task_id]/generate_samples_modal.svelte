@@ -6,6 +6,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormElement from "../../../../../lib/utils/form_element.svelte"
+  import { _ } from "svelte-i18n"
 
   // the number of workers to use for parallel generation
   const PARALLEL_WORKER_COUNT = 5
@@ -88,12 +89,18 @@
   ): Promise<GenerateSampleResponse> {
     try {
       if (!model) {
-        throw new KilnError("No model selected.", null)
+        throw new KilnError(
+          $_("generate.samples_modal.no_model_selected"),
+          null,
+        )
       }
       const model_provider = model.split("/")[0]
       const model_name = model.split("/").slice(1).join("/")
       if (!model_name || !model_provider) {
-        throw new KilnError("Invalid model selected.", null)
+        throw new KilnError(
+          $_("generate.samples_modal.invalid_model_selected"),
+          null,
+        )
       }
       const { data: generate_response, error: generate_error } =
         await client.POST(
@@ -123,7 +130,10 @@
         !response.generated_samples ||
         !Array.isArray(response.generated_samples)
       ) {
-        throw new KilnError("No options returned.", null)
+        throw new KilnError(
+          $_("generate.samples_modal.no_options_returned"),
+          null,
+        )
       }
       // Add new samples
       add_synthetic_samples(
@@ -242,11 +252,14 @@
         >✕</button
       >
     </form>
-    <h3 class="text-lg font-bold">Generate Data</h3>
+    <h3 class="text-lg font-bold">{$_("generate.samples_modal.title")}</h3>
     <p class="text-sm font-light mb-8">
-      Add synthetic data samples
+      {$_("generate.samples_modal.subtitle")}
       {#if path.length > 0}
-        to {cascade_mode ? "each subtopic of " : ""}{path.join(" → ")}
+        {$_("generate.samples_modal.subtitle_to")}
+        {cascade_mode
+          ? $_("generate.samples_modal.subtitle_each_subtopic") + " "
+          : ""}{path.join(" → ")}
       {/if}
     </p>
     {#if sample_generating}
@@ -256,7 +269,9 @@
     {:else}
       <div class="flex flex-col gap-2">
         <div class="flex flex-row items-center gap-4 mt-4 mb-2">
-          <div class="flex-grow font-medium text-sm">Sample Count</div>
+          <div class="flex-grow font-medium text-sm">
+            {$_("generate.samples_modal.sample_count")}
+          </div>
           <IncrementUi bind:value={num_samples_to_generate} />
         </div>
         <AvailableModelsDropdown
@@ -269,13 +284,13 @@
           <FormElement
             id="generate_samples_mode_element"
             inputType="select"
-            info_description="Parallel is ideal for APIs (OpenAI, Fireworks, etc.) as they can handle thousands of requests in parallel. Sequential is ideal for Ollama or other servers that can only handle one request at a time."
+            info_description={$_("generate.run_mode_description")}
             select_options={[
-              ["parallel", "Parallel - Ideal for APIs (OpenAI, Fireworks)"],
-              ["sequential", "Sequential - Ideal for Ollama"],
+              ["parallel", $_("generate.parallel_mode")],
+              ["sequential", $_("generate.sequential_mode")],
             ]}
             bind:value={generate_samples_mode}
-            label="Run Mode"
+            label={$_("generate.run_mode")}
           />
         {/if}
 
@@ -283,22 +298,27 @@
         {#if topics_failed_to_generate_count > 0}
           {#if !cascade_mode}
             <div class="text-error font-light text-sm mt-4">
-              Failed to generate samples for {topics_failed_to_generate[0].topic.path.join(
-                " → ",
-              )}. Running again may resolve transient issues.
+              {$_("generate.samples_modal.failed_to_generate", {
+                values: {
+                  topic: topics_failed_to_generate[0].topic.path.join(" → "),
+                },
+              })}
               <div>
                 {topics_failed_to_generate[0].error?.getMessage()}
               </div>
             </div>
           {:else}
             <div class="text-error font-light text-sm mt-4">
-              {topics_failed_to_generate_count} topics failed. Running again may
-              resolve transient issues.
+              {$_("generate.samples_modal.topics_failed", {
+                values: { count: topics_failed_to_generate_count },
+              })}
               <button
                 class="link"
                 on:click={() => (ui_show_errors = !ui_show_errors)}
               >
-                {ui_show_errors ? "Hide Errors" : "Show Errors"}
+                {ui_show_errors
+                  ? $_("generate.hide_errors")
+                  : $_("generate.show_errors")}
               </button>
             </div>
             <div
@@ -319,15 +339,17 @@
           class="btn mt-6 {custom_topics_string ? '' : 'btn-primary'}"
           on:click={generate_samples}
         >
-          Generate {num_samples_to_generate} Samples
+          {$_("generate.samples_modal.generate_samples", {
+            values: { count: num_samples_to_generate },
+          })}
           {#if cascade_mode}
-            For Each Topic
+            {$_("generate.samples_modal.for_each_topic")}
           {/if}
         </button>
       </div>
     {/if}
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button>close</button>
+    <button>{$_("common.close")}</button>
   </form>
 </dialog>

@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { OptionGroup } from "./fancy_select_types"
+  import { _ } from "svelte-i18n"
 
   export let options: OptionGroup[] = []
   export let selected: unknown
-  export let empty_label: string = "Select an option"
+  export let empty_label: string = $_("ui.fancy_select.select_option")
 
   // Add this variable to track scrollability
   let isMenuScrollable = false

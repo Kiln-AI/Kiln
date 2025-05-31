@@ -1,5 +1,6 @@
 <script lang="ts">
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { _ } from "svelte-i18n"
 
   export let title: string
   export let blur_background: boolean = false
@@ -70,7 +71,7 @@
       </h3>
       {#each header_buttons as button}
         <button
-          class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
+          class="btn btn-sm h-8 w-8 btn-ghost focus:outline-none"
           on:click={button.action}
         >
           <img
@@ -115,7 +116,7 @@
       </div>
     {:else if error}
       <div class="text-error text-sm font-medium">
-        {error.getMessage() || "An unknown error occurred"}
+        {error.getMessage() || $_("errors.unknown_error")}
       </div>
     {:else}
       <slot />
@@ -125,14 +126,16 @@
       <div class="flex flex-row gap-2 justify-end mt-6">
         {#if error}
           <form method="dialog">
-            <button class="btn btn-sm h-10 btn-outline min-w-24">Close</button>
+            <button class="btn btn-sm h-10 btn-outline min-w-24"
+              >{$_("common.close")}</button
+            >
           </form>
         {:else}
           {#each action_buttons as button}
             {#if button.isCancel}
               <form method="dialog">
                 <button class="btn btn-sm h-10 btn-outline min-w-24"
-                  >{button.label || "Cancel"}</button
+                  >{button.label || $_("common.cancel")}</button
                 >
               </form>
             {:else}
@@ -144,7 +147,7 @@
                 disabled={button.disabled}
                 on:click={() => perform_button_action(button)}
               >
-                {button.label || "Confirm"}
+                {button.label || $_("common.ok")}
               </button>
             {/if}
           {/each}

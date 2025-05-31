@@ -1,9 +1,12 @@
+import { _ } from "svelte-i18n"
+import { get } from "svelte/store"
+
 export class KilnError extends Error {
   private error_messages: string[] | null
 
   constructor(message: string | null, error_messages: string[] | null = null) {
-    super(message || "Unknown error")
-    this.name = "KilnError"
+    super(message || get(_)("errors.unknown_error"))
+    this.name = get(_)("errors.kiln_error")
     this.error_messages = error_messages
   }
 
@@ -32,7 +35,10 @@ export function createKilnError(e: unknown): KilnError {
     "message" in e &&
     typeof e.message === "string"
   ) {
-    return new KilnError("Unexpected error: " + e.message, null)
+    return new KilnError(
+      get(_)("errors.unexpected_error") + ": " + e.message,
+      null,
+    )
   }
   if (
     e &&
@@ -40,16 +46,31 @@ export function createKilnError(e: unknown): KilnError {
     "details" in e &&
     typeof e.details === "string"
   ) {
-    return new KilnError("Unexpected error: " + e.details, null)
-  }
-  if (
-    e &&
-    typeof e === "object" &&
-    "message" in e &&
-    typeof e.message === "string"
-  ) {
-    return new KilnError("Unexpected error: " + e.message, null)
+    return new KilnError(
+      get(_)("errors.unexpected_error") + ": " + e.details,
+      null,
+    )
   }
 
-  return new KilnError("Unknown error", null)
+  return new KilnError(get(_)("errors.unknown_error"), null)
+}
+
+// 便利函数：创建带翻译的常见错误
+export function createTranslatedKilnError(
+  errorKey: string,
+  errorMessages: string[] | null = null,
+): KilnError {
+  return new KilnError(get(_)(`errors.${errorKey}`), errorMessages)
+}
+
+// 便利函数：创建带参数的翻译错误
+export function createTranslatedKilnErrorWithParams(
+  errorKey: string,
+  params: Record<string, any>,
+  errorMessages: string[] | null = null,
+): KilnError {
+  return new KilnError(
+    get(_)(`errors.${errorKey}`, { values: params }),
+    errorMessages,
+  )
 }

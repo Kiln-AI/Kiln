@@ -1,20 +1,22 @@
 import { type EvalConfigType } from "$lib/types"
+import { _ } from "svelte-i18n"
+import { get } from "svelte/store"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
-    return "Unknown"
+    return get(_)("formatters.unknown")
   }
   const date = new Date(dateString)
   const time_ago = Date.now() - date.getTime()
 
   if (time_ago < 1000 * 60) {
-    return "just now"
+    return get(_)("formatters.just_now")
   }
   if (time_ago < 1000 * 60 * 2) {
-    return "1 minute ago"
+    return get(_)("formatters.one_minute_ago")
   }
   if (time_ago < 1000 * 60 * 60) {
-    return `${Math.floor(time_ago / (1000 * 60))} minutes ago`
+    return `${Math.floor(time_ago / (1000 * 60))} ${get(_)("formatters.minutes_ago")}`
   }
   if (date.toDateString() === new Date().toDateString()) {
     return (
@@ -22,7 +24,9 @@ export function formatDate(dateString: string | undefined): string {
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
-      }) + " today"
+      }) +
+      " " +
+      get(_)("formatters.today")
     )
   }
 
@@ -48,8 +52,8 @@ export function eval_config_to_ui_name(
 ): string {
   return (
     {
-      g_eval: "G-Eval",
-      llm_as_judge: "LLM as Judge",
+      g_eval: get(_)("formatters.eval_config.g_eval"),
+      llm_as_judge: get(_)("formatters.eval_config.llm_as_judge"),
     }[eval_config_type] || eval_config_type
   )
 }
@@ -57,9 +61,9 @@ export function eval_config_to_ui_name(
 export function data_strategy_name(data_strategy: string): string {
   switch (data_strategy) {
     case "final_only":
-      return "Standard"
+      return get(_)("formatters.data_strategy.standard")
     case "final_and_intermediate":
-      return "Reasoning"
+      return get(_)("formatters.data_strategy.reasoning")
     default:
       return data_strategy
   }
@@ -68,11 +72,11 @@ export function data_strategy_name(data_strategy: string): string {
 export function rating_name(rating_type: string): string {
   switch (rating_type) {
     case "five_star":
-      return "5 star"
+      return get(_)("formatters.rating.five_star")
     case "pass_fail":
-      return "Pass/Fail"
+      return get(_)("formatters.rating.pass_fail")
     case "pass_fail_critical":
-      return "Pass/Fail/Critical"
+      return get(_)("formatters.rating.pass_fail_critical")
     default:
       return rating_type
   }

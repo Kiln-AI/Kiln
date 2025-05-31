@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -41,16 +42,12 @@
   // Export to let parent redefine this. This is a basic "Optional" and max length check
   export let validator: (value: unknown) => string | null = () => {
     if (!optional && is_empty(value)) {
-      return '"' + label + '" is required'
+      return $_("forms.field_required", { values: { label } })
     }
     if (max_length && typeof value === "string" && value.length > max_length) {
-      return (
-        '"' +
-        label +
-        '" is too long. Max length is ' +
-        max_length +
-        " characters."
-      )
+      return $_("forms.field_too_long", {
+        values: { label, maxLength: max_length },
+      })
     }
     return null
   }
@@ -61,7 +58,7 @@
     if (initial_run) {
       initial_run = false
     } else if (!optional && is_empty(value)) {
-      inline_error = "Required"
+      inline_error = $_("forms.required")
     } else if (
       max_length &&
       typeof value === "string" &&
@@ -105,7 +102,7 @@
           >{label}</span
         >
         <span class="pl-1 text-xs text-gray-500 flex-none"
-          >{info_msg || (optional ? "Optional" : "")}</span
+          >{info_msg || (optional ? $_("forms.optional") : "")}</span
         >
         {#if info_description}
           <div class="text-gray-500 {light_label ? 'h-4 mt-[-4px]' : ''}">

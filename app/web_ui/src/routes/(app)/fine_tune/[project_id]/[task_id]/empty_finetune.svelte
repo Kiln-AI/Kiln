@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
+
   export let project_id: string
   export let task_id: string
 </script>
@@ -76,24 +78,23 @@
       </svg>
     </div>
     <div class="font-medium text-lg">
-      Fine-Tuning Learns from Your Dataset to Create Custom Models
+      {$_("finetune.empty_finetune.title")}
     </div>
     <div>
-      Fine-tuned models can be faster, cheaper and more accurate than standard
-      models.
+      {$_("finetune.empty_finetune.description")}
     </div>
     <a
       href={`/fine_tune/${project_id}/${task_id}/create_finetune`}
       class="btn btn-primary mt-2"
     >
-      Create a Fine-Tune
+      {$_("finetune.empty_finetune.create_button")}
     </a>
     <a
       href="https://docs.getkiln.ai/docs/fine-tuning-guide"
       class="btn"
       target="_blank"
     >
-      Fine Tuning Guide
+      {$_("finetune.empty_finetune.guide_button")}
     </a>
   </div>
 </div>

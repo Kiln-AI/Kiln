@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade } from "svelte/transition"
   import { onMount } from "svelte"
+  import { _ } from "svelte-i18n"
   import type { OllamaConnection } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -27,190 +28,145 @@
     {
       name: "OpenRouter.ai",
       id: "openrouter",
-      description:
-        "Proxies requests to OpenAI, Anthropic, and more. Works with almost any model.",
+      description: "",
       image: "/images/openrouter.svg",
       featured: !highlight_finetune,
-      api_key_steps: [
-        "Go to https://openrouter.ai/settings/keys",
-        "Create a new API Key",
-        "Copy the new API Key, paste it below and click 'Connect'",
-      ],
     },
     {
       name: "OpenAI",
       id: "openai",
-      description: "The OG home to GPT-4o and more. Supports fine-tuning.",
+      description: "",
       image: "/images/openai.svg",
       featured: false,
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Create an OpenAI Platform account at https://platform.openai.com/signup and add a payment method.",
-        "Go to https://platform.openai.com/account/api-keys",
-        "Click 'Create new secret key'",
-        "Copy the new secret key, paste it below and click 'Connect'",
-      ],
-      api_key_warning:
-        "Note: the OpenAI API requires a separate account from ChatGPT.",
+      pill_text: highlight_finetune
+        ? $_("providers.connect_providers.pills.tuneable")
+        : undefined,
     },
     {
       name: "Ollama",
       id: "ollama",
-      description: "Run models locally. No API key required.",
+      description: "",
       image: "/images/ollama.svg",
       featured: false,
     },
     {
       name: "Groq",
       id: "groq",
-      description:
-        "The fastest model host. Providing Llama, Gemma and Mistral models.",
+      description: "",
       image: "/images/groq.svg",
       featured: false,
-      api_key_steps: [
-        "Go to https://console.groq.com/keys",
-        "Create an API Key",
-        "Copy the new key, paste it below and click 'Connect'",
-      ],
     },
     {
       name: "Fireworks AI",
       id: "fireworks_ai",
-      description: "Open models (Llama, Phi), plus the ability to fine-tune.",
+      description: "",
       image: "/images/fireworks.svg",
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Go to https://fireworks.ai/account/api-keys",
-        "Create a new API Key and paste it below",
-        "Go to https://fireworks.ai/account/profile",
-        "Copy the Account ID, paste it below, and click 'Connect'",
-      ],
+      pill_text: highlight_finetune
+        ? $_("providers.connect_providers.pills.tuneable")
+        : undefined,
       featured: false,
-      api_key_fields: ["API Key", "Account ID"],
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
+        $_("providers.connect_providers.api_key_fields.account_id"),
+      ],
     },
     {
       name: "Anthropic",
       id: "anthropic",
-      description: "The home of Sonnet, Haiku, and Opus.",
+      description: "",
       image: "/images/anthropic.svg",
       featured: false,
-      api_key_steps: [
-        "Go to https://console.anthropic.com/settings/keys",
-        "Create a new API Key",
-        "Copy the new API Key, paste it below and click 'Connect'",
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
       ],
-      api_key_fields: ["API Key"],
     },
     {
       name: "Gemini AI Studio",
       id: "gemini_api",
-      description: "Google's Gemini API. Not to be confused with Vertex AI.",
+      description: "",
       image: "/images/gemini.svg",
       featured: false,
-      api_key_steps: [
-        "Go to https://aistudio.google.com/app/apikey",
-        "Create a new API Key",
-        "Copy the new API Key, paste it below and click 'Connect'",
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
       ],
-      api_key_fields: ["API Key"],
     },
     {
       name: "Azure OpenAI",
       id: "azure_openai",
-      description: "Microsoft's Azure OpenAI API.",
+      description: "",
       image: "/images/azure_openai.svg",
       featured: false,
-      api_key_steps: [
-        "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use. Create a new resource if you don't have one, we suggest 'East US2' for maximal model support.",
-        "Open the Keys & Endpoint section. Find your API Key and Endpoint URL. The Endpoint URL will look like https://<your-resource-name>.openai.azure.com",
-        "Copy the API Key and Endpoint URL, paste them below and click 'Connect'",
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
+        $_("providers.connect_providers.api_key_fields.endpoint_url"),
       ],
-      api_key_fields: ["API Key", "Endpoint URL"],
-      api_key_warning:
-        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#azure-openai-api",
     },
     {
       name: "Hugging Face",
       id: "huggingface",
-      description: "AI community hub, with many models.",
+      description: "",
       image: "/images/hugging_face.svg",
       featured: false,
-      api_key_steps: [
-        "Go to https://huggingface.co/settings/tokens",
-        "Create a new Access Token",
-        "Copy the new Access Token, paste it below and click 'Connect'",
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
       ],
-      api_key_fields: ["API Key"],
     },
     {
       name: "Google Vertex AI",
       id: "vertex",
-      description:
-        "Google's Vertex AI API. Not to be confused with Gemini AI Studio.",
+      description: "",
       image: "/images/google_logo.svg",
       featured: false,
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Create a Google Cloud account.",
-        "Install the glcoud CLI, then run `gcloud auth application-default login` in the terminal. This will add Google Vertex credentials to you environment.",
-        "Create a project in the console, enable Vertex AI for that project, and click 'Enable Recommended APIs' in the Vertex AI console.",
-        "Add the project ID below. Be sure to use the project ID, not the project name.",
-        "Add a Google Cloud location, example: 'us-central1'. We suggest 'us-central1' as it has the widest model support.",
-        "Click connect.",
+      pill_text: highlight_finetune
+        ? $_("providers.connect_providers.pills.tuneable")
+        : undefined,
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.project_id"),
+        $_("providers.connect_providers.api_key_fields.project_location"),
       ],
-      api_key_fields: ["Project ID", "Project Location"],
-      api_key_warning:
-        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#google-vertex-ai",
     },
     {
       name: "Together.ai",
       id: "together_ai",
-      description: "Inference service from Together.ai",
+      description: "",
       image: "/images/together_ai.svg",
       featured: false,
-      pill_text: highlight_finetune ? "Tuneable" : undefined,
-      api_key_steps: [
-        "Create a Together account.",
-        "Create an API Key (or user key) here: https://api.together.ai/settings/api-keys",
-        "Copy the API Key, paste it below and click 'Connect'",
+      pill_text: highlight_finetune
+        ? $_("providers.connect_providers.pills.tuneable")
+        : undefined,
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
       ],
-      api_key_fields: ["API Key"],
     },
     {
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
-      description: "So your company has an AWS contract?",
+      description: "",
       image: "/images/aws.svg",
       featured: false,
-      api_key_steps: [
-        "Go to https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/overview - be sure to select us-west-2, as it has the most models, and Kiln defaults to this region",
-        "Request model access for supported models like Llama and Mistral",
-        "Create an IAM Key using this guide https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html and be sure to select 'AmazonBedrockFullAccess' policy when creating the IAM user",
-        "Get the access key ID and secret access key for the new user. Paste them below and click 'Connect'",
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.access_key"),
+        $_("providers.connect_providers.api_key_fields.secret_key"),
       ],
-      api_key_warning:
-        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they easier to setup and have more models.",
-      api_key_fields: ["Access Key", "Secret Key"],
     },
     {
       name: "Weights & Biases",
       id: "wandb",
-      description: "Track and visualize your experiments.",
+      description: "",
       image: "/images/wandb.svg",
       featured: false,
-      api_key_steps: [
-        "Create a Weights & Biases account at https://wandb.ai, or host your own instance.",
-        "If you host your own instance, set the base URL below. Then create an API key and entering it below.",
-        "If you use the hosted version, go to https://wandb.ai/settings#api, get your API key, and paste it below.",
-        "Click 'Connect'",
+      api_key_fields: [
+        $_("providers.connect_providers.api_key_fields.api_key"),
+        $_("providers.connect_providers.api_key_fields.base_url"),
       ],
-      api_key_fields: ["API Key", "Base URL"],
-      optional_fields: ["Base URL"],
+      optional_fields: [
+        $_("providers.connect_providers.api_key_fields.base_url"),
+      ],
     },
     {
       name: "Custom API",
       id: "openai_compatible",
-      description: "Connect any OpenAI compatible API.",
+      description: "",
       image: "/images/api.svg",
       featured: false,
     },
@@ -319,18 +275,26 @@
     intermediate_step = api_key_provider != null
   }
 
+  // Computed properties for translations
+  let api_key_steps: string[] = []
+  $: api_key_steps = api_key_provider
+    ? ($_(`providers.connect_providers.api_key_steps.${api_key_provider.id}`, {
+        default: "",
+      }) as unknown as string[]) || []
+    : []
+  $: api_key_warning = api_key_provider
+    ? ($_(
+        `providers.connect_providers.provider_warnings.${api_key_provider.id}`,
+        { default: "" },
+      ) as string)
+    : ""
+
   const disconnect_provider = async (provider: Provider) => {
     if (provider.id === "ollama") {
-      alert(
-        "Ollama automatically connects to the localhost Ollama instance when it is running. It can't be manually disconnected. To change your preferred Ollama URL, turn of your localhost Ollama instance then return to this screen.",
-      )
+      alert($_("providers.connect_providers.ollama_disconnect_message"))
       return
     }
-    if (
-      !confirm(
-        "Are you sure you want to disconnect this provider? Your connection details will be deleted and can not be recovered.",
-      )
-    ) {
+    if (!confirm($_("providers.connect_providers.disconnect_confirm"))) {
       return
     }
     try {
@@ -354,7 +318,7 @@
       available_tuning_models.set(null)
     } catch (e) {
       console.error("disconnect_provider error", e)
-      alert("Failed to disconnect provider. Unknown error.")
+      alert($_("providers.connect_providers.disconnect_failed"))
       return
     }
   }
@@ -406,7 +370,9 @@
       ) {
         status.ollama.error = e.message
       } else {
-        status.ollama.error = "Failed to connect. Ensure Ollama app is running."
+        status.ollama.error = $_(
+          "providers.connect_providers.ollama_connection_failed",
+        )
       }
       status.ollama.connected = false
       return
@@ -420,8 +386,9 @@
         const major = parseInt(version_parts[0])
         const minor = parseInt(version_parts[1])
         if (major < 0 || (major == 0 && minor < 5)) {
-          status.ollama.error =
-            "Ollama version must be 0.5.0 or higher. Please update Ollama."
+          status.ollama.error = $_(
+            "providers.connect_providers.ollama_version_error",
+          )
           status.ollama.connected = false
           return
         }
@@ -431,30 +398,32 @@
       data.supported_models.length === 0 &&
       (!data.untested_models || data.untested_models.length === 0)
     ) {
-      status.ollama.error =
-        "Ollama running, but no models available. Install some using ollama cli (e.g. 'ollama pull llama3.1')."
+      status.ollama.error = $_("providers.connect_providers.ollama_no_models")
       return
     }
     status.ollama.error = null
     status.ollama.connected = true
     const supported_models_str =
       data.supported_models.length > 0
-        ? "The following supported models are available: " +
-          data.supported_models.join(", ") +
-          ". "
-        : "No supported models are installed -- we suggest installing some (e.g. 'ollama pull llama3.1'). "
+        ? $_("providers.connect_providers.ollama_supported_models", {
+            values: { models: data.supported_models.join(", ") },
+          }) + " "
+        : $_("providers.connect_providers.ollama_no_supported_models") + " "
     const untested_models_str =
       data.untested_models && data.untested_models.length > 0
-        ? "The following untested models are installed: " +
-          data.untested_models.join(", ") +
-          ". "
+        ? $_("providers.connect_providers.ollama_untested_models", {
+            values: { models: data.untested_models.join(", ") },
+          }) + " "
         : ""
     const custom_url_str =
       custom_ollama_url && custom_ollama_url == "http://localhost:11434"
         ? ""
-        : "Custom Ollama URL: " + custom_ollama_url
+        : $_("providers.connect_providers.ollama_custom_url", {
+            values: { url: custom_ollama_url },
+          })
     status.ollama.custom_description =
-      "Ollama connected. " +
+      $_("providers.connect_providers.ollama_connected") +
+      " " +
       supported_models_str +
       untested_models_str +
       custom_url_str
@@ -500,7 +469,7 @@
 
       if (res.status !== 200) {
         api_key_message =
-          data.message || "Failed to connect to provider. Unknown error."
+          data.message || $_("providers.connect_providers.disconnect_failed")
         return
       }
 
@@ -513,7 +482,11 @@
       available_tuning_models.set(null)
     } catch (e) {
       console.error("submit_api_key error", e)
-      api_key_message = "Failed to connect to provider (Exception: " + e + ")"
+      api_key_message =
+        $_("providers.connect_providers.disconnect_failed") +
+        " (Exception: " +
+        e +
+        ")"
       api_key_issue = true
       return
     } finally {
@@ -615,7 +588,7 @@
     try {
       adding_new_provider = true
       if (!new_provider_base_url.startsWith("http")) {
-        throw new Error("Base URL must start with http")
+        throw new Error($_("providers.connect_providers.base_url_error"))
       }
 
       const { error: save_error } = await client.POST(
@@ -690,7 +663,11 @@
         status.openai_compatible.connected = false
       }
     } catch (e) {
-      alert("Failed to remove provider: " + e)
+      alert(
+        $_("providers.connect_providers.remove_provider_failed", {
+          values: { error: String(e) },
+        }),
+      )
     }
   }
 </script>
@@ -701,21 +678,23 @@
       <div class="grow"></div>
 
       <h1 class="text-xl font-medium flex-none text-center">
-        Connect {api_key_provider.name}
+        {$_("providers.connect_providers.connect_title", {
+          values: { provider: api_key_provider.name },
+        })}
       </h1>
 
-      {#if api_key_provider.api_key_warning}
+      {#if api_key_warning !== ""}
         <div class="pt-2">
           <Warning
             warning_color="warning"
-            warning_message={api_key_provider.api_key_warning}
+            warning_message={api_key_warning}
             trusted={true}
           />
         </div>
       {/if}
 
       <ol class="flex-none my-2 text-gray-700">
-        {#each api_key_provider.api_key_steps || [] as step}
+        {#each api_key_steps as step}
           <li class="list-decimal pl-1 mx-8 my-4">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html step.replace(
@@ -730,7 +709,7 @@
       {/if}
       <div class="flex flex-row gap-4 items-center">
         <div class="grow flex flex-col gap-2" id="api-key-fields">
-          {#each api_key_provider.api_key_fields || ["API Key"] as field}
+          {#each api_key_provider.api_key_fields || [$_("providers.connect_providers.api_key_fields.api_key")] as field}
             <input
               type="text"
               id={field}
@@ -749,7 +728,7 @@
           {#if api_key_submitting}
             <div class="loading loading-spinner loading-md"></div>
           {:else}
-            Connect
+            {$_("providers.connect_providers.connect")}
           {/if}
         </button>
       </div>
@@ -757,7 +736,9 @@
         class="link text-center text-sm mt-8"
         on:click={() => (api_key_provider = null)}
       >
-        Cancel setting up {api_key_provider.name}
+        {$_("providers.connect_providers.cancel_setup", {
+          values: { provider: api_key_provider.name },
+        })}
       </button>
       <div class="grow-[1.5]"></div>
     </div>
@@ -785,7 +766,7 @@
               {provider.name}
               {#if provider.featured}
                 <div class="badge badge-sm ml-2 badge-secondary">
-                  Recommended
+                  {$_("common.recommended")}
                 </div>
               {:else if provider.pill_text}
                 <div class="badge badge-sm ml-2 badge-primary">
@@ -799,7 +780,11 @@
               </p>
             {:else}
               <p class="text-sm text-gray-500">
-                {status[provider.id].custom_description || provider.description}
+                {status[provider.id].custom_description ||
+                  $_(
+                    `providers.connect_providers.provider_descriptions.${provider.id}`,
+                    { default: provider.description },
+                  )}
               </p>
             {/if}
             {#if provider.id === "ollama" && status[provider.id] && status[provider.id].error}
@@ -807,7 +792,7 @@
                 class="link text-left text-sm text-gray-500"
                 on:click={show_custom_ollama_url_dialog}
               >
-                Set Custom Ollama URL
+                {$_("providers.connect_providers.set_custom_ollama_url")}
               </button>
             {/if}
           </div>
@@ -821,7 +806,7 @@
               class="btn md:min-w-[100px]"
               on:click={() => show_custom_api_dialog()}
             >
-              Manage
+              {$_("providers.connect_providers.manage")}
             </button>
           {:else if is_connected}
             <button
@@ -831,9 +816,11 @@
               <img
                 src="/images/circle-check.svg"
                 class="size-6 group-hover:hidden"
-                alt="Connected"
+                alt={$_("providers.connect_providers.connected")}
               />
-              <span class="text-xs hidden group-hover:inline">Disconnect</span>
+              <span class="text-xs hidden group-hover:inline"
+                >{$_("providers.connect_providers.disconnect")}</span
+              >
             </button>
           {:else if status[provider.id].connecting}
             <div class="btn md:min-w-[100px]">
@@ -841,9 +828,11 @@
             </div>
           {:else if initial_load_failure}
             <div>
-              <div class="btn md:min-w-[100px] btn-error text-xs">Error</div>
+              <div class="btn md:min-w-[100px] btn-error text-xs">
+                {$_("providers.connect_providers.error")}
+              </div>
               <div class="text-xs text-gray-500 text-center pt-1">
-                Reload page
+                {$_("providers.connect_providers.reload_page")}
               </div>
             </div>
           {:else}
@@ -851,7 +840,7 @@
               class="btn md:min-w-[100px]"
               on:click={() => connect_provider(provider)}
             >
-              Connect
+              {$_("providers.connect_providers.connect")}
             </button>
           {/if}
         </div>
@@ -869,21 +858,22 @@
       >
     </form>
 
-    <h3 class="text-lg font-bold">Custom Ollama URL</h3>
+    <h3 class="text-lg font-bold">
+      {$_("providers.connect_providers.custom_ollama_url")}
+    </h3>
     <p class="text-sm font-light mb-8">
-      By default, Kiln attempts to connect to Ollama running on localhost:11434.
-      If you run Ollama on a custom URL or port, enter it here to connect.
+      {$_("providers.connect_providers.custom_ollama_url_description")}
     </p>
     <FormElement
       id="ollama_url"
-      label="Ollama URL"
-      info_description="It should included the http prefix, and the port number. For example, http://localhost:11434"
+      label={$_("providers.connect_providers.custom_ollama_url")}
+      info_description={$_("providers.connect_providers.ollama_url_info")}
       bind:value={custom_ollama_url}
       placeholder="http://localhost:11434"
     />
     <div class="flex flex-row gap-4 items-center mt-4 justify-end">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{$_("common.cancel")}</button>
       </form>
       <button
         class="btn btn-primary"
@@ -894,12 +884,12 @@
           document.getElementById("ollama_dialog")?.close()
         }}
       >
-        Connect
+        {$_("providers.connect_providers.connect")}
       </button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button>close</button>
+    <button>{$_("common.close")}</button>
   </form>
 </dialog>
 
@@ -912,13 +902,17 @@
       >
     </form>
 
-    <h3 class="text-lg font-bold flex flex-row gap-4">Connect Custom APIs</h3>
+    <h3 class="text-lg font-bold flex flex-row gap-4">
+      {$_("providers.connect_providers.connect_custom_apis")}
+    </h3>
     <p class="text-sm font-light mb-8">
-      Connect any any OpenAI compatible API by adding a base URL and API key.
+      {$_("providers.connect_providers.custom_api_description")}
     </p>
     {#if custom_openai_compatible_providers.length > 0}
       <div class="flex flex-col gap-2">
-        <div class="font-medium">Existing APIs</div>
+        <div class="font-medium">
+          {$_("providers.connect_providers.existing_apis")}
+        </div>
         {#each custom_openai_compatible_providers as provider, index}
           <div class="flex flex-row gap-3 card bg-base-200 px-4 items-center">
             <div class="text-sm">{provider.name}</div>
@@ -929,16 +923,18 @@
               class="btn btn-sm btn-ghost"
               on:click={() => remove_openai_compatible_provider_at_index(index)}
             >
-              Remove
+              {$_("providers.connect_providers.remove")}
             </button>
           </div>
         {/each}
       </div>
     {/if}
     <div class="flex flex-col gap-2 mt-8">
-      <div class="font-medium">Add New API</div>
+      <div class="font-medium">
+        {$_("providers.connect_providers.add_new_api")}
+      </div>
       <FormContainer
-        submit_label="Add"
+        submit_label={$_("providers.connect_providers.add")}
         on:submit={add_new_provider}
         gap={2}
         submitting={adding_new_provider}
@@ -946,31 +942,31 @@
       >
         <FormElement
           id="name"
-          label="API Name"
+          label={$_("providers.connect_providers.api_name")}
           bind:value={new_provider_name}
-          placeholder="My home server"
-          info_description="A name for this endpoint for you use. Example: 'My home server'"
+          placeholder={$_("providers.connect_providers.api_name_placeholder")}
+          info_description={$_("providers.connect_providers.api_name_info")}
         />
         <FormElement
           id="base_url"
-          label="Base URL"
+          label={$_("providers.connect_providers.base_url")}
           bind:value={new_provider_base_url}
-          placeholder="https://.../v1"
-          info_description="The base URL of an OpenAI compatible API. For example, https://openrouter.ai/api/v1"
+          placeholder={$_("providers.connect_providers.base_url_placeholder")}
+          info_description={$_("providers.connect_providers.base_url_info")}
         />
         <FormElement
           id="api_key"
-          label="API Key"
+          label={$_("providers.connect_providers.api_key")}
           optional={true}
           bind:value={new_provider_api_key}
-          placeholder="sk-..."
-          info_description="The API key for the OpenAI compatible API."
+          placeholder={$_("providers.connect_providers.api_key_placeholder")}
+          info_description={$_("providers.connect_providers.api_key_info")}
         />
       </FormContainer>
     </div>
 
     <form method="dialog" class="modal-backdrop">
-      <button>close</button>
+      <button>{$_("common.close")}</button>
     </form>
   </div>
 </dialog>

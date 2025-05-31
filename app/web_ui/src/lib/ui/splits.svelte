@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { _ } from "svelte-i18n"
 
   export let splits: Record<string, number>
   export let subtitle: string | undefined
@@ -29,18 +30,17 @@
 
       return splitMap
     } catch (e) {
-      console.warn("Invalid splits parameter, using default", e)
+      console.warn($_("finetune.invalid_splits_parameter"), e)
       return {}
     }
   })()
 
   $: subtitle = (() => {
     if (Object.keys(splits).length === 0) return undefined
-    return `Samples will be assigned the following tags: ${Object.entries(
-      splits,
-    )
+    const tags = Object.entries(splits)
       .map(([name, value]) => `${Math.round(value * 100)}% ${name}`)
-      .join(", ")}`
+      .join(", ")
+    return $_("finetune.samples_assigned_tags", { values: { tags } })
   })()
 
   export function get_random_split_tag() {

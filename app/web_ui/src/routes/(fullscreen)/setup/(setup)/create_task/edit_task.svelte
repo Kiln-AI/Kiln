@@ -12,6 +12,7 @@
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
   import { tick } from "svelte"
+  import { _ } from "svelte-i18n"
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
@@ -54,7 +55,7 @@
     } else {
       project_target_name =
         $projects?.projects.find((p) => p.id === target_project_id)?.name ||
-        "Project ID: " + target_project_id
+        $_("task.edit_task_page.project_id_prefix") + target_project_id
     }
   }
 
@@ -63,7 +64,7 @@
       saved = false
       if (!target_project_id) {
         error = new KilnError(
-          "You must create a project before creating a task",
+          $_("task.edit_task_page.project_required_error"),
           null,
         )
         return
@@ -82,7 +83,10 @@
       }
       const project_id = target_project_id
       if (!project_id) {
-        throw new KilnError("Current project not found", null)
+        throw new KilnError(
+          $_("task.edit_task_page.current_project_not_found"),
+          null,
+        )
       }
       let data: Task | undefined
       let network_error: unknown | null = null
@@ -159,33 +163,33 @@
 
   function example_task() {
     if (has_edits()) {
-      if (
-        !confirm("This will replace your current task edits. Are you sure?")
-      ) {
+      if (!confirm($_("task.edit_task_page.replace_edits_confirm"))) {
         return
       }
     }
 
     // @ts-expect-error This is a partial task, which is fine.
     task = {
-      name: "Joke Generator",
-      description: "An example task from the KilnAI team.",
-      instruction:
-        "Generate a joke, given a theme. The theme will be provided as a word or phrase as the input to the model. The assistant should output a joke that is funny and relevant to the theme. If a style is provided, the joke should be in that style. The output should include a setup and punchline.",
+      name: $_("task.edit_task_page.example_task_name"),
+      description: $_("task.edit_task_page.example_task_description"),
+      instruction: $_("task.edit_task_page.example_task_instruction"),
       requirements: [],
       input_json_schema: JSON.stringify({
         type: "object",
         properties: {
           joke_topic: {
-            title: "Joke Topic",
+            title: $_("task.edit_task_page.example_joke_topic_title"),
             type: "string",
-            description: "The topic of the joke.",
+            description: $_(
+              "task.edit_task_page.example_joke_topic_description",
+            ),
           },
           joke_style: {
-            title: "Joke Style",
+            title: $_("task.edit_task_page.example_joke_style_title"),
             type: "string",
-            description:
-              "The style of the joke, such as 'dad joke' or 'kids joke'.",
+            description: $_(
+              "task.edit_task_page.example_joke_style_description",
+            ),
           },
         },
         required: ["joke_topic"],
@@ -194,14 +198,16 @@
         type: "object",
         properties: {
           setup: {
-            title: "setup",
+            title: $_("task.edit_task_page.example_setup_title"),
             type: "string",
-            description: "The setup to the joke",
+            description: $_("task.edit_task_page.example_setup_description"),
           },
           punchline: {
-            title: "punchline",
+            title: $_("task.edit_task_page.example_punchline_title"),
             type: "string",
-            description: "The punchline to the joke",
+            description: $_(
+              "task.edit_task_page.example_punchline_description",
+            ),
           },
         },
         required: ["setup", "punchline"],
@@ -211,18 +217,22 @@
 
   function prompt_description() {
     if (!editing) {
-      return "The prompt for the model to follow."
+      return $_("task.edit_task_page.prompt_description_creating")
     }
     if (task.requirements.length > 0) {
-      return "The base prompt used by prompt generators (Basic, Multi-shot, etc). The task requirements below are appended to this. You can create additional prompts in the 'Prompts' tab to compare prompt performance."
+      return $_(
+        "task.edit_task_page.prompt_description_editing_with_requirements",
+      )
     }
-    return "The base prompt used by prompt generators (Basic, Multi-shot, etc). You can create additional prompts in the 'Prompts' tab to compare prompt performance."
+    return $_("task.edit_task_page.prompt_description_editing_no_requirements")
   }
 </script>
 
 <div class="flex flex-col gap-2 w-full">
   <FormContainer
-    submit_label={editing ? "Save Task" : "Create Task"}
+    submit_label={editing
+      ? $_("task.edit_task_page.save_task")
+      : $_("task.edit_task_page.create_task")}
     on:submit={create_task}
     bind:warn_before_unload
     bind:error
@@ -230,26 +240,28 @@
     bind:saved
   >
     <div>
-      <div class="text-xl font-bold">Part 1: Overview</div>
+      <div class="text-xl font-bold">
+        {$_("task.edit_task_page.part_1_overview")}
+      </div>
       {#if creating && !hide_example_task}
         <h3 class="text-sm mt-1">
-          Just exploring?
+          {$_("task.edit_task_page.just_exploring")}
           <button class="link text-primary" on:click={example_task}
-            >Try an example.</button
+            >{$_("task.edit_task_page.try_example")}</button
           >
         </h3>
       {/if}
     </div>
     <FormElement
-      label="Task Name"
+      label={$_("task.edit_task_page.task_name_label")}
       id="task_name"
-      description="A description for you and your team, not used by the model."
+      description={$_("task.edit_task_page.task_name_description")}
       bind:value={task.name}
       max_length={120}
     />
 
     <FormElement
-      label="Prompt / Task Instructions"
+      label={$_("task.edit_task_page.prompt_task_instructions_label")}
       inputType="textarea"
       id="task_instructions"
       description={prompt_description()}
@@ -257,36 +269,35 @@
     />
 
     <FormElement
-      label="Task Description"
+      label={$_("task.edit_task_page.task_description_label")}
       inputType="textarea"
       id="task_description"
-      description="A description for you and your team, not used by the model."
+      description={$_("task.edit_task_page.task_description_description")}
       optional={true}
       bind:value={task.description}
     />
 
     <FormElement
-      label="'Thinking' Instructions"
+      label={$_("task.edit_task_page.thinking_instructions_label")}
       inputType="textarea"
       id="thinking_instructions"
       optional={true}
-      description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
-      info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
+      description={$_("task.edit_task_page.thinking_instructions_description")}
+      info_description={$_("task.edit_task_page.thinking_instructions_info")}
       bind:value={task.thinking_instruction}
     />
 
     {#if show_requirements}
       <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
         <div class="text-xl font-bold" id="requirements_part">
-          Part 2: Requirements
+          {$_("task.edit_task_page.part_2_requirements")}
         </div>
         <div class="text-xs text-gray-500">
-          Define requirements you can use to rate the results of the model.
-          These are used in the prompt, ratings, evals and training.
+          {$_("task.edit_task_page.requirements_description")}
           <a
             href="https://docs.getkiln.ai/docs/reviewing-and-rating"
             target="_blank"
-            class="link">Learn more</a
+            class="link">{$_("task.edit_task_page.learn_more")}</a
           >.
         </div>
       </div>
@@ -294,7 +305,7 @@
       <!-- Requirements Section -->
       <FormList
         content={task.requirements}
-        content_label="Requirement"
+        content_label={$_("task.edit_task_page.requirement_label")}
         start_with_one={false}
         empty_content={{
           name: "",
@@ -308,8 +319,10 @@
           <div class="flex flex-row gap-1">
             <div class="grow flex flex-col gap-1">
               <FormElement
-                label="Requirement Name"
-                info_description="A short name to uniquely identify the requirement. This will appear in the rating UI. It's not used by the model."
+                label={$_("task.edit_task_page.requirement_name_label")}
+                info_description={$_(
+                  "task.edit_task_page.requirement_name_info",
+                )}
                 id="requirement_name_{item_index}"
                 light_label={true}
                 bind:value={task.requirements[item_index].name}
@@ -318,29 +331,38 @@
             </div>
             <div class="flex flex-col gap-1">
               <FormElement
-                label="Rating Type"
+                label={$_("task.edit_task_page.rating_type_label")}
                 inputType="select"
                 id="requirement_type_{item_index}"
                 light_label={true}
                 select_options={[
-                  ["five_star", "5 Star"],
-                  ["pass_fail", "Pass / Fail"],
-                  ["pass_fail_critical", "Pass / Fail / Critical"],
+                  [
+                    "five_star",
+                    $_("task.edit_task_page.rating_types.five_star"),
+                  ],
+                  [
+                    "pass_fail",
+                    $_("task.edit_task_page.rating_types.pass_fail"),
+                  ],
+                  [
+                    "pass_fail_critical",
+                    $_("task.edit_task_page.rating_types.pass_fail_critical"),
+                  ],
                 ]}
                 bind:value={task.requirements[item_index].type}
               />
             </div>
             <div class="flex flex-col gap-1">
               <FormElement
-                label="Priority"
+                label={$_("task.edit_task_page.priority_label")}
                 inputType="select"
                 id="requirement_priority_{item_index}"
                 light_label={true}
                 select_options={[
-                  [0, "P0 - Critical"],
-                  [1, "P1 - High"],
-                  [2, "P2 - Medium"],
-                  [3, "P3 - Low"],
+                  [0, $_("task.edit_task_page.priorities.p0_critical")],
+                  [1, $_("task.edit_task_page.priorities.p1_high")],
+                  [2, $_("task.edit_task_page.priorities.p2_medium")],
+                  [3, $_("task.edit_task_page.priorities.p3_low")],
                 ]}
                 bind:value={task.requirements[item_index].priority}
               />
@@ -348,8 +370,10 @@
           </div>
           <div class="grow flex flex-col gap-1">
             <FormElement
-              label="Instructions: a few sentences describing this requirement for the model"
-              info_description="These instructions will be appended to the prompt and using during evals. It should be written with the model in mind. Example requirement: Name='Be Succinct' and Instruction='Use short sentences and simple language. Don't repeat yourself.'"
+              label={$_("task.edit_task_page.requirement_instructions_label")}
+              info_description={$_(
+                "task.edit_task_page.requirement_instructions_info",
+              )}
               inputType="textarea"
               id="requirement_instructions_{item_index}"
               light_label={true}
@@ -362,10 +386,13 @@
 
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
       <div class="text-xl font-bold">
-        Part {show_requirements ? "3" : "2"}: Input Schema
+        {$_("task.edit_task_page.part")}
+        {show_requirements ? "3" : "2"}: {$_(
+          "task.edit_task_page.input_schema_title",
+        )}
       </div>
       <div class="text-xs text-gray-500">
-        What kind of input will the model receive?
+        {$_("task.edit_task_page.input_schema_description")}
       </div>
     </div>
 
@@ -374,21 +401,27 @@
         <div>
           <div class="text-sm mb-2 flex flex-col gap-1">
             <p>
-              You can't edit an existing task's input format, as existing
-              dataset items would not conform to the new schema.
+              {$_("task.edit_task_page.cannot_edit_existing_schema", {
+                values: {
+                  type: $_(
+                    "task.edit_task_page.input_schema_title",
+                  ).toLowerCase(),
+                },
+              })}
             </p>
             <p>
-              You can
+              {$_("task.edit_task_page.clone_task_instead")}
               <a
                 class="link"
                 href="/settings/clone_task/{target_project_id}/{task.id}"
-                >clone this task</a
+                >{$_("task.edit_task_page.clone_this_task")}</a
               >
-              instead.
+              {$_("task.edit_task_page.instead")}
             </p>
           </div>
           <Output
-            raw_output={task.input_json_schema || "Input Format: Plain text"}
+            raw_output={task.input_json_schema ||
+              $_("task.edit_task_page.input_format_plain_text")}
           />
         </div>
       {:else}
@@ -401,10 +434,13 @@
 
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
       <div class="text-xl font-bold">
-        Part {show_requirements ? "4" : "3"}: Output Schema
+        {$_("task.edit_task_page.part")}
+        {show_requirements ? "4" : "3"}: {$_(
+          "task.edit_task_page.output_schema_title",
+        )}
       </div>
       <div class="text-xs text-gray-500">
-        What kind of output will the model produce?
+        {$_("task.edit_task_page.output_schema_description")}
       </div>
     </div>
 
@@ -413,21 +449,27 @@
         <div>
           <div class="text-sm mb-2 flex flex-col gap-1">
             <p>
-              You can't edit an existing task's output format, as existing
-              dataset items would not conform to the new schema.
+              {$_("task.edit_task_page.cannot_edit_existing_schema", {
+                values: {
+                  type: $_(
+                    "task.edit_task_page.output_schema_title",
+                  ).toLowerCase(),
+                },
+              })}
             </p>
             <p>
-              You can
+              {$_("task.edit_task_page.clone_task_instead")}
               <a
                 class="link"
                 href="/settings/clone_task/{target_project_id}/{task.id}"
-                >clone this task</a
+                >{$_("task.edit_task_page.clone_this_task")}</a
               >
-              instead.
+              {$_("task.edit_task_page.instead")}
             </p>
           </div>
           <Output
-            raw_output={task.output_json_schema || "Output Format: Plain text"}
+            raw_output={task.output_json_schema ||
+              $_("task.edit_task_page.output_format_plain_text")}
           />
         </div>
       {:else}

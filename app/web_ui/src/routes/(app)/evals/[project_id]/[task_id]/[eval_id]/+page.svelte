@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   import AppPage from "../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
   import { client } from "$lib/api_client"
@@ -116,17 +117,17 @@
     const properties: UiProperty[] = []
 
     properties.push({
-      name: "Name",
+      name: $_("evaluation.main_page.name"),
       value: evaluator.name,
     })
     if (evaluator.description) {
       properties.push({
-        name: "Description",
+        name: $_("evaluation.main_page.description"),
         value: evaluator.description,
       })
     }
     properties.push({
-      name: "ID",
+      name: $_("evaluation.main_page.id"),
       value: evaluator.id || "unknown",
     })
 
@@ -135,7 +136,7 @@
       eval_set_size = " (" + eval_progress.dataset_size + " items)"
     }
     properties.push({
-      name: "Eval Dataset",
+      name: $_("evaluation.main_page.eval_dataset"),
       value: evaluator.eval_set_filter_id + eval_set_size,
       link: link_from_filter_id(evaluator.eval_set_filter_id),
     })
@@ -144,49 +145,48 @@
       golden_dataset_size = " (" + eval_progress.golden_dataset_size + " items)"
     }
     properties.push({
-      name: "Golden Dataset",
+      name: $_("evaluation.main_page.golden_dataset"),
       value: evaluator.eval_configs_filter_id + golden_dataset_size,
-      tooltip:
-        "This is the dataset that we use to evaluate the quality of the evaluation method. Also called the 'Eval Method Dataset'. It needs to have human ratings.",
+      tooltip: $_("evaluation.main_page.golden_dataset_tooltip"),
       link: link_from_filter_id(evaluator.eval_configs_filter_id),
     })
 
     if (eval_progress?.current_eval_method) {
       properties.push({
-        name: "Eval Algorithm",
+        name: $_("evaluation.main_page.eval_algorithm"),
         value: eval_config_to_ui_name(
           eval_progress.current_eval_method.config_type,
         ),
-        tooltip: "The evaluation algorithm used by your selected eval method.",
+        tooltip: $_("evaluation.main_page.eval_algorithm_tooltip"),
       })
       properties.push({
-        name: "Eval Model",
+        name: $_("evaluation.main_page.eval_model"),
         value: model_name(
           eval_progress.current_eval_method.model_name,
           modelInfo,
         ),
-        tooltip: "The model used by your selected eval method.",
+        tooltip: $_("evaluation.main_page.eval_model_tooltip"),
       })
     }
 
     if (eval_progress?.current_run_method) {
       properties.push({
-        name: "Run Model",
+        name: $_("evaluation.main_page.run_model"),
         value: model_name(
           eval_progress.current_run_method.run_config_properties.model_name,
           modelInfo,
         ),
-        tooltip: "The model used by your selected run method.",
+        tooltip: $_("evaluation.main_page.run_model_tooltip"),
       })
       properties.push({
-        name: "Run Prompt",
+        name: $_("evaluation.main_page.run_prompt"),
         value:
           eval_progress.current_run_method.prompt?.name ||
           prompt_name_from_id(
             eval_progress.current_run_method.run_config_properties.prompt_id,
             taskPrompts,
           ),
-        tooltip: "The prompt used by your selected run method.",
+        tooltip: $_("evaluation.main_page.run_prompt_tooltip"),
         link: prompt_link(
           project_id,
           task_id,
@@ -210,18 +210,18 @@
   let goals: string[] = []
   let golden_dataset_explanation = ""
   const step_titles: string[] = [
-    "Define Goals",
-    "Create Eval Data",
-    "Human Ratings",
-    "Find the Best Evaluator",
-    "Find the Best Way to Run this Task",
+    $_("evaluation.main_page.step_titles.define_goals"),
+    $_("evaluation.main_page.step_titles.create_eval_data"),
+    $_("evaluation.main_page.step_titles.human_ratings"),
+    $_("evaluation.main_page.step_titles.find_best_evaluator"),
+    $_("evaluation.main_page.step_titles.find_best_way"),
   ]
   const step_tooltips: Record<number, string> = {
-    1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
-    2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
-    3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the evaluator is working by checking how well it aligns to human preferences. ",
-    4: "Benchmark different evaluation methods (models, prompts, algorithms). We'll compare to your golden dataset to find the evaluator which best matches human preferences.",
-    5: "This tool will help your compare a variety of options for running this task and find the best one. You can compare different models, prompts, or fine-tunes.",
+    1: $_("evaluation.main_page.step_tooltips.define_goals"),
+    2: $_("evaluation.main_page.step_tooltips.create_eval_data"),
+    3: $_("evaluation.main_page.step_tooltips.human_ratings"),
+    4: $_("evaluation.main_page.step_tooltips.find_best_evaluator"),
+    5: $_("evaluation.main_page.step_tooltips.find_best_way"),
   }
   function update_eval_progress(
     progress: EvalProgress | null,
@@ -271,24 +271,41 @@
       return
     }
     if (progress.golden_dataset_size == 0) {
-      golden_dataset_explanation =
-        "Your golden dataset is empty. Add data to your golden dataset to get started."
+      golden_dataset_explanation = $_(
+        "evaluation.main_page.golden_dataset_status.empty",
+      )
       return
     }
     let golden_dataset_rating_issues: string[] = []
     if (progress.golden_dataset_not_rated_count > 0) {
+      const count = progress.golden_dataset_not_rated_count
+      const plural = count == 1 ? "" : "s"
+      const verb = count == 1 ? "is" : "are"
       golden_dataset_rating_issues.push(
-        `${progress.golden_dataset_not_rated_count} item${progress.golden_dataset_not_rated_count == 1 ? " is" : "s are"} unrated`,
+        $_("evaluation.main_page.golden_dataset_status.unrated_items", {
+          values: { count, plural, verb },
+        }),
       )
     }
     if (progress.golden_dataset_partially_rated_count > 0) {
+      const count = progress.golden_dataset_partially_rated_count
+      const plural = count == 1 ? "" : "s"
+      const verb = count == 1 ? "is" : "are"
       golden_dataset_rating_issues.push(
-        `${progress.golden_dataset_partially_rated_count} item${progress.golden_dataset_partially_rated_count == 1 ? " is" : "s are"} partially unrated`,
+        $_("evaluation.main_page.golden_dataset_status.partially_rated_items", {
+          values: { count, plural, verb },
+        }),
       )
     }
     if (golden_dataset_rating_issues.length > 0) {
       // Some golden dataset items are not fully rated.
-      golden_dataset_explanation = `In your golden dataset ${golden_dataset_rating_issues.join(" and ")}. Fully rate all items to to get the best results from your eval.`
+      const issues = golden_dataset_rating_issues.join($_("common.and"))
+      golden_dataset_explanation = $_(
+        "evaluation.main_page.golden_dataset_status.unrated",
+        {
+          values: { issues },
+        },
+      )
     } else {
       golden_dataset_explanation = ""
     }
@@ -320,15 +337,13 @@
 
   function add_eval_data() {
     if (!evaluator) {
-      alert("Unable to add eval data. Please try again later.")
+      alert($_("evaluation.main_page.errors.unable_to_add_data"))
       return
     }
     const eval_tag = tag_from_filter_id(evaluator?.eval_set_filter_id)
     const golden_tag = tag_from_filter_id(evaluator?.eval_configs_filter_id)
     if (!eval_tag || !golden_tag) {
-      alert(
-        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
-      )
+      alert($_("evaluation.main_page.errors.no_tag_found"))
       return
     }
     const url = `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${encodeURIComponent(
@@ -336,16 +351,19 @@
     )}:0.8,${encodeURIComponent(golden_tag)}:0.2&eval_link=${encodeURIComponent(
       window.location.pathname,
     )}`
-    show_progress_ui("When you're done adding data, ", 2)
+    show_progress_ui(
+      $_("evaluation.main_page.creating_eval_progress.when_done_adding"),
+      2,
+    )
     goto(url)
   }
 
   function show_progress_ui(body: string, step: number) {
     progress_ui_state.set({
-      title: "Creating Eval",
+      title: $_("evaluation.main_page.creating_eval_progress.title"),
       body,
       link: $page.url.pathname,
-      cta: "return to the eval",
+      cta: $_("evaluation.main_page.creating_eval_progress.return_to_eval"),
       progress: null,
       step_count: 5,
       current_step: step,
@@ -361,32 +379,45 @@
       return
     }
 
-    show_progress_ui("When you're done rating, ", 3)
+    show_progress_ui(
+      $_("evaluation.main_page.creating_eval_progress.when_done_rating"),
+      3,
+    )
     goto(url)
   }
 
   function compare_eval_methods() {
     let url = `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`
-    show_progress_ui("When you're done comparing eval methods, ", 4)
+    show_progress_ui(
+      $_(
+        "evaluation.main_page.creating_eval_progress.when_done_comparing_eval",
+      ),
+      4,
+    )
     goto(url)
   }
 
   function compare_run_methods() {
     let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_methods`
-    show_progress_ui("When you're done comparing run methods, ", 5)
+    show_progress_ui(
+      $_("evaluation.main_page.creating_eval_progress.when_done_comparing_run"),
+      5,
+    )
     goto(url)
   }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Eval: {evaluator?.name || ''}"
-    subtitle="Follow these steps to find the best way to evaluate and run your task"
-    sub_subtitle="Read the Docs"
+    title={$_("evaluation.main_page.title", {
+      values: { name: evaluator?.name || "" },
+    })}
+    subtitle={$_("evaluation.main_page.subtitle")}
+    sub_subtitle={$_("evaluation.main_page.sub_subtitle")}
     sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
     action_buttons={[
       {
-        label: "Edit",
+        label: $_("common.edit"),
         handler: () => {
           edit_dialog?.show()
         },
@@ -401,9 +432,11 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">Error Loading Evaluator</div>
+        <div class="font-medium">
+          {$_("evaluation.main_page.error_loading")}
+        </div>
         <div class="text-error text-sm">
-          {error.getMessage() || "An unknown error occurred"}
+          {error.getMessage() || $_("evaluation.main_page.unknown_error")}
         </div>
       </div>
     {:else if evaluator}
@@ -434,27 +467,58 @@
                   </div>
                   <div class="text-sm text-gray-500">
                     {#if step == 1 && goals.length > 0}
-                      This eval has {goals.length} goals: {goals.join(", ")}.
+                      {$_("evaluation.main_page.goals_description", {
+                        values: {
+                          count: goals.length,
+                          goals: goals.join(", "),
+                        },
+                      })}
                     {:else if step == 2}
                       <div>
                         <div class="mb-1">
                           {#if eval_progress && !required_more_eval_data && !required_more_golden_data}
-                            You have {eval_progress?.dataset_size} eval items and
-                            {eval_progress?.golden_dataset_size} golden items.
+                            {$_("evaluation.main_page.data_status.sufficient", {
+                              values: {
+                                evalSize: eval_progress?.dataset_size,
+                                goldenSize: eval_progress?.golden_dataset_size,
+                              },
+                            })}
                           {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0}
-                            Create data for this eval.
+                            {$_("evaluation.main_page.data_status.empty")}
                           {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}
-                            You require additional eval data. You only have
                             {#if required_more_eval_data && required_more_golden_data}
-                              {eval_progress?.dataset_size} eval items and {eval_progress?.golden_dataset_size}
-                              golden items. We suggest at least {MIN_DATASET_SIZE}
-                              items in each set.
+                              {$_(
+                                "evaluation.main_page.data_status.insufficient",
+                                {
+                                  values: {
+                                    evalSize: eval_progress?.dataset_size,
+                                    goldenSize:
+                                      eval_progress?.golden_dataset_size,
+                                    minSize: MIN_DATASET_SIZE,
+                                  },
+                                },
+                              )}
                             {:else if required_more_eval_data}
-                              {eval_progress?.dataset_size} eval items. We suggest
-                              at least {MIN_DATASET_SIZE} items.
+                              {$_(
+                                "evaluation.main_page.data_status.insufficient_eval",
+                                {
+                                  values: {
+                                    evalSize: eval_progress?.dataset_size,
+                                    minSize: MIN_DATASET_SIZE,
+                                  },
+                                },
+                              )}
                             {:else if required_more_golden_data}
-                              {eval_progress?.golden_dataset_size} golden items.
-                              We suggest at least {MIN_DATASET_SIZE} items.
+                              {$_(
+                                "evaluation.main_page.data_status.insufficient_golden",
+                                {
+                                  values: {
+                                    goldenSize:
+                                      eval_progress?.golden_dataset_size,
+                                    minSize: MIN_DATASET_SIZE,
+                                  },
+                                },
+                              )}
                             {/if}
                           {/if}
                         </div>
@@ -464,7 +528,7 @@
                             : ''}"
                           on:click={add_eval_data}
                         >
-                          Add Eval Data
+                          {$_("evaluation.main_page.add_eval_data")}
                         </button>
                       </div>
                     {:else if step == 3}
@@ -472,7 +536,9 @@
                         {#if golden_dataset_explanation}
                           {golden_dataset_explanation}
                         {:else}
-                          All items in your golden dataset are fully rated.
+                          {$_(
+                            "evaluation.main_page.golden_dataset_status.complete",
+                          )}
                         {/if}
                       </div>
                       <div>
@@ -483,34 +549,43 @@
                               : ''}"
                             on:click={show_golden_dataset}
                           >
-                            {golden_dataset_explanation ? "Rate" : "View"} Golden
-                            Dataset
+                            {golden_dataset_explanation
+                              ? $_("evaluation.main_page.rate_golden_dataset")
+                              : $_("evaluation.main_page.view_golden_dataset")}
                           </button>
                         {:else}
                           <!-- We always use "tag::" so this shouldn't happen unless it's created by code. -->
-                          Your golden dataset is filtered by
-                          <span class="font-mono bg-gray-100 p-1"
-                            >{evaluator.eval_configs_filter_id}</span
-                          >. Please rate these entries in the
+                          {$_(
+                            "evaluation.main_page.golden_dataset_filter_note",
+                            {
+                              values: {
+                                filter: evaluator.eval_configs_filter_id,
+                              },
+                            },
+                          )}
                           <a
                             class="link"
                             href={`/dataset/${project_id}/${task_id}`}
-                            >dataset tab</a
+                            >{$_("dataset.title")}</a
                           >.
                         {/if}
                       </div>
                     {:else if step == 4}
                       <div class="mb-1">
                         {#if eval_progress?.current_eval_method}
-                          You've selected the eval method '{eval_config_to_ui_name(
-                            eval_progress.current_eval_method.config_type,
-                          )}' using the model '{model_name(
-                            eval_progress.current_eval_method.model_name,
-                            $model_info,
-                          )}'.
+                          {$_("evaluation.main_page.eval_method_selected", {
+                            values: {
+                              method: eval_config_to_ui_name(
+                                eval_progress.current_eval_method.config_type,
+                              ),
+                              model: model_name(
+                                eval_progress.current_eval_method.model_name,
+                                $model_info,
+                              ),
+                            },
+                          })}
                         {:else}
-                          Compare automated evals to find one that aligns with
-                          your human preferences.
+                          {$_("evaluation.main_page.eval_method_not_selected")}
                         {/if}
                       </div>
                       <div>
@@ -520,26 +595,30 @@
                             : ''}"
                           on:click={compare_eval_methods}
                         >
-                          Compare Eval Methods
+                          {$_("evaluation.main_page.compare_eval_methods")}
                         </button>
                       </div>
                     {:else if step == 5}
                       <div class="mb-1">
                         {#if eval_progress?.current_run_method}
-                          You've selected the model '{model_name(
-                            eval_progress.current_run_method
-                              .run_config_properties.model_name,
-                            $model_info,
-                          )}' with the prompt '{eval_progress.current_run_method
-                            .prompt?.name ||
-                            prompt_name_from_id(
-                              eval_progress.current_run_method
-                                .run_config_properties.prompt_id,
-                              $current_task_prompts,
-                            )}'.
+                          {$_("evaluation.main_page.run_method_selected", {
+                            values: {
+                              model: model_name(
+                                eval_progress.current_run_method
+                                  .run_config_properties.model_name,
+                                $model_info,
+                              ),
+                              prompt:
+                                eval_progress.current_run_method.prompt?.name ||
+                                prompt_name_from_id(
+                                  eval_progress.current_run_method
+                                    .run_config_properties.prompt_id,
+                                  $current_task_prompts,
+                                ),
+                            },
+                          })}
                         {:else}
-                          Compare models, prompts and fine-tunes to find the
-                          most effective.
+                          {$_("evaluation.main_page.run_method_not_selected")}
                         {/if}
                       </div>
                       <div>
@@ -549,7 +628,7 @@
                             : ''}"
                           on:click={compare_run_methods}
                         >
-                          Compare Run Methods
+                          {$_("evaluation.main_page.compare_run_methods")}
                         </button>
                       </div>
                     {/if}
@@ -561,7 +640,9 @@
         </div>
 
         <div class="w-72 2xl:w-96 flex-none">
-          <div class="text-xl font-bold mb-4">Evaluator Properties</div>
+          <div class="text-xl font-bold mb-4">
+            {$_("evaluation.main_page.evaluator_properties")}
+          </div>
           <div
             class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
           >
@@ -589,20 +670,22 @@
 
 <EditDialog
   bind:this={edit_dialog}
-  name="Eval"
+  name={$_("evaluation.main_page.edit_dialog.name")}
   patch_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
   delete_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
   fields={[
     {
-      label: "Eval Name",
-      description: "A name to identify this eval.",
+      label: $_("evaluation.main_page.edit_dialog.eval_name_label"),
+      description: $_("evaluation.main_page.edit_dialog.eval_name_description"),
       api_name: "name",
       value: evaluator?.name || "",
       input_type: "input",
     },
     {
-      label: "Description",
-      description: "A description of the eval for you and your team.",
+      label: $_("evaluation.main_page.edit_dialog.description_label"),
+      description: $_(
+        "evaluation.main_page.edit_dialog.description_description",
+      ),
       api_name: "description",
       value: evaluator?.description || "",
       input_type: "textarea",

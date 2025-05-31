@@ -1,13 +1,14 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   import AppPage from "../../../../app_page.svelte"
   import LoadTaskEditor from "../../../edit_task/[project_id]/[task_id]/load_task_editor.svelte"
 </script>
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Clone Task"
-    subtitle="Create a new task, using an existing task as a template"
-    sub_subtitle="The cloned task will not contain any data from the original task."
+    title={$_("task.clone_task")}
+    subtitle={$_("task.clone_task_subtitle")}
+    sub_subtitle={$_("task.clone_task_description")}
   >
     <LoadTaskEditor clone_mode={true} />
   </AppPage>

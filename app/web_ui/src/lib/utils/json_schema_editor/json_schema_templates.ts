@@ -1,4 +1,6 @@
 import { KilnError } from "../error_handlers"
+import { _ } from "svelte-i18n"
+import { get } from "svelte/store"
 
 export type JsonSchema = {
   type: "object"
@@ -60,13 +62,14 @@ export function schema_from_model(
   for (let i = 0; i < m.properties.length; i++) {
     const title = m.properties[i].title
     if (!title) {
-      throw new KilnError("Property is empty. Please provide a name.", null)
+      throw new KilnError(get(_)("json_schema.errors.property_empty"), null)
     }
     const safe_name = string_to_json_key(m.properties[i].title)
     if (!safe_name) {
       throw new KilnError(
-        "Property name only contains special characters. Must be alphanumeric. Provided name with issues: " +
-          m.properties[i].title,
+        get(_)("json_schema.errors.property_special_chars", {
+          values: { name: m.properties[i].title },
+        }),
         null,
       )
     }
@@ -105,8 +108,8 @@ export function example_schema_model(): SchemaModel {
     properties: [
       // @ts-expect-error we're not using the id, because we want it to be generated from the title
       {
-        title: "Example Property",
-        description: "Replace this with your own property",
+        title: get(_)("json_schema.errors.example_property_title"),
+        description: get(_)("json_schema.errors.example_property_description"),
         type: "string",
         required: true,
       },
@@ -124,7 +127,9 @@ export function typed_json_from_schema_model(
     const property = m.properties.find((p) => p.id === prop_id)
     if (!property) {
       throw new KilnError(
-        "Property not allowed in JSON schema: " + prop_id,
+        get(_)("json_schema.errors.property_not_allowed", {
+          values: { property: prop_id },
+        }),
         null,
       )
     }
@@ -132,19 +137,29 @@ export function typed_json_from_schema_model(
       parsed_data[prop_id] = prop_value
     } else if (prop_value === "") {
       // JS parsing is too flexible. Empty string is not always an error.
-      errors.push("Empty string provided for non-string property: " + prop_id)
+      errors.push(
+        get(_)("json_schema.errors.empty_string_non_string", {
+          values: { property: prop_id },
+        }),
+      )
     } else if (property.type === "number") {
       parsed_data[prop_id] = Number(prop_value)
     } else if (property.type === "boolean") {
       if (prop_value !== "true" && prop_value !== "false") {
-        errors.push("Boolean property must be 'true' or 'false': " + prop_id)
+        errors.push(
+          get(_)("json_schema.errors.boolean_invalid", {
+            values: { property: prop_id },
+          }),
+        )
       }
       parsed_data[prop_id] = prop_value === "true"
     } else if (property.type === "integer") {
       const parsedValue = Number(prop_value)
       if (!Number.isInteger(parsedValue)) {
         errors.push(
-          `Property ${prop_id} must be an integer, got: ${prop_value}`,
+          get(_)("json_schema.errors.integer_invalid", {
+            values: { property: prop_id, value: prop_value },
+          }),
         )
       }
       parsed_data[prop_id] = parsedValue
@@ -153,13 +168,17 @@ export function typed_json_from_schema_model(
         const parsed_value = JSON.parse(prop_value)
         if (!Array.isArray(parsed_value)) {
           errors.push(
-            `Property ${prop_id} must be an array, got: ${prop_value}`,
+            get(_)("json_schema.errors.array_invalid", {
+              values: { property: prop_id, value: prop_value },
+            }),
           )
         }
         parsed_data[prop_id] = parsed_value
       } catch (e) {
         errors.push(
-          `Property ${prop_id} must be a valid JSON array, got: ${prop_value}`,
+          get(_)("json_schema.errors.array_json_invalid", {
+            values: { property: prop_id, value: prop_value },
+          }),
         )
       }
     } else if (property.type === "object") {
@@ -172,22 +191,24 @@ export function typed_json_from_schema_model(
           Array.isArray(parsed_value)
         ) {
           errors.push(
-            `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
+            get(_)("json_schema.errors.object_invalid", {
+              values: { property: prop_id, value: prop_value },
+            }),
           )
         }
         parsed_data[prop_id] = parsed_value
       } catch (e) {
         errors.push(
-          `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
+          get(_)("json_schema.errors.object_json_invalid", {
+            values: { property: prop_id, value: prop_value },
+          }),
         )
       }
     } else {
       errors.push(
-        "Unsupported property type: " +
-          property.type +
-          "for property " +
-          property.id +
-          ". This may be supported by the python framework, but is not yet supported in the UI.",
+        get(_)("json_schema.errors.unsupported_type", {
+          values: { type: property.type, property: property.id },
+        }),
       )
     }
   }
@@ -197,12 +218,16 @@ export function typed_json_from_schema_model(
       (parsed_data[model_prop.id] === undefined ||
         parsed_data[model_prop.id] === "")
     ) {
-      errors.push("Required property not provided: " + model_prop.id)
+      errors.push(
+        get(_)("json_schema.errors.required_property_missing", {
+          values: { property: model_prop.id },
+        }),
+      )
     }
   }
   if (errors.length > 0) {
     throw new KilnError(
-      "The data did not match the required JSON schema.",
+      get(_)("json_schema.errors.schema_validation_failed"),
       errors,
     )
   }

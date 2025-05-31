@@ -1,6 +1,7 @@
 <script lang="ts">
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { TaskOutputRatingType } from "$lib/types"
+  import { _ } from "svelte-i18n"
 
   export let output_score_type: TaskOutputRatingType
 </script>
@@ -9,17 +10,17 @@
   {#if output_score_type === "five_star"}
     1 to 5
     <span class="ml-[-5px]">
-      <InfoTooltip tooltip_text="1 to 5 stars, where 5 is best" />
+      <InfoTooltip tooltip_text={$_("evaluation.one_to_five_stars")} />
     </span>
   {:else if output_score_type === "pass_fail"}
     pass/fail
     <span class="ml-[-5px]">
-      <InfoTooltip tooltip_text="0 is fail and 1 is pass" />
+      <InfoTooltip tooltip_text={$_("evaluation.pass_fail_desc")} />
     </span>
   {:else if output_score_type === "pass_fail_critical"}
     pass/fail/critical
     <InfoTooltip
-      tooltip_text="-1 is critical failure, 0 is fail, and 1 is pass"
+      tooltip_text={$_("evaluation.pass_fail_critical_desc")}
       no_pad={true}
     />
   {:else}

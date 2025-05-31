@@ -3,6 +3,7 @@
   import { createKilnError } from "$lib/utils/error_handlers"
   import { base_url } from "$lib/api_client"
   import Warning from "./warning.svelte"
+  import { _ } from "svelte-i18n"
 
   export let name: string
   export let delete_url: string
@@ -22,7 +23,7 @@
         try {
           error_body = await response.json()
         } catch (e) {
-          throw new Error("Failed to delete.")
+          throw new Error($_("dialog.failed_to_delete"))
         }
         throw createKilnError(error_body)
       }
@@ -40,11 +41,11 @@
 </script>
 
 <Dialog
-  title={"Delete " + name + "?"}
+  title={$_("dialog.delete_title", { values: { name } })}
   bind:this={dialog}
   action_buttons={[
     {
-      label: "Delete",
+      label: $_("common.delete"),
       asyncAction: delete_item,
       isError: true,
     },
@@ -55,11 +56,9 @@
       <p>{delete_message}</p>
     {:else}
       <p>
-        Are you sure you want to delete this {name}?
+        {$_("dialog.delete_confirm_message", { values: { name } })}
       </p>
     {/if}
-    <Warning
-      warning_message="This cannot be undone. We suggest backing up your project before deleting."
-    />
+    <Warning warning_message={$_("dialog.delete_warning")} />
   </div>
 </Dialog>

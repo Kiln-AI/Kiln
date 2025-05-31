@@ -7,6 +7,7 @@
   import { goto } from "$app/navigation"
   import Splits from "$lib/ui/splits.svelte"
   import OptionList from "$lib/ui/option_list.svelte"
+  import { _ } from "svelte-i18n"
 
   const validReasons = ["generic", "eval", "fine_tune"] as const
   type Reason = (typeof validReasons)[number]
@@ -29,31 +30,37 @@
 
   $: title =
     reason === "generic"
-      ? "Add Samples to your Dataset"
+      ? $_("add_data.add_samples")
       : reason === "eval"
-        ? "Add Data for your Eval"
-        : "Add Data for Fine-tuning"
+        ? $_("add_data.add_for_eval")
+        : $_("add_data.add_for_finetune")
   $: reason_name =
-    reason === "generic" ? "dataset" : reason === "eval" ? "eval" : "fine tune"
+    reason === "generic"
+      ? $_("add_data.reason_names.dataset")
+      : reason === "eval"
+        ? $_("add_data.reason_names.eval")
+        : $_("add_data.reason_names.fine_tune")
 
   $: data_source_descriptions = [
     {
       id: "synthetic",
-      name: "Synthetic Data",
-      description: `Generate synthetic data using our interactive tool.`,
+      name: $_("add_data.synthetic_data"),
+      description: $_("add_data.synthetic_data_description"),
       recommended: true,
     },
     {
       id: "csv",
-      name: "Upload CSV",
-      description: `Add data by uploading a CSV file.`,
+      name: $_("add_data.upload_csv"),
+      description: $_("add_data.upload_csv_description"),
     },
     ...(reason === "generic" && splitsArray.length === 0
       ? [
           {
             id: "run_task",
-            name: "Manually Run Task",
-            description: `Each run will be saved to your ${reason_name}.`,
+            name: $_("add_data.manually_run_task"),
+            description: $_("add_data.manually_run_task_description", {
+              values: { reason_name },
+            }),
           },
         ]
       : []),
@@ -61,8 +68,10 @@
       ? [
           {
             id: "manual",
-            name: "Manually Tag Existing Data",
-            description: `Tag existing data for use in your ${reason_name}.`,
+            name: $_("add_data.manually_tag_existing_data"),
+            description: $_("add_data.manually_tag_existing_data_description", {
+              values: { reason_name },
+            }),
           },
         ]
       : []),
@@ -92,10 +101,10 @@
     let finetune_link = $page.url.searchParams.get("finetune_link")
     if (eval_link) {
       completed_link = eval_link
-      completed_button_text = "Return to Eval"
+      completed_button_text = $_("add_data.return_to_eval")
     } else if (finetune_link) {
       completed_link = finetune_link
-      completed_button_text = "Return to Fine-Tune"
+      completed_button_text = $_("add_data.return_to_finetune")
     }
   }
 </script>
@@ -104,10 +113,10 @@
   <Splits bind:splits bind:subtitle={splits_subtitle} />
   {#if completed}
     <Completed
-      title="Data Added"
-      subtitle="Your data has been added."
+      title={$_("add_data.data_added")}
+      subtitle={$_("add_data.data_added_subtitle")}
       link={completed_link || dataset_link}
-      button_text={completed_button_text || "View Dataset"}
+      button_text={completed_button_text || $_("add_data.view_dataset")}
     />
   {:else}
     <OptionList
@@ -119,14 +128,14 @@
 
 <Dialog
   bind:this={manual_dialog}
-  title="Manually Tag Existing Data"
+  title={$_("add_data.manually_tag_dialog_title")}
   action_buttons={[
     {
-      label: "Cancel",
+      label: $_("common.cancel"),
       isCancel: true,
     },
     {
-      label: "Open Dataset",
+      label: $_("add_data.open_dataset"),
       isPrimary: true,
       action: () => {
         window.open(dataset_link, "_blank")
@@ -141,36 +150,37 @@
         .map((split) => `${Math.round(split.value * 100)}% ${split.name}`)
         .join(", ")}
       <div class="rounded-box bg-base-200 p-4 text-sm font-normal mt-4">
-        You will be adding tags in the following proportions:
+        {$_("add_data.adding_tags_proportions")}
         {tag_list}
       </div>
     {/if}
     <p>
-      Follow these steps to manually tag existing data to be used for your {reason_name}.
+      {$_("add_data.follow_steps_to_tag", { values: { reason_name } })}
     </p>
 
     <ol class="list-decimal list-inside flex flex-col gap-2 text-sm">
       <li class="ml-4">
-        Open the <a href={dataset_link} class="link" target="_blank"
-          >dataset page</a
-        > in a new tab so you can follow these instructions.
+        {@html $_("add_data.step_open_dataset", {
+          values: {
+            dataset_link: `<a href="${dataset_link}" class="link" target="_blank">${$_("add_data.dataset_page")}</a>`,
+          },
+        })}
       </li>
       <li class="ml-4">
-        Using the "Select" button, select the data you to tag. You can select
-        many examples at once using the shift key.
+        {$_("add_data.step_select_data")}
       </li>
       <li class="ml-4">
-        Click the "Tag" button, select "Add Tag", then add
         {#if splitsArray.length > 1}
-          the desired tag.
+          {$_("add_data.step_click_tag_multiple")}
         {:else if splitsArray.length === 1}
-          the tag "{splitsArray[0].name}".
+          {$_("add_data.step_click_tag_single", {
+            values: { tag_name: splitsArray[0].name },
+          })}
         {/if}
       </li>
       {#if splitsArray.length > 1}
         <li class="ml-4">
-          Repeat steps 2-3 for each tag. Be sure to tag in the proportions
-          described above.
+          {$_("add_data.step_repeat_for_tags")}
         </li>
       {/if}
     </ol>

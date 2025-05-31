@@ -14,6 +14,7 @@ import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
 import type { Writable } from "svelte/store"
 import type { ProviderModel } from "./types"
+import { _ } from "svelte-i18n"
 
 export type AllProjects = {
   projects: Project[]
@@ -107,7 +108,10 @@ export async function load_projects() {
   } catch (error: unknown) {
     const all_projects: AllProjects = {
       projects: [],
-      error: "Issue loading projects. " + createKilnError(error).getMessage(),
+      error:
+        get(_)("errors.issue_loading_projects") +
+        " " +
+        createKilnError(error).getMessage(),
     }
     projects.set(all_projects)
   }
@@ -170,7 +174,8 @@ export async function load_current_task(project: Project | null) {
     // Can't load this task, likely deleted. Clear the ID, which will force the user to select a new task
     if (dev) {
       alert(
-        "Removing current_task_id from UI state: " +
+        get(_)("errors.removing_current_task_id") +
+          " " +
           createKilnError(error).getMessage(),
       )
     }
@@ -289,19 +294,19 @@ export function model_name(
   provider_models: ProviderModels | null,
 ): string {
   if (!model_id) {
-    return "Unknown"
+    return get(_)("test.unknown")
   }
 
   const model = get_model_info(model_id, provider_models)
   if (model?.name) {
     return model.name
   }
-  return "Model ID: " + model_id
+  return get(_)("stores.model_id_prefix") + " " + model_id
 }
 
 export function provider_name_from_id(provider_id: string): string {
   if (!provider_id) {
-    return "Unknown"
+    return get(_)("test.unknown")
   }
   const provider = get(available_models).find(
     (provider) => provider.provider_id === provider_id,
@@ -321,7 +326,7 @@ export function prompt_name_from_id(
   // Special case for fine-tuned prompts
   let prompt_name: string | undefined = undefined
   if (prompt_id && prompt_id.startsWith("fine_tune_prompt::")) {
-    prompt_name = "Fine-Tune Prompt"
+    prompt_name = get(_)("stores.fine_tune_prompt")
   }
   if (!prompt_name) {
     prompt_name = prompt_response?.prompts.find(

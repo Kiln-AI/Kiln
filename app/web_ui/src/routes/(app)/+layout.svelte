@@ -7,6 +7,7 @@
   import { update_update_store, update_info } from "$lib/utils/update"
   import { onMount } from "svelte"
   import ProgressWidget from "$lib/ui/progress_widget.svelte"
+  import { _ } from "svelte-i18n"
 
   onMount(async () => {
     update_update_store()
@@ -139,9 +140,12 @@
         <details id="task-menu">
           <summary>
             <div class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
-              <span class="font-bold whitespace-nowrap">Project:</span>
+              <span class="font-bold whitespace-nowrap"
+                >{$_("project.name")}:</span
+              >
               <span class="truncate">{$current_project?.name}</span>
-              <span class="font-bold whitespace-nowrap">Task:</span>
+              <span class="font-bold whitespace-nowrap">{$_("task.name")}:</span
+              >
               <span class="truncate">{$current_task?.name}</span>
             </div>
           </summary>
@@ -170,7 +174,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Run</a
+          {$_("navigation.run")}</a
         >
       </li>
       <li class="menu-lg">
@@ -213,7 +217,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Dataset</a
+          {$_("navigation.dataset")}</a
         >
       </li>
 
@@ -241,7 +245,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Synthetic Data</a
+          {$_("navigation.synthetic_data")}</a
         >
       </li>
 
@@ -319,7 +323,7 @@
             />
           </svg>
 
-          Fine Tune</a
+          {$_("navigation.fine_tune")}</a
         >
       </li>
 
@@ -368,7 +372,7 @@
             />
           </svg>
 
-          Evals</a
+          {$_("navigation.evals")}</a
         >
       </li>
 
@@ -394,7 +398,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Prompts</a
+          {$_("navigation.prompts")}</a
         >
       </li>
       <li class="menu-lg">
@@ -423,7 +427,7 @@
             />
           </svg>
 
-          Settings</a
+          {$_("navigation.settings")}</a
         >
         {#if settingsSections.includes(section)}
           <ul class="py-2 ml-6">
@@ -432,7 +436,7 @@
                 class={section == Section.SettingsEditTask ? "active" : ""}
                 href={`/settings/edit_task/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
               >
-                Edit Task
+                {$_("settings.edit_task")}
               </a>
             </li>
             <li class="menu-nested-sm">
@@ -440,7 +444,7 @@
                 class={section == Section.SettingsProviders ? "active" : ""}
                 href="/settings/providers"
               >
-                AI Providers &amp; Models
+                {$_("settings.ai_providers")}
               </a>
             </li>
             <li class="menu-nested-sm">
@@ -450,7 +454,7 @@
                   : ""}
                 href="/settings/manage_projects"
               >
-                Manage Projects
+                {$_("project.manage_projects")}
               </a>
             </li>
             <li class="menu-nested-sm {$current_project?.id ? '' : 'hidden'}">
@@ -458,7 +462,7 @@
                 class={section == Section.SettingsEditProject ? "active" : ""}
                 href="/settings/edit_project/{$current_project?.id}"
               >
-                Edit Project
+                {$_("project.edit_project")}
               </a>
             </li>
             <li class="menu-nested-sm">
@@ -466,7 +470,7 @@
                 class={section == Section.SettingsAppUpdate ? "active" : ""}
                 href="/settings/check_for_update"
               >
-                App Update
+                {$_("settings.app_updates")}
               </a>
             </li>
           </ul>
@@ -475,7 +479,9 @@
       {#if $update_info.update_result && $update_info.update_result.has_update}
         <li class="menu-md mt-4">
           <a href="/settings/check_for_update" class="px-6">
-            <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App Update
+            <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>{$_(
+              "settings.app_updates",
+            )}
             Available</a
           >
         </li>

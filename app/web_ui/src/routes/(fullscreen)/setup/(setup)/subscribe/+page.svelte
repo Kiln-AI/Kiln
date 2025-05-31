@@ -2,6 +2,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { _ } from "svelte-i18n"
 
   let email = ""
   let subscribed = false
@@ -39,9 +40,11 @@
 <div class="flex-none flex flex-row items-center justify-center">
   <img src="/logo.svg" alt="logo" class="size-8 mb-3" />
 </div>
-<h1 class="text-2xl lg:text-4xl flex-none font-bold text-center">Newsletter</h1>
+<h1 class="text-2xl lg:text-4xl flex-none font-bold text-center">
+  {$_("setup.newsletter")}
+</h1>
 <h3 class="text-base font-medium text-center mt-3 max-w-[600px] mx-auto">
-  Zero spam, unsubscribe any time, totally optional.
+  {$_("setup.newsletter_subtitle")}
 </h3>
 
 <div
@@ -51,13 +54,12 @@
     <h3
       class="text-base mb-5 font-light text-center mt-3 max-w-[420px] mx-auto"
     >
-      Subscribe to our newsletter to learn about new features, updates, new
-      models, and other Kiln AI news.
+      {$_("setup.newsletter_description")}
     </h3>
     <div class="max-w-[280px] mx-auto">
       <FormContainer
         on:submit={subscribe}
-        submit_label="Subscribe"
+        submit_label={$_("setup.subscribe")}
         keyboard_submit={false}
         submitting={loading}
         {error}
@@ -65,7 +67,7 @@
         <FormElement
           id="email"
           inputType="input"
-          label="Email"
+          label={$_("setup.email")}
           bind:value={email}
         />
       </FormContainer>
@@ -84,16 +86,18 @@
           d="M256,48C141.31,48,48,141.31,48,256s93.31,208,208,208,208-93.31,208-208S370.69,48,256,48ZM364.25,186.29l-134.4,160a16,16,0,0,1-12,5.71h-.27a16,16,0,0,1-11.89-5.3l-57.6-64a16,16,0,1,1,23.78-21.4l45.29,50.32L339.75,165.71a16,16,0,0,1,24.5,20.58Z"
         />
       </svg>
-      Subscribed!
+      {$_("setup.subscribed")}
     </div>
-    <p class="text-center">Thanks for subscribing! ❤️</p>
+    <p class="text-center">{$_("setup.subscribed_message")}</p>
   {/if}
 </div>
 
 <div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
   <a href="/setup/connect_providers">
     <button class="btn {subscribed ? 'btn-primary' : ''} w-full min-w-[130px]">
-      Continue {subscribed ? "" : " Without Subscribing"}
+      {subscribed
+        ? $_("setup.continue")
+        : $_("setup.continue_without_subscribing")}
     </button></a
   >
 </div>

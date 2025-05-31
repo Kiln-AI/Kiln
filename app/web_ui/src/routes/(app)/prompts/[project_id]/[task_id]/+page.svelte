@@ -3,6 +3,7 @@
   import { current_task, current_task_prompts } from "$lib/stores"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
+  import { _ } from "svelte-i18n"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -10,13 +11,15 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Prompts"
-    subtitle={`Prompts for the task "${$current_task?.name}"`}
-    sub_subtitle="Read the Docs"
+    title={$_("prompts.page_title")}
+    subtitle={$_("prompts.page_subtitle", {
+      values: { task_name: $current_task?.name },
+    })}
+    sub_subtitle={$_("prompts.page_sub_subtitle")}
     sub_subtitle_link="https://docs.getkiln.ai/docs/prompts"
     action_buttons={[
       {
-        label: "Create Prompt",
+        label: $_("prompts.create_prompt"),
         href: `/prompts/${project_id}/${task_id}/create`,
         primary: true,
       },
@@ -28,30 +31,25 @@
       </div>
     {:else if $current_task?.id != task_id}
       <div class="flex flex-col gap-4 text-error">
-        This link is to another task's prompts. Either select that task in the
-        sidebar, or click prompts in the sidebar to load the current task's
-        prompts.
+        {$_("prompts.task_link_error")}
       </div>
     {:else}
-      <div class="font-medium">Prompt Generators</div>
+      <div class="font-medium">{$_("prompts.generators_title")}</div>
       {#if $current_task_prompts.generators.length > 0}
         <div class="font-light text-gray-500 text-sm">
-          Generators build prompts dynamically based on the
-          <a href={`/settings/edit_task/${project_id}/${task_id}`} class="link"
-            >task's default prompt</a
-          >
-          and the
-          <a href={`/dataset/${project_id}/${task_id}`} class="link"
-            >task's dataset</a
-          >. For example, the multi-shot prompt appends highly rated dataset
-          samples to the prompt.
+          {@html $_("prompts.generators_description", {
+            values: {
+              task_link: `<a href="/settings/edit_task/${project_id}/${task_id}" class="link">${$_("prompts.task_default_prompt_link")}</a>`,
+              dataset_link: `<a href="/dataset/${project_id}/${task_id}" class="link">${$_("prompts.task_dataset_link")}</a>`,
+            },
+          })}
         </div>
         <div class="overflow-x-auto rounded-lg border mt-4">
           <table class="table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Description</th>
+                <th>{$_("prompts.table_headers.name")}</th>
+                <th>{$_("prompts.table_headers.description")}</th>
               </tr>
             </thead>
             <tbody>
@@ -72,24 +70,24 @@
         </div>
       {:else}
         <div class="font-light text-gray-500 text-sm">
-          No prompt generators found for this task.
+          {$_("prompts.no_generators_found")}
         </div>
       {/if}
 
-      <div class="font-medium mt-8">Saved Prompts</div>
+      <div class="font-medium mt-8">{$_("prompts.saved_prompts_title")}</div>
       {#if $current_task_prompts.prompts.length > 0}
         <div class="font-light text-gray-500 text-sm">
           <a href={`/prompts/${project_id}/${task_id}/create`} class="link">
-            Create a new prompt
+            {$_("prompts.create_new_prompt_link")}
           </a>
         </div>
         <div class="overflow-x-auto rounded-lg border mt-4">
           <table class="table">
             <thead>
               <tr>
-                <th>Name &amp; Description</th>
-                <th>Type</th>
-                <th>Prompt Preview</th>
+                <th>{$_("prompts.table_headers.name_and_description")}</th>
+                <th>{$_("prompts.table_headers.type")}</th>
+                <th>{$_("prompts.table_headers.prompt_preview")}</th>
               </tr>
             </thead>
             <tbody>
@@ -115,13 +113,13 @@
                   </td>
                   <td class="min-w-[120px]">
                     {#if prompt.id.startsWith("id::")}
-                      Custom
+                      {$_("prompts.prompt_types.custom")}
                     {:else if prompt.id.startsWith("fine_tune_prompt::")}
-                      Fine Tuning Prompt
+                      {$_("prompts.prompt_types.fine_tune_prompt")}
                     {:else if prompt.id.startsWith("task_run_config::")}
-                      Eval Prompt
+                      {$_("prompts.prompt_types.eval_prompt")}
                     {:else}
-                      Unknown
+                      {$_("prompts.prompt_types.unknown")}
                     {/if}
                   </td>
                   <td>
@@ -136,11 +134,11 @@
         </div>
       {:else}
         <div class="font-light text-gray-500 text-sm">
-          No saved prompts found for this task.{" "}
-          <a href={`/prompts/${project_id}/${task_id}/create`} class="link">
-            Create one now
-          </a>
-          .
+          {@html $_("prompts.no_saved_prompts_found", {
+            values: {
+              create_link: `<a href="/prompts/${project_id}/${task_id}/create" class="link">${$_("prompts.create_one_now")}</a>`,
+            },
+          })}
         </div>
       {/if}
     {/if}

@@ -1,5 +1,7 @@
-import posthog from "posthog-js"
+import "../lib/i18n"
 import { browser } from "$app/environment"
+import { locale, waitLocale } from "svelte-i18n"
+import posthog from "posthog-js"
 import { dev } from "$app/environment"
 
 export const prerender = true
@@ -14,5 +16,11 @@ export const load = async () => {
       capture_pageleave: false,
     })
   }
-  return
+  if (browser) {
+    const savedLocale = localStorage.getItem("locale")
+    if (savedLocale) {
+      locale.set(savedLocale)
+    }
+  }
+  await waitLocale()
 }

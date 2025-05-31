@@ -4,6 +4,7 @@
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import { _ } from "svelte-i18n"
 
   export let prompt_method: string
   export let linked_model_selection: string | undefined = undefined
@@ -30,7 +31,7 @@
     if (!current_task_prompts) {
       return [
         {
-          label: "Loading...",
+          label: $_("common.loading"),
           options: [],
         },
       ]
@@ -51,20 +52,19 @@
     }
     if (generators.length > 0) {
       grouped_options.push({
-        label: "Prompt Generators",
+        label: $_("run.prompt_generators"),
         options: generators,
       })
     }
 
     if (fine_tune_prompt_id) {
       grouped_options.push({
-        label: "Fine-Tune Prompt",
+        label: $_("run.fine_tune_prompt"),
         options: [
           {
             value: fine_tune_prompt_id,
-            label: "Fine-Tune Specific Prompt",
-            description:
-              "Recommended: The prompt used to fine-tune this model.",
+            label: $_("run.fine_tune_specific_prompt"),
+            description: $_("run.fine_tune_prompt_description"),
           },
         ],
       })
@@ -72,7 +72,7 @@
 
     if (custom_prompt_name) {
       grouped_options.push({
-        label: "Custom Prompt",
+        label: $_("run.custom_prompt"),
         options: [{ value: "custom", label: custom_prompt_name }],
       })
     }
@@ -89,7 +89,7 @@
     }
     if (static_prompts.length > 0) {
       grouped_options.push({
-        label: "Saved Prompts",
+        label: $_("run.saved_prompts"),
         options: static_prompts,
       })
     }
@@ -127,7 +127,7 @@
 </script>
 
 <FormElement
-  label="Prompt Method"
+  label={$_("run.prompt_method")}
   inputType="fancy_select"
   {description}
   {info_description}
@@ -137,7 +137,5 @@
 />
 
 {#if is_fine_tune_model && prompt_method != fine_tune_prompt_id}
-  <Warning
-    warning_message="We strongly recommend using prompt the model was trained on when running a fine-tuned model."
-  />
+  <Warning warning_message={$_("run.fine_tune_model_warning")} />
 {/if}

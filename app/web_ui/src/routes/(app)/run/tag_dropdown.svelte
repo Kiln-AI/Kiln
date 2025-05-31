@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte"
+  import { _ } from "svelte-i18n"
 
   export let tag: string | null = null
   export let on_select: (tag: string) => void = () => {}
@@ -11,9 +12,9 @@
   function handle_keyup(event: KeyboardEvent) {
     if (event.key === "Enter") {
       if (tag === null || tag.length === 0) {
-        error = "Tags cannot be empty"
+        error = $_("tags.cannot_be_empty")
       } else if (tag.includes(" ")) {
-        error = "Tags cannot contain spaces. Use underscores."
+        error = $_("tags.no_spaces")
       } else {
         on_select(tag)
         error = null
@@ -36,7 +37,7 @@
     list="tag_options"
     type="text"
     class="w-full input input-bordered py-2 {error ? 'input-error' : ''}"
-    placeholder="Add a tag"
+    placeholder={$_("tags.add_tag")}
     bind:value={tag}
     on:keyup={handle_keyup}
   />

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Tutorial from "./tutorial.svelte"
+  import { _ } from "svelte-i18n"
 
   let completed: boolean = false
 </script>
@@ -9,7 +10,7 @@
   <img src="/logo.svg" alt="logo" class="size-8 mb-3" />
 </div>
 <h1 class="text-2xl lg:text-4xl flex-none font-bold text-center">
-  Introduction
+  {$_("setup.introduction")}
 </h1>
 
 <div
@@ -21,9 +22,11 @@
 <div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
   {#if completed}
     <a href="/setup/subscribe">
-      <button class="btn btn-primary w-full min-w-[130px]"> Continue </button>
+      <button class="btn btn-primary w-full min-w-[130px]">
+        {$_("setup.continue")}
+      </button>
     </a>
   {:else}
-    <a class="btn" href="/setup/subscribe"> Skip Tutorial </a>
+    <a class="btn" href="/setup/subscribe"> {$_("setup.skip_tutorial")} </a>
   {/if}
 </div>

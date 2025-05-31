@@ -8,6 +8,7 @@
   import { client } from "$lib/api_client"
   import type { Project } from "$lib/types"
   import { onMount, tick } from "svelte"
+  import { _ } from "svelte-i18n"
 
   let importing = false
   onMount(() => {
@@ -40,7 +41,7 @@
       saved = false
       submitting = true
       if (!project?.name) {
-        throw new Error("Project name is required")
+        throw new Error($_("forms.project_name_required"))
       }
       let data: Project | undefined = undefined
       let error: unknown | undefined = undefined
@@ -141,7 +142,9 @@
   {#if !created}
     {#if !importing}
       <FormContainer
-        submit_label={project.id ? "Update Project" : "Create Project"}
+        submit_label={project.id
+          ? $_("project.update_project")
+          : $_("project.create_project")}
         on:submit={save_project}
         bind:warn_before_unload
         bind:submitting
@@ -149,14 +152,14 @@
         bind:saved
       >
         <FormElement
-          label="Project Name"
+          label={$_("project.name")}
           id="project_name"
           inputType="input"
           bind:value={project.name}
           max_length={120}
         />
         <FormElement
-          label="Project Description"
+          label={$_("project.description")}
           id="project_description"
           inputType="textarea"
           optional={true}
@@ -165,15 +168,15 @@
       </FormContainer>
       {#if !project.id}
         <p class="mt-4 text-center">
-          Or
+          {$_("common.or")}
           <button class="link font-bold" on:click={() => (importing = true)}>
-            import an existing project
+            {$_("project.import_existing_project")}
           </button>
         </p>
       {/if}
     {:else}
       <FormContainer
-        submit_label="Import Project"
+        submit_label={$_("project.import_project")}
         on:submit={import_project}
         bind:warn_before_unload
         bind:submitting
@@ -181,30 +184,38 @@
         bind:saved
       >
         <FormElement
-          label="Existing Project Path"
-          description="The path to the project on your local machine. For example, /Users/username/Kiln Projects/my_project/project.kiln"
+          label={$_("project.existing_project_path")}
+          description={$_("project.project_path_description")}
           id="import_project_path"
           inputType="input"
           bind:value={import_project_path}
         />
       </FormContainer>
       <p class="mt-4 text-center">
-        Or
+        {$_("common.or")}
         <button class="link font-bold" on:click={() => (importing = false)}>
-          create a new project
+          {$_("project.create_new_project")}
         </button>
       </p>
     {/if}
   {:else if !redirect_on_created}
     {#if importing}
-      <h2 class="text-xl font-medium text-center">Project Imported!</h2>
+      <h2 class="text-xl font-medium text-center">
+        {$_("project.project_imported")}
+      </h2>
       <p class="text-sm text-center">
-        Your project "{import_project_path}" has been imported.
+        {$_("project.project_imported_message", {
+          values: { path: import_project_path },
+        })}
       </p>
     {:else}
-      <h2 class="text-xl font-medium text-center">Project Created!</h2>
+      <h2 class="text-xl font-medium text-center">
+        {$_("project.project_created")}
+      </h2>
       <p class="text-sm text-center">
-        Your new project "{project.name}" has been created.
+        {$_("project.project_created_message", {
+          values: { name: project.name },
+        })}
       </p>
     {/if}
   {/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   import AppPage from "../../../../app_page.svelte"
   import { current_task, load_available_prompts } from "$lib/stores"
   import { page } from "$app/stores"
@@ -16,8 +17,10 @@
   let prompt_description = ""
   let prompt = ""
   let is_chain_of_thought = false
-  let chain_of_thought_instructions =
-    "Think step by step, explaining your reasoning."
+  let chain_of_thought_instructions = ""
+  $: if (is_chain_of_thought && !chain_of_thought_instructions) {
+    chain_of_thought_instructions = $_("prompts.chain_of_thought_default")
+  }
   let create_error: KilnError | null = null
   let create_loading = false
 
@@ -63,57 +66,62 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title="Create a Prompt" subtitle={`For the task "${task_name}"`}>
+  <AppPage
+    title={$_("prompts.create_prompt")}
+    subtitle={$_("prompts.create_prompt_subtitle", { values: { task_name } })}
+  >
     <div class="max-w-[800px]">
       <FormContainer
-        submit_label="Create Prompt"
+        submit_label={$_("prompts.create_prompt_button")}
         on:submit={create_prompt}
         bind:error={create_error}
         bind:submitting={create_loading}
       >
         <FormElement
-          label="Prompt Name"
+          label={$_("prompts.prompt_name")}
           id="prompt_name"
           bind:value={prompt_name}
-          description="A short name to uniquely identify this prompt."
+          description={$_("prompts.prompt_name_description")}
           max_length={60}
         />
 
         <FormElement
-          label="Prompt Description"
+          label={$_("prompts.prompt_description")}
           id="prompt_description"
           optional={true}
           bind:value={prompt_description}
-          description="A description of the prompt for your reference."
+          description={$_("prompts.prompt_description_description")}
         />
 
         <FormElement
-          label="Prompt"
+          label={$_("prompts.prompt_label")}
           id="prompt"
           bind:value={prompt}
           inputType="textarea"
           tall={true}
-          description="A prompt to use for this task."
-          info_description="A LLM prompt such as 'You are a helpful assistant.'. This prompt is specific to this task. To use this prompt after creation, select it from the prompts dropdown."
+          description={$_("prompts.prompt_input_description")}
+          info_description={$_("prompts.prompt_info_description")}
         />
         <FormElement
-          label="Chain of Thought"
+          label={$_("prompts.chain_of_thought")}
           id="is_chain_of_thought"
           bind:value={is_chain_of_thought}
-          description="Should this prompt use chain of thought?"
+          description={$_("prompts.chain_of_thought_description")}
           inputType="select"
           select_options={[
-            [false, "Disabled"],
-            [true, "Enabled"],
+            [false, $_("prompts.chain_of_thought_disabled")],
+            [true, $_("prompts.chain_of_thought_enabled")],
           ]}
         />
         {#if is_chain_of_thought}
           <FormElement
-            label="Chain of Thought Instructions"
+            label={$_("prompts.chain_of_thought_instructions")}
             id="chain_of_thought_instructions"
             bind:value={chain_of_thought_instructions}
             inputType="textarea"
-            description="Instructions for the model's 'thinking' prior to answering. Required for chain of thought prompting."
+            description={$_(
+              "prompts.chain_of_thought_instructions_description",
+            )}
           />
         {/if}
       </FormContainer>

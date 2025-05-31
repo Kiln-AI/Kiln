@@ -15,6 +15,7 @@
     current_task_prompts,
   } from "$lib/stores"
   import { prompt_link } from "$lib/utils/link_builder"
+  import { _ } from "svelte-i18n"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -108,7 +109,7 @@
   async function toggle_eval_favourite(evaluator: Eval) {
     try {
       if (!evaluator.id) {
-        throw new Error("Eval ID is required")
+        throw new Error($_("errors.eval_id_required"))
       }
       const new_fav_state = !evaluator.favourite
       const { data, error } = await client.PATCH(
@@ -133,15 +134,15 @@
 </script>
 
 <AppPage
-  title="Evals"
-  subtitle="Evaluate task performance. Compare models, prompts, and fine-tunes."
-  sub_subtitle={is_empty ? undefined : "Read the Docs"}
+  title={$_("evaluation.page_title")}
+  subtitle={$_("evaluation.page_subtitle")}
+  sub_subtitle={is_empty ? undefined : $_("evaluation.read_docs")}
   sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "New Evaluator",
+          label: $_("evaluation.new_evaluator"),
           href: `/evals/${project_id}/${task_id}/create_evaluator`,
           primary: true,
         },
@@ -159,9 +160,9 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error</div>
+      <div class="font-medium">{$_("common.error")}</div>
       <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+        {error.getMessage() || $_("evaluation.unknown_error_occurred")}
       </div>
     </div>
   {:else if evals}
@@ -170,9 +171,9 @@
         <thead>
           <tr>
             <th></th>
-            <th>Eval Name</th>
-            <th>Description</th>
-            <th>Selected Run Method</th>
+            <th>{$_("evaluation.eval_name")}</th>
+            <th>{$_("evaluation.description")}</th>
+            <th>{$_("evaluation.selected_run_method")}</th>
           </tr>
         </thead>
         <tbody>
@@ -217,14 +218,14 @@
                   <div
                     class="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4 lg:min-w-[260px]"
                   >
-                    <div>Model:</div>
+                    <div>{$_("evaluation.model")}:</div>
                     <div class="text-gray-500">
                       {model_name(
                         run_config.run_config_properties.model_name,
                         $model_info,
                       )}
                     </div>
-                    <div>Prompt:</div>
+                    <div>{$_("evaluation.prompt")}:</div>
                     <div class="text-gray-500">
                       {#if prompt_href}
                         <a href={prompt_href} class="link">{prompt_name}</a>
@@ -234,7 +235,7 @@
                     </div>
                   </div>
                 {:else}
-                  <div class="text-gray-500">N/A</div>
+                  <div class="text-gray-500">{$_("evaluation.na")}</div>
                 {/if}
               </td>
             </tr>

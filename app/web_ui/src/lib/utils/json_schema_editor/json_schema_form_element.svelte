@@ -5,6 +5,7 @@
     schema_from_model,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { _ } from "svelte-i18n"
 
   let validation_errors: string[] = []
   let id = Math.random().toString(36)
@@ -54,9 +55,9 @@
     if (
       !isPropertyEdited ||
       confirm(
-        "Are you sure you want to remove Property #" +
-          (index + 1) +
-          "?\n\nIt has content which hasn't been saved.",
+        $_("json_schema.confirm_remove_property", {
+          values: { number: index + 1 },
+        }),
       )
     ) {
       schema_model.properties.splice(index, 1)
@@ -106,11 +107,7 @@
   }
 
   function switch_to_visual_schema() {
-    if (
-      confirm(
-        "Revert to the visual schema editor?\n\nChanges made to the raw JSON schema will be lost.",
-      )
-    ) {
+    if (confirm($_("json_schema.confirm_revert_to_visual"))) {
       raw = false
     }
   }
@@ -136,20 +133,22 @@
             id={"property_" + index + "_" + id}
           >
             <div class="grow">
-              Property #{index + 1}
+              {$_("json_schema.property_number", {
+                values: { number: index + 1 },
+              })}
             </div>
             <button
               class="link text-xs text-gray-500"
               on:click={() => remove_property(index)}
             >
-              remove
+              {$_("json_schema.remove")}
             </button>
           </div>
           <div class="flex flex-row gap-3">
             <div class="grow">
               <FormElement
                 id={"property_" + property.id + "_title"}
-                label="Property Name"
+                label={$_("json_schema.property_name")}
                 inputType="input"
                 bind:value={schema_model.properties[index].title}
                 light_label={true}
@@ -157,37 +156,37 @@
             </div>
             <FormElement
               id={"property_" + property.id + "_type"}
-              label="Type"
+              label={$_("json_schema.type")}
               inputType="select"
               bind:value={schema_model.properties[index].type}
               on_select={(e) => selected_type(e, index)}
               select_options={[
-                ["string", "String"],
-                ["number", "Number"],
-                ["integer", "Integer"],
-                ["boolean", "Boolean"],
-                ["array", "Array"],
-                ["object", "Object"],
-                ["enum", "Enum"],
-                ["other", "More..."],
+                ["string", $_("json_schema.types.string")],
+                ["number", $_("json_schema.types.number")],
+                ["integer", $_("json_schema.types.integer")],
+                ["boolean", $_("json_schema.types.boolean")],
+                ["array", $_("json_schema.types.array")],
+                ["object", $_("json_schema.types.object")],
+                ["enum", $_("json_schema.types.enum")],
+                ["other", $_("json_schema.types.other")],
               ]}
               light_label={true}
             />
             <FormElement
               id={"property_" + property.id + "_required"}
-              label="Required"
+              label={$_("json_schema.required")}
               inputType="select"
               bind:value={schema_model.properties[index].required}
               select_options={[
-                [true, "True"],
-                [false, "False"],
+                [true, $_("json_schema.required_options.true")],
+                [false, $_("json_schema.required_options.false")],
               ]}
               light_label={true}
             />
           </div>
           <FormElement
             id={"property_" + property.id + "_description"}
-            label="Description"
+            label={$_("json_schema.description")}
             inputType="input"
             bind:value={schema_model.properties[index].description}
             light_label={true}
@@ -200,7 +199,7 @@
           on:click={() => add_property()}
           id={"add_button_" + id}
         >
-          Add Property
+          {$_("json_schema.add_property")}
         </button>
       </div>
     </div>
@@ -209,38 +208,41 @@
   <div class="flex flex-col gap-4 pt-6" {id}>
     <FormElement
       id={"raw_schema"}
-      label="Raw JSON Schema"
-      info_description="See json-schema.org for more information on the JSON Schema spec."
+      label={$_("json_schema.raw_json_schema")}
+      info_description={$_("json_schema.raw_json_schema_info")}
       inputType="textarea"
       tall={true}
       bind:value={raw_schema}
     />
     <button
       class="link text-gray-500 text-sm text-right"
-      on:click={() => switch_to_visual_schema()}>Revert to Visual Editor</button
+      on:click={() => switch_to_visual_schema()}
+      >{$_("json_schema.revert_to_visual_editor")}</button
     >
   </div>
 {/if}
 
 <Dialog
   bind:this={raw_json_schema_dialog}
-  title="Not Supported by the Visual Editor"
+  title={$_("json_schema.not_supported_by_visual_editor")}
   action_buttons={[
-    { label: "Cancel", isCancel: true },
-    { label: "Switch to Raw JSON Schema", action: switch_to_raw_schema },
+    { label: $_("common.cancel"), isCancel: true },
+    {
+      label: $_("json_schema.switch_to_raw_json_schema"),
+      action: switch_to_raw_schema,
+    },
   ]}
 >
-  <h4 class="mt-4">Switch to Raw JSON Schema?</h4>
+  <h4 class="mt-4">{$_("json_schema.switch_to_raw_json_schema_question")}</h4>
 
   <div class="text-sm font-light text-gray-500">
     <a href="https://json-schema.org/learn" target="_blank" class="link"
-      >Raw JSON Schema</a
-    > will give you more control over the structure of your data, including arrays,
-    nested objects, enums and more.
+      >{$_("json_schema.raw_json_schema")}</a
+    >
+    {$_("json_schema.raw_json_schema_description")}
   </div>
-  <h4 class="mt-4">Advanced Users Only</h4>
+  <h4 class="mt-4">{$_("json_schema.advanced_users_only")}</h4>
   <div class="text-sm font-light text-gray-500 mt-1">
-    Raw JSON Schema provides advanced functionality, but requires technical
-    expertise. Invalid schemas will cause task failures.
+    {$_("json_schema.advanced_users_warning")}
   </div>
 </Dialog>

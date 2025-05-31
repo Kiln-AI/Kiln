@@ -6,6 +6,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { provider_name_from_id } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { _ } from "svelte-i18n"
 
   let connected_providers: [string, string][] = []
   let loading_providers = true
@@ -24,7 +25,7 @@
         throw settings_error
       }
       if (!settings) {
-        throw new KilnError("Settings not found", null)
+        throw new KilnError($_("providers.settings_not_found"), null)
       }
       custom_models = settings["custom_models"] || []
       if (settings["open_ai_api_key"]) {
@@ -103,10 +104,7 @@
       await save_model_list()
       new_model_name = null
     } else {
-      throw new KilnError(
-        "Invalid model provider or name. Please try again with all fields.",
-        null,
-      )
+      throw new KilnError($_("providers.invalid_model_error"), null)
     }
 
     return true
@@ -125,7 +123,7 @@
         throw save_error
       }
       if (!save_result) {
-        throw new KilnError("No response from server", null)
+        throw new KilnError($_("providers.no_response_error"), null)
       }
     } catch (e) {
       save_model_list_error = createKilnError(e)
@@ -148,12 +146,12 @@
 </script>
 
 <AppPage
-  title="Add Models from Existing Providers"
-  sub_subtitle="Each AI provider already includes models tested for Kiln. Add additional models here."
+  title={$_("providers.add_models")}
+  sub_subtitle={$_("providers.add_models_subtitle")}
   action_buttons={custom_models && custom_models.length > 0
     ? [
         {
-          label: "Add Model",
+          label: $_("providers.add_model"),
           primary: true,
           handler: show_add_model_modal,
         },
@@ -182,7 +180,7 @@
           </div>
           <button
             on:click={() => remove_model(index)}
-            class="link text-sm text-gray-500">Remove</button
+            class="link text-sm text-gray-500">{$_("common.remove")}</button
           >
         </div>
       {/each}
@@ -193,50 +191,52 @@
         class="btn btn-wide btn-primary mt-4"
         on:click={show_add_model_modal}
       >
-        Add Model
+        {$_("providers.add_model")}
       </button>
     </div>
   {/if}
   {#if saving_model_list}
     <div class="flex flex-row gap-2 mt-4">
       <div class="loading loading-spinner"></div>
-      Saving
+      {$_("providers.saving")}
     </div>
   {:else if save_model_list_error}
     <div class="mt-4 text-error font-medium">
-      <span>Error saving model list: {save_model_list_error.message}</span>
+      <span
+        >{$_("providers.error_saving_model_list")}
+        {save_model_list_error.message}</span
+      >
     </div>
   {/if}
 </AppPage>
 
 <Dialog
   bind:this={add_model_dialog}
-  title="Add Model"
+  title={$_("providers.add_model")}
   action_buttons={[
-    { label: "Cancel", isCancel: true },
+    { label: $_("common.cancel"), isCancel: true },
     {
-      label: "Add Model",
+      label: $_("providers.add_model"),
       asyncAction: add_model,
       disabled: !new_model_provider || !new_model_name,
       isPrimary: true,
     },
   ]}
 >
-  <div class="text-sm">Add a model from an existing provider.</div>
+  <div class="text-sm">{$_("providers.add_model_from_provider")}</div>
   <div class="text-sm text-gray-500 mt-3">
-    Provide the exact model ID used by the provider API. For example, OpenAI's
-    "gpt-3.5-turbo" or Groq's "gemma2-9b-it".
+    {$_("providers.model_id_instructions")}
   </div>
   <div class="flex flex-col gap-4 mt-8">
     <FormElement
-      label="Model Provider"
+      label={$_("providers.model_provider")}
       id="model_provider"
       inputType="select"
       select_options={connected_providers}
       bind:value={new_model_provider}
     />
     <FormElement
-      label="Model Name"
+      label={$_("providers.model_name")}
       id="model_name"
       inputType="input"
       bind:value={new_model_name}

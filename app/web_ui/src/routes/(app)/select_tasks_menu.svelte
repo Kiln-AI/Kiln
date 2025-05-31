@@ -4,6 +4,7 @@
   import { ui_state } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
+  import { _ } from "svelte-i18n"
 
   let id = "select-tasks-menu-" + Math.random().toString(36)
 
@@ -42,7 +43,7 @@
   async function load_tasks(project: Project | null) {
     if (project == null || !project.id) {
       tasks_loading = false
-      tasks_loading_error = "No project selected"
+      tasks_loading_error = $_("project.select_task")
       return
     }
     try {
@@ -63,7 +64,7 @@
       }
       selected_project_tasks = tasks_data
     } catch (error) {
-      tasks_loading_error = "Tasks failed to load: " + error
+      tasks_loading_error = $_("errors.loading_projects") + ": " + error
       selected_project_tasks = []
     } finally {
       tasks_loading = false
@@ -107,7 +108,9 @@
         class="flex flex-row pr-1"
       >
         <div class="grow">
-          <span class="badge badge-secondary badge-outline">Project</span>
+          <span class="badge badge-secondary badge-outline"
+            >{$_("project.name")}</span
+          >
           {project.name}
         </div>
         <div>
@@ -157,7 +160,7 @@
               class="flex justify-center place-items-center place-content-center h-32"
             >
               <span class="flex flex-col">
-                <span class="font-bold">Error</span>
+                <span class="font-bold">{$_("common.error")}</span>
                 <span class="">{tasks_loading_error}</span>
               </span>
             </li>
@@ -186,7 +189,7 @@
                   fill="#000000"
                 />
               </svg>
-              New Task
+              {$_("task.create_task")}
             </a>
           </li>
         </ul>
@@ -209,7 +212,7 @@
           fill="#000000"
         />
       </svg>
-      New Project</a
-    >
+      {$_("project.create_project")}
+    </a>
   </li>
 </ul>

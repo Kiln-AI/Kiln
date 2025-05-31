@@ -18,6 +18,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import { _ } from "svelte-i18n"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -53,20 +54,29 @@
     const model_id = run?.output?.source?.properties?.model_name
     model_props = Object.fromEntries(
       Object.entries({
-        ID: run?.id || undefined,
-        "Input Source":
+        [$_("common.id") || "ID"]: run?.id || undefined,
+        [$_("dataset.input_source") || "Input Source"]:
           "" +
           run?.input_source?.type.charAt(0).toUpperCase() +
           run?.input_source?.type.slice(1),
-        "Output Model": model_name(model_id, $model_info),
-        "Model Provider": run?.output?.source?.properties?.model_provider,
-        Prompt:
+        [$_("dataset.output_model") || "Output Model"]: model_name(
+          model_id,
+          $model_info,
+        ),
+        [$_("dataset.model_provider") || "Model Provider"]:
+          run?.output?.source?.properties?.model_provider,
+        [$_("dataset.prompt") || "Prompt"]:
           prompt_id && prompt_name_from_id(prompt_id, $current_task_prompts),
-        Cost: run?.usage?.cost ? `$${run?.usage?.cost.toFixed(6)}` : undefined,
-        Tokens: run?.usage?.total_tokens ? run?.usage?.total_tokens : undefined,
-        "Created By": run?.input_source?.properties?.created_by,
-        "Created At": formatDate(run?.created_at),
-        Topic: topic_path,
+        [$_("dataset.cost") || "Cost"]: run?.usage?.cost
+          ? `$${run?.usage?.cost.toFixed(6)}`
+          : undefined,
+        [$_("dataset.tokens") || "Tokens"]: run?.usage?.total_tokens
+          ? run?.usage?.total_tokens
+          : undefined,
+        [$_("dataset.created_by") || "Created By"]:
+          run?.input_source?.properties?.created_by,
+        [$_("dataset.created_at") || "Created At"]: formatDate(run?.created_at),
+        [$_("dataset.topic") || "Topic"]: topic_path,
       }).filter(([_, value]) => value !== undefined && value !== ""),
     )
   }
@@ -92,7 +102,8 @@
     } catch (error) {
       if (error instanceof Error && error.message.includes("Load failed")) {
         load_error = new KilnError(
-          "Could not load run. It may belong to a project you don't have access to.",
+          $_("dataset.could_not_load_run") ||
+            "Could not load run. It may belong to a project you don't have access to.",
           null,
         )
       } else {
@@ -175,8 +186,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Dataset Run"
-    subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
+    title={$_("dataset.run_title")}
+    subtitle={run?.id ? `${$_("dataset.run_id")}: ${run.id}` : undefined}
     action_buttons={buttons}
   >
     {#if loading}
@@ -184,17 +195,19 @@
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if deleted[run_id] === true}
-      <div class="badge badge-error badge-lg p-4">Run Deleted</div>
+      <div class="badge badge-error badge-lg p-4">
+        {$_("dataset.run_deleted")}
+      </div>
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
     {:else if run && $current_task}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
         <div class="grow">
-          <div class="text-xl font-bold mb-4">Input</div>
+          <div class="text-xl font-bold mb-4">{$_("dataset.input")}</div>
           <Output raw_output={run.input} />
         </div>
         <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
-          <div class="text-xl font-bold">Parameters</div>
+          <div class="text-xl font-bold">{$_("dataset.parameters")}</div>
           <div
             class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
           >
@@ -209,13 +222,13 @@
       </div>
       <Run initial_run={run} task={$current_task} {project_id} />
     {:else}
-      <div class="text-gray-500 text-lg">Run not found</div>
+      <div class="text-gray-500 text-lg">{$_("dataset.run_not_found")}</div>
     {/if}
   </AppPage>
 </div>
 
 <DeleteDialog
-  name="Dataset Run"
+  name={$_("dataset.run_title")}
   bind:this={delete_dialog}
   {delete_url}
   {after_delete}

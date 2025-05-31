@@ -15,6 +15,7 @@
   import { get } from "svelte/store"
   import { KilnError } from "$lib/utils/error_handlers"
   import { createKilnError } from "$lib/utils/error_handlers"
+  import { _ } from "svelte-i18n"
   let loading = true
   let load_error: string | null = null
   import posthog from "posthog-js"
@@ -94,13 +95,13 @@
   >
     {#if load_error}
       <span class="text-center flex flex-col gap-4">
-        <h1 class="text-2xl font-bold">Error loading projects</h1>
+        <h1 class="text-2xl font-bold">{$_("errors.loading_projects")}</h1>
         <p class="text-error">{load_error}</p>
         <button
           class="btn btn-primary btn-sm"
           on:click={() => window.location.reload()}
         >
-          Retry
+          {$_("common.retry")}
         </button>
       </span>
     {:else}

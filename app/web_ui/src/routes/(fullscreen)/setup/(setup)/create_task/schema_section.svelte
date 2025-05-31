@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n"
   import JsonSchemaFormElement from "$lib/utils/json_schema_editor/json_schema_form_element.svelte"
   import {
     type SchemaModel,
@@ -52,7 +53,9 @@
         value={true}
         bind:group={plaintext}
       />
-      <span class="label-text text-left grow">Plain Text</span>
+      <span class="label-text text-left grow"
+        >{$_("task.schema_section.plain_text")}</span
+      >
     </label>
   </div>
   <div class="form-control">
@@ -64,7 +67,9 @@
         value={false}
         bind:group={plaintext}
       />
-      <span class="label-text text-left grow">Structured JSON</span>
+      <span class="label-text text-left grow"
+        >{$_("task.schema_section.structured_json")}</span
+      >
     </label>
   </div>
 

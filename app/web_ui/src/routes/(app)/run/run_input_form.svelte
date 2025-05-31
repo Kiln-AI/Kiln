@@ -5,6 +5,7 @@
     typed_json_from_schema_model,
     type SchemaModelProperty,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { _ } from "svelte-i18n"
 
   let id = "plaintext_input_" + Math.random().toString(36).substring(2, 15)
 
@@ -44,25 +45,25 @@
   export function describe_type(property: SchemaModelProperty): string {
     let base_description = ""
     if (property.type === "string") {
-      base_description = "String"
+      base_description = $_("run.type_descriptions.string")
     } else if (property.type === "number") {
-      base_description = "Number"
+      base_description = $_("run.type_descriptions.number")
     } else if (property.type === "integer") {
-      base_description = "Integer"
+      base_description = $_("run.type_descriptions.integer")
     } else if (property.type === "boolean") {
-      base_description = "'true' or 'false'"
+      base_description = $_("run.type_descriptions.boolean")
     } else if (property.type === "array") {
-      base_description = "JSON Array"
+      base_description = $_("run.type_descriptions.array")
     } else if (property.type === "object") {
-      base_description = "JSON Object"
+      base_description = $_("run.type_descriptions.object")
     } else {
-      base_description = "Unknown type"
+      base_description = $_("run.type_descriptions.unknown")
     }
 
     if (property.required) {
-      return base_description + " (required)"
+      return base_description + $_("run.type_descriptions.required_suffix")
     }
-    return base_description + " (optional)"
+    return base_description + $_("run.type_descriptions.optional_suffix")
   }
 
   function get_input_type(property: SchemaModelProperty): "textarea" | "input" {
@@ -77,10 +78,10 @@
     property: SchemaModelProperty,
   ): string | undefined {
     if (property.type === "array") {
-      return "A list of items in JSON format. For example: [item_1, item_2]"
+      return $_("run.input_info.array_description")
     }
     if (property.type === "object") {
-      return 'A JSON object. For example: {"key_1": "value_1", "key_2": "value_2"}'
+      return $_("run.input_info.object_description")
     }
     return undefined
   }
@@ -88,7 +89,7 @@
 
 {#if !input_schema}
   <FormElement
-    label="Plaintext Input"
+    label={$_("run.plaintext_input")}
     inputType="textarea"
     {id}
     bind:value={plaintext_input}
@@ -107,5 +108,5 @@
     />
   {/each}
 {:else}
-  <p>Invalid or unsupported input schema</p>
+  <p>{$_("run.invalid_unsupported_schema")}</p>
 {/if}

@@ -1,5 +1,7 @@
 import { createKilnError, KilnError } from "$lib/utils/error_handlers"
 import { writable } from "svelte/store"
+import { _ } from "svelte-i18n"
+import { get } from "svelte/store"
 
 export const app_version = "0.16.0"
 
@@ -56,7 +58,7 @@ export async function check_for_update(): Promise<
     const html_url = data.html_url
     const full_version = data.tag_name
     if (!html_url || !full_version) {
-      return new KilnError("Failed to fetch update data", [])
+      return new KilnError(get(_)("errors.failed_to_fetch_update_data"), [])
     }
     const [version] = full_version.split("-")
     return {

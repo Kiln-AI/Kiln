@@ -26,6 +26,7 @@
     load_available_models,
   } from "$lib/stores"
   import OutputTypeTablePreview from "../../../output_type_table_preview.svelte"
+  import { _ } from "svelte-i18n"
 
   let results: EvalRunResult | null = null
   let results_error: KilnError | null = null
@@ -83,19 +84,20 @@
       return {}
     }
     return {
-      "Run Method Name": run_config.name,
-      Model: model_name(
+      [$_("evaluation.results.properties.run_method_name")]: run_config.name,
+      [$_("evaluation.results.properties.model")]: model_name(
         run_config.run_config_properties?.model_name,
         $model_info,
       ),
-      Provider: provider_name_from_id(
+      [$_("evaluation.results.properties.provider")]: provider_name_from_id(
         run_config.run_config_properties?.model_provider_name,
       ),
-      Prompt: prompt_name_from_id(
+      [$_("evaluation.results.properties.prompt")]: prompt_name_from_id(
         run_config.run_config_properties?.prompt_id,
         $current_task_prompts,
       ),
-      "Task Inputs From Dataset": evaluator.eval_set_filter_id,
+      [$_("evaluation.results.properties.task_inputs_from_dataset")]:
+        evaluator.eval_set_filter_id,
     }
   }
 
@@ -107,18 +109,24 @@
       return {}
     }
     return {
-      "Eval Name": evaluator.name,
-      "Eval Method Name": eval_config.name,
-      Algorithm: eval_config_to_ui_name(eval_config.config_type),
-      Model: model_name(eval_config.model_name, $model_info),
-      "Model Provider": provider_name_from_id(eval_config.model_provider),
+      [$_("evaluation.results.properties.eval_name")]: evaluator.name,
+      [$_("evaluation.results.properties.eval_method_name")]: eval_config.name,
+      [$_("evaluation.results.properties.algorithm")]: eval_config_to_ui_name(
+        eval_config.config_type,
+      ),
+      [$_("evaluation.results.properties.model")]: model_name(
+        eval_config.model_name,
+        $model_info,
+      ),
+      [$_("evaluation.results.properties.model_provider")]:
+        provider_name_from_id(eval_config.model_provider),
     }
   }
 </script>
 
 <AppPage
-  title="Eval Results"
-  subtitle="Evaluating a task run method with an evaluation method."
+  title={$_("evaluation.results.title")}
+  subtitle={$_("evaluation.results.subtitle")}
 >
   {#if results_loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -128,26 +136,28 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Eval Results</div>
+      <div class="font-medium">{$_("evaluation.results.error_loading")}</div>
       <div class="text-error text-sm">
-        {results_error.getMessage() || "An unknown error occurred"}
+        {results_error.getMessage() || $_("errors.unknown_error")}
       </div>
     </div>
   {:else if results && results.results.length === 0}
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Eval Results Empty</div>
+      <div class="font-medium">{$_("evaluation.results.empty_title")}</div>
       <div class="text-error text-sm">
-        No results found for this run method.
+        {$_("evaluation.results.empty_message")}
       </div>
     </div>
   {:else if results}
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
       <div class="grow basis-1/2">
-        <div class="text-xl font-bold">Task Run Method</div>
+        <div class="text-xl font-bold">
+          {$_("evaluation.results.task_run_method")}
+        </div>
         <div class="text-sm text-gray-500 mb-4">
-          How the task outputs were generated.
+          {$_("evaluation.results.task_run_method_desc")}
         </div>
         <div
           class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
@@ -161,9 +171,11 @@
         </div>
       </div>
       <div class="grow basis-1/2">
-        <div class="text-xl font-bold">Evaluation Method</div>
+        <div class="text-xl font-bold">
+          {$_("evaluation.results.evaluation_method")}
+        </div>
         <div class="text-sm text-gray-500 mb-4">
-          How the task outputs were evaluated.
+          {$_("evaluation.results.evaluation_method_desc")}
         </div>
         <div
           class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
@@ -181,8 +193,8 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Input & Output</th>
-            <th>Thinking</th>
+            <th>{$_("evaluation.results.input_output")}</th>
+            <th>{$_("evaluation.results.thinking")}</th>
             {#each results.eval.output_scores as score}
               <th class="text-center">
                 {score.name}
@@ -195,11 +207,15 @@
           {#each results.results as result}
             <tr>
               <td>
-                <div class="font-medium">Input:</div>
+                <div class="font-medium">
+                  {$_("evaluation.results.input_label")}
+                </div>
                 <div>
                   {result.input}
                 </div>
-                <div class="font-medium mt-4">Output:</div>
+                <div class="font-medium mt-4">
+                  {$_("evaluation.results.output_label")}
+                </div>
                 <div>
                   {result.output}
                 </div>
@@ -225,7 +241,7 @@
                               thinking_dialog?.show()
                             }}
                           >
-                            See all
+                            {$_("evaluation.results.see_all")}
                           </button>
                         </div>
                       </div>
@@ -251,16 +267,16 @@
 </AppPage>
 
 <Dialog
-  title="Are you sure you want to peek?"
+  title={$_("evaluation.results.peek_dialog.title")}
   bind:this={peek_dialog}
   blur_background={true}
   action_buttons={[
     {
-      label: "Look Anyways",
+      label: $_("evaluation.results.peek_dialog.look_anyways"),
       isError: true,
     },
     {
-      label: "Go Back",
+      label: $_("evaluation.results.peek_dialog.go_back"),
       isPrimary: true,
       action: () => {
         window.history.back()
@@ -270,29 +286,22 @@
   ]}
 >
   <div class="font-light flex flex-col gap-4">
-    <Warning
-      warning_message="We strongly suggest you don't look at these results! Looking at these results can bias future iteration."
-    />
+    <Warning warning_message={$_("evaluation.results.peek_dialog.warning")} />
     <div>
-      Viewing these evaluation results may lead to data leakage - a fundamental
-      issue in machine learning where information from your test set
-      inadvertently influences your development process. When you examine
-      specific examples, you're likely to optimize for those particular cases
-      rather than developing solutions that generalize well to unseen data.
+      {$_("evaluation.results.peek_dialog.data_leakage_warning")}
     </div>
     <div>
-      Use our "Run" screen or fresh synthetic dataset generation if you want to
-      explore what type of content a run method is generating.
+      {$_("evaluation.results.peek_dialog.alternative_suggestion")}
     </div>
   </div>
 </Dialog>
 
 <Dialog
   bind:this={thinking_dialog}
-  title="Thinking Output"
+  title={$_("evaluation.results.thinking_dialog.title")}
   action_buttons={[
     {
-      label: "Close",
+      label: $_("common.close"),
       isCancel: true,
     },
   ]}

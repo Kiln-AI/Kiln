@@ -6,6 +6,7 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import { ui_state } from "$lib/stores"
   import { get } from "svelte/store"
+  import { _ } from "svelte-i18n"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -28,15 +29,15 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Edit Task"
-    subtitle={task_id ? `Task ID: ${task_id}` : undefined}
+    title={$_("task.edit_task")}
+    subtitle={task_id ? `${$_("task.task_id")}: ${task_id}` : undefined}
     action_buttons={[
       {
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
       },
       {
-        label: "Clone Task",
+        label: $_("task.clone_task"),
         primary: true,
         handler: () => {
           goto(`/settings/clone_task/${project_id}/${task_id}`)
@@ -49,7 +50,7 @@
 </div>
 
 <DeleteDialog
-  name="Task"
+  name={$_("common.task")}
   bind:this={delete_dialog}
   {delete_url}
   {after_delete}

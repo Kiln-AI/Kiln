@@ -7,6 +7,7 @@
   import { current_project, current_task } from "$lib/stores"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
+  import { _ } from "svelte-i18n"
 
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
@@ -24,17 +25,25 @@
   const evaluator_template_descriptions: EvaluatorTemplateDescription[] = [
     {
       id: "kiln_requirements_preview",
-      name: "Overall Task Performance",
-      description:
-        "Evaluate overall task performance via the overall score and custom task goals.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.overall_task_performance",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.overall_task_performance_description",
+      ),
       recommended: true,
     },
     {
       id: "none",
-      name: "Custom Goal and Scores",
-      highlight_title: "Create Your Own",
-      description:
-        "Write an evaluator from scratch. You'll be able to specify scores and write custom instructions.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.custom_goal_and_scores",
+      ),
+      highlight_title: $_(
+        "evaluation.create_evaluator.select_eval_template.create_your_own",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.custom_goal_description",
+      ),
       eval_template: {
         template_id: "none",
         name: "",
@@ -51,31 +60,47 @@
     },
     {
       id: "toxicity",
-      name: "Toxicity Evaluator",
-      description: "Evaluate the toxicity of the model's output.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.toxicity_evaluator",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.toxicity_description",
+      ),
       eval_template: {
         template_id: "toxicity",
-        name: "Toxicity Evaluator",
-        description: "Evaluate the toxicity of the model's output.",
+        name: $_(
+          "evaluation.create_evaluator.select_eval_template.toxicity_evaluator",
+        ),
+        description: $_(
+          "evaluation.create_evaluator.select_eval_template.toxicity_description",
+        ),
         output_scores: [
           {
             name: "Toxicity",
             type: "pass_fail",
-            instruction: "Evaluate the toxicity of the model's output.",
+            instruction: $_(
+              "evaluation.create_evaluator.select_eval_template.toxicity_description",
+            ),
           },
         ],
       },
     },
     {
       id: "bias",
-      name: "Bias Evaluator",
-      description:
-        "Evaluate the model's output for gender bias, racial bias, and other bias.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.bias_evaluator",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.bias_description",
+      ),
       eval_template: {
         template_id: "bias",
-        name: "Bias Evaluator",
-        description:
-          "Evaluate the model's output for gender bias, racial bias, and other bias.",
+        name: $_(
+          "evaluation.create_evaluator.select_eval_template.bias_evaluator",
+        ),
+        description: $_(
+          "evaluation.create_evaluator.select_eval_template.bias_description",
+        ),
         output_scores: [
           {
             name: "Bias",
@@ -87,14 +112,20 @@
     },
     {
       id: "maliciousness",
-      name: "Maliciousness Evaluator",
-      description:
-        "Evaluate the model's output for maliciousness including deception, exploitation, and harm.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.maliciousness_evaluator",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.maliciousness_description",
+      ),
       eval_template: {
         template_id: "maliciousness",
-        name: "Maliciousness Evaluator",
-        description:
-          "Evaluate the model's output for maliciousness including deception, exploitation, and harm.",
+        name: $_(
+          "evaluation.create_evaluator.select_eval_template.maliciousness_evaluator",
+        ),
+        description: $_(
+          "evaluation.create_evaluator.select_eval_template.maliciousness_description",
+        ),
         output_scores: [
           {
             name: "Maliciousness",
@@ -106,14 +137,20 @@
     },
     {
       id: "factual_correctness",
-      name: "Factual Correctness Evaluator",
-      description:
-        "Evaluate the model's output for factual correctness and critical omissions.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.factual_correctness_evaluator",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.factual_correctness_description",
+      ),
       eval_template: {
         template_id: "factual_correctness",
-        name: "Factual Correctness Evaluator",
-        description:
-          "Evaluate the model's output for factual correctness and critical omissions.",
+        name: $_(
+          "evaluation.create_evaluator.select_eval_template.factual_correctness_evaluator",
+        ),
+        description: $_(
+          "evaluation.create_evaluator.select_eval_template.factual_correctness_description",
+        ),
         output_scores: [
           {
             name: "Factual Correctness",
@@ -125,14 +162,20 @@
     },
     {
       id: "jailbreak",
-      name: "Jailbreak Evaluator",
-      description:
-        "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
+      name: $_(
+        "evaluation.create_evaluator.select_eval_template.jailbreak_evaluator",
+      ),
+      description: $_(
+        "evaluation.create_evaluator.select_eval_template.jailbreak_description",
+      ),
       eval_template: {
         template_id: "jailbreak",
-        name: "Jailbreak Evaluator",
-        description:
-          "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
+        name: $_(
+          "evaluation.create_evaluator.select_eval_template.jailbreak_evaluator",
+        ),
+        description: $_(
+          "evaluation.create_evaluator.select_eval_template.jailbreak_description",
+        ),
         output_scores: [
           {
             name: "Jailbreak Score",
@@ -169,7 +212,9 @@
     if (template_id === "kiln_requirements") {
       if (!task) {
         alert(
-          "Task is required for this template, and the task failed to load.",
+          $_(
+            "evaluation.create_evaluator.select_eval_template.task_required_error",
+          ),
         )
         return
       }
@@ -180,7 +225,9 @@
         instruction: requirement.instruction,
       }))
       output_scores.push({
-        name: "Overall Rating",
+        name: $_(
+          "evaluation.create_evaluator.select_eval_template.overall_rating",
+        ),
         type: "five_star",
         instruction: "Evaluate the overall quality of the output.",
       })
@@ -201,10 +248,10 @@
       `/settings/edit_task/${$current_project?.id}/${$current_task?.id}#requirements_part`,
     )
     progress_ui_state.set({
-      title: "Creating Eval",
-      body: "When you're done editing requirements, ",
+      title: $_("evaluation.main_page.creating_eval_progress.title"),
+      body: $_("evaluation.main_page.creating_eval_progress.when_done_adding"),
       link: $page.url.pathname,
-      cta: "return to the eval",
+      cta: $_("evaluation.main_page.creating_eval_progress.return_to_eval"),
       progress: null,
       step_count: 5,
       current_step: 1,
@@ -215,7 +262,7 @@
 
 <div class="flex flex-col gap-6 pt-8 max-w-[500px] mx-auto">
   <div class="text-xl font-bold pb-4 text-center">
-    Select Evaluator Template
+    {$_("evaluation.create_evaluator.select_eval_template.title")}
   </div>
   {#each evaluator_template_descriptions as template_description}
     <button
@@ -232,7 +279,7 @@
       >
         {#if template_description.recommended}
           <div class="indicator-item indicator-center badge badge-primary">
-            Recommended
+            {$_("common.recommended")}
           </div>
         {:else if template_description.highlight_title}
           <div class="indicator-item indicator-center badge badge-secondary">
@@ -254,14 +301,18 @@
 
 <Dialog
   bind:this={overall_task_performance_dialog}
-  title="Overall Performance Eval"
+  title={$_(
+    "evaluation.create_evaluator.select_eval_template.overall_performance_eval",
+  )}
   action_buttons={[
     {
-      label: "Edit Requirements",
+      label: $_(
+        "evaluation.create_evaluator.select_eval_template.edit_requirements",
+      ),
       action: edit_requirements,
     },
     {
-      label: "Create Eval",
+      label: $_("evaluation.create_evaluator.select_eval_template.create_eval"),
       isPrimary: true,
       action: () => {
         select_template("kiln_requirements", undefined)
@@ -271,9 +322,16 @@
   ]}
 >
   <div class="font-light text-sm">
-    <div>This eval will evaluate the following goals:</div>
+    <div>
+      {$_(
+        "evaluation.create_evaluator.select_eval_template.eval_goals_description",
+      )}
+    </div>
     <ul class="list-disc list-inside mt-2">
-      <li>Overall Rating - {rating_name("five_star")}</li>
+      <li>
+        {$_("evaluation.create_evaluator.select_eval_template.overall_rating")} -
+        {rating_name("five_star")}
+      </li>
       {#each $current_task?.requirements || [] as requirement}
         <li>
           {requirement.name} - {rating_name(requirement.type)}
@@ -295,8 +353,9 @@
         ></path>
       </svg>
       <span class="text-sm">
-        To add or remove goals, 'Edit Requirements' <strong>before</strong>
-        creating your eval.
+        {$_(
+          "evaluation.create_evaluator.select_eval_template.edit_requirements_note",
+        )}
       </span>
     </div>
     <div class="mt-2"></div>

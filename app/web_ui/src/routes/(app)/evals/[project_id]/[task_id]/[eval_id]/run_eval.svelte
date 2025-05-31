@@ -2,6 +2,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { _ } from "svelte-i18n"
 
   export let btn_size: "normal" | "mid" = "mid"
   export let on_run_complete: () => void = () => {}
@@ -20,10 +21,10 @@
   let eval_total_count = 0
   let eval_error_count = 0
 
-  function run_eval(): boolean {
+  async function run_eval(): Promise<boolean> {
     if (!run_url) {
       eval_run_error = new KilnError(
-        "Select all options needed to run the eval",
+        $_("evaluation.select_all_options_error"),
         null,
       )
       eval_state = "complete_with_errors"
@@ -77,8 +78,8 @@
   }
 
   // Returns false so the dialog isn't closed
-  function re_run_eval(): boolean {
-    run_eval()
+  async function re_run_eval(): Promise<boolean> {
+    await run_eval()
     return false
   }
 
@@ -87,7 +88,7 @@
 
     if (eval_state === "complete" || eval_state === "complete_with_errors") {
       buttons.push({
-        label: "Close",
+        label: $_("common.close"),
         isCancel: true,
         isPrimary: false,
       })
@@ -95,9 +96,9 @@
 
     if (eval_state === "complete_with_errors") {
       buttons.push({
-        label: "Re-run Eval",
+        label: $_("evaluation.re_run_eval"),
         isPrimary: true,
-        action: re_run_eval,
+        asyncAction: re_run_eval,
       })
     }
 
@@ -112,7 +113,7 @@
       : ''} btn-primary whitespace-nowrap"
     on:click={() => {
       run_dialog?.show()
-    }}>Run Eval</button
+    }}>{$_("evaluation.run_eval")}</button
   >
 {:else}
   <button
@@ -123,13 +124,13 @@
   >
     {#if eval_state === "running"}
       <div class="loading loading-spinner loading-xs"></div>
-      Running...
+      {$_("evaluation.running")}
     {:else if eval_state === "complete"}
-      Eval Complete
+      {$_("evaluation.eval_complete")}
     {:else if eval_state === "complete_with_errors"}
-      Eval Complete with Errors
+      {$_("evaluation.eval_complete_with_errors")}
     {:else}
-      Eval Status
+      {$_("evaluation.eval_status")}
     {/if}
   </button>
 {/if}
@@ -143,39 +144,48 @@
     class="mt-12 mb-6 flex flex-col items-center justify-center min-h-[100px] text-center"
   >
     {#if eval_state === "complete" && eval_complete_count == 0}
-      <div class="font-medium">No Data Needed to be Evaluated</div>
+      <div class="font-medium">{$_("evaluation.no_data_needed")}</div>
       <div class="text-gray-500 text-sm mt-2 flex flex-col gap-2">
         <div>
-          If you want to add more data to your eval,
+          {$_("evaluation.add_more_data_instruction")}
           <a
             href="https://docs.getkiln.ai/docs/evaluations#create-your-eval-datasets"
             target="_blank"
-            class="link">read the docs</a
-          > for instructions.
+            class="link">{$_("evaluation.read_docs")}</a
+          >
+          {$_("evaluation.for_instructions")}.
         </div>
       </div>
     {:else if eval_state === "complete"}
-      <div class="font-medium">Eval Complete 🎉</div>
+      <div class="font-medium">{$_("evaluation.eval_complete")} 🎉</div>
     {:else if eval_state === "complete_with_errors"}
-      <div class="font-medium">Eval Complete with Errors</div>
+      <div class="font-medium">
+        {$_("evaluation.eval_complete_with_errors")}
+      </div>
     {:else if eval_state === "running"}
       <div class="loading loading-spinner loading-lg text-success"></div>
-      <div class="font-medium mt-4">Running...</div>
+      <div class="font-medium mt-4">{$_("evaluation.running")}</div>
     {/if}
     <div class="text-sm font-light min-w-[120px]">
       {#if eval_total_count > 0}
         <div>
-          {eval_complete_count + eval_error_count} of {eval_total_count}
+          {eval_complete_count + eval_error_count}
+          {$_("evaluation.of")}
+          {eval_total_count}
         </div>
       {/if}
       {#if eval_error_count > 0}
         <div class="text-error font-light text-xs">
-          {eval_error_count} error{eval_error_count === 1 ? "" : "s"}
+          {eval_error_count}
+          {$_("evaluation.error")}{eval_error_count === 1
+            ? ""
+            : $_("evaluation.errors_plural")}
         </div>
       {/if}
       {#if eval_run_error}
         <div class="text-error font-light text-xs mt-2">
-          {eval_run_error.getMessage() || "An unknown error occurred"}
+          {eval_run_error.getMessage() ||
+            $_("evaluation.unknown_error_occurred")}
         </div>
       {/if}
     </div>
@@ -184,25 +194,22 @@
 
 <Dialog
   bind:this={run_dialog}
-  title="Run Eval"
+  title={$_("evaluation.run_eval")}
   action_buttons={[
+    { label: $_("common.cancel"), isCancel: true },
     {
-      label: "Cancel",
-      isCancel: true,
-    },
-    {
-      label: "Run Eval",
-      action: run_eval,
+      label: $_("evaluation.run_eval"),
+      asyncAction: run_eval,
       isPrimary: true,
     },
   ]}
 >
   <div class="flex flex-col gap-2 font-light mt-4">
-    <div>Run this eval with the selected configuration?</div>
-    <div>Don't close this page if you want to monitor progress.</div>
+    <div>{$_("evaluation.run_with_config")}</div>
+    <div>{$_("evaluation.dont_close_page")}</div>
     <Warning
       warning_color="warning"
-      warning_message="This may use considerable compute/credits."
+      warning_message={$_("evaluation.considerable_compute")}
       tight={true}
     />
   </div>

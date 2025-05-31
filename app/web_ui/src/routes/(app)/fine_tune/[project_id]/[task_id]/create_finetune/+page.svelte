@@ -19,6 +19,7 @@
   } from "$lib/stores/fine_tune_store"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { goto } from "$app/navigation"
+  import { _ } from "svelte-i18n"
 
   import type {
     FinetuneProvider,
@@ -84,7 +85,7 @@
     available_model_select = []
     available_model_select.push([
       disabled_header,
-      "Select a model to fine-tune",
+      $_("finetune.select_model_to_finetune"),
     ])
     for (const provider of models) {
       for (const model of provider.models) {
@@ -93,40 +94,40 @@
           provider.name +
             ": " +
             model.name +
-            (provider.enabled ? "" : " --- Requires API Key in Settings"),
+            (provider.enabled ? "" : $_("finetune.requires_api_key")),
         ])
       }
       // Providers with zero models should still appear and be disabled. Logging in will typically load their models
       if (!provider.enabled && provider.models.length === 0) {
         available_model_select.push([
           "disabled_" + provider.id,
-          provider.name + " --- Requires API Key in Settings",
+          provider.name + $_("finetune.requires_api_key"),
         ])
       }
     }
     available_model_select.push([
       "download_jsonl_msg",
-      "Download: OpenAI chat format (JSONL)",
+      $_("finetune.download_formats.openai_chat_jsonl"),
     ])
     available_model_select.push([
       "download_jsonl_json_schema_msg",
-      "Download: OpenAI chat format with JSON response (JSONL)",
+      $_("finetune.download_formats.openai_chat_json_schema_jsonl"),
     ])
     available_model_select.push([
       "download_jsonl_toolcall",
-      "Download: OpenAI chat format with tool call response (JSONL)",
+      $_("finetune.download_formats.openai_chat_toolcall_jsonl"),
     ])
     available_model_select.push([
       "download_huggingface_chat_template",
-      "Download: HuggingFace chat template (JSONL)",
+      $_("finetune.download_formats.huggingface_chat_template_jsonl"),
     ])
     available_model_select.push([
       "download_huggingface_chat_template_toolcall",
-      "Download: HuggingFace chat template with tool calls (JSONL)",
+      $_("finetune.download_formats.huggingface_chat_template_toolcall_jsonl"),
     ])
     available_model_select.push([
       "download_vertex_gemini",
-      "Download: Google Vertex-AI Gemini format (JSONL)",
+      $_("finetune.download_formats.vertex_gemini"),
     ])
 
     // Check if the model provider is in the available model select
@@ -182,7 +183,7 @@
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         hyperparameters_error = new KilnError(
-          "Could not load hyperparameters for fine-tuning.",
+          $_("finetune.could_not_load_hyperparameters"),
           null,
         )
       } else {
@@ -194,10 +195,10 @@
   }
 
   const type_strings: Record<FineTuneParameter["type"], string> = {
-    int: "Integer",
-    float: "Float",
-    bool: "Boolean - 'true' or 'false'",
-    string: "String",
+    int: $_("finetune.type_integer"),
+    float: $_("finetune.type_float"),
+    bool: $_("finetune.type_boolean"),
+    string: $_("finetune.type_string"),
   }
 
   function get_system_prompt_method_param(): string | undefined {
@@ -223,7 +224,7 @@
       create_finetune_loading = true
       created_finetune = null
       if (!provider_id || !base_model_id) {
-        throw new Error("Invalid model or provider")
+        throw new Error($_("finetune.invalid_model_provider"))
       }
 
       // Filter out empty strings from hyperparameter_values, and parse/validate types
@@ -264,14 +265,14 @@
         throw post_error
       }
       if (!create_finetune_response || !create_finetune_response.id) {
-        throw new Error("Invalid response from server")
+        throw new Error($_("finetune.invalid_response_from_server"))
       }
       created_finetune = create_finetune_response
       progress_ui_state.set({
-        title: "Creating Fine-Tune",
-        body: "In progress,  ",
+        title: $_("finetune.creating_finetune"),
+        body: $_("progress.in_progress") + ",  ",
         link: `/fine_tune/${project_id}/${task_id}/fine_tune/${created_finetune?.id}`,
-        cta: "view job status",
+        cta: $_("finetune.view_finetune_job"),
         progress: null,
         step_count: 4,
         current_step: 3,
@@ -279,7 +280,7 @@
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         create_finetune_error = new KilnError(
-          "Could not create a dataset split for fine-tuning.",
+          $_("finetune.could_not_create_dataset_split"),
           null,
         )
       } else {
@@ -307,7 +308,9 @@
           parsed.toString() !== raw_value // checks it didn't parse 1.1 to 1
         ) {
           throw new Error(
-            `Invalid integer value for ${hyperparameter.name}: ${raw_value}`,
+            $_("finetune.invalid_integer", {
+              values: { name: hyperparameter.name, value: raw_value },
+            }),
           )
         }
         value = parsed
@@ -315,19 +318,29 @@
         const parsed = parseFloat(raw_value)
         if (isNaN(parsed)) {
           throw new Error(
-            `Invalid float value for ${hyperparameter.name}: ${raw_value}`,
+            $_("finetune.invalid_float", {
+              values: { name: hyperparameter.name, value: raw_value },
+            }),
           )
         }
         value = parsed
       } else if (hyperparameter.type === "bool") {
         if (raw_value !== "true" && raw_value !== "false") {
-          throw new Error("Invalid boolean value: " + raw_value)
+          throw new Error(
+            $_("finetune.invalid_boolean", {
+              values: { value: raw_value },
+            }),
+          )
         }
         value = raw_value === "true"
       } else if (hyperparameter.type === "string") {
         value = raw_value
       } else {
-        throw new Error("Invalid hyperparameter type: " + hyperparameter.type)
+        throw new Error(
+          $_("finetune.invalid_hyperparameter_type", {
+            values: { type: hyperparameter.type },
+          }),
+        )
       }
       parsed_hyperparameters[hyperparameter.name] = value
     }
@@ -371,12 +384,11 @@
     }
 
     const data_strategies_labels: Record<FinetuneDataStrategy, string> = {
-      final_only: "Disabled - (Recommended)",
-      final_and_intermediate:
-        "Thinking - Learn both thinking and final response",
+      final_only: $_("finetune.disabled_recommended"),
+      final_and_intermediate: $_("finetune.thinking_learn_both"),
       final_and_intermediate_r1_compatible: is_download
-        ? "Thinking (R1 compatible) - Learn both thinking and final response"
-        : "Thinking - Learn both thinking and final response",
+        ? $_("finetune.thinking_r1_compatible")
+        : $_("finetune.thinking_learn_both"),
     }
 
     const r1_disabled_for_downloads = [
@@ -420,10 +432,10 @@
 
   function go_to_providers_settings() {
     progress_ui_state.set({
-      title: "Creating Fine-Tune",
-      body: "When you're done connecting providers, ",
+      title: $_("finetune.creating_finetune"),
+      body: $_("finetune.when_done_adding"),
       link: $page.url.pathname,
-      cta: "return to fine-tuning",
+      cta: $_("finetune.return_to_finetuning"),
       progress: null,
       step_count: 4,
       current_step: 1,
@@ -434,8 +446,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Create a New Fine Tune"
-    subtitle="Fine-tuned models learn from your dataset."
+    title={$_("finetune.create_new_finetune")}
+    subtitle={$_("finetune.finetune_subtitle")}
   >
     {#if $available_models_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -443,38 +455,38 @@
       </div>
     {:else if created_finetune}
       <Completed
-        title="Fine Tune Created"
-        subtitle="It will take a while to complete training."
+        title={$_("finetune.finetune_created_title")}
+        subtitle={$_("finetune.finetune_created_subtitle")}
         link={`/fine_tune/${project_id}/${task_id}/fine_tune/${created_finetune?.id}`}
-        button_text="View Fine Tune Job"
+        button_text={$_("finetune.view_finetune_job")}
       />
     {:else if $available_models_error}
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
         <div class="font-medium">
-          Error Loading Available Models and Datasets
+          {$_("finetune.error_loading_models")}
         </div>
         <div class="text-error text-sm">
-          {$available_models_error?.getMessage() || "An unknown error occurred"}
+          {$available_models_error?.getMessage() || $_("errors.unknown_error")}
         </div>
       </div>
     {:else}
       <FormContainer
         {submit_visible}
-        submit_label="Start Fine-Tune Job"
+        submit_label={$_("finetune.start_finetune_job")}
         on:submit={create_finetune}
         bind:error={create_finetune_error}
         bind:submitting={create_finetune_loading}
       >
         <div class="text-xl font-bold">
-          Step 1: Select Base Model to Fine-Tune
+          {$_("finetune.step1_title")}
         </div>
         <div>
           <FormElement
-            label="Model & Provider"
-            description="Select which model to fine-tune. Alternatively, download a JSONL file to fine-tune using any infrastructure."
-            info_description="Connect providers in settings for 1-click fine-tuning. Alternatively, download a JSONL file to fine-tune using any infrastructure, like Unsloth or Axolotl."
+            label={$_("finetune.model_provider_label")}
+            description={$_("finetune.model_provider_description")}
+            info_description={$_("finetune.model_provider_info")}
             inputType="select"
             id="provider"
             select_options={available_model_select}
@@ -485,7 +497,7 @@
             on:click={go_to_providers_settings}
           >
             <Warning
-              warning_message="For 1-click fine-tuning connect OpenAI, Fireworks, Together, or Google Vertex."
+              warning_message={$_("finetune.connect_providers_warning")}
               warning_icon="info"
               warning_color="success"
               tight={true}
@@ -495,12 +507,12 @@
         {#if step_2_visible}
           <div>
             <div class="text-xl font-bold">
-              Step 2: Select Fine-Tuning Dataset
+              {$_("finetune.step2_title")}
             </div>
             <div class="font-light">
-              Select a dataset to use for this fine-tune.
+              {$_("finetune.select_dataset_description")}
               <InfoTooltip
-                tooltip_text="A fine-tuning dataset is a subset of your dataset which is used to train and validate the fine-tuned model. This is typically a subset of your dataset, which is intentionally kept separate from your eval data."
+                tooltip_text={$_("finetune.dataset_info_tooltip")}
                 position="bottom"
                 no_pad={true}
               />
@@ -510,20 +522,20 @@
         {/if}
 
         {#if step_3_visible}
-          <div class="text-xl font-bold">Step 3: Options</div>
+          <div class="text-xl font-bold">{$_("finetune.step3_title")}</div>
           <PromptTypeSelector
             bind:prompt_method={system_prompt_method}
-            description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+            description={$_("finetune.system_prompt_description")}
+            info_description={$_("finetune.system_prompt_info")}
             exclude_cot={true}
-            custom_prompt_name="Custom Fine Tuning Prompt"
+            custom_prompt_name={$_("finetune.custom_finetune_prompt")}
           />
           {#if system_prompt_method === "custom"}
             <div class="p-4 border-l-4 border-gray-300">
               <FormElement
-                label="Custom System Prompt"
-                description="Enter a custom system prompt to use during fine-tuning."
-                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                label={$_("finetune.custom_system_prompt_label")}
+                description={$_("finetune.custom_system_prompt_description")}
+                info_description={$_("finetune.system_prompt_info")}
                 inputType="textarea"
                 id="finetune_custom_system_prompt"
                 bind:value={finetune_custom_system_prompt}
@@ -531,9 +543,13 @@
               {#if data_strategy === "final_and_intermediate"}
                 <div class="mt-4"></div>
                 <FormElement
-                  label="Custom Thinking Instructions"
-                  description="Instructions for the model's 'thinking' stage, before returning the final response."
-                  info_description="When training with intermediate results (reasoning, chain of thought, etc.), this prompt will be used to ask the model to 'think' before returning the final response."
+                  label={$_("finetune.custom_thinking_instructions_label")}
+                  description={$_(
+                    "finetune.custom_thinking_instructions_description",
+                  )}
+                  info_description={$_(
+                    "finetune.custom_thinking_instructions_info",
+                  )}
                   inputType="textarea"
                   id="finetune_custom_thinking_instructions"
                   bind:value={finetune_custom_thinking_instructions}
@@ -543,9 +559,9 @@
           {/if}
           <div>
             <FormElement
-              label="Reasoning"
-              description="Should the model be trained on reasoning/thinking content?"
-              info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
+              label={$_("finetune.reasoning_label")}
+              description={$_("finetune.reasoning_description")}
+              info_description={$_("finetune.reasoning_info")}
               inputType="select"
               id="data_strategy"
               select_options={data_strategy_select_options}
@@ -553,13 +569,13 @@
             />
             {#if data_strategy === "final_and_intermediate" && !selecting_thinking_dataset}
               <Warning
-                warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
+                warning_message={$_("finetune.thinking_dataset_warning")}
                 large_icon={true}
               />
             {/if}
             {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
               <Warning
-                warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
+                warning_message={$_("finetune.thinking_r1_warning")}
                 large_icon={true}
               />
             {/if}
@@ -567,19 +583,21 @@
           {#if !is_download}
             <div class="collapse collapse-arrow bg-base-200">
               <input type="checkbox" class="peer" />
-              <div class="collapse-title font-medium">Advanced Options</div>
+              <div class="collapse-title font-medium">
+                {$_("finetune.advanced_options")}
+              </div>
               <div class="collapse-content flex flex-col gap-4">
                 <FormElement
-                  label="Name"
-                  description="A name to identify this fine-tune. Leave blank and we'll generate one for you."
+                  label={$_("finetune.finetune_name_label")}
+                  description={$_("finetune.finetune_name_description")}
                   optional={true}
                   inputType="input"
                   id="finetune_name"
                   bind:value={finetune_name}
                 />
                 <FormElement
-                  label="Description"
-                  description="An optional description of this fine-tune."
+                  label={$_("finetune.finetune_description_label")}
+                  description={$_("finetune.finetune_description_description")}
                   optional={true}
                   inputType="textarea"
                   id="finetune_description"
@@ -592,7 +610,7 @@
                 {:else if hyperparameters_error || !hyperparameters}
                   <div class="text-error text-sm">
                     {hyperparameters_error?.getMessage() ||
-                      "An unknown error occurred"}
+                      $_("errors.unknown_error")}
                   </div>
                 {:else if hyperparameters.length > 0}
                   {#each hyperparameters as hyperparameter}
@@ -602,7 +620,7 @@
                         type_strings[hyperparameter.type] +
                         ")"}
                       description={hyperparameter.description}
-                      info_description="If you aren't sure, leave blank for default/recommended value. Ensure your value is valid for the type (e.g. an integer can't have decimals)."
+                      info_description={$_("finetune.hyperparameter_info")}
                       inputType="input"
                       optional={hyperparameter.optional}
                       id={hyperparameter.name}
@@ -618,20 +636,16 @@
     {/if}
     {#if step_4_download_visible}
       <div>
-        <div class="text-xl font-bold">Step 4: Download JSONL</div>
+        <div class="text-xl font-bold">{$_("finetune.step4_title")}</div>
         <div class="text-sm">
-          Download JSONL files to fine-tune using any infrastructure, such as
-          <a
-            href="https://github.com/unslothai/unsloth"
-            class="link"
-            target="_blank">Unsloth</a
-          >
-          or
-          <a
-            href="https://github.com/axolotl-ai-cloud/axolotl"
-            class="link"
-            target="_blank">Axolotl</a
-          >.
+          {@html $_("finetune.download_jsonl_description", {
+            values: {
+              unsloth:
+                '<a href="https://github.com/unslothai/unsloth" class="link" target="_blank">Unsloth</a>',
+              axolotl:
+                '<a href="https://github.com/axolotl-ai-cloud/axolotl" class="link" target="_blank">Axolotl</a>',
+            },
+          })}
         </div>
         <div class="flex flex-col gap-4 mt-6">
           {#each Object.keys(selected_dataset?.split_contents || {}) as split_name}
@@ -642,9 +656,12 @@
                 : 'btn-primary'} max-w-[400px]"
               on:click={() => download_dataset_jsonl(split_name)}
             >
-              Download Split: {split_name} ({selected_dataset?.split_contents[
-                split_name
-              ]?.length} examples)
+              {$_("finetune.download_split", {
+                values: {
+                  split: split_name,
+                  count: selected_dataset?.split_contents[split_name]?.length,
+                },
+              })}
             </button>
           {/each}
         </div>

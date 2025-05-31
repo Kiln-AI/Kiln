@@ -18,6 +18,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Splits from "$lib/ui/splits.svelte"
+  import { _ } from "svelte-i18n"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -53,12 +54,15 @@
   let human_guidance_dialog: Dialog | null = null
   $: action_buttons = [
     {
-      label: human_guidance.length > 0 ? "Edit Guidance" : "Add Guidance",
+      label:
+        human_guidance.length > 0
+          ? $_("generate.edit_guidance")
+          : $_("generate.add_guidance"),
       notice: human_guidance.length > 0,
       handler: show_human_guidance_dialog,
     },
     {
-      label: "Save All",
+      label: $_("generate.save_all"),
       handler: show_save_all_modal,
     },
   ]
@@ -83,7 +87,7 @@
     try {
       task_loading = true
       if (!project_id || !task_id) {
-        throw new Error("Project or task ID not set.")
+        throw new Error($_("errors.project_task_id_not_set"))
       }
       if ($current_task?.id === task_id) {
         task = $current_task
@@ -106,10 +110,7 @@
       task = task_response
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
-        task_error = new KilnError(
-          "Could not load task. It may belong to a project you don't have access to.",
-          null,
-        )
+        task_error = new KilnError($_("errors.could_not_load_task"), null)
       } else {
         task_error = createKilnError(e)
       }
@@ -139,30 +140,15 @@
   // Handle Svelte navigation: warn if there are unsaved changes
   beforeNavigate((navigation) => {
     if (save_all_running) {
-      if (
-        !confirm(
-          "Content generation is currently running. If you leave, it will be stopped and your changes will be lost.\n\n" +
-            "Press Cancel to stay, OK to leave.",
-        )
-      ) {
+      if (!confirm($_("generate.content_generation_running"))) {
         navigation.cancel()
       }
     } else if (has_unsaved_changes()) {
-      if (
-        !confirm(
-          "You have unsaved changes which will be lost if you leave.\n\n" +
-            "Press Cancel to stay, OK to leave.",
-        )
-      ) {
+      if (!confirm($_("generate.unsaved_changes_warning"))) {
         navigation.cancel()
       }
     } else if (root_node.sub_topics.length > 0) {
-      if (
-        !confirm(
-          "Your topic tree will be lost if you leave.\n\n" +
-            "Press Cancel to stay, OK to leave.",
-        )
-      ) {
+      if (!confirm($_("generate.topic_tree_warning"))) {
         navigation.cancel()
       }
     }
@@ -236,7 +222,7 @@
         // Trigger reactivity
         save_all_sub_errors = save_all_sub_errors
       } else if (!result.saved_id) {
-        save_all_sub_errors.push(new KilnError("No ID returned from server"))
+        save_all_sub_errors.push(new KilnError($_("generate.no_id_returned")))
         // Trigger reactivity
         save_all_sub_errors = save_all_sub_errors
       } else {
@@ -328,7 +314,7 @@
         throw post_error
       }
       if (response.status !== 200 || !data.id) {
-        throw new KilnError("Failed to save sample")
+        throw new KilnError($_("generate.failed_to_save_sample"))
       }
 
       return { saved_id: data.id, error: null }
@@ -347,10 +333,10 @@
 <Splits bind:splits bind:subtitle={splits_subtitle} bind:this={split_object} />
 <div class="max-w-[1400px]">
   <AppPage
-    title="Synthetic Data Generation"
+    title={$_("generate.synthetic_data_generation")}
     subtitle={splits_subtitle}
     sub_subtitle_link="https://docs.getkiln.ai/docs/synthetic-data-generation"
-    sub_subtitle="Read the Docs"
+    sub_subtitle={$_("generate.read_the_docs")}
     {action_buttons}
   >
     {#if task_loading}
@@ -373,9 +359,9 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">Error Loading Task</div>
+        <div class="font-medium">{$_("errors.loading_task")}</div>
         <div class="text-error text-sm">
-          {task_error.getMessage() || "An unknown error occurred"}
+          {task_error.getMessage() || $_("errors.unknown_error")}
         </div>
       </div>
     {/if}
@@ -402,7 +388,8 @@
         <div class="font-light text-xs text-center mt-1">
           {saved_count} of {samples_to_save.length}
           {#if save_all_sub_errors && save_all_sub_errors.length > 0}
-            complete — {save_all_sub_errors.length} failed
+            {$_("generate.complete")} — {save_all_sub_errors.length}
+            {$_("generate.failed")}
           {/if}
         </div>
       </div>
@@ -422,24 +409,32 @@
             /></svg
           >
         {/if}
-        <div class="font-medium">Saved {saved_count} new items.</div>
+        <div class="font-medium">
+          {$_("generate.saved_new_items", { values: { count: saved_count } })}
+        </div>
         <div class="font-light text-sm">
-          Use the <a href={`/dataset/${project_id}/${task_id}`} class="link"
-            >dataset tab</a
-          > to review and manage.
+          {$_("generate.use_dataset_tab")}
+          <a href={`/dataset/${project_id}/${task_id}`} class="link"
+            >{$_("generate.dataset_tab")}</a
+          >
+          {$_("generate.to_review_manage")}
         </div>
         <div class="font-light text-xs mt-4 text-gray-500">
-          Set tagged with &quot;synthetic_session_{session_id}&quot;
+          {$_("generate.set_tagged_with", {
+            values: { tag: `synthetic_session_${session_id}` },
+          })}
         </div>
         {#if save_all_sub_errors.length > 0}
           <div class="text-error font-light text-sm mt-4">
-            {save_all_sub_errors.length} samples failed to save. Running again may
-            resolve transient issues.
+            {save_all_sub_errors.length}
+            {$_("generate.samples_failed_to_save")}
             <button
               class="link"
               on:click={() => (ui_show_errors = !ui_show_errors)}
             >
-              {ui_show_errors ? "Hide Errors" : "Show Errors"}
+              {ui_show_errors
+                ? $_("generate.hide_errors")
+                : $_("generate.show_errors")}
             </button>
           </div>
           <div
@@ -454,8 +449,8 @@
         {/if}
         {#if save_all_error}
           <div class="text-error font-light text-sm mt-4">
-            Error message: {save_all_error.getMessage() ||
-              "An unknown error occurred"}
+            {$_("generate.error_message")}
+            {save_all_error.getMessage() || $_("errors.unknown_error")}
           </div>
         {/if}
       </div>
@@ -463,42 +458,42 @@
       <div
         class="flex flex-col items-center justify-center min-h-[150px] gap-2"
       >
-        <div class="font-medium">No Items to Save</div>
-        <div class="font-light">Generate some data to get started.</div>
+        <div class="font-medium">{$_("generate.no_items_to_save")}</div>
+        <div class="font-light">{$_("generate.generate_data_to_start")}</div>
         {#if already_saved_count > 0}
           <div class="font-light text-sm">
-            {already_saved_count} existing items already saved.
+            {already_saved_count}
+            {$_("generate.existing_items_saved")}
           </div>
         {/if}
       </div>
     {:else}
-      <h3 class="text-lg font-bold">Save All Items</h3>
+      <h3 class="text-lg font-bold">{$_("generate.save_all_items")}</h3>
       <p class="text-sm font-light mb-8">
-        Run the generation and add all items to your dataset.
+        {$_("generate.run_generation")}
       </p>
       <FormContainer
-        submit_label="Run and Save"
+        submit_label={$_("generate.run_and_save")}
         bind:submitting={save_all_running}
         bind:error={save_all_error}
         on:submit={save_all_samples}
       >
         <div>
-          <div class="font-medium text-sm">Status</div>
+          <div class="font-medium text-sm">{$_("generate.status")}</div>
           <div class="font-light">
-            {samples_to_save.length} items pending
+            {samples_to_save.length}
+            {$_("generate.items_pending")}
             {#if already_saved_count > 0}
-              / {already_saved_count} already saved
+              / {already_saved_count} {$_("generate.already_saved")}
             {/if}
           </div>
         </div>
         {#if human_guidance.length > 0}
           {#if prompt_method.includes("::")}
-            <Warning
-              warning_message="Human guidance is enabled, but you've selected a custom prompt with a fixed string. Human guidance will not be applied."
-            />
+            <Warning warning_message={$_("generate.human_guidance_enabled")} />
           {:else}
             <Warning
-              warning_message="Human guidance is enabled. Your guidance will be passed to the model and used to influence output."
+              warning_message={$_("generate.human_guidance_warning")}
               warning_color="warning"
             />
           {/if}
@@ -511,50 +506,50 @@
         <FormElement
           id="save_all_samples_mode_element"
           inputType="select"
-          info_description="Parallel is ideal for APIs (OpenAI, Fireworks, etc.) as they can handle thousands of requests in parallel. Sequential is ideal for Ollama or other servers that can only handle one request at a time."
+          info_description={$_("generate.run_mode_description")}
           select_options={[
-            ["parallel", "Parallel - Ideal for APIs (OpenAI, Fireworks)"],
-            ["sequential", "Sequential - Ideal for Ollama"],
+            ["parallel", $_("generate.parallel_mode")],
+            ["sequential", $_("generate.sequential_mode")],
           ]}
           bind:value={save_all_samples_mode}
-          label="Run Mode"
+          label={$_("generate.run_mode")}
         />
       </FormContainer>
     {/if}
   </div>
   <form method="dialog" class="modal-backdrop">
-    <button>close</button>
+    <button>{$_("generate.close")}</button>
   </form>
 </dialog>
 
 <Dialog
   bind:this={human_guidance_dialog}
-  title="Human Guidance"
+  title={$_("data_generation.human_guidance")}
   action_buttons={[
     {
-      label: "Clear",
+      label: $_("data_generation.clear"),
       action: clear_human_guidance,
       disabled: human_guidance.length == 0,
     },
     {
-      label: "Done",
+      label: $_("data_generation.done"),
       isPrimary: true,
     },
   ]}
 >
   <div>
     <div class="text-sm text-gray-500">
-      Add human guidance to improve or steer the AI-generated data. Learn more
-      and see examples <a
+      {$_("data_generation.guidance_description")}
+      <a
         href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
         target="_blank"
-        class="link">in the docs</a
+        class="link">{$_("data_generation.in_the_docs")}</a
       >.
     </div>
 
     <div class="flex flex-col gap-2 w-full mt-4">
       <label for="human_guidance" class="label font-medium p-0 text-sm"
-        >Guidance to help the model generate relevant data:</label
+        >{$_("data_generation.guidance_label")}</label
       >
       <textarea
         id="human_guidance"
