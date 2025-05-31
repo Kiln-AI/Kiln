@@ -13,7 +13,7 @@ def extractor_adapter_from_type(
     extractor_type: ExtractorType,
 ) -> Callable[[ExtractorConfig], BaseExtractor] | type[BaseExtractor]:
     match extractor_type:
-        case ExtractorType.gemini:
+        case ExtractorType.GEMINI:
             # TODO: maybe make client global / singleton in GeminiExtractor instead of here
             client = genai.Client(api_key=Config.shared().gemini_api_key)
             return lambda extractor_config: GeminiExtractor(client, extractor_config)

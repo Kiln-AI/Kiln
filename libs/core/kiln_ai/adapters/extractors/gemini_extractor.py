@@ -1,13 +1,9 @@
-import pathlib
+from pathlib import Path
 
 from google import genai
 from google.genai import types
 
-from kiln_ai.adapters.extractors.base_extractor import (
-    BaseExtractor,
-    ExtractionOutput,
-    FileInfoInternal,
-)
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 
 # docs list out supported formats:
@@ -63,7 +59,7 @@ MIME_TYPES_SUPPORTED = {
 
 class GeminiExtractor(BaseExtractor):
     def __init__(self, gemini_client: genai.Client, extractor_config: ExtractorConfig):
-        if extractor_config.extractor_type != ExtractorType.gemini:
+        if extractor_config.extractor_type != ExtractorType.GEMINI:
             raise ValueError(
                 f"GeminiExtractor must be initialized with a gemini extractor_type config. Got {extractor_config.extractor_type}"
             )
@@ -89,10 +85,10 @@ class GeminiExtractor(BaseExtractor):
                 return kind
         return None
 
-    def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
-        kind = self._get_kind_from_mime_type(file_info.mime_type)
+    def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
+        kind = self._get_kind_from_mime_type(mime_type)
         if kind is None:
-            raise ValueError(f"Unsupported MIME type: {file_info.mime_type}")
+            raise ValueError(f"Unsupported MIME type: {mime_type}")
 
         prompt = self.prompt_for_kind.get(kind)
         if prompt is None:
@@ -102,8 +98,8 @@ class GeminiExtractor(BaseExtractor):
             model=self.model_name,
             contents=[
                 types.Part.from_bytes(
-                    data=pathlib.Path(file_info.path).read_bytes(),
-                    mime_type=file_info.mime_type,
+                    data=path.read_bytes(),
+                    mime_type=mime_type,
                 ),
                 prompt,
             ],
