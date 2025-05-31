@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, List, Union, cast
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
@@ -9,10 +9,18 @@ from kiln_ai.datamodel.basemodel import (
     NAME_FIELD,
     KilnAttachmentModel,
     KilnParentedModel,
+    KilnParentModel,
 )
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
+
+
+class Kind(str, Enum):
+    DOCUMENT = "document"
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
 
 
 class OutputFormat(str, Enum):
@@ -21,14 +29,7 @@ class OutputFormat(str, Enum):
 
 
 class ExtractorType(str, Enum):
-    gemini = "gemini"
-
-
-class Kind(str, Enum):
-    DOCUMENT = "document"
-    IMAGE = "image"
-    VIDEO = "video"
-    AUDIO = "audio"
+    GEMINI = "gemini"
 
 
 def validate_prompt_for_kind(prompt_for_kind: Any):
@@ -63,6 +64,28 @@ def validate_model_name(model_name: Any):
         raise ValueError("model_name cannot be empty.")
 
 
+class ExtractionSource(str, Enum):
+    PROCESSED = "processed"
+    PASSTHROUGH = "passthrough"
+
+
+class Extraction(KilnParentedModel):
+    source: ExtractionSource = Field(
+        description="The source of the extraction.",
+    )
+    extractor_config_id: ID_TYPE = Field(
+        description="The ID of the extractor config that was used to extract the data.",
+    )
+    output: KilnAttachmentModel = Field(
+        description="The extraction output.",
+    )
+
+    def parent_document(self) -> Union["Document", None]:
+        if self.parent is None or self.parent.__class__.__name__ != "Document":
+            return None
+        return self.parent  # type: ignore
+
+
 class ExtractorConfig(KilnParentedModel):
     name: str = NAME_FIELD
     description: str | None = Field(
@@ -86,7 +109,7 @@ class ExtractorConfig(KilnParentedModel):
 
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
-        if self.extractor_type == ExtractorType.gemini:
+        if self.extractor_type == ExtractorType.GEMINI:
             validate_prompt_for_kind(self.properties.get("prompt_for_kind"))
             validate_model_name(self.properties.get("model_name"))
             return self
@@ -118,18 +141,56 @@ class ExtractorConfig(KilnParentedModel):
         return self.parent  # type: ignore
 
 
-class ExtractionSource(str, Enum):
-    PROCESSED = "processed"
-    PASSTHROUGH = "passthrough"
+class FileInfo(BaseModel):
+    filename: str = Field(description="The filename of the file")
+
+    size: int = Field(description="The size of the file in bytes")
+
+    mime_type: str = Field(description="The MIME type of the file")
+
+    attachment: KilnAttachmentModel = Field(
+        description="The attachment to the file",
+    )
 
 
-class Extraction(KilnParentedModel):
-    source: ExtractionSource = Field(
-        description="The source of the extraction.",
+class Document(
+    KilnParentedModel, KilnParentModel, parent_of={"extractions": Extraction}
+):
+    name: str = NAME_FIELD
+
+    description: str = Field(description="A description for the file")
+
+    original_file: FileInfo = Field(description="The original file")
+
+    # TODO: move {mime_type:kind} mapping out of GeminiExtractor and into here
+    #   - will also need to have models specify which mimetypes they support
+    kind: Kind = Field(
+        description="The kind of document. The kind is a broad family of filetypes that can be handled in a similar way"
     )
-    extractor_config_id: ID_TYPE = Field(
-        description="The ID of the extractor config that was used to extract the data.",
+
+    # NOTE: could extract {tags + validate_tags} into a reusable Taggable model and inherit from that here
+    # and in TaskRun
+    # thoughts?
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Tags for the document. Tags are used to categorize documents for filtering and reporting.",
     )
-    output: KilnAttachmentModel = Field(
-        description="The extraction output.",
-    )
+
+    @model_validator(mode="after")
+    def validate_tags(self) -> Self:
+        for tag in self.tags:
+            if not tag:
+                raise ValueError("Tags cannot be empty strings")
+            if " " in tag:
+                raise ValueError("Tags cannot contain spaces. Try underscores.")
+
+        return self
+
+    # Workaround to return typed parent without importing Project
+    def parent_project(self) -> Union["Project", None]:
+        if self.parent is None or self.parent.__class__.__name__ != "Project":
+            return None
+        return self.parent  # type: ignore
+
+    def extractions(self) -> list[Extraction]:
+        return super().extractions()  # type: ignore

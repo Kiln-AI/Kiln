@@ -19,7 +19,6 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
-from kiln_ai.datamodel.document import Document, FileInfo
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
@@ -52,8 +51,6 @@ __all__ = [
     "DataSource",
     "DataSourceType",
     "DataSourceProperty",
-    "Document",
-    "FileInfo",
     "Finetune",
     "FineTuneStatusType",
     "TaskOutputRatingType",
