@@ -1,7 +1,9 @@
 import json
+import mimetypes
 import os
 import re
 import shutil
+import tempfile
 import uuid
 from abc import ABCMeta
 from builtins import classmethod
@@ -115,6 +117,25 @@ class KilnAttachmentModel(BaseModel):
         target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
         return target_path
+
+    @classmethod
+    def from_data(
+        cls, data: str | bytes, mime_type: str, suffix: str | None = None
+    ) -> "KilnAttachmentModel":
+        # mimetype to extension
+        extension = suffix or mimetypes.guess_extension(mime_type) or ".unknown"
+
+        # write to temp file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
+        if isinstance(data, str):
+            temp_file.write(data.encode("utf-8"))
+        else:
+            temp_file.write(data)
+        temp_file.close()
+        return cls(path=Path(temp_file.name))
+
+    def resolve_path(self, parent_path: Path) -> Path:
+        return parent_path / self.path
 
 
 class KilnBaseModel(BaseModel):

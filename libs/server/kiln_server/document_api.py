@@ -5,9 +5,15 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.document import Document, FileInfo
-from kiln_ai.datamodel.extraction import Kind
+from kiln_ai.datamodel.extraction import (
+    ExtractorConfig,
+    ExtractorType,
+    Kind,
+    OutputFormat,
+)
 from kiln_ai.datamodel.registry import project_from_id
 from pydantic import BaseModel
 
@@ -43,10 +49,28 @@ def connect_document_api(app: FastAPI):
                     status_code=404, detail=f"Project not found: {project_id}"
                 )
 
+            # WIP: demo basic flow
+            extractor_config = ExtractorConfig(
+                parent=project,
+                name="Gemini",
+                extractor_type=ExtractorType.gemini,
+                output_format=OutputFormat.MARKDOWN,
+                properties={
+                    "model_name": "gemini-2.0-flash",
+                    "prompt_for_kind": {
+                        Kind.DOCUMENT: "Extract the text from the document.",
+                        Kind.IMAGE: "Extract the text from the image.",
+                        Kind.VIDEO: "Extract the text from the video.",
+                        Kind.AUDIO: "Extract the text from the audio.",
+                    },
+                },
+            )
+            extractor_config.save_to_file()
+
             document = Document(
+                parent=project,
                 name=name,
                 description=description,
-                parent=project,
                 kind=Kind.DOCUMENT,
                 original_file=FileInfo(
                     filename=file.filename or "",
@@ -56,4 +80,13 @@ def connect_document_api(app: FastAPI):
                 ),
             )
             document.save_to_file()
+
+            # extract the document
+            extractor_runner = ExtractorRunner(
+                documents=[document],
+                extractor_configs=[extractor_config],
+            )
+            async for progress in extractor_runner.run():
+                pass
+
             return document

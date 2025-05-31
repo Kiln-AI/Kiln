@@ -1,11 +1,8 @@
 import logging
-import mimetypes
-import tempfile
 from dataclasses import dataclass
-from pathlib import Path
 from typing import AsyncGenerator, List
 
-from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, FileInfo
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
 from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.document import Document
@@ -13,20 +10,6 @@ from kiln_ai.datamodel.extraction import Extraction, ExtractionSource, Extractor
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
 
 logger = logging.getLogger(__name__)
-
-
-# TODO: refactor this logic into the KilnAttachmentModel as a classmethod (e.g. from_string(xxx) -> KilnAttachmentModel)
-def to_attachment(data: str, mime_type: str) -> KilnAttachmentModel:
-    # mimetype to extension
-    extension = mimetypes.guess_extension(mime_type) or ".unknown"
-
-    # write to temp file
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
-    temp_file.write(data.encode("utf-8"))
-    temp_file.close()
-    return KilnAttachmentModel(
-        path=Path(temp_file.name),
-    )
 
 
 @dataclass
@@ -73,22 +56,30 @@ class ExtractorRunner:
             if not isinstance(extractor, BaseExtractor):
                 raise ValueError("Not able to create extractor from extractor config")
 
+            if job.item.path is None:
+                raise ValueError("Document path is not set")
+
             output = extractor.extract(
-                # TODO: guess the mimetype upstream, so here we would already have it
-                FileInfo(path=job.item.original_file.attachment.path)
+                # FIXME: needing to resolve the path here is not ideal; should be done
+                # on the model when deserializing
+                path=job.item.original_file.attachment.resolve_path(
+                    job.item.path.parent
+                ),
+                mime_type=job.item.original_file.mime_type,
             )
 
-            # TODO: turn output into an attachment and save
             extraction = Extraction(
                 parent=job.item,
                 extractor_config_id=job.extractor_config.id,
-                output=to_attachment(output.content, output.content_format),
+                output=KilnAttachmentModel.from_data(
+                    data=output.content,
+                    mime_type=output.content_format,
+                ),
                 # TODO: harmonize between ExtractionSource and output property
                 source=ExtractionSource.PASSTHROUGH
                 if output.is_passthrough
                 else ExtractionSource.PROCESSED,
             )
-
             extraction.save_to_file()
 
             return True
