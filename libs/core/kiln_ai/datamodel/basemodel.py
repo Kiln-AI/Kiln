@@ -111,7 +111,16 @@ class KilnAttachmentModel(BaseModel):
             return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
+        path_before_copy = self.path
         new_path = self.copy_file_to(dest_path)
+
+        # check if source was a temp file and clean it up
+        if KilnAttachmentModel.is_temp_file(path_before_copy):
+            try:
+                path_before_copy.unlink()
+            except (OSError, FileNotFoundError):
+                pass  # file is already gone, that's fine
+
         self.path = new_path.relative_to(dest_path)
 
         return {"path": self.path}
@@ -121,6 +130,16 @@ class KilnAttachmentModel(BaseModel):
         target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
         return target_path
+
+    @classmethod
+    def is_temp_file(cls, path: Path) -> bool:
+        """Check if the path is in a temporary directory."""
+        temp_dir = Path(tempfile.gettempdir())
+        try:
+            path.resolve().relative_to(temp_dir.resolve())
+            return True
+        except ValueError:
+            return False
 
     @classmethod
     def from_data(
