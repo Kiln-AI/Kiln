@@ -1,6 +1,7 @@
 import filecmp
 import hashlib
 import json
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -59,17 +60,6 @@ def test_media_file_document(test_media_files) -> Path:
 
 @pytest.fixture
 def test_base_kiln_file(tmp_path) -> Path:
-    test_file_path = tmp_path / "test_model.json"
-    data = {"v": 1, "model_type": "kiln_base_model"}
-
-    with open(test_file_path, "w") as file:
-        json.dump(data, file, indent=4)
-
-    return test_file_path
-
-
-@pytest.fixture
-def test_media_file(tmp_path) -> Path:
     test_file_path = tmp_path / "test_model.json"
     data = {"v": 1, "model_type": "kiln_base_model"}
 
@@ -264,10 +254,10 @@ def test_save_to_file_with_indirect_attachment_optional_none(test_base_kiln_file
         mock_save_to_file.assert_not_called()
 
 
-def test_dump_dest_path(test_base_kiln_file, test_media_file):
+def test_dump_dest_path(test_base_kiln_file, test_media_file_document):
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_media_file),
+        attachment=KilnAttachmentModel(path=test_media_file_document),
     )
 
     with pytest.raises(
@@ -282,7 +272,10 @@ def test_dump_dest_path(test_base_kiln_file, test_media_file):
         match="dest_path must be a valid Path object when saving attachments",
     ):
         model.model_dump_json(
-            context={"save_attachments": True, "dest_path": str(test_media_file)}
+            context={
+                "save_attachments": True,
+                "dest_path": str(test_media_file_document),
+            }
         )
 
     # should raise when dest_path is not a directory
@@ -291,19 +284,22 @@ def test_dump_dest_path(test_base_kiln_file, test_media_file):
         match="dest_path must be a directory when saving attachments",
     ):
         model.model_dump_json(
-            context={"save_attachments": True, "dest_path": test_media_file}
+            context={"save_attachments": True, "dest_path": test_media_file_document}
         )
 
     # should not raise when dest_path is set
     model.model_dump_json(context={"dest_path": test_base_kiln_file.parent})
 
 
-def test_resolve_path(test_base_kiln_file, test_media_file):
+def test_resolve_path(test_base_kiln_file, test_media_file_document):
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_media_file),
+        attachment=KilnAttachmentModel(path=test_media_file_document),
     )
-    assert model.attachment.resolve_path(test_base_kiln_file.parent) == test_media_file
+    assert (
+        model.attachment.resolve_path(test_base_kiln_file.parent)
+        == test_media_file_document
+    )
 
 
 def test_create_from_data(test_base_kiln_file, test_media_file_document):
@@ -351,3 +347,39 @@ def test_attachment_is_folder(test_base_kiln_file, tmp_path):
             path=test_base_kiln_file,
             attachment=KilnAttachmentModel(path=folder),
         )
+
+
+def test_temp_file_cleanup(test_base_kiln_file, test_media_file_document):
+    with open(test_media_file_document, "rb") as file:
+        data = file.read()
+
+    attachment = KilnAttachmentModel.from_data(data, "application/pdf")
+    path_before_save = attachment.path
+    assert path_before_save.exists()
+
+    model = ModelWithAttachment(
+        path=test_base_kiln_file,
+        attachment=attachment,
+    )
+    model.save_to_file()
+
+    assert not path_before_save.exists()
+
+
+def test_is_temp_file(test_media_file_paths):
+    with tempfile.NamedTemporaryFile() as temp_file:
+        # file in temp folder
+        temp_file_path = Path(temp_file.name)
+        temp_file_path.touch()
+        assert KilnAttachmentModel.is_temp_file(temp_file_path)
+
+        # file in subdir of temp folder
+        subdir = temp_file_path.parent / f"subdir_{str(uuid.uuid4())}"
+        subdir.mkdir()
+        subdir_file = subdir / "subdir_file.txt"
+        subdir_file.touch()
+        assert KilnAttachmentModel.is_temp_file(subdir_file)
+
+    # file not in temp folder
+    for file in test_media_file_paths:
+        assert not KilnAttachmentModel.is_temp_file(file)
