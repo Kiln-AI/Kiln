@@ -113,8 +113,7 @@ class ExtractorConfig(KilnParentedModel):
             validate_prompt_for_kind(self.properties.get("prompt_for_kind"))
             validate_model_name(self.properties.get("model_name"))
             return self
-        else:
-            raise ValueError(f"Invalid extractor type: {self.extractor_type}")
+        raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
     def model_name(self) -> str | None:
         model_name = self.properties.get("model_name")
