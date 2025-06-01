@@ -71,10 +71,10 @@ class ExtractorRunner:
 
     async def run_job(self, job: ExtractorJob) -> bool:
         try:
-            extractor_factory = extractor_adapter_from_type(
+            extractor = extractor_adapter_from_type(
                 job.extractor_config.extractor_type,
+                job.extractor_config,
             )
-            extractor = extractor_factory(job.extractor_config)
             if not isinstance(extractor, BaseExtractor):
                 raise ValueError("Not able to create extractor from extractor config")
 
