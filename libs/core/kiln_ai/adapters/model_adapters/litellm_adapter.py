@@ -65,24 +65,20 @@ class LiteLlmAdapter(BaseAdapter):
             {"role": "user", "content": user_msg},
         ]
 
-        run_strategy, cot_prompt = self.run_strategy()
+        # TODO remove cot_prompt from here, it's not needed
+        run_strategy = self.run_strategy()
+        # TODO P0 - our fine-tunes are returning "reasoning_capable" as true, when they should be false. This is forcing the R1 mode with json_mode!!!!
+        print(f"run_strategy: {run_strategy}")
+        run_strategy = "cot_two_call"
 
-        if run_strategy == "cot_as_message":
-            # Used for reasoning-capable models that can output thinking and structured format
-            if not cot_prompt:
-                raise ValueError("cot_prompt is required for cot_as_message strategy")
-            messages.append({"role": "system", "content": cot_prompt})
-        elif run_strategy == "cot_two_call":
-            if not cot_prompt:
-                raise ValueError("cot_prompt is required for cot_two_call strategy")
-            messages.append({"role": "system", "content": cot_prompt})
-
-            # First call for chain of thought
+        if run_strategy == "cot_two_call":
+            # First call is for the chain of thought
             # No response format as this request is for "thinking" in plain text
             # No logprobs as only needed for final answer
             completion_kwargs = await self.build_completion_kwargs(
                 provider, messages, None, skip_response_format=True
             )
+            print(f"completion_kwargs: {completion_kwargs}")
             cot_response = await litellm.acompletion(**completion_kwargs)
             if (
                 not isinstance(cot_response, ModelResponse)

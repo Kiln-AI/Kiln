@@ -201,24 +201,25 @@ class BaseAdapter(metaclass=ABCMeta):
 
     def run_strategy(
         self,
-    ) -> Tuple[Literal["cot_as_message", "cot_two_call", "basic"], str | None]:
+    ) -> Literal["cot_as_message", "cot_two_call", "basic"]:
         # Determine the run strategy for COT prompting. 3 options:
         # 1. "Thinking" LLM designed to output thinking in a structured format plus a COT prompt: we make 1 call to the LLM, which outputs thinking in a structured format. We include the thinking instuctions as a message.
         # 2. Normal LLM with COT prompt: we make 2 calls to the LLM - one for thinking and one for the final response. This helps us use the LLM's structured output modes (json_schema, tools, etc), which can't be used in a single call. It also separates the thinking from the final response.
         # 3. Non chain of thought: we make 1 call to the LLM, with no COT prompt.
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
         reasoning_capable = self.model_provider().reasoning_capable
+        print(f"reasoning_capable: {reasoning_capable}")
 
         if cot_prompt and reasoning_capable:
             # 1: "Thinking" LLM designed to output thinking in a structured format
             # A simple message with the COT prompt appended to the message list is sufficient
-            return "cot_as_message", cot_prompt
+            return "cot_as_message"
         elif cot_prompt:
             # 2: Unstructured output with COT
             # Two calls to separate the thinking from the final response
-            return "cot_two_call", cot_prompt
+            return "cot_two_call"
         else:
-            return "basic", None
+            return "basic"
 
     # create a run and task output
     def generate_run(

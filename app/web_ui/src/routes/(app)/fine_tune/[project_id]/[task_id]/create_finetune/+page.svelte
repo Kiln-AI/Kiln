@@ -366,7 +366,14 @@
     is_download: boolean,
     available_models: FinetuneProvider[] | null,
   ) {
-    if (!model_provider || !base_model_id) {
+    console.log(
+      "update_data_strategies_supported",
+      model_provider,
+      base_model_id,
+      is_download,
+      available_models,
+    )
+    if (!model_provider || (!base_model_id && !is_download)) {
       return
     }
 
@@ -542,6 +549,7 @@
             </div>
           {/if}
           <div>
+            {JSON.stringify(data_strategy_select_options)}
             <FormElement
               label="Reasoning"
               description="Should the model be trained on reasoning/thinking content?"
