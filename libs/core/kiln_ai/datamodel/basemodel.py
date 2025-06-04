@@ -107,7 +107,8 @@ class KilnAttachmentModel(BaseModel):
             raise ValueError("dest_path must be a directory when saving attachments")
 
         # the attachment is already in the parent folder, so we don't need to copy it
-        if self.path.parent == dest_path:
+        # if the path is already relative, we consider it has been copied already
+        if self.path.parent == dest_path or not self.path.is_absolute():
             return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
