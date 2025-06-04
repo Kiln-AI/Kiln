@@ -9,9 +9,9 @@ from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
 
 def test_extractor_adapter_from_type():
     with patch(
-        "kiln_ai.adapters.extractors.registry.get_genai_client"
-    ) as mock_get_genai_client:
-        mock_get_genai_client.return_value = MagicMock()
+        "kiln_ai.adapters.extractors.gemini_extractor.genai.Client"
+    ) as mock_genai_client:
+        mock_genai_client.return_value = MagicMock()
 
         extractor = extractor_adapter_from_type(
             ExtractorType.GEMINI,
@@ -36,4 +36,4 @@ def test_extractor_adapter_from_type():
 
 def test_extractor_adapter_from_type_invalid():
     with pytest.raises(ValueError):
-        extractor_adapter_from_type("invalid-type", {})  # type: ignore
+        extractor_adapter_from_type("invalid-type", {})
