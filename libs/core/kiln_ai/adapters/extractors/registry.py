@@ -1,17 +1,7 @@
-from functools import lru_cache
-
-from google import genai
-
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
-from kiln_ai.adapters.extractors.gemini_extractor import GeminiExtractor
+from kiln_ai.adapters.extractors.gemini_extractor import build_gemini_extractor
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
-from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-
-
-@lru_cache(maxsize=1)
-def get_genai_client() -> genai.Client:
-    return genai.Client(api_key=Config.shared().gemini_api_key)
 
 
 def extractor_adapter_from_type(
@@ -20,7 +10,7 @@ def extractor_adapter_from_type(
 ) -> BaseExtractor:
     match extractor_type:
         case ExtractorType.GEMINI:
-            return GeminiExtractor(get_genai_client(), extractor_config)
+            return build_gemini_extractor(extractor_config)
         case _:
             # type checking will catch missing cases
             raise_exhaustive_enum_error(extractor_type)

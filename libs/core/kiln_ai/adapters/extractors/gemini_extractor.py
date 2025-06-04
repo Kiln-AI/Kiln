@@ -5,6 +5,7 @@ from google.genai import types
 
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
+from kiln_ai.utils.config import Config
 
 # docs list out supported formats:
 # - https://ai.google.dev/gemini-api/docs/document-processing#supported-formats
@@ -88,7 +89,9 @@ class GeminiExtractor(BaseExtractor):
     def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
         kind = self._get_kind_from_mime_type(mime_type)
         if kind is None:
-            raise ValueError(f"Unsupported MIME type: {mime_type}")
+            raise ValueError(
+                f"Unsupported MIME type: {mime_type} for {path} with {self.model_name}"
+            )
 
         prompt = self.prompt_for_kind.get(kind)
         if prompt is None:
@@ -113,3 +116,11 @@ class GeminiExtractor(BaseExtractor):
             content=response.text,
             content_format=self.extractor_config.output_format,
         )
+
+
+def get_genai_client() -> genai.Client:
+    return genai.Client(api_key=Config.shared().gemini_api_key)
+
+
+def build_gemini_extractor(extractor_config: ExtractorConfig) -> GeminiExtractor:
+    return GeminiExtractor(get_genai_client(), extractor_config)
