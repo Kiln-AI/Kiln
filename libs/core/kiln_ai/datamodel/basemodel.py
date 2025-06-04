@@ -71,10 +71,19 @@ def string_to_valid_name(name: str) -> str:
 class KilnAttachmentModel(BaseModel):
     path: Path = Field(description="The path to the attachment")
 
+    is_persisted: bool = Field(
+        default=False,
+        exclude=True,
+        description="Whether the attachment is persisted to its permanent location on disk. This is set automatically when the attachment is loaded from a file.",
+    )
+
     @model_validator(mode="after")
     def check_file_exists(self, info: ValidationInfo) -> Self:
         context = info.context or {}
+        self.is_persisted = False
         if context.get("loading_from_file", False):
+            # if we load from file, we assume it is persisted correctly
+            self.is_persisted = True
             return self
         if isinstance(self.path, str):
             self.path = Path(self.path)
@@ -108,7 +117,7 @@ class KilnAttachmentModel(BaseModel):
 
         # the attachment is already in the parent folder, so we don't need to copy it
         # if the path is already relative, we consider it has been copied already
-        if self.path.parent == dest_path or not self.path.is_absolute():
+        if self.is_persisted:
             return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
@@ -123,6 +132,7 @@ class KilnAttachmentModel(BaseModel):
                 pass  # file is already gone, that's fine
 
         self.path = new_path.relative_to(dest_path)
+        self.is_persisted = True
 
         return {"path": self.path}
 
