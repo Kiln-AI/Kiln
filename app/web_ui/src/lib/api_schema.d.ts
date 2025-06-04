@@ -369,6 +369,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Documents */
+        get: operations["get_documents_api_projects__project_id__documents_get"];
+        put?: never;
+        /** Create Document */
+        post: operations["create_document_api_projects__project_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_api_projects__project_id__documents__document_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/edit_tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Tags */
+        post: operations["edit_tags_api_projects__project_id__documents_edit_tags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_extractor_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Extractor Config */
+        post: operations["create_extractor_config_api_projects__project_id__create_extractor_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_config/{extractor_config_id}/run_extractor_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Extractor Config */
+        get: operations["run_extractor_config_api_projects__project_id__extractor_config__extractor_config_id__run_extractor_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/extractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extractions */
+        get: operations["get_extractions_api_projects__project_id__documents__document_id__extractions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -1112,6 +1215,33 @@ export interface components {
             /** Splits */
             splits?: string | null;
         };
+        /** Body_create_document_api_projects__project_id__documents_post */
+        Body_create_document_api_projects__project_id__documents_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
+        /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
+        Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
+            /** Document Ids */
+            document_ids: string[];
+            /** Add Tags */
+            add_tags?: string[] | null;
+            /** Remove Tags */
+            remove_tags?: string[] | null;
+        };
         /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
         Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
             /** Run Ids */
@@ -1184,6 +1314,23 @@ export interface components {
             eval_set_filter_id: string;
             /** Eval Configs Filter Id */
             eval_configs_filter_id: string;
+        };
+        /** CreateExtractorConfigRequest */
+        CreateExtractorConfigRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            output_format: components["schemas"]["OutputFormat"];
+            /** Passthrough Mimetypes */
+            passthrough_mimetypes: components["schemas"]["OutputFormat"][];
+            extractor_type: components["schemas"]["ExtractorType"];
+            /** Properties */
+            properties: {
+                [key: string]: string | number | boolean | {
+                    [key: string]: string;
+                };
+            };
         };
         /**
          * CreateFinetuneRequest
@@ -1452,6 +1599,46 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** Document */
+        Document: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for the file
+             */
+            description: string;
+            /** @description The original file */
+            original_file: components["schemas"]["FileInfo"];
+            /** @description The kind of document. The kind is a broad family of filetypes that can be handled in a similar way */
+            kind: components["schemas"]["Kind"];
+            /**
+             * Tags
+             * @description Tags for the document. Tags are used to categorize documents for filtering and reporting.
+             */
+            tags?: string[];
+            /** Model Type */
+            readonly model_type: string;
+        };
         /** Eval */
         Eval: {
             /**
@@ -1728,6 +1915,119 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        /** Extraction */
+        Extraction: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /** @description The source of the extraction. */
+            source: components["schemas"]["ExtractionSource"];
+            /**
+             * Extractor Config Id
+             * @description The ID of the extractor config that was used to extract the data.
+             */
+            extractor_config_id: string | null;
+            /** @description The extraction output. */
+            output: components["schemas"]["KilnAttachmentModel"];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * ExtractionSource
+         * @enum {string}
+         */
+        ExtractionSource: "processed" | "passthrough";
+        /** ExtractorConfig */
+        ExtractorConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The description of the extractor config
+             */
+            description?: string | null;
+            /**
+             * @description The format to use for the output.
+             * @default text/markdown
+             */
+            output_format: components["schemas"]["OutputFormat"];
+            /**
+             * Passthrough Mimetypes
+             * @description If the mimetype is in this list, the extractor will not be used and the text content of the file will be returned as is.
+             */
+            passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
+            /** @description This is used to determine the type of extractor to use. */
+            extractor_type: components["schemas"]["ExtractorType"];
+            /**
+             * Properties
+             * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
+             * @default {}
+             */
+            properties: {
+                [key: string]: string | number | boolean | {
+                    [key: string]: string;
+                };
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * ExtractorType
+         * @enum {string}
+         */
+        ExtractorType: "gemini";
+        /** FileInfo */
+        FileInfo: {
+            /**
+             * Filename
+             * @description The filename of the file
+             */
+            filename: string;
+            /**
+             * Size
+             * @description The size of the file in bytes
+             */
+            size: number;
+            /**
+             * Mime Type
+             * @description The MIME type of the file
+             */
+            mime_type: string;
+            /** @description The attachment to the file */
+            attachment: components["schemas"]["KilnAttachmentModel"];
+        };
         /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
@@ -1946,6 +2246,9 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        KilnAttachmentModel: {
+            [key: string]: string;
+        } | null;
         /**
          * KilnBaseModel
          * @description Base model for all Kiln data models with common functionality for persistence and versioning.
@@ -2006,6 +2309,11 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /**
+         * Kind
+         * @enum {string}
+         */
+        Kind: "document" | "image" | "video" | "audio";
         /** ModelDetails */
         ModelDetails: {
             /** Id */
@@ -2036,7 +2344,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_no_thinking";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
@@ -2054,6 +2362,11 @@ export interface components {
             /** Untested Models */
             untested_models?: string[];
         };
+        /**
+         * OutputFormat
+         * @enum {string}
+         */
+        OutputFormat: "text/plain" | "text/markdown";
         /**
          * Priority
          * @description Defines priority levels for tasks and requirements, where P0 is highest priority.
@@ -3673,6 +3986,240 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_documents_api_projects__project_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_document_api_projects__project_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_document_api_projects__project_id__documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_api_projects__project_id__documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_tags_api_projects__project_id__documents_edit_tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Body_edit_tags_api_projects__project_id__documents_edit_tags_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_extractor_config_api_projects__project_id__create_extractor_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExtractorConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractorConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_extractor_config_api_projects__project_id__extractor_config__extractor_config_id__run_extractor_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractions_api_projects__project_id__documents__document_id__extractions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Extraction"][];
                 };
             };
             /** @description Validation Error */
