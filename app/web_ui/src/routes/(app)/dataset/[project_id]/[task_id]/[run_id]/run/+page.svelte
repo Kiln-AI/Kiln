@@ -22,6 +22,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
+  import { isMacOS } from "../../../../../../../lib/utils/platform"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -204,13 +205,6 @@
     load_run()
   }
 
-  function isMac(): boolean {
-    return (
-      typeof window !== "undefined" &&
-      navigator.platform.toUpperCase().indexOf("MAC") >= 0
-    )
-  }
-
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -218,7 +212,7 @@
       buttons.push({
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
-        shortcut: isMac() ? "Backspace" : "Delete",
+        shortcut: isMacOS() ? "Backspace" : "Delete",
       })
     }
     if (list_page.length > 1) {
