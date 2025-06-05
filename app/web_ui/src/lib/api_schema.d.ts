@@ -398,7 +398,8 @@ export interface paths {
         get: operations["get_document_api_projects__project_id__documents__document_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Document */
+        delete: operations["delete_document_api_projects__project_id__documents__document_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -438,6 +439,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/extractor_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extractor Configs */
+        get: operations["get_extractor_configs_api_projects__project_id__extractor_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extractor Config */
+        get: operations["get_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/extractor_config/{extractor_config_id}/run_extractor_config": {
         parameters: {
             query?: never;
@@ -466,6 +501,74 @@ export interface paths {
         get: operations["get_extractions_api_projects__project_id__documents__document_id__extractions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extraction */
+        get: operations["get_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/discover_serve_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discover Serve Document File */
+        get: operations["discover_serve_document_file_api_projects__project_id__documents__document_id__discover_serve_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/serve_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve Document File */
+        get: operations["serve_document_file_api_projects__project_id__documents__document_id__serve_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Document Enclosing Folder */
+        post: operations["open_document_enclosing_folder_api_projects__project_id__documents__document_id__open_enclosing_folder_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1599,6 +1702,11 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DiscoverServeFileResponse */
+        DiscoverServeFileResponse: {
+            /** Url */
+            url: string;
+        };
         /** Document */
         Document: {
             /**
@@ -1950,6 +2058,12 @@ export interface components {
          * @enum {string}
          */
         ExtractionSource: "processed" | "passthrough";
+        /** ExtractionWithOutput */
+        ExtractionWithOutput: {
+            extraction: components["schemas"]["Extraction"];
+            /** Output */
+            output: string;
+        };
         /** ExtractorConfig */
         ExtractorConfig: {
             /**
@@ -2361,6 +2475,11 @@ export interface components {
             supported_models: string[];
             /** Untested Models */
             untested_models?: string[];
+        };
+        /** OpenFileResponse */
+        OpenFileResponse: {
+            /** Path */
+            path: string;
         };
         /**
          * OutputFormat
@@ -4097,6 +4216,38 @@ export interface operations {
             };
         };
     };
+    delete_document_api_projects__project_id__documents__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     edit_tags_api_projects__project_id__documents_edit_tags_post: {
         parameters: {
             query?: never;
@@ -4169,6 +4320,69 @@ export interface operations {
             };
         };
     };
+    get_extractor_configs_api_projects__project_id__extractor_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractorConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractorConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_extractor_config_api_projects__project_id__extractor_config__extractor_config_id__run_extractor_config_get: {
         parameters: {
             query?: never;
@@ -4220,6 +4434,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Extraction"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+                extraction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionWithOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_serve_document_file_api_projects__project_id__documents__document_id__discover_serve_file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoverServeFileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    serve_document_file_api_projects__project_id__documents__document_id__serve_file_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_document_enclosing_folder_api_projects__project_id__documents__document_id__open_enclosing_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenFileResponse"];
                 };
             };
             /** @description Validation Error */
