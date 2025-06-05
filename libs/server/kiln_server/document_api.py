@@ -1,11 +1,12 @@
 import json
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
@@ -23,6 +24,10 @@ from pydantic import BaseModel
 from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_name(name: str) -> str:
+    return name.strip().replace(" ", "_").replace(".", "_").replace("/", "_")
 
 
 # TODO: extract out into common utils
@@ -63,6 +68,19 @@ class CreateExtractorConfigRequest(BaseModel):
     properties: dict[str, str | int | float | bool | dict[str, str]]
 
 
+class ExtractionWithOutput(BaseModel):
+    extraction: Extraction
+    output: str
+
+
+class OpenFileResponse(BaseModel):
+    path: str
+
+
+class DiscoverServeFileResponse(BaseModel):
+    url: str
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
@@ -92,7 +110,7 @@ def connect_document_api(app: FastAPI):
 
             document = Document(
                 parent=project,
-                name=name,
+                name=sanitize_name(name),
                 description=description,
                 kind=kind,
                 original_file=FileInfo(
@@ -189,24 +207,6 @@ def connect_document_api(app: FastAPI):
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
         name = request.name or generate_memorable_name()
-
-        # example properties:
-        # extractor_config = ExtractorConfig(
-        #     parent=project,
-        #     name="Gemini",
-        #     extractor_type=ExtractorType.GEMINI,
-        #     output_format=OutputFormat.MARKDOWN,
-        #     properties={
-        #         "model_name": "gemini-2.0-flash",
-        #         "prompt_for_kind": {
-        #             Kind.DOCUMENT: "Transcribe the document into markdown.",
-        #             Kind.IMAGE: "Describe the image.",
-        #             Kind.VIDEO: "Describe the video.",
-        #             Kind.AUDIO: "Describe the audio.",
-        #         },
-        #     },
-        # )
-
         extractor_config = ExtractorConfig(
             name=name,
             description=request.description,
@@ -217,6 +217,29 @@ def connect_document_api(app: FastAPI):
             parent=project,
         )
         extractor_config.save_to_file()
+        return extractor_config
+
+    @app.get("/api/projects/{project_id}/extractor_configs")
+    async def get_extractor_configs(
+        project_id: str,
+    ) -> list[ExtractorConfig]:
+        project = project_from_id(project_id)
+        return project.extractor_configs()
+
+    @app.get("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
+    async def get_extractor_config(
+        project_id: str,
+        extractor_config_id: str,
+    ) -> ExtractorConfig:
+        project = project_from_id(project_id)
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config not found",
+            )
         return extractor_config
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
@@ -260,3 +283,108 @@ def connect_document_api(app: FastAPI):
             )
 
         return document.extractions()
+
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
+    )
+    async def get_extraction(
+        project_id: str,
+        document_id: str,
+        extraction_id: str,
+    ) -> ExtractionWithOutput:
+        project = project_from_id(project_id)
+
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+
+        extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
+        if not extraction:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extraction {extraction_id} not found",
+            )
+
+        return ExtractionWithOutput(
+            extraction=extraction, output=extraction.output_content() or ""
+        )
+
+    @app.get("/api/projects/{project_id}/documents/{document_id}/discover_serve_file")
+    async def discover_serve_document_file(
+        project_id: str,
+        document_id: str,
+    ) -> DiscoverServeFileResponse:
+        # frontend calls this to get the full URL that serves the file.
+        # this avoids needing to hardcode the URL in the frontend.
+        return DiscoverServeFileResponse(
+            # TODO: load base URL from config
+            url=f"http://localhost:8757/api/projects/{project_id}/documents/{document_id}/serve_file",
+        )
+
+    @app.get("/api/projects/{project_id}/documents/{document_id}/serve_file")
+    async def serve_document_file(
+        project_id: str,
+        document_id: str,
+    ) -> FileResponse:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+        if not document.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Document path not found",
+            )
+
+        path = document.original_file.attachment.resolve_path(
+            document.path.parent
+        ).resolve()
+
+        return FileResponse(path=path, filename=document.original_file.filename)
+
+    @app.post(
+        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder"
+    )
+    async def open_document_enclosing_folder(
+        project_id: str,
+        document_id: str,
+    ) -> OpenFileResponse:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+
+        if not document.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Document path not found",
+            )
+
+        # system call to open folder in default OS explorer (finder, explorer, etc)
+        os.system(f'open "{document.path.parent}"')
+
+        return OpenFileResponse(path=str(document.path.parent))
+
+    @app.delete("/api/projects/{project_id}/documents/{document_id}")
+    async def delete_document(project_id: str, document_id: str) -> dict:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+
+        document.delete()
+
+        return {"message": f"Document removed. ID: {document_id}"}
