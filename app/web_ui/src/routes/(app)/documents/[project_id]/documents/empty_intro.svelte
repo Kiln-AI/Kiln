@@ -1,5 +1,4 @@
 <script lang="ts">
-  export let project_id: string
 </script>
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
