@@ -1,7 +1,13 @@
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Union, cast
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SerializationInfo,
+    field_serializer,
+    model_validator,
+)
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
@@ -150,6 +156,14 @@ class FileInfo(BaseModel):
     attachment: KilnAttachmentModel = Field(
         description="The attachment to the file",
     )
+
+    @field_serializer("attachment")
+    def serialize_attachment(
+        self, attachment: KilnAttachmentModel, info: SerializationInfo
+    ) -> dict:
+        context = info.context or {}
+        context["filename_prefix"] = "attachment"
+        return attachment.model_dump(mode="json", context=context)
 
 
 class Document(

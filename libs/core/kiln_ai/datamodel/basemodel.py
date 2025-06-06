@@ -11,9 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
-from kiln_ai.datamodel.model_cache import ModelCache
-from kiln_ai.utils.config import Config
-from kiln_ai.utils.formatting import snake_case
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -27,6 +24,10 @@ from pydantic import (
 )
 from pydantic_core import ErrorDetails
 from typing_extensions import Self
+
+from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.utils.config import Config
+from kiln_ai.utils.formatting import snake_case
 
 # ID is a 12 digit random integer string.
 # Should be unique per item, at least inside the context of a parent/child relationship.
@@ -120,15 +121,19 @@ class KilnAttachmentModel(BaseModel):
             return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
-        new_path = self.copy_file_to(dest_path)
+        new_path = self.copy_file_to(dest_path, context.get("filename_prefix", None))
 
         self.path = new_path.relative_to(dest_path)
         self.is_persisted = True
 
         return {"path": self.path}
 
-    def copy_file_to(self, dest_folder: Path) -> Path:
+    def copy_file_to(
+        self, dest_folder: Path, filename_prefix: str | None = None
+    ) -> Path:
         filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
+        if filename_prefix:
+            filename = f"{filename_prefix}_{filename}"
         target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
         return target_path
