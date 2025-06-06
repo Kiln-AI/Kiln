@@ -43,6 +43,16 @@ export function formatDate(dateString: string | undefined): string {
     .replace(",", "")
 }
 
+export function formatSize(byteSize: number): string {
+  if (byteSize < 1024) {
+    return byteSize + " B"
+  }
+  if (byteSize < 1024 * 1024) {
+    return (byteSize / 1024).toFixed(2) + " KB"
+  }
+  return (byteSize / 1024 / 1024).toFixed(2) + " MB"
+}
+
 export function eval_config_to_ui_name(
   eval_config_type: EvalConfigType,
 ): string {
