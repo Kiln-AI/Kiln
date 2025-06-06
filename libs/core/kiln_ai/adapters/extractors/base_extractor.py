@@ -1,23 +1,13 @@
 import logging
 import mimetypes
-import pathlib
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.extraction import ExtractorConfig, OutputFormat
 
 logger = logging.getLogger(__name__)
-
-
-# TODO: take in the file/document datamodel instead once we have it
-class FileInfo(BaseModel):
-    # TODO: check if works with relative paths or needs to be absolute
-    path: str = Field(description="The path to the file to extract from.")
-
-
-class FileInfoInternal(FileInfo):
-    mime_type: str = Field(description="The mime type of the file to extract from.")
 
 
 class ExtractionOutput(BaseModel):
@@ -41,36 +31,39 @@ class BaseExtractor(ABC):
         self.extractor_config = extractor_config
 
     @abstractmethod
-    def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
+    def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
         pass
 
     def extract(
         self,
-        file_info: FileInfo,
+        path: Path | str,
+        mime_type: str | None = None,
     ) -> ExtractionOutput:
         """
         Extracts content from a file by delegating to the concrete extractor implementation.
         """
+        if isinstance(path, str):
+            path = Path(path)
+
         try:
-            mime_type, _ = mimetypes.guess_type(file_info.path)
             if mime_type is None:
-                raise ValueError("Unable to guess file mime type")
+                mime_type, _ = mimetypes.guess_type(path)
+                if mime_type is None:
+                    raise ValueError(f"Unable to guess file mime type for {path}")
 
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
                     is_passthrough=True,
-                    content=pathlib.Path(file_info.path).read_text(encoding="utf-8"),
+                    content=path.read_text(encoding="utf-8"),
                     content_format=self.extractor_config.output_format,
                 )
 
             return self._extract(
-                FileInfoInternal(
-                    path=file_info.path,
-                    mime_type=mime_type,
-                ),
+                path=path,
+                mime_type=mime_type,
             )
         except Exception as e:
-            raise ValueError(f"Error extracting {file_info.path}: {e}") from e
+            raise ValueError(f"Error extracting {path}: {e}") from e
 
     def _should_passthrough(self, mime_type: str) -> bool:
         return mime_type.lower() in {

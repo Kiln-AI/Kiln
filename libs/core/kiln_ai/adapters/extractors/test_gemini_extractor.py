@@ -5,12 +5,7 @@ import pytest
 from google import genai
 from google.genai import types
 
-from kiln_ai.adapters.extractors.base_extractor import (
-    ExtractionOutput,
-    FileInfo,
-    FileInfoInternal,
-    OutputFormat,
-)
+from kiln_ai.adapters.extractors.base_extractor import ExtractionOutput, OutputFormat
 from kiln_ai.adapters.extractors.gemini_extractor import (
     ExtractorConfig,
     GeminiExtractor,
@@ -38,7 +33,7 @@ def mock_gemini_extractor(mock_gemini_client):
         mock_gemini_client,
         ExtractorConfig(
             name="mock",
-            extractor_type=ExtractorType.gemini,
+            extractor_type=ExtractorType.GEMINI,
             properties={
                 "prompt_for_kind": PROMPTS_FOR_KIND,
                 "model_name": "fake-model",
@@ -120,7 +115,8 @@ def test_extract_success(mock_gemini_extractor):
 
         # test the extract method
         assert mock_gemini_extractor.extract(
-            FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
+            path="test.pdf",
+            mime_type="application/pdf",
         ) == ExtractionOutput(
             is_passthrough=False,
             content="extracted content",
@@ -153,10 +149,11 @@ def test_extract_failure_from_gemini(mock_gemini_extractor):
 
         mock_gemini_extractor.gemini_client = mock_gemini_client
 
-        file_info = FileInfoInternal(path="test.pdf", mime_type="application/pdf")
-
         with pytest.raises(Exception, match="error from gemini"):
-            mock_gemini_extractor.extract(file_info)
+            mock_gemini_extractor.extract(
+                path="test.pdf",
+                mime_type="application/pdf",
+            )
 
         mock_models.generate_content.assert_called_once_with(
             model="fake-model",
@@ -190,7 +187,8 @@ def test_extract_failure_from_bytes_read(mock_gemini_extractor):
         # test the extract method
         with pytest.raises(ValueError, match="error from read_bytes"):
             mock_gemini_extractor.extract(
-                FileInfoInternal(path="test.pdf", mime_type="application/pdf"),
+                path="test.pdf",
+                mime_type="application/pdf",
             )
 
         mock_gemini_client.models.generate_content.assert_not_called()
@@ -202,11 +200,10 @@ def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
         "mimetypes.guess_type",
         return_value=(None, None),
     ):
-        with pytest.raises(ValueError, match="Unable to guess file mime type"):
+        with pytest.raises(ValueError, match="Unsupported MIME type"):
             mock_gemini_extractor.extract(
-                FileInfoInternal(
-                    path="test.unsupported", mime_type="unsupported/mimetype"
-                ),
+                path="test.unsupported",
+                mime_type="unsupported/mimetype",
             )
 
 
@@ -217,7 +214,7 @@ def paid_gemini_extractor(model_name: str):
     return GeminiExtractor(
         extractor_config=ExtractorConfig(
             name="paid-gemini",
-            extractor_type=ExtractorType.gemini,
+            extractor_type=ExtractorType.GEMINI,
             properties={
                 "model_name": model_name,
                 "prompt_for_kind": {
@@ -243,7 +240,8 @@ def paid_gemini_extractor(model_name: str):
 def test_extract_document(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
-        file_info=FileInfo(path=str(test_data_dir / "1706.03762v7.pdf")),
+        path=str(test_data_dir / "1706.03762v7.pdf"),
+        mime_type="application/pdf",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -255,7 +253,8 @@ def test_extract_document(model_name, test_data_dir):
 def test_extract_image(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
-        file_info=FileInfo(path=str(test_data_dir / "kodim23.png")),
+        path=str(test_data_dir / "kodim23.png"),
+        mime_type="image/png",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -267,7 +266,8 @@ def test_extract_image(model_name, test_data_dir):
 def test_extract_video(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
-        file_info=FileInfo(path=str(test_data_dir / "big_buck_bunny_sample.mp4")),
+        path=str(test_data_dir / "big_buck_bunny_sample.mp4"),
+        mime_type="video/mp4",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -279,7 +279,8 @@ def test_extract_video(model_name, test_data_dir):
 def test_extract_audio(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = extractor.extract(
-        file_info=FileInfo(path=str(test_data_dir / "poacher.ogg")),
+        path=str(test_data_dir / "poacher.ogg"),
+        mime_type="audio/ogg",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -297,5 +298,5 @@ def test_provider_bad_request(tmp_path, model_name):
 
     with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
         extractor.extract(
-            file_info=FileInfo(path=temp_file.as_posix()),
+            path=temp_file.as_posix(),
         )

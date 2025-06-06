@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -6,15 +7,13 @@ import pytest
 from kiln_ai.adapters.extractors.base_extractor import (
     BaseExtractor,
     ExtractionOutput,
-    FileInfo,
-    FileInfoInternal,
     OutputFormat,
 )
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
 
 
 class MockBaseExtractor(BaseExtractor):
-    def _extract(self, file_info: FileInfoInternal) -> ExtractionOutput:
+    def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
         return ExtractionOutput(
             is_passthrough=False,
             content="mock concrete extractor output",
@@ -40,7 +39,7 @@ def mock_extractor(mock_gemini_properties):
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
-            extractor_type=ExtractorType.gemini,
+            extractor_type=ExtractorType.GEMINI,
             output_format=OutputFormat.MARKDOWN,
             properties=mock_gemini_properties,
         )
@@ -55,7 +54,7 @@ def mock_extractor_with_passthroughs(
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
-            extractor_type=ExtractorType.gemini,
+            extractor_type=ExtractorType.GEMINI,
             passthrough_mimetypes=mimetypes,
             output_format=output_format,
             properties=properties,
@@ -111,7 +110,7 @@ def test_extract_passthrough(mock_gemini_properties):
             return_value=("text/plain", None),
         ),
     ):
-        result = extractor.extract(file_info=FileInfo(path="test.txt"))
+        result = extractor.extract(path="test.txt", mime_type="text/plain")
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -154,7 +153,7 @@ def test_extract_passthrough_output_format(mock_gemini_properties, output_format
             return_value=("text/plain", None),
         ),
     ):
-        result = extractor.extract(file_info=FileInfo(path="test.txt"))
+        result = extractor.extract(path="test.txt")
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -196,12 +195,10 @@ def test_extract_non_passthrough(
         ),
     ):
         # first we call the base class extract method
-        result = mock_extractor.extract(file_info=FileInfo(path=path))
+        result = mock_extractor.extract(path=path)
 
         # then we call the subclass _extract method and add validated mime_type
-        mock_extract.assert_called_once_with(
-            FileInfoInternal(path=path, mime_type=mime_type)
-        )
+        mock_extract.assert_called_once_with(path=Path(path), mime_type=mime_type)
 
         assert not result.is_passthrough
         assert result.content == "mock concrete extractor output"
@@ -211,7 +208,7 @@ def test_extract_non_passthrough(
 def test_default_output_format(mock_gemini_properties):
     config = ExtractorConfig(
         name="mock",
-        extractor_type=ExtractorType.gemini,
+        extractor_type=ExtractorType.GEMINI,
         properties=mock_gemini_properties,
     )
     assert config.output_format == OutputFormat.MARKDOWN
@@ -224,14 +221,14 @@ def test_extract_failure_from_concrete_extractor(mock_extractor):
         side_effect=Exception("error from concrete extractor"),
     ):
         with pytest.raises(ValueError, match="error from concrete extractor"):
-            mock_extractor.extract(file_info=FileInfo(path="test.txt"))
+            mock_extractor.extract(path="test.txt", mime_type="text/plain")
 
 
 def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
     extractor = MockBaseExtractor(
         ExtractorConfig(
             name="mock",
-            extractor_type=ExtractorType.gemini,
+            extractor_type=ExtractorType.GEMINI,
             properties=mock_gemini_properties,
         )
     )
@@ -242,4 +239,4 @@ def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
         with pytest.raises(
             ValueError, match="Error extracting .*: Unable to guess file mime type"
         ):
-            extractor.extract(file_info=FileInfo(path="test-xyz"))
+            extractor.extract(path="test-xyz")
