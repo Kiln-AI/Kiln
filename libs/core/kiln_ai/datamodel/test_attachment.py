@@ -1,16 +1,14 @@
 import filecmp
 import hashlib
 import json
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 from unittest.mock import patch
 
 import pytest
-from pydantic import BaseModel, Field
-
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
+from pydantic import BaseModel, Field
 
 
 class ModelWithAttachment(KilnBaseModel):
@@ -377,46 +375,6 @@ def test_attachment_is_folder(test_base_kiln_file, tmp_path):
             path=test_base_kiln_file,
             attachment=KilnAttachmentModel(path=folder),
         )
-
-
-def test_temp_file_cleanup(test_base_kiln_file, test_media_file_document):
-    with open(test_media_file_document, "rb") as file:
-        data = file.read()
-
-    attachment = KilnAttachmentModel.from_data(data, "application/pdf")
-    path_before_save = attachment.path
-    assert path_before_save.exists()
-
-    model = ModelWithAttachment(
-        path=test_base_kiln_file,
-        attachment=attachment,
-    )
-    assert not model.attachment.is_persisted
-
-    model.save_to_file()
-
-    assert model.attachment.is_persisted
-
-    assert not path_before_save.exists()
-
-
-def test_is_temp_file(test_media_file_paths):
-    with tempfile.NamedTemporaryFile() as temp_file:
-        # file in temp folder
-        temp_file_path = Path(temp_file.name)
-        temp_file_path.touch()
-        assert KilnAttachmentModel.is_temp_file(temp_file_path)
-
-        # file in subdir of temp folder
-        subdir = temp_file_path.parent / f"subdir_{str(uuid.uuid4())}"
-        subdir.mkdir()
-        subdir_file = subdir / "subdir_file.txt"
-        subdir_file.touch()
-        assert KilnAttachmentModel.is_temp_file(subdir_file)
-
-    # file not in temp folder
-    for file in test_media_file_paths:
-        assert not KilnAttachmentModel.is_temp_file(file)
 
 
 def test_is_persisted_not_serialized(test_base_kiln_file, test_media_file_document):

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExtractorJob:
-    item: Document
+    doc: Document
     extractor_config: ExtractorConfig
 
 
@@ -36,29 +36,23 @@ class ExtractorRunner:
         self.extractor_configs = extractor_configs
 
     def collect_jobs(self) -> List[ExtractorJob]:
-        # all extractor configs come from the same project
-        project = self.extractor_configs[0].parent_project()
-        if project is None:
-            raise ValueError("Extractor runner requires a project")
+        jobs = []
 
-        # filter out documents that have already been extracted for this extractor config
+        # we want to avoid re-running the same document for the same extractor config
         already_extracted: Dict[ID_TYPE, Set[ID_TYPE]] = defaultdict(set)
-        for document in project.documents():
+        for document in self.documents:
             for extraction in document.extractions():
                 already_extracted[extraction.extractor_config_id].add(document.id)
 
-        jobs = []
         for extractor_config in self.extractor_configs:
-            # queue up unprocessed documents for this extractor config
             for document in self.documents:
-                if document.id in already_extracted.get(extractor_config.id, []):
-                    continue
-                jobs.append(
-                    ExtractorJob(
-                        item=document,
-                        extractor_config=extractor_config,
+                if document.id not in already_extracted[extractor_config.id]:
+                    jobs.append(
+                        ExtractorJob(
+                            doc=document,
+                            extractor_config=extractor_config,
+                        )
                     )
-                )
 
         return jobs
 
@@ -78,18 +72,16 @@ class ExtractorRunner:
             if not isinstance(extractor, BaseExtractor):
                 raise ValueError("Not able to create extractor from extractor config")
 
-            if job.item.path is None:
+            if job.doc.path is None:
                 raise ValueError("Document path is not set")
 
             output = extractor.extract(
-                path=job.item.original_file.attachment.resolve_path(
-                    job.item.path.parent
-                ),
-                mime_type=job.item.original_file.mime_type,
+                path=job.doc.original_file.attachment.resolve_path(job.doc.path.parent),
+                mime_type=job.doc.original_file.mime_type,
             )
 
             extraction = Extraction(
-                parent=job.item,
+                parent=job.doc,
                 extractor_config_id=job.extractor_config.id,
                 output=KilnAttachmentModel.from_data(
                     data=output.content,
@@ -104,5 +96,5 @@ class ExtractorRunner:
 
             return True
         except Exception as e:
-            logger.error(f"Error running eval job for dataset item {job.item.id}: {e}")
+            logger.error(f"Error running eval job for dataset item {job.doc.id}: {e}")
             return False
