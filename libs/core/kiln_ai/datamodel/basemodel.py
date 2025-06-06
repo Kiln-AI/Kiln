@@ -11,6 +11,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
+from kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.utils.config import Config
+from kiln_ai.utils.formatting import snake_case
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -24,10 +27,6 @@ from pydantic import (
 )
 from pydantic_core import ErrorDetails
 from typing_extensions import Self
-
-from kiln_ai.datamodel.model_cache import ModelCache
-from kiln_ai.utils.config import Config
-from kiln_ai.utils.formatting import snake_case
 
 # ID is a 12 digit random integer string.
 # Should be unique per item, at least inside the context of a parent/child relationship.
@@ -121,15 +120,7 @@ class KilnAttachmentModel(BaseModel):
             return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
-        path_before_copy = self.path
         new_path = self.copy_file_to(dest_path)
-
-        # check if source was a temp file and clean it up
-        if KilnAttachmentModel.is_temp_file(path_before_copy):
-            try:
-                path_before_copy.unlink()
-            except (OSError, FileNotFoundError):
-                pass  # file is already gone, that's fine
 
         self.path = new_path.relative_to(dest_path)
         self.is_persisted = True
@@ -141,16 +132,6 @@ class KilnAttachmentModel(BaseModel):
         target_path = dest_folder / filename
         shutil.copy(self.path, target_path)
         return target_path
-
-    @classmethod
-    def is_temp_file(cls, path: Path) -> bool:
-        """Check if the path is in a temporary directory."""
-        temp_dir = Path(tempfile.gettempdir())
-        try:
-            path.resolve().relative_to(temp_dir.resolve())
-            return True
-        except ValueError:
-            return False
 
     @classmethod
     def from_data(

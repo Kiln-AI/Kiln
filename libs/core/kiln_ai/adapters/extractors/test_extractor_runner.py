@@ -3,7 +3,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
@@ -139,7 +138,7 @@ def test_collect_jobs_excludes_already_run_extraction(
     # should get the one job, since the document was not already extracted with this extractor config
     jobs = mock_extractor_runner.collect_jobs()
     assert len(jobs) == 1
-    assert jobs[0].item.id == mock_document.id
+    assert jobs[0].doc.id == mock_document.id
     assert jobs[0].extractor_config.id == mock_extractor_config.id
 
     # Create an extraction for this document
