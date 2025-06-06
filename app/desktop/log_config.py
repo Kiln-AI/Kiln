@@ -175,20 +175,34 @@ class CustomLiteLLMLogger(CustomLogger):
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         try:
             if len(response_obj.choices) == 1:
+                if response_obj.choices[0].message.tool_calls:
+                    for tool_call in response_obj.choices[0].message.tool_calls:
+                        try:
+                            args = tool_call.function.arguments
+                            function_name = tool_call.function.name
+                            self.logger.info(
+                                f"Model Response Tool Call Arguments [{function_name}]:\n{args}"
+                            )
+                        except Exception:
+                            self.logger.info(f"Model Response Tool Call:\n{tool_call}")
+
                 content = response_obj.choices[0].message.content
-                try:
-                    json_content = json.loads(content)
-                    self.logger.info(
-                        f"Model Response:\n{json.dumps(json_content, indent=2)}"
-                    )
-                except Exception:
-                    self.logger.info(f"Model Response:\n{content}")
+                if content:
+                    try:
+                        # JSON format logs if possible
+                        json_content = json.loads(content)
+                        self.logger.info(
+                            f"Model Response Content:\n{json.dumps(json_content, indent=2)}"
+                        )
+                    except Exception:
+                        self.logger.info(f"Model Response Content:\n{content}")
             elif len(response_obj.choices) > 1:
                 self.logger.info(
                     f"Model Response (multiple choices):\n{response_obj.choices}"
                 )
             else:
                 self.logger.info("Model Response: No choices returned")
+
         except Exception as e:
             self.logger.info(f"Model Response: Could not print {e}")
 

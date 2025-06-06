@@ -160,9 +160,12 @@ def kiln_model_provider_from(
     if built_in_model:
         return built_in_model
 
+    structured_output_mode = StructuredOutputMode.default
     # For custom registry, get the provider name and model name from the model id
     if provider_name == ModelProviderName.kiln_custom_registry:
         provider_name, name = parse_custom_model_id(name)
+        # We don't know the structured output mode for custom models, so we default to json_instructions which is the only one that works everywhere.
+        structured_output_mode = StructuredOutputMode.json_instructions
 
     # Custom/untested model. Set untested, and build a ModelProvider at runtime
     if provider_name is None:
@@ -177,6 +180,7 @@ def kiln_model_provider_from(
         supports_data_gen=False,
         untested_model=True,
         model_id=name,
+        structured_output_mode=structured_output_mode,
     )
 
 
@@ -279,7 +283,6 @@ def finetune_provider_model(
         reasoning_capable=(
             fine_tune.data_strategy
             in [
-                FinetuneDataStrategy.final_and_intermediate,
                 FinetuneDataStrategy.final_and_intermediate_r1_compatible,
             ]
         ),

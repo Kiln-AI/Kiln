@@ -357,6 +357,7 @@ async def test_kiln_model_provider_from_custom_model_valid(mock_config):
     assert provider.supports_data_gen is False
     assert provider.untested_model is True
     assert provider.model_id == "custom_model"
+    assert provider.structured_output_mode == StructuredOutputMode.default
 
 
 @pytest.mark.asyncio
@@ -374,6 +375,7 @@ async def test_kiln_model_provider_from_custom_registry(mock_config):
     assert provider.supports_data_gen is False
     assert provider.untested_model is True
     assert provider.model_id == "gpt-4-turbo"
+    assert provider.structured_output_mode == StructuredOutputMode.json_instructions
 
 
 @pytest.mark.asyncio
@@ -474,7 +476,7 @@ def test_finetune_provider_model_success_final_and_intermediate(
     assert provider.name == ModelProviderName.openai
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
-    assert provider.reasoning_capable is True
+    assert provider.reasoning_capable is False
     assert provider.parser == None
 
 
