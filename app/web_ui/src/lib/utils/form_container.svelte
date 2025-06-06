@@ -3,6 +3,7 @@
   import { createEventDispatcher } from "svelte"
   import { KilnError } from "./error_handlers"
   import { beforeNavigate } from "$app/navigation"
+  import { isMacOS } from "./platform"
 
   const id = "form_container_" + Math.random().toString(36)
 
@@ -146,14 +147,6 @@
         validate_and_submit()
       }
     }
-  }
-
-  // Add this function to detect macOS
-  function isMacOS() {
-    return (
-      typeof navigator !== "undefined" &&
-      navigator.platform.toLowerCase().includes("mac")
-    )
   }
 
   function handleFormSubmit(event: SubmitEvent) {
