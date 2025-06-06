@@ -7,8 +7,9 @@ from typing import Dict, List, Optional
 from unittest.mock import patch
 
 import pytest
+from pydantic import BaseModel, Field, SerializationInfo, field_serializer
+
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
-from pydantic import BaseModel, Field
 
 
 class ModelWithAttachment(KilnBaseModel):
@@ -418,3 +419,93 @@ def test_loading_from_file(test_base_kiln_file, test_media_file_document):
     model.save_to_file()
 
     assert model.attachment.is_persisted
+
+
+class ModelWithAttachmentNameOverride(KilnBaseModel):
+    attachment: KilnAttachmentModel = Field(default=None)
+
+    @field_serializer("attachment")
+    def serialize_attachment(
+        self, attachment: KilnAttachmentModel, info: SerializationInfo
+    ) -> dict:
+        context = info.context or {}
+        context["filename_prefix"] = "attachment_override"
+        return attachment.model_dump(mode="json", context=context)
+
+
+def test_attachment_filename_override(test_base_kiln_file, test_media_file_document):
+    root_path = test_base_kiln_file.parent
+    json_path = root_path / "test_model.json"
+    model = ModelWithAttachmentNameOverride(
+        path=json_path,
+        attachment=KilnAttachmentModel(path=test_media_file_document),
+    )
+
+    model.save_to_file()
+
+    with open(test_base_kiln_file, "r") as file:
+        data = json.load(file)
+
+    # file persisted to disk will be named like: attachment_override_<random_numbers>.pdf
+    assert data["attachment"]["path"].startswith("attachment_override_")
+    assert data["attachment"]["path"].endswith(".pdf")
+    assert filecmp.cmp(root_path / data["attachment"]["path"], test_media_file_document)
+
+
+class ModelWithAttachmentNameOverrideList(KilnBaseModel):
+    attachment_list: List[KilnAttachmentModel] = Field(default=[])
+
+    @field_serializer("attachment_list")
+    def serialize_attachment_list(
+        self, attachment_list: List[KilnAttachmentModel], info: SerializationInfo
+    ) -> dict:
+        context = info.context or {}
+        context["filename_prefix"] = "attachment_override"
+        return [
+            attachment.model_dump(mode="json", context=context)
+            for attachment in attachment_list
+        ]
+
+
+def test_attachment_filename_override_list(test_base_kiln_file, test_media_file_paths):
+    root_path = test_base_kiln_file.parent
+    json_path = root_path / "test_model.json"
+    model = ModelWithAttachmentNameOverrideList(
+        path=json_path,
+        attachment_list=[KilnAttachmentModel(path=p) for p in test_media_file_paths],
+    )
+
+    model.save_to_file()
+
+    with open(test_base_kiln_file, "r") as file:
+        data = json.load(file)
+
+    for attachment, file_path in zip(data["attachment_list"], test_media_file_paths):
+        # file persisted to disk will be named like: attachment_override_<random_numbers>.pdf
+        assert attachment["path"].startswith("attachment_override_")
+        extension = file_path.suffix
+        assert attachment["path"].endswith(extension)
+        assert filecmp.cmp(root_path / attachment["path"], file_path)
+
+
+class ModelWithAttachmentNoNameOverride(KilnBaseModel):
+    attachment: KilnAttachmentModel = Field(default=None)
+
+
+def test_attachment_filename_no_override(test_base_kiln_file, test_media_file_document):
+    root_path = test_base_kiln_file.parent
+    json_path = root_path / "test_model.json"
+    model = ModelWithAttachmentNoNameOverride(
+        path=json_path,
+        attachment=KilnAttachmentModel(path=test_media_file_document),
+    )
+
+    model.save_to_file()
+
+    with open(test_base_kiln_file, "r") as file:
+        data = json.load(file)
+
+    # file persisted to disk will be named like: <random_numbers>.pdf
+    assert data["attachment"]["path"].split(".")[0].isdigit()
+    assert data["attachment"]["path"].endswith(".pdf")
+    assert filecmp.cmp(root_path / data["attachment"]["path"], test_media_file_document)
