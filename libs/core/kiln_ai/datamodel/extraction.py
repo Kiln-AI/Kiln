@@ -73,6 +73,18 @@ class Extraction(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
+    def output_content(self) -> str | None:
+        if not self.output.is_persisted:
+            return None
+        if not self.path:
+            raise ValueError(
+                "Failed to resolve the path of extraction output attachment because the extraction does not have a path."
+            )
+
+        full_path = self.output.resolve_path(self.path.parent)
+        with open(full_path, "r") as f:
+            return f.read()
+
 
 class ExtractorConfig(KilnParentedModel):
     name: str = NAME_FIELD
