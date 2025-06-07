@@ -63,9 +63,9 @@ class BasePromptBuilder(metaclass=ABCMeta):
             str: The formatted user message.
         """
         if isinstance(input, Dict):
-            return f"The input is:\n{json.dumps(input, indent=2, ensure_ascii=False)}"
+            return f"The input is:\n```\n{json.dumps(input, indent=2, ensure_ascii=False)}\n```"
 
-        return f"The input is:\n{input}"
+        return f"The input is:\n```\n{input}\n```"
 
     def chain_of_thought_prompt(self) -> str | None:
         """Build and return the chain of thought prompt string.
@@ -247,11 +247,22 @@ def chain_of_thought_prompt(task: Task) -> str:
     return cot_instruction
 
 
+def user_message_with_cot(user_message: str, cot_prompt: str | None) -> str:
+    if cot_prompt is None:
+        raise ValueError("cot_prompt is required when using chain of thought")
+    return user_message + "\n\n" + cot_prompt
+
+
 class SimpleChainOfThoughtPromptBuilder(SimplePromptBuilder):
     """A prompt builder that includes a chain of thought prompt on top of the simple prompt."""
 
     def chain_of_thought_prompt(self) -> str | None:
         return chain_of_thought_prompt(self.task)
+
+    def build_user_message(self, input: Dict | str) -> str:
+        return user_message_with_cot(
+            super().build_user_message(input), self.chain_of_thought_prompt()
+        )
 
 
 class FewShotChainOfThoughtPromptBuilder(FewShotPromptBuilder):
@@ -260,12 +271,22 @@ class FewShotChainOfThoughtPromptBuilder(FewShotPromptBuilder):
     def chain_of_thought_prompt(self) -> str | None:
         return chain_of_thought_prompt(self.task)
 
+    def build_user_message(self, input: Dict | str) -> str:
+        return user_message_with_cot(
+            super().build_user_message(input), self.chain_of_thought_prompt()
+        )
+
 
 class MultiShotChainOfThoughtPromptBuilder(MultiShotPromptBuilder):
     """A prompt builder that includes a chain of thought prompt on top of the multi shot prompt."""
 
     def chain_of_thought_prompt(self) -> str | None:
         return chain_of_thought_prompt(self.task)
+
+    def build_user_message(self, input: Dict | str) -> str:
+        return user_message_with_cot(
+            super().build_user_message(input), self.chain_of_thought_prompt()
+        )
 
 
 class SavedPromptBuilder(BasePromptBuilder):
@@ -298,6 +319,13 @@ class SavedPromptBuilder(BasePromptBuilder):
 
     def chain_of_thought_prompt(self) -> str | None:
         return self.prompt_model.chain_of_thought_instructions
+
+    def build_user_message(self, input: Dict | str) -> str:
+        cot_prompt = self.chain_of_thought_prompt()
+        user_message = super().build_user_message(input)
+        if cot_prompt:
+            return user_message_with_cot(user_message, cot_prompt)
+        return user_message
 
 
 class TaskRunConfigPromptBuilder(BasePromptBuilder):
@@ -350,6 +378,13 @@ class TaskRunConfigPromptBuilder(BasePromptBuilder):
     def chain_of_thought_prompt(self) -> str | None:
         return self.cot_prompt
 
+    def build_user_message(self, input: Dict | str) -> str:
+        cot_prompt = self.chain_of_thought_prompt()
+        user_message = super().build_user_message(input)
+        if cot_prompt:
+            return user_message_with_cot(user_message, cot_prompt)
+        return user_message
+
 
 class FineTunePromptBuilder(BasePromptBuilder):
     """A prompt builder that looks up a fine-tune prompt."""
@@ -386,6 +421,13 @@ class FineTunePromptBuilder(BasePromptBuilder):
 
     def chain_of_thought_prompt(self) -> str | None:
         return self.fine_tune_model.thinking_instructions
+
+    def build_user_message(self, input: Dict | str) -> str:
+        cot_prompt = self.chain_of_thought_prompt()
+        user_message = super().build_user_message(input)
+        if cot_prompt:
+            return user_message_with_cot(user_message, cot_prompt)
+        return user_message
 
 
 # Our UI has some names that are not the same as the class names, which also hint parameters.

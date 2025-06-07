@@ -366,7 +366,7 @@
     is_download: boolean,
     available_models: FinetuneProvider[] | null,
   ) {
-    if (!model_provider || !base_model_id) {
+    if (!model_provider || (!base_model_id && !is_download)) {
       return
     }
 

@@ -7,6 +7,10 @@ from typing import Any, Dict, Protocol
 from uuid import uuid4
 
 from kiln_ai.adapters.model_adapters.base_adapter import COT_FINAL_ANSWER_PROMPT
+from kiln_ai.adapters.prompt_builders import (
+    prompt_builder_from_id,
+    user_message_with_cot,
+)
 from kiln_ai.datamodel import DatasetSplit, FinetuneDataStrategy, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES
 
@@ -37,11 +41,10 @@ class DatasetFormat(str, Enum):
 
 @dataclass
 class ModelTrainingData:
-    input: str
+    user_message: str
     system_message: str
     final_output: str
     # These 3 are optional, and used for COT/Thinking style multi-message responses
-    thinking_instructions: str | None = None
     thinking: str | None = None
     thinking_final_answer_prompt: str | None = None
     thinking_r1_style: bool = False
@@ -51,9 +54,7 @@ class ModelTrainingData:
             raise ValueError("R1 style does not support COT")
 
         return (
-            self.thinking_instructions is not None
-            and self.thinking is not None
-            and self.thinking_final_answer_prompt is not None
+            self.thinking is not None and self.thinking_final_answer_prompt is not None
         )
 
 
@@ -88,9 +89,21 @@ def build_training_data(
     thinking_r1_style = False
     parent_task = task_run.parent_task()
 
+    task = task_run.parent_task()
+    if task is None:
+        raise ValueError(
+            "TaskRun has no parent task -- cannot build training data without a task"
+        )
+
+    # TODO totally wrong to hardcode
+    prompt_builder = prompt_builder_from_id("simple_prompt_builder", task)
+    user_message = prompt_builder.build_user_message(task_run.input)
+
     if data_strategy in THINKING_DATA_STRATEGIES:
         # Prefer reasoning to cot if both are present
         thinking = task_run.thinking_training_data()
+        # TODO use actual prompt builder here, we happen to always use user_message_with_cot but that's not guaranteed
+        user_message = user_message_with_cot(user_message, thinking_instructions)
 
         if data_strategy == FinetuneDataStrategy.final_and_intermediate_r1_compatible:
             if not task_run.has_thinking_training_data() or not thinking:
@@ -122,11 +135,11 @@ def build_training_data(
             raise ValueError(f"Unsupported data strategy: {data_strategy}")
 
     return ModelTrainingData(
-        input=task_run.input,
+        user_message=user_message,
         system_message=system_message,
         final_output=final_output,
         thinking=thinking,
-        thinking_instructions=thinking_instructions,
+        # thinking_instructions=thinking_instructions,
         thinking_final_answer_prompt=thinking_final_answer_prompt,
         thinking_r1_style=thinking_r1_style,
     )
@@ -148,7 +161,7 @@ def generate_chat_message_response(
 
     messages: list[dict[str, str | None]] = [
         {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
+        {"role": "user", "content": training_data.user_message},
     ]
 
     if training_data.thinking_r1_style:
@@ -168,7 +181,6 @@ def generate_chat_message_response(
     elif training_data.supports_cot():
         messages.extend(
             [
-                {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
                 {
                     "role": "user",
@@ -197,7 +209,7 @@ def generate_json_schema_message(
 
     messages: list[dict[str, str | None]] = [
         {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
+        {"role": "user", "content": training_data.user_message},
     ]
 
     if training_data.thinking_r1_style:
@@ -217,7 +229,6 @@ def generate_json_schema_message(
     elif training_data.supports_cot():
         messages.extend(
             [
-                {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
                 {
                     "role": "user",
@@ -242,7 +253,7 @@ def generate_chat_message_toolcall(
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
+        {"role": "user", "content": training_data.user_message},
     ]
 
     if training_data.thinking_r1_style:
@@ -252,7 +263,6 @@ def generate_chat_message_toolcall(
     elif training_data.supports_cot():
         messages.extend(
             [
-                {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
                 {
                     "role": "user",
@@ -289,7 +299,7 @@ def generate_huggingface_chat_template(
 
     conversations: list[dict[str, Any]] = [
         {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
+        {"role": "user", "content": training_data.user_message},
     ]
 
     if training_data.thinking_r1_style:
@@ -309,7 +319,6 @@ def generate_huggingface_chat_template(
     if training_data.supports_cot():
         conversations.extend(
             [
-                {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
                 {
                     "role": "user",
@@ -335,7 +344,7 @@ def generate_huggingface_chat_template_toolcall(
     # See https://huggingface.co/docs/transformers/en/chat_templating
     conversations: list[dict[str, Any]] = [
         {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
+        {"role": "user", "content": training_data.user_message},
     ]
 
     if training_data.thinking_r1_style:
@@ -345,7 +354,6 @@ def generate_huggingface_chat_template_toolcall(
     elif training_data.supports_cot():
         conversations.extend(
             [
-                {"role": "user", "content": training_data.thinking_instructions},
                 {"role": "assistant", "content": training_data.thinking},
                 {
                     "role": "user",
@@ -392,7 +400,7 @@ def generate_vertex_gemini(
             "role": "user",
             "parts": [
                 {
-                    "text": training_data.input,
+                    "text": training_data.user_message,
                 }
             ],
         }
@@ -405,10 +413,6 @@ def generate_vertex_gemini(
     elif training_data.supports_cot():
         contents.extend(
             [
-                {
-                    "role": "user",
-                    "parts": [{"text": training_data.thinking_instructions}],
-                },
                 {"role": "model", "parts": [{"text": training_data.thinking}]},
                 {
                     "role": "user",
