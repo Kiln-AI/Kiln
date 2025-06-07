@@ -3,35 +3,13 @@ from typing import Dict, List, Literal
 
 from pydantic import BaseModel
 
-from kiln_ai.datamodel import StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
 """
 Provides model configuration and management for various LLM providers and models.
 This module handles the integration with different AI model providers and their respective models,
 including configuration, validation, and instantiation of language models.
 """
-
-
-class ModelProviderName(str, Enum):
-    """
-    Enumeration of supported AI model providers.
-    """
-
-    openai = "openai"
-    groq = "groq"
-    amazon_bedrock = "amazon_bedrock"
-    ollama = "ollama"
-    openrouter = "openrouter"
-    fireworks_ai = "fireworks_ai"
-    kiln_fine_tune = "kiln_fine_tune"
-    kiln_custom_registry = "kiln_custom_registry"
-    openai_compatible = "openai_compatible"
-    anthropic = "anthropic"
-    gemini_api = "gemini_api"
-    azure_openai = "azure_openai"
-    huggingface = "huggingface"
-    vertex = "vertex"
-    together_ai = "together_ai"
 
 
 class ModelFamily(str, Enum):

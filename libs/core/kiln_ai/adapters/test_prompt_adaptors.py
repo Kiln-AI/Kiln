@@ -18,6 +18,7 @@ from kiln_ai.adapters.prompt_builders import (
     SimpleChainOfThoughtPromptBuilder,
 )
 from kiln_ai.datamodel import PromptId
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 def get_all_models_and_providers():
@@ -124,13 +125,15 @@ async def test_mock_returning_run(tmp_path):
 
         adapter = LiteLlmAdapter(
             config=LiteLlmConfig(
-                model_name="custom_model",
-                provider_name="ollama",
+                run_config_properties=RunConfigProperties(
+                    model_name="custom_model",
+                    model_provider_name="ollama",
+                    prompt_id="simple_prompt_builder",
+                ),
                 base_url="http://localhost:11434",
                 additional_body_options={"api_key": "test_key"},
             ),
             kiln_task=task,
-            prompt_id="simple_prompt_builder",
         )
 
         run = await adapter.invoke("You are a mock, send me the response!")

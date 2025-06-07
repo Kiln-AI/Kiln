@@ -72,3 +72,25 @@ THINKING_DATA_STRATEGIES: list[FinetuneDataStrategy] = [
     FinetuneDataStrategy.final_and_intermediate,
     FinetuneDataStrategy.final_and_intermediate_r1_compatible,
 ]
+
+
+class ModelProviderName(str, Enum):
+    """
+    Enumeration of supported AI model providers.
+    """
+
+    openai = "openai"
+    groq = "groq"
+    amazon_bedrock = "amazon_bedrock"
+    ollama = "ollama"
+    openrouter = "openrouter"
+    fireworks_ai = "fireworks_ai"
+    kiln_fine_tune = "kiln_fine_tune"
+    kiln_custom_registry = "kiln_custom_registry"
+    openai_compatible = "openai_compatible"
+    anthropic = "anthropic"
+    gemini_api = "gemini_api"
+    azure_openai = "azure_openai"
+    huggingface = "huggingface"
+    vertex = "vertex"
+    together_ai = "together_ai"

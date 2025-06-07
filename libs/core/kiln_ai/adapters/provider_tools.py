@@ -18,6 +18,7 @@ from kiln_ai.adapters.ollama_tools import (
 )
 from kiln_ai.datamodel import Finetune, FinetuneDataStrategy, Task
 from kiln_ai.datamodel.registry import project_from_id
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -184,9 +185,10 @@ def kiln_model_provider_from(
     )
 
 
-def lite_llm_config(
-    model_id: str,
+def lite_llm_config_for_openai_compatible(
+    run_config_properties: RunConfigProperties,
 ) -> LiteLlmConfig:
+    model_id = run_config_properties.model_name
     try:
         openai_provider_name, model_id = model_id.split("::")
     except Exception:
@@ -210,10 +212,16 @@ def lite_llm_config(
             f"OpenAI compatible provider {openai_provider_name} has no base URL"
         )
 
+    # Update a copy of the run config properties to use the openai compatible provider
+    updated_run_config_properties = run_config_properties.model_copy(deep=True)
+    updated_run_config_properties.model_provider_name = (
+        ModelProviderName.openai_compatible
+    )
+    updated_run_config_properties.model_name = model_id
+
     return LiteLlmConfig(
         # OpenAI compatible, with a custom base URL
-        model_name=model_id,
-        provider_name=ModelProviderName.openai_compatible,
+        run_config_properties=updated_run_config_properties,
         base_url=base_url,
         additional_body_options={
             "api_key": api_key,

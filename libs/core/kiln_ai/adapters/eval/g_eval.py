@@ -9,7 +9,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutpu
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {
@@ -116,10 +116,12 @@ class GEval(BaseEval):
 
         adapter = adapter_for_task(
             self.geval_task,
-            model_name,
-            provider,
-            # We always use Simple COT for G-Eval and LLM as Judge
-            prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+            run_config_properties=RunConfigProperties(
+                model_name=model_name,
+                model_provider_name=provider,
+                # We always use Simple COT for G-Eval and LLM as Judge
+                prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+            ),
             base_adapter_config=AdapterConfig(
                 # Don't save this run into the task_runs. It will be saved into an eval_run where it belongs
                 allow_saving=False,

@@ -21,6 +21,7 @@ from kiln_ai.datamodel import (
     TaskRequirement,
     TaskRun,
 )
+from kiln_ai.datamodel.task import RunConfigProperties
 
 json_joke_schema = """{
   "type": "object",
@@ -225,9 +226,11 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
 
         adapter = adapter_for_task(
             repair_task,
-            model_name="llama_3_1_8b",
-            provider="ollama",
-            prompt_id="simple_prompt_builder",
+            RunConfigProperties(
+                model_name="llama_3_1_8b",
+                model_provider_name="ollama",
+                prompt_id="simple_prompt_builder",
+            ),
         )
 
         run = await adapter.invoke(repair_task_input.model_dump())

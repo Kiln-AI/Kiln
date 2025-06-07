@@ -7,8 +7,8 @@ from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 @pytest.fixture
@@ -41,15 +41,20 @@ def mock_finetune_from_id():
 def test_openai_adapter_creation(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="gpt-4",
-        provider=ModelProviderName.openai,
-        prompt_id="simple_prompt_builder",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
     assert isinstance(adapter, LiteLlmAdapter)
-    assert adapter.config.model_name == "gpt-4"
+    assert adapter.config.run_config_properties.model_name == "gpt-4"
     assert adapter.config.additional_body_options == {"api_key": "test-openai-key"}
-    assert adapter.config.provider_name == ModelProviderName.openai
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.openai
+    )
     assert adapter.config.base_url is None  # OpenAI url is default
     assert adapter.config.default_headers is None
 
@@ -57,15 +62,20 @@ def test_openai_adapter_creation(mock_config, basic_task):
 def test_openrouter_adapter_creation(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="anthropic/claude-3-opus",
-        provider=ModelProviderName.openrouter,
-        prompt_id="simple_prompt_builder",
+        run_config_properties=RunConfigProperties(
+            model_name="anthropic/claude-3-opus",
+            model_provider_name=ModelProviderName.openrouter,
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
     assert isinstance(adapter, LiteLlmAdapter)
-    assert adapter.config.model_name == "anthropic/claude-3-opus"
+    assert adapter.config.run_config_properties.model_name == "anthropic/claude-3-opus"
     assert adapter.config.additional_body_options == {"api_key": "test-openrouter-key"}
-    assert adapter.config.provider_name == ModelProviderName.openrouter
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.openrouter
+    )
     assert adapter.config.default_headers == {
         "HTTP-Referer": "https://getkiln.ai/openrouter",
         "X-Title": "KilnAI",
@@ -84,9 +94,11 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
 def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="test-model",
-        provider=provider,
-        prompt_id="simple_prompt_builder",
+        run_config_properties=RunConfigProperties(
+            model_name="test-model",
+            model_provider_name=provider,
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
     assert isinstance(adapter, LiteLlmAdapter)
@@ -97,9 +109,11 @@ def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
 def test_custom_prompt_builder(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="gpt-4",
-        provider=ModelProviderName.openai,
-        prompt_id="simple_chain_of_thought_prompt_builder",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+        ),
     )
 
     assert adapter.run_config.prompt_id == "simple_chain_of_thought_prompt_builder"
@@ -110,28 +124,32 @@ def test_tags_passed_through(mock_config, basic_task):
     tags = ["test-tag-1", "test-tag-2"]
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="gpt-4",
-        provider=ModelProviderName.openai,
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
         base_adapter_config=AdapterConfig(
             default_tags=tags,
         ),
-        prompt_id="simple_prompt_builder",
     )
 
     assert adapter.base_adapter_config.default_tags == tags
 
 
 def test_invalid_provider(mock_config, basic_task):
-    with pytest.raises(ValueError, match="Unhandled enum value"):
+    with pytest.raises(ValueError, match="Input should be"):
         adapter_for_task(
             kiln_task=basic_task,
-            model_name="test-model",
-            provider="invalid",
-            prompt_id="simple_prompt_builder",
+            run_config_properties=RunConfigProperties(
+                model_name="test-model",
+                model_provider_name="invalid",
+                prompt_id="simple_prompt_builder",
+            ),
         )
 
 
-@patch("kiln_ai.adapters.adapter_registry.lite_llm_config")
+@patch("kiln_ai.adapters.adapter_registry.lite_llm_config_for_openai_compatible")
 def test_openai_compatible_adapter(mock_compatible_config, mock_config, basic_task):
     mock_compatible_config.return_value.model_name = "test-model"
     mock_compatible_config.return_value.additional_body_options = {
@@ -139,47 +157,64 @@ def test_openai_compatible_adapter(mock_compatible_config, mock_config, basic_ta
     }
     mock_compatible_config.return_value.base_url = "https://test.com/v1"
     mock_compatible_config.return_value.provider_name = "CustomProvider99"
-
-    adapter = adapter_for_task(
-        kiln_task=basic_task,
+    mock_compatible_config.return_value.run_config_properties = RunConfigProperties(
         model_name="provider::test-model",
-        provider=ModelProviderName.openai_compatible,
+        model_provider_name=ModelProviderName.openai_compatible,
         prompt_id="simple_prompt_builder",
     )
 
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="provider::test-model",
+            model_provider_name=ModelProviderName.openai_compatible,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+
     assert isinstance(adapter, LiteLlmAdapter)
-    mock_compatible_config.assert_called_once_with("provider::test-model")
+    mock_compatible_config.assert_called_once()
     assert adapter.config == mock_compatible_config.return_value
 
 
 def test_custom_openai_compatible_provider(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="openai::test-model",
-        provider=ModelProviderName.kiln_custom_registry,
-        prompt_id="simple_prompt_builder",
+        run_config_properties=RunConfigProperties(
+            model_name="openai::test-model",
+            model_provider_name=ModelProviderName.kiln_custom_registry,
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
     assert isinstance(adapter, LiteLlmAdapter)
-    assert adapter.config.model_name == "openai::test-model"
+    assert adapter.config.run_config_properties.model_name == "openai::test-model"
     assert adapter.config.additional_body_options == {"api_key": "test-openai-key"}
     assert adapter.config.base_url is None  # openai is none
-    assert adapter.config.provider_name == ModelProviderName.kiln_custom_registry
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.kiln_custom_registry
+    )
 
 
 async def test_fine_tune_provider(mock_config, basic_task, mock_finetune_from_id):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        model_name="proj::task::tune",
-        provider=ModelProviderName.kiln_fine_tune,
-        prompt_id="simple_prompt_builder",
+        run_config_properties=RunConfigProperties(
+            model_name="proj::task::tune",
+            model_provider_name=ModelProviderName.kiln_fine_tune,
+            prompt_id="simple_prompt_builder",
+        ),
     )
 
     mock_finetune_from_id.assert_called_once_with("proj::task::tune")
     assert isinstance(adapter, LiteLlmAdapter)
-    assert adapter.config.provider_name == ModelProviderName.kiln_fine_tune
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.kiln_fine_tune
+    )
     # Kiln model name here, but the underlying openai model id below
-    assert adapter.config.model_name == "proj::task::tune"
+    assert adapter.config.run_config_properties.model_name == "proj::task::tune"
 
     provider = kiln_model_provider_from(
         "proj::task::tune", provider_name=ModelProviderName.kiln_fine_tune

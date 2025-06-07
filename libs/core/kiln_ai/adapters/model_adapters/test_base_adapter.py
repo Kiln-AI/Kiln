@@ -37,7 +37,7 @@ def adapter(base_task):
         run_config=RunConfig(
             task=base_task,
             model_name="test_model",
-            model_provider_name="test_provider",
+            model_provider_name="openai",
             prompt_id="simple_prompt_builder",
         ),
     )
@@ -88,7 +88,7 @@ async def test_model_provider_loads_and_caches(adapter, mock_provider):
         # First call should load and cache
         provider1 = adapter.model_provider()
         assert provider1 == mock_provider
-        mock_loader.assert_called_once_with("test_model", "test_provider")
+        mock_loader.assert_called_once_with("test_model", "openai")
 
         # Second call should use cache
         mock_loader.reset_mock()
@@ -97,28 +97,28 @@ async def test_model_provider_loads_and_caches(adapter, mock_provider):
         mock_loader.assert_not_called()
 
 
-async def test_model_provider_missing_names(base_task):
+async def test_model_provider_invalid_provider_model_name(base_task):
+    """Test error when model or provider name is missing"""
+    # Test with missing model name
+    with pytest.raises(ValueError, match="Input should be"):
+        adapter = MockAdapter(
+            run_config=RunConfig(
+                task=base_task,
+                model_name="test_model",
+                model_provider_name="invalid",
+                prompt_id="simple_prompt_builder",
+            ),
+        )
+
+
+async def test_model_provider_missing_model_names(base_task):
     """Test error when model or provider name is missing"""
     # Test with missing model name
     adapter = MockAdapter(
         run_config=RunConfig(
             task=base_task,
             model_name="",
-            model_provider_name="",
-            prompt_id="simple_prompt_builder",
-        ),
-    )
-    with pytest.raises(
-        ValueError, match="model_name and model_provider_name must be provided"
-    ):
-        await adapter.model_provider()
-
-    # Test with missing provider name
-    adapter = MockAdapter(
-        run_config=RunConfig(
-            task=base_task,
-            model_name="test_model",
-            model_provider_name="",
+            model_provider_name="openai",
             prompt_id="simple_prompt_builder",
         ),
     )
@@ -138,7 +138,7 @@ async def test_model_provider_not_found(adapter):
 
         with pytest.raises(
             ValueError,
-            match="model_provider_name test_provider not found for model test_model",
+            match="not found for model test_model",
         ):
             await adapter.model_provider()
 

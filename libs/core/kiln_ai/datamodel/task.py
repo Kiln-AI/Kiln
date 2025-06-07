@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Dict, List, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
 from kiln_ai.datamodel import Finetune
 from kiln_ai.datamodel.basemodel import (
@@ -11,7 +12,12 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
-from kiln_ai.datamodel.datamodel_enums import Priority, TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    Priority,
+    StructuredOutputMode,
+    TaskOutputRatingType,
+)
 from kiln_ai.datamodel.dataset_split import DatasetSplit
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.json_schema import JsonObjectSchema, schema_from_json_str
@@ -47,12 +53,34 @@ class RunConfigProperties(BaseModel):
     """
 
     model_name: str = Field(description="The model to use for this run config.")
-    model_provider_name: str = Field(
+    model_provider_name: ModelProviderName = Field(
         description="The provider to use for this run config."
     )
     prompt_id: PromptId = Field(
         description="The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided.",
     )
+    top_p: float = Field(
+        default=1.0,
+        description="The top-p value to use for this run config. Defaults to 1.0, which means the model will use its default top-p value.",
+    )
+    temperature: float = Field(
+        default=1.0,
+        description="The temperature to use for this run config. Defaults to 1.0, which means the model will use its default temperature value.",
+    )
+    structured_output_mode: StructuredOutputMode = Field(
+        default=StructuredOutputMode.default,
+        description="The structured output mode to use for this run config. Defaults to default, which means the model will use its default structured output mode.",
+    )
+
+    @model_validator(mode="after")
+    def validate_required_fields(self) -> Self:
+        if not (0 <= self.top_p <= 1):
+            raise ValueError("top_p must be between 0 and 1")
+
+        elif self.temperature < 0 or self.temperature > 2:
+            raise ValueError("temperature must be between 0 and 2")
+
+        return self
 
 
 class RunConfig(RunConfigProperties):
@@ -106,6 +134,9 @@ class TaskRunConfig(KilnParentedModel):
             model_name=self.run_config_properties.model_name,
             model_provider_name=self.run_config_properties.model_provider_name,
             prompt_id=self.run_config_properties.prompt_id,
+            top_p=self.run_config_properties.top_p,
+            temperature=self.run_config_properties.temperature,
+            structured_output_mode=self.run_config_properties.structured_output_mode,
         )
 
 

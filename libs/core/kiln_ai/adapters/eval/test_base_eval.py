@@ -396,15 +396,14 @@ async def test_run_task_and_eval():
         result = await evaluator.run_task_and_eval("test input")
 
         # Verify adapter_for_task was called with correct parameters
-        mock_adapter_for_task.assert_called_once_with(
-            evaluator.target_task,
-            "llama_3_1_8b",
-            evaluator.run_config.model_provider_name,
-            prompt_id="simple_prompt_builder",
-            base_adapter_config=mock_adapter_for_task.call_args[1][
-                "base_adapter_config"
-            ],
-        )
+        mock_adapter_for_task.assert_called_once()
+        assert mock_adapter_for_task.call_args[0][0] == evaluator.target_task
+        props = mock_adapter_for_task.call_args[0][1]
+        assert props.model_name == "llama_3_1_8b"
+        assert props.model_provider_name == "groq"
+        assert props.prompt_id == "simple_prompt_builder"
+        bac = mock_adapter_for_task.call_args[1]
+        assert bac["base_adapter_config"].allow_saving is False
 
         # Verify the base_adapter_config has allow_saving=False
         adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
