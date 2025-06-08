@@ -1,14 +1,12 @@
 import json
 import logging
 import os
-import tempfile
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -81,6 +79,12 @@ class DiscoverServeFileResponse(BaseModel):
     url: str
 
 
+class ExtractionProgress(BaseModel):
+    document_count_total: int
+    document_count_successful: int
+    current_extractor_config: ExtractorConfig | None
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
@@ -133,7 +137,7 @@ def connect_document_api(app: FastAPI):
     ) -> list[Document]:
         project = project_from_id(project_id)
 
-        # TODO: maybe add cache here (readonly=True flag)
+        # NOTE: maybe add cache here (readonly=True flag)?
         return project.documents()
 
     @app.get("/api/projects/{project_id}/documents/{document_id}")
@@ -198,7 +202,7 @@ def connect_document_api(app: FastAPI):
     async def create_extractor_config(
         project_id: str,
         request: CreateExtractorConfigRequest,
-    ) -> ExtractorConfig:
+    ) -> StreamingResponse:
         project = project_from_id(project_id)
         name = request.name or generate_memorable_name()
         extractor_config = ExtractorConfig(
@@ -211,7 +215,13 @@ def connect_document_api(app: FastAPI):
             parent=project,
         )
         extractor_config.save_to_file()
-        return extractor_config
+
+        # TODO: async trigger extraction for all configs
+        extractor_runner = ExtractorRunner(
+            extractor_configs=[extractor_config],
+            documents=project.documents(),
+        )
+        return await run_extractor_runner_with_status(extractor_runner)
 
     @app.get("/api/projects/{project_id}/extractor_configs")
     async def get_extractor_configs(
@@ -382,3 +392,77 @@ def connect_document_api(app: FastAPI):
         document.delete()
 
         return {"message": f"Document removed. ID: {document_id}"}
+
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress"
+    )
+    async def get_extraction_progress(
+        project_id: str,
+        extractor_config_id: str,
+    ) -> ExtractionProgress:
+        project = project_from_id(project_id)
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config not found",
+            )
+
+        document_count_total = len(project.documents())
+        document_count_successful = 0
+        for document in project.documents():
+            extractions = document.extractions()
+            if any(
+                extraction.extractor_config_id == extractor_config_id
+                for extraction in extractions
+            ):
+                document_count_successful += 1
+
+        # NOTE: could make sense to persist failed extractions (with some property like "status" / "failed_reason") to
+        # be able to surface failures here (as opposed to pending extractions), and also show the actual error
+        # as some may be due to some provider-specific rejection (e.g. "file too large", "wrong codec", etc.) we cannot resolve
+        return ExtractionProgress(
+            document_count_total=document_count_total,
+            document_count_successful=document_count_successful,
+            current_extractor_config=extractor_config,
+        )
+
+    @app.post("/api/projects/{project_id}/documents/{document_id}/extract")
+    async def extract_file(
+        project_id: str,
+        document_id: str,
+        extractor_config_ids: list[ID_TYPE] | None = None,
+    ) -> StreamingResponse:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+
+        if extractor_config_ids is None:
+            extractor_config_ids = [
+                extractor_config.id for extractor_config in project.extractor_configs()
+            ]
+
+        extractor_configs: list[ExtractorConfig] = []
+        for extractor_config_id in extractor_config_ids:
+            extractor_config = ExtractorConfig.from_id_and_parent_path(
+                str(extractor_config_id), project.path
+            )
+            if extractor_config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Extractor config {extractor_config_id} not found",
+                )
+            extractor_configs.append(extractor_config)
+
+        extractor_runner = ExtractorRunner(
+            extractor_configs=extractor_configs,
+            documents=[document],
+        )
+
+        return await run_extractor_runner_with_status(extractor_runner)
