@@ -75,7 +75,7 @@ class ExtractorRunner:
             if job.doc.path is None:
                 raise ValueError("Document path is not set")
 
-            output = extractor.extract(
+            output = await extractor.extract(
                 path=job.doc.original_file.attachment.resolve_path(job.doc.path.parent),
                 mime_type=job.doc.original_file.mime_type,
             )
