@@ -89,49 +89,43 @@ def connect_document_api(app: FastAPI):
         name: Annotated[str, Form()] = "",
         description: Annotated[str, Form()] = "",
     ) -> Document:
+        file_data = await file.read()
         project = project_from_id(project_id)
-        suffix = Path(file.filename).suffix if file.filename else ""
-        with tempfile.NamedTemporaryFile(
-            mode="wb", delete=True, suffix=suffix
-        ) as tmp_file:
-            file_data = await file.read()
-            tmp_file.write(file_data)
+        # TODO: detect kind from file
+        content_type = file.content_type or ""
+        if content_type.startswith("image/"):
+            kind = Kind.IMAGE
+        elif content_type.startswith("video/"):
+            kind = Kind.VIDEO
+        elif content_type.startswith("audio/"):
+            kind = Kind.AUDIO
+        else:
+            kind = Kind.DOCUMENT
 
-            # TODO: detect kind from file
-            content_type = file.content_type or ""
-            if content_type.startswith("image/"):
-                kind = Kind.IMAGE
-            elif content_type.startswith("video/"):
-                kind = Kind.VIDEO
-            elif content_type.startswith("audio/"):
-                kind = Kind.AUDIO
-            else:
-                kind = Kind.DOCUMENT
+        document = Document(
+            parent=project,
+            name=sanitize_name(name),
+            description=description,
+            kind=kind,
+            original_file=FileInfo(
+                filename=file.filename or "",
+                mime_type=content_type,
+                attachment=KilnAttachmentModel.from_data(file_data, content_type),
+                size=len(file_data),
+            ),
+        )
+        document.save_to_file()
 
-            document = Document(
-                parent=project,
-                name=sanitize_name(name),
-                description=description,
-                kind=kind,
-                original_file=FileInfo(
-                    filename=file.filename or "",
-                    mime_type=content_type,
-                    attachment=KilnAttachmentModel(path=Path(tmp_file.name)),
-                    size=len(file_data),
-                ),
+        # TODO: async trigger extraction for all configs
+        for extractor_config in project.extractor_configs():
+            extractor_runner = ExtractorRunner(
+                extractor_configs=[extractor_config],
+                documents=[document],
             )
-            document.save_to_file()
+            async for progress in extractor_runner.run():
+                pass
 
-            # TODO: async trigger extraction for all configs
-            for extractor_config in project.extractor_configs():
-                extractor_runner = ExtractorRunner(
-                    extractor_configs=[extractor_config],
-                    documents=[document],
-                )
-                async for progress in extractor_runner.run():
-                    pass
-
-            return document
+        return document
 
     @app.get("/api/projects/{project_id}/documents")
     async def get_documents(
