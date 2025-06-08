@@ -100,7 +100,7 @@ class GeminiExtractor(BaseExtractor):
                 return kind
         return None
 
-    def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
+    async def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
         kind = self._get_kind_from_mime_type(mime_type)
         if kind is None:
             raise ValueError(
@@ -111,7 +111,7 @@ class GeminiExtractor(BaseExtractor):
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
 
-        response = self.gemini_client.models.generate_content(
+        response = await self.gemini_client.aio.models.generate_content(
             model=self.model_name,
             contents=[
                 types.Part.from_bytes(
