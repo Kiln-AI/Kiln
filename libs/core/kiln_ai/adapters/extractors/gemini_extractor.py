@@ -70,13 +70,19 @@ class GeminiExtractor(BaseExtractor):
             raise ValueError("properties.model_name is required for GeminiExtractor")
 
         prompt_document = extractor_config.prompt_document()
-        prompt_video = extractor_config.prompt_video()
-        prompt_audio = extractor_config.prompt_audio()
-        prompt_image = extractor_config.prompt_image()
-        if None in (prompt_document, prompt_video, prompt_audio, prompt_image):
+        if prompt_document is None or prompt_document == "":
             raise ValueError(
-                "properties.prompt_document/prompt_video/prompt_audio/prompt_image are required for GeminiExtractor"
+                "properties.prompt_document is required for GeminiExtractor"
             )
+        prompt_video = extractor_config.prompt_video()
+        if prompt_video is None or prompt_video == "":
+            raise ValueError("properties.prompt_video is required for GeminiExtractor")
+        prompt_audio = extractor_config.prompt_audio()
+        if prompt_audio is None or prompt_audio == "":
+            raise ValueError("properties.prompt_audio is required for GeminiExtractor")
+        prompt_image = extractor_config.prompt_image()
+        if prompt_image is None or prompt_image == "":
+            raise ValueError("properties.prompt_image is required for GeminiExtractor")
 
         super().__init__(extractor_config)
         self.gemini_client = gemini_client
