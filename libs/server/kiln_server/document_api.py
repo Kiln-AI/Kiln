@@ -204,19 +204,79 @@ def connect_document_api(app: FastAPI):
         request: CreateExtractorConfigRequest,
     ) -> StreamingResponse:
         project = project_from_id(project_id)
-        name = request.name or generate_memorable_name()
-        extractor_config = ExtractorConfig(
-            name=name,
-            description=request.description,
-            output_format=request.output_format,
-            passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=request.extractor_type,
-            properties=request.properties,
-            parent=project,
-        )
+        request.name = request.name or generate_memorable_name()
+
+        # TODO: refactor prompt_for_kind into flat properties like prompt_document, prompt_image, etc.
+        # will be easier for defaults, easier for UI, etc.
+        match request.extractor_type:
+            case ExtractorType.GEMINI:
+                output_format = request.output_format or OutputFormat.MARKDOWN
+                DEFAULT_PROMPT_FOR_KIND = {
+                    Kind.DOCUMENT: f"""Transcribe the document into {output_format.value}.
+If the document contains images and figures, describe them in the output. For example, if the
+document contains an image, describe it in the output. If the document contains a table, format it 
+appropriately and add a sentence describing it as a whole.
+
+Format the output as valid {output_format.value}.
+
+Do NOT include any prefatory text such as 'Here is the transcription of the document:'.
+""",
+                    Kind.IMAGE: f"""Describe the image in {output_format.value}.
+If the image contains text, transcribe it into {output_format.value}.
+
+Do NOT include any prefatory text such as 'Here is the description of the image:'.
+""",
+                    Kind.VIDEO: f"""Describe what happens in the video in {output_format.value}.
+Take into account the audio as well as the visual content. Your transcription must chronologically
+describe the events in the video and transcribe any speech.
+
+Do NOT include any prefatory text such as 'Here is the transcription of the video:'.
+""",
+                    Kind.AUDIO: f"""Transcribe the audio into {output_format.value}.
+If the audio contains speech, transcribe it into {output_format.value}.
+
+Do NOT include any prefatory text such as 'Here is the transcription of the audio:'.
+""",
+                }
+
+                user_prompts: dict[str, str] = (
+                    request.properties.get("prompt_for_kind") or {}  # type: ignore
+                )
+                # parse string keys into Kind enums if needed
+                parsed_user_prompts = {
+                    Kind(k) if isinstance(k, str) else k: v
+                    for k, v in user_prompts.items()
+                }
+
+                # filter the empty string prompts
+                parsed_user_prompts = {
+                    k: v for k, v in parsed_user_prompts.items() if v and v.strip()
+                }
+
+                prompt_for_kind: dict[str, str] = {
+                    **DEFAULT_PROMPT_FOR_KIND,
+                    **parsed_user_prompts,
+                }
+                model_name = request.properties.get("model_name")
+                if model_name is None:
+                    model_name = "gemini-2.0-flash"
+                extractor_config = ExtractorConfig(
+                    parent=project,
+                    name=request.name or "",
+                    description=request.description or "",
+                    output_format=output_format,
+                    passthrough_mimetypes=request.passthrough_mimetypes or [],
+                    extractor_type=request.extractor_type,
+                    properties={
+                        "prompt_for_kind": prompt_for_kind,
+                        "model_name": model_name,
+                    },
+                )
+            case _:
+                raise ValueError(f"Invalid extractor type: {request.extractor_type}")
+
         extractor_config.save_to_file()
 
-        # TODO: async trigger extraction for all configs
         extractor_runner = ExtractorRunner(
             extractor_configs=[extractor_config],
             documents=project.documents(),
