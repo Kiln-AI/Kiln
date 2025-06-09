@@ -473,7 +473,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/extractor_config/{extractor_config_id}/run_extractor_config": {
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -481,7 +481,7 @@ export interface paths {
             cookie?: never;
         };
         /** Run Extractor Config */
-        get: operations["run_extractor_config_api_projects__project_id__extractor_config__extractor_config_id__run_extractor_config_get"];
+        get: operations["run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -569,6 +569,40 @@ export interface paths {
         put?: never;
         /** Open Document Enclosing Folder */
         post: operations["open_document_enclosing_folder_api_projects__project_id__documents__document_id__open_enclosing_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extraction Progress */
+        get: operations["get_extraction_progress_api_projects__project_id__extractor_configs__extractor_config_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract File */
+        post: operations["extract_file_api_projects__project_id__documents__document_id__extract_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2052,6 +2086,14 @@ export interface components {
             output: components["schemas"]["KilnAttachmentModel"];
             /** Model Type */
             readonly model_type: string;
+        };
+        /** ExtractionProgress */
+        ExtractionProgress: {
+            /** Document Count Total */
+            document_count_total: number;
+            /** Document Count Successful */
+            document_count_successful: number;
+            current_extractor_config: components["schemas"]["ExtractorConfig"] | null;
         };
         /**
          * ExtractionSource
@@ -4306,7 +4348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExtractorConfig"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -4383,7 +4425,7 @@ export interface operations {
             };
         };
     };
-    run_extractor_config_api_projects__project_id__extractor_config__extractor_config_id__run_extractor_config_get: {
+    run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4563,6 +4605,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenFileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_progress_api_projects__project_id__extractor_configs__extractor_config_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_file_api_projects__project_id__documents__document_id__extract_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": (string | null)[] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

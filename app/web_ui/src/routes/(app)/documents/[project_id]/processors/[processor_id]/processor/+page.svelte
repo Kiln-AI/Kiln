@@ -52,6 +52,40 @@
       loading = false
     }
   }
+
+  async function run_extractor(extractor_config_id: string) {
+    try {
+      loading = true
+      if (!project_id) {
+        throw new Error("Project ID not set.")
+      }
+      const { error: run_error } = await client.GET(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
+        {
+          params: {
+            path: {
+              project_id,
+              extractor_config_id,
+            },
+          },
+        },
+      )
+      if (run_error) {
+        throw run_error
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Load failed")) {
+        error = new KilnError(
+          "Could not run extractor. It may belong to a project you don't have access to.",
+          null,
+        )
+      } else {
+        error = createKilnError(e)
+      }
+    } finally {
+      loading = false
+    }
+  }
 </script>
 
 <AppPage
@@ -59,7 +93,15 @@
   sub_subtitle=""
   sub_subtitle_link="#"
   no_y_padding
-  action_buttons={[]}
+  action_buttons={[
+    {
+      label: "Run Extractor",
+      handler: () => {
+        run_extractor(extractor_config_id)
+      },
+      primary: true,
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
