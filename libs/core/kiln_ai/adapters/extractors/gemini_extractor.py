@@ -78,17 +78,15 @@ class GeminiExtractor(BaseExtractor):
                 "properties.prompt_document/prompt_video/prompt_audio/prompt_image are required for GeminiExtractor"
             )
 
-        prompt_for_kind = {
+        super().__init__(extractor_config)
+        self.gemini_client = gemini_client
+        self.model_name = model_name
+        self.prompt_for_kind = {
             Kind.DOCUMENT: prompt_document,
             Kind.VIDEO: prompt_video,
             Kind.AUDIO: prompt_audio,
             Kind.IMAGE: prompt_image,
         }
-
-        super().__init__(extractor_config)
-        self.gemini_client = gemini_client
-        self.model_name = model_name
-        self.prompt_for_kind = prompt_for_kind
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
