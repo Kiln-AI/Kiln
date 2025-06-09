@@ -38,7 +38,7 @@ class ExtractorType(str, Enum):
     GEMINI = "gemini"
 
 
-def _validate_prompt(prompt: Any, name: str):
+def validate_prompt(prompt: Any, name: str):
     if not isinstance(prompt, str):
         raise ValueError(f"{name} must be a string.")
     if prompt == "":
@@ -99,10 +99,10 @@ class ExtractorConfig(KilnParentedModel):
     def validate_properties(self) -> Self:
         if self.extractor_type == ExtractorType.GEMINI:
             validate_model_name(self.properties.get("model_name"))
-            _validate_prompt(self.properties.get("prompt_document"), "prompt_document")
-            _validate_prompt(self.properties.get("prompt_video"), "prompt_video")
-            _validate_prompt(self.properties.get("prompt_audio"), "prompt_audio")
-            _validate_prompt(self.properties.get("prompt_image"), "prompt_image")
+            validate_prompt(self.properties.get("prompt_document"), "prompt_document")
+            validate_prompt(self.properties.get("prompt_video"), "prompt_video")
+            validate_prompt(self.properties.get("prompt_audio"), "prompt_audio")
+            validate_prompt(self.properties.get("prompt_image"), "prompt_image")
             return self
         raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
@@ -147,15 +147,6 @@ class ExtractorConfig(KilnParentedModel):
         if not isinstance(prompt, str):
             raise ValueError("Invalid prompt_image. prompt_image must be a string.")
         return prompt
-
-    def prompt_for_kind(self, kind: Kind) -> str | None:
-        mapping = {
-            Kind.DOCUMENT: self.prompt_document(),
-            Kind.VIDEO: self.prompt_video(),
-            Kind.AUDIO: self.prompt_audio(),
-            Kind.IMAGE: self.prompt_image(),
-        }
-        return mapping.get(kind)
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:

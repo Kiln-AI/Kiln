@@ -12,8 +12,8 @@ from kiln_ai.datamodel.extraction import (
     FileInfo,
     Kind,
     OutputFormat,
-    _validate_prompt,
     validate_model_name,
+    validate_prompt,
 )
 from kiln_ai.datamodel.project import Project
 
@@ -188,7 +188,8 @@ def test_invalid_passthrough_mimetypes(
 
 
 def test_validate_prompt_valid():
-    _validate_prompt("abc", "prompt_document")
+    # should not raise an error
+    validate_prompt("Transcribe the document.", "prompt_document")
 
 
 @pytest.mark.parametrize(
@@ -200,7 +201,7 @@ def test_validate_prompt_valid():
 )
 def test_validate_prompt_errors(value, expected_error):
     with pytest.raises(ValueError, match=expected_error):
-        _validate_prompt(value, "prompt_document")
+        validate_prompt(value, "prompt_document")
 
 
 def test_validate_model_name_valid():
