@@ -98,7 +98,8 @@
       <div>
         <p>
           Upload a file to your project's document store. The following file
-          types are supported: [.pdf]
+          types are supported: [.pdf, .jpg, .jpeg, .png, .gif, .mp4, .mp3, .wav,
+          .ogg]
         </p>
       </div>
     </div>
@@ -142,7 +143,7 @@
           type="file"
           class="file-input file-input-bordered w-full"
           on:change={handleFileSelect}
-          accept=".pdf"
+          accept=".pdf,.jpg,.jpeg,.png,.gif,.mp4,.mp3,.wav,.ogg"
         />
       </div>
     </form>

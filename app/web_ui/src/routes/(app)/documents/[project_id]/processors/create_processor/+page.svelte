@@ -112,7 +112,7 @@
       <div class="mt-4">
         <div class="collapse collapse-arrow bg-base-200">
           <input type="checkbox" class="peer" />
-          <div class="collapse-title font-medium">Advanced Options</div>
+          <div class="collapse-title font-medium">Extractor Options</div>
           <div class="collapse-content flex flex-col gap-4">
             <FormElement
               label="Name"
@@ -130,16 +130,49 @@
               id="processor_description"
               bind:value={description}
             />
-            <div class="font-medium">Prompt options</div>
+            <div class="font-medium">Prompt Options</div>
             <div class="flex flex-col gap-2">
               <FormElement
                 label="Document"
-                description="A prompt to use for document processing."
+                description="A prompt to use for extracting content from documents (e.g. PDFs, Word documents, etc.)."
                 optional={true}
                 inputType="textarea"
                 id="prompt_document"
                 bind:value={prompt_document}
                 placeholder="Transcribe the document into markdown."
+              />
+            </div>
+            <div class="flex flex-col gap-2">
+              <FormElement
+                label="Image"
+                description="A prompt to use for extracting content from images."
+                optional={true}
+                inputType="textarea"
+                id="prompt_image"
+                bind:value={prompt_image}
+                placeholder="Describe the image in markdown."
+              />
+            </div>
+            <div class="flex flex-col gap-2">
+              <FormElement
+                label="Video"
+                description="A prompt to use for extracting content from videos."
+                optional={true}
+                inputType="textarea"
+                id="prompt_video"
+                bind:value={prompt_video}
+                placeholder="Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech."
+              />
+            </div>
+            <div class="flex flex-col gap-2">
+              <FormElement
+                label="Audio"
+                description="A prompt to use for extracting content from audio files."
+                optional={true}
+                inputType="textarea"
+                id="prompt_audio"
+                bind:value={prompt_audio}
+                placeholder="Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown."
               />
             </div>
           </div>
