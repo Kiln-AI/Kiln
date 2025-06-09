@@ -42,7 +42,6 @@
 
   const columns = [
     { key: "id", label: "ID" },
-    { key: "name", label: "Name" },
     { key: "description", label: "Description" },
     { key: "created_at", label: "Created At" },
   ]
@@ -97,10 +96,6 @@
       case "created_at":
         aValue = a.created_at
         bValue = b.created_at
-        break
-      case "name":
-        aValue = a.name
-        bValue = b.name
         break
       case "description":
         aValue = a.description
@@ -181,13 +176,13 @@
 </script>
 
 <AppPage
-  title="Processors"
+  title="Document Extractors"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="#"
   no_y_padding
   action_buttons={[
     {
-      label: "Create Processor",
+      label: "Create Extractor",
       href: `/documents/${project_id}/processors/create_processor`,
     },
   ]}
@@ -229,10 +224,15 @@
                   row_clicked(extractor_config.id || null)
                 }}
               >
-                <td class="font-mono text-gray-500">
-                  {extractor_config.id}
+                <td>
+                  <div class="font-medium">
+                    Extractor Name: {extractor_config.name}
+                  </div>
+
+                  <div class="text-sm text-gray-500">
+                    ID:{extractor_config.id}
+                  </div>
                 </td>
-                <td>{extractor_config.name}</td>
                 <td>{extractor_config.description || "N/A"}</td>
                 <td>{formatDate(extractor_config.created_at)}</td>
               </tr>
@@ -260,7 +260,7 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Processors</div>
+      <div class="font-medium">Error Loading Extractors</div>
       <div class="text-error text-sm">
         {error.getMessage() || "An unknown error occurred"}
       </div>

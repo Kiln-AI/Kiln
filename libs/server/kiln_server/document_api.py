@@ -248,7 +248,7 @@ def connect_document_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/extractor_config/{extractor_config_id}/run_extractor_config"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config"
     )
     async def run_extractor_config(
         project_id: str,
