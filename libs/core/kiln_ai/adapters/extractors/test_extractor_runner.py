@@ -50,12 +50,10 @@ def mock_extractor_config(mock_project):
         parent=mock_project,
         properties={
             "model_name": "gemini-2.0-flash",
-            "prompt_for_kind": {
-                "document": "Extract the text from the document",
-                "image": "Extract the text from the image",
-                "video": "Extract the text from the video",
-                "audio": "Extract the text from the audio",
-            },
+            "prompt_document": "Extract the text from the document",
+            "prompt_image": "Extract the text from the image",
+            "prompt_video": "Extract the text from the video",
+            "prompt_audio": "Extract the text from the audio",
         },
     )
     extractor_config.save_to_file()
@@ -174,12 +172,10 @@ def test_collect_jobs_multiple_extractor_configs(
         parent=mock_project,
         properties={
             "model_name": "gemini-2.0-flash",
-            "prompt_for_kind": {
-                "document": "Extract the text from the document",
-                "image": "Extract the text from the image",
-                "video": "Extract the text from the video",
-                "audio": "Extract the text from the audio",
-            },
+            "prompt_document": "Extract the text from the document",
+            "prompt_image": "Extract the text from the image",
+            "prompt_video": "Extract the text from the video",
+            "prompt_audio": "Extract the text from the audio",
         },
     )
     second_config.save_to_file()

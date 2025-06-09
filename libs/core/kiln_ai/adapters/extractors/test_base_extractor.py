@@ -24,12 +24,10 @@ class MockBaseExtractor(BaseExtractor):
 @pytest.fixture
 def mock_gemini_properties():
     return {
-        "prompt_for_kind": {
-            "document": "mock prompt for document",
-            "image": "mock prompt for image",
-            "video": "mock prompt for video",
-            "audio": "mock prompt for audio",
-        },
+        "prompt_document": "mock prompt for document",
+        "prompt_image": "mock prompt for image",
+        "prompt_video": "mock prompt for video",
+        "prompt_audio": "mock prompt for audio",
         "model_name": "mock",
     }
 

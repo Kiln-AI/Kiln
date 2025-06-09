@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, Union, cast
+from typing import TYPE_CHECKING, Any, List, Union
 
 from pydantic import (
     BaseModel,
@@ -38,29 +38,11 @@ class ExtractorType(str, Enum):
     GEMINI = "gemini"
 
 
-def validate_prompt_for_kind(prompt_for_kind: Any):
-    # check prompt_for_kind is a dictionary
-    if not isinstance(prompt_for_kind, dict):
-        raise ValueError("prompt_for_kind must be a dictionary.")
-    # check all keys are valid kinds
-    for key, value in prompt_for_kind.items():
-        # raise an error if the key is not a valid kind
-        try:
-            Kind(key)
-        except ValueError:
-            raise ValueError(f"Invalid kind in prompt_for_kind: '{key}'")
-        # type the key to a kind
-        if not isinstance(value, str):
-            raise ValueError(
-                f"Invalid prompt for kind: '{key}'. Prompt must be a string."
-            )
-
-    # check all kinds are present
-    for kind in Kind:
-        if kind not in prompt_for_kind:
-            raise ValueError(
-                f"Missing prompt for kind: '{kind.value}'. All kinds must be present in prompt_for_kind."
-            )
+def _validate_prompt(prompt: Any, name: str):
+    if not isinstance(prompt, str):
+        raise ValueError(f"{name} must be a string.")
+    if prompt == "":
+        raise ValueError(f"{name} cannot be empty.")
 
 
 def validate_model_name(model_name: Any):
@@ -116,8 +98,11 @@ class ExtractorConfig(KilnParentedModel):
     @model_validator(mode="after")
     def validate_properties(self) -> Self:
         if self.extractor_type == ExtractorType.GEMINI:
-            validate_prompt_for_kind(self.properties.get("prompt_for_kind"))
             validate_model_name(self.properties.get("model_name"))
+            _validate_prompt(self.properties.get("prompt_document"), "prompt_document")
+            _validate_prompt(self.properties.get("prompt_video"), "prompt_video")
+            _validate_prompt(self.properties.get("prompt_audio"), "prompt_audio")
+            _validate_prompt(self.properties.get("prompt_image"), "prompt_image")
             return self
         raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
@@ -129,15 +114,48 @@ class ExtractorConfig(KilnParentedModel):
             raise ValueError("Invalid model_name. model_name must be a string.")
         return model_name
 
-    def prompt_for_kind(self) -> dict[Kind, str] | None:
-        prompt_for_kind = self.properties.get("prompt_for_kind")
-        if prompt_for_kind is None:
+    def prompt_document(self) -> str | None:
+        prompt = self.properties.get("prompt_document")
+        if prompt is None:
             return None
-        if not isinstance(prompt_for_kind, dict):
+        if not isinstance(prompt, str):
             raise ValueError(
-                "Invalid prompt_for_kind. prompt_for_kind must be a dictionary."
+                "Invalid prompt_document. prompt_document must be a string."
             )
-        return cast(dict[Kind, str], prompt_for_kind)
+        return prompt
+
+    def prompt_video(self) -> str | None:
+        prompt = self.properties.get("prompt_video")
+        if prompt is None:
+            return None
+        if not isinstance(prompt, str):
+            raise ValueError("Invalid prompt_video. prompt_video must be a string.")
+        return prompt
+
+    def prompt_audio(self) -> str | None:
+        prompt = self.properties.get("prompt_audio")
+        if prompt is None:
+            return None
+        if not isinstance(prompt, str):
+            raise ValueError("Invalid prompt_audio. prompt_audio must be a string.")
+        return prompt
+
+    def prompt_image(self) -> str | None:
+        prompt = self.properties.get("prompt_image")
+        if prompt is None:
+            return None
+        if not isinstance(prompt, str):
+            raise ValueError("Invalid prompt_image. prompt_image must be a string.")
+        return prompt
+
+    def prompt_for_kind(self, kind: Kind) -> str | None:
+        mapping = {
+            Kind.DOCUMENT: self.prompt_document(),
+            Kind.VIDEO: self.prompt_video(),
+            Kind.AUDIO: self.prompt_audio(),
+            Kind.IMAGE: self.prompt_image(),
+        }
+        return mapping.get(kind)
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:
