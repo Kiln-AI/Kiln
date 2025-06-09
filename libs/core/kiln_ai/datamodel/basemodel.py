@@ -1,28 +1,25 @@
 import json
+import mimetypes
 import os
 import re
 import shutil
+import tempfile
 import uuid
 from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Type,
-    TypeVar,
-)
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializationInfo,
     ValidationError,
     ValidationInfo,
     computed_field,
+    model_serializer,
     model_validator,
 )
 from pydantic_core import ErrorDetails
@@ -44,7 +41,7 @@ PT = TypeVar("PT", bound="KilnParentedModel")
 
 # Naming conventions:
 # 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
-# 2) Descrptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
+# 2) Descriptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
 
 # Filename compatible names
 NAME_REGEX = r"^[A-Za-z0-9 _-]+$"
@@ -69,6 +66,104 @@ def string_to_valid_name(name: str) -> str:
     valid_name = re.sub(r"_+", "_", valid_name)
     # Remove leading and trailing underscores or whitespace
     return valid_name.strip("_").strip()
+
+
+class KilnAttachmentModel(BaseModel):
+    path: Path = Field(description="The path to the attachment")
+
+    is_persisted: bool = Field(
+        default=False,
+        exclude=True,
+        description="Whether the attachment is persisted to its permanent location on disk. This is set automatically when the attachment is loaded from a file.",
+    )
+
+    @model_validator(mode="after")
+    def check_file_exists(self, info: ValidationInfo) -> Self:
+        context = info.context or {}
+        self.is_persisted = False
+        if context.get("loading_from_file", False):
+            # if we load from file, we assume it is persisted correctly
+            self.is_persisted = True
+            return self
+        if isinstance(self.path, str):
+            self.path = Path(self.path)
+        if not os.path.exists(self.path):
+            raise ValueError(f"File does not exist: {self.path}")
+        if not os.path.isfile(self.path):
+            raise ValueError(f"Path is not a file: {self.path}")
+        return self
+
+    @model_serializer
+    def serialize(self, info: SerializationInfo) -> dict[str, Path] | None:
+        # when the attachment is optional on the model, we get None here
+        if self is None:
+            return None
+
+        context = info.context or {}
+
+        # serialization may also be called by other parts of the system, the callers should
+        # explicitly set save_attachments to True if they want to save attachments
+        save_attachments: bool = context.get("save_attachments", False)
+        if not save_attachments:
+            return {"path": self.path}
+
+        dest_path: Path | None = context.get("dest_path", None)
+        if not dest_path or not isinstance(dest_path, Path):
+            raise ValueError(
+                f"dest_path must be a valid Path object when saving attachments, got: {dest_path}"
+            )
+        if not dest_path.is_dir():
+            raise ValueError("dest_path must be a directory when saving attachments")
+
+        # the attachment is already in the parent folder, so we don't need to copy it
+        # if the path is already relative, we consider it has been copied already
+        if self.is_persisted:
+            return {"path": self.path}
+
+        # copy file and update the path to be relative to the dest_path
+        new_path = self.copy_file_to(dest_path, context.get("filename_prefix", None))
+
+        self.path = new_path.relative_to(dest_path)
+        self.is_persisted = True
+
+        return {"path": self.path}
+
+    def copy_file_to(
+        self, dest_folder: Path, filename_prefix: str | None = None
+    ) -> Path:
+        filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
+        if filename_prefix:
+            filename = f"{filename_prefix}_{filename}"
+        target_path = dest_folder / filename
+        shutil.copy(self.path, target_path)
+        return target_path
+
+    @classmethod
+    def from_data(
+        cls, data: str | bytes, mime_type: str, suffix: str | None = None
+    ) -> Self:
+        """Create an attachment from str or byte data, in a temp file. The attachment is persisted to
+        its permanent location when the model is saved.
+        """
+        extension = suffix or mimetypes.guess_extension(mime_type) or ".unknown"
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
+        if isinstance(data, str):
+            temp_file.write(data.encode("utf-8"))
+        else:
+            temp_file.write(data)
+        temp_file.close()
+        return cls(path=Path(temp_file.name))
+
+    def resolve_path(self, parent_path: Path) -> Path:
+        """
+        Resolve the path of the attachment relative to the parent path. The attachment does not know
+        its parent, so we need to call this to get the full path.
+        Args:
+            parent_path (Path): The path to the parent folder
+        Returns:
+            Path: The resolved path of the attachment
+        """
+        return parent_path / self.path
 
 
 class KilnBaseModel(BaseModel):
@@ -197,7 +292,17 @@ class KilnBaseModel(BaseModel):
                 f"id: {getattr(self, 'id', None)}, path: {path}"
             )
         path.parent.mkdir(parents=True, exist_ok=True)
-        json_data = self.model_dump_json(indent=2, exclude={"path"})
+
+        json_data = self.model_dump_json(
+            indent=2,
+            exclude={"path"},
+            # dest_path is used by the attachment serializer to save attachments to the correct location
+            # and update the paths to be relative to path.parent
+            context={
+                "save_attachments": True,
+                "dest_path": path.parent,
+            },
+        )
         with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
