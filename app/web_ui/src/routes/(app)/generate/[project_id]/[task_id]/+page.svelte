@@ -361,9 +361,7 @@
         <div
           class="flex flex-row py-1 mb-4 gap-2 justify-end sticky top-0 z-10 backdrop-blur"
         >
-          <button class="btn btn-mid" on:click={clear_all}>
-            <img alt="Clear All" src="/images/delete.svg" class="w-4 h-4" />
-          </button>
+          <button class="btn btn-mid" on:click={clear_all}>Clear</button>
           <button class="btn btn-mid" on:click={show_human_guidance_dialog}>
             {#if human_guidance.length > 0}
               <span class="bg-primary rounded-full w-3 h-3 mr-1" />
