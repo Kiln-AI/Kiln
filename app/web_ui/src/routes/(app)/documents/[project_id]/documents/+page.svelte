@@ -487,6 +487,7 @@
       handler: () => {
         upload_file_dialog?.show()
       },
+      primary: true,
     },
   ]}
 >

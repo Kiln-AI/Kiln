@@ -202,7 +202,7 @@ def connect_document_api(app: FastAPI):
     async def create_extractor_config(
         project_id: str,
         request: CreateExtractorConfigRequest,
-    ) -> StreamingResponse:
+    ) -> ExtractorConfig:
         project = project_from_id(project_id)
         request.name = request.name or generate_memorable_name()
 
@@ -277,11 +277,7 @@ Do NOT include any prefatory text such as 'Here is the transcription of the audi
 
         extractor_config.save_to_file()
 
-        extractor_runner = ExtractorRunner(
-            extractor_configs=[extractor_config],
-            documents=project.documents(),
-        )
-        return await run_extractor_runner_with_status(extractor_runner)
+        return extractor_config
 
     @app.get("/api/projects/{project_id}/extractor_configs")
     async def get_extractor_configs(
