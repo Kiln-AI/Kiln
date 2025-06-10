@@ -1884,8 +1884,8 @@ def test_sanitize_name_empty():
     """Test handling of empty names."""
     from app.desktop.studio_server.eval_api import _sanitize_name
 
-    assert _sanitize_name("") == "Config"
-    assert _sanitize_name("   ") == "Config"
+    assert _sanitize_name("") != ""
+    assert _sanitize_name("   ") != ""
 
 
 @pytest.mark.asyncio

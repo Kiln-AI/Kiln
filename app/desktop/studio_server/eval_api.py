@@ -976,6 +976,6 @@ def _sanitize_name(name: str) -> str:
 
     # Ensure we have at least one character
     if not valid_name:
-        return "Config"
+        return generate_memorable_name()
 
     return valid_name
