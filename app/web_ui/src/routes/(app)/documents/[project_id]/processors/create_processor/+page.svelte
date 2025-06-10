@@ -5,6 +5,8 @@
   import { createKilnError } from "../../../../../../lib/utils/error_handlers"
   import FormElement from "../../../../../../lib/utils/form_element.svelte"
   import AppPage from "../../../../app_page.svelte"
+  import FormContainer from "../../../../../../lib/utils/form_container.svelte"
+  import { goto } from "$app/navigation"
 
   $: project_id = $page.params.project_id
 
@@ -12,10 +14,6 @@
     {
       label: "Gemini: Gemini 2.0 Flash",
       value: "gemini:::gemini-2.0-flash",
-    },
-    {
-      label: "Gemini: Gemini 2.0 Flash Lite",
-      value: "gemini:::gemini-2.0-flash-lite",
     },
   ]
 
@@ -35,7 +33,7 @@
   async function create_processor() {
     try {
       loading = true
-      const { error: post_error } = await client.POST(
+      const { error: create_extractor_error } = await client.POST(
         "/api/projects/{project_id}/create_extractor_config",
         {
           params: {
@@ -62,9 +60,11 @@
         },
       )
 
-      if (post_error) {
-        throw createKilnError(post_error)
+      if (create_extractor_error) {
+        throw createKilnError(create_extractor_error)
       }
+
+      goto(`/documents/${project_id}/processors`)
     } finally {
       loading = false
     }
@@ -84,104 +84,111 @@
     </div>
   {:else}
     <div class="my-4">
-      <div class="flex flex-col gap-2">
-        <div class="form-control">
-          <label class="label" for="extractor_type">Extractor Type</label>
-          <select
-            class="select select-bordered"
-            bind:value={selected_extractor_option}
-          >
-            {#each extractor_options as option}
-              <option
-                value={option.value}
-                selected={selected_extractor_option === option.value}
-              >
-                {option.label}
-              </option>
-            {/each}
-          </select>
+      <FormContainer
+        submit_visible={true}
+        submit_label="Create Extractor"
+        on:submit={create_processor}
+        bind:submitting={loading}
+      >
+        <div class="flex flex-col gap-2">
+          <div class="form-control">
+            <label class="label" for="extractor_type">Extractor Type</label>
+            <select
+              class="select select-bordered"
+              bind:value={selected_extractor_option}
+            >
+              {#each extractor_options as option}
+                <option
+                  value={option.value}
+                  selected={selected_extractor_option === option.value}
+                >
+                  {option.label}
+                </option>
+              {/each}
+            </select>
+          </div>
+          <div class="form-control">
+            <label class="label" for="output_format">Output Format</label>
+            <select class="select select-bordered" bind:value={output_format}>
+              <option value="text/markdown">Markdown</option>
+              <option value="text/plain">Plain Text</option>
+            </select>
+          </div>
         </div>
-        <div class="form-control">
-          <label class="label" for="output_format">Output Format</label>
-          <select class="select select-bordered" bind:value={output_format}>
-            <option value="text/markdown">Markdown</option>
-            <option value="text/plain">Plain Text</option>
-          </select>
-        </div>
-      </div>
-      <div class="mt-4">
-        <div class="collapse collapse-arrow bg-base-200">
-          <input type="checkbox" class="peer" />
-          <div class="collapse-title font-medium">Extractor Options</div>
-          <div class="collapse-content flex flex-col gap-4">
-            <FormElement
-              label="Name"
-              description="A name to identify this processor. Leave blank and we'll generate one for you."
-              optional={true}
-              inputType="input"
-              id="processor_name"
-              bind:value={name}
-            />
-            <FormElement
-              label="Description"
-              description="An optional description of this processor."
-              optional={true}
-              inputType="textarea"
-              id="processor_description"
-              bind:value={description}
-            />
-            <div class="font-medium">Prompt Options</div>
-            <div class="flex flex-col gap-2">
+        <div class="mt-4">
+          <div class="collapse collapse-arrow bg-base-200">
+            <input type="checkbox" class="peer" />
+            <div class="collapse-title font-medium">Extractor Options</div>
+            <div class="collapse-content flex flex-col gap-4">
               <FormElement
-                label="Document"
-                description="A prompt to use for extracting content from documents (e.g. PDFs, Word documents, etc.)."
+                label="Name"
+                description="A name to identify this processor. Leave blank and we'll generate one for you."
+                optional={true}
+                inputType="input"
+                id="processor_name"
+                bind:value={name}
+              />
+              <FormElement
+                label="Description"
+                description="An optional description of this processor."
                 optional={true}
                 inputType="textarea"
-                id="prompt_document"
-                bind:value={prompt_document}
-                placeholder="Transcribe the document into markdown."
+                id="processor_description"
+                bind:value={description}
               />
-            </div>
-            <div class="flex flex-col gap-2">
-              <FormElement
-                label="Image"
-                description="A prompt to use for extracting content from images."
-                optional={true}
-                inputType="textarea"
-                id="prompt_image"
-                bind:value={prompt_image}
-                placeholder="Describe the image in markdown."
-              />
-            </div>
-            <div class="flex flex-col gap-2">
-              <FormElement
-                label="Video"
-                description="A prompt to use for extracting content from videos."
-                optional={true}
-                inputType="textarea"
-                id="prompt_video"
-                bind:value={prompt_video}
-                placeholder="Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech."
-              />
-            </div>
-            <div class="flex flex-col gap-2">
-              <FormElement
-                label="Audio"
-                description="A prompt to use for extracting content from audio files."
-                optional={true}
-                inputType="textarea"
-                id="prompt_audio"
-                bind:value={prompt_audio}
-                placeholder="Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown."
-              />
+              <div class="font-medium">Prompt Options</div>
+              <div class="text-sm text-gray-500">
+                For multimodal extractors, you can specify prompts for each
+                modality. Leave blank to use the default prompts.
+              </div>
+              <div class="flex flex-col gap-2">
+                <FormElement
+                  label="Document"
+                  description="A prompt to use for extracting content from documents (e.g. PDFs, Word documents, etc.)."
+                  optional={true}
+                  inputType="textarea"
+                  id="prompt_document"
+                  bind:value={prompt_document}
+                  placeholder="Transcribe the document into markdown."
+                />
+              </div>
+              <div class="flex flex-col gap-2">
+                <FormElement
+                  label="Image"
+                  description="A prompt to use for extracting content from images."
+                  optional={true}
+                  inputType="textarea"
+                  id="prompt_image"
+                  bind:value={prompt_image}
+                  placeholder="Describe the image in markdown."
+                />
+              </div>
+              <div class="flex flex-col gap-2">
+                <FormElement
+                  label="Video"
+                  description="A prompt to use for extracting content from videos."
+                  optional={true}
+                  inputType="textarea"
+                  id="prompt_video"
+                  bind:value={prompt_video}
+                  placeholder="Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech."
+                />
+              </div>
+              <div class="flex flex-col gap-2">
+                <FormElement
+                  label="Audio"
+                  description="A prompt to use for extracting content from audio files."
+                  optional={true}
+                  inputType="textarea"
+                  id="prompt_audio"
+                  bind:value={prompt_audio}
+                  placeholder="Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown."
+                />
+              </div>
             </div>
           </div>
         </div>
-      </div>
-
-      <button class="mt-4 btn btn-primary" on:click={create_processor}>
-        Create Processor
-      </button>
+      </FormContainer>
     </div>
   {/if}
 </AppPage>

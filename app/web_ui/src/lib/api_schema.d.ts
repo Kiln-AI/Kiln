@@ -2182,7 +2182,7 @@ export interface components {
              */
             mime_type: string;
             /** @description The attachment to the file */
-            attachment: components["schemas"]["KilnAttachmentModel"];
+            attachment: Record<string, never>;
         };
         /**
          * FineTuneParameter
@@ -4348,7 +4348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ExtractorConfig"];
                 };
             };
             /** @description Validation Error */

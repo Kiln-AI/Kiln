@@ -1,16 +1,18 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import { client } from "$lib/api_client"
-  import type { ExtractorConfig } from "$lib/types"
+  import { base_url, client } from "$lib/api_client"
+  import type { ExtractorConfig, ExtractionProgress } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { load_model_info } from "$lib/stores"
   import { page } from "$app/stores"
-  import { goto, replaceState } from "$app/navigation"
+  import { replaceState } from "$app/navigation"
   import EmptyIntro from "./empty_intro.svelte"
   import { formatDate } from "$lib/utils/formatters"
+  import RunExtractor from "./run_extractor.svelte"
 
   let extractor_configs: ExtractorConfig[] | null = null
+  let extractor_progress: Record<string, ExtractionProgress> = {}
   let error: KilnError | null = null
   let loading = true
   let sortColumn = ($page.url.searchParams.get("sort") || "created_at") as
@@ -42,7 +44,6 @@
 
   const columns = [
     { key: "id", label: "ID" },
-    { key: "description", label: "Description" },
     { key: "created_at", label: "Created At" },
   ]
 
@@ -70,6 +71,7 @@
       }
       extractor_configs = extractor_configs_response
       sortExtractorConfigs()
+      await get_all_progress()
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
@@ -96,10 +98,6 @@
       case "created_at":
         aValue = a.created_at
         bValue = b.created_at
-        break
-      case "description":
-        aValue = a.description
-        bValue = b.description
         break
       default:
         return 0
@@ -164,26 +162,50 @@
     sortExtractorConfigs()
   }
 
-  function row_clicked(extractor_config_id: string | null) {
-    if (!extractor_config_id) return
-    open_extractor_config(extractor_config_id)
+  async function get_progress(extractor_config_id: string) {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress",
+        {
+          params: { path: { project_id, extractor_config_id } },
+        },
+      )
+      if (!error && data) {
+        extractor_progress = {
+          ...extractor_progress,
+          [extractor_config_id]: data,
+        }
+      }
+    } catch (e) {
+      // ignore progress errors for now
+    }
   }
 
-  function open_extractor_config(extractor_config_id: string) {
-    const url = `/documents/${project_id}/processors/${extractor_config_id}/processor`
-    goto(url)
+  async function get_all_progress() {
+    extractor_progress = {}
+    await Promise.all(
+      (extractor_configs || []).map((cfg) => get_progress(cfg.id || "")),
+    )
+  }
+
+  function completed_ratio(extractor_config_id: string) {
+    const progress = extractor_progress[extractor_config_id]
+    if (!progress) return 0
+    return progress.document_count_successful / progress.document_count_total
   }
 </script>
 
 <AppPage
   title="Document Extractors"
-  sub_subtitle="Read the Docs"
+  subtitle="Manage your document extractors"
+  sub_subtitle="Read the docs"
   sub_subtitle_link="#"
   no_y_padding
   action_buttons={[
     {
-      label: "Create Extractor",
+      label: "Add Extractor",
       href: `/documents/${project_id}/processors/create_processor`,
+      primary: true,
     },
   ]}
 >
@@ -214,27 +236,68 @@
                     : ""}
                 </th>
               {/each}
+              <th>Run</th>
             </tr>
           </thead>
           <tbody>
             {#each (extractor_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as extractor_config}
-              <tr
-                class="hover cursor-pointer"
-                on:click={() => {
-                  row_clicked(extractor_config.id || null)
-                }}
-              >
-                <td>
+              <tr>
+                <td class="flex flex-col gap-2">
                   <div class="font-medium">
-                    Extractor Name: {extractor_config.name}
+                    {extractor_config.name}
+                  </div>
+
+                  <div class="text-sm text-gray-500">
+                    Description: {extractor_config.description || "N/A"}
                   </div>
 
                   <div class="text-sm text-gray-500">
                     ID:{extractor_config.id}
                   </div>
+
+                  <div class="text-sm text-gray-500">
+                    Output: {extractor_config.output_format}
+                  </div>
+
+                  {#if (completed_ratio(extractor_config.id || "") || 0) < 1}
+                    <div class="flex flex-col gap-1 text-error">
+                      <div>
+                        Progress: {(
+                          completed_ratio(extractor_config.id || "") * 100.0
+                        ).toFixed(1)}%
+                      </div>
+                      <div>
+                        {extractor_progress[extractor_config.id || ""]
+                          .document_count_successful} /
+                        {extractor_progress[extractor_config.id || ""]
+                          .document_count_total} documents
+                      </div>
+                    </div>
+                  {:else}
+                    <div class="flex flex-col gap-1 text-success">
+                      <div>
+                        Completed ({completed_ratio(extractor_config.id || "") *
+                          100}%)
+                      </div>
+                      <div>
+                        {extractor_progress[extractor_config.id || ""]
+                          .document_count_successful} /
+                        {extractor_progress[extractor_config.id || ""]
+                          .document_count_total} documents
+                      </div>
+                    </div>
+                  {/if}
                 </td>
-                <td>{extractor_config.description || "N/A"}</td>
                 <td>{formatDate(extractor_config.created_at)}</td>
+                {#if completed_ratio(extractor_config.id || "") < 1}
+                  <td>
+                    <RunExtractor
+                      btn_size="mid"
+                      on_run_complete={() => get_all_progress()}
+                      run_url={`${base_url}/api/projects/${project_id}/extractor_configs/${extractor_config.id}/run_extractor_config`}
+                    />
+                  </td>
+                {/if}
               </tr>
             {/each}
           </tbody>
