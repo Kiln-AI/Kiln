@@ -1,6 +1,9 @@
 import json
 import logging
 import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -26,6 +29,15 @@ logger = logging.getLogger(__name__)
 
 def sanitize_name(name: str) -> str:
     return name.strip().replace(" ", "_").replace(".", "_").replace("/", "_")
+
+
+def open_folder(path: str | Path) -> None:
+    if sys.platform.startswith("darwin"):
+        subprocess.run(["open", path], check=True)
+    elif sys.platform.startswith("win"):
+        os.startfile(path)  # type: ignore[attr-defined]
+    else:
+        subprocess.run(["xdg-open", path], check=True)
 
 
 # TODO: extract out into common utils
@@ -430,8 +442,7 @@ Do NOT include any prefatory text such as 'Here is the transcription of the audi
                 detail="Document path not found",
             )
 
-        # system call to open folder in default OS explorer (finder, explorer, etc)
-        os.system(f'open "{document.path.parent}"')
+        open_folder(document.path.parent)
 
         return OpenFileResponse(path=str(document.path.parent))
 
