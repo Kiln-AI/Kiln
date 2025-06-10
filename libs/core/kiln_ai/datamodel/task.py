@@ -145,10 +145,14 @@ class TaskRunConfig(KilnParentedModel):
 
         structured_output_mode = data.get("structured_output_mode", None)
         if structured_output_mode is None and "run_config_properties" in data:
-            # Default to unknown. Adapter will have to guess at runtime.
-            data["run_config_properties"]["structured_output_mode"] = (
-                StructuredOutputMode.unknown
-            )
+            run_config_properties = data["run_config_properties"]
+            if not isinstance(run_config_properties, dict):
+                return data
+            if "structured_output_mode" not in run_config_properties:
+                # Default to unknown. Adapter will have to guess at runtime.
+                data["run_config_properties"]["structured_output_mode"] = (
+                    StructuredOutputMode.unknown
+                )
 
         return data
 
