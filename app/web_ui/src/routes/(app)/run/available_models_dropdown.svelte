@@ -4,6 +4,8 @@
     load_available_models,
     available_model_details,
     ui_state,
+    recently_used_models,
+    add_recently_used_model,
   } from "$lib/stores"
   import type { AvailableModels } from "$lib/types"
   import { onMount } from "svelte"
@@ -48,12 +50,46 @@
     requires_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
-  ): [string, [unknown, string][]][] {
-    let options = []
+  ): [string, [string, string][]][] {
+    let options: [string, [string, string][]][] = []
     unsupported_models = []
     untested_models = []
+
+    // Add recently used models section if there are any
+    const recent_models = $recently_used_models
+    if (recent_models.length > 0) {
+      const recent_model_list: [string, string][] = []
+      for (const model_id of recent_models) {
+        const [provider_id, model_name] = model_id.split("/")
+        // Find the model details
+        for (const provider of providers) {
+          if (provider.provider_id === provider_id) {
+            const model = provider.models.find(
+              (m: { id: string }) => m.id === model_name,
+            )
+            if (model) {
+              // Check if model meets requirements
+              if (
+                (requires_data_gen && !model.supports_data_gen) ||
+                (structured_output && !model.supports_structured_output) ||
+                (requires_logprobs && !model.supports_logprobs)
+              ) {
+                continue
+              }
+              recent_model_list.push([model_id, model.name])
+              break
+            }
+          }
+        }
+      }
+      if (recent_model_list.length > 0) {
+        options.push(["Recently Used", recent_model_list])
+      }
+    }
+
+    // Add regular model sections
     for (const provider of providers) {
-      let model_list = []
+      let model_list: [string, string][] = []
       for (const model of provider.models) {
         // Exclude models that are not available for the current task
         if (
@@ -112,7 +148,6 @@
       options.push([not_recommended_label, unsupported_models])
     }
 
-    // @ts-expect-error this is the correct format, but TS isn't finding it
     return options
   }
 
@@ -136,6 +171,11 @@
   $: selected_model_suggested_evals =
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_evals || false
+
+  // Add model to recently used when selected
+  $: if (model) {
+    add_recently_used_model(model)
+  }
 </script>
 
 <div>

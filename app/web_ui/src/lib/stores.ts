@@ -46,6 +46,23 @@ export const current_task_prompts = writable<PromptResponse | null>(null)
 export const fine_tune_target_model: Writable<string | null> =
   localStorageStore("fine_tune_target_model", null)
 
+// Store for recently used models (last 5)
+export const recently_used_models: Writable<string[]> = localStorageStore(
+  "recently_used_models",
+  [],
+)
+
+// Function to add a model to recently used
+export function add_recently_used_model(model_id: string) {
+  const current = get(recently_used_models)
+  // Remove if already exists
+  const filtered = current.filter((m) => m !== model_id)
+  // Add to front
+  filtered.unshift(model_id)
+  // Keep only last 5
+  recently_used_models.set(filtered.slice(0, 5))
+}
+
 // Rating options for the current task
 export const current_task_rating_options =
   writable<RatingOptionResponse | null>(null)
