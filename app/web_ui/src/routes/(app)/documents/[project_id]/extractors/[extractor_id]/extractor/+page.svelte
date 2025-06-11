@@ -1,0 +1,120 @@
+<script lang="ts">
+  import { page } from "$app/stores"
+  import { client } from "../../../../../../../lib/api_client"
+  import type { ExtractorConfig } from "../../../../../../../lib/types"
+  import { createKilnError } from "../../../../../../../lib/utils/error_handlers"
+  import AppPage from "../../../../../app_page.svelte"
+  import PropertyList from "../../../../../../../lib/ui/property_list.svelte"
+  import { onMount } from "svelte"
+  import { formatDate } from "../../../../../../../lib/utils/formatters"
+
+  $: project_id = $page.params.project_id
+  $: extractor_id = $page.params.extractor_id
+
+  let loading: boolean = false
+  let extractor_config: ExtractorConfig | null = null
+
+  onMount(async () => {
+    await get_extractor_config()
+  })
+
+  async function get_extractor_config() {
+    try {
+      loading = true
+      const { error: create_extractor_error, data } = await client.GET(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              extractor_config_id: extractor_id,
+            },
+          },
+        },
+      )
+
+      if (create_extractor_error) {
+        throw createKilnError(create_extractor_error)
+      }
+
+      extractor_config = data
+    } finally {
+      loading = false
+    }
+  }
+</script>
+
+<AppPage
+  title="Document Extractor"
+  subtitle={"Extractor: " + (extractor_config?.name || "N/A")}
+  action_buttons={[]}
+>
+  {#if loading}
+    <div class="w-full min-h-[50vh] flex justify-center items-center">
+      <div class="loading loading-spinner loading-lg"></div>
+    </div>
+  {:else}
+    <div>
+      <div>
+        <PropertyList
+          properties={[
+            { name: "ID", value: extractor_config?.id || "N/A" },
+            { name: "Name", value: extractor_config?.name || "N/A" },
+            {
+              name: "Description",
+              value: extractor_config?.description || "N/A",
+            },
+            { name: "Type", value: extractor_config?.extractor_type || "N/A" },
+            {
+              name: "Output Format",
+              value: extractor_config?.output_format || "N/A",
+            },
+            {
+              name: "Created At",
+              value: formatDate(extractor_config?.created_at),
+            },
+            {
+              name: "Created By",
+              value: extractor_config?.created_by || "N/A",
+            },
+          ]}
+          title="Extractor Configuration"
+        />
+      </div>
+      <div class="mt-8 grid grid-cols-1 gap-4">
+        <div class="text-xl font-bold">Prompt Configuration</div>
+        <div class="text-sm text-gray-500">
+          The prompts used to extract content from different document types.
+        </div>
+        <div class="flex flex-col gap-2">
+          <div class="font-medium">Document:</div>
+          <div class="text-sm text-gray-500">
+            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
+                ?.properties?.prompt_document || "N/A"}</pre>
+          </div>
+        </div>
+        <div>
+          <div class="font-medium">Image:</div>
+          <div class="text-sm text-gray-500">
+            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
+                ?.properties?.prompt_image || "N/A"}</pre>
+          </div>
+        </div>
+        <div>
+          <div class="font-medium">Video:</div>
+          <div class="text-sm text-gray-500">
+            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
+                ?.properties?.prompt_video || "N/A"}</pre>
+          </div>
+        </div>
+        <div>
+          <div class="font-medium">Audio:</div>
+          <div class="text-sm text-gray-500">
+            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
+                ?.properties?.prompt_audio || "N/A"}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+</AppPage>

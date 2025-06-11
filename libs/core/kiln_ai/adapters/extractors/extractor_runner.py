@@ -96,6 +96,5 @@ class ExtractorRunner:
 
             return True
         except Exception as e:
-            print(e)
             logger.error(f"Error running eval job for dataset item {job.doc.id}: {e}")
             return False

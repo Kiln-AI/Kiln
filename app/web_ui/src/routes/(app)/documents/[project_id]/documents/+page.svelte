@@ -480,7 +480,6 @@
   title="Documents"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="#"
-  no_y_padding
   action_buttons={[
     {
       label: "Upload File",
