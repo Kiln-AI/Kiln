@@ -690,12 +690,6 @@
                 <tr
                   class="hover cursor-pointer"
                   on:click={() => {
-                    // Don't navigate if any modal dialogs are open
-                    const openModals = document.querySelectorAll("dialog[open]")
-                    if (openModals.length > 0) {
-                      return
-                    }
-
                     goto(
                       `/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`,
                     )

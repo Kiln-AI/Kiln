@@ -69,9 +69,6 @@
       on_run_complete()
     }
 
-    // Wait a moment to ensure dialog is properly closed before showing progress
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
     // Switch over to the progress dialog
     running_progress_dialog?.show()
     return true
