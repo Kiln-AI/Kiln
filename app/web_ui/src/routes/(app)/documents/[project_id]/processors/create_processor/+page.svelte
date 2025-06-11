@@ -18,7 +18,7 @@
   ]
 
   let loading: boolean = false
-  let name: string = ""
+  let name: string | null = null
   let description: string = ""
   let selected_extractor_option: string = extractor_options[0].value
   let output_format: "text/markdown" | "text/plain" = "text/markdown"
@@ -42,18 +42,16 @@
             },
           },
           body: {
-            name,
-            description,
+            name: name || null,
+            description: description || null,
             extractor_type: extractor_type as unknown as ExtractorType,
             output_format: output_format as unknown as OutputFormat,
             properties: {
               model_name,
-              prompt_for_kind: {
-                document: prompt_document || "",
-                image: prompt_image || "",
-                video: prompt_video || "",
-                audio: prompt_audio || "",
-              },
+              prompt_document: prompt_document || null,
+              prompt_image: prompt_image || null,
+              prompt_video: prompt_video || null,
+              prompt_audio: prompt_audio || null,
             },
             passthrough_mimetypes: ["text/plain", "text/markdown"],
           },

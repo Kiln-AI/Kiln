@@ -1477,19 +1477,33 @@ export interface components {
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the extractor config
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description The description of the extractor config
+             */
             description?: string | null;
+            /** @description The output format of the extractor config */
             output_format: components["schemas"]["OutputFormat"];
-            /** Passthrough Mimetypes */
-            passthrough_mimetypes: components["schemas"]["OutputFormat"][];
+            /**
+             * Passthrough Mimetypes
+             * @description The mimetypes to pass through to the extractor
+             */
+            passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
+            /** @description The type of the extractor */
             extractor_type: components["schemas"]["ExtractorType"];
-            /** Properties */
+            /**
+             * Properties
+             * @default {}
+             */
             properties: {
                 [key: string]: string | number | boolean | {
                     [key: string]: string;
-                };
+                } | null;
             };
         };
         /**
@@ -2173,7 +2187,7 @@ export interface components {
             properties: {
                 [key: string]: string | number | boolean | {
                     [key: string]: string;
-                };
+                } | null;
             };
             /** Model Type */
             readonly model_type: string;
