@@ -188,7 +188,7 @@
     </div>
   {:else if extractor_configs && extractor_configs.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyIntro />
+      <EmptyIntro {project_id} />
     </div>
   {:else if extractor_configs}
     <div class="my-4">

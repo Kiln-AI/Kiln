@@ -497,7 +497,7 @@
     </div>
   {:else if documents && documents.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyIntro />
+      <EmptyIntro action={() => upload_file_dialog?.show()} />
     </div>
   {:else if documents}
     <div class="mb-4">

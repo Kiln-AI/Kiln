@@ -1,4 +1,5 @@
 <script lang="ts">
+  export let action: () => void
 </script>
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
@@ -48,6 +49,8 @@
       To get started, generate some synthetic files or add files manually
     </div>
 
-    <!-- <a class="btn btn-primary" target="_blank" href="#"> Manually Add Files </a> -->
+    <button class="btn btn-primary" on:click={action}
+      >Upload your first file</button
+    >
   </div>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  export let project_id: string
 </script>
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
@@ -41,13 +42,14 @@
       </svg>
     </div>
     <div class="font-medium text-lg">
-      Your document store for this project is empty.
+      You don't have any document extractors yet.
     </div>
-    <div>Adding files will allow the model to improve at it's task.</div>
-    <div>
-      To get started, generate some synthetic files or add files manually
-    </div>
+    <div>To get started, create a new document extractor.</div>
 
-    <!-- <a class="btn btn-primary" target="_blank" href="#"> Manually Add Files </a> -->
+    <a
+      class="btn btn-primary"
+      href={`/documents/${project_id}/extractors/create_extractor`}
+      >Create Extractor</a
+    >
   </div>
 </div>
