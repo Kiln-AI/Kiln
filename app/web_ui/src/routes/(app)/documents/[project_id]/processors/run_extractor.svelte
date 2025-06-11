@@ -104,22 +104,20 @@
       run_dialog?.show()
     }}
   >
-    <!-- Attribution: https://www.svgrepo.com/svg/532511/play -->
+    <!-- Attribution: https://www.svgrepo.com/svg/526106/play -->
     <svg
       viewBox="0 0 24 24"
-      fill="currentColor"
-      class="w-4 h-4"
+      fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      class="w-4 h-4"
       ><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g
         id="SVGRepo_tracerCarrier"
         stroke-linecap="round"
         stroke-linejoin="round"
       ></g><g id="SVGRepo_iconCarrier">
         <path
-          d="M16.6582 9.28638C18.098 10.1862 18.8178 10.6361 19.0647 11.2122C19.2803 11.7152 19.2803 12.2847 19.0647 12.7878C18.8178 13.3638 18.098 13.8137 16.6582 14.7136L9.896 18.94C8.29805 19.9387 7.49907 20.4381 6.83973 20.385C6.26501 20.3388 5.73818 20.0469 5.3944 19.584C5 19.053 5 18.1108 5 16.2264V7.77357C5 5.88919 5 4.94701 5.3944 4.41598C5.73818 3.9531 6.26501 3.66111 6.83973 3.6149C7.49907 3.5619 8.29805 4.06126 9.896 5.05998L16.6582 9.28638Z"
-          stroke="#000000"
-          stroke-width="2"
-          stroke-linejoin="round"
+          d="M21.4086 9.35258C23.5305 10.5065 23.5305 13.4935 21.4086 14.6474L8.59662 21.6145C6.53435 22.736 4 21.2763 4 18.9671L4 5.0329C4 2.72368 6.53435 1.26402 8.59661 2.38548L21.4086 9.35258Z"
+          fill="currentColor"
         ></path>
       </g></svg
     >
