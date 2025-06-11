@@ -175,6 +175,23 @@
         throw error
       }
       task_run_configs = data
+      // Load base models immediately after getting task run configs
+      if (data) {
+        const finetune_models = data
+          .map((config) => config.run_config_properties?.model_name)
+          .filter((model_name) => model_name && is_finetune_model(model_name))
+
+        // Load base models for all finetune models
+        await Promise.all(
+          finetune_models.map(async (model_name) => {
+            if (model_name) {
+              await get_finetune_base_model(model_name)
+            }
+          }),
+        )
+        // Force reactivity after all base models are loaded
+        finetune_base_models = { ...finetune_base_models }
+      }
     } catch (error) {
       task_run_configs_error = createKilnError(error)
     } finally {
@@ -735,28 +752,6 @@
     }
 
     return base_provider
-  }
-
-  // Load finetune base models when task run configs are loaded
-  $: load_finetune_base_models(task_run_configs)
-  async function load_finetune_base_models(configs: TaskRunConfig[] | null) {
-    if (!configs) return
-
-    const finetune_models = configs
-      .map((config) => config.run_config_properties?.model_name)
-      .filter((model_name) => model_name && is_finetune_model(model_name))
-
-    // Load base models for all finetune models
-    await Promise.all(
-      finetune_models.map(async (model_name) => {
-        if (model_name) {
-          await get_finetune_base_model(model_name)
-        }
-      }),
-    )
-
-    // Trigger reactivity
-    finetune_base_models = { ...finetune_base_models }
   }
 </script>
 
