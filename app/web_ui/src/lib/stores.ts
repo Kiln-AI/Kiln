@@ -46,24 +46,36 @@ export const current_task_prompts = writable<PromptResponse | null>(null)
 export const fine_tune_target_model: Writable<string | null> =
   localStorageStore("fine_tune_target_model", null)
 
-// Store for recently used models (last 5)
-const _recently_used_models = localStorageStore("recently_used_models", [])
+// Store for recently used models (last 5) per project-task
+const _recently_used_models = localStorageStore(
+  "recently_used_models",
+  {} as Record<string, string[]>,
+)
 
-export const recently_used_models = derived(_recently_used_models, ($store) =>
-  Array.isArray($store) ? $store : [],
+export const recently_used_models = derived(
+  _recently_used_models,
+  ($store) => $store,
 )
 
 // Function to add a model to recently used
 export function add_recently_used_model(model_id: string) {
-  const current = Array.isArray(get(_recently_used_models))
-    ? get(_recently_used_models)
-    : []
+  const project_id = get(ui_state).current_project_id
+  const task_id = get(ui_state).current_task_id
+  if (!project_id || !task_id) return
+
+  const key = `${project_id}/${task_id}`
+  const current = get(_recently_used_models)
+  const task_models = Array.isArray(current[key]) ? current[key] : []
+
   // Remove if already exists
-  const filtered = current.filter((m: string) => m !== model_id)
+  const filtered = task_models.filter((m: string) => m !== model_id)
   // Add to front
   filtered.unshift(model_id)
   // Keep only last 5
-  _recently_used_models.set(filtered.slice(0, 5))
+  _recently_used_models.set({
+    ...current,
+    [key]: filtered.slice(0, 5),
+  })
 }
 
 // Rating options for the current task

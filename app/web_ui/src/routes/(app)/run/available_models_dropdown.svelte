@@ -18,7 +18,16 @@
   export let requires_logprobs: boolean = false
   export let error_message: string | null = null
   export let suggested_mode: "data_gen" | "evals" | null = null
-  $: $ui_state.selected_model = model
+
+  // Track previous task ID to detect changes
+  let previous_task_id: string | null = null
+  $: {
+    if ($ui_state.current_task_id !== previous_task_id) {
+      ui_state.update((state) => ({ ...state, selected_model: null }))
+      previous_task_id = $ui_state.current_task_id
+    }
+  }
+
   $: model_options = format_model_options(
     $available_models || {},
     requires_structured_output,
@@ -51,16 +60,20 @@
     requires_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
-    recent_models: string[],
+    recent_models: Record<string, string[]>,
   ): [string, [string, string][]][] {
     let options: [string, [string, string][]][] = []
     unsupported_models = []
     untested_models = []
 
     // Add recently used models section if there are any
-    if (recent_models.length > 0) {
+    const project_id = $ui_state.current_project_id
+    const key =
+      project_id && current_task_id ? `${project_id}/${current_task_id}` : null
+    const task_recent_models = key ? recent_models[key] || [] : []
+    if (task_recent_models.length > 0) {
       const recent_model_list: [string, string][] = []
-      for (const model_id of recent_models) {
+      for (const model_id of task_recent_models) {
         const [provider_id, model_name] = model_id.split("/")
         // Find the model details
         for (const provider of providers) {
