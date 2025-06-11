@@ -16,8 +16,8 @@
     <a href={`/documents/${project_id}/documents`} class="link"
       >Documents (List)</a
     >
-    <a href={`/documents/${project_id}/processors`} class="link"
-      >Document Processors (List)</a
+    <a href={`/documents/${project_id}/extractors`} class="link"
+      >Document Extractors (List)</a
     >
   </div>
 </AppPage>

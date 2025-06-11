@@ -30,7 +30,7 @@
   $: extractor_type = selected_extractor_option.split(":::")[0]
   $: model_name = selected_extractor_option.split(":::")[1]
 
-  async function create_processor() {
+  async function create_extractor_config() {
     try {
       loading = true
       const { error: create_extractor_error } = await client.POST(
@@ -62,7 +62,7 @@
         throw createKilnError(create_extractor_error)
       }
 
-      goto(`/documents/${project_id}/processors`)
+      goto(`/documents/${project_id}/extractors`)
     } finally {
       loading = false
     }
@@ -70,8 +70,8 @@
 </script>
 
 <AppPage
-  title="Create Processor"
-  sub_subtitle="Create a new processor"
+  title="Create Document Extractor"
+  sub_subtitle="Create a new document extractor"
   sub_subtitle_link="#"
   no_y_padding
   action_buttons={[]}
@@ -85,7 +85,7 @@
       <FormContainer
         submit_visible={true}
         submit_label="Create Extractor"
-        on:submit={create_processor}
+        on:submit={create_extractor_config}
         bind:submitting={loading}
       >
         <div class="flex flex-col gap-2">
@@ -120,18 +120,18 @@
             <div class="collapse-content flex flex-col gap-4">
               <FormElement
                 label="Name"
-                description="A name to identify this processor. Leave blank and we'll generate one for you."
+                description="A name to identify this extractor. Leave blank and we'll generate one for you."
                 optional={true}
                 inputType="input"
-                id="processor_name"
+                id="extractor_name"
                 bind:value={name}
               />
               <FormElement
                 label="Description"
-                description="An optional description of this processor."
+                description="An optional description of this extractor."
                 optional={true}
                 inputType="textarea"
-                id="processor_description"
+                id="extractor_description"
                 bind:value={description}
               />
               <div class="font-medium">Prompt Options</div>
