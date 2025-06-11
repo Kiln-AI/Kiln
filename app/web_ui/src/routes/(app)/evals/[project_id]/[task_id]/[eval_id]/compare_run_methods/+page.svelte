@@ -61,6 +61,9 @@
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
 
+  // Store finetune base model information
+  let finetune_base_models: Record<string, string> = {}
+
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
   $: loading = eval_loading || eval_configs_loading || task_run_configs_loading
   $: error = eval_error || eval_configs_error || task_run_configs_error
@@ -245,10 +248,43 @@
     (config) => config.id === current_eval_config_id,
   )
 
+  // Filter state
+  let filter_models: string[] = []
+
   // Sort task run configs - default first, then by last output score
   $: sorted_task_run_configs = task_run_configs
     ? sortTaskRunConfigs(task_run_configs, evaluator, score_summary)
     : []
+
+  // Apply filters to sorted configs
+  $: filtered_task_run_configs = sorted_task_run_configs
+    ? applyFilters(sorted_task_run_configs, filter_models)
+    : []
+
+  function applyFilters(
+    configs: TaskRunConfig[],
+    modelFilters: string[],
+  ): TaskRunConfig[] {
+    if (modelFilters.length === 0) {
+      return configs
+    }
+
+    return configs.filter((config) => {
+      const modelName = config.run_config_properties?.model_name
+      if (!modelName) return false
+
+      // Check if the model name itself is in the filters (for base models)
+      if (modelFilters.includes(modelName)) return true
+
+      // Check if the base model is in the filters (for finetunes)
+      if (is_finetune_model(modelName)) {
+        const base_model = finetune_base_models[modelName]
+        return base_model && modelFilters.includes(base_model)
+      }
+
+      return false
+    })
+  }
 
   function sortTaskRunConfigs(
     configs: TaskRunConfig[] | null,
@@ -379,6 +415,11 @@
 
   let add_task_config_dialog: Dialog | null = null
   let add_task_config_error: KilnError | null = null
+  let delete_dialog: Dialog | null = null
+  let delete_url: string | null = null
+  let after_delete: (() => void) | null = null
+  let filter_dialog: Dialog | null = null
+
   async function add_task_config(): Promise<boolean> {
     if (
       !task_run_config_model_name ||
@@ -471,10 +512,6 @@
     }
   }
 
-  let delete_dialog: Dialog | null = null
-  let delete_url: string | null = null
-  let after_delete: (() => void) | null = null
-
   function show_delete_dialog(run_config_id: string) {
     if (!run_config_id) return
     delete_url = `/api/projects/${project_id}/tasks/${task_id}/task_run_config/${run_config_id}`
@@ -516,6 +553,155 @@
       eval_error = new KilnError("Failed to delete run method", [errorMessage])
       return false
     }
+  }
+
+  // Get available models for filtering - separated into base models and finetune base models
+  $: available_filter_models = get_available_filter_models(
+    sorted_task_run_configs,
+    filter_models,
+  )
+
+  function get_available_filter_models(
+    configs: TaskRunConfig[],
+    currentFilters: string[],
+  ): {
+    base_models: Record<string, number>
+    finetune_base_models: Record<string, number>
+  } {
+    if (!configs) return { base_models: {}, finetune_base_models: {} }
+
+    const base_models: Record<string, number> = {}
+    const finetune_base_models_result: Record<string, number> = {}
+
+    configs.forEach((config) => {
+      const modelName = config.run_config_properties?.model_name
+      if (!modelName || currentFilters.includes(modelName)) return
+
+      if (is_finetune_model(modelName)) {
+        // For finetunes, group by base model
+        const base_model = finetune_base_models[modelName]
+        if (base_model && !currentFilters.includes(base_model)) {
+          const current = finetune_base_models_result[base_model]
+          finetune_base_models_result[base_model] = current ? current + 1 : 1
+        }
+      } else {
+        // For regular models, group by model name
+        if (!currentFilters.includes(modelName)) {
+          const current = base_models[modelName]
+          base_models[modelName] = current ? current + 1 : 1
+        }
+      }
+    })
+
+    return { base_models, finetune_base_models: finetune_base_models_result }
+  }
+
+  function add_filter_model(model: string) {
+    const newFilters = [...new Set([...filter_models, model])]
+    filter_models = newFilters
+  }
+
+  function remove_filter_model(model: string) {
+    filter_models = filter_models.filter((m) => m !== model)
+  }
+
+  // Function to check if a model name is a finetune ID
+  function is_finetune_model(model_name: string | undefined): boolean {
+    if (!model_name) return false
+    // Finetune IDs are in format: project_id::task_id::finetune_id
+    const parts = model_name.split("::")
+    return parts.length === 3
+  }
+
+  // Function to parse finetune ID and get base model
+  async function get_finetune_base_model(
+    model_name: string,
+  ): Promise<string | null> {
+    if (!is_finetune_model(model_name)) return null
+
+    // Check cache first
+    if (finetune_base_models[model_name]) {
+      return finetune_base_models[model_name]
+    }
+
+    try {
+      const parts = model_name.split("::")
+      if (parts.length !== 3) return null
+
+      const [ft_project_id, ft_task_id, finetune_id] = parts
+
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
+        {
+          params: {
+            path: {
+              project_id: ft_project_id,
+              task_id: ft_task_id,
+              finetune_id: finetune_id,
+            },
+          },
+        },
+      )
+
+      if (error || !data) return null
+
+      const base_model_id = data.finetune.base_model_id
+      // Cache the result
+      finetune_base_models[model_name] = base_model_id
+      return base_model_id
+    } catch (error) {
+      console.error("Error fetching finetune base model:", error)
+      return null
+    }
+  }
+
+  // Function to get display name for model including base model for finetunes
+  function get_enhanced_model_name(
+    model_name_param: string | undefined,
+  ): string {
+    if (!model_name_param) return "Unknown"
+
+    // Just return the regular model name, base model will be shown in provider line
+    return model_name(model_name_param, $model_info)
+  }
+
+  // Function to get enhanced provider name with base model for finetunes
+  function get_enhanced_provider_name(
+    model_name_param: string | undefined,
+    provider_name_param: string | undefined,
+  ): string {
+    const base_provider = provider_name_from_id(provider_name_param || "")
+
+    if (is_finetune_model(model_name_param) && model_name_param) {
+      const base_model = finetune_base_models[model_name_param]
+      if (base_model) {
+        return `${base_provider} (base: ${base_model})`
+      }
+    }
+
+    return base_provider
+  }
+
+  // Load finetune base models when task run configs are loaded
+  $: load_finetune_base_models(task_run_configs)
+  async function load_finetune_base_models(configs: TaskRunConfig[] | null) {
+    if (!configs) return
+
+    const finetune_models = configs
+      .map((config) => config.run_config_properties?.model_name)
+      .filter((model_name) => model_name && is_finetune_model(model_name))
+
+    // Load base models for all finetune models
+    await Promise.all(
+      finetune_models.map(async (model_name) => {
+        if (model_name) {
+          await get_finetune_base_model(model_name)
+        }
+      }),
+    )
+
+    // Trigger reactivity
+    finetune_base_models = { ...finetune_base_models }
   }
 </script>
 
@@ -619,6 +805,12 @@
                   "An unknown error occurred fetching scores."}
               </div>
             {/if}
+            {#if filter_models.length > 0}
+              <div class="text-xs text-gray-500 mt-1">
+                Showing {filtered_task_run_configs.length} of {sorted_task_run_configs.length}
+                run methods
+              </div>
+            {/if}
           </div>
           <div class="shrink-0">
             <button
@@ -627,6 +819,17 @@
                 add_task_config_dialog?.show()
               }}>Add Run Method</button
             >
+            <button
+              class="btn btn-mid mr-2 !px-3"
+              on:click={() => filter_dialog?.show()}
+            >
+              <img alt="filter" src="/images/filter.svg" class="w-5 h-5" />
+              {#if filter_models.length > 0}
+                <span class="badge badge-primary badge-sm"
+                  >{filter_models.length}</span
+                >
+              {/if}
+            </button>
             <RunEval
               bind:eval_state
               bind:run_url={run_eval_url}
@@ -682,7 +885,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each sorted_task_run_configs as task_run_config}
+              {#each filtered_task_run_configs as task_run_config}
                 {@const percent_complete =
                   score_summary?.run_config_percent_complete?.[
                     "" + task_run_config.id
@@ -697,9 +900,8 @@
                 >
                   <td>
                     <div class="font-medium">
-                      {model_name(
+                      {get_enhanced_model_name(
                         task_run_config?.run_config_properties?.model_name,
-                        $model_info,
                       )}
                     </div>
 
@@ -729,7 +931,8 @@
                       {/if}
                     </div>
                     <div class="text-sm text-gray-500">
-                      Provider: {provider_name_from_id(
+                      Provider: {get_enhanced_provider_name(
+                        task_run_config?.run_config_properties?.model_name,
                         task_run_config?.run_config_properties
                           ?.model_provider_name,
                       )}
@@ -896,5 +1099,82 @@
   <div class="text-sm text-gray-500">
     Are you sure you want to delete this run method? This action cannot be
     undone.
+  </div>
+</Dialog>
+
+<Dialog
+  bind:this={filter_dialog}
+  title="Filter Run Methods by Base Model"
+  action_buttons={[{ label: "Close", isCancel: true }]}
+>
+  <div class="space-y-4">
+    {#if filter_models.length > 0}
+      <div>
+        <div class="text-sm mb-2 font-medium">Current Filters:</div>
+        <div class="flex flex-row gap-2 flex-wrap mb-6">
+          {#each filter_models as model}
+            <div
+              class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full whitespace-normal text-left min-h-[2.5rem] h-auto leading-tight"
+            >
+              <span class="truncate break-words"
+                >{model_name(model, $model_info)}</span
+              >
+              <button
+                class="pl-3 font-medium shrink-0"
+                on:click={() => remove_filter_model(model)}>✕</button
+              >
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <div>
+      <div class="text-sm mt-4 mb-4 font-medium">Add a filter:</div>
+
+      <!-- Base Models Section -->
+      {#if Object.keys(available_filter_models.base_models).length > 0}
+        <div class="mb-6">
+          <div class="text-sm mb-2 font-semibold text-gray-700">
+            Base Models:
+          </div>
+          <div class="flex flex-row gap-2 flex-wrap">
+            {#each Object.entries(available_filter_models.base_models).sort((a, b) => b[1] - a[1]) as [model, count]}
+              <button
+                class="badge bg-blue-100 text-blue-700 py-3 px-3 max-w-full hover:bg-blue-200 whitespace-normal text-left min-h-[2.5rem] h-auto leading-tight"
+                on:click={() => add_filter_model(model)}
+                ><span class="break-words"
+                  >{model_name(model, $model_info)} ({count})</span
+                ></button
+              >
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- Fine-tuned Models Section -->
+      {#if Object.keys(available_filter_models.finetune_base_models).length > 0}
+        <div class="mb-6">
+          <div class="text-sm mb-2 font-semibold text-gray-700">
+            Fine-tuned Models (by base model):
+          </div>
+          <div class="flex flex-row gap-2 flex-wrap">
+            {#each Object.entries(available_filter_models.finetune_base_models).sort((a, b) => b[1] - a[1]) as [base_model, count]}
+              <button
+                class="badge bg-green-100 text-green-700 py-3 px-3 max-w-full hover:bg-green-200 whitespace-normal text-left min-h-[2.5rem] h-auto leading-tight"
+                on:click={() => add_filter_model(base_model)}
+                ><span class="break-words">{base_model} ({count})</span></button
+              >
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      {#if Object.keys(available_filter_models.base_models).length === 0 && Object.keys(available_filter_models.finetune_base_models).length === 0}
+        <p class="text-sm text-gray-500 mt-4">
+          Any further filters would show zero results.
+        </p>
+      {/if}
+    </div>
   </div>
 </Dialog>
