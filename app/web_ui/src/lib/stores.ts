@@ -1,4 +1,4 @@
-import { writable, get } from "svelte/store"
+import { writable, get, derived } from "svelte/store"
 import { dev } from "$app/environment"
 import type {
   Project,
@@ -47,20 +47,23 @@ export const fine_tune_target_model: Writable<string | null> =
   localStorageStore("fine_tune_target_model", null)
 
 // Store for recently used models (last 5)
-export const recently_used_models: Writable<string[]> = localStorageStore(
-  "recently_used_models",
-  [],
+const _recently_used_models = localStorageStore("recently_used_models", [])
+
+export const recently_used_models = derived(_recently_used_models, ($store) =>
+  Array.isArray($store) ? $store : [],
 )
 
 // Function to add a model to recently used
 export function add_recently_used_model(model_id: string) {
-  const current = get(recently_used_models)
+  const current = Array.isArray(get(_recently_used_models))
+    ? get(_recently_used_models)
+    : []
   // Remove if already exists
-  const filtered = current.filter((m) => m !== model_id)
+  const filtered = current.filter((m: string) => m !== model_id)
   // Add to front
   filtered.unshift(model_id)
   // Keep only last 5
-  recently_used_models.set(filtered.slice(0, 5))
+  _recently_used_models.set(filtered.slice(0, 5))
 }
 
 // Rating options for the current task

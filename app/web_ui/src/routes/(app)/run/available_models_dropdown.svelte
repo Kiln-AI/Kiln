@@ -25,6 +25,7 @@
     requires_data_gen,
     requires_logprobs,
     $ui_state.current_task_id,
+    $recently_used_models,
   )
 
   // Export the parsed model name and provider name
@@ -50,13 +51,13 @@
     requires_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
+    recent_models: string[],
   ): [string, [string, string][]][] {
     let options: [string, [string, string][]][] = []
     unsupported_models = []
     untested_models = []
 
     // Add recently used models section if there are any
-    const recent_models = $recently_used_models
     if (recent_models.length > 0) {
       const recent_model_list: [string, string][] = []
       for (const model_id of recent_models) {
@@ -124,13 +125,9 @@
         }
         let model_name = model.name
         if (suggested_mode === "data_gen" && model.suggested_for_data_gen) {
-          model_name =
-            provider.provider_name + " / " + model.name + "  —  Recommended"
+          model_name = model.name + "  —  Recommended"
         } else if (suggested_mode === "evals" && model.suggested_for_evals) {
-          model_name =
-            provider.provider_name + " / " + model.name + "  —  Recommended"
-        } else {
-          model_name = provider.provider_name + " / " + model.name
+          model_name = model.name + "  —  Recommended"
         }
         model_list.push([id, model_name])
       }
