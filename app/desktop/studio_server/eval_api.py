@@ -393,6 +393,17 @@ def connect_evals_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/task_run_config/{run_config_id}"
+    )
+    async def delete_task_run_config(
+        project_id: str,
+        task_id: str,
+        run_config_id: str,
+    ) -> None:
+        task_run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+        task_run_config.delete()
+
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"
     )

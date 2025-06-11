@@ -71,7 +71,7 @@
       {#each header_buttons as button}
         <button
           class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
-          on:click={button.action}
+          on:click|stopPropagation={button.action}
         >
           <img
             class="h-6 w-6 mb-[1px]"
@@ -83,6 +83,7 @@
       <form method="dialog">
         <button
           class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
+          on:click|stopPropagation
         >
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
           <svg
@@ -125,14 +126,18 @@
       <div class="flex flex-row gap-2 justify-end mt-6">
         {#if error}
           <form method="dialog">
-            <button class="btn btn-sm h-10 btn-outline min-w-24">Close</button>
+            <button
+              class="btn btn-sm h-10 btn-outline min-w-24"
+              on:click|stopPropagation>Close</button
+            >
           </form>
         {:else}
           {#each action_buttons as button}
             {#if button.isCancel}
               <form method="dialog">
-                <button class="btn btn-sm h-10 btn-outline min-w-24"
-                  >{button.label || "Cancel"}</button
+                <button
+                  class="btn btn-sm h-10 btn-outline min-w-24"
+                  on:click|stopPropagation>{button.label || "Cancel"}</button
                 >
               </form>
             {:else}
@@ -142,7 +147,7 @@
                   : ''}
                   {button.isError ? 'btn-error' : ''}"
                 disabled={button.disabled}
-                on:click={() => perform_button_action(button)}
+                on:click|stopPropagation={() => perform_button_action(button)}
               >
                 {button.label || "Confirm"}
               </button>

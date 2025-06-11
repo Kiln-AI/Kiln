@@ -3,7 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
-  export let btn_size: "normal" | "mid" = "mid"
+  export let btn_size: "normal" | "mid" | "sm" = "mid"
   export let on_run_complete: () => void = () => {}
   export let run_url: string
   export let eval_state:
@@ -11,21 +11,19 @@
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
-
-  let run_dialog: Dialog | null = null
-  let running_progress_dialog: Dialog | null = null
-  let eval_run_error: KilnError | null = null
+  export let button_text: string = "Run All"
 
   let eval_complete_count = 0
   let eval_total_count = 0
   let eval_error_count = 0
 
-  function run_eval(): boolean {
+  let run_dialog: Dialog | null = null
+  let running_progress_dialog: Dialog | null = null
+  let eval_run_error: KilnError | null = null
+
+  async function run_eval(): Promise<boolean> {
     if (!run_url) {
-      eval_run_error = new KilnError(
-        "Select all options needed to run the eval",
-        null,
-      )
+      eval_run_error = new KilnError("No run URL provided", null)
       eval_state = "complete_with_errors"
       // True to close the run dialog, and then show the error in the progress dialog
       running_progress_dialog?.show()
@@ -71,7 +69,10 @@
       on_run_complete()
     }
 
-    // Switch over to the progress dialog, closing the run dialog
+    // Wait a moment to ensure dialog is properly closed before showing progress
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    // Switch over to the progress dialog
     running_progress_dialog?.show()
     return true
   }
@@ -109,15 +110,22 @@
   <button
     class="btn {btn_size === 'mid'
       ? 'btn-mid'
-      : ''} btn-primary whitespace-nowrap"
-    on:click={() => {
+      : btn_size === 'sm'
+        ? 'btn-sm'
+        : ''} btn-primary whitespace-nowrap"
+    on:click|stopPropagation={() => {
       run_dialog?.show()
-    }}>Run Eval</button
+    }}
+    disabled={!run_url}>{button_text}</button
   >
 {:else}
   <button
-    class="btn {btn_size === 'mid' ? 'btn-mid' : ''} whitespace-nowrap"
-    on:click={() => {
+    class="btn {btn_size === 'mid'
+      ? 'btn-mid'
+      : btn_size === 'sm'
+        ? 'btn-sm'
+        : ''} whitespace-nowrap"
+    on:click|stopPropagation={() => {
       running_progress_dialog?.show()
     }}
   >
@@ -136,7 +144,7 @@
 
 <Dialog
   bind:this={running_progress_dialog}
-  title=""
+  title="Running Evaluation"
   action_buttons={run_dialog_buttons(eval_state)}
 >
   <div
@@ -192,7 +200,7 @@
     },
     {
       label: "Run Eval",
-      action: run_eval,
+      asyncAction: run_eval,
       isPrimary: true,
     },
   ]}

@@ -349,7 +349,9 @@
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
-  $: run_eval_url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
+  $: run_eval_url = current_eval_config_id
+    ? `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
+    : ""
 
   let task_run_config_model_name = ""
   let task_run_config_provider_name = ""
@@ -468,6 +470,53 @@
       eval_error = createKilnError(error)
     }
   }
+
+  let delete_dialog: Dialog | null = null
+  let delete_url: string | null = null
+  let after_delete: (() => void) | null = null
+
+  function show_delete_dialog(run_config_id: string) {
+    if (!run_config_id) return
+    delete_url = `/api/projects/${project_id}/tasks/${task_id}/task_run_config/${run_config_id}`
+    after_delete = () => {
+      get_task_run_configs()
+    }
+    delete_dialog?.show()
+  }
+
+  async function handleDelete() {
+    if (!delete_url) {
+      return false
+    }
+    try {
+      const { error } = await client.DELETE(
+        "/api/projects/{project_id}/tasks/{task_id}/task_run_config/{run_config_id}",
+        {
+          params: {
+            path: {
+              project_id: project_id,
+              task_id: task_id,
+              run_config_id: delete_url.split("/").pop() || "",
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      if (after_delete) {
+        after_delete()
+      }
+      return true
+    } catch (error) {
+      const errorMessage =
+        error && typeof error === "object" && "message" in error
+          ? String(error.message)
+          : "Unknown error"
+      eval_error = new KilnError("Failed to delete run method", [errorMessage])
+      return false
+    }
+  }
 </script>
 
 <AppPage
@@ -584,6 +633,7 @@
               on_run_complete={() => {
                 get_score_summary()
               }}
+              button_text="Run All"
             />
           </div>
         </div>
@@ -636,15 +686,16 @@
                 {@const percent_complete =
                   score_summary?.run_config_percent_complete?.[
                     "" + task_run_config.id
-                  ]}{@const prompt_name =
-                  task_run_config.prompt?.name ||
-                  prompt_name_from_id(
-                    task_run_config?.run_config_properties?.prompt_id,
-                    $current_task_prompts,
-                  )}
+                  ]}
                 <tr
                   class="hover cursor-pointer"
                   on:click={() => {
+                    // Don't navigate if any modal dialogs are open
+                    const openModals = document.querySelectorAll("dialog[open]")
+                    if (openModals.length > 0) {
+                      return
+                    }
+
                     goto(
                       `/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`,
                     )
@@ -668,13 +719,19 @@
                         )}
                         <InfoTooltip
                           tooltip_text={'The exact prompt was saved under the name "' +
-                            prompt_name +
+                            prompt_name_from_id(
+                              task_run_config?.prompt?.generator_id,
+                              $current_task_prompts,
+                            ) +
                             '". See the Prompt tab for details.'}
                           position="right"
                           no_pad={true}
                         />
                       {:else}
-                        {prompt_name}
+                        {prompt_name_from_id(
+                          task_run_config?.run_config_properties?.prompt_id,
+                          $current_task_prompts,
+                        )}
                       {/if}
                     </div>
                     <div class="text-sm text-gray-500">
@@ -688,37 +745,59 @@
                     </div>
                     {#if percent_complete}
                       {#if percent_complete < 1.0}
-                        <div class="text-sm 'text-error'">
-                          Progress: {(percent_complete * 100.0).toFixed(1)}%
+                        <div class="text-sm text-error">
+                          Progress: {(percent_complete * 100).toFixed(2)}%
                         </div>
                       {/if}
                     {:else if score_summary}
-                      <!-- We have results, but not for this run config -->
                       <div class="text-sm text-error">Progress: 0%</div>
                     {/if}
-                    {#if task_run_config.id == evaluator.current_run_config_id}
+                    <div class="flex flex-row gap-2 mt-2">
+                      {#if task_run_config.id == evaluator.current_run_config_id}
+                        <button
+                          class="badge badge-primary"
+                          on:click={(event) => {
+                            event.stopPropagation()
+                            set_current_run_config("None")
+                          }}
+                        >
+                          Default <span class="pl-2">&#x2715;</span>
+                        </button>
+                      {:else}
+                        <button
+                          class="badge {focus_select_eval_config
+                            ? 'badge-primary'
+                            : 'badge-secondary badge-outline'}"
+                          on:click={(event) => {
+                            event.stopPropagation()
+                            set_current_run_config(task_run_config.id)
+                          }}
+                        >
+                          Set as default
+                        </button>
+                      {/if}
+                      <RunEval
+                        btn_size="sm"
+                        run_url={task_run_config.id && current_eval_config_id
+                          ? `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?run_config_ids=${encodeURIComponent(task_run_config.id)}&all_run_configs=false`
+                          : ""}
+                        on_run_complete={() => {
+                          get_score_summary()
+                        }}
+                        button_text="Run"
+                      />
                       <button
-                        class="badge badge-primary mt-2"
+                        class="btn btn-sm btn-error"
                         on:click={(event) => {
                           event.stopPropagation()
-                          set_current_run_config("None")
+                          if (task_run_config.id) {
+                            show_delete_dialog(task_run_config.id)
+                          }
                         }}
                       >
-                        Default <span class="pl-2">&#x2715;</span>
+                        Delete
                       </button>
-                    {:else}
-                      <button
-                        class="badge mt-1 {focus_select_eval_config
-                          ? 'badge-primary'
-                          : 'badge-secondary badge-outline'}"
-                        on:click={(event) => {
-                          event.stopPropagation()
-                          set_current_run_config(task_run_config.id)
-                        }}
-                      >
-                        Set as default
-                      </button>
-                    {/if}
+                    </div>
                   </td>
                   {#each evaluator.output_scores as output_score}
                     {@const score =
@@ -802,5 +881,26 @@
         {add_task_config_error.getMessage() || "An unknown error occurred"}
       </div>
     {/if}
+  </div>
+</Dialog>
+
+<Dialog
+  bind:this={delete_dialog}
+  title="Delete Run Method"
+  action_buttons={[
+    {
+      label: "Cancel",
+      isCancel: true,
+    },
+    {
+      label: "Delete",
+      isPrimary: true,
+      asyncAction: handleDelete,
+    },
+  ]}
+>
+  <div class="text-sm text-gray-500">
+    Are you sure you want to delete this run method? This action cannot be
+    undone.
   </div>
 </Dialog>
