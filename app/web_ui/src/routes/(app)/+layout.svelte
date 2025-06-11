@@ -15,6 +15,8 @@
   enum Section {
     Dataset,
     Documents,
+    DocumentManagement,
+    DocumentExtractors,
     SettingsMain,
     SettingsProviders,
     SettingsManageProjects,
@@ -73,8 +75,18 @@
       section = Section.Prompts
     } else if (path_start("/evals", $page.url.pathname)) {
       section = Section.Evals
-    } else if (path_start("/documents", $page.url.pathname)) {
+    } else if (/\/documents[^/]+$/.test($page.url.pathname)) {
       section = Section.Documents
+    } else if (
+      // regex to match documents/xyz/documents
+      /\/documents\/[^/]+\/documents/.test($page.url.pathname)
+    ) {
+      section = Section.DocumentManagement
+    } else if (
+      // regex to match documents/xyz/extractors
+      /\/documents\/[^/]+\/extractors/.test($page.url.pathname)
+    ) {
+      section = Section.DocumentExtractors
     } else {
       section = Section.None
     }
@@ -423,6 +435,24 @@
           </svg>
           Documents</a
         >
+        <ul class="py-2 ml-6">
+          <li class="menu-nested-sm {$current_task?.id ? '' : 'hidden'}">
+            <a
+              class={section == Section.DocumentManagement ? "active" : ""}
+              href={`/documents/${$ui_state.current_project_id}/documents`}
+            >
+              All Documents
+            </a>
+          </li>
+          <li class="menu-nested-sm">
+            <a
+              class={section == Section.DocumentExtractors ? "active" : ""}
+              href={`/documents/${$ui_state.current_project_id}/extractors`}
+            >
+              Document Extractors
+            </a>
+          </li>
+        </ul>
       </li>
 
       <li class="menu-lg">
