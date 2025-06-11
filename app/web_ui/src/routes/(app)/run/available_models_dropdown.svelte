@@ -76,7 +76,10 @@
               ) {
                 continue
               }
-              recent_model_list.push([model_id, model.name])
+              recent_model_list.push([
+                model_id,
+                provider.provider_name + " / " + model.name,
+              ])
               break
             }
           }
@@ -121,9 +124,13 @@
         }
         let model_name = model.name
         if (suggested_mode === "data_gen" && model.suggested_for_data_gen) {
-          model_name = model.name + "  —  Recommended"
+          model_name =
+            provider.provider_name + " / " + model.name + "  —  Recommended"
         } else if (suggested_mode === "evals" && model.suggested_for_evals) {
-          model_name = model.name + "  —  Recommended"
+          model_name =
+            provider.provider_name + " / " + model.name + "  —  Recommended"
+        } else {
+          model_name = provider.provider_name + " / " + model.name
         }
         model_list.push([id, model_name])
       }
