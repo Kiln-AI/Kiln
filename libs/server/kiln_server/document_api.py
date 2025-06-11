@@ -8,6 +8,9 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from kiln_ai.adapters.extractors.extraction_prompt_builder import (
+    ExtractionPromptBuilder,
+)
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
@@ -20,7 +23,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from kiln_server.project_api import project_from_id
 
@@ -69,15 +72,6 @@ class CreateDocumentRequest(BaseModel):
     description: str
 
 
-class CreateExtractorConfigRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    output_format: OutputFormat
-    passthrough_mimetypes: list[OutputFormat]
-    extractor_type: ExtractorType
-    properties: dict[str, str | int | float | bool | dict[str, str]]
-
-
 class ExtractionWithOutput(BaseModel):
     extraction: Extraction
     output: str
@@ -95,6 +89,88 @@ class ExtractionProgress(BaseModel):
     document_count_total: int
     document_count_successful: int
     current_extractor_config: ExtractorConfig | None
+
+
+class CreateExtractorConfigRequest(BaseModel):
+    name: str = Field(
+        description="The name of the extractor config",
+    )
+    description: str | None = Field(
+        description="The description of the extractor config",
+        default=None,
+    )
+    output_format: OutputFormat = Field(
+        description="The output format of the extractor config",
+    )
+    passthrough_mimetypes: list[OutputFormat] = Field(
+        description="The mimetypes to pass through to the extractor",
+        default_factory=list,
+    )
+    extractor_type: ExtractorType = Field(
+        description="The type of the extractor",
+    )
+    properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
+        default={},
+    )
+
+    @model_validator(mode="before")
+    def set_default_name(cls, values: dict) -> dict:
+        if values.get("name") is None:
+            values["name"] = generate_memorable_name()
+        return values
+
+    @model_validator(mode="after")
+    def set_default_properties(self):
+        if not isinstance(self.properties, dict):
+            raise ValueError("Properties must be a dictionary")
+
+        match self.extractor_type:
+            case ExtractorType.GEMINI:
+                self.properties = gemini_properties_with_defaults(self)
+            case _:
+                pass
+
+        return self
+
+
+def gemini_properties_with_defaults(
+    request: CreateExtractorConfigRequest,
+) -> dict[str, str | int | float | bool | dict[str, str] | None]:
+    def with_default(key: str, default: str) -> str:
+        value = request.properties.get(key)
+        if value is None or value == "":
+            return default
+        if not isinstance(value, str):
+            raise ValueError(f"Prompt for {key} must be a string")
+        return value
+
+    return {
+        "model_name": with_default("model_name", ""),
+        "prompt_document": with_default(
+            "prompt_document",
+            ExtractionPromptBuilder.prompt_for_kind(
+                kind=Kind.DOCUMENT, output_format=request.output_format
+            ),
+        ),
+        "prompt_image": with_default(
+            "prompt_image",
+            ExtractionPromptBuilder.prompt_for_kind(
+                kind=Kind.IMAGE, output_format=request.output_format
+            ),
+        ),
+        "prompt_video": with_default(
+            "prompt_video",
+            ExtractionPromptBuilder.prompt_for_kind(
+                kind=Kind.VIDEO, output_format=request.output_format
+            ),
+        ),
+        "prompt_audio": with_default(
+            "prompt_audio",
+            ExtractionPromptBuilder.prompt_for_kind(
+                kind=Kind.AUDIO, output_format=request.output_format
+            ),
+        ),
+    }
 
 
 def connect_document_api(app: FastAPI):
@@ -216,77 +292,16 @@ def connect_document_api(app: FastAPI):
         request: CreateExtractorConfigRequest,
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
-        request.name = request.name or generate_memorable_name()
 
-        # TODO: refactor prompt_for_kind into flat properties like prompt_document, prompt_image, etc.
-        # will be easier for defaults, easier for UI, etc.
-        match request.extractor_type:
-            case ExtractorType.GEMINI:
-                output_format = request.output_format or OutputFormat.MARKDOWN
-                DEFAULT_PROMPT_FOR_KIND = {
-                    Kind.DOCUMENT: f"""Transcribe the document into {output_format.value}.
-If the document contains images and figures, describe them in the output. For example, if the
-document contains an image, describe it in the output. If the document contains a table, format it 
-appropriately and add a sentence describing it as a whole.
-
-Format the output as valid {output_format.value}.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the document:'.
-""",
-                    Kind.IMAGE: f"""Describe the image in {output_format.value}.
-If the image contains text, transcribe it into {output_format.value}.
-
-Do NOT include any prefatory text such as 'Here is the description of the image:'.
-""",
-                    Kind.VIDEO: f"""Describe what happens in the video in {output_format.value}.
-Take into account the audio as well as the visual content. Your transcription must chronologically
-describe the events in the video and transcribe any speech.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the video:'.
-""",
-                    Kind.AUDIO: f"""Transcribe the audio into {output_format.value}.
-If the audio contains speech, transcribe it into {output_format.value}.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the audio:'.
-""",
-                }
-
-                user_prompts: dict[str, str] = (
-                    request.properties.get("prompt_for_kind") or {}  # type: ignore
-                )
-                # parse string keys into Kind enums if needed
-                parsed_user_prompts = {
-                    Kind(k) if isinstance(k, str) else k: v
-                    for k, v in user_prompts.items()
-                }
-
-                # filter the empty string prompts
-                parsed_user_prompts = {
-                    k: v for k, v in parsed_user_prompts.items() if v and v.strip()
-                }
-
-                prompt_for_kind: dict[str, str] = {
-                    **DEFAULT_PROMPT_FOR_KIND,
-                    **parsed_user_prompts,
-                }
-                model_name = request.properties.get("model_name")
-                if model_name is None:
-                    model_name = "gemini-2.0-flash"
-                extractor_config = ExtractorConfig(
-                    parent=project,
-                    name=request.name or "",
-                    description=request.description or "",
-                    output_format=output_format,
-                    passthrough_mimetypes=request.passthrough_mimetypes or [],
-                    extractor_type=request.extractor_type,
-                    properties={
-                        "prompt_for_kind": prompt_for_kind,
-                        "model_name": model_name,
-                    },
-                )
-            case _:
-                raise ValueError(f"Invalid extractor type: {request.extractor_type}")
-
+        extractor_config = ExtractorConfig(
+            parent=project,
+            name=request.name,
+            description=request.description,
+            output_format=request.output_format,
+            passthrough_mimetypes=request.passthrough_mimetypes,
+            extractor_type=request.extractor_type,
+            properties=request.properties,
+        )
         extractor_config.save_to_file()
 
         return extractor_config
