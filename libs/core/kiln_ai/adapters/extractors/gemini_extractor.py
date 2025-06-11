@@ -69,16 +69,30 @@ class GeminiExtractor(BaseExtractor):
         if model_name is None:
             raise ValueError("properties.model_name is required for GeminiExtractor")
 
-        prompt_for_kind = extractor_config.prompt_for_kind()
-        if prompt_for_kind is None:
+        prompt_document = extractor_config.prompt_document()
+        if prompt_document is None or prompt_document == "":
             raise ValueError(
-                "properties.prompt_for_kind is required for GeminiExtractor"
+                "properties.prompt_document is required for GeminiExtractor"
             )
+        prompt_video = extractor_config.prompt_video()
+        if prompt_video is None or prompt_video == "":
+            raise ValueError("properties.prompt_video is required for GeminiExtractor")
+        prompt_audio = extractor_config.prompt_audio()
+        if prompt_audio is None or prompt_audio == "":
+            raise ValueError("properties.prompt_audio is required for GeminiExtractor")
+        prompt_image = extractor_config.prompt_image()
+        if prompt_image is None or prompt_image == "":
+            raise ValueError("properties.prompt_image is required for GeminiExtractor")
 
         super().__init__(extractor_config)
         self.gemini_client = gemini_client
         self.model_name = model_name
-        self.prompt_for_kind = prompt_for_kind
+        self.prompt_for_kind = {
+            Kind.DOCUMENT: prompt_document,
+            Kind.VIDEO: prompt_video,
+            Kind.AUDIO: prompt_audio,
+            Kind.IMAGE: prompt_image,
+        }
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():

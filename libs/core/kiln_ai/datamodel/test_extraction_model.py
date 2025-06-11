@@ -13,7 +13,7 @@ from kiln_ai.datamodel.extraction import (
     Kind,
     OutputFormat,
     validate_model_name,
-    validate_prompt_for_kind,
+    validate_prompt,
 )
 from kiln_ai.datamodel.project import Project
 
@@ -25,12 +25,10 @@ def valid_extractor_config_data():
         "description": "Test description",
         "extractor_type": ExtractorType.GEMINI,
         "properties": {
-            "prompt_for_kind": {
-                "document": "Transcribe the document.",
-                "audio": "Transcribe the audio.",
-                "video": "Transcribe the video.",
-                "image": "Describe the image.",
-            },
+            "prompt_document": "Transcribe the document.",
+            "prompt_audio": "Transcribe the audio.",
+            "prompt_video": "Transcribe the video.",
+            "prompt_image": "Describe the image.",
             "model_name": "gemini-2.0-flash",
         },
     }
@@ -42,12 +40,10 @@ def valid_extractor_config(valid_extractor_config_data):
 
 
 def test_extractor_config_kind_coercion(valid_extractor_config):
-    # check that the string values are coerced to the correct kind
-    prompt_for_kind = valid_extractor_config.prompt_for_kind()
-    assert prompt_for_kind.get(Kind.DOCUMENT) == "Transcribe the document."
-    assert prompt_for_kind.get(Kind.AUDIO) == "Transcribe the audio."
-    assert prompt_for_kind.get(Kind.VIDEO) == "Transcribe the video."
-    assert prompt_for_kind.get(Kind.IMAGE) == "Describe the image."
+    assert valid_extractor_config.prompt_document() == "Transcribe the document."
+    assert valid_extractor_config.prompt_audio() == "Transcribe the audio."
+    assert valid_extractor_config.prompt_video() == "Transcribe the video."
+    assert valid_extractor_config.prompt_image() == "Describe the image."
 
 
 def test_extractor_config_description_empty(valid_extractor_config_data):
@@ -61,17 +57,18 @@ def test_extractor_config_valid(valid_extractor_config):
     assert valid_extractor_config.name == "Test Extractor Config"
     assert valid_extractor_config.description == "Test description"
     assert valid_extractor_config.extractor_type == ExtractorType.GEMINI
-    assert valid_extractor_config.properties["prompt_for_kind"] == {
-        "document": "Transcribe the document.",
-        "audio": "Transcribe the audio.",
-        "video": "Transcribe the video.",
-        "image": "Describe the image.",
-    }
+    assert (
+        valid_extractor_config.properties["prompt_document"]
+        == "Transcribe the document."
+    )
+    assert valid_extractor_config.properties["prompt_audio"] == "Transcribe the audio."
+    assert valid_extractor_config.properties["prompt_video"] == "Transcribe the video."
+    assert valid_extractor_config.properties["prompt_image"] == "Describe the image."
     assert valid_extractor_config.properties["model_name"] == "gemini-2.0-flash"
 
 
 def test_extractor_config_empty_properties(valid_extractor_config):
-    with pytest.raises(ValueError, match="prompt_for_kind must be a dictionary"):
+    with pytest.raises(ValueError, match="model_name must be a string"):
         valid_extractor_config.properties = {}
 
 
@@ -80,9 +77,12 @@ def test_extractor_config_missing_model_name(
 ):
     with pytest.raises(ValueError, match="model_name must be a string"):
         valid_extractor_config.properties = {
-            "prompt_for_kind": valid_extractor_config_data["properties"][
-                "prompt_for_kind"
+            "prompt_document": valid_extractor_config_data["properties"][
+                "prompt_document"
             ],
+            "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
+            "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
+            "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
         }
 
 
@@ -91,18 +91,18 @@ def test_extractor_config_empty_model_name(
 ):
     with pytest.raises(ValueError, match="model_name cannot be empty"):
         valid_extractor_config.properties = {
-            "prompt_for_kind": valid_extractor_config_data["properties"][
-                "prompt_for_kind"
+            "prompt_document": valid_extractor_config_data["properties"][
+                "prompt_document"
             ],
+            "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
+            "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
+            "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
             "model_name": "",
         }
 
 
-def test_extractor_config_missing_prompt_for_kind(valid_extractor_config):
-    with pytest.raises(
-        ValueError,
-        match="prompt_for_kind must be a dictionary",
-    ):
+def test_extractor_config_missing_prompts(valid_extractor_config):
+    with pytest.raises(ValueError, match="prompt_document must be a string"):
         valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
 
 
@@ -114,37 +114,35 @@ def test_extractor_config_invalid_json(
 
     with pytest.raises(ValueError, match="validation errors for ExtractorConfig"):
         valid_extractor_config.properties = {
-            "prompt_for_kind": valid_extractor_config_data["properties"][
-                "prompt_for_kind"
+            "prompt_document": valid_extractor_config_data["properties"][
+                "prompt_document"
             ],
+            "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
+            "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
+            "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
             "model_name": "gemini-2.0-flash",
             "invalid_key": InvalidClass(),
         }
 
 
-def test_extractor_config_invalid_prompt_for_kind(valid_extractor_config):
-    with pytest.raises(
-        ValueError,
-        match="prompt_for_kind must be a dictionary",
-    ):
+def test_extractor_config_invalid_prompt(valid_extractor_config):
+    with pytest.raises(ValueError, match="prompt_document must be a string"):
         valid_extractor_config.properties = {
-            "prompt_for_kind": "not a dict",
+            "prompt_document": 123,
+            "prompt_audio": "Transcribe the audio.",
+            "prompt_video": "Transcribe the video.",
+            "prompt_image": "Describe the image.",
             "model_name": "gemini-2.0-flash",
         }
 
 
-def test_extractor_config_incomplete_prompt_for_kind(valid_extractor_config):
-    with pytest.raises(
-        ValueError,
-        match="Missing prompt for kind: 'image'",
-    ):
+def test_extractor_config_missing_single_prompt(valid_extractor_config):
+    with pytest.raises(ValueError, match="prompt_image must be a string"):
         valid_extractor_config.properties = {
-            "prompt_for_kind": {
-                "document": "Transcribe the document.",
-                "audio": "Transcribe the audio.",
-                "video": "Transcribe the video.",
-                # missing image
-            },
+            "prompt_document": "Transcribe the document.",
+            "prompt_audio": "Transcribe the audio.",
+            "prompt_video": "Transcribe the video.",
+            # missing image
             "model_name": "gemini-2.0-flash",
         }
 
@@ -189,54 +187,21 @@ def test_invalid_passthrough_mimetypes(
         ExtractorConfig(**config_data)
 
 
-def test_validate_prompt_for_kind_valid():
-    # check should not raise an error
-    validate_prompt_for_kind(
-        {
-            "document": "string",
-            "audio": "string",
-            "video": "string",
-            "image": "string",
-        }
-    )
+def test_validate_prompt_valid():
+    # should not raise an error
+    validate_prompt("Transcribe the document.", "prompt_document")
 
 
 @pytest.mark.parametrize(
-    "prompt_for_kind, expected_error_message",
+    "value, expected_error",
     [
-        ("not a dict", "prompt_for_kind must be a dictionary"),
-        (
-            {"invalid_kind": "not a prompt"},
-            "Invalid kind in prompt_for_kind: 'invalid_kind'",
-        ),
-        (
-            {"document": 123},
-            "Invalid prompt for kind: 'document'. Prompt must be a string.",
-        ),
-        (
-            {
-                "document": "string",
-                "audio": "string",
-                "video": "string",
-                # missing image
-            },
-            "Missing prompt for kind: 'image'",
-        ),
-        (
-            {
-                "document": "string",
-                "audio": "string",
-                "video": "string",
-                "image": "string",
-                "invalid_kind": "string",
-            },
-            "Invalid kind in prompt_for_kind: 'invalid_kind'",
-        ),
+        (123, "prompt_document must be a string"),
+        ("", "prompt_document cannot be empty"),
     ],
 )
-def test_validate_prompt_for_kind_errors(prompt_for_kind, expected_error_message):
-    with pytest.raises(ValueError, match=expected_error_message):
-        validate_prompt_for_kind(prompt_for_kind)
+def test_validate_prompt_errors(value, expected_error):
+    with pytest.raises(ValueError, match=expected_error):
+        validate_prompt(value, "prompt_document")
 
 
 def test_validate_model_name_valid():
@@ -278,12 +243,10 @@ def mock_extractor_config_factory(mock_project):
             description="Test description",
             extractor_type=ExtractorType.GEMINI,
             properties={
-                "prompt_for_kind": {
-                    "document": "Transcribe the document.",
-                    "audio": "Transcribe the audio.",
-                    "video": "Transcribe the video.",
-                    "image": "Describe the image.",
-                },
+                "prompt_document": "Transcribe the document.",
+                "prompt_audio": "Transcribe the audio.",
+                "prompt_video": "Transcribe the video.",
+                "prompt_image": "Describe the image.",
                 "model_name": "gemini-2.0-flash",
             },
             parent=mock_project,

@@ -35,7 +35,10 @@ def mock_gemini_extractor(mock_gemini_client):
             name="mock",
             extractor_type=ExtractorType.GEMINI,
             properties={
-                "prompt_for_kind": PROMPTS_FOR_KIND,
+                "prompt_document": PROMPTS_FOR_KIND["document"],
+                "prompt_image": PROMPTS_FOR_KIND["image"],
+                "prompt_video": PROMPTS_FOR_KIND["video"],
+                "prompt_audio": PROMPTS_FOR_KIND["audio"],
                 "model_name": "fake-model",
             },
         ),
@@ -217,12 +220,10 @@ def paid_gemini_extractor(model_name: str):
             extractor_type=ExtractorType.GEMINI,
             properties={
                 "model_name": model_name,
-                "prompt_for_kind": {
-                    "document": "Return a short paragraph summarizing the document. Start your answer with the word 'Document summary:'.",
-                    "image": "Return a short paragraph summarizing the image. Start your answer with the word 'Image summary:'.",
-                    "video": "Return a short paragraph summarizing the video. Start your answer with the word 'Video summary:'.",
-                    "audio": "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
-                },
+                "prompt_document": "Return a short paragraph summarizing the document. Start your answer with the word 'Document summary:'.",
+                "prompt_image": "Return a short paragraph summarizing the image. Start your answer with the word 'Image summary:'.",
+                "prompt_video": "Return a short paragraph summarizing the video. Start your answer with the word 'Video summary:'.",
+                "prompt_audio": "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
             },
             passthrough_mimetypes=[
                 OutputFormat.TEXT,
