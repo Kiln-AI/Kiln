@@ -71,9 +71,7 @@
 
 <AppPage
   title="Create Document Extractor"
-  sub_subtitle="Create a new document extractor"
-  sub_subtitle_link="#"
-  no_y_padding
+  sub_subtitle="Create a new document extractor that can extract content from files according to your configuration."
   action_buttons={[]}
 >
   {#if loading}
@@ -81,7 +79,7 @@
       <div class="loading loading-spinner loading-lg"></div>
     </div>
   {:else}
-    <div class="my-4">
+    <div>
       <FormContainer
         submit_visible={true}
         submit_label="Create Extractor"
