@@ -186,7 +186,6 @@
   title="Document"
   subtitle={`${document?.name} (${document?.original_file.filename})`}
   sub_subtitle={document?.description}
-  no_y_padding
   action_buttons={[
     {
       icon: "/images/download.svg",
@@ -274,7 +273,7 @@
                     <td>
                       <a
                         href={`/documents/${project_id}/extractors/${extraction.extractor_config_id}/extractor`}
-                        class="link link-primary flex flex-row items-center"
+                        class="link flex flex-row items-center"
                         target="_blank"
                       >
                         <span class="font-mono text-gray-500">

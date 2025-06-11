@@ -9,7 +9,6 @@
   title="Documents"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="#"
-  no_y_padding
   action_buttons={[]}
 >
   <div class="mt-4 grid grid-cols-1 gap-2">

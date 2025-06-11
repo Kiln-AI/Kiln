@@ -173,7 +173,6 @@
   subtitle="Manage your document extractors"
   sub_subtitle="Read the docs"
   sub_subtitle_link="#"
-  no_y_padding
   action_buttons={[
     {
       label: "Add Extractor",
@@ -207,7 +206,12 @@
               <tr>
                 <td class="flex flex-col gap-1">
                   <div class="font-medium">
-                    {extractor_config.name}
+                    <a
+                      href={`/documents/${project_id}/extractors/${extractor_config.id}/extractor`}
+                      class="link"
+                    >
+                      {extractor_config.name}
+                    </a>
                   </div>
 
                   <div class="text-sm text-gray-500">
