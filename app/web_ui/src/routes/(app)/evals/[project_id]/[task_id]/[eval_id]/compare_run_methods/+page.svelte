@@ -251,15 +251,113 @@
   // Filter state
   let filter_models: string[] = []
 
+  // Sort state
+  let sortColumn: "created_at" | "score" | "name" | string | null = "score"
+  let sortDirection: "asc" | "desc" = "desc"
+
+  // Make sort state reactive
+  $: sortState = { column: sortColumn, direction: sortDirection }
+
   // Sort task run configs - default first, then by last output score
   $: sorted_task_run_configs = task_run_configs
-    ? sortTaskRunConfigs(task_run_configs, evaluator, score_summary)
+    ? sortTaskRunConfigs(
+        task_run_configs,
+        evaluator,
+        score_summary,
+        sortState.column,
+        sortState.direction,
+      )
     : []
 
   // Apply filters to sorted configs
   $: filtered_task_run_configs = sorted_task_run_configs
     ? applyFilters(sorted_task_run_configs, filter_models)
     : []
+
+  function sortTaskRunConfigs(
+    configs: TaskRunConfig[] | null,
+    evaluator: Eval | null,
+    score_summary: EvalResultSummary | null,
+    currentSortColumn: "created_at" | "score" | "name" | string | null,
+    currentSortDirection: "asc" | "desc",
+  ): TaskRunConfig[] {
+    if (!configs || !configs.length) return []
+
+    return [...configs].sort((a, b) => {
+      // Default run config always comes first
+      if (a.id === evaluator?.current_run_config_id) return -1
+      if (b.id === evaluator?.current_run_config_id) return 1
+
+      // If sorting by created_at
+      if (currentSortColumn === "created_at") {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+        return currentSortDirection === "asc" ? dateA - dateB : dateB - dateA
+      }
+
+      // If sorting by name
+      if (currentSortColumn === "name") {
+        return currentSortDirection === "asc"
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name)
+      }
+
+      // If sorting by a specific score column
+      if (evaluator?.output_scores && score_summary?.results) {
+        const scoreKey = string_to_json_key(currentSortColumn || "")
+        const scoreA = score_summary.results["" + a.id]?.[scoreKey]?.mean_score
+        const scoreB = score_summary.results["" + b.id]?.[scoreKey]?.mean_score
+
+        // If both have scores, sort by score
+        if (
+          scoreA !== null &&
+          scoreA !== undefined &&
+          scoreB !== null &&
+          scoreB !== undefined
+        ) {
+          return currentSortDirection === "asc"
+            ? scoreA - scoreB
+            : scoreB - scoreA
+        }
+
+        // If only one has a score, it comes first
+        if (scoreA !== null && scoreA !== undefined) return -1
+        if (scoreB !== null && scoreB !== undefined) return 1
+      }
+
+      // Fallback to sort by name if no scores available
+      return a.name.localeCompare(b.name)
+    })
+  }
+
+  function toggleSort(column: "created_at" | "score" | "name" | string) {
+    if (sortColumn === column) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc"
+    } else {
+      sortColumn = column
+      sortDirection = "desc"
+    }
+  }
+
+  function getSortHeaderClass(): string {
+    return "cursor-pointer hover:bg-gray-50"
+  }
+
+  function formatDate(dateString: string | undefined): string {
+    if (!dateString) return "Unknown"
+    const date = new Date(dateString)
+    const datePart = date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })
+    const timePart = date.toLocaleString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    })
+    return `${datePart}\n${timePart}`
+  }
 
   function applyFilters(
     configs: TaskRunConfig[],
@@ -283,49 +381,6 @@
       }
 
       return false
-    })
-  }
-
-  function sortTaskRunConfigs(
-    configs: TaskRunConfig[] | null,
-    evaluator: Eval | null,
-    score_summary: EvalResultSummary | null,
-  ): TaskRunConfig[] {
-    if (!configs || !configs.length) return []
-
-    return [...configs].sort((a, b) => {
-      // Default run config always comes first
-      if (a.id === evaluator?.current_run_config_id) return -1
-      if (b.id === evaluator?.current_run_config_id) return 1
-
-      // If we have evaluator and score summary, sort by the last output score
-      if (evaluator?.output_scores?.length && score_summary?.results) {
-        const lastScoreKey = string_to_json_key(
-          evaluator.output_scores[evaluator.output_scores.length - 1].name,
-        )
-
-        const scoreA =
-          score_summary.results["" + a.id]?.[lastScoreKey]?.mean_score
-        const scoreB =
-          score_summary.results["" + b.id]?.[lastScoreKey]?.mean_score
-
-        // If both have scores, sort by score (higher first)
-        if (
-          scoreA !== null &&
-          scoreA !== undefined &&
-          scoreB !== null &&
-          scoreB !== undefined
-        ) {
-          return scoreB - scoreA
-        }
-
-        // If only one has a score, it comes first
-        if (scoreA !== null && scoreA !== undefined) return -1
-        if (scoreB !== null && scoreB !== undefined) return 1
-      }
-
-      // Fallback to sort by name
-      return a.name.localeCompare(b.name)
     })
   }
 
@@ -870,13 +925,38 @@
           <table class="table">
             <thead>
               <tr>
-                <th>
-                  <div>Run Method</div>
+                <th
+                  class={getSortHeaderClass()}
+                  on:click={(e) => {
+                    e.stopPropagation()
+                    toggleSort("name")
+                  }}
+                >
+                  <div class="flex items-center gap-1">Run Method</div>
                   <div class="font-normal">How task output is generated</div>
                 </th>
+                <th
+                  class={`${getSortHeaderClass()} text-center`}
+                  on:click={(e) => {
+                    e.stopPropagation()
+                    toggleSort("created_at")
+                  }}
+                >
+                  <div class="flex items-center justify-center gap-1">
+                    Date Created
+                  </div>
+                </th>
                 {#each evaluator.output_scores as output_score}
-                  <th class="text-center">
-                    {output_score.name}
+                  <th
+                    class={`text-center ${getSortHeaderClass()}`}
+                    on:click={(e) => {
+                      e.stopPropagation()
+                      toggleSort(output_score.name)
+                    }}
+                  >
+                    <div class="flex items-center justify-center gap-1">
+                      {output_score.name}
+                    </div>
                     <OutputTypeTablePreview
                       output_score_type={output_score.type}
                     />
@@ -994,6 +1074,11 @@
                       >
                         Delete
                       </button>
+                    </div>
+                  </td>
+                  <td class="text-center whitespace-pre-line">
+                    <div class="flex flex-col items-center">
+                      {formatDate(task_run_config.created_at)}
                     </div>
                   </td>
                   {#each evaluator.output_scores as output_score}
