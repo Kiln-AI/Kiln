@@ -15,15 +15,6 @@
   let extractor_progress: Record<string, ExtractionProgress> = {}
   let error: KilnError | null = null
   let loading = true
-  let sortColumn = ($page.url.searchParams.get("sort") || "created_at") as
-    | keyof ExtractorConfig
-    | "id"
-    | "name"
-    | "description"
-    | "created_at"
-  let sortDirection = ($page.url.searchParams.get("order") || "desc") as
-    | "asc"
-    | "desc"
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
     10,
@@ -32,20 +23,10 @@
   $: {
     // Update based on live URL
     const url = new URL(window.location.href)
-    sortColumn = (url.searchParams.get("sort") ||
-      "created_at") as typeof sortColumn
-    sortDirection = (url.searchParams.get("order") ||
-      "desc") as typeof sortDirection
     page_number = parseInt(url.searchParams.get("page") || "1", 10)
-    sortExtractorConfigs()
   }
 
   $: project_id = $page.params.project_id
-
-  const columns = [
-    { key: "id", label: "ID" },
-    { key: "created_at", label: "Created At" },
-  ]
 
   onMount(async () => {
     get_extractor_configs()
@@ -70,7 +51,7 @@
         throw get_error
       }
       extractor_configs = extractor_configs_response
-      sortExtractorConfigs()
+      extractor_configs = sortExtractorConfigs(extractor_configs || [])
       await get_all_progress()
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
@@ -86,50 +67,17 @@
     }
   }
 
-  function sortFunction(a: ExtractorConfig, b: ExtractorConfig) {
-    let aValue: string | number | Date | null | undefined
-    let bValue: string | number | Date | null | undefined
-
-    switch (sortColumn) {
-      case "id":
-        aValue = a.id
-        bValue = b.id
-        break
-      case "created_at":
-        aValue = a.created_at
-        bValue = b.created_at
-        break
-      default:
-        return 0
-    }
-
-    if (!aValue) return sortDirection === "asc" ? 1 : -1
-    if (!bValue) return sortDirection === "asc" ? -1 : 1
-
-    if (aValue < bValue) return sortDirection === "asc" ? -1 : 1
-    if (aValue > bValue) return sortDirection === "asc" ? 1 : -1
-    return 0
-  }
-
-  function handleSort(columnString: string) {
-    const new_column = columnString as typeof sortColumn
-    let new_direction = "desc"
-    if (sortColumn === new_column) {
-      new_direction = sortDirection === "asc" ? "desc" : "asc"
-    } else {
-      new_direction = "desc"
-    }
-    updateURL({
-      sort: new_column,
-      order: new_direction,
+  function sortExtractorConfigs(extractor_configs: ExtractorConfig[] | null) {
+    if (!extractor_configs) return null
+    return extractor_configs.sort((a, b) => {
+      const aValue = a.created_at || ""
+      const bValue = b.created_at || ""
+      if (!bValue) return 1
+      if (!aValue) return -1
+      if (bValue < aValue) return -1
+      if (bValue > aValue) return 1
+      return 0
     })
-  }
-
-  function sortExtractorConfigs() {
-    if (!extractor_configs) return
-    extractor_configs = extractor_configs
-      ? [...extractor_configs].sort(sortFunction)
-      : null
   }
 
   function updateURL(params: Record<string, string | string[] | number>) {
@@ -146,20 +94,12 @@
     })
 
     // Update state manually
-    if (params.sort) {
-      sortColumn = params.sort as typeof sortColumn
-    }
-    if (params.order) {
-      sortDirection = params.order as typeof sortDirection
-    }
     if (params.page) {
       page_number = params.page as number
     }
 
     // Use replaceState to avoid adding new entries to history
     replaceState(url, {})
-
-    sortExtractorConfigs()
   }
 
   async function get_progress(extractor_config_id: string) {
@@ -182,17 +122,50 @@
   }
 
   async function get_all_progress() {
+    loading = true
     extractor_progress = {}
     await Promise.all(
       (extractor_configs || []).map((cfg) => get_progress(cfg.id || "")),
     )
+
+    // trigger reactive update
+    extractor_progress = extractor_progress
+    loading = false
   }
 
-  function completed_ratio(extractor_config_id: string) {
+  function status(
+    extractor_config_id: string,
+  ): "not_started" | "incomplete" | "complete" {
     const progress = extractor_progress[extractor_config_id]
-    if (!progress) return 0
-    return progress.document_count_successful / progress.document_count_total
+    if (progress.document_count_successful === 0) {
+      return "not_started"
+    }
+
+    if (progress.document_count_successful < progress.document_count_total) {
+      return "incomplete"
+    }
+
+    return "complete"
   }
+
+  function format_progress_percentage(progress: ExtractionProgress | null) {
+    if (!progress) {
+      return "0%"
+    }
+
+    if (progress.document_count_total === 0) {
+      return "0%"
+    }
+
+    return `${(
+      (progress.document_count_successful / progress.document_count_total) *
+      100
+    ).toFixed(1)}%`
+  }
+
+  $: status_map = Object.fromEntries(
+    Object.entries(extractor_progress).map(([id]) => [id, status(id)]),
+  )
 </script>
 
 <AppPage
@@ -223,26 +196,16 @@
         <table class="table">
           <thead>
             <tr>
-              {#each columns as { key, label }}
-                <th
-                  on:click={() => handleSort(key)}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  {label}
-                  {sortColumn === key
-                    ? sortDirection === "asc"
-                      ? "▲"
-                      : "▼"
-                    : ""}
-                </th>
-              {/each}
-              <th>Run</th>
+              <th></th>
+              <th>Type</th>
+              <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {#each (extractor_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as extractor_config}
               <tr>
-                <td class="flex flex-col gap-2">
+                <td class="flex flex-col gap-1">
                   <div class="font-medium">
                     {extractor_config.name}
                   </div>
@@ -252,52 +215,48 @@
                   </div>
 
                   <div class="text-sm text-gray-500">
-                    ID:{extractor_config.id}
-                  </div>
-
-                  <div class="text-sm text-gray-500">
                     Output: {extractor_config.output_format}
                   </div>
 
-                  {#if (completed_ratio(extractor_config.id || "") || 0) < 1}
-                    <div class="flex flex-col gap-1 text-error">
-                      <div>
-                        Progress: {(
-                          completed_ratio(extractor_config.id || "") * 100.0
-                        ).toFixed(1)}%
-                      </div>
-                      <div>
-                        {extractor_progress[extractor_config.id || ""]
-                          .document_count_successful} /
-                        {extractor_progress[extractor_config.id || ""]
-                          .document_count_total} documents
-                      </div>
-                    </div>
-                  {:else}
-                    <div class="flex flex-col gap-1 text-success">
-                      <div>
-                        Completed ({completed_ratio(extractor_config.id || "") *
-                          100}%)
-                      </div>
-                      <div>
-                        {extractor_progress[extractor_config.id || ""]
-                          .document_count_successful} /
-                        {extractor_progress[extractor_config.id || ""]
-                          .document_count_total} documents
-                      </div>
-                    </div>
-                  {/if}
+                  <div class="text-sm text-gray-500">
+                    Created: {formatDate(extractor_config.created_at)}
+                  </div>
                 </td>
-                <td>{formatDate(extractor_config.created_at)}</td>
-                {#if completed_ratio(extractor_config.id || "") < 1}
-                  <td>
+                <td>{extractor_config.extractor_type}</td>
+                <td>
+                  <div class="flex flex-col gap-1">
+                    {#if status_map[extractor_config.id || ""] == "complete"}
+                      <div
+                        class="badge badge-primary badge-outline py-3 font-medium"
+                      >
+                        Complete
+                      </div>
+                    {:else if status_map[extractor_config.id || ""] == "incomplete"}
+                      <div
+                        class="badge badge-error badge-outline py-3 font-medium"
+                      >
+                        Incomplete ({format_progress_percentage(
+                          extractor_progress[extractor_config.id || ""],
+                        )})
+                      </div>
+                    {:else if status_map[extractor_config.id || ""] == "not_started"}
+                      <div
+                        class="badge badge-warning badge-outline py-3 font-medium"
+                      >
+                        Not Started
+                      </div>
+                    {/if}
+                  </div>
+                </td>
+                <td>
+                  {#if status_map[extractor_config.id || ""] === "not_started" || status_map[extractor_config.id || ""] === "incomplete"}
                     <RunExtractor
                       btn_size="mid"
                       on_run_complete={() => get_all_progress()}
                       run_url={`${base_url}/api/projects/${project_id}/extractor_configs/${extractor_config.id}/run_extractor_config`}
                     />
-                  </td>
-                {/if}
+                  {/if}
+                </td>
               </tr>
             {/each}
           </tbody>
