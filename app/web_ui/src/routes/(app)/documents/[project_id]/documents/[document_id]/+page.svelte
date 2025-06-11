@@ -245,7 +245,7 @@
         <div class="block mt-4">
           <div class="text-2xl font-bold">Extractions</div>
           <div class="text-gray-500 text-sm">
-            An extraction is the result of a document processor running on a
+            An extraction is the result of a document extractor running on a
             document.
           </div>
           <div class="mt-4 text-sm text-gray-500">
@@ -260,7 +260,7 @@
                   <th>Created At</th>
                   <th>Created By</th>
                   <th>Source</th>
-                  <th>Processor ID</th>
+                  <th>Extractor ID</th>
                   <th>Output</th>
                 </tr>
               </thead>
@@ -273,7 +273,7 @@
                     <td>{extraction.source}</td>
                     <td>
                       <a
-                        href={`/documents/${project_id}/processors/${extraction.extractor_config_id}/processor`}
+                        href={`/documents/${project_id}/extractors/${extraction.extractor_config_id}/extractor`}
                         class="link link-primary flex flex-row items-center"
                         target="_blank"
                       >

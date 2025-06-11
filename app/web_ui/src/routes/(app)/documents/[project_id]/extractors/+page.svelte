@@ -177,7 +177,7 @@
   action_buttons={[
     {
       label: "Add Extractor",
-      href: `/documents/${project_id}/processors/create_processor`,
+      href: `/documents/${project_id}/extractors/create_extractor`,
       primary: true,
     },
   ]}
