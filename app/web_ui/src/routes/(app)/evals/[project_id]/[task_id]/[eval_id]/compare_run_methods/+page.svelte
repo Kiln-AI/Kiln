@@ -949,10 +949,10 @@
                     {:else if score_summary}
                       <div class="text-sm text-error">Progress: 0%</div>
                     {/if}
-                    <div class="flex flex-row gap-2 mt-2">
+                    <div class="flex flex-row gap-2 mt-2 items-center">
                       {#if task_run_config.id == evaluator.current_run_config_id}
                         <button
-                          class="badge badge-primary"
+                          class="badge badge-primary min-h-[2rem] h-auto px-3 py-1"
                           on:click={(event) => {
                             event.stopPropagation()
                             set_current_run_config("None")
@@ -964,7 +964,7 @@
                         <button
                           class="badge {focus_select_eval_config
                             ? 'badge-primary'
-                            : 'badge-secondary badge-outline'}"
+                            : 'badge-secondary badge-outline'} min-h-[2rem] h-auto px-3 py-1"
                           on:click={(event) => {
                             event.stopPropagation()
                             set_current_run_config(task_run_config.id)
@@ -984,7 +984,7 @@
                         button_text="Run"
                       />
                       <button
-                        class="btn btn-sm btn-error"
+                        class="btn btn-sm btn-error min-h-[2rem]"
                         on:click={(event) => {
                           event.stopPropagation()
                           if (task_run_config.id) {
