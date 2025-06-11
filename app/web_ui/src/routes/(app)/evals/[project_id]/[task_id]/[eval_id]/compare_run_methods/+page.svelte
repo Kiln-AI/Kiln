@@ -269,7 +269,8 @@
   let filter_models: string[] = []
 
   // Sort state
-  let sortColumn: "created_at" | "score" | "name" | string | null = "score"
+  let sortColumn: "created_at" | "score" | "name" | string | null =
+    "Overall Rating"
   let sortDirection: "asc" | "desc" = "desc"
 
   // Make sort state reactive
@@ -319,9 +320,14 @@
           : b.name.localeCompare(a.name)
       }
 
-      // If sorting by a specific score column
+      // If sorting by score (either "score" or a specific score column)
       if (evaluator?.output_scores && score_summary?.results) {
-        const scoreKey = string_to_json_key(currentSortColumn || "")
+        // If currentSortColumn is "score", use the first score column
+        const scoreKey =
+          currentSortColumn === "score"
+            ? string_to_json_key(evaluator.output_scores[0].name)
+            : string_to_json_key(currentSortColumn || "")
+
         const scoreA = score_summary.results["" + a.id]?.[scoreKey]?.mean_score
         const scoreB = score_summary.results["" + b.id]?.[scoreKey]?.mean_score
 
