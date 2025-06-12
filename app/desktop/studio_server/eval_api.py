@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, List, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.ml_model_list import ModelProviderName
@@ -394,15 +394,17 @@ def connect_evals_api(app: FastAPI):
         return task_run_config
 
     @app.delete(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config/{run_config_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/task_run_config/{run_config_id}",
+        status_code=204,
     )
     async def delete_task_run_config(
         project_id: str,
         task_id: str,
         run_config_id: str,
-    ) -> None:
+    ) -> Response:
         task_run_config = task_run_config_from_id(project_id, task_id, run_config_id)
         task_run_config.delete()
+        return Response(status_code=204)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"

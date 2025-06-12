@@ -494,7 +494,7 @@
   let add_task_config_dialog: Dialog | null = null
   let add_task_config_error: KilnError | null = null
   let delete_dialog: Dialog | null = null
-  let delete_url: string | null = null
+  let delete_run_config_id: string | null = null
   let after_delete: (() => void) | null = null
   let filter_dialog: Dialog | null = null
 
@@ -592,7 +592,7 @@
 
   function show_delete_dialog(run_config_id: string) {
     if (!run_config_id) return
-    delete_url = `/api/projects/${project_id}/tasks/${task_id}/task_run_config/${run_config_id}`
+    delete_run_config_id = run_config_id
     after_delete = () => {
       get_task_run_configs()
     }
@@ -600,7 +600,7 @@
   }
 
   async function handleDelete() {
-    if (!delete_url) {
+    if (!delete_run_config_id) {
       return false
     }
     try {
@@ -611,7 +611,7 @@
             path: {
               project_id: project_id,
               task_id: task_id,
-              run_config_id: delete_url.split("/").pop() || "",
+              run_config_id: delete_run_config_id,
             },
           },
         },
