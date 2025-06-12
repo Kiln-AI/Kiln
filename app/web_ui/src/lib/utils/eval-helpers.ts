@@ -167,8 +167,9 @@ export function sortTaskRunConfigs(
       if (scoreB !== null && scoreB !== undefined) return 1
     }
 
-    // Fallback to sort by name if no scores available
-    return a.name.localeCompare(b.name)
+    // Fallback to sort by name while respecting the requested order
+    const cmp = a.name.localeCompare(b.name)
+    return currentSortDirection === "asc" ? cmp : -cmp
   })
 }
 
