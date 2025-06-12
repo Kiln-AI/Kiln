@@ -72,11 +72,6 @@ class CreateDocumentRequest(BaseModel):
     description: str
 
 
-class ExtractionWithOutput(BaseModel):
-    extraction: Extraction
-    output: str
-
-
 class OpenFileResponse(BaseModel):
     path: str
 
@@ -89,6 +84,20 @@ class ExtractionProgress(BaseModel):
     document_count_total: int
     document_count_successful: int
     current_extractor_config: ExtractorConfig | None
+
+
+class ExtractorSummary(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    output_format: OutputFormat
+    passthrough_mimetypes: list[OutputFormat]
+    extractor_type: ExtractorType
+
+
+class ExtractionSummary(Extraction):
+    output: str
+    extractor: ExtractorSummary
 
 
 class CreateExtractorConfigRequest(BaseModel):
@@ -360,7 +369,7 @@ def connect_document_api(app: FastAPI):
     async def get_extractions(
         project_id: str,
         document_id: str,
-    ) -> list[Extraction]:
+    ) -> list[ExtractionSummary]:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
@@ -369,7 +378,28 @@ def connect_document_api(app: FastAPI):
                 detail="Document not found",
             )
 
-        return document.extractions()
+        extractor_configs: dict[str, ExtractorConfig] = {}
+        for extraction in document.extractions():
+            extractor_config = ExtractorConfig.from_id_and_parent_path(
+                str(extraction.extractor_config_id), project.path
+            )
+            if extractor_config:
+                extractor_configs[str(extraction.extractor_config_id)] = (
+                    extractor_config
+                )
+
+        return [
+            ExtractionSummary(
+                **extraction.model_dump(exclude={"output"}),
+                output=extraction.output_content() or "",
+                extractor=ExtractorSummary(
+                    **extractor_configs[str(extraction.extractor_config_id)].model_dump(
+                        exclude={"properties"}
+                    ),
+                ),
+            )
+            for extraction in document.extractions()
+        ]
 
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
@@ -378,7 +408,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         document_id: str,
         extraction_id: str,
-    ) -> ExtractionWithOutput:
+    ) -> ExtractionSummary:
         project = project_from_id(project_id)
 
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -395,8 +425,21 @@ def connect_document_api(app: FastAPI):
                 detail=f"Extraction {extraction_id} not found",
             )
 
-        return ExtractionWithOutput(
-            extraction=extraction, output=extraction.output_content() or ""
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            str(extraction.extractor_config_id), project.path
+        )
+        if not extractor_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extractor config {extraction.extractor_config_id} not found",
+            )
+
+        return ExtractionSummary(
+            **extraction.model_dump(exclude={"output"}),
+            output=extraction.output_content() or "",
+            extractor=ExtractorSummary(
+                **extractor_config.model_dump(exclude={"properties"}),
+            ),
         )
 
     @app.get("/api/projects/{project_id}/documents/{document_id}/discover_serve_file")
