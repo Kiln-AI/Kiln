@@ -325,8 +325,15 @@
         // If currentSortColumn is "score", use the first score column
         const scoreKey =
           currentSortColumn === "score"
-            ? string_to_json_key(evaluator.output_scores[0].name)
+            ? evaluator.output_scores.length
+              ? string_to_json_key(evaluator.output_scores[0].name)
+              : null
             : string_to_json_key(currentSortColumn || "")
+
+        // Skip score-based sorting if no score key is available
+        if (!scoreKey) {
+          return a.name.localeCompare(b.name)
+        }
 
         const scoreA = score_summary.results["" + a.id]?.[scoreKey]?.mean_score
         const scoreB = score_summary.results["" + b.id]?.[scoreKey]?.mean_score

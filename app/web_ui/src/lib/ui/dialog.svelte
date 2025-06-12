@@ -128,8 +128,10 @@
           <form method="dialog">
             <button
               class="btn btn-sm h-10 btn-outline min-w-24"
-              on:click|stopPropagation>Close</button
+              on:click|stopPropagation
             >
+              Close
+            </button>
           </form>
         {:else}
           {#each action_buttons as button}
@@ -137,8 +139,10 @@
               <form method="dialog">
                 <button
                   class="btn btn-sm h-10 btn-outline min-w-24"
-                  on:click|stopPropagation>{button.label || "Cancel"}</button
+                  on:click|stopPropagation
                 >
+                  {button.label || "Cancel"}
+                </button>
               </form>
             {:else}
               <button
