@@ -119,7 +119,11 @@
 
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
-  let finetune_base_models: Record<string, string> = {}
+  const finetune_base_models: Record<string, string> = {}
+  const finetune_base_model_promises: Record<
+    string,
+    Promise<string | null>
+  > = {}
 
   // Computed states
   $: loading =
@@ -253,7 +257,8 @@
 
       // Load finetune details after initial render
       if (data) {
-        await load_finetune_details(data, get_finetune_base_model)
+        // Don't await this - let it run in the background
+        load_finetune_details(data, get_finetune_base_model)
       }
     } catch (error) {
       task_run_config_state.error = createKilnError(error)
@@ -287,21 +292,28 @@
     model_name: string,
   ): Promise<string | null> {
     if (!isFinetuneModel(model_name)) return null
-    if (finetune_base_models[model_name])
+    if (finetune_base_models[model_name]) {
       return finetune_base_models[model_name]
-
-    const { baseModelId, error } = await getFinetuneBaseModel(model_name)
-    if (error) {
-      console.error("Error fetching finetune base model:", error)
-      return null
+    }
+    if (model_name in finetune_base_model_promises) {
+      return await finetune_base_model_promises[model_name]
     }
 
-    if (baseModelId) {
-      finetune_base_models[model_name] = baseModelId
-      return baseModelId
-    }
+    const promise = getFinetuneBaseModel(model_name).then(
+      ({ baseModelId, error }) => {
+        if (error) {
+          console.error("Error fetching finetune base model:", error)
+          return null
+        }
+        if (baseModelId) {
+          finetune_base_models[model_name] = baseModelId
+        }
+        return baseModelId
+      },
+    )
 
-    return null
+    finetune_base_model_promises[model_name] = promise
+    return await promise
   }
 
   async function handleDelete(): Promise<boolean> {
@@ -576,7 +588,7 @@
               data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run Eval' to generate missing results.`}
+                warning_message="Some evals are incomplete and should be excluded from analysis. Click 'Run Eval' to generate missing results."
                 tight={true}
               />
             </button>
