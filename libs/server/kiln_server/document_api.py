@@ -1,10 +1,13 @@
+import asyncio
+import datetime
 import json
 import logging
 import os
 import subprocess
 import sys
+from collections import defaultdict
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -28,6 +31,10 @@ from pydantic import BaseModel, Field, model_validator
 from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
+
+# keep track of locks by extractor config ID to prevent concurrent runs of the same extractor config
+# maps from extractor config ID -> lock
+run_extractor_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 def sanitize_name(name: str) -> str:
@@ -95,8 +102,13 @@ class ExtractorSummary(BaseModel):
     extractor_type: ExtractorType
 
 
-class ExtractionSummary(Extraction):
-    output: str
+class ExtractionSummary(BaseModel):
+    id: str
+    created_at: datetime.datetime
+    created_by: str
+    source: str
+    extractor_config_id: str
+    output_content: str
     extractor: ExtractorSummary
 
 
@@ -371,30 +383,31 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         extractor_config_id: str,
     ) -> StreamingResponse:
-        project = project_from_id(project_id)
-        extractor_config = ExtractorConfig.from_id_and_parent_path(
-            extractor_config_id, project.path
-        )
-        if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+        async with run_extractor_locks[extractor_config_id]:
+            project = project_from_id(project_id)
+            extractor_config = ExtractorConfig.from_id_and_parent_path(
+                extractor_config_id, project.path
+            )
+            if extractor_config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Extractor config not found",
+                )
+
+            if extractor_config.is_archived:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Extractor config is archived. You must unarchive it to use it.",
+                )
+
+            documents = project.documents()
+
+            extractor_runner = ExtractorRunner(
+                extractor_configs=[extractor_config],
+                documents=documents,
             )
 
-        if extractor_config.is_archived:
-            raise HTTPException(
-                status_code=422,
-                detail="Extractor config is archived. You must unarchive it to use it.",
-            )
-
-        documents = project.documents()
-
-        extractor_runner = ExtractorRunner(
-            extractor_configs=[extractor_config],
-            documents=documents,
-        )
-
-        return await run_extractor_runner_with_status(extractor_runner)
+            return await run_extractor_runner_with_status(extractor_runner)
 
     @app.get("/api/projects/{project_id}/documents/{document_id}/extractions")
     async def get_extractions(
@@ -422,7 +435,7 @@ def connect_document_api(app: FastAPI):
         return [
             ExtractionSummary(
                 **extraction.model_dump(exclude={"output"}),
-                output=extraction.output_content() or "",
+                output_content=extraction.output_content() or "",
                 extractor=ExtractorSummary(
                     **extractor_configs[str(extraction.extractor_config_id)].model_dump(
                         exclude={"properties"}
@@ -467,7 +480,7 @@ def connect_document_api(app: FastAPI):
 
         return ExtractionSummary(
             **extraction.model_dump(exclude={"output"}),
-            output=extraction.output_content() or "",
+            output_content=extraction.output_content() or "",
             extractor=ExtractorSummary(
                 **extractor_config.model_dump(exclude={"properties"}),
             ),

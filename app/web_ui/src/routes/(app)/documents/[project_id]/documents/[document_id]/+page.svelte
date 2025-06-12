@@ -276,7 +276,7 @@
                             output_dialog?.show()
                           }}
                         >
-                          {result.output}
+                          {result.output_content}
                           <div class="absolute bottom-0 left-0 w-full">
                             <div
                               class="h-36 bg-gradient-to-t from-white to-transparent"
@@ -337,7 +337,7 @@
 >
   {#if dialog_extraction}
     <div class="text-sm text-gray-500 font-mono">
-      <pre class="whitespace-pre-wrap">{dialog_extraction.output}</pre>
+      <pre class="whitespace-pre-wrap">{dialog_extraction.output_content}</pre>
     </div>
   {/if}
 </Dialog>
