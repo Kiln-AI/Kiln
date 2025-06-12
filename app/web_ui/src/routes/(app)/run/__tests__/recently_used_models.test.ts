@@ -91,12 +91,12 @@ describe("Recently Used Models", () => {
     }))
 
     // Add 6 models
-    add_recently_used_model("model1")
-    add_recently_used_model("model2")
-    add_recently_used_model("model3")
-    add_recently_used_model("model4")
-    add_recently_used_model("model5")
-    add_recently_used_model("model6")
+    add_recently_used_model("provider/model1")
+    add_recently_used_model("provider/model2")
+    add_recently_used_model("provider/model3")
+    add_recently_used_model("provider/model4")
+    add_recently_used_model("provider/model5")
+    add_recently_used_model("provider/model6")
 
     // Get the current state
     const currentState = get(recently_used_models)
@@ -104,9 +104,9 @@ describe("Recently Used Models", () => {
 
     // Verify only 5 models are kept
     expect(currentState[key].length).toBe(5)
-    expect(currentState[key][0]).toBe("model6") // Most recent
-    expect(currentState[key][4]).toBe("model2") // Oldest kept
-    expect(currentState[key]).not.toContain("model1") // First one should be removed
+    expect(currentState[key][0]).toBe("provider/model6") // Most recent
+    expect(currentState[key][4]).toBe("provider/model2") // Oldest kept
+    expect(currentState[key]).not.toContain("provider/model1") // First one should be removed
   })
 
   it("should handle different project/task combinations", () => {
@@ -116,29 +116,29 @@ describe("Recently Used Models", () => {
       current_project_id: "project1",
       current_task_id: "task1",
     }))
-    add_recently_used_model("model1")
+    add_recently_used_model("provider/model1")
 
     ui_state.update((state) => ({
       ...state,
       current_project_id: "project1",
       current_task_id: "task2",
     }))
-    add_recently_used_model("model2")
+    add_recently_used_model("provider/model2")
 
     ui_state.update((state) => ({
       ...state,
       current_project_id: "project2",
       current_task_id: "task1",
     }))
-    add_recently_used_model("model3")
+    add_recently_used_model("provider/model3")
 
     // Get the current state
     const currentState = get(recently_used_models)
 
     // Verify each project/task combination has its own list
-    expect(currentState["project1/task1"]).toContain("model1")
-    expect(currentState["project1/task2"]).toContain("model2")
-    expect(currentState["project2/task1"]).toContain("model3")
+    expect(currentState["project1/task1"]).toContain("provider/model1")
+    expect(currentState["project1/task2"]).toContain("provider/model2")
+    expect(currentState["project2/task1"]).toContain("provider/model3")
   })
 
   it("should handle null project or task ID", () => {
