@@ -57,6 +57,10 @@ export const recently_used_models = derived(
   ($store) => $store,
 )
 
+// TEST-ONLY: Export the writable store for test reset
+// Do not use in production code
+export const _recently_used_models_test_only = _recently_used_models
+
 // Function to add a model to recently used
 export function add_recently_used_model(model_id: string) {
   const project_id = get(ui_state).current_project_id
