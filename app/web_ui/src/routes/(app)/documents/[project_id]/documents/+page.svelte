@@ -363,29 +363,30 @@
   }
 
   async function delete_documents(): Promise<boolean> {
-    return true
-    // try {
-    //   const { error } = await client.POST(
-    //     "/api/projects/{project_id}/documents/delete",
-    //     {
-    //       params: {
-    //         path: { project_id },
-    //       },
-    //       body: Array.from(selected_documents),
-    //     },
-    //   )
-    //   if (error) {
-    //     throw error
-    //   }
+    try {
+      const { error } = await client.POST(
+        "/api/projects/{project_id}/documents/delete",
+        {
+          params: {
+            path: { project_id },
+          },
+          body: Array.from(selected_documents),
+        },
+      )
+      if (error) {
+        throw error
+      }
 
-    //   // Close modal on success
-    //   return true
-    // } finally {
-    //   // Reload UI, even on failure, as partial delete is possible
-    //   selected_documents = new Set()
-    //   select_mode = false
-    //   await get_documents()
-    // }
+      // Close modal on success
+      return true
+    } catch (e) {
+      throw createKilnError(e)
+    } finally {
+      // Reload UI, even on failure, as partial delete is possible
+      selected_documents = new Set()
+      select_mode = false
+      await get_documents()
+    }
   }
 
   let add_tags: Set<string> = new Set()
