@@ -135,6 +135,14 @@ class CreateExtractorConfigRequest(BaseModel):
         default={},
     )
 
+    @model_validator(mode="before")
+    def set_default_name(cls, values: dict) -> dict:
+        if values.get("name") is None:
+            values["name"] = generate_memorable_name()
+        else:
+            values["name"] = sanitize_name(values["name"])
+        return values
+
     @model_validator(mode="after")
     def set_default_properties(self):
         if not isinstance(self.properties, dict):
@@ -247,7 +255,6 @@ def connect_document_api(app: FastAPI):
         )
         document.save_to_file()
 
-        # TODO: async trigger extraction for all configs
         for extractor_config in [
             ec for ec in project.extractor_configs() if not ec.is_archived
         ]:
