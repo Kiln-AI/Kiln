@@ -267,3 +267,22 @@ export function getAvailableFilterModels(
 
   return { base_models, finetune_base_models: finetune_base_models_result }
 }
+
+export async function load_finetune_details(
+  task_run_configs: TaskRunConfig[] | null,
+  get_finetune_base_model: (model_name: string) => Promise<string | null>,
+): Promise<void> {
+  if (!task_run_configs) return
+
+  const finetune_models = task_run_configs
+    .map((config) => config.run_config_properties?.model_name)
+    .filter((model_name) => model_name && isFinetuneModel(model_name))
+
+  await Promise.all(
+    finetune_models.map(async (model_name) => {
+      if (model_name) {
+        await get_finetune_base_model(model_name)
+      }
+    }),
+  )
+}

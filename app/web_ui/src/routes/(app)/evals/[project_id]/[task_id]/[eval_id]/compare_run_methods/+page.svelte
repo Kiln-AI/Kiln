@@ -43,6 +43,7 @@
     showIncompleteWarning,
     getEvalConfigSelectOptions,
     getAvailableFilterModels,
+    load_finetune_details,
   } from "$lib/utils/eval-helpers"
 
   // Services
@@ -249,19 +250,10 @@
       if (error) throw error
 
       task_run_config_state.configs = data
-      if (data) {
-        const finetune_models = data
-          .map((config) => config.run_config_properties?.model_name)
-          .filter((model_name) => model_name && isFinetuneModel(model_name))
 
-        await Promise.all(
-          finetune_models.map(async (model_name) => {
-            if (model_name) {
-              await get_finetune_base_model(model_name)
-            }
-          }),
-        )
-        finetune_base_models = { ...finetune_base_models }
+      // Load finetune details after initial render
+      if (data) {
+        await load_finetune_details(data, get_finetune_base_model)
       }
     } catch (error) {
       task_run_config_state.error = createKilnError(error)
@@ -365,15 +357,22 @@
   // Lifecycle
   onMount(async () => {
     await tick()
+    // Load all initial data in parallel
     await Promise.all([
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
       load_task(project_id, task_id),
+      get_eval(), // Move this into the initial parallel load
     ])
-    await get_eval()
+
+    // Load eval configs and task run configs in parallel
     await Promise.all([get_eval_configs(), get_task_run_configs()])
-    get_score_summary()
+
+    // Load score summary after we have the eval config
+    if (eval_config_state.current_id) {
+      get_score_summary()
+    }
   })
 
   // Watchers
