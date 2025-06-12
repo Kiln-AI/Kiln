@@ -504,6 +504,21 @@ def connect_document_api(app: FastAPI):
 
         return OpenFileResponse(path=str(document.path.parent))
 
+    @app.post("/api/projects/{project_id}/documents/delete")
+    async def delete_documents(project_id: str, document_ids: list[str]) -> dict:
+        project = project_from_id(project_id)
+        for document_id in document_ids:
+            document = Document.from_id_and_parent_path(document_id, project.path)
+            if not document:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Document {document_id} not found",
+                )
+
+            document.delete()
+
+        return {"message": f"Documents removed. IDs: {document_ids}"}
+
     @app.delete("/api/projects/{project_id}/documents/{document_id}")
     async def delete_document(project_id: str, document_id: str) -> dict:
         project = project_from_id(project_id)
