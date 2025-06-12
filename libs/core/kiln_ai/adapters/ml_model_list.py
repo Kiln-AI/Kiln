@@ -97,6 +97,7 @@ class ModelName(str, Enum):
     qwq_32b = "qwq_32b"
     deepseek_3 = "deepseek_3"
     deepseek_r1 = "deepseek_r1"
+    deepseek_r1_0528 = "deepseek_r1_0528"
     mistral_small_3 = "mistral_small_3"
     deepseek_r1_distill_qwen_32b = "deepseek_r1_distill_qwen_32b"
     deepseek_r1_distill_llama_70b = "deepseek_r1_distill_llama_70b"
@@ -2295,6 +2296,21 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
+            ),
+        ],
+    ),
+    # DeepSeek R1 0528
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_r1_0528,
+        friendly_name="DeepSeek R1 0528",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-r1-0528",
+                parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
             ),
         ],
     ),
