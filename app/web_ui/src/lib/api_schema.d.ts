@@ -1477,7 +1477,7 @@ export interface components {
              * Name
              * @description The name of the extractor config
              */
-            name: string;
+            name?: string | null;
             /**
              * Description
              * @description The description of the extractor config
