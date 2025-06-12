@@ -470,7 +470,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Extractor Config */
+        patch: operations["patch_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config": {
@@ -2157,6 +2158,12 @@ export interface components {
              */
             name: string;
             /**
+             * Is Archived
+             * @description Whether the extractor config is archived. Archived extractor configs are not shown in the UI and are not available for use.
+             * @default false
+             */
+            is_archived: boolean;
+            /**
              * Description
              * @description The description of the extractor config
              */
@@ -2568,6 +2575,24 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** PatchExtractorConfigRequest */
+        PatchExtractorConfigRequest: {
+            /**
+             * Name
+             * @description The name of the extractor config
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the extractor config
+             */
+            description?: string | null;
+            /**
+             * Is Archived
+             * @description Whether the extractor config is archived
+             */
+            is_archived?: boolean | null;
+        };
         /**
          * Priority
          * @description Defines priority levels for tasks and requirements, where P0 is highest priority.
@@ -4452,6 +4477,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExtractorConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchExtractorConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */

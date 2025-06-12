@@ -88,6 +88,10 @@ class Extraction(KilnParentedModel):
 
 class ExtractorConfig(KilnParentedModel):
     name: str = NAME_FIELD
+    is_archived: bool = Field(
+        default=False,
+        description="Whether the extractor config is archived. Archived extractor configs are not shown in the UI and are not available for use.",
+    )
     description: str | None = Field(
         default=None, description="The description of the extractor config"
     )
