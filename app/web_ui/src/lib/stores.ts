@@ -63,6 +63,9 @@ export const _recently_used_models_test_only = _recently_used_models
 
 // Function to add a model to recently used
 export function add_recently_used_model(model_id: string) {
+  if (!model_id || typeof model_id !== "string" || !model_id.includes("/")) {
+    return // ignore bad inputs early
+  }
   const project_id = get(ui_state).current_project_id
   const task_id = get(ui_state).current_task_id
   if (!project_id || !task_id) return

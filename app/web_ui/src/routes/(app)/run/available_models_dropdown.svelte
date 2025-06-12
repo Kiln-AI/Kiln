@@ -82,7 +82,7 @@
         // Find the model details
         for (const provider of providers) {
           if (provider.provider_id === provider_id) {
-            const model = provider.models.find(
+            const model = (provider.models ?? []).find(
               (m: { id: string }) => m.id === model_name,
             )
             if (model) {
