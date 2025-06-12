@@ -64,11 +64,16 @@ export function add_recently_used_model(model_id: string) {
   if (!project_id || !task_id) return
 
   const key = `${project_id}/${task_id}`
-  const current = get(_recently_used_models)
+  const raw = get(_recently_used_models)
+  const current =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}
   const task_models = Array.isArray(current[key]) ? current[key] : []
 
+  // Short-circuit if model is already at front of list
+  if (task_models[0] === model_id) return
+
   // Remove if already exists
-  const filtered = task_models.filter((m: string) => m !== model_id)
+  const filtered = task_models.filter((m) => m !== model_id)
   // Add to front
   filtered.unshift(model_id)
   // Keep only last 5

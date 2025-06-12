@@ -12,7 +12,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
-  export let model: string = $ui_state.selected_model
+  export let model: string | null = $ui_state.selected_model
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
@@ -23,6 +23,7 @@
   let previous_task_id: string | null = null
   $: {
     if ($ui_state.current_task_id !== previous_task_id) {
+      model = null
       ui_state.update((state) => ({ ...state, selected_model: null }))
       previous_task_id = $ui_state.current_task_id
     }
@@ -34,6 +35,7 @@
     requires_data_gen,
     requires_logprobs,
     $ui_state.current_task_id,
+    $ui_state.current_project_id,
     $recently_used_models,
   )
 
@@ -41,7 +43,7 @@
   export let model_name: string | null = null
   export let provider_name: string | null = null
   $: get_model_provider(model)
-  function get_model_provider(model_provider: string) {
+  function get_model_provider(model_provider: string | null) {
     model_name = model_provider
       ? model_provider.split("/").slice(1).join("/")
       : null
@@ -60,6 +62,7 @@
     requires_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
+    current_project_id: string | null,
     recent_models: Record<string, string[]>,
   ): [string, [string, string][]][] {
     let options: [string, [string, string][]][] = []
@@ -67,9 +70,10 @@
     untested_models = []
 
     // Add recently used models section if there are any
-    const project_id = $ui_state.current_project_id
     const key =
-      project_id && current_task_id ? `${project_id}/${current_task_id}` : null
+      current_project_id && current_task_id
+        ? `${current_project_id}/${current_task_id}`
+        : null
     const task_recent_models = key ? recent_models[key] || [] : []
     if (task_recent_models.length > 0) {
       const recent_model_list: [string, string][] = []
