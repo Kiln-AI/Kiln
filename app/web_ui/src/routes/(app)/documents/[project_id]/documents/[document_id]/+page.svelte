@@ -1,11 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type {
-    Extraction,
-    ExtractionWithOutput,
-    KilnDocument,
-  } from "$lib/types"
+  import type { ExtractionSummary, KilnDocument } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -22,23 +18,16 @@
   let document: KilnDocument | null = null
   let error: KilnError | null = null
   let loading = true
-  let extractions: Extraction[] | null = null
+  let results: ExtractionSummary[] | null = null
 
   $: project_id = $page.params.project_id
   $: document_id = $page.params.document_id
 
   // dialog state
-  $: dialog_extraction_id = ""
   let output_dialog: Dialog | null = null
-  let dialog_loading = false
-  let dialog_extraction: ExtractionWithOutput | null = null
+  let dialog_extraction: ExtractionSummary | null = null
 
   let download_document_url: string | null = null
-
-  // whenever dialog_extraction_id changes, we need to call the API to fetch the output
-  $: if (dialog_extraction_id) {
-    get_extraction_output(dialog_extraction_id)
-  }
 
   onMount(async () => {
     get_document()
@@ -98,36 +87,9 @@
       if (get_error) {
         throw get_error
       }
-      extractions = extractions_response
+      results = extractions_response
     } finally {
       loading = false
-    }
-  }
-
-  async function get_extraction_output(extraction_id: string) {
-    try {
-      dialog_loading = true
-      const { data: extraction_output_response, error: get_error } =
-        await client.GET(
-          "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
-          {
-            params: {
-              path: {
-                project_id,
-                document_id,
-                extraction_id,
-              },
-            },
-          },
-        )
-
-      if (get_error) {
-        throw get_error
-      }
-
-      dialog_extraction = extraction_output_response
-    } finally {
-      dialog_loading = false
     }
   }
 
@@ -239,7 +201,7 @@
       </div>
     </div>
 
-    {#if extractions}
+    {#if results}
       <div class="block">
         <div class="block mt-4">
           <div class="text-2xl font-bold">Extractions</div>
@@ -248,8 +210,8 @@
             document.
           </div>
           <div class="mt-4 text-sm text-gray-500">
-            {extractions.length}
-            {extractions.length === 1 ? "extraction" : "extractions"}
+            {results.length}
+            {results.length === 1 ? "extraction" : "extractions"}
           </div>
           <div class="text-sm text-gray-500">
             <table class="table table-sm">
@@ -259,26 +221,24 @@
                   <th>Created At</th>
                   <th>Created By</th>
                   <th>Source</th>
-                  <th>Extractor ID</th>
+                  <th>Extractor</th>
                   <th>Output</th>
                 </tr>
               </thead>
               <tbody>
-                {#each extractions as extraction}
+                {#each results as result}
                   <tr>
-                    <td>{extraction.id}</td>
-                    <td>{formatDate(extraction.created_at)}</td>
-                    <td>{extraction.created_by}</td>
-                    <td>{extraction.source}</td>
+                    <td>{result.id}</td>
+                    <td>{formatDate(result.created_at)}</td>
+                    <td>{result.created_by}</td>
+                    <td>{result.source}</td>
                     <td>
                       <a
-                        href={`/documents/${project_id}/extractors/${extraction.extractor_config_id}/extractor`}
+                        href={`/documents/${project_id}/extractors/${result.extractor.id}/extractor`}
                         class="link flex flex-row items-center"
                         target="_blank"
                       >
-                        <span class="font-mono text-gray-500">
-                          {extraction.extractor_config_id}
-                        </span>
+                        {result.extractor.name}
                         <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
                         <svg
                           class="w-4 h-4 ml-2"
@@ -301,13 +261,27 @@
                       </a>
                     </td>
                     <td>
-                      <button
-                        class="btn btn-primary"
-                        on:click={() => {
-                          dialog_extraction_id = extraction.id || ""
-                          output_dialog?.show()
-                        }}>View</button
-                      >
+                      <div class="max-w-[600px] min-w-[200px]">
+                        <button
+                          class="h-[160px] overflow-y-hidden relative text-start justify-start items-start flex"
+                          on:click={() => {
+                            dialog_extraction = result
+                            output_dialog?.show()
+                          }}
+                        >
+                          {result.output}
+                          <div class="absolute bottom-0 left-0 w-full">
+                            <div
+                              class="h-36 bg-gradient-to-t from-white to-transparent"
+                            ></div>
+                            <div
+                              class="text-center bg-white font-medium font-sm text-gray-500"
+                            >
+                              <span class="text-gray-500"> See all </span>
+                            </div>
+                          </div>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 {/each}
@@ -332,14 +306,14 @@
 <Dialog
   bind:this={output_dialog}
   title="Extraction Output"
-  close={() => {
-    dialog_extraction_id = ""
-    output_dialog?.hide()
-  }}
+  action_buttons={[
+    {
+      label: "Close",
+      isCancel: true,
+    },
+  ]}
 >
-  {#if dialog_loading}
-    <div class="loading loading-spinner loading-lg"></div>
-  {:else if dialog_extraction}
+  {#if dialog_extraction}
     <div class="text-sm text-gray-500 font-mono">
       <pre class="whitespace-pre-wrap">{dialog_extraction.output}</pre>
     </div>

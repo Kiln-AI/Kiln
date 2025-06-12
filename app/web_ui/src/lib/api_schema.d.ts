@@ -1481,7 +1481,7 @@ export interface components {
              * Name
              * @description The name of the extractor config
              */
-            name?: string | null;
+            name: string;
             /**
              * Description
              * @description The description of the extractor config
@@ -2090,8 +2090,21 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
-        /** Extraction */
-        Extraction: {
+        /** ExtractionProgress */
+        ExtractionProgress: {
+            /** Document Count Total */
+            document_count_total: number;
+            /** Document Count Successful */
+            document_count_successful: number;
+            current_extractor_config: components["schemas"]["ExtractorConfig"] | null;
+        };
+        /**
+         * ExtractionSource
+         * @enum {string}
+         */
+        ExtractionSource: "processed" | "passthrough";
+        /** ExtractionSummary */
+        ExtractionSummary: {
             /**
              * V
              * @default 1
@@ -2115,29 +2128,11 @@ export interface components {
              * @description The ID of the extractor config that was used to extract the data.
              */
             extractor_config_id: string | null;
-            /** @description The extraction output. */
-            output: components["schemas"]["KilnAttachmentModel"];
-            /** Model Type */
-            readonly model_type: string;
-        };
-        /** ExtractionProgress */
-        ExtractionProgress: {
-            /** Document Count Total */
-            document_count_total: number;
-            /** Document Count Successful */
-            document_count_successful: number;
-            current_extractor_config: components["schemas"]["ExtractorConfig"] | null;
-        };
-        /**
-         * ExtractionSource
-         * @enum {string}
-         */
-        ExtractionSource: "processed" | "passthrough";
-        /** ExtractionWithOutput */
-        ExtractionWithOutput: {
-            extraction: components["schemas"]["Extraction"];
             /** Output */
             output: string;
+            extractor: components["schemas"]["ExtractorSummary"];
+            /** Model Type */
+            readonly model_type: string;
         };
         /** ExtractorConfig */
         ExtractorConfig: {
@@ -2191,6 +2186,19 @@ export interface components {
             };
             /** Model Type */
             readonly model_type: string;
+        };
+        /** ExtractorSummary */
+        ExtractorSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            output_format: components["schemas"]["OutputFormat"];
+            /** Passthrough Mimetypes */
+            passthrough_mimetypes: components["schemas"]["OutputFormat"][];
+            extractor_type: components["schemas"]["ExtractorType"];
         };
         /**
          * ExtractorType
@@ -4503,7 +4511,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Extraction"][];
+                    "application/json": components["schemas"]["ExtractionSummary"][];
                 };
             };
             /** @description Validation Error */
@@ -4536,7 +4544,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExtractionWithOutput"];
+                    "application/json": components["schemas"]["ExtractionSummary"];
                 };
             };
             /** @description Validation Error */
