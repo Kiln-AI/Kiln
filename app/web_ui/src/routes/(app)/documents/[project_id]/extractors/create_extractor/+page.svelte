@@ -79,7 +79,7 @@
       <div class="loading loading-spinner loading-lg"></div>
     </div>
   {:else}
-    <div>
+    <div class="max-w-[900px]">
       <FormContainer
         submit_visible={true}
         submit_label="Create Extractor"
