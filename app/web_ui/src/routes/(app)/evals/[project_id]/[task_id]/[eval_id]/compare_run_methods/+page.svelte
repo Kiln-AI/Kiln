@@ -1,11 +1,12 @@
 <script lang="ts">
-  import AppPage from "../../../../../app_page.svelte"
-  import type { Eval } from "$lib/types"
-  import { base_url } from "$lib/api_client"
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  // Core imports
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
-  import FormElement from "$lib/utils/form_element.svelte"
+  import { goto } from "$app/navigation"
+  import { base_url } from "$lib/api_client"
+
+  // Types
+  import type { Eval } from "$lib/types"
   import type {
     EvalConfig,
     TaskRunConfig,
@@ -13,7 +14,50 @@
     StructuredOutputMode,
     AvailableModels,
   } from "$lib/types"
-  import { goto } from "$app/navigation"
+  import type { components } from "$lib/api_schema"
+
+  // UI Components
+  import AppPage from "../../../../../app_page.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import RunOptions from "$lib/ui/run_options.svelte"
+  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
+  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
+  import RunEval from "../run_eval.svelte"
+  import OutputTypeTablePreview from "../output_type_table_preview.svelte"
+
+  // Utils
+  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import {
+    formatDate,
+    isFinetuneModel,
+    getEnhancedModelName,
+    getEnhancedProviderName,
+    getEvalConfigProperties,
+    sortTaskRunConfigs,
+    applyFilters,
+    showIncompleteWarning,
+    getEvalConfigSelectOptions,
+    getAvailableFilterModels,
+  } from "$lib/utils/eval-helpers"
+
+  // Services
+  import {
+    getEval,
+    getEvalConfigs,
+    getTaskRunConfigs,
+    getScoreSummary,
+    setCurrentRunConfig,
+    deleteTaskRunConfig,
+    getFinetuneBaseModel,
+    addTaskRunConfig,
+  } from "$lib/services/eval-service"
+
+  // Stores
   import {
     model_info,
     load_model_info,
@@ -27,133 +71,110 @@
     current_task,
     load_task,
   } from "$lib/stores"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
-  import Warning from "$lib/ui/warning.svelte"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import RunEval from "../run_eval.svelte"
-  import OutputTypeTablePreview from "../output_type_table_preview.svelte"
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import RunOptions from "$lib/ui/run_options.svelte"
-  import { addTaskRunConfig } from "$lib/services/eval-service"
-  import type { components } from "$lib/api_schema"
-  import {
-    formatDate,
-    isFinetuneModel,
-    getEnhancedModelName,
-    getEnhancedProviderName,
-    getEvalConfigProperties,
-    sortTaskRunConfigs,
-    applyFilters,
-    showIncompleteWarning,
-    getEvalConfigSelectOptions,
-    getAvailableFilterModels,
-  } from "$lib/utils/eval-helpers"
-  import {
-    getEval,
-    getEvalConfigs,
-    getTaskRunConfigs,
-    getScoreSummary,
-    setCurrentRunConfig,
-    deleteTaskRunConfig,
-    getFinetuneBaseModel,
-  } from "$lib/services/eval-service"
 
+  // Page params
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
   $: eval_id = $page.params.eval_id
 
-  let evaluator: Eval | null = null
-  let eval_error: KilnError | null = null
-  let eval_loading = true
+  // State management
+  interface EvalState {
+    evaluator: Eval | null
+    error: KilnError | null
+    loading: boolean
+  }
 
-  let eval_configs: EvalConfig[] | null = null
-  let eval_configs_error: KilnError | null = null
-  let eval_configs_loading = true
-  let current_eval_config_id: string | null = null
+  interface EvalConfigState {
+    configs: EvalConfig[] | null
+    error: KilnError | null
+    loading: boolean
+    current_id: string | null
+  }
 
-  let task_run_configs: TaskRunConfig[] | null = null
-  let task_run_configs_error: KilnError | null = null
-  let task_run_configs_loading = true
+  interface TaskRunConfigState {
+    configs: TaskRunConfig[] | null
+    error: KilnError | null
+    loading: boolean
+  }
+
+  const eval_state: EvalState = {
+    evaluator: null,
+    error: null,
+    loading: true,
+  }
+
+  const eval_config_state: EvalConfigState = {
+    configs: null,
+    error: null,
+    loading: true,
+    current_id: null,
+  }
+
+  const task_run_config_state: TaskRunConfigState = {
+    configs: null,
+    error: null,
+    loading: true,
+  }
 
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
-
-  // Store finetune base model information
   let finetune_base_models: Record<string, string> = {}
 
-  // Note: not including score_summary_error, because it's not a critical error we should block the UI for
-  $: loading = eval_loading || eval_configs_loading || task_run_configs_loading
-  $: error = eval_error || eval_configs_error || task_run_configs_error
-
+  // Computed states
+  $: loading =
+    eval_state.loading ||
+    eval_config_state.loading ||
+    task_run_config_state.loading
+  $: error =
+    eval_state.error || eval_config_state.error || task_run_config_state.error
   $: should_select_eval_config =
-    task_run_configs?.length && !evaluator?.current_run_config_id
+    task_run_config_state.configs?.length &&
+    !eval_state.evaluator?.current_run_config_id
   $: focus_select_eval_config = !!(
-    should_select_eval_config && eval_state?.includes("complete")
+    should_select_eval_config && eval_status?.includes("complete")
+  )
+  $: current_eval_config = eval_config_state.configs?.find(
+    (config) => config.id === eval_config_state.current_id,
   )
 
-  $: current_eval_config = eval_configs?.find(
-    (config) => config.id === current_eval_config_id,
-  )
+  // Sort and filter state
+  let filter_models: string[] = []
+  let sortColumn: "created_at" | "score" | "name" | string | null =
+    "Overall Rating"
+  let sortDirection: "asc" | "desc" = "desc"
+  $: sortState = { column: sortColumn, direction: sortDirection }
 
-  // Update function calls to use imported helpers:
-  $: get_enhanced_model_name = (model_name_param: string | undefined) =>
-    getEnhancedModelName(model_name_param, $model_info)
-  $: get_enhanced_provider_name = (
-    model_name_param: string | undefined,
-    provider_name_param: string | undefined,
-  ) =>
-    getEnhancedProviderName(
-      model_name_param,
-      provider_name_param,
-      finetune_base_models,
-    )
-  $: get_eval_config_properties = (eval_config_id: string | null) =>
-    getEvalConfigProperties(eval_config_id, eval_configs, $model_info)
-  $: show_incomplete_warning = (score_summary: EvalResultSummary | null) =>
-    showIncompleteWarning(score_summary)
+  // Task run config form state
+  let task_run_config_model_name = ""
+  let task_run_config_provider_name = ""
+  let task_run_config_prompt_method = "simple_prompt_builder"
+  let task_run_config_long_prompt_name_provider = ""
+  let task_run_config_temperature: number
+  let task_run_config_top_p: number
+  let task_run_config_structured_output_mode: StructuredOutputMode
 
-  // Update sortTaskRunConfigs call
-  $: sorted_task_run_configs = task_run_configs
-    ? sortTaskRunConfigs(
-        task_run_configs,
-        evaluator,
-        score_summary,
-        sortState.column,
-        sortState.direction,
-      )
-    : []
+  // Dialog refs
+  let add_task_config_dialog: Dialog | null = null
+  let delete_dialog: Dialog | null = null
+  let filter_dialog: Dialog | null = null
+  let delete_run_config_id: string | null = null
+  let after_delete: (() => void) | null = null
 
-  // Update applyFilters call
-  $: filtered_task_run_configs = sorted_task_run_configs
-    ? applyFilters(sorted_task_run_configs, filter_models, finetune_base_models)
-    : []
+  // Eval status
+  let eval_status:
+    | "not_started"
+    | "running"
+    | "complete"
+    | "complete_with_errors" = "not_started"
+  $: run_eval_url = eval_config_state.current_id
+    ? `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${eval_config_state.current_id}/run_task_run_eval?all_run_configs=true`
+    : ""
 
-  // Update is_finetune_model call
-  function is_finetune_model(model_name: string | undefined): boolean {
-    return isFinetuneModel(model_name)
+  // Helper functions
+  function getSortHeaderClass(): string {
+    return "cursor-pointer hover:bg-gray-50"
   }
 
-  // Update get_eval_config_select_options to use the helper
-  $: eval_config_select_options = getEvalConfigSelectOptions(
-    eval_configs,
-    $model_info,
-  )
-
-  // Update get_available_filter_models to use the helper
-  $: available_filter_models = getAvailableFilterModels(
-    sorted_task_run_configs,
-    filter_models,
-    finetune_base_models,
-  )
-
-  // Remove the old function definitions since we're using the helpers now
-  // function get_eval_config_select_options(configs: EvalConfig[] | null) { ... }
-  // function get_available_filter_models(configs: TaskRunConfig[], currentFilters: string[]) { ... }
-
-  // Keep the component-specific UI handlers
   function toggleSort(column: "created_at" | "score" | "name" | string) {
     if (sortColumn === column) {
       sortDirection = sortDirection === "asc" ? "desc" : "asc"
@@ -163,82 +184,76 @@
     }
   }
 
-  function getSortHeaderClass(): string {
-    return "cursor-pointer hover:bg-gray-50"
+  function add_filter_model(model: string) {
+    filter_models = [...new Set([...filter_models, model])]
   }
 
-  onMount(async () => {
-    // Wait for page params to load
-    await tick()
-    // Wait for these 3 to load, as they are needed for better labels. Usually already cached and instant.
-    await Promise.all([
-      load_model_info(),
-      load_available_prompts(),
-      load_available_models(),
-      load_task(project_id, task_id),
-    ])
-    // Get the eval first (want it to set the current config id before the other two load)
-    await get_eval()
-    // These two can be parallel
-    await Promise.all([get_eval_configs(), get_task_run_configs()])
-    // This needs the selected eval config id, set from above requests
-    get_score_summary()
-  })
+  function remove_filter_model(model: string) {
+    filter_models = filter_models.filter((m) => m !== model)
+  }
 
+  function show_delete_dialog(run_config_id: string) {
+    if (!run_config_id) return
+    delete_run_config_id = run_config_id
+    after_delete = () => {
+      get_task_run_configs()
+    }
+    delete_dialog?.show()
+  }
+
+  // Data fetching functions
   async function get_eval() {
     try {
-      eval_loading = true
+      eval_state.loading = true
       const { data, error } = await getEval(project_id, task_id, eval_id)
-      if (error) {
-        throw error
-      }
-      evaluator = data
-      // Set the selected eval config: prefer query params, then eval's default, then first eval config (set below in load_eval_configs)
-      current_eval_config_id =
+      if (error) throw error
+
+      eval_state.evaluator = data
+      eval_config_state.current_id =
         $page.url.searchParams.get("selected_eval_config") ||
-        evaluator?.current_config_id ||
+        eval_state.evaluator?.current_config_id ||
         null
     } catch (error) {
-      eval_error = createKilnError(error)
+      eval_state.error = createKilnError(error)
     } finally {
-      eval_loading = false
+      eval_state.loading = false
     }
   }
 
   async function get_eval_configs() {
     try {
-      eval_configs_loading = true
+      eval_config_state.loading = true
       const { data, error } = await getEvalConfigs(project_id, task_id, eval_id)
-      if (error) {
-        throw error
-      }
-      eval_configs = data
-      // Fallback to first eval config if no current eval config id is set from load_eval()
-      if (!current_eval_config_id && data && data.length > 0 && data[0]?.id) {
-        current_eval_config_id = data[0].id
+      if (error) throw error
+
+      eval_config_state.configs = data
+      if (
+        !eval_config_state.current_id &&
+        data &&
+        data.length > 0 &&
+        data[0]?.id
+      ) {
+        eval_config_state.current_id = data[0].id || null
       }
     } catch (error) {
-      eval_configs_error = createKilnError(error)
+      eval_config_state.error = createKilnError(error)
     } finally {
-      eval_configs_loading = false
+      eval_config_state.loading = false
     }
   }
 
   async function get_task_run_configs() {
     try {
-      task_run_configs_loading = true
+      task_run_config_state.loading = true
       const { data, error } = await getTaskRunConfigs(project_id, task_id)
-      if (error) {
-        throw error
-      }
-      task_run_configs = data
-      // Load base models immediately after getting task run configs
+      if (error) throw error
+
+      task_run_config_state.configs = data
       if (data) {
         const finetune_models = data
           .map((config) => config.run_config_properties?.model_name)
-          .filter((model_name) => model_name && is_finetune_model(model_name))
+          .filter((model_name) => model_name && isFinetuneModel(model_name))
 
-        // Load base models for all finetune models
         await Promise.all(
           finetune_models.map(async (model_name) => {
             if (model_name) {
@@ -246,83 +261,135 @@
             }
           }),
         )
-        // Force reactivity after all base models are loaded
         finetune_base_models = { ...finetune_base_models }
       }
     } catch (error) {
-      task_run_configs_error = createKilnError(error)
+      task_run_config_state.error = createKilnError(error)
     } finally {
-      task_run_configs_loading = false
+      task_run_config_state.loading = false
     }
   }
 
   async function get_score_summary() {
     score_summary = null
-    if (!current_eval_config_id) {
+    if (!eval_config_state.current_id) {
       score_summary_error = new KilnError("No evaluation method selected", null)
       return
     }
+
     try {
-      score_summary = null
       const { data, error } = await getScoreSummary(
         project_id,
         task_id,
         eval_id,
-        current_eval_config_id,
+        eval_config_state.current_id,
       )
-      if (error) {
-        throw error
-      }
+      if (error) throw error
       score_summary = data
     } catch (error) {
       score_summary_error = createKilnError(error)
     }
   }
 
-  // Watches the current eval config id, performing actions based on it
-  $: watch_selected_eval_config(current_eval_config_id)
+  async function get_finetune_base_model(
+    model_name: string,
+  ): Promise<string | null> {
+    if (!isFinetuneModel(model_name)) return null
+    if (finetune_base_models[model_name])
+      return finetune_base_models[model_name]
+
+    const { baseModelId, error } = await getFinetuneBaseModel(model_name)
+    if (error) {
+      console.error("Error fetching finetune base model:", error)
+      return null
+    }
+
+    if (baseModelId) {
+      finetune_base_models[model_name] = baseModelId
+      return baseModelId
+    }
+
+    return null
+  }
+
+  async function handleDelete(): Promise<boolean> {
+    if (!delete_run_config_id) return false
+
+    try {
+      const { success, error } = await deleteTaskRunConfig(
+        project_id,
+        task_id,
+        delete_run_config_id,
+      )
+      if (error) throw error
+
+      if (success && after_delete) {
+        after_delete()
+      }
+      return success
+    } catch (error) {
+      eval_state.error = createKilnError(error)
+      return false
+    }
+  }
+
+  async function add_task_config(): Promise<boolean> {
+    if (
+      !task_run_config_model_name ||
+      !task_run_config_provider_name ||
+      !task_run_config_prompt_method
+    ) {
+      return false
+    }
+
+    try {
+      const { error } = await addTaskRunConfig(project_id, task_id, {
+        model_name: task_run_config_model_name,
+        model_provider_name:
+          task_run_config_provider_name as components["schemas"]["ModelProviderName"],
+        prompt_id: task_run_config_prompt_method,
+        temperature: task_run_config_temperature,
+        top_p: task_run_config_top_p,
+        structured_output_mode: task_run_config_structured_output_mode,
+      })
+      if (error) throw error
+
+      get_task_run_configs()
+      return true
+    } catch (error) {
+      eval_state.error = createKilnError(error)
+      return false
+    }
+  }
+
+  // Lifecycle
+  onMount(async () => {
+    await tick()
+    await Promise.all([
+      load_model_info(),
+      load_available_prompts(),
+      load_available_models(),
+      load_task(project_id, task_id),
+    ])
+    await get_eval()
+    await Promise.all([get_eval_configs(), get_task_run_configs()])
+    get_score_summary()
+  })
+
+  // Watchers
+  $: watch_selected_eval_config(eval_config_state.current_id)
   function watch_selected_eval_config(selected_id: string | null) {
     if (selected_id === "add_config") {
-      // if it's the "add_config" special value, navigate to the create eval config page
       goto(`/evals/${project_id}/${task_id}/${eval_id}/create_eval_config`)
       return
     }
-    // If the selected id is not null, then get the score summary
     score_summary = null
     if (selected_id) {
       get_score_summary()
     }
   }
 
-  // Filter state
-  let filter_models: string[] = []
-
-  // Sort state
-  let sortColumn: "created_at" | "score" | "name" | string | null =
-    "Overall Rating"
-  let sortDirection: "asc" | "desc" = "desc"
-
-  // Make sort state reactive
-  $: sortState = { column: sortColumn, direction: sortDirection }
-
-  let eval_state:
-    | "not_started"
-    | "running"
-    | "complete"
-    | "complete_with_errors" = "not_started"
-  $: run_eval_url = current_eval_config_id
-    ? `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
-    : ""
-
-  let task_run_config_model_name = ""
-  let task_run_config_provider_name = ""
-  let task_run_config_prompt_method = "simple_prompt_builder"
-  let task_run_config_long_prompt_name_provider = ""
-  let task_run_config_temperature: number
-  let task_run_config_top_p: number
-  let task_run_config_structured_output_mode: StructuredOutputMode
-
-  // Update structured_output_mode when model changes
+  // Update structured output mode when model changes
   $: update_structured_output_mode(
     task_run_config_model_name,
     task_run_config_provider_name,
@@ -338,135 +405,34 @@
         ?.structured_output_mode || "default"
   }
 
-  let add_task_config_dialog: Dialog | null = null
-  let add_task_config_error: KilnError | null = null
-  let delete_dialog: Dialog | null = null
-  let delete_run_config_id: string | null = null
-  let after_delete: (() => void) | null = null
-  let filter_dialog: Dialog | null = null
-
-  async function add_task_config(): Promise<boolean> {
-    if (
-      !task_run_config_model_name ||
-      !task_run_config_provider_name ||
-      !task_run_config_prompt_method
-    ) {
-      add_task_config_error = new KilnError("Missing required fields", null)
-      return false
-    }
-
-    try {
-      const { error } = await addTaskRunConfig(project_id, task_id, {
-        model_name: task_run_config_model_name,
-        model_provider_name:
-          task_run_config_provider_name as components["schemas"]["ModelProviderName"],
-        prompt_id: task_run_config_prompt_method,
-        temperature: task_run_config_temperature,
-        top_p: task_run_config_top_p,
-        structured_output_mode: task_run_config_structured_output_mode,
-      })
-      if (error) {
-        throw error
-      }
-      // Load the updated list of task run configs after success
-      get_task_run_configs()
-    } catch (error) {
-      add_task_config_error = createKilnError(error)
-      return false
-    }
-    return true
-  }
-
-  $: has_default_eval_config = evaluator && evaluator.current_config_id
-
-  async function set_current_run_config(
-    run_config_id: string | null | undefined,
-  ) {
-    if (!run_config_id) {
-      return
-    }
-    try {
-      const { data, error } = await setCurrentRunConfig(
-        project_id,
-        task_id,
-        eval_id,
-        run_config_id,
+  // Computed values for UI
+  $: sorted_task_run_configs = task_run_config_state.configs
+    ? sortTaskRunConfigs(
+        task_run_config_state.configs,
+        eval_state.evaluator,
+        score_summary,
+        sortState.column,
+        sortState.direction,
       )
-      if (error) {
-        throw error
-      }
-      // Update the evaluator with the latest
-      evaluator = data
-    } catch (error) {
-      eval_error = createKilnError(error)
-    }
-  }
+    : []
 
-  function show_delete_dialog(run_config_id: string) {
-    if (!run_config_id) return
-    delete_run_config_id = run_config_id
-    after_delete = () => {
-      get_task_run_configs()
-    }
-    delete_dialog?.show()
-  }
+  $: filtered_task_run_configs = sorted_task_run_configs
+    ? applyFilters(sorted_task_run_configs, filter_models, finetune_base_models)
+    : []
 
-  async function handleDelete() {
-    if (!delete_run_config_id) {
-      return false
-    }
-    try {
-      const { success, error } = await deleteTaskRunConfig(
-        project_id,
-        task_id,
-        delete_run_config_id,
-      )
-      if (error) {
-        throw error
-      }
-      if (success && after_delete) {
-        after_delete()
-      }
-      return success
-    } catch (error) {
-      eval_error = createKilnError(error)
-      return false
-    }
-  }
+  $: eval_config_select_options = getEvalConfigSelectOptions(
+    eval_config_state.configs,
+    $model_info,
+  )
 
-  async function get_finetune_base_model(
-    model_name: string,
-  ): Promise<string | null> {
-    if (!is_finetune_model(model_name)) return null
+  $: available_filter_models = getAvailableFilterModels(
+    sorted_task_run_configs,
+    filter_models,
+    finetune_base_models,
+  )
 
-    // Check cache first
-    if (finetune_base_models[model_name]) {
-      return finetune_base_models[model_name]
-    }
-
-    const { baseModelId, error } = await getFinetuneBaseModel(model_name)
-    if (error) {
-      console.error("Error fetching finetune base model:", error)
-      return null
-    }
-
-    if (baseModelId) {
-      // Cache the result
-      finetune_base_models[model_name] = baseModelId
-      return baseModelId
-    }
-
-    return null
-  }
-
-  function add_filter_model(model: string) {
-    const newFilters = [...new Set([...filter_models, model])]
-    filter_models = newFilters
-  }
-
-  function remove_filter_model(model: string) {
-    filter_models = filter_models.filter((m) => m !== model)
-  }
+  $: has_default_eval_config =
+    eval_state.evaluator && eval_state.evaluator.current_config_id
 </script>
 
 <AppPage
@@ -495,7 +461,7 @@
         {error.getMessage() || "An unknown error occurred"}
       </div>
     </div>
-  {:else if evaluator}
+  {:else if eval_state.evaluator}
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
       <div class="grow flex flex-col gap-4">
         <div>
@@ -509,7 +475,7 @@
             id="eval_config_select"
             label="Eval Method"
             inputType="select"
-            bind:value={current_eval_config_id}
+            bind:value={eval_config_state.current_id}
             select_options_grouped={eval_config_select_options}
           />
           {#if !has_default_eval_config}
@@ -518,7 +484,7 @@
               warning_color="warning"
               tight={true}
             />
-          {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
+          {:else if has_default_eval_config && eval_state.evaluator.current_config_id != eval_config_state.current_id}
             <Warning
               warning_message="The currently selected evaluation method is not the default. You can change the default in 'Compare Evaluation Methods'."
               warning_color="warning"
@@ -529,7 +495,7 @@
         <div
           class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
         >
-          {#each get_eval_config_properties(current_eval_config_id) as property}
+          {#each getEvalConfigProperties(eval_config_state.current_id, eval_config_state.configs, $model_info) as property}
             <div class="flex items-center">{property.name}</div>
             <div class="flex items-center text-gray-500 overflow-x-hidden">
               {property.value}
@@ -548,7 +514,7 @@
       </div>
     </div>
     <div class="mt-16">
-      {#if task_run_configs?.length}
+      {#if task_run_config_state.configs?.length}
         <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
           <div class="grow">
             <div class="text-xl font-bold">Run Methods</div>
@@ -593,18 +559,18 @@
               {/if}
             </button>
             <RunEval
-              bind:eval_state
+              bind:eval_state={eval_status}
               bind:run_url={run_eval_url}
               on_run_complete={() => {
                 get_score_summary()
               }}
-              button_text="Run All"
+              button_text="Run"
             />
           </div>
         </div>
 
         <!-- Warn the user if some evals are incomplete -->
-        {#if show_incomplete_warning(score_summary)}
+        {#if showIncompleteWarning(score_summary)}
           <div class="mt-6 mb-4">
             <button
               class="tooltip tooltip-top cursor-pointer"
@@ -653,7 +619,7 @@
                     Date Created
                   </div>
                 </th>
-                {#each evaluator.output_scores as output_score}
+                {#each eval_state.evaluator.output_scores as output_score}
                   <th
                     class={`text-center ${getSortHeaderClass()}`}
                     on:click={(e) => {
@@ -681,14 +647,15 @@
                   class="hover cursor-pointer"
                   on:click={() => {
                     goto(
-                      `/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`,
+                      `/evals/${project_id}/${task_id}/${eval_id}/${eval_config_state.current_id}/${task_run_config.id}/run_result`,
                     )
                   }}
                 >
                   <td>
                     <div class="font-medium">
-                      {get_enhanced_model_name(
+                      {getEnhancedModelName(
                         task_run_config?.run_config_properties?.model_name,
+                        $model_info,
                       )}
                     </div>
 
@@ -718,10 +685,11 @@
                       {/if}
                     </div>
                     <div class="text-sm text-gray-500">
-                      Provider: {get_enhanced_provider_name(
+                      Provider: {getEnhancedProviderName(
                         task_run_config?.run_config_properties?.model_name,
                         task_run_config?.run_config_properties
                           ?.model_provider_name,
+                        finetune_base_models,
                       )}
                     </div>
                     <div class="text-sm text-gray-500">
@@ -737,12 +705,17 @@
                       <div class="text-sm text-error">Progress: 0%</div>
                     {/if}
                     <div class="flex flex-row gap-2 mt-2 items-center">
-                      {#if task_run_config.id == evaluator.current_run_config_id}
+                      {#if task_run_config.id == eval_state.evaluator.current_run_config_id}
                         <button
                           class="badge badge-primary min-h-[2rem] h-auto px-3 py-1"
                           on:click={(event) => {
                             event.stopPropagation()
-                            set_current_run_config("None")
+                            setCurrentRunConfig(
+                              project_id,
+                              task_id,
+                              eval_id,
+                              "None",
+                            )
                           }}
                         >
                           Default <span class="pl-2">&#x2715;</span>
@@ -754,7 +727,14 @@
                             : 'badge-secondary badge-outline'} min-h-[2rem] h-auto px-3 py-1"
                           on:click={(event) => {
                             event.stopPropagation()
-                            set_current_run_config(task_run_config.id)
+                            if (task_run_config.id) {
+                              setCurrentRunConfig(
+                                project_id,
+                                task_id,
+                                eval_id,
+                                task_run_config.id,
+                              )
+                            }
                           }}
                         >
                           Set as default
@@ -762,8 +742,9 @@
                       {/if}
                       <RunEval
                         btn_size="sm"
-                        run_url={task_run_config.id && current_eval_config_id
-                          ? `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?run_config_ids=${encodeURIComponent(task_run_config.id)}&all_run_configs=false`
+                        run_url={task_run_config.id &&
+                        eval_config_state.current_id
+                          ? `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${eval_config_state.current_id}/run_task_run_eval?run_config_ids=${encodeURIComponent(task_run_config.id)}&all_run_configs=false`
                           : ""}
                         on_run_complete={() => {
                           get_score_summary()
@@ -788,7 +769,7 @@
                       {formatDate(task_run_config.created_at)}
                     </div>
                   </td>
-                  {#each evaluator.output_scores as output_score}
+                  {#each eval_state.evaluator.output_scores as output_score}
                     {@const score =
                       score_summary?.results?.["" + task_run_config.id]?.[
                         string_to_json_key(output_score.name)
@@ -865,9 +846,9 @@
         has_structured_output={!!$current_task?.output_json_schema}
       />
     </Collapse>
-    {#if add_task_config_error}
+    {#if eval_state.error}
       <div class="text-error text-sm">
-        {add_task_config_error.getMessage() || "An unknown error occurred"}
+        {eval_state.error.getMessage() || "An unknown error occurred"}
       </div>
     {/if}
   </div>
