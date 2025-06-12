@@ -136,11 +136,17 @@
     }
   }
 
-  export let delete_url: string | undefined = undefined
-  let delete_dialog: DeleteDialog | null = null
-  $: delete_url = `/api/projects/${project_id}/documents/${document_id}`
-  function after_delete() {
+  let delete_document_dialog: DeleteDialog | null = null
+  $: delete_document_url = `/api/projects/${project_id}/documents/${document_id}`
+  function after_document_delete() {
     goto(`/documents/${project_id}/documents`)
+  }
+
+  let delete_extraction_id: string | null = null
+  let delete_extraction_dialog: DeleteDialog | null = null
+  $: delete_extraction_url = `/api/projects/${project_id}/documents/${document_id}/extractions/${delete_extraction_id}`
+  async function after_delete_extraction() {
+    get_extractions()
   }
 </script>
 
@@ -161,7 +167,7 @@
     },
     {
       icon: "/images/delete.svg",
-      handler: () => delete_dialog?.show(),
+      handler: () => delete_document_dialog?.show(),
       shortcut: isMacOS() ? "Backspace" : "Delete",
     },
   ]}
@@ -223,6 +229,7 @@
                   <th>Source</th>
                   <th>Extractor</th>
                   <th>Output</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -283,6 +290,21 @@
                         </button>
                       </div>
                     </td>
+                    <td>
+                      <button
+                        class="btn btn-sm flex flex-row items-center gap-2"
+                        on:click={() => {
+                          delete_extraction_id = result.id || null
+                          delete_extraction_dialog?.show()
+                        }}
+                      >
+                        <img
+                          src="/images/delete.svg"
+                          class="w-4 h-4"
+                          alt="Delete Extraction"
+                        />
+                      </button>
+                    </td>
                   </tr>
                 {/each}
               </tbody>
@@ -322,7 +344,14 @@
 
 <DeleteDialog
   name={document?.name || "Document"}
-  bind:this={delete_dialog}
-  {delete_url}
-  {after_delete}
+  bind:this={delete_document_dialog}
+  delete_url={delete_document_url}
+  after_delete={after_document_delete}
+/>
+
+<DeleteDialog
+  name="Extraction"
+  bind:this={delete_extraction_dialog}
+  delete_url={delete_extraction_url}
+  after_delete={after_delete_extraction}
 />

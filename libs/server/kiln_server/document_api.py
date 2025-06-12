@@ -591,3 +591,30 @@ def connect_document_api(app: FastAPI):
         )
 
         return await run_extractor_runner_with_status(extractor_runner)
+
+    @app.delete(
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
+    )
+    async def delete_extraction(
+        project_id: str,
+        document_id: str,
+        extraction_id: str,
+    ) -> dict:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+
+        extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
+        if not extraction:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extraction {extraction_id} not found",
+            )
+
+        extraction.delete()
+
+        return {"message": f"Extraction removed. ID: {extraction_id}"}
