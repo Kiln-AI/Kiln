@@ -113,8 +113,9 @@ class ExtractionSummary(BaseModel):
 
 
 class CreateExtractorConfigRequest(BaseModel):
-    name: str = Field(
+    name: str | None = Field(
         description="The name of the extractor config",
+        default=None,
     )
     description: str | None = Field(
         description="The description of the extractor config",
@@ -133,12 +134,6 @@ class CreateExtractorConfigRequest(BaseModel):
     properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
         default={},
     )
-
-    @model_validator(mode="before")
-    def set_default_name(cls, values: dict) -> dict:
-        if values.get("name") is None:
-            values["name"] = generate_memorable_name()
-        return values
 
     @model_validator(mode="after")
     def set_default_properties(self):
@@ -341,7 +336,7 @@ def connect_document_api(app: FastAPI):
 
         extractor_config = ExtractorConfig(
             parent=project,
-            name=request.name,
+            name=request.name or generate_memorable_name(),
             description=request.description,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
