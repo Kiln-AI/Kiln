@@ -2098,41 +2098,24 @@ export interface components {
             document_count_successful: number;
             current_extractor_config: components["schemas"]["ExtractorConfig"] | null;
         };
-        /**
-         * ExtractionSource
-         * @enum {string}
-         */
-        ExtractionSource: "processed" | "passthrough";
         /** ExtractionSummary */
         ExtractionSummary: {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
             /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
+            id: string;
             /**
              * Created At
              * Format: date-time
              */
-            created_at?: string;
+            created_at: string;
             /** Created By */
-            created_by?: string;
-            /** @description The source of the extraction. */
-            source: components["schemas"]["ExtractionSource"];
-            /**
-             * Extractor Config Id
-             * @description The ID of the extractor config that was used to extract the data.
-             */
-            extractor_config_id: string | null;
-            /** Output */
-            output: string;
+            created_by: string;
+            /** Source */
+            source: string;
+            /** Extractor Config Id */
+            extractor_config_id: string;
+            /** Output Content */
+            output_content: string;
             extractor: components["schemas"]["ExtractorSummary"];
-            /** Model Type */
-            readonly model_type: string;
         };
         /** ExtractorConfig */
         ExtractorConfig: {

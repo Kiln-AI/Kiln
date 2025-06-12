@@ -64,7 +64,11 @@ class AsyncJobRunner:
                     else:
                         errors += 1
 
-                    yield Progress(complete=complete, total=total, errors=errors)
+                    yield Progress(
+                        complete=complete,
+                        total=total,
+                        errors=errors,
+                    )
                 except asyncio.TimeoutError:
                     # Timeout is expected, just continue to recheck worker status
                     # Don't love this but beats sentinels for reliability
@@ -92,13 +96,13 @@ class AsyncJobRunner:
                 break
 
             try:
-                success = await run_job(job)
+                result = await run_job(job)
             except Exception:
                 logger.error("Job failed to complete", exc_info=True)
-                success = False
+                result = False
 
             try:
-                await status_queue.put(success)
+                await status_queue.put(result)
             except Exception:
                 logger.error("Failed to enqueue status for job", exc_info=True)
             finally:
