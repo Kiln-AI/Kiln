@@ -1,14 +1,13 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
-  import { client, base_url } from "$lib/api_client"
+  import { base_url } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import FormElement from "$lib/utils/form_element.svelte"
   import type {
     EvalConfig,
-    ProviderModels,
     TaskRunConfig,
     EvalResultSummary,
     StructuredOutputMode,
@@ -19,7 +18,6 @@
     model_info,
     load_model_info,
     model_name,
-    provider_name_from_id,
     prompt_name_from_id,
     current_task_prompts,
     load_available_prompts,
@@ -35,11 +33,33 @@
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import RunEval from "../run_eval.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import RunOptions from "$lib/ui/run_options.svelte"
+  import { addTaskRunConfig } from "$lib/services/eval-service"
+  import type { components } from "$lib/api_schema"
+  import {
+    formatDate,
+    isFinetuneModel,
+    getEnhancedModelName,
+    getEnhancedProviderName,
+    getEvalConfigProperties,
+    sortTaskRunConfigs,
+    applyFilters,
+    showIncompleteWarning,
+    getEvalConfigSelectOptions,
+    getAvailableFilterModels,
+  } from "$lib/utils/eval-helpers"
+  import {
+    getEval,
+    getEvalConfigs,
+    getTaskRunConfigs,
+    getScoreSummary,
+    setCurrentRunConfig,
+    deleteTaskRunConfig,
+    getFinetuneBaseModel,
+  } from "$lib/services/eval-service"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -74,6 +94,79 @@
     should_select_eval_config && eval_state?.includes("complete")
   )
 
+  $: current_eval_config = eval_configs?.find(
+    (config) => config.id === current_eval_config_id,
+  )
+
+  // Update function calls to use imported helpers:
+  $: get_enhanced_model_name = (model_name_param: string | undefined) =>
+    getEnhancedModelName(model_name_param, $model_info)
+  $: get_enhanced_provider_name = (
+    model_name_param: string | undefined,
+    provider_name_param: string | undefined,
+  ) =>
+    getEnhancedProviderName(
+      model_name_param,
+      provider_name_param,
+      finetune_base_models,
+    )
+  $: get_eval_config_properties = (eval_config_id: string | null) =>
+    getEvalConfigProperties(eval_config_id, eval_configs, $model_info)
+  $: show_incomplete_warning = (score_summary: EvalResultSummary | null) =>
+    showIncompleteWarning(score_summary)
+
+  // Update sortTaskRunConfigs call
+  $: sorted_task_run_configs = task_run_configs
+    ? sortTaskRunConfigs(
+        task_run_configs,
+        evaluator,
+        score_summary,
+        sortState.column,
+        sortState.direction,
+      )
+    : []
+
+  // Update applyFilters call
+  $: filtered_task_run_configs = sorted_task_run_configs
+    ? applyFilters(sorted_task_run_configs, filter_models, finetune_base_models)
+    : []
+
+  // Update is_finetune_model call
+  function is_finetune_model(model_name: string | undefined): boolean {
+    return isFinetuneModel(model_name)
+  }
+
+  // Update get_eval_config_select_options to use the helper
+  $: eval_config_select_options = getEvalConfigSelectOptions(
+    eval_configs,
+    $model_info,
+  )
+
+  // Update get_available_filter_models to use the helper
+  $: available_filter_models = getAvailableFilterModels(
+    sorted_task_run_configs,
+    filter_models,
+    finetune_base_models,
+  )
+
+  // Remove the old function definitions since we're using the helpers now
+  // function get_eval_config_select_options(configs: EvalConfig[] | null) { ... }
+  // function get_available_filter_models(configs: TaskRunConfig[], currentFilters: string[]) { ... }
+
+  // Keep the component-specific UI handlers
+  function toggleSort(column: "created_at" | "score" | "name" | string) {
+    if (sortColumn === column) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc"
+    } else {
+      sortColumn = column
+      sortDirection = "desc"
+    }
+  }
+
+  function getSortHeaderClass(): string {
+    return "cursor-pointer hover:bg-gray-50"
+  }
+
   onMount(async () => {
     // Wait for page params to load
     await tick()
@@ -95,18 +188,7 @@
   async function get_eval() {
     try {
       eval_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              eval_id,
-            },
-          },
-        },
-      )
+      const { data, error } = await getEval(project_id, task_id, eval_id)
       if (error) {
         throw error
       }
@@ -114,7 +196,7 @@
       // Set the selected eval config: prefer query params, then eval's default, then first eval config (set below in load_eval_configs)
       current_eval_config_id =
         $page.url.searchParams.get("selected_eval_config") ||
-        evaluator.current_config_id ||
+        evaluator?.current_config_id ||
         null
     } catch (error) {
       eval_error = createKilnError(error)
@@ -126,29 +208,14 @@
   async function get_eval_configs() {
     try {
       eval_configs_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              eval_id,
-            },
-          },
-        },
-      )
+      const { data, error } = await getEvalConfigs(project_id, task_id, eval_id)
       if (error) {
         throw error
       }
       eval_configs = data
       // Fallback to first eval config if no current eval config id is set from load_eval()
-      if (
-        !current_eval_config_id &&
-        eval_configs.length > 0 &&
-        eval_configs[0].id
-      ) {
-        current_eval_config_id = eval_configs[0].id
+      if (!current_eval_config_id && data && data.length > 0 && data[0]?.id) {
+        current_eval_config_id = data[0].id
       }
     } catch (error) {
       eval_configs_error = createKilnError(error)
@@ -160,17 +227,7 @@
   async function get_task_run_configs() {
     try {
       task_run_configs_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-        },
-      )
+      const { data, error } = await getTaskRunConfigs(project_id, task_id)
       if (error) {
         throw error
       }
@@ -207,18 +264,11 @@
     }
     try {
       score_summary = null
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              eval_id,
-              eval_config_id: current_eval_config_id,
-            },
-          },
-        },
+      const { data, error } = await getScoreSummary(
+        project_id,
+        task_id,
+        eval_id,
+        current_eval_config_id,
       )
       if (error) {
         throw error
@@ -244,27 +294,6 @@
     }
   }
 
-  type UiProperty = {
-    name: string
-    value: string
-  }
-
-  // A dropdown name for the eval config that is human readable and helpful
-  // Combine's it's name with it's properties
-  function get_eval_config_name(
-    eval_config: EvalConfig,
-    model_info: ProviderModels | null,
-  ): string {
-    let parts = []
-    parts.push(eval_config_to_ui_name(eval_config.config_type))
-    parts.push(model_name(eval_config.model_name, model_info))
-    return eval_config.name + " — " + parts.join(", ")
-  }
-
-  $: current_eval_config = eval_configs?.find(
-    (config) => config.id === current_eval_config_id,
-  )
-
   // Filter state
   let filter_models: string[] = []
 
@@ -275,195 +304,6 @@
 
   // Make sort state reactive
   $: sortState = { column: sortColumn, direction: sortDirection }
-
-  // Sort task run configs - default first, then by last output score
-  $: sorted_task_run_configs = task_run_configs
-    ? sortTaskRunConfigs(
-        task_run_configs,
-        evaluator,
-        score_summary,
-        sortState.column,
-        sortState.direction,
-      )
-    : []
-
-  // Apply filters to sorted configs
-  $: filtered_task_run_configs = sorted_task_run_configs
-    ? applyFilters(sorted_task_run_configs, filter_models)
-    : []
-
-  function sortTaskRunConfigs(
-    configs: TaskRunConfig[] | null,
-    evaluator: Eval | null,
-    score_summary: EvalResultSummary | null,
-    currentSortColumn: "created_at" | "score" | "name" | string | null,
-    currentSortDirection: "asc" | "desc",
-  ): TaskRunConfig[] {
-    if (!configs || !configs.length) return []
-
-    return [...configs].sort((a, b) => {
-      // Default run config always comes first
-      if (a.id === evaluator?.current_run_config_id) return -1
-      if (b.id === evaluator?.current_run_config_id) return 1
-
-      // If sorting by created_at
-      if (currentSortColumn === "created_at") {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
-        return currentSortDirection === "asc" ? dateA - dateB : dateB - dateA
-      }
-
-      // If sorting by name
-      if (currentSortColumn === "name") {
-        return currentSortDirection === "asc"
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name)
-      }
-
-      // If sorting by score (either "score" or a specific score column)
-      if (evaluator?.output_scores && score_summary?.results) {
-        // If currentSortColumn is "score", use the first score column
-        const scoreKey =
-          currentSortColumn === "score"
-            ? evaluator.output_scores.length
-              ? string_to_json_key(evaluator.output_scores[0].name)
-              : null
-            : string_to_json_key(currentSortColumn || "")
-
-        // Skip score-based sorting if no score key is available
-        if (!scoreKey) {
-          return a.name.localeCompare(b.name)
-        }
-
-        const scoreA = score_summary.results["" + a.id]?.[scoreKey]?.mean_score
-        const scoreB = score_summary.results["" + b.id]?.[scoreKey]?.mean_score
-
-        // If both have scores, sort by score
-        if (
-          scoreA !== null &&
-          scoreA !== undefined &&
-          scoreB !== null &&
-          scoreB !== undefined
-        ) {
-          return currentSortDirection === "asc"
-            ? scoreA - scoreB
-            : scoreB - scoreA
-        }
-
-        // If only one has a score, it comes first
-        if (scoreA !== null && scoreA !== undefined) return -1
-        if (scoreB !== null && scoreB !== undefined) return 1
-      }
-
-      // Fallback to sort by name if no scores available
-      return a.name.localeCompare(b.name)
-    })
-  }
-
-  function toggleSort(column: "created_at" | "score" | "name" | string) {
-    if (sortColumn === column) {
-      sortDirection = sortDirection === "asc" ? "desc" : "asc"
-    } else {
-      sortColumn = column
-      sortDirection = "desc"
-    }
-  }
-
-  function getSortHeaderClass(): string {
-    return "cursor-pointer hover:bg-gray-50"
-  }
-
-  function formatDate(dateString: string | undefined): string {
-    if (!dateString) return "Unknown"
-    const date = new Date(dateString)
-    const datePart = date.toLocaleString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
-    const timePart = date.toLocaleString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZoneName: "short",
-    })
-    return `${datePart}\n${timePart}`
-  }
-
-  function applyFilters(
-    configs: TaskRunConfig[],
-    modelFilters: string[],
-  ): TaskRunConfig[] {
-    if (modelFilters.length === 0) {
-      return configs
-    }
-
-    return configs.filter((config) => {
-      const modelName = config.run_config_properties?.model_name
-      if (!modelName) return false
-
-      // Check if the model name itself is in the filters (for base models)
-      if (modelFilters.includes(modelName)) return true
-
-      // Check if the base model is in the filters (for finetunes)
-      if (is_finetune_model(modelName)) {
-        const base_model = finetune_base_models[modelName]
-        return base_model && modelFilters.includes(base_model)
-      }
-
-      return false
-    })
-  }
-
-  function get_eval_config_properties(
-    eval_config_id: string | null,
-    model_info: ProviderModels | null,
-  ): UiProperty[] {
-    const eval_config = eval_configs?.find(
-      (config) => config.id === eval_config_id,
-    )
-    if (!eval_config) {
-      return [
-        {
-          name: "No Config Selected",
-          value: "Select a config from dropdown above",
-        },
-      ]
-    }
-
-    const properties: UiProperty[] = []
-
-    properties.push({
-      name: "Algorithm",
-      value: eval_config_to_ui_name(eval_config.config_type),
-    })
-    properties.push({
-      name: "Eval Model",
-      value: model_name(eval_config.model_name, model_info),
-    })
-    properties.push({
-      name: "Model Provider",
-      value: provider_name_from_id(eval_config.model_provider),
-    })
-    return properties
-  }
-
-  function get_eval_config_select_options(
-    configs: EvalConfig[] | null,
-  ): [string, [unknown, string][]][] {
-    const configs_options: [string, string][] = []
-    for (const c of configs || []) {
-      if (c.id) {
-        configs_options.push([c.id, get_eval_config_name(c, $model_info)])
-      }
-    }
-
-    const results: [string, [unknown, string][]][] = []
-    if (configs_options.length > 0) {
-      results.push(["Select Eval Method", configs_options])
-    }
-    results.push(["Manage Eval Methods", [["add_config", "Add Eval Method"]]])
-    return results
-  }
 
   let eval_state:
     | "not_started"
@@ -516,28 +356,15 @@
     }
 
     try {
-      const { error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-          body: {
-            run_config_properties: {
-              model_name: task_run_config_model_name,
-              // @ts-expect-error not checking types here, server will check them
-              model_provider_name: task_run_config_provider_name,
-              prompt_id: task_run_config_prompt_method,
-              temperature: task_run_config_temperature,
-              top_p: task_run_config_top_p,
-              structured_output_mode: task_run_config_structured_output_mode,
-            },
-          },
-        },
-      )
+      const { error } = await addTaskRunConfig(project_id, task_id, {
+        model_name: task_run_config_model_name,
+        model_provider_name:
+          task_run_config_provider_name as components["schemas"]["ModelProviderName"],
+        prompt_id: task_run_config_prompt_method,
+        temperature: task_run_config_temperature,
+        top_p: task_run_config_top_p,
+        structured_output_mode: task_run_config_structured_output_mode,
+      })
       if (error) {
         throw error
       }
@@ -550,21 +377,6 @@
     return true
   }
 
-  function show_incomplete_warning(
-    score_summary: EvalResultSummary | null,
-  ): boolean {
-    if (!score_summary?.run_config_percent_complete) {
-      return false
-    }
-
-    const values = Object.values(score_summary.run_config_percent_complete)
-    const minComplete =
-      values.length > 0
-        ? values.reduce((min, val) => Math.min(min, val), 1.0)
-        : 1.0
-    return minComplete < 1.0
-  }
-
   $: has_default_eval_config = evaluator && evaluator.current_config_id
 
   async function set_current_run_config(
@@ -574,18 +386,11 @@
       return
     }
     try {
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
-              run_config_id: run_config_id,
-            },
-          },
-        },
+      const { data, error } = await setCurrentRunConfig(
+        project_id,
+        task_id,
+        eval_id,
+        run_config_id,
       )
       if (error) {
         throw error
@@ -611,94 +416,24 @@
       return false
     }
     try {
-      const { error } = await client.DELETE(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config/{run_config_id}",
-        {
-          params: {
-            path: {
-              project_id: project_id,
-              task_id: task_id,
-              run_config_id: delete_run_config_id,
-            },
-          },
-        },
+      const { success, error } = await deleteTaskRunConfig(
+        project_id,
+        task_id,
+        delete_run_config_id,
       )
       if (error) {
         throw error
       }
-      if (after_delete) {
+      if (success && after_delete) {
         after_delete()
       }
-      return true
+      return success
     } catch (error) {
-      const errorMessage =
-        error && typeof error === "object" && "message" in error
-          ? String(error.message)
-          : "Unknown error"
-      eval_error = new KilnError("Failed to delete run method", [errorMessage])
+      eval_error = createKilnError(error)
       return false
     }
   }
 
-  // Get available models for filtering - separated into base models and finetune base models
-  $: available_filter_models = get_available_filter_models(
-    sorted_task_run_configs,
-    filter_models,
-  )
-
-  function get_available_filter_models(
-    configs: TaskRunConfig[],
-    currentFilters: string[],
-  ): {
-    base_models: Record<string, number>
-    finetune_base_models: Record<string, number>
-  } {
-    if (!configs) return { base_models: {}, finetune_base_models: {} }
-
-    const base_models: Record<string, number> = {}
-    const finetune_base_models_result: Record<string, number> = {}
-
-    configs.forEach((config) => {
-      const modelName = config.run_config_properties?.model_name
-      if (!modelName || currentFilters.includes(modelName)) return
-
-      if (is_finetune_model(modelName)) {
-        // For finetunes, group by base model
-        const base_model = finetune_base_models[modelName]
-        if (base_model && !currentFilters.includes(base_model)) {
-          const current = finetune_base_models_result[base_model]
-          finetune_base_models_result[base_model] = current ? current + 1 : 1
-        }
-      } else {
-        // For regular models, group by model name
-        if (!currentFilters.includes(modelName)) {
-          const current = base_models[modelName]
-          base_models[modelName] = current ? current + 1 : 1
-        }
-      }
-    })
-
-    return { base_models, finetune_base_models: finetune_base_models_result }
-  }
-
-  function add_filter_model(model: string) {
-    const newFilters = [...new Set([...filter_models, model])]
-    filter_models = newFilters
-  }
-
-  function remove_filter_model(model: string) {
-    filter_models = filter_models.filter((m) => m !== model)
-  }
-
-  // Function to check if a model name is a finetune ID
-  function is_finetune_model(model_name: string | undefined): boolean {
-    if (!model_name) return false
-    // Finetune IDs are in format: project_id::task_id::finetune_id
-    const parts = model_name.split("::")
-    return parts.length === 3
-  }
-
-  // Function to parse finetune ID and get base model
   async function get_finetune_base_model(
     model_name: string,
   ): Promise<string | null> {
@@ -709,62 +444,28 @@
       return finetune_base_models[model_name]
     }
 
-    try {
-      const parts = model_name.split("::")
-      if (parts.length !== 3) return null
-
-      const [ft_project_id, ft_task_id, finetune_id] = parts
-
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
-        {
-          params: {
-            path: {
-              project_id: ft_project_id,
-              task_id: ft_task_id,
-              finetune_id: finetune_id,
-            },
-          },
-        },
-      )
-
-      if (error || !data) return null
-
-      const base_model_id = data.finetune.base_model_id
-      // Cache the result
-      finetune_base_models[model_name] = base_model_id
-      return base_model_id
-    } catch (error) {
+    const { baseModelId, error } = await getFinetuneBaseModel(model_name)
+    if (error) {
       console.error("Error fetching finetune base model:", error)
       return null
     }
-  }
 
-  // Function to get display name for model including base model for finetunes
-  function get_enhanced_model_name(
-    model_name_param: string | undefined,
-  ): string {
-    if (!model_name_param) return "Unknown"
-
-    // Just return the regular model name, base model will be shown in provider line
-    return model_name(model_name_param, $model_info)
-  }
-
-  // Function to get enhanced provider name with base model for finetunes
-  function get_enhanced_provider_name(
-    model_name_param: string | undefined,
-    provider_name_param: string | undefined,
-  ): string {
-    const base_provider = provider_name_from_id(provider_name_param || "")
-
-    if (is_finetune_model(model_name_param) && model_name_param) {
-      const base_model = finetune_base_models[model_name_param]
-      if (base_model) {
-        return `${base_provider} (base: ${base_model})`
-      }
+    if (baseModelId) {
+      // Cache the result
+      finetune_base_models[model_name] = baseModelId
+      return baseModelId
     }
 
-    return base_provider
+    return null
+  }
+
+  function add_filter_model(model: string) {
+    const newFilters = [...new Set([...filter_models, model])]
+    filter_models = newFilters
+  }
+
+  function remove_filter_model(model: string) {
+    filter_models = filter_models.filter((m) => m !== model)
   }
 </script>
 
@@ -809,9 +510,7 @@
             label="Eval Method"
             inputType="select"
             bind:value={current_eval_config_id}
-            select_options_grouped={get_eval_config_select_options(
-              eval_configs,
-            )}
+            select_options_grouped={eval_config_select_options}
           />
           {#if !has_default_eval_config}
             <Warning
@@ -830,7 +529,7 @@
         <div
           class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
         >
-          {#each get_eval_config_properties(current_eval_config_id, $model_info) as property}
+          {#each get_eval_config_properties(current_eval_config_id) as property}
             <div class="flex items-center">{property.name}</div>
             <div class="flex items-center text-gray-500 overflow-x-hidden">
               {property.value}
