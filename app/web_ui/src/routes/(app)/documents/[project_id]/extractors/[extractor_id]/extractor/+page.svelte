@@ -42,12 +42,69 @@
       loading = false
     }
   }
+
+  async function archive_extractor_config() {
+    const { error: archive_extractor_error } = await client.PATCH(
+      "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+      {
+        body: {
+          is_archived: true,
+        },
+        params: {
+          path: {
+            project_id,
+            extractor_config_id: extractor_id,
+          },
+        },
+      },
+    )
+
+    if (archive_extractor_error) {
+      throw createKilnError(archive_extractor_error)
+    }
+
+    await get_extractor_config()
+  }
+
+  async function unarchive_extractor_config() {
+    const { error: unarchive_extractor_error } = await client.PATCH(
+      "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+      {
+        body: {
+          is_archived: false,
+        },
+        params: {
+          path: {
+            project_id,
+            extractor_config_id: extractor_id,
+          },
+        },
+      },
+    )
+
+    if (unarchive_extractor_error) {
+      throw createKilnError(unarchive_extractor_error)
+    }
+
+    await get_extractor_config()
+  }
 </script>
 
 <AppPage
   title="Document Extractor"
   subtitle={"Extractor: " + (extractor_config?.name || "N/A")}
-  action_buttons={[]}
+  action_buttons={[
+    {
+      label: extractor_config?.is_archived ? "Unarchive" : "Archive",
+      handler: () => {
+        if (extractor_config?.is_archived) {
+          unarchive_extractor_config()
+        } else {
+          archive_extractor_config()
+        }
+      },
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -55,6 +112,11 @@
     </div>
   {:else}
     <div>
+      {#if extractor_config?.is_archived}
+        <div class="alert alert-warning mb-4">
+          This extractor is archived. You may unarchive it to use it again.
+        </div>
+      {/if}
       <div>
         <PropertyList
           properties={[

@@ -182,6 +182,29 @@ def gemini_properties_with_defaults(
     }
 
 
+class PatchExtractorConfigRequest(BaseModel):
+    name: str | None = Field(
+        description="The name of the extractor config",
+        default=None,
+    )
+    description: str | None = Field(
+        description="The description of the extractor config",
+        default=None,
+    )
+    is_archived: bool | None = Field(
+        description="Whether the extractor config is archived",
+        default=None,
+    )
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self):
+        if all(
+            field is None for field in [self.name, self.description, self.is_archived]
+        ):
+            raise ValueError("At least one field must be provided")
+        return self
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
@@ -218,7 +241,9 @@ def connect_document_api(app: FastAPI):
         document.save_to_file()
 
         # TODO: async trigger extraction for all configs
-        for extractor_config in project.extractor_configs():
+        for extractor_config in [
+            ec for ec in project.extractor_configs() if not ec.is_archived
+        ]:
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
                 documents=[document],
@@ -354,6 +379,12 @@ def connect_document_api(app: FastAPI):
             raise HTTPException(
                 status_code=404,
                 detail="Extractor config not found",
+            )
+
+        if extractor_config.is_archived:
+            raise HTTPException(
+                status_code=422,
+                detail="Extractor config is archived. You must unarchive it to use it.",
             )
 
         documents = project.documents()
@@ -585,7 +616,11 @@ def connect_document_api(app: FastAPI):
 
         if extractor_config_ids is None:
             extractor_config_ids = [
-                extractor_config.id for extractor_config in project.extractor_configs()
+                extractor_config.id
+                for extractor_config in [
+                    ec for ec in project.extractor_configs() if not ec.is_archived
+                ]
+                if not extractor_config.is_archived
             ]
 
         extractor_configs: list[ExtractorConfig] = []
@@ -633,3 +668,31 @@ def connect_document_api(app: FastAPI):
         extraction.delete()
 
         return {"message": f"Extraction removed. ID: {extraction_id}"}
+
+    @app.patch("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
+    async def patch_extractor_config(
+        project_id: str,
+        extractor_config_id: str,
+        request: PatchExtractorConfigRequest,
+    ) -> dict:
+        project = project_from_id(project_id)
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+
+        if extractor_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config not found",
+            )
+
+        if request.name is not None:
+            extractor_config.name = request.name
+        if request.description is not None:
+            extractor_config.description = request.description
+        if request.is_archived is not None:
+            extractor_config.is_archived = request.is_archived
+
+        extractor_config.save_to_file()
+
+        return {"message": f"Extractor config updated. ID: {extractor_config_id}"}

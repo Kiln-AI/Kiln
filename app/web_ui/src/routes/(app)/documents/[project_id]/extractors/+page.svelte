@@ -229,7 +229,13 @@
                 <td>{extractor_config.extractor_type}</td>
                 <td>
                   <div class="flex flex-col gap-1">
-                    {#if status_map[extractor_config.id || ""] == "complete"}
+                    {#if extractor_config.is_archived}
+                      <div
+                        class="badge badge-neutral badge-outline py-3 font-medium"
+                      >
+                        Archived
+                      </div>
+                    {:else if status_map[extractor_config.id || ""] == "complete"}
                       <div
                         class="badge badge-primary badge-outline py-3 font-medium"
                       >
@@ -253,7 +259,7 @@
                   </div>
                 </td>
                 <td>
-                  {#if status_map[extractor_config.id || ""] === "not_started" || status_map[extractor_config.id || ""] === "incomplete"}
+                  {#if !extractor_config.is_archived && (status_map[extractor_config.id || ""] === "not_started" || status_map[extractor_config.id || ""] === "incomplete")}
                     <RunExtractor
                       btn_size="mid"
                       on_run_complete={() => get_all_progress()}
