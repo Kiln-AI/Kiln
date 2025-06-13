@@ -2,7 +2,10 @@
   import { page } from "$app/stores"
   import { client } from "../../../../../../../lib/api_client"
   import type { ExtractorConfig } from "../../../../../../../lib/types"
-  import { createKilnError } from "../../../../../../../lib/utils/error_handlers"
+  import {
+    createKilnError,
+    type KilnError,
+  } from "../../../../../../../lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "../../../../../../../lib/ui/property_list.svelte"
   import { onMount } from "svelte"
@@ -12,6 +15,7 @@
   $: extractor_id = $page.params.extractor_id
 
   let loading: boolean = false
+  let error: KilnError | null = null
   let extractor_config: ExtractorConfig | null = null
 
   onMount(async () => {
@@ -34,7 +38,8 @@
       )
 
       if (create_extractor_error) {
-        throw createKilnError(create_extractor_error)
+        error = createKilnError(create_extractor_error)
+        return
       }
 
       extractor_config = data
@@ -178,5 +183,14 @@
         </div>
       </div>
     </div>
+    {#if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
+        </div>
+      </div>
+    {/if}
   {/if}
 </AppPage>
