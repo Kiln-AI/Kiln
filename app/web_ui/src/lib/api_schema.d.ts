@@ -526,32 +526,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/documents/{document_id}/discover_serve_file": {
+    "/api/projects/{project_id}/documents/{document_id}/download": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Discover Serve Document File */
-        get: operations["discover_serve_document_file_api_projects__project_id__documents__document_id__discover_serve_file_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/documents/{document_id}/serve_file": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Serve Document File */
-        get: operations["serve_document_file_api_projects__project_id__documents__document_id__serve_file_get"];
+        /** Download Document File */
+        get: operations["download_document_file_api_projects__project_id__documents__document_id__download_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1788,11 +1771,6 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
-        /** DiscoverServeFileResponse */
-        DiscoverServeFileResponse: {
-            /** Url */
-            url: string;
-        };
         /** Document */
         Document: {
             /**
@@ -4653,39 +4631,7 @@ export interface operations {
             };
         };
     };
-    discover_serve_document_file_api_projects__project_id__documents__document_id__discover_serve_file_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                document_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscoverServeFileResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    serve_document_file_api_projects__project_id__documents__document_id__serve_file_get: {
+    download_document_file_api_projects__project_id__documents__document_id__download_get: {
         parameters: {
             query?: never;
             header?: never;
