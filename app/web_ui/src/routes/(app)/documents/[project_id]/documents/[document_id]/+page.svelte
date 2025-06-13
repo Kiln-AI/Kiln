@@ -300,7 +300,7 @@
                       >
                         <img
                           src="/images/delete.svg"
-                          class="w-4 h-4"
+                          class="w-4 h-4 text-error"
                           alt="Delete Extraction"
                         />
                       </button>

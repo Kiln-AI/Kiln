@@ -1,12 +1,11 @@
 <script lang="ts">
   import type { ExtractorConfig } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
-  import RunExtractorDialogButton from "./run_extractor_dialog_button.svelte"
   import {
     extractorProgress,
     formatProgressPercentage,
   } from "$lib/stores/extractor_progress"
-  import RunProgressDialogButton from "./run_progress_dialog_button.svelte"
+  import RunExtractorControl from "./run_extractor_control.svelte"
 
   export let extractor_config: ExtractorConfig
   export let project_id: string
@@ -69,21 +68,6 @@
     </div>
   </td>
   <td>
-    {#if !extractor_config.is_archived}
-      {#if $extractorProgress.status[extractor_config.id || ""] === "running" || $extractorProgress.status[extractor_config.id || ""] === "completed_with_errors"}
-        <RunProgressDialogButton
-          extractor_config_id={extractor_config.id || ""}
-          {project_id}
-        />
-      {:else}
-        <RunExtractorDialogButton
-          disabled={$extractorProgress.status[extractor_config.id || ""] ===
-            "complete"}
-          extractor_config_id={extractor_config.id || ""}
-          btn_size="mid"
-          {project_id}
-        />
-      {/if}
-    {/if}
+    <RunExtractorControl {extractor_config} {project_id} />
   </td>
 </tr>
