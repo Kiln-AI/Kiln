@@ -1,6 +1,6 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
-  import { extractorProgress } from "$lib/stores/extractor_progress"
+  import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
   import type { ExtractorConfig } from "../../../../../lib/types"
 
   export let btn_size: "normal" | "mid" = "mid"
@@ -37,7 +37,7 @@
         label: "Re-run",
         isPrimary: true,
         action: () => {
-          extractorProgress.run_extractor(project_id, extractor_config_id)
+          extractorProgressStore.run_extractor(project_id, extractor_config_id)
           return false
         },
       })
@@ -46,10 +46,12 @@
     return buttons
   }
 
-  $: error_count = $extractorProgress.progress[extractor_config_id]?.error || 0
-  $: total_count = $extractorProgress.progress[extractor_config_id]?.total || 0
+  $: error_count =
+    $extractorProgressStore.progress[extractor_config_id]?.error || 0
+  $: total_count =
+    $extractorProgressStore.progress[extractor_config_id]?.total || 0
   $: success_count =
-    $extractorProgress.progress[extractor_config_id]?.success || 0
+    $extractorProgressStore.progress[extractor_config_id]?.success || 0
 
   function get_state_to_label(status: string) {
     const state_to_label: Record<
@@ -98,7 +100,7 @@
         icon: "play",
         isPrimary: true,
         action: () => {
-          extractorProgress.run_extractor(project_id, extractor_config_id)
+          extractorProgressStore.run_extractor(project_id, extractor_config_id)
           return false
         },
       },
@@ -107,10 +109,10 @@
     return state_to_label[status]
   }
 
-  $: status = $extractorProgress.status[extractor_config_id]
+  $: status = $extractorProgressStore.status[extractor_config_id]
   $: disabled =
     extractor_config.is_archived ||
-    $extractorProgress.status[extractor_config_id] === "complete"
+    $extractorProgressStore.status[extractor_config_id] === "complete"
   $: button_state = get_state_to_label(status)
 </script>
 
@@ -157,7 +159,7 @@
     {
       label: "Yes, start extraction",
       action: () => {
-        extractorProgress.run_extractor(project_id, extractor_config_id)
+        extractorProgressStore.run_extractor(project_id, extractor_config_id)
         run_confirm_dialog?.close()
         return false
       },

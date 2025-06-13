@@ -87,23 +87,23 @@ function createExtractorProgressStore() {
           eventSource.close()
           const newStatus =
             error_count > 0 ? "completed_with_errors" : "complete"
-          extractorProgress.updateStatus(extractor_config_id, newStatus)
+          extractorProgressStore.updateStatus(extractor_config_id, newStatus)
         } else {
           const data = JSON.parse(event.data)
           extracted_count = data.progress
           total_count = data.total
           error_count = data.errors
-          extractorProgress.updateProgress(extractor_config_id, {
+          extractorProgressStore.updateProgress(extractor_config_id, {
             is_running: true,
             success: extracted_count,
             total: total_count,
             error: error_count,
           })
-          extractorProgress.updateStatus(extractor_config_id, "running")
+          extractorProgressStore.updateStatus(extractor_config_id, "running")
         }
       } catch (error) {
         eventSource.close()
-        extractorProgress.updateStatus(
+        extractorProgressStore.updateStatus(
           extractor_config_id,
           "completed_with_errors",
         )
@@ -112,7 +112,7 @@ function createExtractorProgressStore() {
 
     eventSource.onerror = () => {
       eventSource.close()
-      extractorProgress.updateStatus(extractor_config_id, "incomplete")
+      extractorProgressStore.updateStatus(extractor_config_id, "incomplete")
     }
 
     return true
@@ -159,7 +159,7 @@ function createExtractorProgressStore() {
   }
 }
 
-export const extractorProgress = createExtractorProgressStore()
+export const extractorProgressStore = createExtractorProgressStore()
 
 function calculateStatus(progress: UiExtractionProgress): ExtractorStatus {
   if (progress.is_running) {

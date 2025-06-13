@@ -2,7 +2,10 @@
   import { page } from "$app/stores"
   import { client } from "../../../../../../lib/api_client"
   import type { ExtractorType, OutputFormat } from "../../../../../../lib/types"
-  import { createKilnError } from "../../../../../../lib/utils/error_handlers"
+  import {
+    createKilnError,
+    type KilnError,
+  } from "../../../../../../lib/utils/error_handlers"
   import FormElement from "../../../../../../lib/utils/form_element.svelte"
   import AppPage from "../../../../app_page.svelte"
   import FormContainer from "../../../../../../lib/utils/form_container.svelte"
@@ -18,6 +21,7 @@
   ]
 
   let loading: boolean = false
+  let error: KilnError | null = null
   let name: string | null = null
   let description: string = ""
   let selected_extractor_option: string = extractor_options[0].value
@@ -59,7 +63,8 @@
       )
 
       if (create_extractor_error) {
-        throw createKilnError(create_extractor_error)
+        error = createKilnError(create_extractor_error)
+        return
       }
 
       goto(`/docs/extractors/${project_id}`)
@@ -84,6 +89,8 @@
         submit_visible={true}
         submit_label="Create Extractor"
         on:submit={create_extractor_config}
+        {error}
+        gap={4}
         bind:submitting={loading}
       >
         <div class="flex flex-col gap-4">

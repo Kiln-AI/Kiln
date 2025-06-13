@@ -1,5 +1,5 @@
+import filecmp
 import io
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +17,7 @@ from kiln_ai.datamodel.extraction import (
 from kiln_ai.datamodel.project import Project
 
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.document_api import connect_document_api, sanitize_name
+from kiln_server.document_api import connect_document_api
 
 
 @pytest.fixture
@@ -91,11 +91,13 @@ def extractor_config_setup(project_setup):
     return {"project": project, "extractor_config": extractor_config}
 
 
-def test_sanitize_name():
-    assert sanitize_name("  hello world  ") == "hello_world"
-    assert sanitize_name("file.name.txt") == "file_name_txt"
-    assert sanitize_name("path/to/file") == "path_to_file"
-    assert sanitize_name("normal_name") == "normal_name"
+def check_attachment_saved(document: Document, test_content: bytes):
+    attachment_path = document.original_file.attachment.resolve_path(
+        document.path.parent
+    )
+    assert attachment_path.exists()
+    with open(attachment_path, "rb") as f:
+        assert f.read() == test_content
 
 
 @pytest.mark.asyncio
@@ -124,11 +126,18 @@ async def test_create_document_success(client, project_setup):
 
     assert response.status_code == 200
     result = response.json()
-    assert result["name"] == "Test_Document"
+    assert result["id"] is not None
+    assert result["name"] == "Test Document"
     assert result["description"] == "Test description"
     assert result["kind"] == "document"
     assert result["original_file"]["filename"] == "test.txt"
     assert result["original_file"]["mime_type"] == "text/plain"
+    assert result["original_file"]["size"] == len(test_content)
+
+    # check the attachment was saved with the document
+    document = Document.from_id_and_parent_path(result["id"], project.path)
+    assert document is not None
+    check_attachment_saved(document, test_content)
 
 
 @pytest.mark.asyncio
@@ -156,6 +165,11 @@ async def test_create_document_image_kind(client, project_setup):
     assert response.status_code == 200
     result = response.json()
     assert result["kind"] == "image"
+
+    # check the attachment was saved with the document
+    document = Document.from_id_and_parent_path(result["id"], project.path)
+    assert document is not None
+    check_attachment_saved(document, test_content)
 
 
 @pytest.mark.asyncio
@@ -341,7 +355,7 @@ async def test_create_extractor_config_success(client, project_setup):
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert result["name"] == "Test_Extractor"  # sanitized
+    assert result["name"] == "Test Extractor"
     assert result["description"] == "Test description"
     assert result["output_format"] == "text/plain"
     assert result["extractor_type"] == "gemini"
@@ -492,21 +506,6 @@ async def test_delete_documents_success(client, document_setup):
     assert response.status_code == 200
     result = response.json()
     assert document.id in result["message"]
-
-
-@pytest.mark.asyncio
-async def test_discover_serve_document_file(client, document_setup):
-    project = document_setup["project"]
-    document = document_setup["document"]
-
-    response = client.get(
-        f"/api/projects/{project.id}/documents/{document.id}/discover_serve_file"
-    )
-
-    assert response.status_code == 200
-    result = response.json()
-    expected_url = f"http://localhost:8757/api/projects/{project.id}/documents/{document.id}/serve_file"
-    assert result["url"] == expected_url
 
 
 @pytest.mark.parametrize(

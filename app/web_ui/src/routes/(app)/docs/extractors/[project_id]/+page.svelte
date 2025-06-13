@@ -8,7 +8,7 @@
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
   import EmptyIntro from "./empty_intro.svelte"
-  import { extractorProgress } from "$lib/stores/extractor_progress"
+  import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
   import TableExtractorRow from "./table_extractor_row.svelte"
 
   let extractor_configs: ExtractorConfig[] | null = null
@@ -103,9 +103,9 @@
 
   async function get_all_progress() {
     loading = true
-    extractorProgress.reset()
+    extractorProgressStore.reset()
     if (extractor_configs) {
-      await extractorProgress.getAllProgress(
+      await extractorProgressStore.getAllProgress(
         project_id,
         extractor_configs.map((cfg) => cfg.id || "").filter(Boolean),
       )

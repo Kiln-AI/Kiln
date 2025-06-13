@@ -2,9 +2,9 @@
   import type { ExtractorConfig } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import {
-    extractorProgress,
+    extractorProgressStore,
     formatProgressPercentage,
-  } from "$lib/stores/extractor_progress"
+  } from "$lib/stores/extractor_progress_store"
   import RunExtractorControl from "./run_extractor_control.svelte"
 
   export let extractor_config: ExtractorConfig
@@ -41,26 +41,26 @@
         <div class="badge badge-neutral badge-outline py-3 font-medium">
           Archived
         </div>
-      {:else if $extractorProgress.status[extractor_config.id || ""] === "completed_with_errors"}
+      {:else if $extractorProgressStore.status[extractor_config.id || ""] === "completed_with_errors"}
         <div class="badge badge-error badge-outline py-3 font-medium">
           Errors
         </div>
-      {:else if $extractorProgress.status[extractor_config.id || ""] === "running"}
+      {:else if $extractorProgressStore.status[extractor_config.id || ""] === "running"}
         <div class="badge badge-success badge-outline py-3 font-medium">
           Running
         </div>
-      {:else if $extractorProgress.status[extractor_config.id || ""] === "complete"}
+      {:else if $extractorProgressStore.status[extractor_config.id || ""] === "complete"}
         <div class="badge badge-primary badge-outline py-3 font-medium">
           Complete
         </div>
-      {:else if $extractorProgress.status[extractor_config.id || ""] === "incomplete"}
+      {:else if $extractorProgressStore.status[extractor_config.id || ""] === "incomplete"}
         <div class="badge badge-error badge-outline py-3 font-medium">
           Incomplete (
           {formatProgressPercentage(
-            $extractorProgress.progress[extractor_config.id || ""],
+            $extractorProgressStore.progress[extractor_config.id || ""],
           )})
         </div>
-      {:else if $extractorProgress.status[extractor_config.id || ""] === "not_started"}
+      {:else if $extractorProgressStore.status[extractor_config.id || ""] === "not_started"}
         <div class="badge badge-warning badge-outline py-3 font-medium">
           Not Started
         </div>
