@@ -219,7 +219,7 @@
             {results.length}
             {results.length === 1 ? "extraction" : "extractions"}
           </div>
-          <div class="text-sm text-gray-500">
+          <div class="text-sm text-gray-500 overflow-x-auto">
             <table class="table table-sm">
               <thead>
                 <tr>
