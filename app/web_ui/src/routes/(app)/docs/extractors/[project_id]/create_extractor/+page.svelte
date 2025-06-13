@@ -86,7 +86,23 @@
         on:submit={create_extractor_config}
         bind:submitting={loading}
       >
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-4">
+          <FormElement
+            label="Name"
+            description="A name to identify this extractor. Leave blank and we'll generate one for you."
+            optional={true}
+            inputType="input"
+            id="extractor_name"
+            bind:value={name}
+          />
+          <FormElement
+            label="Description"
+            description="A description of the extractor for you and your team. This will have no effect on the extractor's behavior."
+            optional={true}
+            inputType="textarea"
+            id="extractor_description"
+            bind:value={description}
+          />
           <div class="form-control">
             <label class="label" for="extractor_type">Extractor Type</label>
             <select
@@ -114,28 +130,12 @@
         <div class="mt-4">
           <div class="collapse collapse-arrow bg-base-200">
             <input type="checkbox" class="peer" />
-            <div class="collapse-title font-medium">Extractor Options</div>
+            <div class="collapse-title font-medium">Advanced Options</div>
             <div class="collapse-content flex flex-col gap-4">
-              <FormElement
-                label="Name"
-                description="A name to identify this extractor. Leave blank and we'll generate one for you."
-                optional={true}
-                inputType="input"
-                id="extractor_name"
-                bind:value={name}
-              />
-              <FormElement
-                label="Description"
-                description="An optional description of this extractor."
-                optional={true}
-                inputType="textarea"
-                id="extractor_description"
-                bind:value={description}
-              />
               <div class="font-medium">Prompt Options</div>
               <div class="text-sm text-gray-500">
-                For multimodal extractors, you can specify prompts for each
-                modality. Leave blank to use the default prompts.
+                Specify prompts for each modality. Leave blank to use the
+                default prompts.
               </div>
               <div class="flex flex-col gap-2">
                 <FormElement
