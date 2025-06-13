@@ -1,13 +1,10 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel import (
-    Project,
-    Task,
-    TaskRequirement,
-)
+from kiln_ai.datamodel import Project, Task, TaskRequirement
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.task_api import connect_task_api, task_from_id
@@ -49,7 +46,7 @@ def test_create_task_success(client, tmp_path):
     project_path.mkdir()
 
     task_data = {
-        "name": "Test Task",
+        "name": "Test Task 啊",
         "description": "This is a test task",
         "instruction": "This is a test instruction",
     }
@@ -67,7 +64,7 @@ def test_create_task_success(client, tmp_path):
 
     assert response.status_code == 200
     res = response.json()
-    assert res["name"] == "Test Task"
+    assert res["name"] == "Test Task 啊"
     assert res["description"] == "This is a test task"
     assert res["id"] is not None
 
