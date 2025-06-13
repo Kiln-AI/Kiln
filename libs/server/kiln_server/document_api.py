@@ -15,7 +15,11 @@ from kiln_ai.adapters.extractors.extraction_prompt_builder import (
     ExtractionPromptBuilder,
 )
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
-from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
+from kiln_ai.datamodel.basemodel import (
+    ID_TYPE,
+    KilnAttachmentModel,
+    string_to_valid_name,
+)
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -35,10 +39,6 @@ logger = logging.getLogger(__name__)
 # keep track of locks by extractor config ID to prevent concurrent runs of the same extractor config
 # maps from extractor config ID -> lock
 run_extractor_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-
-
-def sanitize_name(name: str) -> str:
-    return name.strip().replace(" ", "_").replace(".", "_").replace("/", "_")
 
 
 def open_folder(path: str | Path) -> None:
@@ -72,11 +72,6 @@ async def run_extractor_runner_with_status(
         content=event_generator(),
         media_type="text/event-stream",
     )
-
-
-class CreateDocumentRequest(BaseModel):
-    name: str
-    description: str
 
 
 class OpenFileResponse(BaseModel):
@@ -140,7 +135,7 @@ class CreateExtractorConfigRequest(BaseModel):
         if values.get("name") is None:
             values["name"] = generate_memorable_name()
         else:
-            values["name"] = sanitize_name(values["name"])
+            values["name"] = string_to_valid_name(values["name"])
         return values
 
     @model_validator(mode="after")
@@ -230,7 +225,6 @@ def connect_document_api(app: FastAPI):
     ) -> Document:
         file_data = await file.read()
         project = project_from_id(project_id)
-        # TODO: detect kind from file
         content_type = file.content_type or ""
         if content_type.startswith("image/"):
             kind = Kind.IMAGE
@@ -243,7 +237,7 @@ def connect_document_api(app: FastAPI):
 
         document = Document(
             parent=project,
-            name=sanitize_name(name),
+            name=string_to_valid_name(name),
             description=description,
             kind=kind,
             original_file=FileInfo(
@@ -343,7 +337,7 @@ def connect_document_api(app: FastAPI):
 
         extractor_config = ExtractorConfig(
             parent=project,
-            name=request.name or generate_memorable_name(),
+            name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
