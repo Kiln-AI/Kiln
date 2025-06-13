@@ -12,10 +12,8 @@
   action_buttons={[]}
 >
   <div class="mt-4 grid grid-cols-1 gap-2">
-    <a href={`/documents/${project_id}/documents`} class="link"
-      >Documents (List)</a
-    >
-    <a href={`/documents/${project_id}/extractors`} class="link"
+    <a href={`/docs/library/${project_id}`} class="link">Documents (List)</a>
+    <a href={`/docs/extractors/${project_id}`} class="link"
       >Document Extractors (List)</a
     >
   </div>

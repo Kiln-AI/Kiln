@@ -15,8 +15,8 @@
   enum Section {
     Dataset,
     Documents,
-    DocumentManagement,
-    DocumentExtractors,
+    DocumentsLibrary,
+    DocumentsExtractors,
     SettingsMain,
     SettingsProviders,
     SettingsManageProjects,
@@ -75,18 +75,12 @@
       section = Section.Prompts
     } else if (path_start("/evals", $page.url.pathname)) {
       section = Section.Evals
-    } else if (/\/documents[^/]+$/.test($page.url.pathname)) {
+    } else if (path_start("/docs/library", $page.url.pathname)) {
+      section = Section.DocumentsLibrary
+    } else if (path_start("/docs/extractors", $page.url.pathname)) {
+      section = Section.DocumentsExtractors
+    } else if (path_start("/docs", $page.url.pathname)) {
       section = Section.Documents
-    } else if (
-      // regex to match documents/xyz/documents
-      /\/documents\/[^/]+\/documents/.test($page.url.pathname)
-    ) {
-      section = Section.DocumentManagement
-    } else if (
-      // regex to match documents/xyz/extractors
-      /\/documents\/[^/]+\/extractors/.test($page.url.pathname)
-    ) {
-      section = Section.DocumentExtractors
     } else {
       section = Section.None
     }
@@ -415,7 +409,7 @@
 
       <li class="menu-lg">
         <a
-          href={`/documents/${$ui_state.current_project_id}`}
+          href={`/docs/${$ui_state.current_project_id}`}
           class={section == Section.Documents ? "active" : ""}
         >
           <!-- From SVG Repo, www.svgrepo.com -->
@@ -438,16 +432,16 @@
         <ul class="py-2 ml-6">
           <li class="menu-nested-sm {$current_task?.id ? '' : 'hidden'}">
             <a
-              class={section == Section.DocumentManagement ? "active" : ""}
-              href={`/documents/${$ui_state.current_project_id}/documents`}
+              class={section == Section.DocumentsLibrary ? "active" : ""}
+              href={`/docs/library/${$ui_state.current_project_id}`}
             >
               All Documents
             </a>
           </li>
           <li class="menu-nested-sm">
             <a
-              class={section == Section.DocumentExtractors ? "active" : ""}
-              href={`/documents/${$ui_state.current_project_id}/extractors`}
+              class={section == Section.DocumentsExtractors ? "active" : ""}
+              href={`/docs/extractors/${$ui_state.current_project_id}`}
             >
               Document Extractors
             </a>

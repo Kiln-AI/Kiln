@@ -139,7 +139,7 @@
   let delete_document_dialog: DeleteDialog | null = null
   $: delete_document_url = `/api/projects/${project_id}/documents/${document_id}`
   function after_document_delete() {
-    goto(`/documents/${project_id}/documents`)
+    goto(`/docs/library/${project_id}`)
   }
 
   let delete_extraction_id: string | null = null
@@ -241,7 +241,7 @@
                     <td>{result.source}</td>
                     <td>
                       <a
-                        href={`/documents/${project_id}/extractors/${result.extractor.id}/extractor`}
+                        href={`/docs/extractors/${project_id}/${result.extractor.id}/extractor`}
                         class="link flex flex-row items-center"
                         target="_blank"
                       >

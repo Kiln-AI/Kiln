@@ -9,7 +9,7 @@
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import EmptyIntro from "./empty_intro.svelte"
-  import FileIcon from "../fileicon.svelte"
+  import FileIcon from "../../fileicon.svelte"
   import { formatDate, formatSize } from "$lib/utils/formatters"
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
@@ -301,7 +301,7 @@
   }
 
   function open_document(document_id: string) {
-    const url = `/documents/${project_id}/documents/${document_id}`
+    const url = `/docs/library/${project_id}/${document_id}`
     goto(url)
   }
 

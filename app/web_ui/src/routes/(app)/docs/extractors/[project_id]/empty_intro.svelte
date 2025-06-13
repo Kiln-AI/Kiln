@@ -48,7 +48,7 @@
 
     <a
       class="btn btn-primary"
-      href={`/documents/${project_id}/extractors/create_extractor`}
+      href={`/docs/extractors/${project_id}/create_extractor`}
       >Create Extractor</a
     >
   </div>
