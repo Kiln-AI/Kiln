@@ -482,20 +482,8 @@ def connect_document_api(app: FastAPI):
             ),
         )
 
-    @app.get("/api/projects/{project_id}/documents/{document_id}/discover_serve_file")
-    async def discover_serve_document_file(
-        project_id: str,
-        document_id: str,
-    ) -> DiscoverServeFileResponse:
-        # frontend calls this to get the full URL that serves the file.
-        # this avoids needing to hardcode the URL in the frontend.
-        return DiscoverServeFileResponse(
-            # TODO: load base URL from config
-            url=f"http://localhost:8757/api/projects/{project_id}/documents/{document_id}/serve_file",
-        )
-
-    @app.get("/api/projects/{project_id}/documents/{document_id}/serve_file")
-    async def serve_document_file(
+    @app.get("/api/projects/{project_id}/documents/{document_id}/download")
+    async def download_document_file(
         project_id: str,
         document_id: str,
     ) -> FileResponse:

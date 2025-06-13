@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import { client } from "$lib/api_client"
+  import { base_url, client } from "$lib/api_client"
   import type { ExtractionSummary, KilnDocument } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -27,12 +27,11 @@
   let output_dialog: Dialog | null = null
   let dialog_extraction: ExtractionSummary | null = null
 
-  let download_document_url: string | null = null
+  $: download_document_url = `${base_url}/api/projects/${project_id}/documents/${document_id}/download`
 
   onMount(async () => {
     get_document()
     get_extractions()
-    discover_download_document_url()
   })
 
   async function get_document() {
@@ -91,27 +90,6 @@
     } finally {
       loading = false
     }
-  }
-
-  async function discover_download_document_url() {
-    const { data: serve_file_response, error: discover_error } =
-      await client.GET(
-        "/api/projects/{project_id}/documents/{document_id}/discover_serve_file",
-        {
-          params: {
-            path: {
-              project_id,
-              document_id,
-            },
-          },
-        },
-      )
-
-    if (discover_error) {
-      throw createKilnError(discover_error)
-    }
-
-    download_document_url = serve_file_response.url
   }
 
   async function open_enclosing_folder() {
