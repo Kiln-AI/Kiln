@@ -15,7 +15,7 @@
   <td class="flex flex-col gap-1">
     <div class="font-medium">
       <a
-        href={`/documents/${project_id}/extractors/${extractor_config.id}/extractor`}
+        href={`/docs/extractors/${project_id}/${extractor_config.id}/extractor`}
         class="link"
       >
         {extractor_config.name}

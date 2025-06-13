@@ -62,7 +62,7 @@
         throw createKilnError(create_extractor_error)
       }
 
-      goto(`/documents/${project_id}/extractors`)
+      goto(`/docs/extractors/${project_id}`)
     } finally {
       loading = false
     }
