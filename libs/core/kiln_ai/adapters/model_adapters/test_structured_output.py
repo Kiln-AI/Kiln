@@ -17,8 +17,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
+from kiln_ai.datamodel.task import RunConfig
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
 
@@ -150,12 +149,9 @@ async def run_structured_output_test(tmp_path: Path, model_name: str, provider: 
     task = build_structured_output_test_task(tmp_path)
     a = adapter_for_task(
         task,
-        RunConfigProperties(
-            model_name=model_name,
-            model_provider_name=provider,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.unknown,
-        ),
+        model_name=model_name,
+        provider=provider,
+        prompt_id="simple_prompt_builder",
     )
     try:
         run = await a.invoke("Cows")  # a joke about cows
@@ -229,12 +225,9 @@ async def run_structured_input_task_no_validation(
 ):
     a = adapter_for_task(
         task,
-        RunConfigProperties(
-            model_name=model_name,
-            model_provider_name=provider,
-            prompt_id=prompt_id,
-            structured_output_mode=StructuredOutputMode.unknown,
-        ),
+        model_name=model_name,
+        provider=provider,
+        prompt_id=prompt_id,
     )
     with pytest.raises(ValueError):
         # not structured input in dictionary
@@ -280,8 +273,8 @@ async def run_structured_input_task(
     # Check reasoning models
     assert a._model_provider is not None
     if a._model_provider.reasoning_capable:
-        assert "reasoning" in a.intermediate_outputs
-        assert isinstance(a.intermediate_outputs["reasoning"], str)
+        assert "reasoning" in run.intermediate_outputs
+        assert isinstance(run.intermediate_outputs["reasoning"], str)
 
 
 @pytest.mark.paid
@@ -351,7 +344,7 @@ When asked for a final result, this is the format (for an equilateral example):
 """
     task.output_json_schema = json.dumps(triangle_schema)
     task.save_to_file()
-    response, _ = await run_structured_input_task_no_validation(
+    response = await run_structured_input_task_no_validation(
         task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
     )
 
