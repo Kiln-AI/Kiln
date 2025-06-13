@@ -46,6 +46,8 @@ class ModelName(str, Enum):
     llama_3_2_11b = "llama_3_2_11b"
     llama_3_2_90b = "llama_3_2_90b"
     llama_3_3_70b = "llama_3_3_70b"
+    llama_4_maverick = "llama_4_maverick"
+    llama_4_scout = "llama_4_scout"
     gpt_4o_mini = "gpt_4o_mini"
     gpt_4o = "gpt_4o"
     gpt_4_1 = "gpt_4_1"
@@ -2311,6 +2313,32 @@ built_in_models: List[KilnModel] = [
                 parser=ModelParserID.r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+            ),
+        ],
+    ),
+    # Llama 4 Maverick Basic
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_4_maverick,
+        friendly_name="Llama 4 Maverick Basic",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Llama 4 Scout Basic
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_4_scout,
+        friendly_name="Llama 4 Scout Basic",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/llama4-scout-instruct-basic",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
