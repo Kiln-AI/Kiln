@@ -77,11 +77,11 @@ def test_save_to_file_with_attachment_single(
         attachment=KilnAttachmentModel(path=test_file),
     )
 
-    assert not model.attachment.is_persisted
+    assert model.attachment.path is None
 
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -111,12 +111,12 @@ def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_
     )
 
     for attachment in model.attachment_list:
-        assert not attachment.is_persisted
+        assert attachment.path is None
 
     model.save_to_file()
 
     for attachment in model.attachment_list:
-        assert attachment.is_persisted
+        assert attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -161,12 +161,12 @@ def test_save_to_file_with_attachment_dict(test_base_kiln_file, test_media_file_
         attachment_dict=test_files,
     )
     for attachment in model.attachment_dict.values():
-        assert not attachment.is_persisted
+        assert attachment.path is None
 
     model.save_to_file()
 
     for attachment in model.attachment_dict.values():
-        assert attachment.is_persisted
+        assert attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -207,11 +207,11 @@ def test_save_to_file_with_indirect_attachment(
             indirect_attachment=KilnAttachmentModel(path=test_media_file_document)
         ),
     )
-    assert not model.container.indirect_attachment.is_persisted
+    assert model.container.indirect_attachment.path is None
 
     model.save_to_file()
 
-    assert model.container.indirect_attachment.is_persisted
+    assert model.container.indirect_attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -238,11 +238,11 @@ def test_save_to_file_with_indirect_attachment_optional(
             indirect_attachment=KilnAttachmentModel(path=test_media_file_document)
         ),
     )
-    assert not model.container_optional.indirect_attachment.is_persisted
+    assert model.container_optional.indirect_attachment.path is None
 
     model.save_to_file()
 
-    assert model.container_optional.indirect_attachment.is_persisted
+    assert model.container_optional.indirect_attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -332,22 +332,22 @@ def test_create_from_data(test_base_kiln_file, test_media_file_document):
         data = file.read()
 
     attachment = KilnAttachmentModel.from_data(data, "application/pdf")
-    assert attachment.path.exists()
+    assert attachment.resolve_path(test_base_kiln_file.parent).exists()
 
     model = ModelWithAttachment(
         path=test_base_kiln_file,
         attachment=attachment,
     )
-    assert not model.attachment.is_persisted
+    assert model.attachment.path is None
 
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
 
-    assert str(data["attachment"]["path"]) == str(attachment.path)
+    assert str(data["attachment"]["path"]) == str(model.attachment.path)
     assert filecmp.cmp(
         test_media_file_document, attachment.resolve_path(test_base_kiln_file.parent)
     )
@@ -385,12 +385,12 @@ def test_is_persisted_not_serialized(test_base_kiln_file, test_media_file_docume
     )
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
 
-    assert "is_persisted" not in data["attachment"]
+    assert "_absolute_path" not in data["attachment"]
 
 
 def test_loading_from_file(test_base_kiln_file, test_media_file_document):
@@ -400,16 +400,16 @@ def test_loading_from_file(test_base_kiln_file, test_media_file_document):
         path=json_path,
         attachment=KilnAttachmentModel(path=test_media_file_document),
     )
-    assert not model.attachment.is_persisted
+    assert model.attachment.path is None
 
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     # check we can load the model from the file
     model = ModelWithAttachment.load_from_file(json_path)
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     # when we load from JSON, the attachment path is only the relative segment
     assert filecmp.cmp(root_path / model.attachment.path, test_media_file_document)
@@ -418,7 +418,7 @@ def test_loading_from_file(test_base_kiln_file, test_media_file_document):
     # won't think the file does not exist during validation
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
 
 class ModelWithAttachmentNameOverride(KilnBaseModel):
