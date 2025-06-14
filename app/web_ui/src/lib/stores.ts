@@ -1,4 +1,4 @@
-import { writable, get } from "svelte/store"
+import { writable, get, derived } from "svelte/store"
 import { dev } from "$app/environment"
 import type {
   Project,
@@ -45,6 +45,50 @@ export const current_task_prompts = writable<PromptResponse | null>(null)
 // UI Stores we want persisted across page loads
 export const fine_tune_target_model: Writable<string | null> =
   localStorageStore("fine_tune_target_model", null)
+
+// Store for recently used models (last 5) per project-task
+const _recently_used_models = localStorageStore(
+  "recently_used_models",
+  {} as Record<string, string[]>,
+)
+
+export const recently_used_models = derived(
+  _recently_used_models,
+  ($store) => $store,
+)
+
+// TEST-ONLY: Export the writable store for test reset
+// Do not use in production code
+export const _recently_used_models_test_only = _recently_used_models
+
+// Function to add a model to recently used
+export function add_recently_used_model(model_id: string) {
+  if (!model_id || typeof model_id !== "string" || !model_id.includes("/")) {
+    return // ignore bad inputs early
+  }
+  const project_id = get(ui_state).current_project_id
+  const task_id = get(ui_state).current_task_id
+  if (!project_id || !task_id) return
+
+  const key = `${project_id}/${task_id}`
+  const raw = get(_recently_used_models)
+  const current =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}
+  const task_models = Array.isArray(current[key]) ? current[key] : []
+
+  // Short-circuit if model is already at front of list
+  if (task_models[0] === model_id) return
+
+  // Remove if already exists
+  const filtered = task_models.filter((m) => m !== model_id)
+  // Add to front
+  filtered.unshift(model_id)
+  // Keep only last 5
+  _recently_used_models.set({
+    ...current,
+    [key]: filtered.slice(0, 5),
+  })
+}
 
 // Rating options for the current task
 export const current_task_rating_options =
