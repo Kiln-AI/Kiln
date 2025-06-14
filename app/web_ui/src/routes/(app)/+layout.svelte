@@ -14,7 +14,7 @@
 
   enum Section {
     Dataset,
-    Documents,
+    DocumentsMain,
     DocumentsLibrary,
     DocumentsExtractors,
     SettingsMain,
@@ -38,6 +38,12 @@
     Section.SettingsEditProject,
     Section.SettingsEditTask,
     Section.SettingsAppUpdate,
+  ]
+
+  const documentSections = [
+    Section.DocumentsMain,
+    Section.DocumentsLibrary,
+    Section.DocumentsExtractors,
   ]
 
   function path_start(root: string, pathname: string): boolean {
@@ -80,7 +86,7 @@
     } else if (path_start("/docs/extractors", $page.url.pathname)) {
       section = Section.DocumentsExtractors
     } else if (path_start("/docs", $page.url.pathname)) {
-      section = Section.Documents
+      section = Section.DocumentsMain
     } else {
       section = Section.None
     }
@@ -410,7 +416,7 @@
       <li class="menu-lg">
         <a
           href={`/docs/${$ui_state.current_project_id}`}
-          class={section == Section.Documents ? "active" : ""}
+          class={section == Section.DocumentsMain ? "active" : ""}
         >
           <!-- From SVG Repo, www.svgrepo.com -->
           <svg
@@ -429,24 +435,26 @@
           </svg>
           Documents</a
         >
-        <ul class="py-2 ml-6">
-          <li class="menu-nested-sm {$current_task?.id ? '' : 'hidden'}">
-            <a
-              class={section == Section.DocumentsLibrary ? "active" : ""}
-              href={`/docs/library/${$ui_state.current_project_id}`}
-            >
-              All Documents
-            </a>
-          </li>
-          <li class="menu-nested-sm">
-            <a
-              class={section == Section.DocumentsExtractors ? "active" : ""}
-              href={`/docs/extractors/${$ui_state.current_project_id}`}
-            >
-              Document Extractors
-            </a>
-          </li>
-        </ul>
+        {#if documentSections.includes(section)}
+          <ul class="py-2 ml-6">
+            <li class="menu-nested-sm">
+              <a
+                class={section == Section.DocumentsLibrary ? "active" : ""}
+                href={`/docs/library/${$ui_state.current_project_id}`}
+              >
+                All Documents
+              </a>
+            </li>
+            <li class="menu-nested-sm">
+              <a
+                class={section == Section.DocumentsExtractors ? "active" : ""}
+                href={`/docs/extractors/${$ui_state.current_project_id}`}
+              >
+                Document Extractors
+              </a>
+            </li>
+          </ul>
+        {/if}
       </li>
 
       <li class="menu-lg">
