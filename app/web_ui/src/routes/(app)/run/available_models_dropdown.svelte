@@ -10,6 +10,9 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
+  const LOGPROBS_WARNING =
+    "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
+
   export let model: string = $ui_state.selected_model
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
@@ -42,6 +45,30 @@
 
   let unsupported_models: [string, string][] = []
   let untested_models: [string, string][] = []
+  let previous_model: string = model
+
+  function get_model_warning(selected: string): string | null {
+    if (
+      unsupported_models.some((m) => m[0] === selected && requires_logprobs)
+    ) {
+      return LOGPROBS_WARNING
+    }
+
+    return null
+  }
+
+  function confirm_model_select(event: Event) {
+    const select = event.target as HTMLSelectElement
+    const selected = select.value
+    const warning = get_model_warning(selected)
+    if (warning && !confirm(warning)) {
+      select.value = previous_model
+      model = previous_model
+      return
+    }
+    previous_model = selected
+  }
+
   function format_model_options(
     providers: AvailableModels[],
     structured_output: boolean,
@@ -144,6 +171,7 @@
     bind:value={model}
     id="model"
     inputType="select"
+    on_select={confirm_model_select}
     bind:error_message
     select_options_grouped={model_options}
   />
@@ -158,9 +186,7 @@
         warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."
       />
     {:else if requires_logprobs}
-      <Warning
-        warning_message="This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
-      />
+      <Warning large_icon warning_message={LOGPROBS_WARNING} />
     {:else if requires_structured_output}
       <Warning
         warning_message="This model is not recommended for use with tasks requiring structured output. It fails to consistently return structured data."
