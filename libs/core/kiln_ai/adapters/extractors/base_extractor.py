@@ -31,10 +31,10 @@ class BaseExtractor(ABC):
         self.extractor_config = extractor_config
 
     @abstractmethod
-    def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
+    async def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
         pass
 
-    def extract(
+    async def extract(
         self,
         path: Path | str,
         mime_type: str | None = None,
@@ -58,7 +58,7 @@ class BaseExtractor(ABC):
                     content_format=self.extractor_config.output_format,
                 )
 
-            return self._extract(
+            return await self._extract(
                 path=path,
                 mime_type=mime_type,
             )

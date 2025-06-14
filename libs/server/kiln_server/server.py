@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .custom_errors import connect_custom_errors
+from .document_api import connect_document_api
 from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
@@ -27,6 +28,7 @@ def make_app(lifespan=None):
     connect_task_api(app)
     connect_prompt_api(app)
     connect_run_api(app)
+    connect_document_api(app)
     connect_custom_errors(app)
 
     allowed_origins = [

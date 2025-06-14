@@ -14,6 +14,9 @@
 
   enum Section {
     Dataset,
+    DocumentsMain,
+    DocumentsLibrary,
+    DocumentsExtractors,
     SettingsMain,
     SettingsProviders,
     SettingsManageProjects,
@@ -35,6 +38,12 @@
     Section.SettingsEditProject,
     Section.SettingsEditTask,
     Section.SettingsAppUpdate,
+  ]
+
+  const documentSections = [
+    Section.DocumentsMain,
+    Section.DocumentsLibrary,
+    Section.DocumentsExtractors,
   ]
 
   function path_start(root: string, pathname: string): boolean {
@@ -72,6 +81,12 @@
       section = Section.Prompts
     } else if (path_start("/evals", $page.url.pathname)) {
       section = Section.Evals
+    } else if (path_start("/docs/library", $page.url.pathname)) {
+      section = Section.DocumentsLibrary
+    } else if (path_start("/docs/extractors", $page.url.pathname)) {
+      section = Section.DocumentsExtractors
+    } else if (path_start("/docs", $page.url.pathname)) {
+      section = Section.DocumentsMain
     } else {
       section = Section.None
     }
@@ -397,6 +412,51 @@
           Prompts</a
         >
       </li>
+
+      <li class="menu-lg">
+        <a
+          href={`/docs/${$ui_state.current_project_id}`}
+          class={section == Section.DocumentsMain ? "active" : ""}
+        >
+          <!-- From SVG Repo, www.svgrepo.com -->
+          <svg
+            fill="#000000"
+            class="w-6 h-6 mr-2"
+            viewBox="0 0 16 16"
+            id="library-16px"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              id="Path_82"
+              data-name="Path 82"
+              d="M-10,6.5v9a.5.5,0,0,1-.5.5h-7a.5.5,0,0,1-.5-.5v-1a.5.5,0,0,1,.5-.5.5.5,0,0,1,.5.5V15h6V7h-1.5a.5.5,0,0,1-.5-.5.5.5,0,0,1,.5-.5h2A.5.5,0,0,1-10,6.5ZM-12.5,13a.5.5,0,0,0,.5-.5.5.5,0,0,0-.5-.5H-14V11h1.5a.5.5,0,0,0,.5-.5.5.5,0,0,0-.5-.5H-14V9h1.5a.5.5,0,0,0,.5-.5.5.5,0,0,0-.5-.5H-14V3.5a.5.5,0,0,0-.5-.5h-2a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5H-15v8h-6v-.5a.5.5,0,0,0-.5-.5.5.5,0,0,0-.5.5v1a.5.5,0,0,0,.5.5h9Zm-6-3h-7a.5.5,0,0,1-.5-.5V.5a.5.5,0,0,1,.5-.5h7a.5.5,0,0,1,.5.5V5h1.5a.5.5,0,0,1,.5.5.5.5,0,0,1-.5.5H-18V7h1.5a.5.5,0,0,1,.5.5.5.5,0,0,1-.5.5H-18V9h1.5a.5.5,0,0,1,.5.5.5.5,0,0,1-.5.5ZM-25,9h6V1h-6Zm4.5-3h-3a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5h3a.5.5,0,0,0,.5-.5A.5.5,0,0,0-20.5,6Zm0-2h-3a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5h3a.5.5,0,0,0,.5-.5A.5.5,0,0,0-20.5,4Zm0-2h-3a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5h3a.5.5,0,0,0,.5-.5A.5.5,0,0,0-20.5,2Z"
+              transform="translate(26)"
+            />
+          </svg>
+          Documents</a
+        >
+        {#if documentSections.includes(section)}
+          <ul class="py-2 ml-6">
+            <li class="menu-nested-sm">
+              <a
+                class={section == Section.DocumentsLibrary ? "active" : ""}
+                href={`/docs/library/${$ui_state.current_project_id}`}
+              >
+                All Documents
+              </a>
+            </li>
+            <li class="menu-nested-sm">
+              <a
+                class={section == Section.DocumentsExtractors ? "active" : ""}
+                href={`/docs/extractors/${$ui_state.current_project_id}`}
+              >
+                Document Extractors
+              </a>
+            </li>
+          </ul>
+        {/if}
+      </li>
+
       <li class="menu-lg">
         <a
           href="/settings"

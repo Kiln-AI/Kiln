@@ -73,9 +73,25 @@ class Extraction(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
+    def output_content(self) -> str | None:
+        if not self.output.is_persisted:
+            return None
+        if not self.path:
+            raise ValueError(
+                "Failed to resolve the path of extraction output attachment because the extraction does not have a path."
+            )
+
+        full_path = self.output.resolve_path(self.path.parent)
+        with open(full_path, "r") as f:
+            return f.read()
+
 
 class ExtractorConfig(KilnParentedModel):
     name: str = NAME_FIELD
+    is_archived: bool = Field(
+        default=False,
+        description="Whether the extractor config is archived. Archived extractor configs are not shown in the UI and are not available for use.",
+    )
     description: str | None = Field(
         default=None, description="The description of the extractor config"
     )
@@ -90,7 +106,7 @@ class ExtractorConfig(KilnParentedModel):
     extractor_type: ExtractorType = Field(
         description="This is used to determine the type of extractor to use.",
     )
-    properties: dict[str, str | int | float | bool | dict[str, str]] = Field(
+    properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
         default={},
         description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
     )

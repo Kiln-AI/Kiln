@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from google import genai
@@ -24,7 +24,7 @@ PROMPTS_FOR_KIND: dict[str, str] = {
 
 @pytest.fixture
 def mock_gemini_client():
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ def test_get_kind_from_mime_type_unsupported(mock_gemini_extractor):
     )
 
 
-def test_extract_success(mock_gemini_extractor):
+async def test_extract_success(mock_gemini_extractor):
     with (
         patch(
             "mimetypes.guess_type",
@@ -110,14 +110,14 @@ def test_extract_success(mock_gemini_extractor):
         ),
     ):
         # mock the gemini client call
-        mock_gemini_client = MagicMock()
-        mock_gemini_client.models.generate_content.return_value = MagicMock(
+        mock_gemini_client = AsyncMock()
+        mock_gemini_client.aio.models.generate_content.return_value = AsyncMock(
             text="extracted content"
         )
         mock_gemini_extractor.gemini_client = mock_gemini_client
 
         # test the extract method
-        assert mock_gemini_extractor.extract(
+        assert await mock_gemini_extractor.extract(
             path="test.pdf",
             mime_type="application/pdf",
         ) == ExtractionOutput(
@@ -127,7 +127,7 @@ def test_extract_success(mock_gemini_extractor):
         )
 
         # check the gemini client was called with the correct arguments
-        mock_gemini_client.models.generate_content.assert_called_once_with(
+        mock_gemini_client.aio.models.generate_content.assert_called_once_with(
             model="fake-model",
             contents=[
                 types.Part.from_bytes(
@@ -138,27 +138,24 @@ def test_extract_success(mock_gemini_extractor):
         )
 
 
-def test_extract_failure_from_gemini(mock_gemini_extractor):
+async def test_extract_failure_from_gemini(mock_gemini_extractor):
     with patch(
         "pathlib.Path.read_bytes",
         return_value=b"test content",
     ):
-        # mock the gemini client call
-        mock_models = MagicMock()
-        mock_models.generate_content.side_effect = Exception("error from gemini")
-
-        mock_gemini_client = MagicMock()
-        mock_gemini_client.models = mock_models
-
+        mock_gemini_client = AsyncMock()
+        mock_gemini_client.aio.models.generate_content.side_effect = Exception(
+            "error from gemini"
+        )
         mock_gemini_extractor.gemini_client = mock_gemini_client
 
         with pytest.raises(Exception, match="error from gemini"):
-            mock_gemini_extractor.extract(
+            await mock_gemini_extractor.extract(
                 path="test.pdf",
                 mime_type="application/pdf",
             )
 
-        mock_models.generate_content.assert_called_once_with(
+        mock_gemini_client.aio.models.generate_content.assert_called_once_with(
             model="fake-model",
             contents=[
                 types.Part.from_bytes(
@@ -169,7 +166,7 @@ def test_extract_failure_from_gemini(mock_gemini_extractor):
         )
 
 
-def test_extract_failure_from_bytes_read(mock_gemini_extractor):
+async def test_extract_failure_from_bytes_read(mock_gemini_extractor):
     with (
         patch(
             "mimetypes.guess_type",
@@ -181,30 +178,30 @@ def test_extract_failure_from_bytes_read(mock_gemini_extractor):
         ),
     ):
         # mock the gemini client call
-        mock_gemini_client = MagicMock()
-        mock_gemini_client.models.generate_content.return_value = MagicMock(
+        mock_gemini_client = AsyncMock()
+        mock_gemini_client.aio.models.generate_content.return_value = AsyncMock(
             text="extracted content"
         )
         mock_gemini_extractor.gemini_client = mock_gemini_client
 
         # test the extract method
         with pytest.raises(ValueError, match="error from read_bytes"):
-            mock_gemini_extractor.extract(
+            await mock_gemini_extractor.extract(
                 path="test.pdf",
                 mime_type="application/pdf",
             )
 
-        mock_gemini_client.models.generate_content.assert_not_called()
+        mock_gemini_client.aio.models.generate_content.assert_not_called()
 
 
-def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
+async def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
     # spy on the get mime type
     with patch(
         "mimetypes.guess_type",
         return_value=(None, None),
     ):
         with pytest.raises(ValueError, match="Unsupported MIME type"):
-            mock_gemini_extractor.extract(
+            await mock_gemini_extractor.extract(
                 path="test.unsupported",
                 mime_type="unsupported/mimetype",
             )
@@ -238,9 +235,9 @@ def paid_gemini_extractor(model_name: str):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_document(model_name, test_data_dir):
+async def test_extract_document(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
-    output = extractor.extract(
+    output = await extractor.extract(
         path=str(test_data_dir / "1706.03762v7.pdf"),
         mime_type="application/pdf",
     )
@@ -251,9 +248,9 @@ def test_extract_document(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_image(model_name, test_data_dir):
+async def test_extract_image(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
-    output = extractor.extract(
+    output = await extractor.extract(
         path=str(test_data_dir / "kodim23.png"),
         mime_type="image/png",
     )
@@ -264,9 +261,9 @@ def test_extract_image(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_video(model_name, test_data_dir):
+async def test_extract_video(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
-    output = extractor.extract(
+    output = await extractor.extract(
         path=str(test_data_dir / "big_buck_bunny_sample.mp4"),
         mime_type="video/mp4",
     )
@@ -277,9 +274,9 @@ def test_extract_video(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_extract_audio(model_name, test_data_dir):
+async def test_extract_audio(model_name, test_data_dir):
     extractor = paid_gemini_extractor(model_name=model_name)
-    output = extractor.extract(
+    output = await extractor.extract(
         path=str(test_data_dir / "poacher.ogg"),
         mime_type="audio/ogg",
     )
@@ -290,7 +287,7 @@ def test_extract_audio(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-def test_provider_bad_request(tmp_path, model_name):
+async def test_provider_bad_request(tmp_path, model_name):
     # write corrupted PDF file to temp files
     temp_file = tmp_path / "corrupted_file.pdf"
     temp_file.write_bytes(b"invalid file")
@@ -298,6 +295,6 @@ def test_provider_bad_request(tmp_path, model_name):
     extractor = paid_gemini_extractor(model_name=model_name)
 
     with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
-        extractor.extract(
+        await extractor.extract(
             path=temp_file.as_posix(),
         )

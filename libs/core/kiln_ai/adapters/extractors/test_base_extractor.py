@@ -4,16 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.extractors.base_extractor import (
-    BaseExtractor,
-    ExtractionOutput,
-    OutputFormat,
-)
-from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
+from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, OutputFormat
 
 
 class MockBaseExtractor(BaseExtractor):
-    def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
+    async def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
         return ExtractionOutput(
             is_passthrough=False,
             content="mock concrete extractor output",
@@ -78,7 +74,7 @@ def test_should_passthrough(mock_gemini_properties):
     assert not extractor._should_passthrough("image/jpeg")
 
 
-def test_extract_passthrough(mock_gemini_properties):
+async def test_extract_passthrough(mock_gemini_properties):
     """
     Tests that when a file's MIME type is configured for passthrough, the extractor skips
     the concrete extraction method and returns the file's contents directly with the
@@ -108,7 +104,7 @@ def test_extract_passthrough(mock_gemini_properties):
             return_value=("text/plain", None),
         ),
     ):
-        result = extractor.extract(path="test.txt", mime_type="text/plain")
+        result = await extractor.extract(path="test.txt", mime_type="text/plain")
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -126,7 +122,7 @@ def test_extract_passthrough(mock_gemini_properties):
         "text/markdown",
     ],
 )
-def test_extract_passthrough_output_format(mock_gemini_properties, output_format):
+async def test_extract_passthrough_output_format(mock_gemini_properties, output_format):
     extractor = mock_extractor_with_passthroughs(
         mock_gemini_properties,
         [OutputFormat.TEXT, OutputFormat.MARKDOWN],
@@ -151,7 +147,7 @@ def test_extract_passthrough_output_format(mock_gemini_properties, output_format
             return_value=("text/plain", None),
         ),
     ):
-        result = extractor.extract(path="test.txt")
+        result = await extractor.extract(path="test.txt")
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -174,7 +170,7 @@ def test_extract_passthrough_output_format(mock_gemini_properties, output_format
         ("test.csv", "text/csv", OutputFormat.MARKDOWN),
     ],
 )
-def test_extract_non_passthrough(
+async def test_extract_non_passthrough(
     mock_extractor, path: str, mime_type: str, output_format: OutputFormat
 ):
     with (
@@ -193,7 +189,7 @@ def test_extract_non_passthrough(
         ),
     ):
         # first we call the base class extract method
-        result = mock_extractor.extract(path=path)
+        result = await mock_extractor.extract(path=path)
 
         # then we call the subclass _extract method and add validated mime_type
         mock_extract.assert_called_once_with(path=Path(path), mime_type=mime_type)
@@ -203,7 +199,7 @@ def test_extract_non_passthrough(
         assert result.content_format == output_format
 
 
-def test_default_output_format(mock_gemini_properties):
+async def test_default_output_format(mock_gemini_properties):
     config = ExtractorConfig(
         name="mock",
         extractor_type=ExtractorType.GEMINI,
@@ -212,17 +208,17 @@ def test_default_output_format(mock_gemini_properties):
     assert config.output_format == OutputFormat.MARKDOWN
 
 
-def test_extract_failure_from_concrete_extractor(mock_extractor):
+async def test_extract_failure_from_concrete_extractor(mock_extractor):
     with patch.object(
         mock_extractor,
         "_extract",
         side_effect=Exception("error from concrete extractor"),
     ):
         with pytest.raises(ValueError, match="error from concrete extractor"):
-            mock_extractor.extract(path="test.txt", mime_type="text/plain")
+            await mock_extractor.extract(path="test.txt", mime_type="text/plain")
 
 
-def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
+async def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
     extractor = MockBaseExtractor(
         ExtractorConfig(
             name="mock",
@@ -237,4 +233,4 @@ def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
         with pytest.raises(
             ValueError, match="Error extracting .*: Unable to guess file mime type"
         ):
-            extractor.extract(path="test-xyz")
+            await extractor.extract(path="test-xyz")
