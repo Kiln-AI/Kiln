@@ -4,32 +4,46 @@
     load_available_models,
     available_model_details,
     ui_state,
+    recently_used_models,
+    add_recently_used_model,
   } from "$lib/stores"
   import type { AvailableModels } from "$lib/types"
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
-  export let model: string = $ui_state.selected_model
+  export let model: string | null = $ui_state.selected_model
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
   export let error_message: string | null = null
   export let suggested_mode: "data_gen" | "evals" | null = null
-  $: $ui_state.selected_model = model
+
+  // Track previous task ID to detect changes
+  let previous_task_id: string | null = null
+  $: {
+    if ($ui_state.current_task_id !== previous_task_id) {
+      model = null
+      ui_state.update((state) => ({ ...state, selected_model: null }))
+      previous_task_id = $ui_state.current_task_id
+    }
+  }
+
   $: model_options = format_model_options(
     $available_models || {},
     requires_structured_output,
     requires_data_gen,
     requires_logprobs,
     $ui_state.current_task_id,
+    $ui_state.current_project_id,
+    $recently_used_models,
   )
 
   // Export the parsed model name and provider name
   export let model_name: string | null = null
   export let provider_name: string | null = null
   $: get_model_provider(model)
-  function get_model_provider(model_provider: string) {
+  function get_model_provider(model_provider: string | null) {
     model_name = model_provider
       ? model_provider.split("/").slice(1).join("/")
       : null
@@ -48,12 +62,55 @@
     requires_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
-  ): [string, [unknown, string][]][] {
-    let options = []
+    current_project_id: string | null,
+    recent_models: Record<string, string[]>,
+  ): [string, [string, string][]][] {
+    let options: [string, [string, string][]][] = []
     unsupported_models = []
     untested_models = []
+
+    // Add recently used models section if there are any
+    const key =
+      current_project_id && current_task_id
+        ? `${current_project_id}/${current_task_id}`
+        : null
+    const task_recent_models = key ? recent_models[key] || [] : []
+    if (task_recent_models.length > 0) {
+      const recent_model_list: [string, string][] = []
+      for (const model_id of task_recent_models) {
+        const [provider_id, model_name] = model_id.split("/")
+        // Find the model details
+        for (const provider of providers) {
+          if (provider.provider_id === provider_id) {
+            const model = (provider.models ?? []).find(
+              (m: { id: string }) => m.id === model_name,
+            )
+            if (model) {
+              // Check if model meets requirements
+              if (
+                (requires_data_gen && !model.supports_data_gen) ||
+                (structured_output && !model.supports_structured_output) ||
+                (requires_logprobs && !model.supports_logprobs)
+              ) {
+                continue
+              }
+              recent_model_list.push([
+                model_id,
+                provider.provider_name + " / " + model.name,
+              ])
+              break
+            }
+          }
+        }
+      }
+      if (recent_model_list.length > 0) {
+        options.push(["Recently Used", recent_model_list])
+      }
+    }
+
+    // Add regular model sections
     for (const provider of providers) {
-      let model_list = []
+      let model_list: [string, string][] = []
       for (const model of provider.models) {
         // Exclude models that are not available for the current task
         if (
@@ -112,7 +169,6 @@
       options.push([not_recommended_label, unsupported_models])
     }
 
-    // @ts-expect-error this is the correct format, but TS isn't finding it
     return options
   }
 
@@ -136,6 +192,11 @@
   $: selected_model_suggested_evals =
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_evals || false
+
+  // Add model to recently used when selected
+  $: if (model) {
+    add_recently_used_model(model)
+  }
 </script>
 
 <div>
