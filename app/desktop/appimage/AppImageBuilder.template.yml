@@ -1,0 +1,75 @@
+version: 1
+script:
+  - rm -rf AppDir | true
+  # Kiln binary
+  - mkdir -p AppDir/usr/bin
+  - cp ../build/dist/Kiln AppDir/usr/bin/Kiln
+  # Icons
+  - mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
+  - cp ../../web_ui/static/logo.svg AppDir/usr/share/icons/hicolor/scalable/apps/kiln-ai.svg
+  - cp ../../web_ui/static/logo.svg AppDir/kiln-ai.svg
+  - uv run python3 ./scripts/build_icons.py ../mac_icon.png 16 32 64 128 256 --out-dir AppDir/usr/share/icons/hicolor
+  - cp AppDir/usr/share/icons/hicolor/256x256/kiln-ai.png AppDir/.DirIcon
+  # Desktop file
+  - mkdir -p AppDir/usr/share/applications
+  - cp ./desktop/com.kiln.KilnAI.desktop AppDir/usr/share/applications/com.kiln.KilnAI.desktop
+  - cp ./desktop/com.kiln.KilnAI.desktop AppDir/kiln-ai.desktop
+  # AppData file
+  - mkdir -p AppDir/usr/share/metainfo
+  - cp ./desktop/com.kiln.KilnAI.appdata.xml AppDir/usr/share/metainfo/com.kiln.KilnAI.appdata.xml
+
+AppDir:
+  path: ./AppDir
+  app_info:
+    id: com.kiln.KilnAI
+    name: KilnAI
+    icon: kiln-ai
+    version: [[KILN_VERSION]]
+    exec: usr/bin/Kiln
+    exec_args: $@
+  apt:
+    arch: amd64
+    include:
+      - gstreamer1.0-x
+      - coreutils
+      - dash
+      - dbus
+    sources:
+      - sourceline: deb http://ppa.launchpad.net/deadsnakes/ppa/ubuntu focal main
+        key_url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x6A755776"
+      - sourceline: "deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse"
+        key_url: "http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920d1991bc93c"
+      - sourceline: "deb http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse"
+        key_url: "http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920d1991bc93c"
+      - sourceline: "deb http://archive.ubuntu.com/ubuntu jammy-security main restricted universe multiverse"
+        key_url: "http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920d1991bc93c"
+      - sourceline: "deb http://archive.ubuntu.com/ubuntu jammy-backports main restricted universe multiverse"
+        key_url: "http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920d1991bc93c"
+      - sourceline: "deb http://archive.canonical.com/ubuntu jammy partner"
+        key_url: "http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920d1991bc93c"
+
+  test:
+    fedora-30:
+      image: appimagecrafters/tests-env:fedora-30
+      command: ./AppRun
+      use_host_x: True
+      env:
+        KILN_TEST_MODE: 1
+    debian-stable:
+      image: appimagecrafters/tests-env:debian-stable
+      command: ./AppRun
+      use_host_x: True
+      env:
+        KILN_TEST_MODE: 1
+    ubuntu-bionic:
+      image: appimagecrafters/tests-env:ubuntu-bionic
+      command: ./AppRun
+      use_host_x: True
+      env:
+        KILN_TEST_MODE: 1
+
+AppImage:
+  arch: x86_64
+  comp: xz
+  update-information: guess
+  file_name: KilnAI-[[KILN_VERSION]]-x86_64.AppImage

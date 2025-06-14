@@ -1,3 +1,11 @@
 
 build/
 
+appimage/AppDir
+appimage/appimage-build
+appimage/*.AppImage*
+
+# Generated from templates
+appimage/AppImageBuilder.yml
+appimage/desktop/com.kiln.KilnAI.desktop
+appimage/desktop/com.kiln.KilnAI.appdata.xml

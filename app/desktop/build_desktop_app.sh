@@ -64,9 +64,29 @@ fi
 # Builds the desktop app
 # TODO: use a spec instead of long winded command line
 pyinstaller $(printf %s "$PLATFORM_OPTS")  \
-  --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
-  --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \
-  -n Kiln --specpath=./desktop/build --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext \
+  --add-data "./taskbar.png:." \
+  --add-data "../../web_ui/build:./web_ui/build" \
+  --noconfirm \
+  --distpath=./desktop/build/dist \
+  --workpath=./desktop/build/work \
+  -n Kiln \
+  --specpath=./desktop/build \
+  --hidden-import=tkinter \
+  --hidden-import=PIL.ImageTk \
+  --hidden-import=tiktoken_ext.openai_public \
+  --hidden-import=tiktoken_ext \
   --hidden-import=litellm \
   --collect-all=litellm \
   --paths=. ./desktop/desktop.py
+
+if [ "$(uname)" == "Linux" ]; then
+  echo "Creating AppImage"
+  cd $APP_DIR/desktop/appimage
+  # Update AppImage files with current version
+  uv run python3 ./scripts/update_version.py
+  # Patch packaging to handle ubuntu version strings
+  grep -q '^[ ]\{8\}version = version.split("ubuntu")' ../../../.venv/lib/python3.13/site-packages/packaging/version.py || sed -i '/^[ ]\{8\}match = self\._regex\.search(version)/i\        version = version.split("ubuntu")[0]' ../../../.venv/lib/python3.13/site-packages/packaging/version.py
+  # Switch to latest AppImage runtime (https://github.com/AppImageCrafters/appimage-builder/issues/364)
+  f=../../../.venv/lib/python3.13/site-packages/appimagebuilder/modules/appimage.py; [ -f "$f" ] && sed -i 's|https://github.com/AppImage/AppImageKit/releases/download/continuous/runtime-%s|https://github.com/AppImage/type2-runtime/releases/tag/continuous/runtime-%s|' "$f"
+  uv run appimage-builder --recipe AppImageBuilder.yml --skip-tests
+fi

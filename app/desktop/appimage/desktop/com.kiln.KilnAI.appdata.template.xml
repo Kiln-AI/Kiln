@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.kiln.KilnAI</id>
+  
+  <name>KilnAI</name>
+  <summary>Rapid AI Prototyping and Dataset Collaboration Tool</summary>
+  
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  
+  <description>
+    <p>
+      Kiln AI is a comprehensive platform for AI development that makes it easy to prototype, fine-tune, and collaborate on AI models and datasets.
+    </p>
+    <p>Key features include:</p>
+    <ul>
+      <li>Intuitive desktop apps for Windows, macOS, and Linux with truly intuitive design</li>
+      <li>Zero-code fine-tuning for Llama, GPT-4o, and more with automatic serverless deployment</li>
+      <li>State-of-the-art model evaluation tools to assess quality</li>
+      <li>Interactive visual tooling for synthetic data generation</li>
+      <li>Train or distill your own custom reasoning models</li>
+      <li>Git-based version control for AI datasets with team collaboration</li>
+      <li>Automatic prompt generation including chain-of-thought and few-shot</li>
+      <li>Wide model support via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, and more</li>
+      <li>Privacy-first design - your data stays private</li>
+      <li>Build AI tasks that work with structured JSON data</li>
+    </ul>
+    <p>
+      The Kiln desktop app is completely free and includes both an open-source Python library and OpenAPI REST API under MIT license.
+    </p>
+  </description>
+  
+  <launchable type="desktop-id">com.kiln.KilnAI.desktop</launchable>
+  
+  <!-- TODO: Add screenshots
+  <screenshots>
+    <screenshot type="default">
+      <caption>Kiln AI main interface</caption>
+      <image>https://github.com/user-attachments/assets/e5268dd9-8813-45fe-b091-0d9f4c1907f9</image>
+    </screenshot>
+  </screenshots> -->
+  
+  <url type="homepage">https://getkiln.ai</url>
+  <url type="bugtracker">https://github.com/Kiln-AI/kiln/issues</url>
+  <url type="help">https://docs.getkiln.ai</url>
+  
+  <developer_name>Chesterfield Laboratories Inc.</developer_name>
+  
+  <provides>
+    <binary>Kiln</binary>
+  </provides>
+  
+  <releases>
+    <release version="[[KILN_VERSION]]" date="[[DATE]]">
+      <description>
+        <p>Latest release of Kiln AI</p>
+      </description>
+    </release>
+  </releases>
+  
+  <categories>
+    <category>Development</category>
+    <category>Science</category>
+    <category>ArtificialIntelligence</category>
+  </categories>
+  
+  <keywords>
+    <keyword>AI</keyword>
+    <keyword>Machine Learning</keyword>
+    <keyword>Fine-tuning</keyword>
+    <keyword>Dataset</keyword>
+    <keyword>LLM</keyword>
+    <keyword>GPT</keyword>
+    <keyword>Claude</keyword>
+    <keyword>Ollama</keyword>
+    <keyword>Synthetic Data</keyword>
+    <keyword>Evaluation</keyword>
+  </keywords>
+  
+  <content_rating type="oars-1.1" />
+</component>
