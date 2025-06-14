@@ -2373,16 +2373,17 @@ export interface components {
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
          *
-         *     - default: let the adapter decide
          *     - json_schema: request json using API capabilities for json_schema
          *     - function_calling: request json using API capabilities for function calling
          *     - json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema
          *     - json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.
          *     - json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).
          *     - json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.
+         *     - default: let the adapter decide (legacy, do not use for new use cases)
+         *     - unknown: used for cases where the structured output mode is not known (on old models where it wasn't saved). Should lookup best option at runtime.
          * @enum {string}
          */
-        StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions";
+        StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
         /**
          * Task
          * @description Represents a specific task to be performed, with associated requirements and validation rules.
