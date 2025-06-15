@@ -6,13 +6,18 @@ from typing_extensions import Self
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import (
     THINKING_DATA_STRATEGIES,
-    FinetuneDataStrategy,
+    ChatStrategy,
     FineTuneStatusType,
     StructuredOutputMode,
 )
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
+
+DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS = [
+    ChatStrategy.two_message_cot_legacy,
+    ChatStrategy.two_message_cot,
+]
 
 
 class Finetune(KilnParentedModel):
@@ -76,8 +81,8 @@ class Finetune(KilnParentedModel):
         default={},
         description="Properties of the fine-tune. Different providers may use different properties.",
     )
-    data_strategy: FinetuneDataStrategy = Field(
-        default=FinetuneDataStrategy.final_only,
+    data_strategy: ChatStrategy = Field(
+        default=ChatStrategy.single_turn,
         description="The strategy to use for training the model. 'final_only' will only train on the final response. 'final_and_intermediate' will train on the final response and intermediate outputs (chain of thought or reasoning).",
     )
 
@@ -91,16 +96,16 @@ class Finetune(KilnParentedModel):
     def validate_thinking_instructions(self) -> Self:
         if (
             self.thinking_instructions is not None
-            and self.data_strategy != FinetuneDataStrategy.final_and_intermediate
+            and self.data_strategy not in DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS
         ):
             raise ValueError(
-                "Thinking instructions can only be used when data_strategy is final_and_intermediate"
+                f"Thinking instructions can only be used when data_strategy is one of the following: {DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS}"
             )
         if (
             self.thinking_instructions is None
-            and self.data_strategy == FinetuneDataStrategy.final_and_intermediate
+            and self.data_strategy in DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS
         ):
             raise ValueError(
-                "Thinking instructions are required when data_strategy is final_and_intermediate"
+                f"Thinking instructions are required when data_strategy is one of the following: {DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS}"
             )
         return self

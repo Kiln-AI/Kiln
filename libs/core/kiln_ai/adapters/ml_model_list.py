@@ -3,35 +3,17 @@ from typing import Dict, List, Literal
 
 from pydantic import BaseModel
 
-from kiln_ai.datamodel import StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import (
+    ChatStrategy,
+    ModelProviderName,
+    StructuredOutputMode,
+)
 
 """
 Provides model configuration and management for various LLM providers and models.
 This module handles the integration with different AI model providers and their respective models,
 including configuration, validation, and instantiation of language models.
 """
-
-
-class ModelProviderName(str, Enum):
-    """
-    Enumeration of supported AI model providers.
-    """
-
-    openai = "openai"
-    groq = "groq"
-    amazon_bedrock = "amazon_bedrock"
-    ollama = "ollama"
-    openrouter = "openrouter"
-    fireworks_ai = "fireworks_ai"
-    kiln_fine_tune = "kiln_fine_tune"
-    kiln_custom_registry = "kiln_custom_registry"
-    openai_compatible = "openai_compatible"
-    anthropic = "anthropic"
-    gemini_api = "gemini_api"
-    azure_openai = "azure_openai"
-    huggingface = "huggingface"
-    vertex = "vertex"
-    together_ai = "together_ai"
 
 
 class ModelFamily(str, Enum):
@@ -102,6 +84,8 @@ class ModelName(str, Enum):
     claude_3_5_sonnet = "claude_3_5_sonnet"
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
+    claude_sonnet_4 = "claude_sonnet_4"
+    claude_opus_4 = "claude_opus_4"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -174,6 +158,7 @@ class KilnModelProvider(BaseModel):
         structured_output_mode: The mode we should use to call the model for structured output, if it was trained with structured output.
         parser: A parser to use for the model, if applicable
         reasoning_capable: Whether the model is designed to output thinking in a structured format (eg <think></think>). If so we don't use COT across 2 calls, and ask for thinking and final response in the same call.
+        tuned_chat_strategy: Used when a model is finetuned with a specific chat strategy, and it's best to use it at call time.
     """
 
     name: ModelProviderName
@@ -189,6 +174,7 @@ class KilnModelProvider(BaseModel):
     reasoning_capable: bool = False
     supports_logprobs: bool = False
     suggested_for_evals: bool = False
+    tuned_chat_strategy: ChatStrategy | None = None
 
     # TODO P1: Need a more generalized way to handle custom provider parameters.
     # Making them quite declarative here for now, isolating provider specific logic
@@ -666,14 +652,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.7-sonnet",
                 suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-3-7-sonnet-20250219",
                 structured_output_mode=StructuredOutputMode.function_calling,
                 suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
@@ -697,6 +681,46 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-7-sonnet-20250219",
                 anthropic_extended_thinking=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+        ],
+    ),
+    # Claude Sonnet 4
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_4,
+        friendly_name="Claude Sonnet 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-sonnet-4",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-sonnet-4-20250514",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # Claude Opus 4
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4,
+        friendly_name="Claude Opus 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4",
+                structured_output_mode=StructuredOutputMode.function_calling,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-20250514",
+                structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
     ),
@@ -920,7 +944,7 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
-                provider_finetune_id="meta-llama/Meta-Llama-3.1-8B-Instruct",
+                provider_finetune_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
             ),
         ],
     ),
@@ -939,8 +963,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_data_gen=False,
-                # Need to not pass "strict=True" to the function call to get this to work with logprobs for some reason. Openrouter issue.
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="meta-llama/llama-3.1-70b-instruct",
                 supports_logprobs=True,
                 logprobs_openrouter_options=True,
@@ -961,7 +984,7 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
-                provider_finetune_id="meta-llama/Meta-Llama-3.1-70B-Instruct",
+                provider_finetune_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
             ),
         ],
     ),
@@ -1068,10 +1091,6 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                provider_finetune_id="meta-llama/Llama-3.2-1B-Instruct",
-            ),
         ],
     ),
     # Llama 3.2 3B
@@ -1108,7 +1127,6 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Llama-3.2-3B-Instruct-Turbo",
                 supports_structured_output=False,
                 supports_data_gen=False,
-                provider_finetune_id="meta-llama/Llama-3.2-3B-Instruct",
             ),
         ],
     ),
@@ -1158,10 +1176,6 @@ built_in_models: List[KilnModel] = [
         name=ModelName.llama_3_2_90b,
         friendly_name="Llama 3.2 90B",
         providers=[
-            KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="llama-3.2-90b-vision-preview",
-            ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
@@ -1433,11 +1447,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="google/gemma-3-27b-it",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="google/gemma-3-27b-it",
-                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -2294,3 +2303,31 @@ def get_model_by_name(name: ModelName) -> KilnModel:
         if model.name == name:
             return model
     raise ValueError(f"Model {name} not found in the list of built-in models")
+
+
+def default_structured_output_mode_for_model_provider(
+    model_name: str,
+    provider: ModelProviderName,
+    default: StructuredOutputMode = StructuredOutputMode.default,
+    disallowed_modes: List[StructuredOutputMode] = [],
+) -> StructuredOutputMode:
+    """
+    We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
+    """
+    try:
+        # Convert string to ModelName enum
+        model_name_enum = ModelName(model_name)
+        model = get_model_by_name(model_name_enum)
+    except (ValueError, KeyError):
+        # If model not found, return default
+        return default
+
+    # Find the provider within the model's providers
+    for model_provider in model.providers:
+        if model_provider.name == provider:
+            mode = model_provider.structured_output_mode
+            if mode not in disallowed_modes:
+                return mode
+
+    # If provider not found, return default
+    return default

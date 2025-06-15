@@ -7,6 +7,7 @@
     current_task,
     model_name,
     model_info,
+    load_model_info,
     prompt_name_from_id,
     current_task_prompts,
   } from "$lib/stores"
@@ -18,6 +19,9 @@
   import { formatDate } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
+  import { prompt_link } from "$lib/utils/link_builder"
+  import type { ProviderModels, PromptResponse } from "$lib/types"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -30,14 +34,89 @@
   let loading = true
   let load_error: KilnError | null = null
 
-  let model_props: Record<string, string | number | undefined> = {}
-  $: {
+  function get_properties(
+    run: TaskRun | null,
+    current_task_prompts: PromptResponse | null,
+    model_info: ProviderModels | null,
+  ) {
+    let properties = []
+
+    if (run?.id) {
+      properties.push({
+        name: "ID",
+        value: run.id,
+      })
+    }
+
+    if (run?.input_source?.type) {
+      properties.push({
+        name: "Input Source",
+        value:
+          run.input_source.type.charAt(0).toUpperCase() +
+          run.input_source.type.slice(1),
+      })
+    }
+
+    const model_id = run?.output?.source?.properties?.model_name
+    if (model_id) {
+      properties.push({
+        name: "Output Model",
+        value: model_name(model_id, model_info),
+      })
+    }
+
+    if (run?.output?.source?.properties?.model_provider) {
+      properties.push({
+        name: "Model Provider",
+        value: run.output.source.properties.model_provider,
+      })
+    }
+
     // Prompt ID previously was stored in the prompt_builder_name field
     let prompt_id = (
       run?.output?.source?.properties?.prompt_id ||
       run?.output?.source?.properties?.prompt_builder_name ||
       ""
     ).toString()
+    if (prompt_id) {
+      const prompt_name = prompt_name_from_id(prompt_id, current_task_prompts)
+      if (prompt_name) {
+        let link = prompt_link(project_id, task_id, prompt_id)
+        properties.push({
+          name: "Prompt",
+          value: prompt_name,
+          link: link,
+        })
+      }
+    }
+
+    if (run?.usage?.cost) {
+      properties.push({
+        name: "Cost",
+        value: `$${run.usage.cost.toFixed(6)}`,
+      })
+    }
+
+    if (run?.usage?.total_tokens) {
+      properties.push({
+        name: "Tokens",
+        value: run.usage.total_tokens,
+      })
+    }
+
+    if (run?.input_source?.properties?.created_by) {
+      properties.push({
+        name: "Created By",
+        value: run.input_source.properties.created_by,
+      })
+    }
+
+    if (run?.created_at) {
+      properties.push({
+        name: "Created At",
+        value: formatDate(run.created_at),
+      })
+    }
 
     let topic_path: string | undefined = undefined
     if (
@@ -49,30 +128,19 @@
         " > ",
       )
     }
+    if (topic_path) {
+      properties.push({
+        name: "Topic",
+        value: topic_path,
+      })
+    }
 
-    const model_id = run?.output?.source?.properties?.model_name
-    model_props = Object.fromEntries(
-      Object.entries({
-        ID: run?.id || undefined,
-        "Input Source":
-          "" +
-          run?.input_source?.type.charAt(0).toUpperCase() +
-          run?.input_source?.type.slice(1),
-        "Output Model": model_name(model_id, $model_info),
-        "Model Provider": run?.output?.source?.properties?.model_provider,
-        Prompt:
-          prompt_id && prompt_name_from_id(prompt_id, $current_task_prompts),
-        Cost: run?.usage?.cost ? `$${run?.usage?.cost.toFixed(6)}` : undefined,
-        Tokens: run?.usage?.total_tokens ? run?.usage?.total_tokens : undefined,
-        "Created By": run?.input_source?.properties?.created_by,
-        "Created At": formatDate(run?.created_at),
-        Topic: topic_path,
-      }).filter(([_, value]) => value !== undefined && value !== ""),
-    )
+    return properties
   }
 
   onMount(async () => {
     await load_run()
+    load_model_info()
   })
 
   async function load_run() {
@@ -193,18 +261,11 @@
           <div class="text-xl font-bold mb-4">Input</div>
           <Output raw_output={run.input} />
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
-          <div class="text-xl font-bold">Parameters</div>
-          <div
-            class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
-          >
-            {#each Object.entries(model_props) as [key, value]}
-              <div class="flex items-center">{key}</div>
-              <div class="flex items-center text-gray-500 overflow-x-hidden">
-                {value}
-              </div>
-            {/each}
-          </div>
+        <div class="w-72 2xl:w-96 flex-none flex flex-col">
+          <PropertyList
+            properties={get_properties(run, $current_task_prompts, $model_info)}
+            title="Properties"
+          />
         </div>
       </div>
       <Run initial_run={run} task={$current_task} {project_id} />

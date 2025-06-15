@@ -1,4 +1,6 @@
+import asyncio
 import contextlib
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -7,6 +9,7 @@ import kiln_ai.datamodel.strict_mode as datamodel_strict_mode
 import kiln_server.server as kiln_server
 import uvicorn
 from fastapi import FastAPI
+from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
@@ -21,6 +24,12 @@ from app.desktop.studio_server.webhost import connect_webhost
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # debug event loop, warning on hangs
+    should_debug = os.environ.get("DEBUG_EVENT_LOOP", "false") == "true"
+    if should_debug:
+        loop = asyncio.get_event_loop()
+        loop.set_debug(True)
+
     # Set datamodel strict mode on startup
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
@@ -30,6 +39,8 @@ async def lifespan(app: FastAPI):
 
 
 def make_app():
+    setup_litellm_logging()
+
     app = kiln_server.make_app(lifespan=lifespan)
     connect_provider_api(app)
     connect_prompt_api(app)

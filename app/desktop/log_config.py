@@ -2,7 +2,7 @@ import os
 from enum import Enum
 from typing import List
 
-from kiln_ai.utils.config import Config
+from kiln_ai.utils.logging import get_default_formatter, get_log_file_path
 
 
 class LogDestination(Enum):
@@ -13,20 +13,6 @@ class LogDestination(Enum):
 
 def get_log_level() -> str:
     return os.getenv("KILN_LOG_LEVEL", "WARNING")
-
-
-def get_log_file_path() -> str:
-    """Get the path to the log file, using environment override if specified.
-
-    Returns:
-        str: The path to the log file
-    """
-    log_path_default = os.path.join(Config.settings_dir(), "logs", "kiln_desktop.log")
-    log_path = os.getenv("KILN_LOG_FILE", log_path_default)
-
-    # Ensure the log directory exists
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    return log_path
 
 
 def get_max_file_bytes() -> int:
@@ -45,10 +31,6 @@ def get_max_backup_count() -> int:
     """
     default_backup_count = 3
     return int(os.getenv("KILN_LOG_BACKUP_COUNT", default_backup_count))
-
-
-def get_default_formatter() -> str:
-    return "%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s"
 
 
 def get_handlers() -> List[str]:
@@ -86,7 +68,7 @@ def log_config():
                 "class": "logging.handlers.RotatingFileHandler",
                 "level": get_log_level(),
                 "formatter": "logformatter",
-                "filename": get_log_file_path(),
+                "filename": get_log_file_path("kiln_desktop.log"),
                 "mode": "a",
                 "maxBytes": get_max_file_bytes(),
                 "backupCount": get_max_backup_count(),

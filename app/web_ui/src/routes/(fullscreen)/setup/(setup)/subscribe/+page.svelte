@@ -9,13 +9,12 @@
   let error: KilnError | null = null
 
   async function subscribe() {
-    subscribed = true
     loading = true
+    error = null
     try {
-      // Critical Moments is another project of mine by the same company (same privacy policy)
-      // Using it's domain until we have a dedicated kiln server
+      console.log("Subscribing to newsletter local to remote", email)
       const res = await fetch(
-        "https://criticalmoments.io/account/api/kiln_subscribe",
+        "https://getkiln.ai/api/subscribe_to_newsletter",
         {
           method: "POST",
           body: JSON.stringify({ email }),

@@ -21,6 +21,7 @@ from kiln_ai.datamodel import (
     TaskRequirement,
     TaskRun,
 )
+from kiln_ai.datamodel.task import RunConfigProperties
 
 json_joke_schema = """{
   "type": "object",
@@ -189,7 +190,15 @@ async def test_live_run(sample_task, sample_task_run, sample_repair_data):
     repair_task_input = RepairTaskRun.build_repair_task_input(**sample_repair_data)
     assert isinstance(repair_task_input, RepairTaskInput)
 
-    adapter = adapter_for_task(repair_task, model_name="llama_3_1_8b", provider="groq")
+    adapter = adapter_for_task(
+        repair_task,
+        RunConfigProperties(
+            model_name="llama_3_1_8b",
+            model_provider_name="groq",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+        ),
+    )
 
     run = await adapter.invoke(repair_task_input.model_dump())
     assert run is not None
@@ -198,10 +207,13 @@ async def test_live_run(sample_task, sample_task_run, sample_repair_data):
     assert "setup" in parsed_output
     assert "punchline" in parsed_output
     assert run.output.source.properties == {
-        "adapter_name": "kiln_langchain_adapter",
+        "adapter_name": "kiln_openai_compatible_adapter",
         "model_name": "llama_3_1_8b",
         "model_provider": "groq",
         "prompt_id": "simple_prompt_builder",
+        "structured_output_mode": "default",
+        "temperature": 1.0,
+        "top_p": 1.0,
     }
 
 
@@ -224,7 +236,13 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         )
 
         adapter = adapter_for_task(
-            repair_task, model_name="llama_3_1_8b", provider="ollama"
+            repair_task,
+            RunConfigProperties(
+                model_name="llama_3_1_8b",
+                model_provider_name="ollama",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
         )
 
         run = await adapter.invoke(repair_task_input.model_dump())
@@ -240,6 +258,9 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "model_name": "llama_3_1_8b",
         "model_provider": "ollama",
         "prompt_id": "simple_prompt_builder",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0,
     }
     assert run.input_source.type == DataSourceType.human
     assert "created_by" in run.input_source.properties

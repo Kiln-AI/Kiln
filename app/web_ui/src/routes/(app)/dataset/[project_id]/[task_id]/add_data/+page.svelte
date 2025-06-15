@@ -136,12 +136,12 @@
   ]}
 >
   <div class="font-light flex flex-col gap-4">
-    {#if splitsArray.length > 0}
+    {#if splitsArray.length > 1}
       {@const tag_list = splitsArray
         .map((split) => `${Math.round(split.value * 100)}% ${split.name}`)
         .join(", ")}
       <div class="rounded-box bg-base-200 p-4 text-sm font-normal mt-4">
-        Be sure to assign the following tags in the requested proportions:
+        You will be adding tags in the following proportions:
         {tag_list}
       </div>
     {/if}
@@ -156,14 +156,23 @@
         > in a new tab so you can follow these instructions.
       </li>
       <li class="ml-4">
-        Using the "Select" button, select the data you want to use for one of
-        the tags above. You can select many examples at once using the shift
-        key.
+        Using the "Select" button, select the data you to tag. You can select
+        many examples at once using the shift key.
       </li>
       <li class="ml-4">
-        Click the "Tag" button, select "Add Tag", then add the desired tag.
+        Click the "Tag" button, select "Add Tag", then add
+        {#if splitsArray.length > 1}
+          the desired tag.
+        {:else if splitsArray.length === 1}
+          the tag "{splitsArray[0].name}".
+        {/if}
       </li>
-      <li class="ml-4">Repeat steps 2-3 for each tag.</li>
+      {#if splitsArray.length > 1}
+        <li class="ml-4">
+          Repeat steps 2-3 for each tag. Be sure to tag in the proportions
+          described above.
+        </li>
+      {/if}
     </ol>
   </div>
 </Dialog>

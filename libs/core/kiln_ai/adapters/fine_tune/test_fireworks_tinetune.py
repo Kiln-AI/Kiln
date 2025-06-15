@@ -13,11 +13,11 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetF
 from kiln_ai.adapters.fine_tune.fireworks_finetune import FireworksFinetune
 from kiln_ai.datamodel import (
     DatasetSplit,
-    FinetuneDataStrategy,
     StructuredOutputMode,
     Task,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
 from kiln_ai.utils.config import Config
 
@@ -232,8 +232,8 @@ def mock_task():
 @pytest.mark.parametrize(
     "data_strategy,thinking_instructions",
     [
-        (FinetuneDataStrategy.final_and_intermediate, "thinking instructions"),
-        (FinetuneDataStrategy.final_only, None),
+        (ChatStrategy.two_message_cot, "thinking instructions"),
+        (ChatStrategy.single_turn, None),
     ],
 )
 async def test_generate_and_upload_jsonl_success(

@@ -19,9 +19,13 @@ uvx  ruff check --select I
 uvx ruff format --check .
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
-find . -type f | grep -v "/node_modules/" | grep  -v "/\." | grep -v "/dist/" | grep -v "/desktop/build/" | xargs misspell -error
-echo "No misspellings found"
-
+if command -v misspell >/dev/null 2>&1; then
+    find . -type f | grep -v "/node_modules/" | grep  -v "/\." | grep -v "/dist/" | grep -v "/desktop/build/" | xargs misspell -error
+    echo "No misspellings found"
+else
+    echo "\033[31mWarning: misspell command not found. Skipping misspelling check.\033[0m"
+    echo "\033[31mTo install: go install github.com/client9/misspell/cmd/misspell@latest\033[0m"
+fi
 
 echo "${headerStart}Web UI: format, lint, check${headerEnd}"
 changed_files=$(git diff --name-only --staged)

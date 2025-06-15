@@ -5,11 +5,14 @@ from litellm.types.utils import ChatCompletionTokenLogprob
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.ml_model_list import (
+    default_structured_output_mode_for_model_provider,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutput
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, StructuredOutputMode
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {
@@ -114,12 +117,27 @@ class GEval(BaseEval):
             10 if self.eval_config.config_type == EvalConfigType.g_eval else None
         )
 
-        adapter = adapter_for_task(
-            self.geval_task,
+        # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
+        structured_output_mode = default_structured_output_mode_for_model_provider(
             model_name,
             provider,
-            # We always use Simple COT for G-Eval and LLM as Judge
-            prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+            default=StructuredOutputMode.json_schema,
+            # G-eval expects JSON, so don't allow function calling modes
+            disallowed_modes=[
+                StructuredOutputMode.function_calling,
+                StructuredOutputMode.function_calling_weak,
+            ],
+        )
+
+        adapter = adapter_for_task(
+            self.geval_task,
+            run_config_properties=RunConfigProperties(
+                model_name=model_name,
+                model_provider_name=provider,
+                # We always use Simple COT for G-Eval and LLM as Judge
+                prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+                structured_output_mode=structured_output_mode,
+            ),
             base_adapter_config=AdapterConfig(
                 # Don't save this run into the task_runs. It will be saved into an eval_run where it belongs
                 allow_saving=False,

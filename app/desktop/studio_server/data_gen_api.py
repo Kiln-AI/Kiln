@@ -7,8 +7,13 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     wrap_task_with_guidance,
 )
+from kiln_ai.adapters.ml_model_list import (
+    default_structured_output_mode_for_model_provider,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import DataSource, DataSourceType, PromptId, TaskRun
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_server.run_api import model_provider_from_string
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, ConfigDict, Field
@@ -92,8 +97,15 @@ def connect_data_gen_api(app: FastAPI):
 
         adapter = adapter_for_task(
             categories_task,
-            model_name=input.model_name,
-            provider=model_provider_from_string(input.provider),
+            run_config_properties=RunConfigProperties(
+                model_name=input.model_name,
+                model_provider_name=model_provider_from_string(input.provider),
+                prompt_id=PromptGenerators.SIMPLE,
+                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
+                structured_output_mode=default_structured_output_mode_for_model_provider(
+                    input.model_name, model_provider_from_string(input.provider)
+                ),
+            ),
         )
 
         categories_run = await adapter.invoke(task_input.model_dump())
@@ -115,8 +127,15 @@ def connect_data_gen_api(app: FastAPI):
 
         adapter = adapter_for_task(
             sample_task,
-            model_name=input.model_name,
-            provider=model_provider_from_string(input.provider),
+            run_config_properties=RunConfigProperties(
+                model_name=input.model_name,
+                model_provider_name=model_provider_from_string(input.provider),
+                prompt_id=PromptGenerators.SIMPLE,
+                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
+                structured_output_mode=default_structured_output_mode_for_model_provider(
+                    input.model_name, model_provider_from_string(input.provider)
+                ),
+            ),
         )
 
         samples_run = await adapter.invoke(task_input.model_dump())
@@ -139,9 +158,16 @@ def connect_data_gen_api(app: FastAPI):
 
         adapter = adapter_for_task(
             task,
-            model_name=sample.output_model_name,
-            provider=model_provider_from_string(sample.output_provider),
-            prompt_id=sample.prompt_method,
+            run_config_properties=RunConfigProperties(
+                model_name=sample.output_model_name,
+                model_provider_name=model_provider_from_string(sample.output_provider),
+                prompt_id=sample.prompt_method,
+                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
+                structured_output_mode=default_structured_output_mode_for_model_provider(
+                    sample.output_model_name,
+                    model_provider_from_string(sample.output_provider),
+                ),
+            ),
         )
 
         properties: dict[str, str | int | float] = {

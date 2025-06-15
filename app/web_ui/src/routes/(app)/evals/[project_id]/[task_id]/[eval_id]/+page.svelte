@@ -19,7 +19,7 @@
   import { goto } from "$app/navigation"
   import { prompt_link } from "$lib/utils/link_builder"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
-
+  import PropertyList from "$lib/ui/property_list.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: project_id = $page.params.project_id
@@ -108,11 +108,14 @@
   }
 
   function get_eval_properties(
-    evaluator: Eval,
+    evaluator: Eval | null,
     eval_progress: EvalProgress | null,
     modelInfo: ProviderModels | null,
     taskPrompts: PromptResponse | null,
   ): UiProperty[] {
+    if (!evaluator) {
+      return []
+    }
     const properties: UiProperty[] = []
 
     properties.push({
@@ -308,15 +311,6 @@
     }
     return undefined
   }
-
-  $: properties =
-    evaluator &&
-    get_eval_properties(
-      evaluator,
-      eval_progress,
-      $model_info,
-      $current_task_prompts,
-    )
 
   function add_eval_data() {
     if (!evaluator) {
@@ -561,26 +555,15 @@
         </div>
 
         <div class="w-72 2xl:w-96 flex-none">
-          <div class="text-xl font-bold mb-4">Evaluator Properties</div>
-          <div
-            class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
-          >
-            {#each properties || [] as property}
-              <div class="flex items-center">
-                {property.name}
-                {#if property.tooltip}
-                  <InfoTooltip tooltip_text={property.tooltip} />
-                {/if}
-              </div>
-              <div class="flex items-center text-gray-500 overflow-x-hidden">
-                {#if property.link}
-                  <a href={property.link} class="link">{property.value}</a>
-                {:else}
-                  {property.value}
-                {/if}
-              </div>
-            {/each}
-          </div>
+          <PropertyList
+            properties={get_eval_properties(
+              evaluator,
+              eval_progress,
+              $model_info,
+              $current_task_prompts,
+            )}
+            title="Evaluator Properties"
+          />
         </div>
       </div>
     {/if}

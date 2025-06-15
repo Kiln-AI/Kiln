@@ -10,7 +10,6 @@ from kiln_ai.datamodel import (
     BasePrompt,
     DataSource,
     DataSourceType,
-    PromptId,
     Task,
     TaskRun,
 )
@@ -120,9 +119,7 @@ class CreateEvalConfigRequest(BaseModel):
 class CreateTaskRunConfigRequest(BaseModel):
     name: str | None = None
     description: str | None = None
-    model_name: str
-    model_provider_name: ModelProviderName
-    prompt_id: PromptId
+    run_config_properties: RunConfigProperties
 
 
 class RunEvalConfigRequest(BaseModel):
@@ -365,28 +362,27 @@ def connect_evals_api(app: FastAPI):
             )
 
         frozen_prompt: BasePrompt | None = None
-        if not is_frozen_prompt(request.prompt_id):
+        prompt_id = request.run_config_properties.prompt_id
+        if not is_frozen_prompt(prompt_id):
             # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
             # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
-            prompt_builder = prompt_builder_from_id(request.prompt_id, task)
+            prompt_builder = prompt_builder_from_id(prompt_id, task)
             prompt_name = generate_memorable_name()
             frozen_prompt = BasePrompt(
                 name=prompt_name,
-                description=f"Frozen copy of prompt '{request.prompt_id}', created for evaluations.",
-                generator_id=request.prompt_id,
+                description=f"Frozen copy of prompt '{prompt_id}', created for evaluations.",
+                generator_id=prompt_id,
                 prompt=prompt_builder.build_base_prompt(),
                 chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
             )
 
+        run_config_properties = request.run_config_properties
+
         task_run_config = TaskRunConfig(
             parent=task,
             name=name,
+            run_config_properties=run_config_properties,
             description=request.description,
-            run_config_properties=RunConfigProperties(
-                model_name=request.model_name,
-                model_provider_name=request.model_provider_name,
-                prompt_id=request.prompt_id,
-            ),
             prompt=frozen_prompt,
         )
         if frozen_prompt is not None:

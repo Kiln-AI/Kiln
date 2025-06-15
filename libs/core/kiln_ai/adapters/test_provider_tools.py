@@ -18,7 +18,7 @@ from kiln_ai.adapters.provider_tools import (
     finetune_provider_model,
     get_model_and_provider,
     kiln_model_provider_from,
-    lite_llm_config,
+    lite_llm_config_for_openai_compatible,
     lite_llm_provider_model,
     parse_custom_model_id,
     provider_enabled,
@@ -27,10 +27,11 @@ from kiln_ai.adapters.provider_tools import (
 )
 from kiln_ai.datamodel import (
     Finetune,
-    FinetuneDataStrategy,
     StructuredOutputMode,
     Task,
 )
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +72,7 @@ def mock_finetune():
         finetune.provider = ModelProviderName.openai
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
-        finetune.data_strategy = FinetuneDataStrategy.final_only
+        finetune.data_strategy = ChatStrategy.single_turn
         mock.return_value = finetune
         yield mock
 
@@ -83,7 +84,7 @@ def mock_finetune_final_and_intermediate():
         finetune.provider = ModelProviderName.openai
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
-        finetune.data_strategy = FinetuneDataStrategy.final_and_intermediate
+        finetune.data_strategy = ChatStrategy.two_message_cot
         mock.return_value = finetune
         yield mock
 
@@ -95,9 +96,7 @@ def mock_finetune_r1_compatible():
         finetune.provider = ModelProviderName.ollama
         finetune.fine_tune_model_id = "ft:deepseek-r1:671b:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
-        finetune.data_strategy = (
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible
-        )
+        finetune.data_strategy = ChatStrategy.single_turn_r1_thinking
         mock.return_value = finetune
         yield mock
 
@@ -357,6 +356,7 @@ async def test_kiln_model_provider_from_custom_model_valid(mock_config):
     assert provider.supports_data_gen is False
     assert provider.untested_model is True
     assert provider.model_id == "custom_model"
+    assert provider.structured_output_mode == StructuredOutputMode.json_instructions
 
 
 @pytest.mark.asyncio
@@ -374,6 +374,7 @@ async def test_kiln_model_provider_from_custom_registry(mock_config):
     assert provider.supports_data_gen is False
     assert provider.untested_model is True
     assert provider.model_id == "gpt-4-turbo"
+    assert provider.structured_output_mode == StructuredOutputMode.json_instructions
 
 
 @pytest.mark.asyncio
@@ -474,7 +475,7 @@ def test_finetune_provider_model_success_final_and_intermediate(
     assert provider.name == ModelProviderName.openai
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
-    assert provider.reasoning_capable is True
+    assert provider.reasoning_capable is False
     assert provider.parser == None
 
 
@@ -580,7 +581,7 @@ def test_finetune_provider_model_structured_mode(
     finetune.provider = provider_name
     finetune.fine_tune_model_id = "fireworks-model-123"
     finetune.structured_output_mode = structured_output_mode
-    finetune.data_strategy = FinetuneDataStrategy.final_only
+    finetune.data_strategy = ChatStrategy.single_turn
     mock_finetune.return_value = finetune
 
     provider = finetune_provider_model("project-123::task-456::finetune-789")
@@ -596,10 +597,20 @@ def test_openai_compatible_provider_config(mock_shared_config):
     """Test successful creation of an OpenAI compatible provider"""
     model_id = "test_provider::gpt-4"
 
-    config = lite_llm_config(model_id)
+    config = lite_llm_config_for_openai_compatible(
+        RunConfigProperties(
+            model_name=model_id,
+            model_provider_name=ModelProviderName.openai_compatible,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        )
+    )
 
-    assert config.provider_name == ModelProviderName.openai_compatible
-    assert config.model_name == "gpt-4"
+    assert (
+        config.run_config_properties.model_provider_name
+        == ModelProviderName.openai_compatible
+    )
+    assert config.run_config_properties.model_name == "gpt-4"
     assert config.additional_body_options == {"api_key": "test-key"}
     assert config.base_url == "https://api.test.com"
 
@@ -621,10 +632,20 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
     """Test provider creation without API key (should work as some providers don't require it, but should pass NA to LiteLLM as it requires one)"""
     model_id = "no_key_provider::gpt-4"
 
-    config = lite_llm_config(model_id)
+    config = lite_llm_config_for_openai_compatible(
+        RunConfigProperties(
+            model_name=model_id,
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        )
+    )
 
-    assert config.provider_name == ModelProviderName.openai_compatible
-    assert config.model_name == "gpt-4"
+    assert (
+        config.run_config_properties.model_provider_name
+        == ModelProviderName.openai_compatible
+    )
+    assert config.run_config_properties.model_name == "gpt-4"
     assert config.additional_body_options == {"api_key": "NA"}
     assert config.base_url == "https://api.nokey.com"
 
@@ -632,7 +653,14 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
 def test_lite_llm_config_invalid_id():
     """Test handling of invalid model ID format"""
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config("invalid-id-format")
+        lite_llm_config_for_openai_compatible(
+            RunConfigProperties(
+                model_name="invalid-id-format",
+                model_provider_name=ModelProviderName.openai_compatible,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            )
+        )
     assert (
         str(exc_info.value) == "Invalid openai compatible model ID: invalid-id-format"
     )
@@ -643,14 +671,28 @@ def test_lite_llm_config_no_providers(mock_shared_config):
     mock_shared_config.return_value.openai_compatible_providers = None
 
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config("test_provider::gpt-4")
+        lite_llm_config_for_openai_compatible(
+            RunConfigProperties(
+                model_name="test_provider::gpt-4",
+                model_provider_name=ModelProviderName.openai_compatible,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            )
+        )
     assert str(exc_info.value) == "OpenAI compatible provider test_provider not found"
 
 
 def test_lite_llm_config_provider_not_found(mock_shared_config):
     """Test handling of non-existent provider"""
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config("unknown_provider::gpt-4")
+        lite_llm_config_for_openai_compatible(
+            RunConfigProperties(
+                model_name="unknown_provider::gpt-4",
+                model_provider_name=ModelProviderName.openai_compatible,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            )
+        )
     assert (
         str(exc_info.value) == "OpenAI compatible provider unknown_provider not found"
     )
@@ -666,7 +708,14 @@ def test_lite_llm_config_no_base_url(mock_shared_config):
     ]
 
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config("test_provider::gpt-4")
+        lite_llm_config_for_openai_compatible(
+            RunConfigProperties(
+                model_name="test_provider::gpt-4",
+                model_provider_name=ModelProviderName.openai_compatible,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            )
+        )
     assert (
         str(exc_info.value)
         == "OpenAI compatible provider test_provider has no base URL"
@@ -867,7 +916,7 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     finetune.provider = ModelProviderName.vertex
     finetune.fine_tune_model_id = "projects/123/locations/us-central1/endpoints/456"
     finetune.structured_output_mode = StructuredOutputMode.json_mode
-    finetune.data_strategy = FinetuneDataStrategy.final_only
+    finetune.data_strategy = ChatStrategy.single_turn
     mock_finetune.return_value = finetune
 
     provider = finetune_provider_model("project-123::task-456::finetune-789")

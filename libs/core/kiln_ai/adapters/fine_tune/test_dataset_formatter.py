@@ -7,11 +7,12 @@ from unittest.mock import Mock
 
 import pytest
 
+from kiln_ai.adapters.chat.chat_formatter import COT_FINAL_ANSWER_PROMPT, ChatMessage
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
+    VERTEX_GEMINI_ROLE_MAP,
     DatasetFormat,
     DatasetFormatter,
-    ModelTrainingData,
-    build_training_data,
+    build_training_chat,
     generate_chat_message_response,
     generate_chat_message_toolcall,
     generate_huggingface_chat_template,
@@ -19,16 +20,15 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_vertex_gemini,
     serialize_r1_style_message,
 )
-from kiln_ai.adapters.model_adapters.base_adapter import COT_FINAL_ANSWER_PROMPT
 from kiln_ai.datamodel import (
     DatasetSplit,
     DataSource,
     DataSourceType,
-    FinetuneDataStrategy,
     Task,
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -100,41 +100,56 @@ def mock_dataset(mock_task):
     return dataset
 
 
-def test_generate_chat_message_response():
-    thinking_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-    )
+@pytest.fixture
+def mock_training_chat_short():
+    return [
+        ChatMessage(role="system", content="system message"),
+        ChatMessage(
+            role="user",
+            content="test input",
+        ),
+        ChatMessage(role="assistant", content="test output"),
+    ]
 
-    result = generate_chat_message_response(thinking_data)
+
+@pytest.fixture
+def mock_training_chat_two_step_plaintext():
+    return [
+        ChatMessage(role="system", content="system message"),
+        ChatMessage(
+            role="user",
+            content="The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
+        ),
+        ChatMessage(role="assistant", content="thinking output"),
+        ChatMessage(role="user", content="thinking final answer prompt"),
+        ChatMessage(role="assistant", content="test output"),
+    ]
+
+
+@pytest.fixture
+def mock_training_chat_two_step_json():
+    return [
+        ChatMessage(role="system", content="system message"),
+        ChatMessage(
+            role="user",
+            content="The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
+        ),
+        ChatMessage(role="assistant", content="thinking output"),
+        ChatMessage(role="user", content="thinking final answer prompt"),
+        ChatMessage(role="assistant", content='{"a":"你好"}'),
+    ]
+
+
+def test_generate_chat_message_response(mock_training_chat_two_step_plaintext):
+    result = generate_chat_message_response(mock_training_chat_two_step_plaintext)
 
     assert result == {
         "messages": [
             {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
-            {"role": "assistant", "content": "test output"},
-        ]
-    }
-
-
-def test_generate_chat_message_response_thinking():
-    thinking_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_final_answer_prompt="thinking final answer prompt",
-    )
-
-    result = generate_chat_message_response(thinking_data)
-
-    assert result == {
-        "messages": [
-            {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
-            {"role": "user", "content": "thinking instructions"},
+            {
+                "role": "user",
+                "content": "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
+            },
             {"role": "assistant", "content": "thinking output"},
             {"role": "user", "content": "thinking final answer prompt"},
             {"role": "assistant", "content": "test output"},
@@ -142,79 +157,33 @@ def test_generate_chat_message_response_thinking():
     }
 
 
-def test_generate_chat_message_response_thinking_r1_style():
-    thinking_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions=None,
-        thinking_final_answer_prompt=None,
-        thinking_r1_style=True,
-    )
-
-    result = generate_chat_message_response(thinking_data)
+def test_generate_chat_message_response_json(mock_training_chat_two_step_json):
+    result = generate_chat_message_response(mock_training_chat_two_step_json)
 
     assert result == {
         "messages": [
             {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
             {
-                "role": "assistant",
-                "content": "<think>\nthinking output\n</think>\n\ntest output",
+                "role": "user",
+                "content": "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
             },
+            {"role": "assistant", "content": "thinking output"},
+            {"role": "user", "content": "thinking final answer prompt"},
+            {"role": "assistant", "content": '{"a":"你好"}'},
         ]
     }
 
 
-def test_generate_chat_message_toolcall():
-    training_data = ModelTrainingData(
-        input="test input 你好",
-        system_message="system message 你好",
-        final_output='{"key": "value 你好"}',
-    )
-
-    result = generate_chat_message_toolcall(training_data)
-
-    assert result == {
-        "messages": [
-            {"role": "system", "content": "system message 你好"},
-            {"role": "user", "content": "test input 你好"},
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {
-                            "name": "task_response",
-                            "arguments": '{"key": "value 你好"}',
-                        },
-                    }
-                ],
-            },
-        ]
-    }
-
-
-def test_generate_chat_message_toolcall_thinking():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output='{"key": "value"}',
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_final_answer_prompt="thinking final answer prompt",
-    )
-
-    result = generate_chat_message_toolcall(training_data)
+def test_generate_chat_message_toolcall(mock_training_chat_two_step_json):
+    result = generate_chat_message_toolcall(mock_training_chat_two_step_json)
 
     assert result == {
         "messages": [
             {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
-            {"role": "user", "content": "thinking instructions"},
+            {
+                "role": "user",
+                "content": "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
+            },
             {"role": "assistant", "content": "thinking output"},
             {"role": "user", "content": "thinking final answer prompt"},
             {
@@ -226,7 +195,7 @@ def test_generate_chat_message_toolcall_thinking():
                         "type": "function",
                         "function": {
                             "name": "task_response",
-                            "arguments": '{"key": "value"}',
+                            "arguments": '{"a": "你好"}',
                         },
                     }
                 ],
@@ -235,49 +204,17 @@ def test_generate_chat_message_toolcall_thinking():
     }
 
 
-def test_generate_chat_message_toolcall_thinking_r1_style():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output='{"key": "value"}',
-        thinking="thinking output",
-        thinking_instructions=None,
-        thinking_final_answer_prompt=None,
-        thinking_r1_style=True,
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="R1 style thinking is not supported for tool call downloads",
-    ):
-        generate_chat_message_toolcall(training_data)
-
-
-def test_generate_chat_message_toolcall_invalid_json():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="invalid json",
-    )
-
-    with pytest.raises(ValueError, match="Invalid JSON in for tool call"):
-        generate_chat_message_toolcall(training_data)
-
-
-def test_dataset_formatter_init_no_parent_task(mock_dataset):
-    mock_dataset.parent_task.return_value = None
-
-    with pytest.raises(ValueError, match="Dataset has no parent task"):
-        DatasetFormatter(mock_dataset, "system message")
+def test_generate_chat_message_toolcall_invalid_json(mock_training_chat_two_step_json):
+    mock_training_chat_two_step_json[-1].content = "invalid json"
+    with pytest.raises(ValueError, match="^Last message is not JSON"):
+        generate_chat_message_toolcall(mock_training_chat_two_step_json)
 
 
 def test_dataset_formatter_dump_invalid_format(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message")
 
     with pytest.raises(ValueError, match="Unsupported format"):
-        formatter.dump_to_file(
-            "train", "invalid_format", FinetuneDataStrategy.final_only
-        )  # type: ignore
+        formatter.dump_to_file("train", "invalid_format", ChatStrategy.single_turn)
 
 
 def test_dataset_formatter_dump_invalid_split(mock_dataset):
@@ -287,7 +224,7 @@ def test_dataset_formatter_dump_invalid_split(mock_dataset):
         formatter.dump_to_file(
             "invalid_split",
             DatasetFormat.OPENAI_CHAT_JSONL,
-            FinetuneDataStrategy.final_only,
+            ChatStrategy.single_turn,
         )
 
 
@@ -299,7 +236,7 @@ def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         path=output_path,
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
 
     assert result_path == output_path
@@ -325,7 +262,7 @@ def test_dataset_formatter_dump_to_temp_file(mock_dataset):
     result_path = formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
 
     assert result_path.exists()
@@ -356,7 +293,7 @@ def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
         "train",
         DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL,
         path=output_path,
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
 
     assert result_path == output_path
@@ -396,7 +333,7 @@ def test_dataset_formatter_dump_with_intermediate_data(
     result_path = formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
-        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        data_strategy=ChatStrategy.two_message_cot_legacy,
     )
 
     assert result_path.exists()
@@ -427,7 +364,7 @@ def test_dataset_formatter_dump_with_intermediate_data_r1_style(
     result_path = formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
-        data_strategy=FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+        data_strategy=ChatStrategy.single_turn_r1_thinking,
     )
 
     assert result_path.exists()
@@ -456,7 +393,7 @@ def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
     result_path = formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
-        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        data_strategy=ChatStrategy.two_message_cot_legacy,
     )
 
     assert result_path.exists()
@@ -476,41 +413,16 @@ def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
             assert "thinking output" in line
 
 
-def test_generate_huggingface_chat_template():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-    )
-
-    result = generate_huggingface_chat_template(training_data)
+def test_generate_huggingface_chat_template(mock_training_chat_two_step_plaintext):
+    result = generate_huggingface_chat_template(mock_training_chat_two_step_plaintext)
 
     assert result == {
         "conversations": [
             {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
-            {"role": "assistant", "content": "test output"},
-        ]
-    }
-
-
-def test_generate_huggingface_chat_template_thinking():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_final_answer_prompt="thinking final answer prompt",
-    )
-
-    result = generate_huggingface_chat_template(training_data)
-
-    assert result == {
-        "conversations": [
-            {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
-            {"role": "user", "content": "thinking instructions"},
+            {
+                "role": "user",
+                "content": "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
+            },
             {"role": "assistant", "content": "thinking output"},
             {"role": "user", "content": "thinking final answer prompt"},
             {"role": "assistant", "content": "test output"},
@@ -518,39 +430,8 @@ def test_generate_huggingface_chat_template_thinking():
     }
 
 
-def test_generate_huggingface_chat_template_thinking_r1_style():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions=None,
-        thinking_final_answer_prompt=None,
-        thinking_r1_style=True,
-    )
-
-    result = generate_huggingface_chat_template(training_data)
-
-    assert result == {
-        "conversations": [
-            {"role": "system", "content": "system message"},
-            {"role": "user", "content": "test input"},
-            {
-                "role": "assistant",
-                "content": "<think>\nthinking output\n</think>\n\ntest output",
-            },
-        ]
-    }
-
-
-def test_generate_vertex_template():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-    )
-
-    result = generate_vertex_gemini(training_data)
+def test_generate_vertex_template(mock_training_chat_short):
+    result = generate_vertex_gemini(mock_training_chat_short)
 
     assert result == {
         "systemInstruction": {
@@ -568,17 +449,8 @@ def test_generate_vertex_template():
     }
 
 
-def test_generate_vertex_template_thinking():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_final_answer_prompt="thinking final answer prompt",
-    )
-
-    result = generate_vertex_gemini(training_data)
+def test_generate_vertex_template_thinking(mock_training_chat_two_step_plaintext):
+    result = generate_vertex_gemini(mock_training_chat_two_step_plaintext)
 
     assert result == {
         "systemInstruction": {
@@ -590,8 +462,14 @@ def test_generate_vertex_template_thinking():
             ],
         },
         "contents": [
-            {"role": "user", "parts": [{"text": "test input"}]},
-            {"role": "user", "parts": [{"text": "thinking instructions"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
+                    }
+                ],
+            },
             {"role": "model", "parts": [{"text": "thinking output"}]},
             {"role": "user", "parts": [{"text": "thinking final answer prompt"}]},
             {"role": "model", "parts": [{"text": "test output"}]},
@@ -599,31 +477,14 @@ def test_generate_vertex_template_thinking():
     }
 
 
-def test_generate_vertex_template_thinking_r1_style():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions=None,
-        thinking_final_answer_prompt=None,
-        thinking_r1_style=True,
-    )
-
-    with pytest.raises(
-        ValueError, match="R1 style thinking is not supported for Vertex Gemini"
-    ):
-        generate_vertex_gemini(training_data)
-
-
 def test_generate_huggingface_chat_template_toolcall():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output='{"key": "value"}',
-    )
+    messages = [
+        ChatMessage("system", "system message"),
+        ChatMessage("user", "test input"),
+        ChatMessage("assistant", '{"key":"value"}'),
+    ]
 
-    result = generate_huggingface_chat_template_toolcall(training_data)
+    result = generate_huggingface_chat_template_toolcall(messages)
 
     assert result["conversations"][0] == {"role": "system", "content": "system message"}
     assert result["conversations"][1] == {"role": "user", "content": "test input"}
@@ -638,34 +499,28 @@ def test_generate_huggingface_chat_template_toolcall():
     assert tool_call["function"]["arguments"] == {"key": "value"}
 
 
-def test_generate_huggingface_chat_template_toolcall_thinking():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output='{"key": "value"}',
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_final_answer_prompt="thinking final answer prompt",
+def test_generate_huggingface_chat_template_toolcall_thinking(
+    mock_training_chat_two_step_json,
+):
+    result = generate_huggingface_chat_template_toolcall(
+        mock_training_chat_two_step_json
     )
 
-    result = generate_huggingface_chat_template_toolcall(training_data)
-
     assert result["conversations"][0] == {"role": "system", "content": "system message"}
-    assert result["conversations"][1] == {"role": "user", "content": "test input"}
-    assert result["conversations"][2] == {
+    assert result["conversations"][1] == {
         "role": "user",
-        "content": "thinking instructions",
+        "content": "The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
     }
-    assert result["conversations"][3] == {
+    assert result["conversations"][2] == {
         "role": "assistant",
         "content": "thinking output",
     }
-    assert result["conversations"][4] == {
+    assert result["conversations"][3] == {
         "role": "user",
         "content": "thinking final answer prompt",
     }
 
-    assistant_msg = result["conversations"][5]
+    assistant_msg = result["conversations"][4]
     assert assistant_msg["role"] == "assistant"
     assert len(assistant_msg["tool_calls"]) == 1
     tool_call = assistant_msg["tool_calls"][0]
@@ -673,53 +528,39 @@ def test_generate_huggingface_chat_template_toolcall_thinking():
     assert tool_call["function"]["name"] == "task_response"
     assert len(tool_call["function"]["id"]) == 9  # UUID is truncated to 9 chars
     assert tool_call["function"]["id"].isalnum()  # Check ID is alphanumeric
-    assert tool_call["function"]["arguments"] == {"key": "value"}
+    assert tool_call["function"]["arguments"] == {"a": "你好"}
 
 
-def test_generate_huggingface_chat_template_toolcall_thinking_r1_style():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output='{"key": "value"}',
-        thinking="thinking output",
-        thinking_instructions=None,
-        thinking_final_answer_prompt=None,
-        thinking_r1_style=True,
-    )
+def test_generate_huggingface_chat_template_toolcall_invalid_json(
+    mock_training_chat_two_step_json,
+):
+    mock_training_chat_two_step_json[-1].content = "invalid json"
 
-    with pytest.raises(
-        ValueError,
-        match="R1 style thinking is not supported for tool call downloads",
-    ):
-        generate_huggingface_chat_template_toolcall(training_data)
+    with pytest.raises(ValueError, match="^Last message is not JSON"):
+        generate_huggingface_chat_template_toolcall(mock_training_chat_two_step_json)
 
 
-def test_generate_huggingface_chat_template_toolcall_invalid_json():
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="invalid json",
-    )
-
-    with pytest.raises(ValueError, match="Invalid JSON in for tool call"):
-        generate_huggingface_chat_template_toolcall(training_data)
-
-
-def test_build_training_data(mock_task):
+def test_build_training_chat(mock_task):
     # Non repaired should use original output
     mock_task_run = mock_task.runs()[0]
-    training_data_output = build_training_data(
+    messages = build_training_chat(
         mock_task_run,
         "system message",
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
-    assert training_data_output.final_output == '{"test":   "output 你好"}'
-    assert training_data_output.thinking is None
-    assert training_data_output.thinking_instructions is None
-    assert training_data_output.thinking_final_answer_prompt is None
-    assert training_data_output.input == '{"test": "input 你好"}'
-    assert training_data_output.system_message == "system message"
-    assert not training_data_output.supports_cot()
+
+    assert len(messages) == 3
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
+
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert user_msg.content == '{"test": "input 你好"}'
+
+    final_msg = messages[2]
+    assert final_msg.role == "assistant"
+    assert final_msg.content == '{"test":   "output 你好"}'
 
 
 def test_build_training_data_with_COT(mock_task):
@@ -729,47 +570,76 @@ def test_build_training_data_with_COT(mock_task):
     mock_task_run.intermediate_outputs = {"chain_of_thought": "cot output"}
     mock_task_run.thinking_training_data.return_value = "cot output"
 
-    training_data_output = build_training_data(
+    messages = build_training_chat(
         mock_task_run,
         "system message",
-        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        data_strategy=ChatStrategy.two_message_cot,
         thinking_instructions="thinking instructions",
     )
-    assert training_data_output.final_output == '{"test":   "output 你好"}'
-    assert training_data_output.thinking == "cot output"
-    assert training_data_output.thinking_instructions == "thinking instructions"
-    assert training_data_output.thinking_final_answer_prompt == COT_FINAL_ANSWER_PROMPT
-    assert training_data_output.input == '{"test": "input 你好"}'
-    assert training_data_output.system_message == "system message"
-    assert training_data_output.thinking_r1_style == False
-    assert training_data_output.supports_cot()
 
+    assert len(messages) == 5
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
 
-def test_model_training_data_supports_cot(mock_task):
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_final_answer_prompt=COT_FINAL_ANSWER_PROMPT,
-        thinking_r1_style=False,
-    )
-    assert training_data.supports_cot() == True
-
-
-def test_model_training_data_supports_cot_r1_style(mock_task):
-    training_data = ModelTrainingData(
-        input="test input",
-        system_message="system message",
-        final_output="test output",
-        thinking="thinking output",
-        thinking_instructions="thinking instructions",
-        thinking_r1_style=True,
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert (
+        user_msg.content
+        == 'The input is:\n<user_input>\n{"test": "input 你好"}\n</user_input>\n\nthinking instructions'
     )
 
-    with pytest.raises(ValueError, match="R1 style does not support COT"):
-        training_data.supports_cot()
+    assistant_msg = messages[2]
+    assert assistant_msg.role == "assistant"
+    assert assistant_msg.content == "cot output"
+
+    final_answer_prompt_msg = messages[3]
+    assert final_answer_prompt_msg.role == "user"
+    assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
+
+    final_msg = messages[4]
+    assert final_msg.role == "assistant"
+    assert final_msg.content == '{"test":   "output 你好"}'
+
+
+def test_build_training_data_with_COT_legacy(mock_task):
+    # Setup with needed fields for thinking
+    mock_task_run = mock_task.runs()[0]
+    assert mock_task_run.parent_task() == mock_task
+    mock_task_run.intermediate_outputs = {"chain_of_thought": "cot output"}
+    mock_task_run.thinking_training_data.return_value = "cot output"
+
+    messages = build_training_chat(
+        mock_task_run,
+        "system message",
+        data_strategy=ChatStrategy.two_message_cot_legacy,
+        thinking_instructions="thinking instructions",
+    )
+
+    assert len(messages) == 6
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
+
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert user_msg.content == '{"test": "input 你好"}'
+
+    cot_msg = messages[2]
+    assert cot_msg.role == "system"
+    assert cot_msg.content == "thinking instructions"
+
+    assistant_msg = messages[3]
+    assert assistant_msg.role == "assistant"
+    assert assistant_msg.content == "cot output"
+
+    final_answer_prompt_msg = messages[4]
+    assert final_answer_prompt_msg.role == "user"
+    assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
+
+    final_msg = messages[5]
+    assert final_msg.role == "assistant"
+    assert final_msg.content == '{"test":   "output 你好"}'
 
 
 def test_build_training_data_with_COT_r1_style(mock_task):
@@ -779,19 +649,28 @@ def test_build_training_data_with_COT_r1_style(mock_task):
     mock_task_run.intermediate_outputs = {"chain_of_thought": "cot output"}
     mock_task_run.thinking_training_data.return_value = "cot output"
 
-    training_data_output = build_training_data(
+    messages = build_training_chat(
         mock_task_run,
         "system message",
-        data_strategy=FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+        data_strategy=ChatStrategy.single_turn_r1_thinking,
         thinking_instructions=None,
     )
-    assert training_data_output.final_output == '{"test":   "output 你好"}'
-    assert training_data_output.thinking == "cot output"
-    assert training_data_output.thinking_instructions == None
-    assert training_data_output.thinking_final_answer_prompt == None
-    assert training_data_output.input == '{"test": "input 你好"}'
-    assert training_data_output.system_message == "system message"
-    assert training_data_output.thinking_r1_style == True
+
+    assert len(messages) == 3
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
+
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert user_msg.content == '{"test": "input 你好"}'
+
+    final_msg = messages[2]
+    assert final_msg.role == "assistant"
+    assert (
+        final_msg.content
+        == '<think>\ncot output\n</think>\n\n{"test":   "output 你好"}'
+    )
 
 
 def test_build_training_data_with_thinking(mock_task):
@@ -807,19 +686,36 @@ def test_build_training_data_with_thinking(mock_task):
     mock_task.thinking_instruction = "thinking instructions"
     assert mock_task.thinking_instruction == "thinking instructions"
 
-    training_data_output = build_training_data(
+    messages = build_training_chat(
         mock_task_run,
         "system message",
-        FinetuneDataStrategy.final_and_intermediate,
+        ChatStrategy.two_message_cot,
         thinking_instructions="thinking instructions",
     )
-    assert training_data_output.final_output == '{"test":   "output 你好"}'
-    assert training_data_output.thinking == "thinking output"
-    assert training_data_output.thinking_instructions == "thinking instructions"
-    assert training_data_output.thinking_final_answer_prompt == COT_FINAL_ANSWER_PROMPT
-    assert training_data_output.input == '{"test": "input 你好"}'
-    assert training_data_output.system_message == "system message"
-    assert training_data_output.thinking_r1_style == False
+
+    assert len(messages) == 5
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
+
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert (
+        user_msg.content
+        == 'The input is:\n<user_input>\n{"test": "input 你好"}\n</user_input>\n\nthinking instructions'
+    )
+
+    assistant_msg = messages[2]
+    assert assistant_msg.role == "assistant"
+    assert assistant_msg.content == "thinking output"
+
+    final_answer_prompt_msg = messages[3]
+    assert final_answer_prompt_msg.role == "user"
+    assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
+
+    final_msg = messages[4]
+    assert final_msg.role == "assistant"
+    assert final_msg.content == '{"test":   "output 你好"}'
 
 
 def test_build_training_data_with_thinking_r1_style(mock_task):
@@ -836,19 +732,28 @@ def test_build_training_data_with_thinking_r1_style(mock_task):
 
     assert mock_task.thinking_instruction == "thinking instructions"
 
-    training_data_output = build_training_data(
+    messages = build_training_chat(
         mock_task_run,
         "system message",
-        FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+        ChatStrategy.single_turn_r1_thinking,
         thinking_instructions=None,
     )
-    assert training_data_output.final_output == '{"test":   "output 你好"}'
-    assert training_data_output.thinking == "thinking output"
-    assert training_data_output.thinking_instructions == None
-    assert training_data_output.thinking_final_answer_prompt == None
-    assert training_data_output.input == '{"test": "input 你好"}'
-    assert training_data_output.system_message == "system message"
-    assert training_data_output.thinking_r1_style == True
+
+    assert len(messages) == 3
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
+
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert user_msg.content == '{"test": "input 你好"}'
+
+    final_msg = messages[2]
+    assert final_msg.role == "assistant"
+    assert (
+        final_msg.content
+        == '<think>\nthinking output\n</think>\n\n{"test":   "output 你好"}'
+    )
 
 
 def test_build_training_data_with_repaired_output(mock_task):
@@ -863,17 +768,25 @@ def test_build_training_data_with_repaired_output(mock_task):
         ),
     )
 
-    training_data_output = build_training_data(
+    messages = build_training_chat(
         mock_task_run,
         "system message",
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
-    assert training_data_output.final_output == '{"test": "repaired output"}'
-    assert training_data_output.thinking is None
-    assert training_data_output.thinking_instructions is None
-    assert training_data_output.thinking_final_answer_prompt is None
-    assert training_data_output.input == '{"test": "input 你好"}'
-    assert training_data_output.system_message == "system message"
+
+    assert len(messages) == 3
+    system_msg = messages[0]
+    assert system_msg.role == "system"
+    assert system_msg.content == "system message"
+
+    user_msg = messages[1]
+    assert user_msg.role == "user"
+    assert user_msg.content == '{"test": "input 你好"}'
+
+    final_msg = messages[2]
+    assert final_msg.role == "assistant"
+    # Note we re-format the json
+    assert final_msg.content == '{"test": "repaired output"}'
 
 
 def test_dataset_formatter_dump_to_file_json_schema_format(mock_dataset, tmp_path):
@@ -884,7 +797,7 @@ def test_dataset_formatter_dump_to_file_json_schema_format(mock_dataset, tmp_pat
         "train",
         DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL,
         path=output_path,
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
 
     assert result_path == output_path
@@ -940,3 +853,24 @@ def test_serialize_r1_style_message_missing_thinking(thinking, final_output):
         ),
     ):
         serialize_r1_style_message(thinking=thinking, final_output=final_output)
+
+
+def test_vertex_gemini_role_map_coverage():
+    """Test that VERTEX_GEMINI_ROLE_MAP covers all possible ChatMessage.role values"""
+    from typing import Literal, get_type_hints
+
+    # Get the Literal type from ChatMessage.role
+    role_type = get_type_hints(ChatMessage)["role"]
+    # Extract the possible values from the Literal type
+    possible_roles = role_type.__args__  # type: ignore
+
+    # Check that every possible role is in the map
+    for role in possible_roles:
+        assert role in VERTEX_GEMINI_ROLE_MAP, (
+            f"Role {role} is not mapped in VERTEX_GEMINI_ROLE_MAP"
+        )
+
+    # Check that there are no extra mappings
+    assert set(VERTEX_GEMINI_ROLE_MAP.keys()) == set(possible_roles), (
+        "VERTEX_GEMINI_ROLE_MAP has extra mappings"
+    )

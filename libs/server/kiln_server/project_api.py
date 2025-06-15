@@ -108,7 +108,7 @@ def connect_project_api(app: FastAPI):
         except Exception as e:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to load project. The file be invalid: {e}",
+                detail=f"Failed to load project. The file is invalid: {e}",
             )
 
         # add to projects list

@@ -1,15 +1,27 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
-  import { current_task, current_project, ui_state } from "$lib/stores"
+  import {
+    current_task,
+    current_project,
+    ui_state,
+    available_models,
+    available_model_details,
+  } from "$lib/stores"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
   import { client } from "$lib/api_client"
-  import type { TaskRun } from "$lib/types"
+  import type {
+    TaskRun,
+    StructuredOutputMode,
+    AvailableModels,
+  } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import RunInputForm from "./run_input_form.svelte"
+  import RunOptions from "$lib/ui/run_options.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   // TODO: implement checking input content
   // let warn_before_unload
@@ -22,6 +34,9 @@
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
+  let temperature: number
+  let top_p: number
+  let structured_output_mode: StructuredOutputMode
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
@@ -34,6 +49,20 @@
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
   $: input_schema = $current_task?.input_json_schema
   $: requires_structured_output = !!$current_task?.output_json_schema
+
+  // Model defaults come from available_models store
+
+  // Update structured_output_mode when model changes
+  $: update_structured_output_mode(model_name, provider, $available_models)
+  function update_structured_output_mode(
+    model_name: string,
+    provider: string,
+    available_models: AvailableModels[],
+  ) {
+    structured_output_mode =
+      available_model_details(model_name, provider, available_models)
+        ?.structured_output_mode || "default"
+  }
 
   async function run_task() {
     try {
@@ -58,12 +87,18 @@
           },
         },
         body: {
-          model_name: model_name,
-          provider: provider,
+          run_config_properties: {
+            model_name: model_name,
+            // @ts-expect-error server will catch if enum is not valid
+            model_provider_name: provider,
+            prompt_id: prompt_method,
+            temperature: temperature,
+            top_p: top_p,
+            structured_output_mode: structured_output_mode,
+          },
           plaintext_input: input_form.get_plaintext_input_data(),
           // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
           structured_input: input_form.get_structured_input_data(),
-          ui_prompt_method: prompt_method,
           tags: ["manual_run"],
         },
       })
@@ -127,6 +162,14 @@
           bind:error_message={model_dropdown_error_message}
           bind:this={model_dropdown}
         />
+        <Collapse title="Advanced Options">
+          <RunOptions
+            bind:temperature
+            bind:top_p
+            bind:structured_output_mode
+            has_structured_output={requires_structured_output}
+          />
+        </Collapse>
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}

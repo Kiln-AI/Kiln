@@ -66,6 +66,12 @@ class TogetherFinetune(BaseFinetuneAdapter):
             # retrieve the fine-tuning job
             together_finetune = self.client.fine_tuning.retrieve(id=fine_tuning_job_id)
 
+            # update the fine tune model ID if it has changed (sometimes it's not set at training time)
+            if self.datamodel.fine_tune_model_id != together_finetune.output_name:
+                self.datamodel.fine_tune_model_id = together_finetune.output_name
+                if self.datamodel.path:
+                    self.datamodel.save_to_file()
+
             status = together_finetune.status
             if status in _pending_statuses:
                 return FineTuneStatus(
@@ -135,8 +141,13 @@ class TogetherFinetune(BaseFinetuneAdapter):
             **self._build_finetune_parameters(),
         )
 
-        # 2 different IDs, output_name is the name of the model that results from the fine-tune job, the finetune_job_id is the ID of the fine-tune job
+        # 2 different IDs, output_name is the name of the model that results from the fine-tune job, while the id is the ID of the fine-tune job itself
+        if not together_finetune.id:
+            raise ValueError(
+                "Together failed to return a fine-tune job ID. While tuning job was dispatched, Kiln never received the ID so won't be able to reference it. Check for errors before dispatching more jobs."
+            )
         self.datamodel.provider_id = together_finetune.id
+        # Output name is sometimes returned here, and save it if it is. But it might be populated later by status call
         self.datamodel.fine_tune_model_id = together_finetune.output_name
 
         if self.datamodel.path:

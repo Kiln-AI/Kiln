@@ -200,7 +200,7 @@ def test_repair_run_missing_model_info(
     )
 
     # Assert
-    assert response.status_code == 400
+    assert response.status_code == 422
     assert response.json()["detail"] == "Model name and provider must be specified."
 
 

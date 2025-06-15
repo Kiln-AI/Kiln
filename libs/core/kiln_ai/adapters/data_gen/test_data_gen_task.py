@@ -14,6 +14,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 from kiln_ai.adapters.provider_tools import get_model_and_provider
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 @pytest.fixture
@@ -110,8 +111,12 @@ async def test_data_gen_all_models_providers(
 
     adapter = adapter_for_task(
         data_gen_task,
-        model_name=model_name,
-        provider=provider_name,
+        run_config_properties=RunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="unknown",
+        ),
     )
 
     input_dict = data_gen_input.model_dump()
@@ -254,8 +259,12 @@ async def test_data_gen_sample_all_models_providers(
 
     adapter = adapter_for_task(
         data_gen_task,
-        model_name=model_name,
-        provider=provider_name,
+        run_config_properties=RunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="unknown",
+        ),
     )
 
     input_dict = data_gen_input.model_dump()
@@ -304,8 +313,12 @@ async def test_data_gen_sample_all_models_providers_with_structured_output(
 
     adapter = adapter_for_task(
         data_gen_task,
-        model_name=model_name,
-        provider=provider_name,
+        run_config_properties=RunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="unknown",
+        ),
     )
 
     input_dict = data_gen_input.model_dump()

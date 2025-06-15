@@ -12,11 +12,11 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetF
 from kiln_ai.adapters.fine_tune.vertex_finetune import VertexFinetune
 from kiln_ai.datamodel import (
     DatasetSplit,
-    FinetuneDataStrategy,
     StructuredOutputMode,
     Task,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
 from kiln_ai.utils.config import Config
 
@@ -35,7 +35,7 @@ def vertex_finetune(tmp_path):
             system_message="Test system message",
             fine_tune_model_id="ft-123",
             path=tmp_file,
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
         ),
     )
     return finetune
@@ -252,8 +252,8 @@ async def test_status_model_id_update_exception(vertex_finetune, mock_response):
 @pytest.mark.parametrize(
     "data_strategy,thinking_instructions",
     [
-        (FinetuneDataStrategy.final_and_intermediate, "Custom thinking instructions"),
-        (FinetuneDataStrategy.final_only, None),
+        (ChatStrategy.two_message_cot, "Custom thinking instructions"),
+        (ChatStrategy.single_turn, None),
     ],
 )
 async def test_generate_and_upload_jsonl(

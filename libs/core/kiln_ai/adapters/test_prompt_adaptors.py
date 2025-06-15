@@ -18,6 +18,7 @@ from kiln_ai.adapters.prompt_builders import (
     SimpleChainOfThoughtPromptBuilder,
 )
 from kiln_ai.datamodel import PromptId
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 def get_all_models_and_providers():
@@ -124,8 +125,12 @@ async def test_mock_returning_run(tmp_path):
 
         adapter = LiteLlmAdapter(
             config=LiteLlmConfig(
-                model_name="custom_model",
-                provider_name="ollama",
+                run_config_properties=RunConfigProperties(
+                    model_name="custom_model",
+                    model_provider_name="ollama",
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
                 base_url="http://localhost:11434",
                 additional_body_options={"api_key": "test_key"},
             ),
@@ -145,6 +150,9 @@ async def test_mock_returning_run(tmp_path):
         "model_name": "custom_model",
         "model_provider": "ollama",
         "prompt_id": "simple_prompt_builder",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0,
     }
 
 
@@ -212,7 +220,13 @@ async def run_simple_task(
     prompt_id: PromptId | None = None,
 ) -> datamodel.TaskRun:
     adapter = adapter_for_task(
-        task, model_name=model_name, provider=provider, prompt_id=prompt_id
+        task,
+        RunConfigProperties(
+            structured_output_mode="json_schema",
+            model_name=model_name,
+            model_provider_name=provider,
+            prompt_id=prompt_id or "simple_prompt_builder",
+        ),
     )
 
     run = await adapter.invoke(

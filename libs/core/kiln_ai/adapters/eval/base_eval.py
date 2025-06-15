@@ -2,14 +2,17 @@ import json
 from abc import abstractmethod
 from typing import Dict
 
-import jsonschema
-
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalScores
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.task import RunConfig, TaskOutputRatingType, TaskRun
+from kiln_ai.datamodel.task import (
+    RunConfig,
+    RunConfigProperties,
+    TaskOutputRatingType,
+    TaskRun,
+)
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -60,14 +63,13 @@ class BaseEval:
 
         run_adapter = adapter_for_task(
             self.target_task,
-            self.run_config.model_name,
-            ModelProviderName(self.run_config.model_provider_name),
+            self.run_config,
             base_adapter_config=AdapterConfig(allow_saving=False),
         )
 
         # Parse structured input if needed
         parsed_input = input
-        if self.target_task.output_json_schema is not None:
+        if self.target_task.input_json_schema is not None:
             parsed_input = json.loads(input)
 
         # we don't save by default here. We'll save manually after validating the output

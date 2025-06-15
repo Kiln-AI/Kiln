@@ -94,6 +94,7 @@ def mock_run_config(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
         ),
         parent=mock_task,
     )
@@ -209,6 +210,7 @@ def test_collect_tasks_filtering(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
         ),
         parent=mock_task,
     )
@@ -416,6 +418,7 @@ def test_collect_tasks_multiple_run_configs(
             model_name="gpt-3.5",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
         ),
         parent=mock_task,
     )

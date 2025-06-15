@@ -26,7 +26,7 @@ Running the web-UI and Python servers separately is useful for development, as b
 
 To run the API server, Studio server, and Studio Web UI with auto-reload for development:
 
-1. In your first terminal:
+1. In your first terminal, navigate to the base Kiln directory:
 
    ```bash
    uv run python -m app.desktop.dev_server
@@ -54,7 +54,7 @@ Please ensure any new code has test coverage, and that all code is formatted and
 To confirm everything works locally, run:
 
 ```bash
-./checks.sh
+uv run ./checks.sh
 ```
 
 ## Optional Setup
@@ -71,7 +71,6 @@ We suggest the following extensions for VSCode/Cursor. With them, you'll get com
 - Svelte for VS Code
 - Vitest
 - ESLint
-- Cursor Pyright
 
 ### llms.txt
 

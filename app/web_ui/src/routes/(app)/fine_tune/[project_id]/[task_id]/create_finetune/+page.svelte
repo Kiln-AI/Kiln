@@ -6,7 +6,7 @@
   import { client, base_url } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import type { FinetuneDataStrategy } from "$lib/types"
+  import type { ChatStrategy } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import PromptTypeSelector from "../../../../run/prompt_type_selector.svelte"
@@ -27,11 +27,12 @@
     FineTuneParameter,
   } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   let finetune_description = ""
   let finetune_name = ""
   const disabled_header = "disabled_header"
-  let data_strategy: FinetuneDataStrategy = "final_only"
+  let data_strategy: ChatStrategy = "final_only"
   let finetune_custom_system_prompt = ""
   let finetune_custom_thinking_instructions =
     "Think step by step, explaining your reasoning."
@@ -209,7 +210,7 @@
   }
   function get_custom_thinking_instructions_param(): string | undefined {
     return system_prompt_method === "custom" &&
-      data_strategy === "final_and_intermediate"
+      data_strategy === "two_message_cot"
       ? finetune_custom_thinking_instructions
       : undefined
   }
@@ -357,7 +358,7 @@
     window.open(base_url + "/api/download_dataset_jsonl?" + query_string)
   }
 
-  let data_strategy_select_options: [FinetuneDataStrategy, string][] = []
+  let data_strategy_select_options: [ChatStrategy, string][] = []
 
   function update_data_strategies_supported(
     model_provider: string | null,
@@ -365,14 +366,15 @@
     is_download: boolean,
     available_models: FinetuneProvider[] | null,
   ) {
-    if (!model_provider || !base_model_id) {
+    if (!model_provider || (!base_model_id && !is_download)) {
       return
     }
 
-    const data_strategies_labels: Record<FinetuneDataStrategy, string> = {
+    const data_strategies_labels: Record<ChatStrategy, string> = {
       final_only: "Disabled - (Recommended)",
+      two_message_cot: "Thinking - Learn both thinking and final response",
       final_and_intermediate:
-        "Thinking - Learn both thinking and final response",
+        "Thinking - Learn both thinking and final response (Legacy Format)",
       final_and_intermediate_r1_compatible: is_download
         ? "Thinking (R1 compatible) - Learn both thinking and final response"
         : "Thinking - Learn both thinking and final response",
@@ -388,13 +390,13 @@
       "download_vertex_gemini",
     ]
     if (r1_disabled_for_downloads.includes(model_provider)) {
-      return ["final_only", "final_and_intermediate"]
+      return ["final_only", "two_message_cot"]
     }
 
-    const compatible_data_strategies: FinetuneDataStrategy[] = is_download
+    const compatible_data_strategies: ChatStrategy[] = is_download
       ? [
           "final_only",
-          "final_and_intermediate",
+          "two_message_cot",
           "final_and_intermediate_r1_compatible",
         ]
       : available_models
@@ -405,7 +407,7 @@
 
     data_strategy_select_options = compatible_data_strategies.map(
       (strategy) => [strategy, data_strategies_labels[strategy]],
-    ) as [FinetuneDataStrategy, string][]
+    ) as [ChatStrategy, string][]
 
     data_strategy = compatible_data_strategies[0]
   }
@@ -480,7 +482,7 @@
             bind:value={$model_provider}
           />
           <button
-            class="mt-1 hover:underline"
+            class="mt-1 underline decoration-gray-400"
             on:click={go_to_providers_settings}
           >
             <Warning
@@ -492,7 +494,19 @@
           </button>
         </div>
         {#if step_2_visible}
-          <div class="text-xl font-bold">Step 2: Training Dataset</div>
+          <div>
+            <div class="text-xl font-bold">
+              Step 2: Select Fine-Tuning Dataset
+            </div>
+            <div class="font-light">
+              Select a dataset to use for this fine-tune.
+              <InfoTooltip
+                tooltip_text="A fine-tuning dataset is a subset of your dataset which is used to train and validate the fine-tuned model. This is typically a subset of your dataset, which is intentionally kept separate from your eval data."
+                position="bottom"
+                no_pad={true}
+              />
+            </div>
+          </div>
           <SelectFinetuneDataset {project_id} {task_id} bind:selected_dataset />
         {/if}
 
@@ -515,7 +529,7 @@
                 id="finetune_custom_system_prompt"
                 bind:value={finetune_custom_system_prompt}
               />
-              {#if data_strategy === "final_and_intermediate"}
+              {#if data_strategy === "two_message_cot"}
                 <div class="mt-4"></div>
                 <FormElement
                   label="Custom Thinking Instructions"
@@ -538,7 +552,7 @@
               select_options={data_strategy_select_options}
               bind:value={data_strategy}
             />
-            {#if data_strategy === "final_and_intermediate" && !selecting_thinking_dataset}
+            {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
               <Warning
                 warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
                 large_icon={true}

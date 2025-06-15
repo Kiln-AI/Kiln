@@ -219,7 +219,7 @@ def test_import_project_load_error(client):
 
     assert response.status_code == 500
     assert response.json() == {
-        "message": "Failed to load project. The file be invalid: Load error"
+        "message": "Failed to load project. The file is invalid: Load error"
     }
 
 

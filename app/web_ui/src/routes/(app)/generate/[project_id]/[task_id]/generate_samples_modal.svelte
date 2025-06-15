@@ -8,7 +8,7 @@
   import FormElement from "../../../../../lib/utils/form_element.svelte"
 
   // the number of workers to use for parallel generation
-  const PARALLEL_WORKER_COUNT = 25
+  const PARALLEL_WORKER_COUNT = 5
 
   type GenerateSamplesOutcome = {
     topic: TopicNodeWithPath

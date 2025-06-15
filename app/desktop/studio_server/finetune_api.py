@@ -26,11 +26,10 @@ from kiln_ai.adapters.provider_tools import provider_enabled, provider_name_from
 from kiln_ai.datamodel import (
     DatasetSplit,
     Finetune,
-    FinetuneDataStrategy,
     FineTuneStatusType,
     Task,
 )
-from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES
+from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     HighRatingDatasetFilter,
@@ -56,10 +55,10 @@ class FinetuneProviderModel(BaseModel):
 
     name: str
     id: str
-    data_strategies_supported: list[FinetuneDataStrategy] = Field(
+    data_strategies_supported: list[ChatStrategy] = Field(
         default_factory=lambda: [
-            FinetuneDataStrategy.final_only,
-            FinetuneDataStrategy.final_and_intermediate,
+            ChatStrategy.single_turn,
+            ChatStrategy.two_message_cot,
         ]
     )
 
@@ -133,10 +132,10 @@ class CreateFinetuneRequest(BaseModel):
     system_message_generator: str | None = None
     custom_system_message: str | None = None
     custom_thinking_instructions: str | None = None
-    data_strategy: FinetuneDataStrategy
+    data_strategy: ChatStrategy
 
     @model_validator(mode="after")
-    def validate_data_strategy(self) -> "CreateFinetuneRequest":
+    def validate_data_strategy(self):
         if self.data_strategy not in infer_data_strategies_for_model(
             built_in_models, self.base_model_id, self.provider
         ):
@@ -415,13 +414,13 @@ def connect_fine_tune_api(app: FastAPI):
                 detail=f"Dataset format '{format_type}' not found",
             )
         format_type_typed = DatasetFormat(format_type)
-        if data_strategy not in [strategy.value for strategy in FinetuneDataStrategy]:
+        if data_strategy not in [strategy.value for strategy in ChatStrategy]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Data strategy '{data_strategy}' not found",
             )
 
-        data_strategy_typed = FinetuneDataStrategy(data_strategy)
+        data_strategy_typed = ChatStrategy(data_strategy)
 
         task = task_from_id(project_id, task_id)
         dataset = DatasetSplit.from_id_and_parent_path(dataset_id, task.path)
@@ -498,14 +497,14 @@ def system_message_from_request(
 
 def thinking_instructions_from_request(
     task: Task,
-    data_strategy: FinetuneDataStrategy,
+    data_strategy: ChatStrategy,
     custom_thinking_instructions: str | None,
 ) -> str | None:
     if data_strategy not in THINKING_DATA_STRATEGIES:
         # Not using COT/Thinking style
         return None
 
-    if data_strategy == FinetuneDataStrategy.final_and_intermediate_r1_compatible:
+    if data_strategy == ChatStrategy.single_turn_r1_thinking:
         return None
 
     if custom_thinking_instructions:
@@ -577,35 +576,36 @@ async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
     return tuneable_models
 
 
+# While technical COT legacy is supported, we don't want new tunes using it.
 DEFAULT_DATA_STRATEGIES = [
-    FinetuneDataStrategy.final_only,
-    FinetuneDataStrategy.final_and_intermediate,
+    ChatStrategy.single_turn,
+    ChatStrategy.two_message_cot,
 ]
 
 
 def data_strategies_from_model_provider(
     provider: KilnModelProvider,
-) -> list[FinetuneDataStrategy]:
+) -> list[ChatStrategy]:
     if provider.parser == ModelParserID.r1_thinking:
         return [
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            ChatStrategy.single_turn_r1_thinking,
         ]
     return DEFAULT_DATA_STRATEGIES
 
 
 def data_strategies_from_finetune_id(
     provider_finetune_id: str,
-) -> list[FinetuneDataStrategy]:
+) -> list[ChatStrategy]:
     if "qwen3" in provider_finetune_id.lower():
         return [
-            FinetuneDataStrategy.final_only,
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            ChatStrategy.single_turn,
+            ChatStrategy.single_turn_r1_thinking,
         ]
 
     r1_must_include = ["r1", "qwq"]
     if any(substring in provider_finetune_id.lower() for substring in r1_must_include):
         return [
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            ChatStrategy.single_turn_r1_thinking,
         ]
     return DEFAULT_DATA_STRATEGIES
 
@@ -614,7 +614,7 @@ def infer_data_strategies_for_model(
     available_models: list[KilnModel],
     provider_finetune_id: str,
     provider_name: str,
-) -> list[FinetuneDataStrategy]:
+) -> list[ChatStrategy]:
     # we don't have built-in models for fireworks models, so we infer the data strategy from the model name
     if provider_name == ModelProviderName.fireworks_ai:
         return data_strategies_from_finetune_id(provider_finetune_id)

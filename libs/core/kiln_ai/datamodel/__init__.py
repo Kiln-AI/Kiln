@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from kiln_ai.datamodel import dataset_split, eval, strict_mode
 from kiln_ai.datamodel.datamodel_enums import (
-    FinetuneDataStrategy,
     FineTuneStatusType,
     Priority,
     StructuredOutputMode,
@@ -71,7 +70,6 @@ __all__ = [
     "Prompt",
     "TaskOutputRating",
     "StructuredOutputMode",
-    "FinetuneDataStrategy",
     "PromptId",
     "PromptGenerators",
     "prompt_generator_values",

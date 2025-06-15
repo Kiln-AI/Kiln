@@ -9,13 +9,13 @@ from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
     Finetune,
-    FinetuneDataStrategy,
     Project,
     Prompt,
     Task,
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
 
@@ -536,44 +536,58 @@ def test_prompt_parent_task():
         # Test 1: Valid case - no thinking instructions with final_only
         (
             None,
-            FinetuneDataStrategy.final_only,
+            ChatStrategy.single_turn,
             False,
             None,
         ),
         # Test 2: Valid case - thinking instructions with final_and_intermediate
         (
             "Think step by step",
-            FinetuneDataStrategy.final_and_intermediate,
+            ChatStrategy.two_message_cot_legacy,
             False,
             None,
         ),
         # Test 3: Valid case - no thinking instructions with final_and_intermediate_r1_compatible
         (
             None,
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            ChatStrategy.single_turn_r1_thinking,
             False,
             None,
         ),
         # Test 4: Invalid case - thinking instructions with final_only
         (
             "Think step by step",
-            FinetuneDataStrategy.final_only,
+            ChatStrategy.single_turn,
             True,
-            "Thinking instructions can only be used when data_strategy is final_and_intermediate",
+            "Thinking instructions can only be used when data_strategy is",
         ),
         # Test 5: Invalid case - no thinking instructions with final_and_intermediate
         (
             None,
-            FinetuneDataStrategy.final_and_intermediate,
+            ChatStrategy.two_message_cot_legacy,
             True,
-            "Thinking instructions are required when data_strategy is final_and_intermediate",
+            "Thinking instructions are required when data_strategy is",
         ),
         # Test 6: Invalid case - thinking instructions with final_and_intermediate_r1_compatible
         (
             "Think step by step",
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+            ChatStrategy.single_turn_r1_thinking,
             True,
-            "Thinking instructions can only be used when data_strategy is final_and_intermediate",
+            "Thinking instructions can only be used when data_strategy is",
+        ),
+        # Test 7: new COT format
+        (
+            "Think step by step",
+            ChatStrategy.two_message_cot,
+            False,
+            None,
+        ),
+        # Test 8: new COT format
+        (
+            None,
+            ChatStrategy.two_message_cot,
+            True,
+            "Thinking instructions are required when data_strategy is",
         ),
     ],
 )
@@ -665,3 +679,12 @@ def test_task_run_thinking_training_data(intermediate_outputs, expected):
         intermediate_outputs=intermediate_outputs,
     )
     assert task_run.thinking_training_data() == expected
+
+
+def test_chat_strategy_enum():
+    # This has to align to the old FinetuneDataStrategy enum
+    assert ChatStrategy.single_turn == "final_only"
+    assert ChatStrategy.two_message_cot_legacy == "final_and_intermediate"
+    assert (
+        ChatStrategy.single_turn_r1_thinking == "final_and_intermediate_r1_compatible"
+    )

@@ -46,6 +46,7 @@ def adapter(test_task):
             model_name="phi_3_5",
             model_provider_name="ollama",
             prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode="json_schema",
         ),
     )
 
@@ -102,6 +103,9 @@ def test_save_run_isolation(test_task, adapter):
         reloaded_output.source.properties["prompt_id"]
         == "simple_chain_of_thought_prompt_builder"
     )
+    assert reloaded_output.source.properties["structured_output_mode"] == "json_schema"
+    assert reloaded_output.source.properties["temperature"] == 1.0
+    assert reloaded_output.source.properties["top_p"] == 1.0
     # Run again, with same input and different output. Should create a new TaskRun.
     different_run_output = RunOutput(
         output="Different output", intermediate_outputs=None
@@ -228,3 +232,40 @@ async def test_autosave_true(test_task, adapter):
             output.source.properties["prompt_id"]
             == "simple_chain_of_thought_prompt_builder"
         )
+        assert output.source.properties["structured_output_mode"] == "json_schema"
+        assert output.source.properties["temperature"] == 1.0
+        assert output.source.properties["top_p"] == 1.0
+
+
+def test_properties_for_task_output_custom_values(test_task):
+    """Test that _properties_for_task_output includes custom temperature, top_p, and structured_output_mode"""
+    adapter = MockAdapter(
+        run_config=RunConfig(
+            task=test_task,
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            temperature=0.7,
+            top_p=0.9,
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    input_data = "Test input"
+    output_data = "Test output"
+    run_output = RunOutput(output=output_data, intermediate_outputs=None)
+
+    task_run = adapter.generate_run(
+        input=input_data, input_source=None, run_output=run_output
+    )
+    task_run.save_to_file()
+
+    # Verify custom values are preserved in properties
+    output = task_run.output
+    assert output.source.properties["adapter_name"] == "mock_adapter"
+    assert output.source.properties["model_name"] == "gpt-4"
+    assert output.source.properties["model_provider"] == "openai"
+    assert output.source.properties["prompt_id"] == "simple_prompt_builder"
+    assert output.source.properties["structured_output_mode"] == "json_schema"
+    assert output.source.properties["temperature"] == 0.7
+    assert output.source.properties["top_p"] == 0.9

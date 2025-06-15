@@ -2,26 +2,27 @@ import json
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.ml_model_list import (
+    default_structured_output_mode_for_model_provider,
+)
 from kiln_ai.adapters.repair.repair_task import RepairTaskRun
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.json_schema import validate_schema
-from kiln_ai.datamodel.task_output import DataSource, DataSourceType
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+)
 from kiln_ai.utils.config import Config
 from kiln_server.run_api import model_provider_from_string, task_and_run_from_id
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class RepairTaskApiInput(BaseModel):
     evaluator_feedback: str = Field(
         description="Feedback from an evaluator on how to repair the task run."
-    )
-    model_name: str | None = Field(
-        description="The name of the model to use for the repair task. Optional, if not specified, the model of the original task will be used.",
-        default=None,
-    )
-    provider: str | None = Field(
-        description="The provider of the model to use for the repair task. Optional, if not specified, the provider of the original task will be used.",
-        default=None,
     )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
@@ -46,28 +47,61 @@ def connect_repair_api(app: FastAPI):
             evaluator_feedback=input.evaluator_feedback,
         )
 
+        # Build the same run config properties as the original run. The persisted data has changed over time, so lots of error checks.
         source_properties = (
             run.output.source.properties
             if run.output.source and run.output.source.properties
             else {}
         )
-        model_name = input.model_name or source_properties.get("model_name")
-        provider = input.provider or source_properties.get("model_provider")
-        if (
-            not model_name
-            or not provider
-            or not isinstance(model_name, str)
-            or not isinstance(provider, str)
-        ):
+        try:
+            model_name = source_properties.get("model_name", None)
+            provider = source_properties.get("model_provider", None)
+            if (
+                not model_name
+                or not provider
+                or not isinstance(model_name, str)
+                or not isinstance(provider, str)
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Model name and provider must be specified.",
+                )
+            model_name = str(model_name)
+            provider = model_provider_from_string(provider)
+
+            sdm = source_properties.get("structured_output_mode", None)
+            if sdm is None or not isinstance(sdm, str):
+                sdm = default_structured_output_mode_for_model_provider(
+                    model_name,
+                    provider,
+                )
+            else:
+                sdm = StructuredOutputMode(sdm)
+
+            run_config_properties = RunConfigProperties(
+                model_name=model_name,
+                model_provider_name=provider,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=sdm,
+            )
+
+            temperature = source_properties.get("temperature", None)
+            if temperature is not None and isinstance(temperature, float):
+                run_config_properties.temperature = temperature
+
+            top_p = source_properties.get("top_p", None)
+            if top_p is not None and isinstance(top_p, float):
+                run_config_properties.top_p = top_p
+
+        except ValidationError as e:
             raise HTTPException(
-                status_code=400,
-                detail="Model name and provider must be specified.",
+                status_code=422,
+                detail=f"Invalid run config properties: {e}",
             )
 
         adapter = adapter_for_task(
             repair_task,
-            model_name=model_name,
-            provider=model_provider_from_string(provider),
+            run_config_properties=run_config_properties,
         )
 
         repair_run = await adapter.invoke(repair_task_input.model_dump())

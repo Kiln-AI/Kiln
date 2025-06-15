@@ -53,10 +53,10 @@
         >.
       </div>
       <button class="btn btn-primary" on:click={() => generate_subtopics()}>
-        Add Top Level Topics
+        Add Topics
       </button>
       <button class="btn" on:click={() => generate_samples()}>
-        Add Top Level Data
+        Add Data Without Topics
       </button>
       <a
         href="https://docs.getkiln.ai/docs/synthetic-data-generation"

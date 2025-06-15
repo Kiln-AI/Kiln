@@ -14,6 +14,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelName,
     ModelProviderName,
+    StructuredOutputMode,
     built_in_models,
 )
 from kiln_ai.adapters.ollama_tools import (
@@ -85,6 +86,8 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    # the suggested structured output mode for this model.
+    structured_output_mode: StructuredOutputMode
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
@@ -155,6 +158,7 @@ def connect_provider_api(app: FastAPI):
                                 suggested_for_data_gen=provider.suggested_for_data_gen,
                                 supports_logprobs=provider.supports_logprobs,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                structured_output_mode=provider.structured_output_mode,
                             )
                         )
 
@@ -854,6 +858,8 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            # Ollama has constrained decode and all models support json_schema. Use it!
+                            structured_output_mode=StructuredOutputMode.json_schema,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -867,6 +873,8 @@ async def available_ollama_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    # Ollama has constrained decode and all models support json_schema. Use it!
+                    structured_output_mode=StructuredOutputMode.json_schema,
                 )
             )
 
@@ -922,6 +930,8 @@ def custom_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
+                    structured_output_mode=StructuredOutputMode.json_instructions,
                 )
             )
         except Exception:
@@ -956,6 +966,16 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            structured_output_mode=(
+                                fine_tune_mode
+                                if (
+                                    fine_tune_mode := getattr(
+                                        fine_tune, "structured_output_mode", None
+                                    )
+                                )
+                                and isinstance(fine_tune_mode, StructuredOutputMode)
+                                else StructuredOutputMode.json_instructions
+                            ),
                         )
                     )
 
@@ -1060,6 +1080,8 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
+                        structured_output_mode=StructuredOutputMode.json_instructions,
                     )
                 )
 

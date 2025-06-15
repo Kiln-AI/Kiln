@@ -1,5 +1,6 @@
 import getpass
 import os
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -299,3 +300,25 @@ def test_yaml_persistence_structured_data(config_with_yaml, mock_yaml_file):
     with open(mock_yaml_file, "r") as f:
         saved_settings = yaml.safe_load(f)
     assert saved_settings["list_of_objects"] == new_settings
+
+
+def test_update_settings_thread_safety(config_with_yaml):
+    config = config_with_yaml
+
+    exceptions = []
+
+    def update(val):
+        try:
+            config.update_settings({"int_property": val})
+        except Exception as e:
+            exceptions.append(e)
+
+    threads = [threading.Thread(target=update, args=(i,)) for i in range(5)]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not exceptions
+    assert config.int_property in range(5)

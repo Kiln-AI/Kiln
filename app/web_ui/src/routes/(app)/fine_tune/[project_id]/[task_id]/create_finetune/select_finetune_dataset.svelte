@@ -81,32 +81,42 @@
     },
   ]
 
+  $: show_existing_dataset_option =
+    finetune_dataset_info?.existing_finetunes.length
+  $: show_new_dataset_option = finetune_dataset_info?.finetune_tags.length
+  $: can_select_dataset =
+    show_existing_dataset_option || show_new_dataset_option
   $: top_options = [
-    ...(finetune_dataset_info?.existing_finetunes.length
+    ...(show_existing_dataset_option
       ? [
           {
             id: "existing_dataset",
-            name: "Use Training Dataset from Existing Fine-Tune",
+            name: "Reuse Dataset from an Existing Fine-Tune",
             description:
-              "When comparing multiple models, it's best to used exactly the same training dataset.",
+              "When comparing multiple base models, it's best to use exactly the same fine-tuning dataset.",
           },
         ]
       : []),
-    ...(finetune_dataset_info?.finetune_tags.length
+    ...(show_new_dataset_option
       ? [
           {
             id: "new_dataset",
-            name: "New Training Dataset",
-            description: "Create a training set using a tag in your dataset.",
+            name: "Create a New Fine-Tuning Dataset",
+            description:
+              "Create a new fine-tuning dataset by selecting a subset of your data.",
           },
         ]
       : []),
-    {
-      id: "add",
-      name: "Add Training Data",
-      description:
-        "Add a new training data using synthetic data generation, CSV upload, or by tagging existing data.",
-    },
+    ...(!can_select_dataset
+      ? [
+          {
+            id: "add",
+            name: "Add Fine-Tuning Data",
+            description:
+              "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
+          },
+        ]
+      : []),
   ]
 
   function select_top_option(option: string) {
@@ -291,14 +301,22 @@
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
+      {#if can_select_dataset}
+        <div class="pt-4 font-light">
+          or
+          <button class="link font-normal" on:click={show_add_data}
+            >add additional fine-tuning data</button
+          > before you start.
+        </div>
+      {/if}
     {/if}
   </div>
 {/if}
 
-<Dialog title="Create Training Dataset" bind:this={create_dataset_dialog}>
+<Dialog title="New Fine-Tuning Dataset" bind:this={create_dataset_dialog}>
   <div class="font-light text-sm mb-6">
     <div class="font-light text-sm mb-6">
-      Snapshot your current dataset for training, filtering to a specific tag.
+      Snapshot a subset of your dataset to be used for fine-tuning.
     </div>
     <div class="flex flex-row gap-6 justify-center flex-col">
       <FormContainer
@@ -311,9 +329,9 @@
       >
         <div class="flex flex-col gap-4">
           <FormElement
-            label="Target Dataset Tag"
-            description="Samples with this tag will be included in the training dataset."
-            info_description="Any tag starting with 'fine_tune' will be available here. Advanced users can create their own tags to manage multiple training datasets."
+            label="Dataset Filter Tag (Required)"
+            description="Select a tag. Only samples with this tag will be used in fine-tuning."
+            info_description="Available tags start with 'fine_tune'. You can create custom tags with this prefix to organize different fine-tuning datasets."
             inputType="fancy_select"
             optional={false}
             id="dataset_filter"
@@ -383,7 +401,7 @@
 </Dialog>
 
 <Dialog
-  title="Select Training Dataset from Existing Fine-Tune"
+  title="Select Dataset from an Existing Fine-Tune"
   bind:this={existing_dataset_dialog}
   action_buttons={[
     {
@@ -396,8 +414,8 @@
     <div class="text-error">No existing fine-tune datasets found.</div>
   {:else}
     <div class="font-light text-sm mb-6">
-      Select an existing training dataset to use exactly the same data for this
-      fine-tune.
+      Select an existing fine-tuning dataset to use exactly the same data for
+      this fine-tune.
     </div>
     <div class="flex flex-col gap-4 text-sm max-w-[600px]">
       {#each finetune_dataset_info.existing_datasets as dataset}

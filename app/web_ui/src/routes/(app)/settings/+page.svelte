@@ -1,12 +1,29 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
+  import { client } from "$lib/api_client"
+
+  async function view_logs() {
+    try {
+      const { error } = await client.POST("/api/open_logs", {})
+      if (error) {
+        const errorMessage = (error as Record<string, unknown>)?.message
+        if (typeof errorMessage === "string") {
+          throw new Error(errorMessage)
+        } else {
+          throw new Error("Unknown error")
+        }
+      }
+    } catch (e) {
+      alert("Failed to open logs: " + e)
+    }
+  }
 
   let sections = [
     {
       name: "Edit Task",
       description:
-        "Edit the currently task, including the prompt and requirements.",
+        "Edit the currently selected task, including the prompt and requirements.",
       button_text: "Edit Current Task",
       href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
     },
@@ -28,6 +45,12 @@
       description: "Edit the currently selected project.",
       button_text: "Edit Current Project",
       href: "/settings/edit_project/" + $ui_state.current_project_id,
+    },
+    {
+      name: "View Logs",
+      description: "View logs of the LLM calls or the application logs.",
+      button_text: "View Logs",
+      on_click: view_logs,
     },
     {
       name: "App Updates",
@@ -59,14 +82,24 @@
           <h3 class="font-medium">{section.name}</h3>
           <p class="text-sm text-gray-500">{section.description}</p>
         </div>
-        <a
-          href={section.href}
-          class="btn"
-          style="min-width: 14rem"
-          target={section.is_external ? "_blank" : "_self"}
-        >
-          {section.button_text}
-        </a>
+        {#if section.href}
+          <a
+            href={section.href}
+            class="btn"
+            style="min-width: 14rem"
+            target={section.is_external ? "_blank" : "_self"}
+          >
+            {section.button_text}
+          </a>
+        {:else if section.on_click}
+          <button
+            class="btn"
+            style="min-width: 14rem"
+            on:click={section.on_click}
+          >
+            {section.button_text}
+          </button>
+        {/if}
       </div>
     {/each}
   </div>

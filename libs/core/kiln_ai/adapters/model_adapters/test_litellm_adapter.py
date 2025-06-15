@@ -11,6 +11,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import (
     LiteLlmConfig,
 )
 from kiln_ai.datamodel import Project, Task, Usage
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 @pytest.fixture
@@ -41,8 +42,12 @@ def mock_task(tmp_path):
 def config():
     return LiteLlmConfig(
         base_url="https://api.test.com",
-        model_name="test-model",
-        provider_name="openrouter",
+        run_config_properties=RunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openrouter",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
         default_headers={"X-Test": "test"},
         additional_body_options={"api_key": "test_key"},
     )
@@ -52,7 +57,6 @@ def test_initialization(config, mock_task):
     adapter = LiteLlmAdapter(
         config=config,
         kiln_task=mock_task,
-        prompt_id="simple_prompt_builder",
         base_adapter_config=AdapterConfig(default_tags=["test-tag"]),
     )
 
@@ -60,8 +64,11 @@ def test_initialization(config, mock_task):
     assert adapter.run_config.task == mock_task
     assert adapter.run_config.prompt_id == "simple_prompt_builder"
     assert adapter.base_adapter_config.default_tags == ["test-tag"]
-    assert adapter.run_config.model_name == config.model_name
-    assert adapter.run_config.model_provider_name == config.provider_name
+    assert adapter.run_config.model_name == config.run_config_properties.model_name
+    assert (
+        adapter.run_config.model_provider_name
+        == config.run_config_properties.model_provider_name
+    )
     assert adapter.config.additional_body_options["api_key"] == "test_key"
     assert adapter._api_base == config.base_url
     assert adapter._headers == config.default_headers
@@ -72,8 +79,11 @@ def test_adapter_info(config, mock_task):
 
     assert adapter.adapter_name() == "kiln_openai_compatible_adapter"
 
-    assert adapter.run_config.model_name == config.model_name
-    assert adapter.run_config.model_provider_name == config.provider_name
+    assert adapter.run_config.model_name == config.run_config_properties.model_name
+    assert (
+        adapter.run_config.model_provider_name
+        == config.run_config_properties.model_provider_name
+    )
     assert adapter.run_config.prompt_id == "simple_prompt_builder"
 
 
@@ -96,14 +106,12 @@ async def test_response_format_options_unstructured(config, mock_task):
 )
 @pytest.mark.asyncio
 async def test_response_format_options_json_mode(config, mock_task, mode):
+    config.run_config_properties.structured_output_mode = mode
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
-        patch.object(adapter, "model_provider") as mock_provider,
     ):
-        mock_provider.return_value.structured_output_mode = mode
-
         options = await adapter.response_format_options()
         assert options == {"response_format": {"type": "json_object"}}
 
@@ -117,14 +125,12 @@ async def test_response_format_options_json_mode(config, mock_task, mode):
 )
 @pytest.mark.asyncio
 async def test_response_format_options_function_calling(config, mock_task, mode):
+    config.run_config_properties.structured_output_mode = mode
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
-        patch.object(adapter, "model_provider") as mock_provider,
     ):
-        mock_provider.return_value.structured_output_mode = mode
-
         options = await adapter.response_format_options()
         assert "tools" in options
         # full tool structure validated below
@@ -139,30 +145,26 @@ async def test_response_format_options_function_calling(config, mock_task, mode)
 )
 @pytest.mark.asyncio
 async def test_response_format_options_json_instructions(config, mock_task, mode):
+    config.run_config_properties.structured_output_mode = mode
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
-        patch.object(adapter, "model_provider") as mock_provider,
     ):
-        mock_provider.return_value.structured_output_mode = (
-            StructuredOutputMode.json_instructions
-        )
         options = await adapter.response_format_options()
         assert options == {}
 
 
 @pytest.mark.asyncio
 async def test_response_format_options_json_schema(config, mock_task):
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with (
         patch.object(adapter, "has_structured_output", return_value=True),
-        patch.object(adapter, "model_provider") as mock_provider,
     ):
-        mock_provider.return_value.structured_output_mode = (
-            StructuredOutputMode.json_schema
-        )
         options = await adapter.response_format_options()
         assert options == {
             "response_format": {
@@ -351,6 +353,32 @@ def test_litellm_model_id_unknown_provider(config, mock_task):
 
 
 @pytest.mark.asyncio
+async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_task):
+    """Test build_completion_kwargs with custom temperature and top_p values"""
+    # Create config with custom temperature and top_p
+    config.run_config_properties.temperature = 0.7
+    config.run_config_properties.top_p = 0.9
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    # Verify custom temperature and top_p are passed through
+    assert kwargs["temperature"] == 0.7
+    assert kwargs["top_p"] == 0.9
+    # Verify drop_params is set correctly
+    assert kwargs["drop_params"] is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "top_logprobs,response_format,extra_body",
     [
@@ -390,6 +418,13 @@ async def test_build_completion_kwargs(
     assert kwargs["model"] == "openai/test-model"
     assert kwargs["messages"] == messages
     assert kwargs["api_base"] == config.base_url
+
+    # Verify temperature and top_p are included with default values
+    assert kwargs["temperature"] == 1.0  # Default from RunConfigProperties
+    assert kwargs["top_p"] == 1.0  # Default from RunConfigProperties
+
+    # Verify drop_params is set correctly
+    assert kwargs["drop_params"] is True
 
     # Verify optional parameters
     if top_logprobs is not None:

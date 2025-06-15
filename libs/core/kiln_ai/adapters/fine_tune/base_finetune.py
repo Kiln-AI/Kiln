@@ -6,11 +6,11 @@ from pydantic import BaseModel
 from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.datamodel import (
     DatasetSplit,
-    FinetuneDataStrategy,
     FineTuneStatusType,
     Task,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.utils.name_generator import generate_memorable_name
 
 
@@ -62,7 +62,7 @@ class BaseFinetuneAdapter(ABC):
         train_split_name: str,
         system_message: str,
         thinking_instructions: str | None,
-        data_strategy: FinetuneDataStrategy,
+        data_strategy: ChatStrategy,
         parameters: dict[str, str | int | float | bool] = {},
         name: str | None = None,
         description: str | None = None,

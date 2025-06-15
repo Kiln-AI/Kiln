@@ -7,7 +7,6 @@
   import { ui_state } from "$lib/stores"
   import { createEventDispatcher } from "svelte"
   import IncrementUi from "./increment_ui.svelte"
-  import DataGenIntro from "./data_gen_intro.svelte"
   import GenerateSamplesModal from "./generate_samples_modal.svelte"
 
   export let data: SampleDataNode
@@ -16,6 +15,7 @@
   export let project_id: string
   export let task_id: string
   export let human_guidance: string | null = null
+  export let triggerSave: () => void
 
   let model: string = $ui_state.selected_model
 
@@ -50,7 +50,7 @@
   let topic_generation_error: KilnError | null = null
   let generate_subtopics: boolean = false
   let custom_topics_string: string = ""
-  async function open_generate_subtopics_modal() {
+  export async function open_generate_subtopics_modal() {
     // Avoid having a trillion of these hidden in the DOM
     generate_subtopics = true
     // Clear any previous error
@@ -89,6 +89,9 @@
 
     // trigger reactivity
     data = data
+
+    // Trigger save to localStorage
+    triggerSave()
 
     // Close modal
     const modal = document.getElementById(`${id}-generate-subtopics`)
@@ -176,7 +179,9 @@
 
   let generate_samples_modal: boolean = false
   let generate_samples_cascade_mode: boolean = false
-  async function open_generate_samples_modal(cascade_mode: boolean = false) {
+  export async function open_generate_samples_modal(
+    cascade_mode: boolean = false,
+  ) {
     // Avoid having a trillion of these hidden in the DOM
     generate_samples_modal = true
     generate_samples_cascade_mode = cascade_mode
@@ -192,6 +197,7 @@
 
   function delete_topic() {
     dispatch("delete_topic", { node_to_delete: data })
+    // Note: The parent will handle removing this node and triggering save
   }
 
   function handleChildDeleteTopic(
@@ -204,6 +210,9 @@
 
     // Trigger reactivity
     data = data
+
+    // Trigger save to localStorage
+    triggerSave()
   }
 
   function delete_sample(sample_to_delete: SampleData) {
@@ -212,13 +221,17 @@
 
     // Trigger reactivity
     data = data
-  }
 
-  $: is_empty = data.sub_topics.length == 0 && data.samples.length == 0
+    // Trigger save to localStorage
+    triggerSave()
+  }
 
   function handleGenerateSamplesCompleted() {
     // Trigger reactivity
     data = data
+
+    // Trigger save to localStorage
+    triggerSave()
 
     // close all modals
     generate_samples_modal = false
@@ -228,33 +241,7 @@
   }
 </script>
 
-{#if path.length == 0}
-  <!-- Root node -->
-  <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
-    {#if is_empty}
-      <div class="flex flex-col items-center justify-center min-h-[60vh]">
-        <DataGenIntro
-          generate_subtopics={open_generate_subtopics_modal}
-          generate_samples={open_generate_samples_modal}
-          {project_id}
-          {task_id}
-        />
-      </div>
-    {:else}
-      <div class="flex flex-row justify-center mb-6 gap-8">
-        <button class="btn" on:click={() => open_generate_subtopics_modal()}>
-          Add Top Level Topics
-        </button>
-        <button class="btn" on:click={() => open_generate_samples_modal()}>
-          Add Top Level Data
-        </button>
-        <button class="btn" on:click={() => open_generate_samples_modal(true)}>
-          Add Data to All
-        </button>
-      </div>
-    {/if}
-  </div>
-{:else}
+{#if path.length != 0}
   <div
     class="data-row-collapsed bg-base-200 font-medium flex flex-row pr-4 border-b-2 border-base-100"
     style="padding-left: {(depth - 1) * 25 + 20}px"
@@ -277,7 +264,7 @@
       </button>
       {#if data.sub_topics.length > 0}
         <button class="link" on:click={() => open_generate_samples_modal(true)}>
-          Add data to all
+          Add data to all subtopics
         </button>
       {/if}
     </div>
@@ -328,6 +315,7 @@
         {project_id}
         {task_id}
         {human_guidance}
+        {triggerSave}
         bind:num_subtopics_to_generate
         bind:num_samples_to_generate
         on:delete_topic={handleChildDeleteTopic}

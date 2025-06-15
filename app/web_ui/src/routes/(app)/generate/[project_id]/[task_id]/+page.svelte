@@ -9,7 +9,6 @@
   import type { SampleDataNode } from "./gen_model"
   import GeneratedDataNode from "./generated_data_node.svelte"
   import AvailableModelsDropdown from "../../../run/available_models_dropdown.svelte"
-  import { beforeNavigate } from "$app/navigation"
   import { ui_state } from "$lib/stores"
   import PromptTypeSelector from "../../../run/prompt_type_selector.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -18,6 +17,9 @@
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Splits from "$lib/ui/splits.svelte"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import { writable, type Writable } from "svelte/store"
+  import DataGenIntro from "./data_gen_intro.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -51,31 +53,46 @@
   }
 
   let human_guidance_dialog: Dialog | null = null
-  $: action_buttons = [
-    {
-      label: human_guidance.length > 0 ? "Edit Guidance" : "Add Guidance",
-      notice: human_guidance.length > 0,
-      handler: show_human_guidance_dialog,
-    },
-    {
-      label: "Save All",
-      handler: show_save_all_modal,
-    },
-  ]
 
-  let root_node: SampleDataNode = {
+  // Empty to start but will be populated from IndexedDB after task is loaded
+  let root_node: Writable<SampleDataNode> = writable({
     topic: "",
     samples: [],
     sub_topics: [],
+  })
+
+  function clear_all() {
+    let msg =
+      "Are you sure you want to clear all topics and data samples? This action cannot be undone."
+    if (human_guidance.length > 0) {
+      msg += " This will not remove your human guidance."
+    }
+
+    if (confirm(msg)) {
+      root_node.set({
+        topic: "",
+        samples: [],
+        sub_topics: [],
+      })
+    }
+  }
+
+  // Function to trigger save when data changes
+  function triggerSave() {
+    root_node.update((n) => n)
   }
 
   onMount(() => {
     get_task()
 
-    // Handle browser reload/close: warn if there are unsaved changes
-    window.addEventListener("beforeunload", handleBeforeUnload)
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload)
+    if (project_id && task_id) {
+      // Setup the root node store
+      const synth_data_key = `synth_data_${project_id}_${task_id}`
+      root_node = indexedDBStore(synth_data_key, {
+        topic: "",
+        samples: [],
+        sub_topics: [],
+      })
     }
   })
 
@@ -118,56 +135,6 @@
     }
   }
 
-  function has_unsaved_changes(): boolean {
-    if (save_all_completed && save_all_sub_errors.length > 0) {
-      return true
-    }
-    update_data_for_save()
-    if (samples_to_save.length > 0) {
-      return true
-    }
-    return false
-  }
-
-  // Handle browser reload/close: warn if there are unsaved changes
-  function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (has_unsaved_changes()) {
-      event.preventDefault()
-    }
-  }
-
-  // Handle Svelte navigation: warn if there are unsaved changes
-  beforeNavigate((navigation) => {
-    if (save_all_running) {
-      if (
-        !confirm(
-          "Content generation is currently running. If you leave, it will be stopped and your changes will be lost.\n\n" +
-            "Press Cancel to stay, OK to leave.",
-        )
-      ) {
-        navigation.cancel()
-      }
-    } else if (has_unsaved_changes()) {
-      if (
-        !confirm(
-          "You have unsaved changes which will be lost if you leave.\n\n" +
-            "Press Cancel to stay, OK to leave.",
-        )
-      ) {
-        navigation.cancel()
-      }
-    } else if (root_node.sub_topics.length > 0) {
-      if (
-        !confirm(
-          "Your topic tree will be lost if you leave.\n\n" +
-            "Press Cancel to stay, OK to leave.",
-        )
-      ) {
-        navigation.cancel()
-      }
-    }
-  })
-
   function show_save_all_modal() {
     // Reset the modal state unless it was already running
     if (!save_all_running) {
@@ -204,7 +171,7 @@
     saved_count = 0
     already_saved_count = 0
     samples_to_save = []
-    visit_node_for_collection(root_node, [])
+    visit_node_for_collection($root_node, [])
   }
 
   let save_all_running = false
@@ -242,6 +209,7 @@
       } else {
         sample.saved_id = result.saved_id
         saved_count++
+        triggerSave()
       }
     }
   }
@@ -256,7 +224,8 @@
       const model_name = model.split("/").slice(1).join("/")
 
       const queue = [...samples_to_save]
-      let parallelism = save_all_samples_mode === "parallel" ? 25 : 1
+      // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+      let parallelism = save_all_samples_mode === "parallel" ? 5 : 1
 
       // Create and start N workers
       const workers = Array(parallelism)
@@ -341,6 +310,10 @@
     human_guidance = ""
     return true
   }
+
+  $: is_empty =
+    $root_node.samples.length == 0 && $root_node.sub_topics.length == 0
+  let root_node_component: GeneratedDataNode | null = null
 </script>
 
 <Splits bind:splits bind:subtitle={splits_subtitle} bind:this={split_object} />
@@ -350,24 +323,97 @@
     subtitle={splits_subtitle}
     sub_subtitle_link="https://docs.getkiln.ai/docs/synthetic-data-generation"
     sub_subtitle="Read the Docs"
-    {action_buttons}
+    no_y_padding
+    action_buttons={[
+      ...(is_empty
+        ? [
+            {
+              label:
+                human_guidance.length > 0 ? "Edit Guidance" : "Add Guidance",
+              notice: human_guidance.length > 0,
+              handler: show_human_guidance_dialog,
+            },
+          ]
+        : []),
+    ]}
   >
     {#if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if task}
+      {#if is_empty}
+        <div
+          class="flex flex-col items-center justify-center min-h-[60vh] mt-12"
+        >
+          <DataGenIntro
+            generate_subtopics={() => {
+              root_node_component?.open_generate_subtopics_modal()
+            }}
+            generate_samples={() => {
+              root_node_component?.open_generate_samples_modal()
+            }}
+            {project_id}
+            {task_id}
+          />
+        </div>
+      {:else}
+        <div
+          class="flex flex-row py-1 mb-4 gap-2 justify-end sticky top-0 z-10 backdrop-blur"
+        >
+          <button class="btn btn-mid" on:click={clear_all}>Clear</button>
+          <button class="btn btn-mid" on:click={show_human_guidance_dialog}>
+            {#if human_guidance.length > 0}
+              <span class="bg-primary rounded-full w-3 h-3 mr-1" />
+              Edit Guidance
+            {:else}
+              Add Guidance
+            {/if}
+          </button>
+          <button
+            class="btn btn-mid"
+            on:click={() => {
+              root_node_component?.open_generate_samples_modal(true)
+            }}
+          >
+            Add Data to All
+          </button>
+          <button class="btn btn-mid" on:click={show_save_all_modal}>
+            Save All
+          </button>
+        </div>
+      {/if}
       <div class="flex flex-col">
         <GeneratedDataNode
-          data={root_node}
+          data={$root_node}
           path={[]}
           {project_id}
           {task_id}
           {human_guidance}
+          {triggerSave}
           bind:num_subtopics_to_generate
           bind:num_samples_to_generate
+          bind:this={root_node_component}
         />
       </div>
+      {#if !is_empty}
+        <div class="font-light my-6 text-center">
+          <button
+            class="link"
+            on:click={() =>
+              root_node_component?.open_generate_subtopics_modal()}
+          >
+            Add top level topics
+          </button>
+          or
+          <button
+            class="link"
+            on:click={() => root_node_component?.open_generate_samples_modal()}
+          >
+            add top level samples
+          </button>.
+        </div>
+      {/if}
     {:else if task_error}
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"

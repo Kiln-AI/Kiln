@@ -183,6 +183,7 @@ async def test_status_job_states(
     # Mock the retrieve method of the fine_tuning object
     mock_job = MagicMock()
     mock_job.status = together_status
+    mock_job.output_name = None
     mock_together_client.fine_tuning.retrieve.return_value = mock_job
 
     status = await together_finetune.status()

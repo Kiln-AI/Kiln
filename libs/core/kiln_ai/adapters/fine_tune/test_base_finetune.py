@@ -4,13 +4,13 @@ import pytest
 
 from kiln_ai.adapters.fine_tune.base_finetune import (
     BaseFinetuneAdapter,
-    FinetuneDataStrategy,
     FineTuneParameter,
     FineTuneStatus,
     FineTuneStatusType,
 )
 from kiln_ai.datamodel import DatasetSplit, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 
 
 class MockFinetune(BaseFinetuneAdapter):
@@ -162,7 +162,7 @@ async def test_create_and_start_success(mock_dataset):
         train_split_name="train",
         parameters={"epochs": 10},  # Required parameter
         system_message="Test system message",
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
         thinking_instructions=None,
     )
 
@@ -176,7 +176,7 @@ async def test_create_and_start_success(mock_dataset):
     assert datamodel.parameters == {"epochs": 10}
     assert datamodel.system_message == "Test system message"
     assert datamodel.path.exists()
-    assert datamodel.data_strategy == FinetuneDataStrategy.final_only
+    assert datamodel.data_strategy == ChatStrategy.single_turn
     assert datamodel.thinking_instructions is None
 
 
@@ -192,7 +192,7 @@ async def test_create_and_start_with_all_params(mock_dataset):
         description="Custom Description",
         validation_split_name="test",
         system_message="Test system message",
-        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        data_strategy=ChatStrategy.two_message_cot,
         thinking_instructions="Custom thinking instructions",
     )
 
@@ -202,7 +202,7 @@ async def test_create_and_start_with_all_params(mock_dataset):
     assert datamodel.parameters == {"epochs": 10, "learning_rate": 0.001}
     assert datamodel.system_message == "Test system message"
     assert adapter.datamodel == datamodel
-    assert datamodel.data_strategy == FinetuneDataStrategy.final_and_intermediate
+    assert datamodel.data_strategy == ChatStrategy.two_message_cot
     assert datamodel.thinking_instructions == "Custom thinking instructions"
 
     # load the datamodel from the file, confirm it's saved
@@ -221,7 +221,7 @@ async def test_create_and_start_invalid_parameters(mock_dataset):
             parameters={"learning_rate": 0.001},  # Missing required 'epochs'
             system_message="Test system message",
             thinking_instructions=None,
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
         )
 
 
@@ -240,7 +240,7 @@ async def test_create_and_start_no_parent_task():
             train_split_name="train",
             parameters={"epochs": 10},
             system_message="Test system message",
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
         )
 
@@ -263,7 +263,7 @@ async def test_create_and_start_no_parent_task_path():
             train_split_name="train",
             parameters={"epochs": 10},
             system_message="Test system message",
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
         )
 
@@ -282,7 +282,7 @@ async def test_create_and_start_invalid_train_split(mock_dataset):
             train_split_name="invalid_train",  # Invalid train split
             parameters={"epochs": 10},
             system_message="Test system message",
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
         )
 
@@ -302,6 +302,6 @@ async def test_create_and_start_invalid_validation_split(mock_dataset):
             validation_split_name="invalid_test",  # Invalid validation split
             parameters={"epochs": 10},
             system_message="Test system message",
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
         )

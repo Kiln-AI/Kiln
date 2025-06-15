@@ -12,15 +12,13 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import (
-    COT_FINAL_ANSWER_PROMPT,
     AdapterConfig,
     BaseAdapter,
     RunOutput,
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
-from kiln_ai.datamodel import PromptGenerators, PromptId
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import run_config_from_run_config_properties
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
@@ -31,7 +29,6 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         config: LiteLlmConfig,
         kiln_task: datamodel.Task,
-        prompt_id: PromptId | None = None,
         base_adapter_config: AdapterConfig | None = None,
     ):
         self.config = config
@@ -40,11 +37,10 @@ class LiteLlmAdapter(BaseAdapter):
         self._headers = config.default_headers
         self._litellm_model_id: str | None = None
 
-        run_config = RunConfig(
+        # Create a RunConfig, adding the task to the RunConfigProperties
+        run_config = run_config_from_run_config_properties(
             task=kiln_task,
-            model_name=config.model_name,
-            model_provider_name=config.provider_name,
-            prompt_id=prompt_id or PromptGenerators.SIMPLE,
+            run_config_properties=config.run_config_properties,
         )
 
         super().__init__(
@@ -57,79 +53,69 @@ class LiteLlmAdapter(BaseAdapter):
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
-        intermediate_outputs: dict[str, str] = {}
-        prompt = self.build_prompt()
-        user_msg = self.prompt_builder.build_user_message(input)
-        messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_msg},
-        ]
+        chat_formatter = self.build_chat_formatter(input)
 
-        run_strategy, cot_prompt = self.run_strategy()
+        prior_output = None
+        prior_message = None
+        response = None
+        turns = 0
+        while True:
+            turns += 1
+            if turns > 10:
+                raise RuntimeError(
+                    "Too many turns. Stopping iteration to avoid using too many tokens."
+                )
 
-        if run_strategy == "cot_as_message":
-            # Used for reasoning-capable models that can output thinking and structured format
-            if not cot_prompt:
-                raise ValueError("cot_prompt is required for cot_as_message strategy")
-            messages.append({"role": "system", "content": cot_prompt})
-        elif run_strategy == "cot_two_call":
-            if not cot_prompt:
-                raise ValueError("cot_prompt is required for cot_two_call strategy")
-            messages.append({"role": "system", "content": cot_prompt})
+            turn = chat_formatter.next_turn(prior_output)
+            if turn is None:
+                break
 
-            # First call for chain of thought
-            # No response format as this request is for "thinking" in plain text
-            # No logprobs as only needed for final answer
+            skip_response_format = not turn.final_call
+            all_messages = chat_formatter.message_dicts()
             completion_kwargs = await self.build_completion_kwargs(
-                provider, messages, None, skip_response_format=True
+                provider,
+                all_messages,
+                self.base_adapter_config.top_logprobs if turn.final_call else None,
+                skip_response_format,
             )
-            cot_response = await litellm.acompletion(**completion_kwargs)
+            response = await litellm.acompletion(**completion_kwargs)
             if (
-                not isinstance(cot_response, ModelResponse)
-                or not cot_response.choices
-                or len(cot_response.choices) == 0
-                or not isinstance(cot_response.choices[0], Choices)
+                not isinstance(response, ModelResponse)
+                or not response.choices
+                or len(response.choices) == 0
+                or not isinstance(response.choices[0], Choices)
             ):
                 raise RuntimeError(
-                    f"Expected ModelResponse with Choices, got {type(cot_response)}."
+                    f"Expected ModelResponse with Choices, got {type(response)}."
                 )
-            cot_content = cot_response.choices[0].message.content
-            if cot_content is not None:
-                intermediate_outputs["chain_of_thought"] = cot_content
+            prior_message = response.choices[0].message
+            prior_output = prior_message.content
 
-            messages.extend(
-                [
-                    {"role": "assistant", "content": cot_content or ""},
-                    {"role": "user", "content": COT_FINAL_ANSWER_PROMPT},
-                ]
-            )
+            # Fallback: Use args of first tool call to task_response if it exists
+            if (
+                not prior_output
+                and hasattr(prior_message, "tool_calls")
+                and prior_message.tool_calls
+            ):
+                tool_call = next(
+                    (
+                        tool_call
+                        for tool_call in prior_message.tool_calls
+                        if tool_call.function.name == "task_response"
+                    ),
+                    None,
+                )
+                if tool_call:
+                    prior_output = tool_call.function.arguments
 
-        # Make the API call using litellm
-        completion_kwargs = await self.build_completion_kwargs(
-            provider, messages, self.base_adapter_config.top_logprobs
-        )
-        response = await litellm.acompletion(**completion_kwargs)
+            if not prior_output:
+                raise RuntimeError("No output returned from model")
 
-        if not isinstance(response, ModelResponse):
-            raise RuntimeError(f"Expected ModelResponse, got {type(response)}.")
+        if response is None or prior_message is None:
+            raise RuntimeError("No response returned from model")
 
-        # Maybe remove this? There is no error attribute on the response object.
-        # # Keeping in typesafe way as we added it for a reason, but should investigate what that was and if it still applies.
-        if hasattr(response, "error") and response.__getattribute__("error"):
-            raise RuntimeError(
-                f"LLM API returned an error: {response.__getattribute__('error')}"
-            )
+        intermediate_outputs = chat_formatter.intermediate_outputs()
 
-        if (
-            not response.choices
-            or len(response.choices) == 0
-            or not isinstance(response.choices[0], Choices)
-        ):
-            raise RuntimeError(
-                "No message content returned in the response from LLM API"
-            )
-
-        message = response.choices[0].message
         logprobs = (
             response.choices[0].logprobs
             if hasattr(response.choices[0], "logprobs")
@@ -143,31 +129,15 @@ class LiteLlmAdapter(BaseAdapter):
 
         # Save reasoning if it exists and was parsed by LiteLLM (or openrouter, or anyone upstream)
         if (
-            hasattr(message, "reasoning_content")
-            and message.reasoning_content
-            and len(message.reasoning_content.strip()) > 0
+            prior_message is not None
+            and hasattr(prior_message, "reasoning_content")
+            and prior_message.reasoning_content
+            and len(prior_message.reasoning_content.strip()) > 0
         ):
-            intermediate_outputs["reasoning"] = message.reasoning_content.strip()
+            intermediate_outputs["reasoning"] = prior_message.reasoning_content.strip()
 
         # the string content of the response
-        response_content = message.content
-
-        # Fallback: Use args of first tool call to task_response if it exists
-        if (
-            not response_content
-            and hasattr(message, "tool_calls")
-            and message.tool_calls
-        ):
-            tool_call = next(
-                (
-                    tool_call
-                    for tool_call in message.tool_calls
-                    if tool_call.function.name == "task_response"
-                ),
-                None,
-            )
-            if tool_call:
-                response_content = tool_call.function.arguments
+        response_content = prior_output
 
         if not isinstance(response_content, str):
             raise RuntimeError(f"response is not a string: {response_content}")
@@ -186,8 +156,9 @@ class LiteLlmAdapter(BaseAdapter):
         if not self.has_structured_output():
             return {}
 
-        provider = self.model_provider()
-        match provider.structured_output_mode:
+        structured_output_mode = self.run_config.structured_output_mode
+
+        match structured_output_mode:
             case StructuredOutputMode.json_mode:
                 return {"response_format": {"type": "json_object"}}
             case StructuredOutputMode.json_schema:
@@ -206,16 +177,20 @@ class LiteLlmAdapter(BaseAdapter):
                 # We set response_format to json_object and also set json instructions in the prompt
                 return {"response_format": {"type": "json_object"}}
             case StructuredOutputMode.default:
-                if provider.name == ModelProviderName.ollama:
+                provider_name = self.run_config.model_provider_name
+                if provider_name == ModelProviderName.ollama:
                     # Ollama added json_schema to all models: https://ollama.com/blog/structured-outputs
                     return self.json_schema_response_format()
                 else:
                     # Default to function calling -- it's older than the other modes. Higher compatibility.
                     # Strict isn't widely supported yet, so we don't use it by default unless it's OpenAI.
-                    strict = provider.name == ModelProviderName.openai
+                    strict = provider_name == ModelProviderName.openai
                     return self.tool_call_params(strict=strict)
+            case StructuredOutputMode.unknown:
+                # See above, but this case should never happen.
+                raise ValueError("Structured output mode is unknown.")
             case _:
-                raise_exhaustive_enum_error(provider.structured_output_mode)
+                raise_exhaustive_enum_error(structured_output_mode)
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task().output_schema()
@@ -387,6 +362,13 @@ class LiteLlmAdapter(BaseAdapter):
             "messages": messages,
             "api_base": self._api_base,
             "headers": self._headers,
+            "temperature": self.run_config.temperature,
+            "top_p": self.run_config.top_p,
+            # This drops params that are not supported by the model. Only openai params like top_p, temperature -- not litellm params like model, etc.
+            # Not all models and providers support all openai params (for example, o3 doesn't support top_p)
+            # Better to ignore them than to fail the model call.
+            # https://docs.litellm.ai/docs/completion/input
+            "drop_params": True,
             **extra_body,
             **self._additional_body_options,
         }

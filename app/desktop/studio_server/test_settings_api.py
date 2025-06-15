@@ -154,3 +154,10 @@ def test_settings_endpoints(client, mock_config):
     response = client.get("/api/settings/sensitive_setting")
     assert response.status_code == 200
     assert response.json() == {"sensitive_setting": "[hidden]"}
+
+
+def test_open_logs_endpoint(client):
+    with patch("app.desktop.studio_server.settings_api.open_logs_folder") as m:
+        response = client.post("/api/open_logs")
+        assert response.status_code == 200
+        m.assert_called_once()

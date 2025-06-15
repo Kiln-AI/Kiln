@@ -66,8 +66,12 @@ def task_run_setup(tmp_path):
     task.save_to_file()
 
     run_task_request = {
-        "model_name": "gpt_4o",
-        "provider": "ollama",
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
         "plaintext_input": "Test input",
     }
 
@@ -164,8 +168,15 @@ async def test_run_task_structured_output(client, task_run_setup):
 async def test_run_task_no_input(client, task_run_setup, mock_config):
     task = task_run_setup["task"]
 
-    # Misisng input
-    run_task_request = {"model_name": "gpt_4o", "provider": "openai"}
+    # Missing input
+    run_task_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "openai",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        }
+    }
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
@@ -190,8 +201,12 @@ async def test_run_task_structured_input(client, task_run_setup):
         },
     ):
         run_task_request = {
-            "model_name": "gpt_4o",
-            "provider": "ollama",
+            "run_config_properties": {
+                "model_name": "gpt_4o",
+                "model_provider_name": "ollama",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
             "structured_input": {"key": "value"},
         }
 
@@ -707,7 +722,7 @@ def test_run_summary_repair_status_display_name():
     run.repair_instructions = None
     run.output = MagicMock()
     run.output.rating = None
-    assert RunSummary.repair_status_display_name(run) == "Rating needed"
+    assert RunSummary.repair_status_display_name(run) == "NA"
 
     run.output.rating = TaskOutputRating(value=5.0, type=TaskOutputRatingType.five_star)
     assert RunSummary.repair_status_display_name(run) == "No repair needed"
@@ -935,34 +950,6 @@ async def test_add_tags_success(client, task_run_setup):
     # Verify tags were added
     updated_run = TaskRun.from_id_and_parent_path(task_run.id, task.path)
     assert set(updated_run.tags) == {"existing_tag", "new_tag1", "new_tag2"}
-
-
-@pytest.mark.asyncio
-async def test_remove_tags_success(client, task_run_setup):
-    project = task_run_setup["project"]
-    task = task_run_setup["task"]
-    task_run = task_run_setup["task_run"]
-
-    # Initial tags
-    task_run.tags = ["tag1", "tag2", "tag3"]
-    task_run.save_to_file()
-
-    run_ids = [task_run.id]
-    tags_to_remove = ["tag1", "tag3"]
-
-    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/runs/edit_tags",
-            json={"run_ids": run_ids, "add_tags": [], "remove_tags": tags_to_remove},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {"success": True}
-
-    # Verify tags were removed
-    updated_run = TaskRun.from_id_and_parent_path(task_run.id, task.path)
-    assert set(updated_run.tags) == {"tag2"}
 
 
 @pytest.mark.asyncio
@@ -1226,6 +1213,152 @@ def test_model_provider_from_string():
 
     with pytest.raises(ValueError, match="Unsupported provider: unknown"):
         model_provider_from_string("unknown")
+
+
+@pytest.mark.asyncio
+async def test_run_task_invalid_temperature_values(client, task_run_setup):
+    """Test that invalid temperature values return 422 errors."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        # Test temperature below 0
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "temperature": -0.1,
+                    "structured_output_mode": "json_schema",
+                },
+                "plaintext_input": "Test input",
+            },
+        )
+        assert response.status_code == 422
+        error_detail = response.json()["message"]
+        assert "temperature must be between 0 and 2" in str(error_detail)
+
+        # Test temperature above 2
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "temperature": 2.1,
+                    "structured_output_mode": "json_schema",
+                },
+                "plaintext_input": "Test input",
+            },
+        )
+        assert response.status_code == 422
+        error_detail = response.json()["message"]
+        assert "temperature must be between 0 and 2" in str(error_detail)
+
+
+@pytest.mark.asyncio
+async def test_run_task_invalid_top_p_values(client, task_run_setup):
+    """Test that invalid top_p values return 422 errors."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        # Test top_p below 0
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "top_p": -0.1,
+                    "structured_output_mode": "json_schema",
+                },
+                "plaintext_input": "Test input",
+            },
+        )
+        assert response.status_code == 422
+        error_detail = response.json()["message"]
+        assert "top_p must be between 0 and 1" in str(error_detail)
+
+        # Test top_p above 1
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "top_p": 1.1,
+                    "structured_output_mode": "json_schema",
+                },
+                "plaintext_input": "Test input",
+            },
+        )
+        assert response.status_code == 422
+        error_detail = response.json()["message"]
+        assert "top_p must be between 0 and 1" in str(error_detail)
+
+
+@pytest.mark.asyncio
+async def test_run_task_valid_boundary_values(client, task_run_setup):
+    """Test that valid boundary values for temperature and top_p work correctly."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_invoke.return_value = task_run
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.open_ai_api_key = "test_key"
+
+        # Test valid boundary values - temperature = 0, top_p = 0
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "temperature": 0.0,
+                    "top_p": 0.0,
+                    "structured_output_mode": "json_schema",
+                },
+                "plaintext_input": "Test input",
+            },
+        )
+        assert response.status_code == 200
+
+        # Test valid boundary values - temperature = 2, top_p = 1
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run",
+            json={
+                "run_config_properties": {
+                    "model_name": "gpt-4o",
+                    "model_provider_name": "openai",
+                    "prompt_id": "simple_prompt_builder",
+                    "temperature": 2.0,
+                    "top_p": 1.0,
+                    "structured_output_mode": "json_schema",
+                },
+                "plaintext_input": "Test input",
+            },
+        )
+        assert response.status_code == 200
 
 
 @pytest.mark.parametrize(

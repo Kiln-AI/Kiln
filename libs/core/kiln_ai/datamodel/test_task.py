@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode, TaskOutputRatingType
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
@@ -15,6 +15,7 @@ def test_runconfig_valid_creation():
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
+        structured_output_mode="json_schema",
     )
 
     assert config.task == task
@@ -29,12 +30,13 @@ def test_runconfig_missing_required_fields():
 
     errors = exc_info.value.errors()
     assert (
-        len(errors) == 4
+        len(errors) == 5
     )  # task, model_name, model_provider_name, and prompt_id are required
     assert any(error["loc"][0] == "task" for error in errors)
     assert any(error["loc"][0] == "model_name" for error in errors)
     assert any(error["loc"][0] == "model_provider_name" for error in errors)
     assert any(error["loc"][0] == "prompt_id" for error in errors)
+    assert any(error["loc"][0] == "structured_output_mode" for error in errors)
 
 
 def test_runconfig_custom_prompt_id():
@@ -45,6 +47,7 @@ def test_runconfig_custom_prompt_id():
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+        structured_output_mode="json_schema",
     )
 
     assert config.prompt_id == PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT
@@ -61,6 +64,7 @@ def sample_run_config_props(sample_task):
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
+        structured_output_mode="json_schema",
     )
 
 
@@ -157,3 +161,165 @@ def test_normalize_rating(rating_type, rating, expected):
 def test_normalize_rating_errors(rating_type, rating):
     with pytest.raises(ValueError):
         normalize_rating(rating, rating_type)
+
+
+def test_run_config_defaults():
+    """RunConfig should require top_p, temperature, and structured_output_mode to be set."""
+    task = Task(id="task1", name="Test Task", instruction="Do something")
+
+    config = RunConfig(
+        task=task,
+        model_name="gpt-4",
+        model_provider_name="openai",
+        prompt_id=PromptGenerators.SIMPLE,
+        structured_output_mode="json_schema",
+    )
+    assert config.top_p == 1.0
+    assert config.temperature == 1.0
+
+
+def test_run_config_valid_ranges():
+    """RunConfig should accept valid ranges for top_p and temperature."""
+    task = Task(id="task1", name="Test Task", instruction="Do something")
+
+    # Test valid values
+    config = RunConfig(
+        task=task,
+        model_name="gpt-4",
+        model_provider_name="openai",
+        prompt_id=PromptGenerators.SIMPLE,
+        top_p=0.9,
+        temperature=0.7,
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    assert config.top_p == 0.9
+    assert config.temperature == 0.7
+    assert config.structured_output_mode == StructuredOutputMode.json_schema
+
+
+@pytest.mark.parametrize("top_p", [0.0, 0.5, 1.0])
+def test_run_config_valid_top_p(top_p):
+    """Test that RunConfig accepts valid top_p values (0-1)."""
+    task = Task(id="task1", name="Test Task", instruction="Do something")
+
+    config = RunConfig(
+        task=task,
+        model_name="gpt-4",
+        model_provider_name="openai",
+        prompt_id=PromptGenerators.SIMPLE,
+        top_p=top_p,
+        temperature=1.0,
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    assert config.top_p == top_p
+
+
+@pytest.mark.parametrize("top_p", [-0.1, 1.1, 2.0])
+def test_run_config_invalid_top_p(top_p):
+    """Test that RunConfig rejects invalid top_p values."""
+    task = Task(id="task1", name="Test Task", instruction="Do something")
+
+    with pytest.raises(ValueError, match="top_p must be between 0 and 1"):
+        RunConfig(
+            task=task,
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            top_p=top_p,
+            temperature=1.0,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        )
+
+
+@pytest.mark.parametrize("temperature", [0.0, 1.0, 2.0])
+def test_run_config_valid_temperature(temperature):
+    """Test that RunConfig accepts valid temperature values (0-2)."""
+    task = Task(id="task1", name="Test Task", instruction="Do something")
+
+    config = RunConfig(
+        task=task,
+        model_name="gpt-4",
+        model_provider_name="openai",
+        prompt_id=PromptGenerators.SIMPLE,
+        top_p=0.9,
+        temperature=temperature,
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    assert config.temperature == temperature
+
+
+@pytest.mark.parametrize("temperature", [-0.1, 2.1, 3.0])
+def test_run_config_invalid_temperature(temperature):
+    """Test that RunConfig rejects invalid temperature values."""
+    task = Task(id="task1", name="Test Task", instruction="Do something")
+
+    with pytest.raises(ValueError, match="temperature must be between 0 and 2"):
+        RunConfig(
+            task=task,
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            top_p=0.9,
+            temperature=temperature,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        )
+
+
+def test_run_config_upgrade_old_entries():
+    """Test that TaskRunConfig parses old entries correctly with nested objects, filling in defaults where needed."""
+
+    data = {
+        "v": 1,
+        "name": "test name",
+        "created_at": "2025-06-09T13:33:35.276927",
+        "created_by": "scosman",
+        "run_config_properties": {
+            "model_name": "gpt_4_1_nano",
+            "model_provider_name": "openai",
+            "prompt_id": "task_run_config::189194447826::228174773209::244130257039",
+            "top_p": 0.77,
+            "temperature": 0.77,
+            "structured_output_mode": "json_instruction_and_object",
+        },
+        "prompt": {
+            "name": "Dazzling Unicorn",
+            "description": "Frozen copy of prompt 'simple_prompt_builder', created for evaluations.",
+            "generator_id": "simple_prompt_builder",
+            "prompt": "Generate a joke, given a theme. The theme will be provided as a word or phrase as the input to the model. The assistant should output a joke that is funny and relevant to the theme. If a style is provided, the joke should be in that style. The output should include a setup and punchline.\n\nYour response should respect the following requirements:\n1) Keep the joke on topic. If the user specifies a theme, the joke must be related to that theme.\n2) Avoid any jokes that are offensive or inappropriate. Keep the joke clean and appropriate for all audiences.\n3) Make the joke funny and engaging. It should be something that someone would want to tell to their friends. Something clever, not just a simple pun.\n",
+            "chain_of_thought_instructions": None,
+        },
+        "model_type": "task_run_config",
+    }
+
+    # Parse the data - this should be TaskRunConfig, not RunConfig
+    parsed = TaskRunConfig.model_validate(data)
+    assert parsed.name == "test name"
+    assert parsed.created_by == "scosman"
+    assert (
+        parsed.run_config_properties.structured_output_mode
+        == "json_instruction_and_object"
+    )
+
+    # should still work if loading from file
+    parsed = TaskRunConfig.model_validate(data, context={"loading_from_file": True})
+    assert parsed.name == "test name"
+    assert parsed.created_by == "scosman"
+    assert (
+        parsed.run_config_properties.structured_output_mode
+        == "json_instruction_and_object"
+    )
+
+    # Remove structured_output_mode from run_config_properties and parse again
+    del data["run_config_properties"]["structured_output_mode"]
+
+    with pytest.raises(ValidationError):
+        # should error if not loading from file
+        parsed = TaskRunConfig.model_validate(data)
+
+    parsed = TaskRunConfig.model_validate(data, context={"loading_from_file": True})
+    assert parsed.name == "test name"
+    assert parsed.created_by == "scosman"
+    assert parsed.run_config_properties.structured_output_mode == "unknown"

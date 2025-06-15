@@ -59,7 +59,11 @@ export function data_strategy_name(data_strategy: string): string {
     case "final_only":
       return "Standard"
     case "final_and_intermediate":
-      return "Reasoning"
+      return "Reasoning (legacy two-message format)"
+    case "two_message_cot":
+      return "Reasoning (separate thinking message)"
+    case "final_and_intermediate_r1_compatible":
+      return "Reasoning (R1 format thinking)"
     default:
       return data_strategy
   }

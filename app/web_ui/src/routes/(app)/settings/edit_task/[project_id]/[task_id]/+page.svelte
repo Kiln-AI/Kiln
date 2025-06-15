@@ -37,7 +37,6 @@
       },
       {
         label: "Clone Task",
-        primary: true,
         handler: () => {
           goto(`/settings/clone_task/${project_id}/${task_id}`)
         },

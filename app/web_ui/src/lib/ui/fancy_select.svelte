@@ -177,7 +177,7 @@
     </span>
 
     <div
-      class="dropdown-content relative bg-base-100 rounded-box z-[1] w-full p-2 pt-0 shadow absolute max-h-[50vh] flex flex-col relative border {listVisible
+      class="dropdown-content relative bg-base-100 rounded-box z-[1] w-full p-2 pt-0 shadow absolute max-h-[50vh] min-h-[300px] flex flex-col relative border {listVisible
         ? 'block'
         : 'hidden'}"
       style="bottom: auto; left: 0; top: 0; max-height: calc(100vh - var(--dropdown-top, 0px) - 30px);"

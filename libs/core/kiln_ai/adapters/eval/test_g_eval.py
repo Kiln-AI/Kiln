@@ -99,6 +99,7 @@ def test_run_config(test_task):
         model_provider_name="groq",
         task=test_task,
         prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
     )
 
 

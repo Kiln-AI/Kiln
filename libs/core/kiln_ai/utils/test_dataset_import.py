@@ -261,6 +261,36 @@ def test_import_csv_plain_text_missing_output(base_task: Task, tmp_path):
     assert "Missing required headers" in str(e.value)
 
 
+def test_import_csv_utf8_encoding(base_task: Task, tmp_path):
+    """Ensure UTF-8 encoded files are read correctly."""
+
+    row_data = [
+        {
+            "input": "Español entrada 你好👋",
+            "output": "salida áéí 你好👋",
+            "tags": "",
+        },
+    ]
+
+    file_path = dicts_to_file_as_csv(row_data, "utf8.csv", tmp_path)
+
+    importer = DatasetFileImporter(
+        base_task,
+        ImportConfig(
+            dataset_type=DatasetImportFormat.CSV,
+            dataset_path=file_path,
+            dataset_name="utf8.csv",
+        ),
+    )
+
+    importer.create_runs_from_file()
+
+    assert len(base_task.runs()) == 1
+    run = base_task.runs()[0]
+    assert run.input == "Español entrada 你好👋"
+    assert run.output.output == "salida áéí 你好👋"
+
+
 def test_import_csv_structured_output(task_with_structured_output: Task, tmp_path):
     row_data = [
         {

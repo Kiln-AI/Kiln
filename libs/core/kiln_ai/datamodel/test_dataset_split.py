@@ -73,14 +73,6 @@ def sample_task_runs(sample_task):
 
 
 @pytest.fixture
-def standard_splitstandard_splitss():
-    return [
-        DatasetSplitDefinition(name="train", percentage=0.8),
-        DatasetSplitDefinition(name="test", percentage=0.2),
-    ]
-
-
-@pytest.fixture
 def task_run():
     return TaskRun(
         input="test input",

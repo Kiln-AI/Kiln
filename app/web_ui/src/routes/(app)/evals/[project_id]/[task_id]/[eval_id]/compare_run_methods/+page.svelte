@@ -11,6 +11,8 @@
     ProviderModels,
     TaskRunConfig,
     EvalResultSummary,
+    StructuredOutputMode,
+    AvailableModels,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import {
@@ -22,6 +24,10 @@
     current_task_prompts,
     load_available_prompts,
     load_available_models,
+    available_model_details,
+    available_models,
+    current_task,
+    load_task,
   } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
   import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
@@ -32,6 +38,8 @@
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import RunOptions from "$lib/ui/run_options.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -71,6 +79,7 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      load_task(project_id, task_id),
     ])
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
@@ -346,6 +355,25 @@
   let task_run_config_provider_name = ""
   let task_run_config_prompt_method = "simple_prompt_builder"
   let task_run_config_long_prompt_name_provider = ""
+  let task_run_config_temperature: number
+  let task_run_config_top_p: number
+  let task_run_config_structured_output_mode: StructuredOutputMode
+
+  // Update structured_output_mode when model changes
+  $: update_structured_output_mode(
+    task_run_config_model_name,
+    task_run_config_provider_name,
+    $available_models,
+  )
+  function update_structured_output_mode(
+    model_name: string,
+    provider: string,
+    available_models: AvailableModels[],
+  ) {
+    task_run_config_structured_output_mode =
+      available_model_details(model_name, provider, available_models)
+        ?.structured_output_mode || "default"
+  }
 
   let add_task_config_dialog: Dialog | null = null
   let add_task_config_error: KilnError | null = null
@@ -370,10 +398,15 @@
             },
           },
           body: {
-            model_name: task_run_config_model_name,
-            // @ts-expect-error not checking types here, server will check them
-            model_provider_name: task_run_config_provider_name,
-            prompt_id: task_run_config_prompt_method,
+            run_config_properties: {
+              model_name: task_run_config_model_name,
+              // @ts-expect-error not checking types here, server will check them
+              model_provider_name: task_run_config_provider_name,
+              prompt_id: task_run_config_prompt_method,
+              temperature: task_run_config_temperature,
+              top_p: task_run_config_top_p,
+              structured_output_mode: task_run_config_structured_output_mode,
+            },
           },
         },
       )
@@ -756,6 +789,14 @@
       bind:prompt_method={task_run_config_prompt_method}
       bind:linked_model_selection={task_run_config_long_prompt_name_provider}
     />
+    <Collapse title="Advanced Options">
+      <RunOptions
+        bind:temperature={task_run_config_temperature}
+        bind:top_p={task_run_config_top_p}
+        bind:structured_output_mode={task_run_config_structured_output_mode}
+        has_structured_output={!!$current_task?.output_json_schema}
+      />
+    </Collapse>
     {#if add_task_config_error}
       <div class="text-error text-sm">
         {add_task_config_error.getMessage() || "An unknown error occurred"}

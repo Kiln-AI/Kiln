@@ -138,6 +138,7 @@ class Config:
                 sensitive_keys=["api_key"],
             ),
         }
+        self._lock = threading.Lock()
         self._settings = self.load_settings()
 
     @classmethod
@@ -180,7 +181,7 @@ class Config:
         return None if value is None else property_config.type(value)
 
     def __setattr__(self, name, value):
-        if name in ("_properties", "_settings"):
+        if name in ("_properties", "_settings", "_lock"):
             super().__setattr__(name, value)
         elif name in self._properties:
             self.update_settings({name: value})
@@ -234,7 +235,7 @@ class Config:
 
     def update_settings(self, new_settings: Dict[str, Any]):
         # Lock to prevent race conditions in multi-threaded scenarios
-        with threading.Lock():
+        with self._lock:
             # Fresh load to avoid clobbering changes from other instances
             current_settings = self.load_settings()
             current_settings.update(new_settings)

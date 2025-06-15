@@ -10,7 +10,7 @@
   export let select_option: (id: string) => void
 </script>
 
-<div class="flex flex-col gap-6 pt-4 max-w-[500px]">
+<div class="flex flex-col gap-6 max-w-[500px]">
   {#each options as option}
     <button
       class="cursor-pointer text-left"

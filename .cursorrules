@@ -7,5 +7,6 @@
    2) assume an appriopirate test file already exists, find it, and suggest tests get appended to that file. If no such file exists, ask me before assuming a new test file is the correct route.
    3) Test brevity is important. Use approaches for re-use and brevity including using fixtures for repeated code, and using pytest parameterize for similar tests
    4) After writing a new test, run it and ensure it works. Fix any issues you find.
-
- 
+ - To run web tests `cd app/web_ui` then `npm run test_run`
+ - Don't include comments in code explaining changes, explain changes in chat instead.
+ - If a python API's interface changes (or a new one is added), generate new bindings by running `cd app/web_ui/src/lib/ && ./generate.sh`

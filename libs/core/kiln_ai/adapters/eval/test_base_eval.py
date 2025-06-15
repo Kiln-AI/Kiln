@@ -1,9 +1,9 @@
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.datamodel import BasePrompt, DataSource, DataSourceType
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
 from kiln_ai.datamodel.task import (
     RunConfigProperties,
@@ -245,7 +245,7 @@ class EvalTester(BaseEval):
     """Test implementation of BaseEval"""
 
     async def run_eval(self, task_run):
-        return {"overall_rating": 5, "quality": 4}
+        return {"overall_rating": 5, "quality": 4}, None
 
 
 @pytest.mark.paid
@@ -265,14 +265,8 @@ async def test_run_method():
 
     eval_config = EvalConfig(
         name="Test Eval Config",
-        model=DataSource(
-            type=DataSourceType.synthetic,
-            properties={
-                "model_name": "gpt-4o",
-                "model_provider": "openai",
-                "adapter_name": "test",
-            },
-        ),
+        model_name="gpt-4o",
+        model_provider="openai",
         parent=Eval(
             name="Test Eval",
             parent=task,
@@ -291,10 +285,6 @@ async def test_run_method():
                 ),
             ],
         ),
-        prompt=BasePrompt(
-            name="Test Prompt",
-            prompt="Test prompt",
-        ),
         properties={"eval_steps": ["test_step"]},
     )
 
@@ -311,7 +301,9 @@ async def test_run_method():
     evaluator = EvalTester(eval_config, run_config.run_config())
 
     # Run the evaluation
-    task_run, eval_scores = await evaluator.run("test input")
+    task_run, eval_scores, intermediate_outputs = await evaluator.run_task_and_eval(
+        "test input"
+    )
 
     # Verify task run was created
     assert task_run.input == "test input"
@@ -323,3 +315,162 @@ async def test_run_method():
 
     # Verify schema validation worked (these keys should exist per schema)
     assert set(eval_scores.keys()) == {"overall_rating", "quality"}
+
+
+@pytest.mark.asyncio
+async def test_run_task_and_eval():
+    """Test run_task_and_eval method with mocked dependencies"""
+    # Create test data
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        requirements=[
+            TaskRequirement(
+                name="Quality",
+                instruction="Rate quality",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+    )
+
+    eval_config = EvalConfig(
+        name="Test Eval Config",
+        model_name="gpt-4o",
+        model_provider="openai",
+        parent=Eval(
+            name="Test Eval",
+            parent=task,
+            eval_set_filter_id="all",
+            eval_configs_filter_id="all",
+            output_scores=[
+                EvalOutputScore(
+                    name="Quality",
+                    instruction="Rate quality",
+                    type=TaskOutputRatingType.five_star,
+                ),
+                EvalOutputScore(
+                    name="Overall Rating",
+                    instruction="The overall rating for the task output",
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        ),
+        properties={"eval_steps": ["test_step"]},
+    )
+
+    run_config = TaskRunConfig(
+        name="Test Run Config",
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_1_8b",
+            model_provider_name="groq",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        parent=task,
+    )
+
+    # Create evaluator instance
+    class MockEval(BaseEval):
+        async def run_eval(self, task_run):
+            return {"overall_rating": 5, "quality": 4}, {"thinking": "test thinking"}
+
+    evaluator = MockEval(eval_config, run_config.run_config())
+
+    # Mock dependencies
+    mock_adapter = AsyncMock()
+    mock_task_run = MagicMock()
+    mock_task_run.input = "test input"
+    mock_task_run.output.output = "test output"
+    mock_adapter.invoke.return_value = mock_task_run
+
+    with (
+        patch(
+            "kiln_ai.adapters.eval.base_eval.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "kiln_ai.adapters.eval.base_eval.validate_schema_with_value_error"
+        ) as mock_validate,
+    ):
+        mock_adapter_for_task.return_value = mock_adapter
+
+        # Test with string input
+        result = await evaluator.run_task_and_eval("test input")
+
+        # Verify adapter_for_task was called with correct parameters
+        mock_adapter_for_task.assert_called_once()
+        assert mock_adapter_for_task.call_args[0][0] == evaluator.target_task
+        props = mock_adapter_for_task.call_args[0][1]
+        assert props.model_name == "llama_3_1_8b"
+        assert props.model_provider_name == "groq"
+        assert props.prompt_id == "simple_prompt_builder"
+        bac = mock_adapter_for_task.call_args[1]
+        assert bac["base_adapter_config"].allow_saving is False
+
+        # Verify the base_adapter_config has allow_saving=False
+        adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
+        assert adapter_config.allow_saving is False
+
+        # Verify adapter.invoke was called with correct input
+        mock_adapter.invoke.assert_called_once_with("test input")
+
+        # Verify validate_schema_with_value_error was called
+        mock_validate.assert_called_once_with(
+            {"overall_rating": 5, "quality": 4},
+            evaluator.score_schema,
+            "Eval output does not match score schema.",
+        )
+
+        # Verify return values
+        task_run, eval_scores, intermediate_outputs = result
+        assert task_run == mock_task_run
+        assert eval_scores == {"overall_rating": 5, "quality": 4}
+        assert intermediate_outputs == {"thinking": "test thinking"}
+
+
+@pytest.mark.asyncio
+async def test_run_task_and_eval_no_run_config():
+    """Test run_task_and_eval raises error when run_config is None"""
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        requirements=[
+            TaskRequirement(
+                name="Quality",
+                instruction="Rate quality",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+    )
+
+    eval_config = EvalConfig(
+        name="Test Eval Config",
+        model_name="gpt-4o",
+        model_provider="openai",
+        parent=Eval(
+            name="Test Eval",
+            parent=task,
+            eval_set_filter_id="all",
+            eval_configs_filter_id="all",
+            output_scores=[
+                EvalOutputScore(
+                    name="Quality",
+                    instruction="Rate quality",
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        ),
+        properties={"eval_steps": ["test_step"]},
+    )
+
+    # Create evaluator instance with no run_config
+    class MockEval(BaseEval):
+        async def run_eval(self, task_run):
+            return {"quality": 4}, None
+
+    evaluator = MockEval(eval_config, None)
+
+    # Test that it raises ValueError
+    with pytest.raises(
+        ValueError, match="Run config is required for run_task_and_eval"
+    ):
+        await evaluator.run_task_and_eval("test input")

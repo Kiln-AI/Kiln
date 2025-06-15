@@ -221,7 +221,7 @@ def import_csv(
     optional_headers = {"reasoning", "tags", "chain_of_thought"}  # optional headers
 
     rows: list[TaskRun] = []
-    with open(dataset_path, "r", newline="") as csvfile:
+    with open(dataset_path, "r", newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
 
         # Check if we have headers
