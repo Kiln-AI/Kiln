@@ -1723,3 +1723,442 @@ async def test_create_task_run_config_valid_boundary_values(
     result = response.json()
     assert result["run_config_properties"]["temperature"] == 2.0
     assert result["run_config_properties"]["top_p"] == 1.0
+
+
+# Tests for the new naming functions
+@pytest.mark.asyncio
+async def test_generate_task_run_config_name_simple_prompt(mock_task):
+    """Test generating task run config name with simple prompt."""
+    from app.desktop.studio_server.eval_api import generate_task_run_config_name
+
+    result = generate_task_run_config_name("gpt_4o", "simple_prompt_builder", mock_task)
+    assert result == "GPT 4o - Basic Prompt"
+
+
+@pytest.mark.asyncio
+async def test_generate_task_run_config_name_saved_prompt(mock_task):
+    """Test generating task run config name with saved prompt."""
+    from unittest.mock import Mock
+
+    from app.desktop.studio_server.eval_api import generate_task_run_config_name
+
+    # Create a proper mock for the saved prompt
+    test_prompt = Mock()
+    test_prompt.id = "saved_prompt_123"
+    test_prompt.name = "My Custom Prompt"
+
+    # Create a proper mock for the task
+    task_mock = Mock()
+    task_mock.prompts.return_value = [test_prompt]
+
+    result = generate_task_run_config_name("gpt_4o", "id::saved_prompt_123", task_mock)
+    assert result == "GPT 4o - My Custom Prompt"
+
+
+@pytest.mark.asyncio
+async def test_generate_task_run_config_name_long_names():
+    """Test name truncation when model name and prompt name are too long."""
+    from unittest.mock import Mock
+
+    from app.desktop.studio_server.eval_api import generate_task_run_config_name
+
+    mock_task = Mock()
+    mock_task.prompts.return_value = []
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+
+    # Very long model name and prompt should be truncated to 32 chars
+    result = generate_task_run_config_name(
+        "very-long-model-name-that-exceeds-limit",
+        "multi_shot_chain_of_thought_prompt_builder",
+        mock_task,
+    )
+    assert len(result) <= 32
+    # The very long model name is not in our model list, so it will be kept as-is
+    # and the result will be truncated but may only show part of the long name
+    assert len(result) == 32
+
+
+def test_generate_eval_config_name_g_eval():
+    """Test generating eval config name for G-Eval."""
+    from kiln_ai.datamodel.eval import EvalConfigType
+
+    from app.desktop.studio_server.eval_api import generate_eval_config_name
+
+    result = generate_eval_config_name(EvalConfigType.g_eval, "gpt_4o")
+    assert result == "G-Eval - GPT 4o"
+
+
+def test_generate_eval_config_name_llm_as_judge():
+    """Test generating eval config name for LLM as Judge."""
+    from kiln_ai.datamodel.eval import EvalConfigType
+
+    from app.desktop.studio_server.eval_api import generate_eval_config_name
+
+    result = generate_eval_config_name(EvalConfigType.llm_as_judge, "claude_3_5_sonnet")
+    assert result == "LLM as Judge - Claude 3_5 Sonnet"
+
+
+def test_generate_eval_config_name_truncation():
+    """Test name truncation for very long names."""
+    from kiln_ai.datamodel.eval import EvalConfigType
+
+    from app.desktop.studio_server.eval_api import generate_eval_config_name
+
+    result = generate_eval_config_name(
+        EvalConfigType.llm_as_judge, "very-long-model-name-that-exceeds-limits"
+    )
+    assert len(result) <= 32
+    assert "LLM as Judge" in result
+
+
+def test_get_prompt_display_name_saved_prompt_not_found(mock_task):
+    """Test getting display name for non-existent saved prompt."""
+    from app.desktop.studio_server.eval_api import _get_prompt_display_name
+
+    result = _get_prompt_display_name("id::nonexistent", mock_task)
+    assert result == "Saved Prompt"
+
+
+def test_get_prompt_display_name_fine_tune(mock_task):
+    """Test getting display name for any fine-tune."""
+    from app.desktop.studio_server.eval_api import _get_prompt_display_name
+
+    result = _get_prompt_display_name(
+        "fine_tune_prompt::project1::task1::nonexistent", mock_task
+    )
+    assert result == "Fine Tune Prompt"
+
+
+def test_get_prompt_display_name_unknown():
+    """Test getting display name for unknown prompt type."""
+    from unittest.mock import Mock
+
+    from app.desktop.studio_server.eval_api import _get_prompt_display_name
+
+    mock_task = Mock()
+    result = _get_prompt_display_name("unknown_prompt_type", mock_task)
+    assert result == "Unknown"
+
+
+def test_get_eval_method_display_name():
+    """Test getting display names for eval methods."""
+    from kiln_ai.datamodel.eval import EvalConfigType
+
+    from app.desktop.studio_server.eval_api import _get_eval_method_display_name
+
+    assert _get_eval_method_display_name(EvalConfigType.g_eval) == "G-Eval"
+    assert _get_eval_method_display_name(EvalConfigType.llm_as_judge) == "LLM as Judge"
+
+
+def test_sanitize_name_basic():
+    """Test basic name sanitization."""
+    from app.desktop.studio_server.eval_api import _sanitize_name
+
+    assert _sanitize_name("Normal Name") == "Normal Name"
+    assert _sanitize_name("name-with-hyphens") == "name-with-hyphens"
+    assert _sanitize_name("name_with_underscores") == "name_with_underscores"
+
+
+def test_sanitize_name_invalid_characters():
+    """Test sanitization of names with invalid characters."""
+    from app.desktop.studio_server.eval_api import _sanitize_name
+
+    # Should replace invalid characters with underscores
+    assert _sanitize_name("name@with#special!chars") == "name_with_special_chars"
+    assert _sanitize_name("name/with\\slashes") == "name_with_slashes"
+
+
+def test_sanitize_name_too_long():
+    """Test truncation of names that are too long."""
+    from app.desktop.studio_server.eval_api import _sanitize_name
+
+    # Should truncate to MAX_SHORT_NAME_LENGTH (32)
+    long_name = "a" * 50
+    result = _sanitize_name(long_name)
+    assert len(result) <= 32
+    assert result == "a" * 32
+
+
+def test_sanitize_name_empty():
+    """Test handling of empty names."""
+    from app.desktop.studio_server.eval_api import _sanitize_name
+
+    assert _sanitize_name("") != ""
+    assert _sanitize_name("   ") != ""
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_uses_descriptive_name(
+    client, mock_task_from_id, mock_task
+):
+    """Test that task run config creation uses descriptive naming when name is not provided."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/task_run_config",
+        json={
+            # No name provided - should generate descriptive name
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use descriptive name format: model - prompt
+    assert result["name"] == "GPT 4o - Basic Prompt"
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_uses_descriptive_name(
+    client, mock_task_from_id, mock_task
+):
+    """Test that task run config creation uses descriptive naming when name is not provided."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/task_run_config",
+        json={
+            # No name provided - should generate descriptive name
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use descriptive name format: model - prompt
+    assert result["name"] == "GPT 4o - Basic Prompt"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_uses_descriptive_name(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that eval config creation uses descriptive naming when name is not provided."""
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/eval/eval1/create_eval_config",
+            json={
+                # No name provided - should generate descriptive name
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4o",
+                "provider": "openai",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use descriptive name format: eval_method - model
+    assert result["name"] == "G-Eval - GPT 4o"
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_respects_provided_name(
+    client, mock_task_from_id, mock_task
+):
+    """Test that task run config creation respects provided names."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/task_run_config",
+        json={
+            "name": "Custom Name",  # Explicit name provided
+            "run_config_properties": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use the provided name, not generated one
+    assert result["name"] == "Custom Name"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_respects_provided_name(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that eval config creation respects provided names."""
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/eval/eval1/create_eval_config",
+            json={
+                "name": "Custom Eval Config",  # Explicit name provided
+                "type": "llm_as_judge",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "claude-3",
+                "provider": "anthropic",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use the provided name, not generated one
+    assert result["name"] == "Custom Eval Config"
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_uses_descriptive_name(
+    client, mock_task_from_id, mock_task
+):
+    """Test that task run config creation uses descriptive naming when name is not provided."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/task_run_config",
+        json={
+            # No name provided - should generate descriptive name
+            "run_config_properties": {
+                "model_name": "gpt_4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use descriptive name format: model - prompt
+    assert result["name"] == "GPT 4o - Basic Prompt"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_uses_descriptive_name(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that eval config creation uses descriptive naming when name is not provided."""
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/eval/eval1/create_eval_config",
+            json={
+                # No name provided - should generate descriptive name
+                "type": "g_eval",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt_4o",
+                "provider": "openai",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use descriptive name format: eval_method - model
+    assert result["name"] == "G-Eval - GPT 4o"
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_respects_provided_name(
+    client, mock_task_from_id, mock_task
+):
+    """Test that task run config creation respects provided names."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/task_run_config",
+        json={
+            "name": "Custom Name",  # Explicit name provided
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "json_schema",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use the provided name, not generated one
+    assert result["name"] == "Custom Name"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_config_respects_provided_name(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that eval config creation respects provided names."""
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/eval/eval1/create_eval_config",
+            json={
+                "name": "Custom Eval Config",  # Explicit name provided
+                "type": "llm_as_judge",
+                "properties": {"eval_steps": ["step1"]},
+                "model_name": "gpt-4o",
+                "provider": "openai",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should use the provided name, not generated one
+    assert result["name"] == "Custom Eval Config"
+
+
+def test_prompt_generator_names_covers_all_enum_values():
+    """Test that _prompt_generator_names dictionary covers all PromptGenerators enum values."""
+    from kiln_ai.datamodel.prompt_id import PromptGenerators
+
+    from app.desktop.studio_server.eval_api import _prompt_generator_names
+
+    # Get all enum values
+    all_enum_values = {generator.value for generator in PromptGenerators}
+
+    # Get all keys in the dictionary
+    dict_keys = set(_prompt_generator_names.keys())
+
+    # Check that all enum values are covered in the dictionary
+    missing_from_dict = all_enum_values - dict_keys
+    extra_in_dict = dict_keys - all_enum_values
+
+    assert missing_from_dict == set(), (
+        f"Missing enum values in _prompt_generator_names: {missing_from_dict}"
+    )
+    assert extra_in_dict == set(), (
+        f"Extra keys in _prompt_generator_names not in enum: {extra_in_dict}"
+    )
+
+    # Ensure we have the expected count (this will also catch if enum values are added/removed)
+    assert len(_prompt_generator_names) == len(PromptGenerators), (
+        f"Expected {len(PromptGenerators)} entries, got {len(_prompt_generator_names)}"
+    )
