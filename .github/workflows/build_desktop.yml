@@ -34,6 +34,26 @@ jobs:
       - name: Set up Python using GH python version
         run: uv venv --python 3.13 --python-preference only-system
 
+      - name: Install AppImage Builder dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            coreutils \
+            desktop-file-utils \
+            fakeroot \
+            fuse \
+            libgdk-pixbuf2.0-dev \
+            patchelf \
+            python3-setuptools \
+            squashfs-tools \
+            strace \
+            util-linux \
+            zsync \
+            appstream \
+            desktop-file-utils
+
       - name: Install the project
         run: uv sync
 
@@ -47,6 +67,12 @@ jobs:
         with:
           path: ./app/desktop/WinInnoSetup.iss
 
+      - name: Tar AppDir for artifact upload
+        if: matrix.os == 'ubuntu-22.04'
+        working-directory: ./app/desktop/appimage
+        run: |
+          tar -czpf AppDir.tar.gz AppDir
+
       - name: Copy Windows Installer
         if: matrix.os == 'windows-latest'
         run: cp ./app/desktop/Output/kilnsetup.exe ./app/desktop/build/dist/Kiln.Windows.Installer.exe
@@ -59,7 +85,9 @@ jobs:
 
       - name: Checksums (Linux)
         if: runner.os == 'Linux'
-        run: find ./app/desktop/build/dist -type f -exec sha256sum {} \;
+        run: |
+          find ./app/desktop/build/dist -type f -exec sha256sum {} \;
+          find ./app/desktop/appimage/*.AppImage -type f -exec sha256sum {} \;
 
       - name: Checksums (Windows)
         if: runner.os == 'Windows'
@@ -81,3 +109,70 @@ jobs:
         with:
           name: kiln-desktop-${{ runner.os }}-${{ runner.arch }}
           path: ./app/desktop/build/dist/*
+
+      - name: AppImage Desktop Files Validation
+        if: matrix.os == 'ubuntu-22.04'
+        working-directory: ./app/desktop/appimage
+        run: |
+          desktop-file-validate ./AppDir/kiln-ai.desktop
+          appstreamcli validate-tree ./AppDir
+
+      - name: Upload AppDir (tar)
+        if: matrix.os == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDir
+          path: ./app/desktop/appimage/AppDir.tar.gz
+
+      - name: Upload AppImage
+        if: matrix.os == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppImage
+          path: ./app/desktop/appimage/Kiln*
+
+  test-appimage:
+    name: Test AppImage (${{ matrix.image-label }})
+    runs-on: ubuntu-22.04
+    needs: build
+    defaults:
+      run:
+        working-directory: ./app/desktop/appimage
+    strategy:
+      matrix:
+        include:
+          - image: appimagecrafters/tests-env:fedora-30
+            image-label: Fedora 30
+          - image: appimagecrafters/tests-env:debian-stable
+            image-label: Debian Stable
+          - image: appimagecrafters/tests-env:ubuntu-bionic
+            image-label: Ubuntu Bionic
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download AppDir
+        uses: actions/download-artifact@v4
+        with:
+          name: AppDir
+          path: app/desktop/appimage
+
+      - name: Start virtual X server
+        run: Xvfb :99 -screen 0 1920x1280x24 > /dev/null 2>&1 &
+
+      - name: Extract AppDir
+        run: tar -xzpf AppDir.tar.gz
+
+      - name: Run AppImage in ${{ matrix.image-label }} container
+        run: |
+          docker run --rm \
+            -e KILN_TEST_MODE=1 \
+            -e DISPLAY=:99 \
+            -e UID=$(id -u) \
+            -e UNAME=$USER \
+            -e XDG_DATA_DIRS="/usr/share:/usr/local/share" \
+            -v "${PWD}/AppDir":/app:ro \
+            -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+            --cap-add=SYS_PTRACE \
+            --workdir /app \
+            ${{ matrix.image }} \
+            ./AppRun
