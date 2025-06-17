@@ -124,7 +124,9 @@ export function typed_json_from_schema_model(
     const property = m.properties.find((p) => p.id === prop_id)
     if (!property) {
       throw new KilnError(
-        "Property not allowed in JSON schema: " + prop_id,
+        "Property not allowed in JSON schema: " +
+          prop_id +
+          '. Note: Use the property key (id), not the title. If your schema has {"chat": {"title": "multi_turn_conversation"}}, use "chat" as the property name.',
         null,
       )
     }
@@ -150,21 +152,26 @@ export function typed_json_from_schema_model(
       parsed_data[prop_id] = parsedValue
     } else if (property.type === "array") {
       try {
-        const parsed_value = JSON.parse(prop_value)
+        // Trim whitespace and handle pretty-printed JSON
+        const trimmed_value = prop_value.trim()
+        const parsed_value = JSON.parse(trimmed_value)
         if (!Array.isArray(parsed_value)) {
           errors.push(
-            `Property ${prop_id} must be an array, got: ${prop_value}`,
+            `Property ${prop_id} must be an array, got: ${trimmed_value.substring(0, 100)}${trimmed_value.length > 100 ? "..." : ""}`,
           )
         }
         parsed_data[prop_id] = parsed_value
       } catch (e) {
+        const trimmed_value = prop_value.trim()
         errors.push(
-          `Property ${prop_id} must be a valid JSON array, got: ${prop_value}`,
+          `Property ${prop_id} must be a valid JSON array. Error: ${e instanceof Error ? e.message : String(e)}. Got: ${trimmed_value.substring(0, 100)}${trimmed_value.length > 100 ? "..." : ""}`,
         )
       }
     } else if (property.type === "object") {
       try {
-        const parsed_value = JSON.parse(prop_value)
+        // Trim whitespace and handle pretty-printed JSON
+        const trimmed_value = prop_value.trim()
+        const parsed_value = JSON.parse(trimmed_value)
         // Check if it's an object but not an array, null, or other primitive
         if (
           typeof parsed_value !== "object" ||
@@ -172,13 +179,14 @@ export function typed_json_from_schema_model(
           Array.isArray(parsed_value)
         ) {
           errors.push(
-            `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
+            `Property ${prop_id} must be a valid JSON object, got: ${trimmed_value.substring(0, 100)}${trimmed_value.length > 100 ? "..." : ""}`,
           )
         }
         parsed_data[prop_id] = parsed_value
       } catch (e) {
+        const trimmed_value = prop_value.trim()
         errors.push(
-          `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
+          `Property ${prop_id} must be a valid JSON object. Error: ${e instanceof Error ? e.message : String(e)}. Got: ${trimmed_value.substring(0, 100)}${trimmed_value.length > 100 ? "..." : ""}`,
         )
       }
     } else {
