@@ -1,15 +1,12 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { client } from "../../../../../../../lib/api_client"
-  import type { ExtractorConfig } from "../../../../../../../lib/types"
-  import {
-    createKilnError,
-    type KilnError,
-  } from "../../../../../../../lib/utils/error_handlers"
+  import { client } from "$lib/api_client"
+  import type { ExtractorConfig } from "$lib/types"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
-  import PropertyList from "../../../../../../../lib/ui/property_list.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import { formatDate } from "../../../../../../../lib/utils/formatters"
+  import { formatDate } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: extractor_id = $page.params.extractor_id

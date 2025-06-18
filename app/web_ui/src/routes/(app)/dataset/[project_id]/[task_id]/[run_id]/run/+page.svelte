@@ -18,7 +18,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
-  import { isMacOS } from "../../../../../../../lib/utils/platform"
+  import { isMacOS } from "$lib/utils/platform"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
