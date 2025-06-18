@@ -580,9 +580,6 @@ def connect_document_api(app: FastAPI):
             ):
                 document_count_successful += 1
 
-        # NOTE: could make sense to persist failed extractions (with some property like "status" / "failed_reason") to
-        # be able to surface failures here (as opposed to pending extractions), and also show the actual error
-        # as some may be due to some provider-specific rejection (e.g. "file too large", "wrong codec", etc.) we cannot resolve
         return ExtractionProgress(
             document_count_total=document_count_total,
             document_count_successful=document_count_successful,
