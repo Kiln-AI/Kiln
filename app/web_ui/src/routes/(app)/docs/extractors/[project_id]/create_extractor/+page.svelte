@@ -1,14 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { client } from "../../../../../../lib/api_client"
-  import type { ExtractorType, OutputFormat } from "../../../../../../lib/types"
-  import {
-    createKilnError,
-    type KilnError,
-  } from "../../../../../../lib/utils/error_handlers"
-  import FormElement from "../../../../../../lib/utils/form_element.svelte"
+  import { client } from "$lib/api_client"
+  import type { ExtractorType, OutputFormat } from "$lib/types"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import FormElement from "$lib/utils/form_element.svelte"
   import AppPage from "../../../../app_page.svelte"
-  import FormContainer from "../../../../../../lib/utils/form_container.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
   import { goto } from "$app/navigation"
 
   $: project_id = $page.params.project_id

@@ -22,7 +22,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
-  import { isMacOS } from "../../../../../../../lib/utils/platform"
+  import { isMacOS } from "$lib/utils/platform"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id

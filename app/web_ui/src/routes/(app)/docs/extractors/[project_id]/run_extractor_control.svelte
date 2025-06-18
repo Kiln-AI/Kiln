@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
-  import type { ExtractorConfig } from "../../../../../lib/types"
+  import type { ExtractorConfig } from "$lib/types"
 
   export let btn_size: "normal" | "mid" = "mid"
   export let project_id: string

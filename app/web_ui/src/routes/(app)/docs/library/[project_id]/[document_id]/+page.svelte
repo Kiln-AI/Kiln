@@ -5,14 +5,11 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import {
-    formatDate,
-    formatSize,
-  } from "../../../../../../lib/utils/formatters"
-  import Dialog from "../../../../../../lib/ui/dialog.svelte"
-  import PropertyList from "../../../../../../lib/ui/property_list.svelte"
-  import DeleteDialog from "../../../../../../lib/ui/delete_dialog.svelte"
-  import { isMacOS } from "../../../../../../lib/utils/platform"
+  import { formatDate, formatSize } from "$lib/utils/formatters"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
+  import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import { isMacOS } from "$lib/utils/platform"
   import { goto } from "$app/navigation"
 
   let document: KilnDocument | null = null
