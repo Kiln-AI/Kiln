@@ -1481,9 +1481,9 @@ export interface components {
         CreateExtractorConfigRequest: {
             /**
              * Name
-             * @description The name of the extractor config
+             * @description A name for this entity.
              */
-            name?: string | null;
+            name: string | null;
             /**
              * Description
              * @description The description of the extractor config
@@ -1498,11 +1498,8 @@ export interface components {
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The type of the extractor */
             extractor_type: components["schemas"]["ExtractorType"];
-            /**
-             * Properties
-             * @default {}
-             */
-            properties: {
+            /** Properties */
+            properties?: {
                 [key: string]: string | number | boolean | {
                     [key: string]: string;
                 } | null;
@@ -2093,7 +2090,7 @@ export interface components {
             document_count_total: number;
             /** Document Count Successful */
             document_count_successful: number;
-            current_extractor_config: components["schemas"]["ExtractorConfig"] | null;
+            extractor_config: components["schemas"]["ExtractorConfig"] | null;
         };
         /** ExtractionSummary */
         ExtractionSummary: {
@@ -2163,9 +2160,8 @@ export interface components {
             /**
              * Properties
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
-             * @default {}
              */
-            properties: {
+            properties?: {
                 [key: string]: string | number | boolean | {
                     [key: string]: string;
                 } | null;
@@ -2554,9 +2550,9 @@ export interface components {
         PatchExtractorConfigRequest: {
             /**
              * Name
-             * @description The name of the extractor config
+             * @description A name for this entity.
              */
-            name?: string | null;
+            name: string | null;
             /**
              * Description
              * @description The description of the extractor config
