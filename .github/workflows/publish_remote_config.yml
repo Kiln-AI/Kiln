@@ -1,0 +1,23 @@
+name: Publish Remote Config
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    if: env.KILN_CONFIG_REPO == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build config
+        run: echo "Building config..."
+
+  deploy:
+    if: env.KILN_CONFIG_REPO == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish config
+        run: echo "Deploying config..."

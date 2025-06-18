@@ -135,6 +135,10 @@ If your product goals shift or new bugs are found (as is almost always the case)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for information on how to setup a development environment and contribute to Kiln.
 
+### Publishing Config
+
+Set a repository environment variable called `KILN_CONFIG_REPO` to `true` to enable the `publish_remote_config.yml` workflow. Forks that do not set this variable will skip publishing.
+
 ## Citation
 
 ```bibtex
