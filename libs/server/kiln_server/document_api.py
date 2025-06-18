@@ -258,9 +258,15 @@ def connect_document_api(app: FastAPI):
         else:
             kind = Kind.DOCUMENT
 
+        if not file.filename:
+            raise HTTPException(
+                status_code=422,
+                detail="File must have a filename",
+            )
+
         document = Document(
             parent=project,
-            name=string_to_valid_name(name),
+            name=string_to_valid_name(name or file.filename),
             description=description,
             kind=kind,
             original_file=FileInfo(
