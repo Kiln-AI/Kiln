@@ -418,28 +418,26 @@ def connect_document_api(app: FastAPI):
                 detail="Document not found",
             )
 
-        extractor_configs: dict[str, ExtractorConfig] = {}
+        summaries: list[ExtractionSummary] = []
         for extraction in document.extractions(readonly=True):
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 str(extraction.extractor_config_id), project.path
             )
-            if extractor_config:
-                extractor_configs[str(extraction.extractor_config_id)] = (
-                    extractor_config
-                )
 
-        return [
-            ExtractionSummary(
-                **extraction.model_dump(exclude={"output"}),
-                output_content=await extraction.output_content() or "",
-                extractor=ExtractorSummary(
-                    **extractor_configs[str(extraction.extractor_config_id)].model_dump(
-                        exclude={"properties"}
+            if not extractor_config:
+                continue
+
+            summaries.append(
+                ExtractionSummary(
+                    **extraction.model_dump(exclude={"output"}),
+                    output_content=await extraction.output_content() or "",
+                    extractor=ExtractorSummary(
+                        **extractor_config.model_dump(exclude={"properties"}),
                     ),
-                ),
+                )
             )
-            for extraction in document.extractions(readonly=True)
-        ]
+
+        return summaries
 
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
