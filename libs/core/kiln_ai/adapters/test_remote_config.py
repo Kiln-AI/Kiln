@@ -76,3 +76,23 @@ async def test_load_remote_models_failure(monkeypatch):
     load_remote_models("http://example.com/models.json")
     await asyncio.sleep(0.01)
     assert built_in_models == original
+
+
+def test_deserialize_config_with_extra_keys(tmp_path):
+    # Take a valid model and add an extra key, ensure it is ignored and still loads
+    import json
+
+    from kiln_ai.adapters.ml_model_list import built_in_models
+
+    model_dict = built_in_models[0].model_dump(mode="json")
+    model_dict["extra_key"] = "should be ignored or error"
+    model_dict["providers"][0]["extra_key"] = "should be ignored or error"
+    data = {"model_list": [model_dict]}
+    path = tmp_path / "extra.json"
+    path.write_text(json.dumps(data))
+    # Should NOT raise, and extra key should be ignored
+    models = deserialize_config(path)
+    assert hasattr(models[0], "family")
+    assert not hasattr(models[0], "extra_key")
+    assert hasattr(models[0], "providers")
+    assert not hasattr(models[0].providers[0], "extra_key")
