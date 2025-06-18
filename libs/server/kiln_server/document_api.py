@@ -127,7 +127,7 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The type of the extractor",
     )
     properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
-        default={},
+        default_factory=dict,
     )
 
     @model_validator(mode="before")

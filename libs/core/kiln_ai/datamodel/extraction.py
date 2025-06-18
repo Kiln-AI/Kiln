@@ -117,7 +117,7 @@ class ExtractorConfig(KilnParentedModel):
         description="This is used to determine the type of extractor to use.",
     )
     properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
-        default={},
+        default_factory=dict,
         description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
     )
 
