@@ -580,7 +580,6 @@ def connect_document_api(app: FastAPI):
 
         documents = project.documents(readonly=True)
 
-        document_count_total = len(documents)
         document_count_successful = 0
         for document in documents:
             extractions = document.extractions(readonly=True)
@@ -591,7 +590,7 @@ def connect_document_api(app: FastAPI):
                 document_count_successful += 1
 
         return ExtractionProgress(
-            document_count_total=document_count_total,
+            document_count_total=len(documents),
             document_count_successful=document_count_successful,
             extractor_config=extractor_config,
         )
