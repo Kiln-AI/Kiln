@@ -2552,7 +2552,7 @@ export interface components {
              * Name
              * @description A name for this entity.
              */
-            name: string | null;
+            name?: string | null;
             /**
              * Description
              * @description The description of the extractor config

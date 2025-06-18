@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Annotated, Dict
+from typing import Annotated, Dict, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -18,6 +18,7 @@ from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     NAME_FIELD,
+    NAME_REGEX,
     KilnAttachmentModel,
     string_to_valid_name,
 )
@@ -188,7 +189,16 @@ def gemini_properties_with_defaults(
 
 
 class PatchExtractorConfigRequest(BaseModel):
-    name: str | None = NAME_FIELD
+    # FIXME: should use the centralized field for name, but the openapi codegen
+    # does not infer correctly that the field is optional when using the centralized
+    # field for name
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default=None,
+    )
     description: str | None = Field(
         description="The description of the extractor config",
         default=None,
