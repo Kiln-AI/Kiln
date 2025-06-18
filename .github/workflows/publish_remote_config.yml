@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    if: env.KILN_CONFIG_REPO == 'true'
+    if: ${{ vars.KILN_CONFIG_REPO == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,7 +15,7 @@ jobs:
         run: echo "Building config..."
 
   deploy:
-    if: env.KILN_CONFIG_REPO == 'true'
+    if: ${{ vars.KILN_CONFIG_REPO == 'true' }}
     needs: build
     runs-on: ubuntu-latest
     steps:
