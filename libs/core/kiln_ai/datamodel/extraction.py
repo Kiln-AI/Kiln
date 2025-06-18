@@ -240,5 +240,5 @@ class Document(
             return None
         return self.parent  # type: ignore
 
-    def extractions(self) -> list[Extraction]:
-        return super().extractions()  # type: ignore
+    def extractions(self, readonly: bool = False) -> list[Extraction]:
+        return super().extractions(readonly=readonly)  # type: ignore

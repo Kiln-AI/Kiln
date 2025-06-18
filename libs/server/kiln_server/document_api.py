@@ -242,7 +242,7 @@ def connect_document_api(app: FastAPI):
         document.save_to_file()
 
         for extractor_config in [
-            ec for ec in project.extractor_configs() if not ec.is_archived
+            ec for ec in project.extractor_configs(readonly=True) if not ec.is_archived
         ]:
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
@@ -258,9 +258,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
     ) -> list[Document]:
         project = project_from_id(project_id)
-
-        # NOTE: maybe add cache here (readonly=True flag)?
-        return project.documents()
+        return project.documents(readonly=True)
 
     @app.get("/api/projects/{project_id}/documents/{document_id}")
     async def get_document(
@@ -345,7 +343,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
     ) -> list[ExtractorConfig]:
         project = project_from_id(project_id)
-        return project.extractor_configs()
+        return project.extractor_configs(readonly=True)
 
     @app.get("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
     async def get_extractor_config(
@@ -388,7 +386,7 @@ def connect_document_api(app: FastAPI):
                     detail="Extractor config is archived. You must unarchive it to use it.",
                 )
 
-            documents = project.documents()
+            documents = project.documents(readonly=True)
 
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
@@ -411,7 +409,7 @@ def connect_document_api(app: FastAPI):
             )
 
         extractor_configs: dict[str, ExtractorConfig] = {}
-        for extraction in document.extractions():
+        for extraction in document.extractions(readonly=True):
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 str(extraction.extractor_config_id), project.path
             )
@@ -430,7 +428,7 @@ def connect_document_api(app: FastAPI):
                     ),
                 ),
             )
-            for extraction in document.extractions()
+            for extraction in document.extractions(readonly=True)
         ]
 
     @app.get(
@@ -570,10 +568,12 @@ def connect_document_api(app: FastAPI):
                 detail="Extractor config not found",
             )
 
-        document_count_total = len(project.documents())
+        documents = project.documents(readonly=True)
+
+        document_count_total = len(documents)
         document_count_successful = 0
-        for document in project.documents():
-            extractions = document.extractions()
+        for document in documents:
+            extractions = document.extractions(readonly=True)
             if any(
                 extraction.extractor_config_id == extractor_config_id
                 for extraction in extractions
@@ -604,7 +604,9 @@ def connect_document_api(app: FastAPI):
             extractor_config_ids = [
                 extractor_config.id
                 for extractor_config in [
-                    ec for ec in project.extractor_configs() if not ec.is_archived
+                    ec
+                    for ec in project.extractor_configs(readonly=True)
+                    if not ec.is_archived
                 ]
                 if not extractor_config.is_archived
             ]

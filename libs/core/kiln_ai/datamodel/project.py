@@ -30,8 +30,8 @@ class Project(
     def tasks(self) -> list[Task]:
         return super().tasks()  # type: ignore
 
-    def documents(self) -> list[Document]:
-        return super().documents()  # type: ignore
+    def documents(self, readonly: bool = False) -> list[Document]:
+        return super().documents(readonly=readonly)  # type: ignore
 
-    def extractor_configs(self) -> list[ExtractorConfig]:
-        return super().extractor_configs()  # type: ignore
+    def extractor_configs(self, readonly: bool = False) -> list[ExtractorConfig]:
+        return super().extractor_configs(readonly=readonly)  # type: ignore
