@@ -17,6 +17,7 @@ from kiln_ai.adapters.extractors.extraction_prompt_builder import (
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
+    NAME_FIELD,
     KilnAttachmentModel,
     string_to_valid_name,
 )
@@ -108,10 +109,7 @@ class ExtractionSummary(BaseModel):
 
 
 class CreateExtractorConfigRequest(BaseModel):
-    name: str | None = Field(
-        description="The name of the extractor config",
-        default=None,
-    )
+    name: str | None = NAME_FIELD
     description: str | None = Field(
         description="The description of the extractor config",
         default=None,
@@ -193,10 +191,7 @@ def gemini_properties_with_defaults(
 
 
 class PatchExtractorConfigRequest(BaseModel):
-    name: str | None = Field(
-        description="The name of the extractor config",
-        default=None,
-    )
+    name: str | None = NAME_FIELD
     description: str | None = Field(
         description="The description of the extractor config",
         default=None,
