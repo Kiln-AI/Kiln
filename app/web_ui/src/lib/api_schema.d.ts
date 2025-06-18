@@ -2086,8 +2086,6 @@ export interface components {
             created_by: string;
             /** Source */
             source: string;
-            /** Extractor Config Id */
-            extractor_config_id: string;
             /** Output Content */
             output_content: string;
             extractor: components["schemas"]["ExtractorSummary"];

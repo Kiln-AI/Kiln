@@ -104,7 +104,6 @@ class ExtractionSummary(BaseModel):
     created_at: datetime.datetime
     created_by: str
     source: str
-    extractor_config_id: str
     output_content: str
     extractor: ExtractorSummary
 
@@ -215,6 +214,28 @@ class PatchExtractorConfigRequest(BaseModel):
         ):
             raise ValueError("At least one field must be provided")
         return self
+
+
+def build_extraction_summary(
+    extraction: Extraction,
+    output_content: str | None,
+    extractor_config: ExtractorConfig,
+) -> ExtractionSummary:
+    return ExtractionSummary(
+        id=str(extraction.id),
+        created_at=extraction.created_at,
+        created_by=extraction.created_by,
+        source=extraction.source,
+        output_content=output_content or "",
+        extractor=ExtractorSummary(
+            id=str(extractor_config.id),
+            name=extractor_config.name,
+            description=extractor_config.description,
+            output_format=extractor_config.output_format,
+            passthrough_mimetypes=extractor_config.passthrough_mimetypes,
+            extractor_type=extractor_config.extractor_type,
+        ),
+    )
 
 
 def connect_document_api(app: FastAPI):
@@ -428,12 +449,10 @@ def connect_document_api(app: FastAPI):
                 continue
 
             summaries.append(
-                ExtractionSummary(
-                    **extraction.model_dump(exclude={"output"}),
+                build_extraction_summary(
+                    extraction=extraction,
                     output_content=await extraction.output_content() or "",
-                    extractor=ExtractorSummary(
-                        **extractor_config.model_dump(exclude={"properties"}),
-                    ),
+                    extractor_config=extractor_config,
                 )
             )
 
@@ -472,12 +491,10 @@ def connect_document_api(app: FastAPI):
                 detail=f"Extractor config {extraction.extractor_config_id} not found",
             )
 
-        return ExtractionSummary(
-            **extraction.model_dump(exclude={"output"}),
+        return build_extraction_summary(
+            extraction=extraction,
             output_content=await extraction.output_content() or "",
-            extractor=ExtractorSummary(
-                **extractor_config.model_dump(exclude={"properties"}),
-            ),
+            extractor_config=extractor_config,
         )
 
     @app.get("/api/projects/{project_id}/documents/{document_id}/download")
