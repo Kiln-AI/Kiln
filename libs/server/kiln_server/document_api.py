@@ -431,7 +431,7 @@ def connect_document_api(app: FastAPI):
         return [
             ExtractionSummary(
                 **extraction.model_dump(exclude={"output"}),
-                output_content=extraction.output_content() or "",
+                output_content=await extraction.output_content() or "",
                 extractor=ExtractorSummary(
                     **extractor_configs[str(extraction.extractor_config_id)].model_dump(
                         exclude={"properties"}
@@ -476,7 +476,7 @@ def connect_document_api(app: FastAPI):
 
         return ExtractionSummary(
             **extraction.model_dump(exclude={"output"}),
-            output_content=extraction.output_content() or "",
+            output_content=await extraction.output_content() or "",
             extractor=ExtractorSummary(
                 **extractor_config.model_dump(exclude={"properties"}),
             ),
