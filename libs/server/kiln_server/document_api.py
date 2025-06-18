@@ -86,7 +86,7 @@ class DiscoverServeFileResponse(BaseModel):
 class ExtractionProgress(BaseModel):
     document_count_total: int
     document_count_successful: int
-    current_extractor_config: ExtractorConfig | None
+    extractor_config: ExtractorConfig | None
 
 
 class ExtractorSummary(BaseModel):
@@ -583,7 +583,7 @@ def connect_document_api(app: FastAPI):
         return ExtractionProgress(
             document_count_total=document_count_total,
             document_count_successful=document_count_successful,
-            current_extractor_config=extractor_config,
+            extractor_config=extractor_config,
         )
 
     @app.post("/api/projects/{project_id}/documents/{document_id}/extract")
