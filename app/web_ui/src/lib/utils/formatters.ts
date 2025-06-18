@@ -43,14 +43,21 @@ export function formatDate(dateString: string | undefined): string {
     .replace(",", "")
 }
 
-export function formatSize(byteSize: number): string {
-  if (byteSize < 1024) {
-    return byteSize + " B"
+export function formatSize(byteSize: number | undefined | null): string {
+  if (typeof byteSize !== "number" || isNaN(byteSize) || byteSize < 0) {
+    return "unknown"
   }
-  if (byteSize < 1024 * 1024) {
-    return (byteSize / 1024).toFixed(2) + " KB"
+
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let size = byteSize
+  let idx = 0
+
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024
+    idx += 1
   }
-  return (byteSize / 1024 / 1024).toFixed(2) + " MB"
+
+  return `${idx === 0 ? size : size.toFixed(2)} ${units[idx]}`
 }
 
 export function eval_config_to_ui_name(
