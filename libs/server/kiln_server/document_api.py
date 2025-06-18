@@ -138,9 +138,6 @@ class CreateExtractorConfigRequest(BaseModel):
 
     @model_validator(mode="after")
     def set_default_properties(self):
-        if not isinstance(self.properties, dict):
-            raise ValueError("Properties must be a dictionary")
-
         match self.extractor_type:
             case ExtractorType.GEMINI:
                 self.properties = gemini_properties_with_defaults(self)
