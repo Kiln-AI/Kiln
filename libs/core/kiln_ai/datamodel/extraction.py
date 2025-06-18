@@ -2,6 +2,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Union
 
+import anyio
 from pydantic import (
     BaseModel,
     Field,
@@ -76,7 +77,7 @@ class Extraction(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    def output_content(self) -> str | None:
+    async def output_content(self) -> str | None:
         if not self.output.is_persisted:
             return None
         if not self.path:
@@ -85,8 +86,9 @@ class Extraction(KilnParentedModel):
             )
 
         full_path = self.output.resolve_path(self.path.parent)
+
         try:
-            return full_path.read_text(encoding="utf-8")
+            return await anyio.Path(full_path).read_text(encoding="utf-8")
         except Exception as e:
             logger.error(
                 f"Failed to read extraction output for {full_path}: {e}", exc_info=True
