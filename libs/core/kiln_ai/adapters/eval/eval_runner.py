@@ -206,6 +206,6 @@ class EvalRunner:
             eval_run.save_to_file()
 
             return True
-        except Exception:
-            logger.error(f"Error running eval job for dataset item {job.item.id}")
+        except Exception as e:
+            logger.error(f"Error running eval job for dataset item {job.item.id}: {e}")
             return False
