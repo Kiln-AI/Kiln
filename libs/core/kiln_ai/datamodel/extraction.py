@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Union
 
@@ -17,6 +18,8 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -82,8 +85,13 @@ class Extraction(KilnParentedModel):
             )
 
         full_path = self.output.resolve_path(self.path.parent)
-        with open(full_path, "r") as f:
-            return f.read()
+        try:
+            return full_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.error(
+                f"Failed to read extraction output for {full_path}: {e}", exc_info=True
+            )
+            raise ValueError(f"Failed to read extraction output: {e}")
 
 
 class ExtractorConfig(KilnParentedModel):
