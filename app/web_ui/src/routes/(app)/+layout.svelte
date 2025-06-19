@@ -418,19 +418,35 @@
           href={`/docs/${$ui_state.current_project_id}`}
           class={section == Section.DocumentsMain ? "active" : ""}
         >
-          <!-- From SVG Repo, www.svgrepo.com -->
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
           <svg
-            fill="#000000"
             class="w-6 h-6 mr-2"
-            viewBox="0 0 16 16"
-            id="library-16px"
+            viewBox="0 0 24 24"
+            fill="none"
             xmlns="http://www.w3.org/2000/svg"
           >
             <path
-              id="Path_82"
-              data-name="Path 82"
-              d="M-10,6.5v9a.5.5,0,0,1-.5.5h-7a.5.5,0,0,1-.5-.5v-1a.5.5,0,0,1,.5-.5.5.5,0,0,1,.5.5V15h6V7h-1.5a.5.5,0,0,1-.5-.5.5.5,0,0,1,.5-.5h2A.5.5,0,0,1-10,6.5ZM-12.5,13a.5.5,0,0,0,.5-.5.5.5,0,0,0-.5-.5H-14V11h1.5a.5.5,0,0,0,.5-.5.5.5,0,0,0-.5-.5H-14V9h1.5a.5.5,0,0,0,.5-.5.5.5,0,0,0-.5-.5H-14V3.5a.5.5,0,0,0-.5-.5h-2a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5H-15v8h-6v-.5a.5.5,0,0,0-.5-.5.5.5,0,0,0-.5.5v1a.5.5,0,0,0,.5.5h9Zm-6-3h-7a.5.5,0,0,1-.5-.5V.5a.5.5,0,0,1,.5-.5h7a.5.5,0,0,1,.5.5V5h1.5a.5.5,0,0,1,.5.5.5.5,0,0,1-.5.5H-18V7h1.5a.5.5,0,0,1,.5.5.5.5,0,0,1-.5.5H-18V9h1.5a.5.5,0,0,1,.5.5.5.5,0,0,1-.5.5ZM-25,9h6V1h-6Zm4.5-3h-3a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5h3a.5.5,0,0,0,.5-.5A.5.5,0,0,0-20.5,6Zm0-2h-3a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5h3a.5.5,0,0,0,.5-.5A.5.5,0,0,0-20.5,4Zm0-2h-3a.5.5,0,0,0-.5.5.5.5,0,0,0,.5.5h3a.5.5,0,0,0,.5-.5A.5.5,0,0,0-20.5,2Z"
-              transform="translate(26)"
+              d="M3 10C3 6.22876 3 4.34315 4.17157 3.17157C5.34315 2 7.22876 2 11 2H13C16.7712 2 18.6569 2 19.8284 3.17157C21 4.34315 21 6.22876 21 10V14C21 17.7712 21 19.6569 19.8284 20.8284C18.6569 22 16.7712 22 13 22H11C7.22876 22 5.34315 22 4.17157 20.8284C3 19.6569 3 17.7712 3 14V10Z"
+              stroke="#1C274C"
+              stroke-width="1.5"
+            />
+            <path
+              d="M8 12H16"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M8 8H16"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M8 16H13"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
             />
           </svg>
           Documents</a
@@ -442,7 +458,7 @@
                 class={section == Section.DocumentsLibrary ? "active" : ""}
                 href={`/docs/library/${$ui_state.current_project_id}`}
               >
-                All Documents
+                Library
               </a>
             </li>
             <li class="menu-nested-sm">
