@@ -466,7 +466,7 @@
                 class={section == Section.DocumentsExtractors ? "active" : ""}
                 href={`/docs/extractors/${$ui_state.current_project_id}`}
               >
-                Document Extractors
+                Extractors
               </a>
             </li>
           </ul>
