@@ -15,28 +15,45 @@
   function row_clicked() {
     goto(`/docs/extractors/${project_id}/${extractor_config.id}/extractor`)
   }
+
+  let row_hovered = false
+
+  function rows(): string[] {
+    let model: string = extractor_config.extractor_type
+    if (
+      extractor_config.properties &&
+      extractor_config.properties["model_name"]
+    ) {
+      model = extractor_config.properties["model_name"] as string
+    }
+    return [
+      extractor_config.name,
+      model,
+      mime_type_to_string(extractor_config.output_format),
+      formatDate(extractor_config.created_at),
+    ]
+  }
 </script>
 
-<tr
-  class="hover cursor-pointer"
-  on:click={() => {
-    row_clicked()
-  }}
->
-  <td>
-    {extractor_config.name}
-  </td>
-  <td>
-    {#if extractor_config.properties && extractor_config.properties["model_name"]}
-      {extractor_config.properties["model_name"]}
-    {:else}
-      {extractor_config.extractor_type}
-    {/if}
-  </td>
-  <td>{mime_type_to_string(extractor_config.output_format)}</td>
-  <td>{formatDate(extractor_config.created_at)}</td>
-  <td class="md:w-[550px]">
-    <div class="flex flex-row gap-8 place-items-center">
+<tr class={row_hovered ? "hover" : ""}>
+  {#each rows() as row}
+    <td
+      class="cursor-pointer"
+      on:mouseenter={() => {
+        row_hovered = true
+      }}
+      on:mouseleave={() => {
+        row_hovered = false
+      }}
+      on:click={() => {
+        row_clicked()
+      }}
+    >
+      {row}
+    </td>
+  {/each}
+  <td class="no-hover cursor-default">
+    <div class="flex flex-row gap-8 place-items-center min-w-[350px]">
       <RunExtractorControl {extractor_config} {project_id} />
       <div class="flex flex-col gap-1">
         {#if extractor_config.is_archived}
