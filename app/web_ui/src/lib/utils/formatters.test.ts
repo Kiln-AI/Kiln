@@ -5,20 +5,21 @@ describe("formatters", () => {
   describe("formatSize", () => {
     const testCases = [
       { a: 0, expected: "0 B" },
-      { a: 1024, expected: "1.00 KB" },
-      { a: 1024 * 1024, expected: "1.00 MB" },
-      { a: 1024 * 1024 * 1024, expected: "1.00 GB" },
-      { a: 1024 * 1024 * 1024 * 1024, expected: "1.00 TB" },
+      { a: 1024, expected: "1 KB" },
+      { a: 1024 * 1024, expected: "1 MB" },
+      { a: 1024 * 1024 * 1024, expected: "1 GB" },
+      { a: 1024 * 1024 * 1024 * 1024, expected: "1 TB" },
       { a: 3, expected: "3 B" },
-      { a: 3.5 * 1024, expected: "3.50 KB" },
-      { a: 3.5 * 1024 * 1024, expected: "3.50 MB" },
-      { a: 3.5 * 1024 * 1024 * 1024, expected: "3.50 GB" },
-      { a: 3.5 * 1024 * 1024 * 1024 * 1024, expected: "3.50 TB" },
+      { a: 3.5 * 1024, expected: "3.5 KB" },
+      { a: 3.5 * 1024 * 1024, expected: "3.5 MB" },
+      { a: 3.5 * 1024 * 1024 * 1024, expected: "3.5 GB" },
+      { a: 3.5 * 1024 * 1024 * 1024 * 1024, expected: "3.5 TB" },
       { a: 15, expected: "15 B" },
-      { a: 15.5 * 1024, expected: "15.50 KB" },
-      { a: 15.5 * 1024 * 1024, expected: "15.50 MB" },
-      { a: 15.5 * 1024 * 1024 * 1024, expected: "15.50 GB" },
-      { a: 15.5 * 1024 * 1024 * 1024 * 1024, expected: "15.50 TB" },
+      { a: 15.5 * 1024, expected: "15.5 KB" },
+      { a: 15.5 * 1024 * 1024, expected: "15.5 MB" },
+      { a: 15.5 * 1024 * 1024 * 1024, expected: "15.5 GB" },
+      { a: 15.5 * 1024 * 1024 * 1024 * 1024, expected: "15.5 TB" },
+      { a: 15 * 1024 * 1024 * 1024 * 1024, expected: "15 TB" },
     ]
 
     testCases.forEach(({ a, expected }) => {
