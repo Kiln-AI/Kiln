@@ -8,6 +8,7 @@ from pydantic import (
     Field,
     SerializationInfo,
     field_serializer,
+    field_validator,
     model_validator,
 )
 from typing_extensions import Self
@@ -121,16 +122,54 @@ class ExtractorConfig(KilnParentedModel):
         description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
     )
 
-    @model_validator(mode="after")
-    def validate_properties(self) -> Self:
-        if self.extractor_type == ExtractorType.GEMINI:
-            validate_model_name(self.properties.get("model_name"))
-            validate_prompt(self.properties.get("prompt_document"), "prompt_document")
-            validate_prompt(self.properties.get("prompt_video"), "prompt_video")
-            validate_prompt(self.properties.get("prompt_audio"), "prompt_audio")
-            validate_prompt(self.properties.get("prompt_image"), "prompt_image")
-            return self
-        raise ValueError(f"Invalid extractor type: {self.extractor_type}")
+    @field_validator("properties")
+    @classmethod
+    def validate_properties(cls, properties: dict[str, Any], info) -> dict[str, Any]:
+        extractor_type = info.data.get("extractor_type")
+        output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
+
+        if extractor_type != ExtractorType.GEMINI:
+            raise ValueError(f"Invalid extractor type: {extractor_type}")
+
+        def get_property(key: str, default: str) -> str:
+            value = properties.get(key)
+            if value is None or value == "":
+                return default
+            if not isinstance(value, str):
+                raise ValueError(f"Prompt for {key} must be a string")
+            return value
+
+        model_name = get_property("model_name", default="")
+        if not model_name:
+            raise ValueError("model_name must be a non-empty string")
+
+        return {
+            "model_name": model_name,
+            "prompt_document": get_property(
+                "prompt_document",
+                default=ExtractionPromptBuilder.prompt_for_kind(
+                    kind=Kind.DOCUMENT, output_format=output_format
+                ),
+            ),
+            "prompt_image": get_property(
+                "prompt_image",
+                default=ExtractionPromptBuilder.prompt_for_kind(
+                    kind=Kind.IMAGE, output_format=output_format
+                ),
+            ),
+            "prompt_video": get_property(
+                "prompt_video",
+                default=ExtractionPromptBuilder.prompt_for_kind(
+                    kind=Kind.VIDEO, output_format=output_format
+                ),
+            ),
+            "prompt_audio": get_property(
+                "prompt_audio",
+                default=ExtractionPromptBuilder.prompt_for_kind(
+                    kind=Kind.AUDIO, output_format=output_format
+                ),
+            ),
+        }
 
     def model_name(self) -> str | None:
         model_name = self.properties.get("model_name")
@@ -212,6 +251,7 @@ class Document(
 
     # TODO: move {mime_type:kind} mapping out of GeminiExtractor and into here
     #   - will also need to have models specify which mimetypes they support
+    # thoughts?
     kind: Kind = Field(
         description="The kind of document. The kind is a broad family of filetypes that can be handled in a similar way"
     )
@@ -242,3 +282,59 @@ class Document(
 
     def extractions(self, readonly: bool = False) -> list[Extraction]:
         return super().extractions(readonly=readonly)  # type: ignore
+
+
+class ExtractionPromptBuilder:
+    @classmethod
+    def prompt_document(cls, output_format: OutputFormat) -> str:
+        return f"""Transcribe the document into {output_format.value}.
+
+If the document contains images and figures, describe them in the output. For example, if the
+document contains an image, describe it in the output. If the document contains a table, format it 
+appropriately and add a sentence describing it as a whole.
+
+Format the output as valid {output_format.value}.
+
+Do NOT include any prefatory text such as 'Here is the transcription of the document:'.
+"""
+
+    @classmethod
+    def prompt_image(cls, output_format: OutputFormat) -> str:
+        return f"""Describe the image in {output_format.value}.
+
+If the image contains text, transcribe it into {output_format.value}.
+
+Do NOT include any prefatory text such as 'Here is the description of the image:'.
+"""
+
+    @classmethod
+    def prompt_video(cls, output_format: OutputFormat) -> str:
+        return f"""Describe what happens in the video in {output_format.value}.
+
+Take into account the audio as well as the visual content. Your transcription must chronologically
+describe the events in the video and transcribe any speech.
+
+Do NOT include any prefatory text such as 'Here is the transcription of the video:'.
+"""
+
+    @classmethod
+    def prompt_audio(cls, output_format: OutputFormat) -> str:
+        return f"""Transcribe the audio into {output_format.value}.
+If the audio contains speech, transcribe it into {output_format.value}.
+
+Do NOT include any prefatory text such as 'Here is the transcription of the audio:'.
+"""
+
+    @classmethod
+    def prompt_for_kind(cls, kind: Kind, output_format: OutputFormat) -> str:
+        match kind:
+            case Kind.DOCUMENT:
+                return cls.prompt_document(output_format)
+            case Kind.IMAGE:
+                return cls.prompt_image(output_format)
+            case Kind.VIDEO:
+                return cls.prompt_video(output_format)
+            case Kind.AUDIO:
+                return cls.prompt_audio(output_format)
+            case _:
+                raise ValueError(f"Cannot build prompt for unknown kind: '{kind}'")

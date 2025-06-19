@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import patch
 
 import pytest
 
@@ -6,6 +7,7 @@ from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
+    ExtractionPromptBuilder,
     ExtractionSource,
     ExtractorConfig,
     ExtractorType,
@@ -68,14 +70,14 @@ def test_extractor_config_valid(valid_extractor_config):
 
 
 def test_extractor_config_empty_properties(valid_extractor_config):
-    with pytest.raises(ValueError, match="model_name must be a string"):
+    with pytest.raises(ValueError, match="model_name must be a non-empty string"):
         valid_extractor_config.properties = {}
 
 
 def test_extractor_config_missing_model_name(
     valid_extractor_config, valid_extractor_config_data
 ):
-    with pytest.raises(ValueError, match="model_name must be a string"):
+    with pytest.raises(ValueError, match="model_name must be a non-empty string"):
         valid_extractor_config.properties = {
             "prompt_document": valid_extractor_config_data["properties"][
                 "prompt_document"
@@ -89,7 +91,7 @@ def test_extractor_config_missing_model_name(
 def test_extractor_config_empty_model_name(
     valid_extractor_config, valid_extractor_config_data
 ):
-    with pytest.raises(ValueError, match="model_name cannot be empty"):
+    with pytest.raises(ValueError, match="model_name must be a non-empty string"):
         valid_extractor_config.properties = {
             "prompt_document": valid_extractor_config_data["properties"][
                 "prompt_document"
@@ -102,8 +104,14 @@ def test_extractor_config_empty_model_name(
 
 
 def test_extractor_config_missing_prompts(valid_extractor_config):
-    with pytest.raises(ValueError, match="prompt_document must be a string"):
-        valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
+    # should not raise an error - prompts will be set to defaults
+    valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
+
+    #  check each prompt type is set to a default (string, non-empty)
+    assert valid_extractor_config.properties["prompt_document"]
+    assert valid_extractor_config.properties["prompt_audio"]
+    assert valid_extractor_config.properties["prompt_video"]
+    assert valid_extractor_config.properties["prompt_image"]
 
 
 def test_extractor_config_invalid_json(
@@ -137,14 +145,16 @@ def test_extractor_config_invalid_prompt(valid_extractor_config):
 
 
 def test_extractor_config_missing_single_prompt(valid_extractor_config):
-    with pytest.raises(ValueError, match="prompt_image must be a string"):
-        valid_extractor_config.properties = {
-            "prompt_document": "Transcribe the document.",
-            "prompt_audio": "Transcribe the audio.",
-            "prompt_video": "Transcribe the video.",
-            # missing image
-            "model_name": "gemini-2.0-flash",
-        }
+    valid_extractor_config.properties = {
+        "prompt_document": "Transcribe the document.",
+        "prompt_audio": "Transcribe the audio.",
+        "prompt_video": "Transcribe the video.",
+        # missing image
+        "model_name": "gemini-2.0-flash",
+    }
+
+    # check prompt_image is set to a default (string, non-empty)
+    assert valid_extractor_config.properties["prompt_image"]
 
 
 def test_extractor_config_invalid_config_type(valid_extractor_config):
@@ -402,3 +412,38 @@ def test_invalid_tags(valid_document):
         ValueError, match="Tags cannot contain spaces. Try underscores."
     ):
         valid_document.tags = ["test", "document new"]
+
+
+@pytest.mark.parametrize(
+    "kind,output_format",
+    [
+        (Kind.AUDIO, OutputFormat.MARKDOWN),
+        (Kind.IMAGE, OutputFormat.MARKDOWN),
+        (Kind.DOCUMENT, OutputFormat.MARKDOWN),
+        (Kind.VIDEO, OutputFormat.TEXT),
+    ],
+)
+def test_extraction_prompt_builder_formats(kind, output_format):
+    prompt_method = f"prompt_{kind.value.lower()}"
+    with patch.object(
+        ExtractionPromptBuilder,
+        prompt_method,
+        wraps=getattr(ExtractionPromptBuilder, prompt_method),
+    ) as mock_prompt:
+        prompt = ExtractionPromptBuilder.prompt_for_kind(kind, output_format)
+        mock_prompt.assert_called_with(output_format)
+
+        # Simple format check based on output_format
+        if output_format == OutputFormat.MARKDOWN:
+            assert "text/markdown" in prompt
+            assert "text/plain" not in prompt
+        else:
+            assert "text/plain" in prompt
+            assert "text/markdown" not in prompt
+
+
+def test_extraction_prompt_builder_invalid_kind():
+    with pytest.raises(
+        ValueError, match="Cannot build prompt for unknown kind: 'invalid-kind'"
+    ):
+        ExtractionPromptBuilder.prompt_for_kind("invalid-kind", OutputFormat.TEXT)

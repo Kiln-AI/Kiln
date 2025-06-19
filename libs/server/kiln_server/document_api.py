@@ -11,13 +11,9 @@ from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from kiln_ai.adapters.extractors.extraction_prompt_builder import (
-    ExtractionPromptBuilder,
-)
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_FIELD,
     NAME_REGEX,
     KilnAttachmentModel,
     string_to_valid_name,
@@ -109,7 +105,16 @@ class ExtractionSummary(BaseModel):
 
 
 class CreateExtractorConfigRequest(BaseModel):
-    name: str | None = NAME_FIELD
+    # FIXME: should use the centralized field for name, but the openapi codegen
+    # does not infer correctly that the field is optional when using the centralized
+    # field for name
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
     description: str | None = Field(
         description="The description of the extractor config",
         default=None,
@@ -135,56 +140,6 @@ class CreateExtractorConfigRequest(BaseModel):
         else:
             values["name"] = string_to_valid_name(values["name"])
         return values
-
-    @model_validator(mode="after")
-    def set_default_properties(self):
-        match self.extractor_type:
-            case ExtractorType.GEMINI:
-                self.properties = gemini_properties_with_defaults(self)
-            case _:
-                pass
-
-        return self
-
-
-def gemini_properties_with_defaults(
-    request: CreateExtractorConfigRequest,
-) -> dict[str, str | int | float | bool | dict[str, str] | None]:
-    def with_default(key: str, default: str) -> str:
-        value = request.properties.get(key)
-        if value is None or value == "":
-            return default
-        if not isinstance(value, str):
-            raise ValueError(f"Prompt for {key} must be a string")
-        return value
-
-    return {
-        "model_name": with_default("model_name", ""),
-        "prompt_document": with_default(
-            "prompt_document",
-            ExtractionPromptBuilder.prompt_for_kind(
-                kind=Kind.DOCUMENT, output_format=request.output_format
-            ),
-        ),
-        "prompt_image": with_default(
-            "prompt_image",
-            ExtractionPromptBuilder.prompt_for_kind(
-                kind=Kind.IMAGE, output_format=request.output_format
-            ),
-        ),
-        "prompt_video": with_default(
-            "prompt_video",
-            ExtractionPromptBuilder.prompt_for_kind(
-                kind=Kind.VIDEO, output_format=request.output_format
-            ),
-        ),
-        "prompt_audio": with_default(
-            "prompt_audio",
-            ExtractionPromptBuilder.prompt_for_kind(
-                kind=Kind.AUDIO, output_format=request.output_format
-            ),
-        ),
-    }
 
 
 class PatchExtractorConfigRequest(BaseModel):
