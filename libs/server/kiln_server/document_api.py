@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Annotated, Dict, Optional
+from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
