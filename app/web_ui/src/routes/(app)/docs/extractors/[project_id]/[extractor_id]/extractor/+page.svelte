@@ -135,7 +135,7 @@
           />
         </div>
       {/if}
-      <div class="flex flex-col md:flex-row gap-8">
+      <div class="flex flex-col md:flex-row gap-16">
         <div class="grid grid-cols-1 gap-4">
           <div>
             <div class="text-xl font-bold">Extraction Prompts</div>
