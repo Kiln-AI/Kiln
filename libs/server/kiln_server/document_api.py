@@ -134,14 +134,6 @@ class CreateExtractorConfigRequest(BaseModel):
         default_factory=dict,
     )
 
-    @model_validator(mode="before")
-    def set_default_name(cls, values: dict) -> dict:
-        if values.get("name") is None:
-            values["name"] = generate_memorable_name()
-        else:
-            values["name"] = string_to_valid_name(values["name"])
-        return values
-
 
 class PatchExtractorConfigRequest(BaseModel):
     # FIXME: should use the centralized field for name, but the openapi codegen
