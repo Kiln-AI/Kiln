@@ -7,6 +7,8 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
   import { formatDate } from "$lib/utils/formatters"
+  import Output from "../../../../../run/output.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: extractor_id = $page.params.extractor_id
@@ -90,14 +92,24 @@
 
     await get_extractor_config()
   }
+
+  function prompts(): Record<string, string | null> {
+    return {
+      Document: "" + (extractor_config?.properties?.prompt_document || "N/A"),
+      Image: "" + (extractor_config?.properties?.prompt_image || "N/A"),
+      Video: "" + (extractor_config?.properties?.prompt_video || "N/A"),
+      Audio: "" + (extractor_config?.properties?.prompt_audio || "N/A"),
+    }
+  }
 </script>
 
 <AppPage
   title="Document Extractor"
-  subtitle={"Extractor: " + (extractor_config?.name || "N/A")}
+  subtitle={loading ? "" : "Name: " + (extractor_config?.name || "Unknown")}
   action_buttons={[
     {
       label: extractor_config?.is_archived ? "Unarchive" : "Archive",
+      primary: extractor_config?.is_archived,
       handler: () => {
         if (extractor_config?.is_archived) {
           unarchive_extractor_config()
@@ -115,68 +127,64 @@
   {:else}
     <div>
       {#if extractor_config?.is_archived}
-        <div class="alert alert-warning mb-4">
-          This extractor is archived. You may unarchive it to use it again.
+        <div class="border-2 border-warning rounded-lg p-4 pt-2 mb-6">
+          <Warning
+            warning_message="This extractor is archived. You may unarchive it to use it again."
+            large_icon={true}
+            warning_color="warning"
+          />
         </div>
       {/if}
-      <div>
-        <PropertyList
-          properties={[
-            { name: "ID", value: extractor_config?.id || "N/A" },
-            { name: "Name", value: extractor_config?.name || "N/A" },
-            {
-              name: "Description",
-              value: extractor_config?.description || "N/A",
-            },
-            { name: "Type", value: extractor_config?.extractor_type || "N/A" },
-            {
-              name: "Output Format",
-              value: extractor_config?.output_format || "N/A",
-            },
-            {
-              name: "Created At",
-              value: formatDate(extractor_config?.created_at),
-            },
-            {
-              name: "Created By",
-              value: extractor_config?.created_by || "N/A",
-            },
-          ]}
-          title="Extractor Configuration"
-        />
-      </div>
-      <div class="mt-8 grid grid-cols-1 gap-4">
-        <div class="text-xl font-bold">Prompt Configuration</div>
-        <div class="text-sm text-gray-500">
-          The prompts used to extract content from different document types.
-        </div>
-        <div class="flex flex-col gap-2">
-          <div class="font-medium">Document:</div>
-          <div class="text-sm text-gray-500">
-            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
-                ?.properties?.prompt_document || "N/A"}</pre>
+      <div class="flex flex-col md:flex-row gap-8">
+        <div class="grid grid-cols-1 gap-4">
+          <div>
+            <div class="text-xl font-bold">Extraction Prompts</div>
+            <div class="text-sm text-gray-500 mt-1">
+              These prompts are used by the model to extract content from each
+              document type.
+            </div>
           </div>
+          {#each Object.entries(prompts()) as [name, prompt]}
+            <div class="flex flex-col gap-2">
+              <div class="font-medium">{name} Prompt</div>
+              <Output raw_output={prompt || ""} />
+            </div>
+          {/each}
         </div>
-        <div>
-          <div class="font-medium">Image:</div>
-          <div class="text-sm text-gray-500">
-            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
-                ?.properties?.prompt_image || "N/A"}</pre>
-          </div>
-        </div>
-        <div>
-          <div class="font-medium">Video:</div>
-          <div class="text-sm text-gray-500">
-            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
-                ?.properties?.prompt_video || "N/A"}</pre>
-          </div>
-        </div>
-        <div>
-          <div class="font-medium">Audio:</div>
-          <div class="text-sm text-gray-500">
-            <pre class="bg-gray-100 border rounded-lg p-2">{extractor_config
-                ?.properties?.prompt_audio || "N/A"}</pre>
-          </div>
+        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
+          <PropertyList
+            title="Parameters"
+            properties={[
+              { name: "ID", value: extractor_config?.id || "N/A" },
+              { name: "Name", value: extractor_config?.name || "N/A" },
+
+              {
+                name: "Type",
+                value: extractor_config?.extractor_type || "N/A",
+              },
+              {
+                name: "Model",
+                value:
+                  "" + (extractor_config?.properties?.model_name || "Unknown"),
+              },
+              {
+                name: "Output Format",
+                value: extractor_config?.output_format || "N/A",
+              },
+              {
+                name: "Created At",
+                value: formatDate(extractor_config?.created_at),
+              },
+              {
+                name: "Created By",
+                value: extractor_config?.created_by || "N/A",
+              },
+              {
+                name: "Description",
+                value: extractor_config?.description || "N/A",
+              },
+            ]}
+          />
         </div>
       </div>
     </div>
