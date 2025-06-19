@@ -120,13 +120,15 @@
   sub_subtitle="Read the docs"
   sub_subtitle_link="#"
   no_y_padding
-  action_buttons={[
-    {
-      label: "Add Extractor",
-      href: `/docs/extractors/${project_id}/create_extractor`,
-      primary: true,
-    },
-  ]}
+  action_buttons={extractor_configs && extractor_configs.length == 0
+    ? []
+    : [
+        {
+          label: "Add Extractor",
+          href: `/docs/extractors/${project_id}/create_extractor`,
+          primary: true,
+        },
+      ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
