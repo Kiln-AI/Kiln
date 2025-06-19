@@ -1,3 +1,4 @@
+import re
 import uuid
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ from kiln_ai.datamodel.extraction import (
     FileInfo,
     Kind,
     OutputFormat,
+    get_kind_from_mime_type,
     validate_model_name,
     validate_prompt,
 )
@@ -447,3 +449,104 @@ def test_extraction_prompt_builder_invalid_kind():
         ValueError, match="Cannot build prompt for unknown kind: 'invalid-kind'"
     ):
         ExtractionPromptBuilder.prompt_for_kind("invalid-kind", OutputFormat.TEXT)
+
+
+@pytest.mark.parametrize(
+    "filename, mime_type",
+    [
+        ("file.pdf", "application/pdf"),
+        ("file.txt", "text/plain"),
+        ("file.md", "text/markdown"),
+        ("file.html", "text/html"),
+        ("file.csv", "text/csv"),
+        ("file.png", "image/png"),
+        ("file.jpeg", "image/jpeg"),
+        ("file.mp4", "video/mp4"),
+        ("file.mov", "video/quicktime"),
+        ("file.wav", "audio/wav"),
+        ("file.mp3", "audio/mpeg"),
+        ("file.ogg", "audio/ogg"),
+    ],
+)
+def test_document_valid_mime_type(
+    mock_project, mock_attachment_factory, filename, mime_type
+):
+    document = Document(
+        name="Test Document",
+        description="Test description",
+        kind=Kind.DOCUMENT,
+        original_file=FileInfo(
+            filename=filename,
+            size=100,
+            mime_type=mime_type,
+            attachment=mock_attachment_factory(),
+        ),
+        parent=mock_project,
+    )
+    assert document.original_file.mime_type == mime_type
+
+
+@pytest.mark.parametrize(
+    "filename, mime_type",
+    [
+        # these are a handful of mime types not currently supported by the extractors
+        (
+            "file.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ),
+        (
+            "file.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        (
+            "file.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+        (
+            "file.svg",
+            "image/svg+xml",
+        ),
+        (
+            "file.avi",
+            "video/x-msvideo",
+        ),
+    ],
+)
+def test_document_invalid_mime_type(
+    mock_project, mock_attachment_factory, filename, mime_type
+):
+    with pytest.raises(
+        ValueError, match=f"MIME type is not supported: {re.escape(mime_type)}"
+    ):
+        Document(
+            name="Test Document",
+            description="Test description",
+            kind=Kind.DOCUMENT,
+            original_file=FileInfo(
+                filename=filename,
+                size=100,
+                mime_type=mime_type,
+                attachment=mock_attachment_factory(),
+            ),
+            parent=mock_project,
+        )
+
+
+@pytest.mark.parametrize(
+    "mime_type, expected_kind",
+    [
+        ("application/pdf", Kind.DOCUMENT),
+        ("text/plain", Kind.DOCUMENT),
+        ("text/markdown", Kind.DOCUMENT),
+        ("text/html", Kind.DOCUMENT),
+        ("image/png", Kind.IMAGE),
+        ("image/jpeg", Kind.IMAGE),
+        ("video/mp4", Kind.VIDEO),
+        ("video/quicktime", Kind.VIDEO),
+        ("audio/mpeg", Kind.AUDIO),
+        ("audio/wav", Kind.AUDIO),
+        ("audio/ogg", Kind.AUDIO),
+    ],
+)
+def test_get_kind_from_mime_type(mime_type, expected_kind):
+    assert get_kind_from_mime_type(mime_type) == expected_kind

@@ -24,9 +24,10 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
     ExtractorType,
     FileInfo,
-    Kind,
     OutputFormat,
+    get_kind_from_mime_type,
 )
+from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
 
@@ -203,20 +204,29 @@ def connect_document_api(app: FastAPI):
     ) -> Document:
         file_data = await file.read()
         project = project_from_id(project_id)
-        content_type = file.content_type or ""
-        if content_type.startswith("image/"):
-            kind = Kind.IMAGE
-        elif content_type.startswith("video/"):
-            kind = Kind.VIDEO
-        elif content_type.startswith("audio/"):
-            kind = Kind.AUDIO
-        else:
-            kind = Kind.DOCUMENT
 
         if not file.filename:
             raise HTTPException(
                 status_code=422,
                 detail="File must have a filename",
+            )
+
+        # we cannot use content_type from UploadFile because it is not always set correctly
+        # depending on the browser and the file type (for example, audio/ogg sent via Safari)
+        mime_type = guess_mime_type(file.filename)
+
+        # application/octet-stream is a catch-all for unknown mime types
+        if not mime_type or mime_type == "application/octet-stream":
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unable to determine mime type for {file.filename}. Ensure the file name has a valid extension.",
+            )
+
+        kind = get_kind_from_mime_type(mime_type)
+        if not kind:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported mime type: {mime_type} for file {file.filename}",
             )
 
         document = Document(
@@ -225,9 +235,9 @@ def connect_document_api(app: FastAPI):
             description=description,
             kind=kind,
             original_file=FileInfo(
-                filename=file.filename or "",
-                mime_type=content_type,
-                attachment=KilnAttachmentModel.from_data(file_data, content_type),
+                filename=file.filename,
+                mime_type=mime_type,
+                attachment=KilnAttachmentModel.from_data(file_data, mime_type),
                 size=len(file_data),
             ),
         )
