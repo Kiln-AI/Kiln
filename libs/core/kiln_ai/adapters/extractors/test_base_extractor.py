@@ -99,10 +99,6 @@ async def test_extract_passthrough(mock_gemini_properties):
             "pathlib.Path.read_text",
             return_value=b"test content",
         ),
-        patch(
-            "mimetypes.guess_type",
-            return_value=("text/plain", None),
-        ),
     ):
         result = await extractor.extract(path="test.txt", mime_type="text/plain")
 
@@ -142,12 +138,8 @@ async def test_extract_passthrough_output_format(mock_gemini_properties, output_
             "pathlib.Path.read_text",
             return_value="test content",
         ),
-        patch(
-            "mimetypes.guess_type",
-            return_value=("text/plain", None),
-        ),
     ):
-        result = await extractor.extract(path="test.txt")
+        result = await extractor.extract(path="test.txt", mime_type="text/plain")
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -183,13 +175,9 @@ async def test_extract_non_passthrough(
                 content_format=output_format,
             ),
         ) as mock_extract,
-        patch(
-            "mimetypes.guess_type",
-            return_value=(mime_type, None),
-        ),
     ):
         # first we call the base class extract method
-        result = await mock_extractor.extract(path=path)
+        result = await mock_extractor.extract(path=path, mime_type=mime_type)
 
         # then we call the subclass _extract method and add validated mime_type
         mock_extract.assert_called_once_with(path=Path(path), mime_type=mime_type)
@@ -216,21 +204,3 @@ async def test_extract_failure_from_concrete_extractor(mock_extractor):
     ):
         with pytest.raises(ValueError, match="error from concrete extractor"):
             await mock_extractor.extract(path="test.txt", mime_type="text/plain")
-
-
-async def test_extract_failure_from_mime_type_guess(mock_gemini_properties):
-    extractor = MockBaseExtractor(
-        ExtractorConfig(
-            name="mock",
-            extractor_type=ExtractorType.GEMINI,
-            properties=mock_gemini_properties,
-        )
-    )
-    with patch(
-        "mimetypes.guess_type",
-        return_value=(None, None),
-    ):
-        with pytest.raises(
-            ValueError, match="Error extracting .*: Unable to guess file mime type"
-        ):
-            await extractor.extract(path="test-xyz")
