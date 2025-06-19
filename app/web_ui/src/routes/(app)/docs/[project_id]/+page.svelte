@@ -25,7 +25,7 @@
 
 <AppPage
   title="Documents"
-  subtitle="Add knowledge to your project with Documents"
+  subtitle="Add knowledge to your project with documents"
 >
   <div class="flex flex-col gap-4 mt-16">
     {#each sections as section}
