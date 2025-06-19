@@ -469,15 +469,17 @@
   title="Document Library"
   subtitle="Add or Browse Documents"
   no_y_padding
-  action_buttons={[
-    {
-      label: "Add Document",
-      handler: () => {
-        upload_file_dialog?.show()
-      },
-      primary: true,
-    },
-  ]}
+  action_buttons={documents && documents.length == 0
+    ? []
+    : [
+        {
+          label: "Add Document",
+          handler: () => {
+            upload_file_dialog?.show()
+          },
+          primary: true,
+        },
+      ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
