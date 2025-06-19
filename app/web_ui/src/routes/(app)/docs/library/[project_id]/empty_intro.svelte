@@ -49,8 +49,6 @@
       To get started, generate some synthetic files or add files manually
     </div>
 
-    <button class="btn btn-primary" on:click={action}
-      >Upload your first file</button
-    >
+    <button class="btn btn-primary" on:click={action}>Add Document</button>
   </div>
 </div>

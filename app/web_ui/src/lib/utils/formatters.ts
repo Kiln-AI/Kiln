@@ -57,7 +57,12 @@ export function formatSize(byteSize: number | undefined | null): string {
     idx += 1
   }
 
-  return `${idx === 0 ? size : size.toFixed(2)} ${units[idx]}`
+  // Remove trailing .0 from the size
+  const formattedSize = idx === 0 ? size.toString() : size.toFixed(1)
+  const displaySize = formattedSize.endsWith(".0")
+    ? formattedSize.slice(0, -2)
+    : formattedSize
+  return `${displaySize} ${units[idx]}`
 }
 
 export function eval_config_to_ui_name(

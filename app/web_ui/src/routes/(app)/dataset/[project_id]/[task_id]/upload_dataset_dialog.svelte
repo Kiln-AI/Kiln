@@ -73,7 +73,7 @@
 
 <Dialog
   bind:this={dialog}
-  title="Upload CSV to Dataset"
+  title="Add CSV to Dataset"
   action_buttons={[
     { label: "Cancel", isCancel: true, action: () => handleCancel() },
     {
@@ -88,8 +88,8 @@
     <div class="space-y-2">
       <div>
         <p>
-          Upload a CSV to add each row to your dataset. The CSV must have a
-          header row (<a
+          Add each row from a CSV to your dataset. The CSV must have a header
+          row (<a
             href="https://docs.getkiln.ai/docs/organizing-datasets"
             target="_blank"
             class="link">see docs</a
