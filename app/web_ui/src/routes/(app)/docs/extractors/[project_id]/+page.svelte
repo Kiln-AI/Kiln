@@ -116,9 +116,7 @@
 
 <AppPage
   title="Document Extractors"
-  subtitle="Manage your document extractors"
-  sub_subtitle="Read the docs"
-  sub_subtitle_link="#"
+  subtitle="Extract data from your documents"
   no_y_padding
   action_buttons={extractor_configs && extractor_configs.length == 0
     ? []
