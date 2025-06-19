@@ -117,7 +117,7 @@
 <AppPage
   title="Document Extractors"
   subtitle="Extract data from your documents"
-  no_y_padding
+  no_y_padding={!!(extractor_configs && extractor_configs.length == 0)}
   action_buttons={extractor_configs && extractor_configs.length == 0
     ? []
     : [
@@ -142,10 +142,11 @@
         <table class="table">
           <thead>
             <tr>
-              <th></th>
-              <th>Type</th>
+              <th>Name</th>
+              <th>Extraction Model</th>
+              <th>Output Format</th>
+              <th>Created At</th>
               <th>Status</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>

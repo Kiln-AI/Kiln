@@ -121,7 +121,8 @@
     class="btn {btn_size === 'mid'
       ? 'btn-mid'
       : ''} whitespace-nowrap {button_state?.isPrimary ? 'btn-primary' : ''}"
-    on:click={() => {
+    on:click={(event) => {
+      event.stopPropagation()
       button_state?.action()
     }}
     {disabled}

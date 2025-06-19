@@ -99,3 +99,27 @@ export function rating_name(rating_type: string): string {
       return rating_type
   }
 }
+
+export function mime_type_to_string(mime_type: string): string {
+  if (mime_type === "application/pdf") {
+    return "PDF"
+  } else if (mime_type === "text/csv") {
+    return "CSV"
+  } else if (mime_type === "text/markdown") {
+    return "Markdown"
+  } else if (mime_type === "text/html") {
+    return "HTML"
+  } else if (mime_type === "text/plain") {
+    return "Text"
+  } else if (mime_type.startsWith("image/")) {
+    return `Image (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("text/")) {
+    return `Text (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("video/")) {
+    return `Video (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("audio/")) {
+    return `Audio (${mime_type.split("/")[1]})`
+  } else {
+    return mime_type
+  }
+}
