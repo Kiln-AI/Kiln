@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Union
 
@@ -7,6 +8,7 @@ from pydantic import (
     BaseModel,
     Field,
     SerializationInfo,
+    ValidationInfo,
     field_serializer,
     field_validator,
     model_validator,
@@ -41,6 +43,31 @@ class OutputFormat(str, Enum):
 
 class ExtractorType(str, Enum):
     GEMINI = "gemini"
+
+
+SUPPORTED_MIME_TYPES = {
+    Kind.DOCUMENT: {
+        "application/pdf",
+        "text/plain",
+        "text/markdown",
+        "text/html",
+        "text/md",
+        "text/csv",
+    },
+    Kind.IMAGE: {
+        "image/png",
+        "image/jpeg",
+    },
+    Kind.VIDEO: {
+        "video/mp4",
+        "video/quicktime",
+    },
+    Kind.AUDIO: {
+        "audio/wav",
+        "audio/mpeg",
+        "audio/ogg",
+    },
+}
 
 
 def validate_prompt(prompt: Any, name: str):
@@ -124,7 +151,9 @@ class ExtractorConfig(KilnParentedModel):
 
     @field_validator("properties")
     @classmethod
-    def validate_properties(cls, properties: dict[str, Any], info) -> dict[str, Any]:
+    def validate_properties(
+        cls, properties: dict[str, Any], info: ValidationInfo
+    ) -> dict[str, Any]:
         extractor_type = info.data.get("extractor_type")
         output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
 
@@ -239,6 +268,16 @@ class FileInfo(BaseModel):
         context["filename_prefix"] = "attachment"
         return attachment.model_dump(mode="json", context=context)
 
+    @field_validator("mime_type")
+    @classmethod
+    def validate_mime_type(cls, mime_type: str, info: ValidationInfo) -> str:
+        filename = info.data.get("filename") or ""
+
+        for mime_types in SUPPORTED_MIME_TYPES.values():
+            if mime_type in mime_types:
+                return mime_type
+        raise ValueError(f"MIME type is not supported: {mime_type} (for {filename})")
+
 
 class Document(
     KilnParentedModel, KilnParentModel, parent_of={"extractions": Extraction}
@@ -249,9 +288,6 @@ class Document(
 
     original_file: FileInfo = Field(description="The original file")
 
-    # TODO: move {mime_type:kind} mapping out of GeminiExtractor and into here
-    #   - will also need to have models specify which mimetypes they support
-    # thoughts?
     kind: Kind = Field(
         description="The kind of document. The kind is a broad family of filetypes that can be handled in a similar way"
     )
@@ -338,3 +374,10 @@ Do NOT include any prefatory text such as 'Here is the transcription of the audi
                 return cls.prompt_audio(output_format)
             case _:
                 raise ValueError(f"Cannot build prompt for unknown kind: '{kind}'")
+
+
+def get_kind_from_mime_type(mime_type: str) -> Kind | None:
+    for kind, mime_types in SUPPORTED_MIME_TYPES.items():
+        if mime_type in mime_types:
+            return kind
+    return None

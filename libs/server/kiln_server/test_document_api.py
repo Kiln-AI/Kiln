@@ -1,4 +1,3 @@
-import filecmp
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -509,21 +508,25 @@ async def test_delete_documents_success(client, document_setup):
 
 
 @pytest.mark.parametrize(
-    "content_type,expected_kind",
+    "filename,expected_content_type,expected_kind",
     [
-        ("image/jpeg", "image"),
-        ("image/png", "image"),
-        ("video/mp4", "video"),
-        ("video/avi", "video"),
-        ("audio/mp3", "audio"),
-        ("audio/wav", "audio"),
-        ("text/plain", "document"),
-        ("application/pdf", "document"),
+        ("document.pdf", "application/pdf", "document"),
+        ("document.txt", "text/plain", "document"),
+        ("document.md", "text/markdown", "document"),
+        ("document.html", "text/html", "document"),
+        ("document.csv", "text/csv", "document"),
+        ("image.png", "image/png", "image"),
+        ("image.jpeg", "image/jpeg", "image"),
+        ("video.mp4", "video/mp4", "video"),
+        ("video.mov", "video/quicktime", "video"),
+        ("audio.mp3", "audio/mpeg", "audio"),
+        ("audio.wav", "audio/wav", "audio"),
+        ("audio.ogg", "audio/ogg", "audio"),
     ],
 )
 @pytest.mark.asyncio
 async def test_create_document_content_type_detection(
-    client, project_setup, content_type, expected_kind
+    client, project_setup, filename, expected_content_type, expected_kind
 ):
     project = project_setup
     test_content = b"test content"
@@ -540,13 +543,14 @@ async def test_create_document_content_type_detection(
         mock_runner_instance.run.return_value = iter([])
         mock_extractor_runner.return_value = mock_runner_instance
 
-        files = {"file": ("test_file", io.BytesIO(test_content), content_type)}
+        files = {"file": (filename, io.BytesIO(test_content), expected_content_type)}
         data = {"name": "Test File", "description": "Test description"}
 
         response = client.post(
             f"/api/projects/{project.id}/documents", files=files, data=data
         )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     result = response.json()
     assert result["kind"] == expected_kind
+    assert result["original_file"]["mime_type"] == expected_content_type
