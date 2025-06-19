@@ -594,7 +594,7 @@
                 }}
               >
                 {#if select_mode}
-                  <td>
+                  <td class="w-12">
                     <input
                       type="checkbox"
                       class="checkbox checkbox-sm"
