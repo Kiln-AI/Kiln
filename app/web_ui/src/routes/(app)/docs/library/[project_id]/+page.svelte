@@ -10,7 +10,11 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import EmptyIntro from "./empty_intro.svelte"
   import FileIcon from "../../fileicon.svelte"
-  import { formatDate, formatSize } from "$lib/utils/formatters"
+  import {
+    formatDate,
+    formatSize,
+    mime_type_to_string,
+  } from "$lib/utils/formatters"
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
   // TODO: move to shared folder
@@ -611,27 +615,7 @@
                   <div class="flex flex-row items-center gap-2">
                     <FileIcon kind={document.kind} />
                     <span class="text-sm">
-                      {#if document.original_file.mime_type == "application/pdf"}
-                        PDF
-                      {:else if document.original_file.mime_type == "text/csv"}
-                        CSV
-                      {:else if document.original_file.mime_type == "text/markdown"}
-                        Markdown
-                      {:else if document.original_file.mime_type == "text/html"}
-                        HTML
-                      {:else if document.original_file.mime_type == "text/plain"}
-                        Text
-                      {:else if document.original_file.mime_type.startsWith("image/")}
-                        Image ({document.original_file.mime_type.split("/")[1]})
-                      {:else if document.original_file.mime_type.startsWith("text/")}
-                        Text ({document.original_file.mime_type.split("/")[1]})
-                      {:else if document.original_file.mime_type.startsWith("video/")}
-                        Video ({document.original_file.mime_type.split("/")[1]})
-                      {:else if document.original_file.mime_type.startsWith("audio/")}
-                        Audio ({document.original_file.mime_type.split("/")[1]})
-                      {:else}
-                        {document.original_file.mime_type}
-                      {/if}
+                      {mime_type_to_string(document.original_file.mime_type)}
                     </span>
                   </div>
                 </td>

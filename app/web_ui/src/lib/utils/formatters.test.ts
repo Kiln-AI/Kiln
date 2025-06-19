@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { formatSize } from "./formatters"
+import { formatSize, mime_type_to_string } from "./formatters"
 
 describe("formatters", () => {
   describe("formatSize", () => {
@@ -42,6 +42,105 @@ describe("formatters", () => {
 
     it("should return unknown when the size is NaN", () => {
       expect(formatSize(NaN)).toBe("unknown")
+    })
+  })
+
+  describe("mime_type_to_string", () => {
+    it("should handle specific PDF mime type", () => {
+      expect(mime_type_to_string("application/pdf")).toBe("PDF")
+    })
+
+    it("should handle specific CSV mime type", () => {
+      expect(mime_type_to_string("text/csv")).toBe("CSV")
+    })
+
+    it("should handle specific Markdown mime type", () => {
+      expect(mime_type_to_string("text/markdown")).toBe("Markdown")
+    })
+
+    it("should handle specific HTML mime type", () => {
+      expect(mime_type_to_string("text/html")).toBe("HTML")
+    })
+
+    it("should handle specific plain text mime type", () => {
+      expect(mime_type_to_string("text/plain")).toBe("Text")
+    })
+
+    describe("generic image types", () => {
+      const imageTestCases = [
+        { input: "image/jpeg", expected: "Image (jpeg)" },
+        { input: "image/png", expected: "Image (png)" },
+        { input: "image/gif", expected: "Image (gif)" },
+        { input: "image/webp", expected: "Image (webp)" },
+        { input: "image/svg+xml", expected: "Image (svg+xml)" },
+      ]
+
+      imageTestCases.forEach(({ input, expected }) => {
+        it(`should return ${expected} for ${input}`, () => {
+          expect(mime_type_to_string(input)).toBe(expected)
+        })
+      })
+    })
+
+    describe("generic text types", () => {
+      const textTestCases = [
+        { input: "text/xml", expected: "Text (xml)" },
+        { input: "text/json", expected: "Text (json)" },
+        { input: "text/javascript", expected: "Text (javascript)" },
+        { input: "text/css", expected: "Text (css)" },
+      ]
+
+      textTestCases.forEach(({ input, expected }) => {
+        it(`should return ${expected} for ${input}`, () => {
+          expect(mime_type_to_string(input)).toBe(expected)
+        })
+      })
+    })
+
+    describe("generic video types", () => {
+      const videoTestCases = [
+        { input: "video/mp4", expected: "Video (mp4)" },
+        { input: "video/webm", expected: "Video (webm)" },
+        { input: "video/avi", expected: "Video (avi)" },
+        { input: "video/quicktime", expected: "Video (quicktime)" },
+      ]
+
+      videoTestCases.forEach(({ input, expected }) => {
+        it(`should return ${expected} for ${input}`, () => {
+          expect(mime_type_to_string(input)).toBe(expected)
+        })
+      })
+    })
+
+    describe("generic audio types", () => {
+      const audioTestCases = [
+        { input: "audio/mp3", expected: "Audio (mp3)" },
+        { input: "audio/wav", expected: "Audio (wav)" },
+        { input: "audio/ogg", expected: "Audio (ogg)" },
+        { input: "audio/mpeg", expected: "Audio (mpeg)" },
+      ]
+
+      audioTestCases.forEach(({ input, expected }) => {
+        it(`should return ${expected} for ${input}`, () => {
+          expect(mime_type_to_string(input)).toBe(expected)
+        })
+      })
+    })
+
+    describe("fallback cases", () => {
+      const fallbackTestCases = [
+        "application/json",
+        "application/xml",
+        "application/zip",
+        "unknown/type",
+        "custom-mime-type",
+      ]
+
+      fallbackTestCases.forEach((input) => {
+        it(`should return original mime type for unhandled type: ${input}`, () => {
+          expect(mime_type_to_string(input)).toBe(input)
+        })
+      })
     })
   })
 })
