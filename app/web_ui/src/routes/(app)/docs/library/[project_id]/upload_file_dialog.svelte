@@ -2,12 +2,29 @@
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import Dialog from "$lib/ui/dialog.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   export let onUploadCompleted: () => void
 
   let selected_file: File | null = null
   let name: string = ""
   let description: string | null = null
+  const supported_file_types = [
+    ".pdf",
+    ".csv",
+    ".txt",
+    ".md",
+    ".html",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".mp4",
+    ".mov",
+    ".mp3",
+    ".wav",
+    ".ogg",
+  ]
 
   $: project_id = $page.params.project_id
 
@@ -22,7 +39,18 @@
     }
   }
 
+  let upload_in_progress: boolean = false
   async function handleUpload(): Promise<boolean> {
+    upload_in_progress = true
+    try {
+      const success = await uploadFile()
+      return success
+    } finally {
+      upload_in_progress = false
+    }
+  }
+
+  async function uploadFile(): Promise<boolean> {
     if (!selected_file) {
       return false
     }
@@ -55,6 +83,8 @@
     }
 
     selected_file = null
+    name = ""
+    description = null
 
     onUploadCompleted()
 
@@ -78,17 +108,26 @@
     close()
     return true
   }
+
+  function file_supported(file: File): boolean {
+    if (!file) {
+      return false
+    }
+    return supported_file_types.includes(
+      ("." + (file.name.split(".").pop() || "")).toLowerCase(),
+    )
+  }
 </script>
 
 <Dialog
   bind:this={dialog}
-  title="Upload File"
+  title={upload_in_progress ? "Processing Document" : "Add Document"}
   action_buttons={[
     { label: "Cancel", isCancel: true, action: () => handleCancel() },
     {
       label: "Upload",
       asyncAction: () => handleUpload(),
-      disabled: !selected_file,
+      disabled: !selected_file || !file_supported(selected_file),
       isPrimary: true,
     },
   ]}
@@ -97,55 +136,45 @@
     <div class="space-y-2">
       <div>
         <p>
-          Upload a file to your project's document store. The following file
-          types are supported: [.pdf, .jpg, .jpeg, .png, .gif, .mp4, .mp3, .wav,
-          .ogg]
+          Add a file to your project's document store. The following file types
+          are supported:
         </p>
+        <ul class="list-disc list-inside mt-2">
+          <li>Documents: .pdf, .csv, .txt, .md, .html</li>
+          <li>Images: .jpg, .jpeg, .png</li>
+          <li>Videos: .mp4, .mov</li>
+          <li>Audio: .mp3, .wav, .ogg</li>
+        </ul>
       </div>
     </div>
-    <form class="grid grid-cols-1 gap-2 mt-4">
-      <div class="mt-4 grid grid-cols-1 gap-2">
-        <div>
-          <label for="name" class="label font-medium p-0 text-sm"
-            >Name (optional)</label
-          >
-          <p class="text-xs text-gray-500">
-            The name is for your reference. It does not impact the file's
-            processing.
-          </p>
-        </div>
-        <input
-          type="text"
-          id="name"
-          class="input input-bordered py-2 w-full"
-          bind:value={name}
-          autocomplete="off"
+    <form class="flex flex-col gap-4 mt-8">
+      <input
+        type="file"
+        class="file-input file-input-bordered w-full"
+        on:change={handleFileSelect}
+        accept={supported_file_types.join(",")}
+      />
+      {#if selected_file && !file_supported(selected_file)}
+        <Warning
+          warning_message={`Select file isn't supported. Please upload a file with one of the following extensions: ${supported_file_types.join(", ")}`}
         />
-      </div>
-      <div class="mt-4 grid grid-cols-1 gap-2">
-        <div>
-          <label for="description" class="label font-medium p-0 text-sm"
-            >Description (optional)</label
-          >
-          <p class="text-xs text-gray-500">
-            The description is for your reference. It does not impact the file's
-            processing.
-          </p>
-        </div>
-        <textarea
-          id="description"
-          class="input input-bordered py-2 w-full h-[100px]"
-          bind:value={description}
-        />
-      </div>
-      <div class="mt-4 grid grid-cols-1 gap-2">
-        <input
-          type="file"
-          class="file-input file-input-bordered w-full"
-          on:change={handleFileSelect}
-          accept=".pdf,.jpg,.jpeg,.png,.gif,.mp4,.mp3,.wav,.ogg"
-        />
-      </div>
+      {/if}
+      <FormElement
+        label="Name"
+        optional={true}
+        description="A name for your reference."
+        bind:value={name}
+        id="name"
+        inputType="input"
+      />
+      <FormElement
+        label="Description"
+        optional={true}
+        description="A description for your reference."
+        bind:value={description}
+        id="description"
+        inputType="textarea"
+      />
     </form>
   </div>
 </Dialog>

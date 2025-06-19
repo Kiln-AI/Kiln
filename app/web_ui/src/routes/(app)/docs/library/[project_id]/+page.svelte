@@ -28,8 +28,6 @@
     | "kind"
     | "created_at"
     | "original_file.size"
-    | "original_file.mime_type"
-    | "description"
   let sortDirection = ($page.url.searchParams.get("order") || "desc") as
     | "asc"
     | "desc"
@@ -54,10 +52,8 @@
   $: project_id = $page.params.project_id
 
   const columns = [
-    { key: "kind", label: "Kind" },
+    { key: "kind", label: "Type" },
     { key: "name", label: "Name" },
-    { key: "description", label: "Description" },
-    { key: "original_file.mime_type", label: "MIME Type" },
     { key: "original_file.size", label: "Size" },
     { key: "created_at", label: "Created At" },
   ]
@@ -120,20 +116,12 @@
         bValue = b.name
         break
       case "kind":
-        aValue = a.kind
-        bValue = b.kind
-        break
-      case "description":
-        aValue = a.description
-        bValue = b.description
+        aValue = a.original_file.mime_type
+        bValue = b.original_file.mime_type
         break
       case "original_file.size":
         aValue = a.original_file.size
         bValue = b.original_file.size
-        break
-      case "original_file.mime_type":
-        aValue = a.original_file.mime_type
-        bValue = b.original_file.mime_type
         break
       default:
         return 0
@@ -478,12 +466,11 @@
 </script>
 
 <AppPage
-  title="Documents"
-  sub_subtitle="Read the Docs"
-  sub_subtitle_link="#"
+  title="Document Library"
+  subtitle="Add or Browse Documents"
   action_buttons={[
     {
-      label: "Upload File",
+      label: "Add Document",
       handler: () => {
         upload_file_dialog?.show()
       },
@@ -620,14 +607,32 @@
                 <td>
                   <div class="flex flex-row items-center gap-2">
                     <FileIcon kind={document.kind} />
-                    <div class="text-xs text-center text-gray-500 truncate">
-                      {document.kind}
-                    </div>
+                    <span class="text-sm">
+                      {#if document.original_file.mime_type == "application/pdf"}
+                        PDF
+                      {:else if document.original_file.mime_type == "text/csv"}
+                        CSV
+                      {:else if document.original_file.mime_type == "text/markdown"}
+                        Markdown
+                      {:else if document.original_file.mime_type == "text/html"}
+                        HTML
+                      {:else if document.original_file.mime_type == "text/plain"}
+                        Text
+                      {:else if document.original_file.mime_type.startsWith("image/")}
+                        Image ({document.original_file.mime_type.split("/")[1]})
+                      {:else if document.original_file.mime_type.startsWith("text/")}
+                        Text ({document.original_file.mime_type.split("/")[1]})
+                      {:else if document.original_file.mime_type.startsWith("video/")}
+                        Video ({document.original_file.mime_type.split("/")[1]})
+                      {:else if document.original_file.mime_type.startsWith("audio/")}
+                        Audio ({document.original_file.mime_type.split("/")[1]})
+                      {:else}
+                        {document.original_file.mime_type}
+                      {/if}
+                    </span>
                   </div>
                 </td>
                 <td>{document.name}</td>
-                <td>{document.description}</td>
-                <td>{document.original_file.mime_type}</td>
                 <td>{formatSize(document.original_file.size)}</td>
                 <td>{formatDate(document.created_at)}</td>
               </tr>
