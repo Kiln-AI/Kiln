@@ -119,6 +119,7 @@
   subtitle="Manage your document extractors"
   sub_subtitle="Read the docs"
   sub_subtitle_link="#"
+  no_y_padding
   action_buttons={[
     {
       label: "Add Extractor",

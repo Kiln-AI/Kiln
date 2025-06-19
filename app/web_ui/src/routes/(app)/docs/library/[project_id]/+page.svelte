@@ -468,6 +468,7 @@
 <AppPage
   title="Document Library"
   subtitle="Add or Browse Documents"
+  no_y_padding
   action_buttons={[
     {
       label: "Add Document",

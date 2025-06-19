@@ -8,7 +8,7 @@
     {
       name: "Library",
       description: "Add or Browse Documents",
-      button_text: "Go to Library",
+      button_text: "View Library",
       href: `/docs/library/${project_id}`,
       img: "/images/doc_library.svg",
     },
@@ -23,7 +23,10 @@
   ]
 </script>
 
-<AppPage title="Documents" subtitle="Add knowledge to your project">
+<AppPage
+  title="Documents"
+  subtitle="Add knowledge to your project with Documents"
+>
   <div class="flex flex-col gap-4 mt-16">
     {#each sections as section}
       <a
