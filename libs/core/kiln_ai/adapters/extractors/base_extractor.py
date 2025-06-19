@@ -1,5 +1,4 @@
 import logging
-import mimetypes
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -37,7 +36,7 @@ class BaseExtractor(ABC):
     async def extract(
         self,
         path: Path | str,
-        mime_type: str | None = None,
+        mime_type: str,
     ) -> ExtractionOutput:
         """
         Extracts content from a file by delegating to the concrete extractor implementation.
@@ -46,11 +45,6 @@ class BaseExtractor(ABC):
             path = Path(path)
 
         try:
-            if mime_type is None:
-                mime_type, _ = mimetypes.guess_type(path)
-                if mime_type is None:
-                    raise ValueError(f"Unable to guess file mime type for {path}")
-
             if self._should_passthrough(mime_type):
                 return ExtractionOutput(
                     is_passthrough=True,
