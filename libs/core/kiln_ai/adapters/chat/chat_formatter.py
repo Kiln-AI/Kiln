@@ -216,7 +216,7 @@ def get_chat_formatter(
         case ChatStrategy.single_turn_r1_thinking:
             return SingleTurnR1ThinkingFormatter(system_message, user_input)
         case _:
-            raise ValueError(f"Unhandled enum value: {strategy}")
+            raise_exhaustive_enum_error(strategy)
 
 
 def format_user_message(input: Dict | str) -> str:

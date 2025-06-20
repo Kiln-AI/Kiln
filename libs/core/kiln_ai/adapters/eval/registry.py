@@ -12,4 +12,4 @@ def eval_adapter_from_type(eval_config_type: EvalConfigType) -> type[BaseEval]:
             # Also implemented by GEval
             return GEval
         case _:
-            raise AssertionError(f"Unhandled eval config type: {eval_config_type}")
+            raise_exhaustive_enum_error(eval_config_type)

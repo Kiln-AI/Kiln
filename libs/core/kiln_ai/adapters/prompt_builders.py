@@ -424,4 +424,4 @@ def prompt_builder_from_id(prompt_id: PromptId, task: Task) -> BasePromptBuilder
         case PromptGenerators.MULTI_SHOT_CHAIN_OF_THOUGHT:
             return MultiShotChainOfThoughtPromptBuilder(task)
         case _:
-            raise ValueError(f"Unhandled enum value: {typed_prompt_generator}")
+            raise_exhaustive_enum_error(typed_prompt_generator)

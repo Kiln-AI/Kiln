@@ -190,7 +190,7 @@ class LiteLlmAdapter(BaseAdapter):
                 # See above, but this case should never happen.
                 raise ValueError("Structured output mode is unknown.")
             case _:
-                raise ValueError(f"Unhandled enum value: {structured_output_mode}")
+                raise_exhaustive_enum_error(structured_output_mode)
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task().output_schema()

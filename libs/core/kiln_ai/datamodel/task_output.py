@@ -44,7 +44,7 @@ def normalize_rating(rating: float, rating_type: TaskOutputRatingType) -> float:
         case TaskOutputRatingType.custom:
             raise ValueError("Custom rating type can not be normalized")
         case _:
-            raise ValueError(f"Unhandled enum value: {rating_type}")
+            raise_exhaustive_enum_error(rating_type)
 
 
 class TaskOutputRating(KilnBaseModel):
