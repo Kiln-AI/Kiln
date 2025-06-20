@@ -159,9 +159,7 @@
           <div class="text-xl font-bold">Document Extractions</div>
           <div class="text-gray-500 text-sm">
             Each
-            <a
-              class="link"
-              href={`http://localhost:5173/docs/extractors/189194447826`}
+            <a class="link" href={`/docs/extractors/189194447826`}
               >document extractor</a
             > generated extractions of this document:
           </div>
