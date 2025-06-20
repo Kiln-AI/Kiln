@@ -1,5 +1,4 @@
 import logging
-import mimetypes
 from enum import Enum
 from typing import TYPE_CHECKING, Any, List, Union
 
@@ -67,6 +66,33 @@ SUPPORTED_MIME_TYPES = {
         "audio/mpeg",
         "audio/ogg",
     },
+}
+
+
+class ExtractionModel(BaseModel):
+    name: str
+    label: str
+
+
+EXTRACTION_MODEL_LIST = {
+    ExtractorType.GEMINI: [
+        ExtractionModel(
+            name="gemini-2.5-pro",
+            label="Gemini 2.5 Pro",
+        ),
+        ExtractionModel(
+            name="gemini-2.5-flash",
+            label="Gemini 2.5 Flash",
+        ),
+        ExtractionModel(
+            name="gemini-2.0-flash",
+            label="Gemini 2.0 Flash",
+        ),
+        ExtractionModel(
+            name="gemini-2.0-flash-lite",
+            label="Gemini 2.0 Flash Lite",
+        ),
+    ],
 }
 
 
@@ -171,6 +197,9 @@ class ExtractorConfig(KilnParentedModel):
         model_name = get_property("model_name", default="")
         if not model_name:
             raise ValueError("model_name must be a non-empty string")
+
+        if model_name not in [m.name for m in EXTRACTION_MODEL_LIST[extractor_type]]:
+            raise ValueError(f'Gemini: "{model_name}" is not supported')
 
         return {
             "model_name": model_name,

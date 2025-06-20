@@ -78,7 +78,7 @@ def extractor_config_setup(project_setup):
         passthrough_mimetypes=[OutputFormat.TEXT],
         extractor_type=ExtractorType.GEMINI,
         properties={
-            "model_name": "test-model",
+            "model_name": "gemini-2.0-flash",
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -340,7 +340,7 @@ async def test_create_extractor_config_success(client, project_setup):
             "extractor_type": "gemini",
             "passthrough_mimetypes": ["text/plain"],
             "properties": {
-                "model_name": "test-model",
+                "model_name": "gemini-2.0-flash",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -359,7 +359,7 @@ async def test_create_extractor_config_success(client, project_setup):
     assert result["output_format"] == "text/plain"
     assert result["extractor_type"] == "gemini"
     assert result["passthrough_mimetypes"] == ["text/plain"]
-    assert result["properties"]["model_name"] == "test-model"
+    assert result["properties"]["model_name"] == "gemini-2.0-flash"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"

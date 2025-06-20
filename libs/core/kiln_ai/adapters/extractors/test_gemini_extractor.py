@@ -39,7 +39,7 @@ def mock_gemini_extractor(mock_gemini_client):
                 "prompt_image": PROMPTS_FOR_KIND["image"],
                 "prompt_video": PROMPTS_FOR_KIND["video"],
                 "prompt_audio": PROMPTS_FOR_KIND["audio"],
-                "model_name": "fake-model",
+                "model_name": "gemini-2.0-flash",
             },
         ),
     )
@@ -101,10 +101,6 @@ def test_get_kind_from_mime_type_unsupported(mock_gemini_extractor):
 async def test_extract_success(mock_gemini_extractor):
     with (
         patch(
-            "mimetypes.guess_type",
-            return_value=("application/pdf", None),
-        ),
-        patch(
             "pathlib.Path.read_bytes",
             return_value=b"test content",
         ),
@@ -128,7 +124,7 @@ async def test_extract_success(mock_gemini_extractor):
 
         # check the gemini client was called with the correct arguments
         mock_gemini_client.aio.models.generate_content.assert_called_once_with(
-            model="fake-model",
+            model="gemini-2.0-flash",
             contents=[
                 types.Part.from_bytes(
                     data=b"test content", mime_type="application/pdf"
@@ -156,7 +152,7 @@ async def test_extract_failure_from_gemini(mock_gemini_extractor):
             )
 
         mock_gemini_client.aio.models.generate_content.assert_called_once_with(
-            model="fake-model",
+            model="gemini-2.0-flash",
             contents=[
                 types.Part.from_bytes(
                     data=b"test content", mime_type="application/pdf"
