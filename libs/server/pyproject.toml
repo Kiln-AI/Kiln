@@ -30,11 +30,11 @@ dependencies = [
 [dependency-groups]
 dev = [
     "isort>=5.13.2",
-    "pyright==1.1.376",
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
     "python-dotenv>=1.0.1",
     "ruff>=0.9.0",
+    "ty>=0.0.1a11",
 ]
 
 

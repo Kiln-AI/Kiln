@@ -13,10 +13,13 @@ cd "$(dirname "$0")"
 headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
 
-echo "${headerStart}Checking Python: Ruff, format, check${headerEnd}"
+echo "${headerStart}Checking Python Linting and Formatting (ruff)${headerEnd}"
 # I is import sorting
 uvx  ruff check --select I
 uvx ruff format --check .
+
+echo "${headerStart}Checking Python Types (ty)${headerEnd}"
+uvx ty check
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
 if command -v misspell >/dev/null 2>&1; then
@@ -42,9 +45,6 @@ if [[ "$changed_files" == *"app/web_ui/"* ]]; then
 else
     echo "Skipping Web UI: no files changed"
 fi
-
-echo "${headerStart}Checking Types${headerEnd}"
-pyright .
 
 echo "${headerStart}Running Python Tests${headerEnd}"
 python3 -m pytest --benchmark-quiet -q .

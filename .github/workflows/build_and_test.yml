@@ -37,7 +37,7 @@ jobs:
         run: uv run python3 -m pytest .
 
       - name: Check Python Types
-        run: uv run pyright .
+        run: uvx ty check
 
       - name: Build Core
         run: uv build
