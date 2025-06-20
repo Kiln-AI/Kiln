@@ -26,7 +26,9 @@ from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warn
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from litellm.exceptions import AuthenticationError, BadRequestError
 from pydantic import BaseModel, Field
+from requests import exceptions as requests_exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
     try:
         base_url = custom_ollama_url or ollama_base_url()
         tags = requests.get(base_url + "/api/tags", timeout=5).json()
-    except requests.exceptions.ConnectionError:
+    except requests_exceptions.ConnectionError:
         raise HTTPException(
             status_code=417,
             detail="Failed to connect. Ensure Ollama app is running.",
@@ -809,7 +811,7 @@ async def connect_bedrock(key_data: dict):
         )
     except Exception as e:
         # Improve error message if it's a confirmed authentication error
-        if isinstance(e, litellm.exceptions.AuthenticationError):
+        if isinstance(e, AuthenticationError):
             return JSONResponse(
                 status_code=401,
                 content={
@@ -817,7 +819,7 @@ async def connect_bedrock(key_data: dict):
                 },
             )
         # If it's a bad request, it's a valid key (but the model is fake)
-        if isinstance(e, litellm.exceptions.BadRequestError):
+        if isinstance(e, BadRequestError):
             Config.shared().bedrock_access_key = access_key
             Config.shared().bedrock_secret_key = secret_key
             return JSONResponse(

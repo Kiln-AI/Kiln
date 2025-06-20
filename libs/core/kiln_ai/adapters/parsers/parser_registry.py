@@ -18,4 +18,4 @@ def model_parser_from_id(parser_id: ModelParserID | None) -> BaseParser:
         case ModelParserID.optional_r1_thinking:
             return R1ThinkingParser(allow_missing_thinking=True)
         case _:
-            raise_exhaustive_enum_error(parser_id)
+            raise ValueError(f"Unhandled enum value: {parser_id}")

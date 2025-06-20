@@ -4,7 +4,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, cast
 
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -216,7 +216,7 @@ def get_chat_formatter(
         case ChatStrategy.single_turn_r1_thinking:
             return SingleTurnR1ThinkingFormatter(system_message, user_input)
         case _:
-            raise_exhaustive_enum_error(strategy)
+            raise ValueError(f"Unhandled enum value: {strategy}")
 
 
 def format_user_message(input: Dict | str) -> str:
@@ -231,4 +231,4 @@ def format_user_message(input: Dict | str) -> str:
     if isinstance(input, dict):
         return json.dumps(input, ensure_ascii=False)
 
-    return input
+    return cast(str, input)

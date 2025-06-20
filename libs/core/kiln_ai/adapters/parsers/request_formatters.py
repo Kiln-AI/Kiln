@@ -37,4 +37,4 @@ def request_formatter_from_id(
         case ModelFormatterID.qwen3_style_no_think:
             return Qwen3StyleNoThinkFormatter()
         case _:
-            raise_exhaustive_enum_error(formatter_id)
+            raise ValueError(f"Unhandled enum value: {formatter_id}")

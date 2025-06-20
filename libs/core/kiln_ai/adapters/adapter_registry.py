@@ -196,4 +196,4 @@ def adapter_for_task(
                 "Custom openai compatible provider is not a supported core provider. It should map to an actual provider."
             )
         case _:
-            raise_exhaustive_enum_error(core_provider_name)
+            raise ValueError(f"Unknown provider: {core_provider_name}")

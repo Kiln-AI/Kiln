@@ -1,11 +1,15 @@
 import logging
 from enum import Enum
-from typing import Dict
+from typing import Dict, cast
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
+from kiln_ai.adapters.fine_tune.base_finetune import (
+    BaseFinetuneAdapter,
+    FineTuneParameter,
+    FineTuneStatus,
+)
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
     DatasetFormat,
     DatasetFormatter,
@@ -208,7 +212,10 @@ def connect_fine_tune_api(app: FastAPI):
                 status_code=400,
                 detail=f"Fine tune provider '{finetune.provider}' not found",
             )
-        finetune_adapter = finetune_registry[finetune.provider]
+
+        finetune_adapter = cast(
+            dict[str, type[BaseFinetuneAdapter]], finetune_registry
+        )[finetune.provider]
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
 
@@ -280,7 +287,10 @@ def connect_fine_tune_api(app: FastAPI):
             raise HTTPException(
                 status_code=400, detail=f"Fine tune provider '{provider_id}' not found"
             )
-        finetune_adapter_class = finetune_registry[provider_id]
+
+        finetune_adapter_class = cast(
+            dict[str, type[BaseFinetuneAdapter]], finetune_registry
+        )[provider_id]
         return finetune_adapter_class.available_parameters()
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info")
@@ -358,7 +368,9 @@ def connect_fine_tune_api(app: FastAPI):
                 status_code=400,
                 detail=f"Fine tune provider '{request.provider}' not found",
             )
-        finetune_adapter_class = finetune_registry[request.provider]
+        finetune_adapter_class = cast(
+            dict[str, type[BaseFinetuneAdapter]], finetune_registry
+        )[request.provider]
 
         dataset = DatasetSplit.from_id_and_parent_path(request.dataset_id, task.path)
         if dataset is None:

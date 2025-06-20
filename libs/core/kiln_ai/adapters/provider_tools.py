@@ -385,7 +385,6 @@ def provider_name_from_id(id: str) -> str:
             case ModelProviderName.together_ai:
                 return "Together AI"
             case _:
-                # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
 
     return "Unknown provider: " + id

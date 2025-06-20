@@ -1,6 +1,6 @@
-from typing import NoReturn
+from typing import Any, NoReturn
 
 
-# Weird trick, but passing a enum to NoReturn triggers the type checker to complain unless all values are handled.
-def raise_exhaustive_enum_error(value: NoReturn) -> NoReturn:
+# Used in exhaustiveness checks. When called, this branch should be unreachable.
+def raise_exhaustive_enum_error(value: Any) -> NoReturn:
     raise ValueError(f"Unhandled enum value: {value}")
