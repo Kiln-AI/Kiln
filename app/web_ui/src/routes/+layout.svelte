@@ -15,6 +15,7 @@
   import { get } from "svelte/store"
   import { KilnError } from "$lib/utils/error_handlers"
   import { createKilnError } from "$lib/utils/error_handlers"
+  import { page } from "$app/stores"
   let loading = true
   let load_error: string | null = null
   import posthog from "posthog-js"
@@ -22,8 +23,16 @@
   import { beforeNavigate, afterNavigate } from "$app/navigation"
 
   if (browser) {
-    beforeNavigate(() => posthog.capture("$pageleave"))
-    afterNavigate(() => posthog.capture("$pageview"))
+    beforeNavigate(() => {
+      const route_id = get(page).route.id || "unknown"
+      const url = window.location.origin + route_id
+      posthog.capture("$pageleave", { $current_url: url, $pathname: route_id })
+    })
+    afterNavigate(() => {
+      const route_id = get(page).route.id || "unknown"
+      const url = window.location.origin + route_id
+      posthog.capture("$pageview", { $current_url: url, $pathname: route_id })
+    })
   }
 
   // Our (app) routes expect a current project and task.
