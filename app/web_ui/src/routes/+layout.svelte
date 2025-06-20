@@ -22,15 +22,39 @@
   import { browser } from "$app/environment"
   import { beforeNavigate, afterNavigate } from "$app/navigation"
 
+  function sanitize_route_id(route_id: string | null | undefined) {
+    if (!route_id) {
+      return "/unknown"
+    }
+    // Strip components in round brackets like "(app)" from the route
+    let sanitized = route_id.replace(/\/?\([^)]*\)/g, "")
+    // Strip square brackets like "[id]" from the route
+    sanitized = sanitized.replace(/\[([^\]]*)\]/g, "$1")
+    // URL encode characters that aren't valid in URLs, but preserve slashes
+    sanitized = sanitized
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")
+    // Ensure route always starts with a slash
+    if (!sanitized.startsWith("/")) {
+      sanitized = "/" + sanitized
+    }
+    return sanitized
+  }
+
+  function get_route_info() {
+    const route_id = sanitize_route_id(get(page).route.id)
+    const url = window.location.origin + route_id
+    return { route_id, url }
+  }
+
   if (browser) {
     beforeNavigate(() => {
-      const route_id = get(page).route.id || "unknown"
-      const url = window.location.origin + route_id
+      const { route_id, url } = get_route_info()
       posthog.capture("$pageleave", { $current_url: url, $pathname: route_id })
     })
     afterNavigate(() => {
-      const route_id = get(page).route.id || "unknown"
-      const url = window.location.origin + route_id
+      const { route_id, url } = get_route_info()
       posthog.capture("$pageview", { $current_url: url, $pathname: route_id })
     })
   }
