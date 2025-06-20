@@ -12,6 +12,7 @@ export const load = async () => {
       person_profiles: "identified_only",
       capture_pageview: false,
       capture_pageleave: false,
+      autocapture: false,
     })
   }
   return
