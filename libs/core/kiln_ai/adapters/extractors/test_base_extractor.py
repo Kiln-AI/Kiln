@@ -24,7 +24,7 @@ def mock_gemini_properties():
         "prompt_image": "mock prompt for image",
         "prompt_video": "mock prompt for video",
         "prompt_audio": "mock prompt for audio",
-        "model_name": "mock",
+        "model_name": "gemini-2.0-flash",
     }
 
 

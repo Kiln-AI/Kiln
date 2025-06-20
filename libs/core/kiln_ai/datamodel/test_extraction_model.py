@@ -105,6 +105,28 @@ def test_extractor_config_empty_model_name(
         }
 
 
+def test_extractor_config_invalid_model_name(
+    valid_extractor_config, valid_extractor_config_data
+):
+    with pytest.raises(
+        ValueError, match='Gemini: "invalid-model-name" is not supported'
+    ):
+        valid_extractor_config.properties = {
+            "model_name": "invalid-model-name",
+        }
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
+)
+def test_extractor_config_valid_model_name(valid_extractor_config, model_name):
+    valid_extractor_config.properties = {
+        "model_name": model_name,
+    }
+    assert valid_extractor_config.properties["model_name"] == model_name
+
+
 def test_extractor_config_missing_prompts(valid_extractor_config):
     # should not raise an error - prompts will be set to defaults
     valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
