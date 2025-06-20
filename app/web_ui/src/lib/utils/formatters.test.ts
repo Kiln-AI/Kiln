@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { formatSize, mime_type_to_string } from "./formatters"
+import { formatSize, mime_type_to_string, capitalize } from "./formatters"
 
 describe("formatters", () => {
   describe("formatSize", () => {
@@ -141,6 +141,52 @@ describe("formatters", () => {
           expect(mime_type_to_string(input)).toBe(input)
         })
       })
+    })
+  })
+
+  describe("capitalize", () => {
+    it("should return empty string for empty string", () => {
+      expect(capitalize("")).toBe("")
+    })
+
+    it("should return empty string for null", () => {
+      expect(capitalize(null)).toBe("")
+    })
+
+    it("should return empty string for undefined", () => {
+      expect(capitalize(undefined)).toBe("")
+    })
+
+    it("should capitalize single character", () => {
+      expect(capitalize("a")).toBe("A")
+    })
+
+    it("should capitalize first letter of lowercase word", () => {
+      expect(capitalize("hello")).toBe("Hello")
+    })
+
+    it("should keep first letter uppercase if already capitalized", () => {
+      expect(capitalize("Hello")).toBe("Hello")
+    })
+
+    it("should only capitalize first letter, keeping rest as-is", () => {
+      expect(capitalize("hELLO")).toBe("HELLO")
+    })
+
+    it("should handle mixed case strings", () => {
+      expect(capitalize("hElLo WoRlD")).toBe("HElLo WoRlD")
+    })
+
+    it("should handle strings with numbers", () => {
+      expect(capitalize("123abc")).toBe("123abc")
+    })
+
+    it("should handle strings starting with special characters", () => {
+      expect(capitalize("!hello")).toBe("!hello")
+    })
+
+    it("should handle strings with spaces", () => {
+      expect(capitalize(" hello")).toBe(" hello")
     })
   })
 })
