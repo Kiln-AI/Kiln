@@ -116,16 +116,17 @@
 
 <AppPage
   title="Document Extractors"
-  subtitle="Manage your document extractors"
-  sub_subtitle="Read the docs"
-  sub_subtitle_link="#"
-  action_buttons={[
-    {
-      label: "Add Extractor",
-      href: `/docs/extractors/${project_id}/create_extractor`,
-      primary: true,
-    },
-  ]}
+  subtitle="Extract data from your documents"
+  no_y_padding={!!(extractor_configs && extractor_configs.length == 0)}
+  action_buttons={extractor_configs && extractor_configs.length == 0
+    ? []
+    : [
+        {
+          label: "Add Extractor",
+          href: `/docs/extractors/${project_id}/create_extractor`,
+          primary: true,
+        },
+      ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -141,10 +142,11 @@
         <table class="table">
           <thead>
             <tr>
-              <th></th>
-              <th>Type</th>
+              <th>Name</th>
+              <th>Extraction Model</th>
+              <th>Output Format</th>
+              <th>Created At</th>
               <th>Status</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>

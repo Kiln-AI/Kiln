@@ -45,8 +45,8 @@
     },
     {
       id: "csv",
-      name: "Upload CSV",
-      description: `Add data by uploading a CSV file.`,
+      name: "Add CSV",
+      description: `Add data from a CSV file.`,
     },
     ...(reason === "generic" && splitsArray.length === 0
       ? [

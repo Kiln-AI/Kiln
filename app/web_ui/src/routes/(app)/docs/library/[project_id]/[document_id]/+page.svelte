@@ -11,6 +11,8 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import { isMacOS } from "$lib/utils/platform"
   import { goto } from "$app/navigation"
+  import Output from "../../../../run/output.svelte"
+  import { capitalize } from "$lib/utils/formatters"
 
   let document: KilnDocument | null = null
   let error: KilnError | null = null
@@ -127,8 +129,7 @@
 
 <AppPage
   title="Document"
-  subtitle={`${document?.name} (${document?.original_file.filename})`}
-  sub_subtitle={document?.description}
+  subtitle={`${document?.name || document?.original_file.filename}`}
   action_buttons={[
     {
       icon: "/images/download.svg",
@@ -152,19 +153,132 @@
       <div class="loading loading-spinner loading-lg"></div>
     </div>
   {:else if document}
-    <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
-      <div class="mt-4 mb-4">
+    <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+      {#if results}
+        <div class="flex-grow">
+          <div class="text-xl font-bold">Document Extractions</div>
+          <div class="text-gray-500 text-sm">
+            Each
+            <a class="link" href={`/docs/extractors/189194447826`}
+              >document extractor</a
+            > generated extractions of this document:
+          </div>
+          {#if results.length == 0}
+            <div class="mt-4 text-sm text-gray-500">
+              No extractions found for this document.
+            </div>
+          {:else}
+            <div class="text-sm overflow-x-auto rounded-lg border mt-4">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Extraction Details</th>
+                    <th>Extraction Output</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each results as result}
+                    <tr>
+                      <td>
+                        <div
+                          class="grid grid-cols-[auto_1fr] gap-y-2 gap-x-4 text-sm"
+                        >
+                          <div>ID</div>
+                          <div class="text-gray-500">{result.id}</div>
+                          <div>Source</div>
+                          <div class="text-gray-500">
+                            {#if result.source == "processed"}
+                              Model Output
+                            {:else if result.source == "passthrough"}
+                              Unprocessed (Original)
+                            {:else}
+                              {result.source}
+                            {/if}
+                          </div>
+                          <div>Extractor</div>
+                          <div class="text-gray-500">
+                            <a
+                              href={`/docs/extractors/${project_id}/${result.extractor.id}/extractor`}
+                              class="link"
+                            >
+                              {result.extractor.name}
+                            </a>
+                          </div>
+                          <div>Actions</div>
+                          <div class="text-gray-500">
+                            <button
+                              class="link"
+                              on:click={() => {
+                                delete_extraction_id = result.id || null
+                                delete_extraction_dialog?.show()
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="min-w-[200px]">
+                          {#if result.output_content.length > 200}
+                            <button
+                              class="w-full h-[160px] overflow-y-hidden relative text-start justify-start items-start flex"
+                              on:click={() => {
+                                dialog_extraction = result
+                                output_dialog?.show()
+                              }}
+                            >
+                              {result.output_content}
+                              <div class="absolute bottom-0 left-0 w-full">
+                                <div
+                                  class="h-36 bg-gradient-to-t from-white to-transparent"
+                                ></div>
+                                <div
+                                  class="text-center bg-white font-medium font-sm text-gray-500"
+                                >
+                                  <span class="text-gray-500"> See all </span>
+                                </div>
+                              </div>
+                            </button>
+                          {:else}
+                            <div
+                              class="text-sm text-gray-500 font-mono text-xs"
+                            >
+                              {result.output_content}
+                            </div>
+                          {/if}
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
         <PropertyList
           properties={[
-            { name: "ID", value: document.id || "N/A" },
+            { name: "ID", value: document.id || "Unknown" },
             { name: "Name", value: document.name },
-            { name: "Original File", value: document.original_file.filename },
-            { name: "Description", value: document.description },
+            {
+              name: "Original Filename",
+              value: document.original_file.filename,
+            },
+            {
+              name: "Original File Size",
+              value: formatSize(document.original_file.size),
+            },
+            {
+              name: "Kind",
+              value: capitalize(document.kind),
+            },
             { name: "MIME Type", value: document.original_file.mime_type },
-            { name: "Size", value: formatSize(document.original_file.size) },
-            { name: "Kind", value: document.kind },
             { name: "Created At", value: formatDate(document.created_at) },
-            { name: "Created By", value: document.created_by || "N/A" },
+            { name: "Created By", value: document.created_by || "Unknown" },
+            { name: "Description", value: document.description || "None" },
           ]}
           title="Properties"
         />
@@ -181,113 +295,6 @@
         </div>
       </div>
     </div>
-
-    {#if results}
-      <div class="block">
-        <div class="block mt-4">
-          <div class="text-2xl font-bold">Extractions</div>
-          <div class="text-gray-500 text-sm">
-            An extraction is the result of a document extractor running on a
-            document.
-          </div>
-          <div class="mt-4 text-sm text-gray-500">
-            {results.length}
-            {results.length === 1 ? "extraction" : "extractions"}
-          </div>
-          <div class="text-sm text-gray-500 overflow-x-auto">
-            <table class="table table-sm">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Created At</th>
-                  <th>Created By</th>
-                  <th>Source</th>
-                  <th>Extractor</th>
-                  <th>Output</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each results as result}
-                  <tr>
-                    <td>{result.id}</td>
-                    <td>{formatDate(result.created_at)}</td>
-                    <td>{result.created_by}</td>
-                    <td>{result.source}</td>
-                    <td>
-                      <a
-                        href={`/docs/extractors/${project_id}/${result.extractor.id}/extractor`}
-                        class="link flex flex-row items-center"
-                        target="_blank"
-                      >
-                        {result.extractor.name}
-                        <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-                        <svg
-                          class="w-4 h-4 ml-2"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                          ><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g
-                            id="SVGRepo_tracerCarrier"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          ></g><g id="SVGRepo_iconCarrier">
-                            <path
-                              d="M5 12V6C5 5.44772 5.44772 5 6 5H18C18.5523 5 19 5.44772 19 6V18C19 18.5523 18.5523 19 18 19H12M8.11111 12H12M12 12V15.8889M12 12L5 19"
-                              stroke="#464455"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                            ></path>
-                          </g></svg
-                        >
-                      </a>
-                    </td>
-                    <td>
-                      <div class="max-w-[600px] min-w-[200px]">
-                        <button
-                          class="h-[160px] overflow-y-hidden relative text-start justify-start items-start flex"
-                          on:click={() => {
-                            dialog_extraction = result
-                            output_dialog?.show()
-                          }}
-                        >
-                          {result.output_content}
-                          <div class="absolute bottom-0 left-0 w-full">
-                            <div
-                              class="h-36 bg-gradient-to-t from-white to-transparent"
-                            ></div>
-                            <div
-                              class="text-center bg-white font-medium font-sm text-gray-500"
-                            >
-                              <span class="text-gray-500"> See all </span>
-                            </div>
-                          </div>
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <button
-                        class="btn btn-sm flex flex-row items-center gap-2"
-                        on:click={() => {
-                          delete_extraction_id = result.id || null
-                          delete_extraction_dialog?.show()
-                        }}
-                      >
-                        <img
-                          src="/images/delete.svg"
-                          class="w-4 h-4"
-                          alt="Delete Extraction"
-                        />
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    {/if}
   {:else if error}
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
@@ -311,9 +318,12 @@
   ]}
 >
   {#if dialog_extraction}
-    <div class="text-sm text-gray-500 font-mono">
-      <pre class="whitespace-pre-wrap">{dialog_extraction.output_content}</pre>
+    <div class="mb-2 text-sm text-gray-500">
+      The extractor produced the following output:
     </div>
+    <Output raw_output={dialog_extraction.output_content} />
+  {:else}
+    <div class="text-sm text-gray-500">No extraction output found.</div>
   {/if}
 </Dialog>
 

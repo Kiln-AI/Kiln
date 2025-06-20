@@ -57,7 +57,12 @@ export function formatSize(byteSize: number | undefined | null): string {
     idx += 1
   }
 
-  return `${idx === 0 ? size : size.toFixed(2)} ${units[idx]}`
+  // Remove trailing .0 from the size
+  const formattedSize = idx === 0 ? size.toString() : size.toFixed(1)
+  const displaySize = formattedSize.endsWith(".0")
+    ? formattedSize.slice(0, -2)
+    : formattedSize
+  return `${displaySize} ${units[idx]}`
 }
 
 export function eval_config_to_ui_name(
@@ -93,4 +98,35 @@ export function rating_name(rating_type: string): string {
     default:
       return rating_type
   }
+}
+
+export function mime_type_to_string(mime_type: string): string {
+  if (mime_type === "application/pdf") {
+    return "PDF"
+  } else if (mime_type === "text/csv") {
+    return "CSV"
+  } else if (mime_type === "text/markdown") {
+    return "Markdown"
+  } else if (mime_type === "text/html") {
+    return "HTML"
+  } else if (mime_type === "text/plain") {
+    return "Text"
+  } else if (mime_type.startsWith("image/")) {
+    return `Image (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("text/")) {
+    return `Text (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("video/")) {
+    return `Video (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("audio/")) {
+    return `Audio (${mime_type.split("/")[1]})`
+  } else {
+    return mime_type
+  }
+}
+
+export function capitalize(str: string | undefined | null): string {
+  if (!str) {
+    return ""
+  }
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }

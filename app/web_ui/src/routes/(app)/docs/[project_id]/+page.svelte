@@ -7,37 +7,52 @@
   let sections = [
     {
       name: "Document Library",
-      description: "Manage, upload and browse documents.",
-      button_text: "Browse Documents",
+      description: "Add or Browse Documents",
+      button_text: "View Library",
       href: `/docs/library/${project_id}`,
+      img: "/images/doc_library.svg",
     },
     {
-      name: "Document Extractors",
+      name: "Extractors",
       description:
-        "Create and manage document extractors. An extractor is a particular way of extracting information from your documents.",
+        "Extractors convert files like PDFs or images into text your models can use.",
       button_text: "Manage Extractors",
       href: `/docs/extractors/${project_id}`,
+      img: "/images/scanner.svg",
     },
   ]
 </script>
 
 <AppPage
   title="Documents"
-  sub_subtitle="Read the Docs"
-  sub_subtitle_link="#"
-  action_buttons={[]}
+  subtitle="Add knowledge to your project with documents"
 >
-  <div class="flex flex-col gap-8 max-w-[700px] mt-16">
+  <div class="flex flex-col gap-4">
     {#each sections as section}
-      <div class="flex flex-col md:flex-row gap-4 md:items-center">
-        <div class="grow">
-          <h3 class="font-medium">{section.name}</h3>
-          <p class="text-sm text-gray-500">{section.description}</p>
+      <a
+        href={section.href}
+        class="group flex items-center p-6 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-200 max-w-[600px]"
+      >
+        <div class="flex-1 min-w-0">
+          <h3 class="text-lg font-semibold mb-2">
+            {section.name}
+          </h3>
+          <p class="text-gray-500 mb-4 text-sm leading-relaxed">
+            {section.description}
+          </p>
+          <div
+            class="btn btn-sm btn-primary btn-outline group-hover:bg-primary group-hover:text-primary-content group-hover:border-primary"
+          >
+            {section.button_text}
+          </div>
         </div>
-        <a href={section.href} class="btn" style="min-width: 14rem">
-          {section.button_text}
-        </a>
-      </div>
+
+        <div
+          class="flex-shrink-0 ml-6 w-36 h-36 flex items-center justify-center rounded-lg"
+        >
+          <img src={section.img} alt={section.name} class="w-24 h-24" />
+        </div>
+      </a>
     {/each}
   </div>
 </AppPage>
