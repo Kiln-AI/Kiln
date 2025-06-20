@@ -24,12 +24,12 @@
 
   if (browser) {
     beforeNavigate(() => {
-      const route_id = get(page).route.id
+      const route_id = get(page).route.id || "unknown"
       const url = window.location.origin + route_id
       posthog.capture("$pageleave", { $current_url: url, $pathname: route_id })
     })
     afterNavigate(() => {
-      const route_id = get(page).route.id
+      const route_id = get(page).route.id || "unknown"
       const url = window.location.origin + route_id
       posthog.capture("$pageview", { $current_url: url, $pathname: route_id })
     })
