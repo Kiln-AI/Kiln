@@ -27,7 +27,7 @@
   title="Documents"
   subtitle="Add knowledge to your project with documents"
 >
-  <div class="flex flex-col gap-4 mt-16">
+  <div class="flex flex-col gap-4">
     {#each sections as section}
       <a
         href={section.href}
