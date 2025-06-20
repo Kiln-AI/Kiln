@@ -123,3 +123,10 @@ export function mime_type_to_string(mime_type: string): string {
     return mime_type
   }
 }
+
+export function capitalize(str: string | undefined | null): string {
+  if (!str) {
+    return ""
+  }
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}

@@ -6,7 +6,7 @@
 
   let sections = [
     {
-      name: "Library",
+      name: "Document Library",
       description: "Add or Browse Documents",
       button_text: "View Library",
       href: `/docs/library/${project_id}`,
