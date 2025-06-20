@@ -64,7 +64,6 @@ uv run ./checks.sh
 We suggest the following extensions for VSCode/Cursor. With them, you'll get compliant formatting and linting in your IDE.
 
 - Prettier
-- Pylance
 - Python
 - Python Debugger
 - Ruff
