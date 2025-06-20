@@ -1019,7 +1019,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.37.10" },
     { name = "coverage", specifier = ">=7.6.4" },
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
-    { name = "google-genai", specifier = ">=1.14.0" },
+    { name = "google-genai", specifier = ">=1.21.1" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "litellm", specifier = ">=1.67.0" },
     { name = "openai", specifier = ">=1.53.0" },
