@@ -4,8 +4,17 @@
     load_available_models,
     available_model_details,
     ui_state,
+    provider_name_from_id,
+    model_name as model_name_from_id,
+    model_info,
+    load_model_info,
   } from "$lib/stores"
-  import type { AvailableModels } from "$lib/types"
+  import {
+    addRecentModel,
+    type RecentModel,
+    recent_model_store,
+  } from "$lib/stores/recent_model_store"
+  import type { AvailableModels, ProviderModels } from "$lib/types"
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -26,6 +35,8 @@
     requires_data_gen,
     requires_logprobs,
     $ui_state.current_task_id,
+    $recent_model_store,
+    $model_info,
   )
 
   // Export the parsed model name and provider name
@@ -39,8 +50,11 @@
     provider_name = model_provider ? model_provider.split("/")[0] : null
   }
 
+  $: addRecentModel(model_name, provider_name)
+
   onMount(async () => {
     await load_available_models()
+    await load_model_info()
   })
 
   let unsupported_models: [string, string][] = []
@@ -75,10 +89,28 @@
     requires_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
+    recent_models: RecentModel[],
+    model_data: ProviderModels | null,
   ): [string, [unknown, string][]][] {
     let options = []
     unsupported_models = []
     untested_models = []
+
+    // Recent models section
+    if (recent_models.length > 0) {
+      let recent_model_list = []
+      for (const recent_model of recent_models) {
+        recent_model_list.push([
+          recent_model.model_provider + "/" + recent_model.model_id,
+          model_name_from_id(recent_model.model_id, model_data) +
+            " (" +
+            provider_name_from_id(recent_model.model_provider) +
+            ")",
+        ])
+      }
+      options.push(["Recent Models", recent_model_list])
+    }
+
     for (const provider of providers) {
       let model_list = []
       for (const model of provider.models) {
