@@ -318,7 +318,7 @@ async def test_extract_image_jpeg(model_name, mock_file_factory):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
         path=str(test_image_file),
-        mime_type="image/png",
+        mime_type="image/jpeg",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -327,12 +327,26 @@ async def test_extract_image_jpeg(model_name, mock_file_factory):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_video(model_name, mock_file_factory):
+async def test_extract_video_mp4(model_name, mock_file_factory):
     test_video_file = mock_file_factory(MockFileFactoryMimeType.MP4)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
         path=str(test_video_file),
         mime_type="video/mp4",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Video summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_video_mov(model_name, mock_file_factory):
+    test_video_file = mock_file_factory(MockFileFactoryMimeType.MOV)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_video_file),
+        mime_type="video/quicktime",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -360,7 +374,7 @@ async def test_extract_audio_mp3(model_name, mock_file_factory):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
         path=str(test_audio_file),
-        mime_type="audio/ogg",
+        mime_type="audio/mpeg",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -374,7 +388,7 @@ async def test_extract_audio_wav(model_name, mock_file_factory):
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
         path=str(test_audio_file),
-        mime_type="audio/ogg",
+        mime_type="audio/wav",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
