@@ -100,10 +100,26 @@ def pytest_collection_modifyitems(config, items):
 
 
 class MockFileFactoryMimeType(Enum):
+    # documents
     PDF = "application/pdf"
+    CSV = "text/csv"
+    TXT = "text/plain"
+    HTML = "text/html"
+    MD = "text/markdown"
+
+    # images
     PNG = "image/png"
-    MP4 = "video/mp4"
+    JPG = "image/jpeg"
+    JPEG = "image/jpeg"
+
+    # audio
+    MP3 = "audio/mpeg"
+    WAV = "audio/wav"
     OGG = "audio/ogg"
+
+    # video
+    MP4 = "video/mp4"
+    MOV = "video/quicktime"
 
 
 @pytest.fixture
@@ -125,14 +141,42 @@ def mock_file_factory(
 
     def create_file(mime_type: MockFileFactoryMimeType) -> Path:
         match mime_type:
+            # document
             case MockFileFactoryMimeType.PDF:
-                filename = test_data_dir / "1706.03762v7.pdf"
+                filename = test_data_dir / "document_paper.pdf"
+            case MockFileFactoryMimeType.CSV:
+                filename = test_data_dir / "document_people.csv"
+            case MockFileFactoryMimeType.TXT:
+                filename = test_data_dir / "document_ice_cubes.txt"
+            case MockFileFactoryMimeType.HTML:
+                filename = test_data_dir / "document_ice_cubes.html"
+            case MockFileFactoryMimeType.MD:
+                filename = test_data_dir / "document_ice_cubes.md"
+            case MockFileFactoryMimeType.TXT:
+                filename = test_data_dir / "document_ice_cubes.txt"
+
+            # images
             case MockFileFactoryMimeType.PNG:
-                filename = test_data_dir / "kodim23.png"
-            case MockFileFactoryMimeType.MP4:
-                filename = test_data_dir / "big_buck_bunny_sample.mp4"
+                filename = test_data_dir / "image_kodim23.png"
+            case MockFileFactoryMimeType.JPG:
+                filename = test_data_dir / "image_nasa.jpg"
+            case MockFileFactoryMimeType.JPEG:
+                filename = test_data_dir / "image_nasa.jpeg"
+
+            # audio
             case MockFileFactoryMimeType.OGG:
-                filename = test_data_dir / "poacher.ogg"
+                filename = test_data_dir / "audio_ice_cubes.ogg"
+            case MockFileFactoryMimeType.MP3:
+                filename = test_data_dir / "audio_ice_cubes.mp3"
+            case MockFileFactoryMimeType.WAV:
+                filename = test_data_dir / "audio_ice_cubes.wav"
+
+            # video
+            case MockFileFactoryMimeType.MP4:
+                filename = test_data_dir / "video_big_buck_bunny.mp4"
+            case MockFileFactoryMimeType.MOV:
+                filename = test_data_dir / "video_tv_bars.mov"
+
             case _:
                 raise ValueError(f"No test file found for mime type: {mime_type}")
 
