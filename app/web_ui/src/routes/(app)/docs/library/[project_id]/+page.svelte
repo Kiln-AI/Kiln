@@ -120,8 +120,8 @@
         bValue = b.name
         break
       case "kind":
-        aValue = a.original_file.mime_type
-        bValue = b.original_file.mime_type
+        aValue = a.kind + a.original_file.mime_type
+        bValue = b.kind + b.original_file.mime_type
         break
       case "original_file.size":
         aValue = a.original_file.size
