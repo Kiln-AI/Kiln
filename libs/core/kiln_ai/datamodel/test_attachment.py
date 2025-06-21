@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel, Field, SerializationInfo, field_serializer
 
+from conftest import MockFileFactoryMimeType
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
-from kiln_ai.tests.fixtures import MockFileFactoryMimeType, mock_file_factory
 
 
 class ModelWithAttachment(KilnBaseModel):
