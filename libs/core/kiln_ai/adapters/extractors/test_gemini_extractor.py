@@ -1,10 +1,10 @@
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from google import genai
 from google.genai import types
 
+from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.base_extractor import ExtractionOutput, OutputFormat
 from kiln_ai.adapters.extractors.gemini_extractor import (
     ExtractorConfig,
@@ -43,12 +43,6 @@ def mock_gemini_extractor(mock_gemini_client):
             },
         ),
     )
-
-
-@pytest.fixture
-def test_data_dir():
-    """Return the path to the test data directory."""
-    return Path(__file__).parent.parent.parent / "tests" / "data"
 
 
 @pytest.mark.parametrize(
@@ -203,7 +197,12 @@ async def test_extract_failure_unsupported_mime_type(mock_gemini_extractor):
             )
 
 
-SUPPORTED_MODELS = ["gemini-2.0-flash"]
+SUPPORTED_MODELS = [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
 
 
 def paid_gemini_extractor(model_name: str):
@@ -219,8 +218,7 @@ def paid_gemini_extractor(model_name: str):
                 "prompt_audio": "Return a short paragraph summarizing the audio. Start your answer with the word 'Audio summary:'.",
             },
             passthrough_mimetypes=[
-                OutputFormat.TEXT,
-                OutputFormat.MARKDOWN,
+                # we want all mimetypes to go to Gemini to be sure we're testing the API call
             ],
         ),
         gemini_client=genai.Client(
@@ -231,10 +229,11 @@ def paid_gemini_extractor(model_name: str):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_document(model_name, test_data_dir):
+async def test_extract_document_pdf(model_name, mock_file_factory):
+    test_pdf_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "1706.03762v7.pdf"),
+        path=str(test_pdf_file),
         mime_type="application/pdf",
     )
     assert not output.is_passthrough
@@ -244,10 +243,67 @@ async def test_extract_document(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_image(model_name, test_data_dir):
+async def test_extract_csv(model_name, mock_file_factory):
+    test_csv_file = mock_file_factory(MockFileFactoryMimeType.CSV)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "kodim23.png"),
+        path=str(test_csv_file),
+        mime_type="text/csv",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Document summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_html(model_name, mock_file_factory):
+    test_html_file = mock_file_factory(MockFileFactoryMimeType.HTML)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_html_file),
+        mime_type="text/html",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Document summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_md(model_name, mock_file_factory):
+    test_md_file = mock_file_factory(MockFileFactoryMimeType.MD)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_md_file),
+        mime_type="text/markdown",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Document summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_txt(model_name, mock_file_factory):
+    test_txt_file = mock_file_factory(MockFileFactoryMimeType.TXT)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_txt_file),
+        mime_type="text/plain",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Document summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_image_png(model_name, mock_file_factory):
+    test_image_file = mock_file_factory(MockFileFactoryMimeType.PNG)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_image_file),
         mime_type="image/png",
     )
     assert not output.is_passthrough
@@ -257,10 +313,25 @@ async def test_extract_image(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_video(model_name, test_data_dir):
+async def test_extract_image_jpeg(model_name, mock_file_factory):
+    test_image_file = mock_file_factory(MockFileFactoryMimeType.JPEG)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "big_buck_bunny_sample.mp4"),
+        path=str(test_image_file),
+        mime_type="image/jpeg",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Image summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_video_mp4(model_name, mock_file_factory):
+    test_video_file = mock_file_factory(MockFileFactoryMimeType.MP4)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_video_file),
         mime_type="video/mp4",
     )
     assert not output.is_passthrough
@@ -270,11 +341,54 @@ async def test_extract_video(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_audio(model_name, test_data_dir):
+async def test_extract_video_mov(model_name, mock_file_factory):
+    test_video_file = mock_file_factory(MockFileFactoryMimeType.MOV)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "poacher.ogg"),
+        path=str(test_video_file),
+        mime_type="video/quicktime",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Video summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_audio_ogg(model_name, mock_file_factory):
+    test_audio_file = mock_file_factory(MockFileFactoryMimeType.OGG)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_audio_file),
         mime_type="audio/ogg",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Audio summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_audio_mp3(model_name, mock_file_factory):
+    test_audio_file = mock_file_factory(MockFileFactoryMimeType.MP3)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_audio_file),
+        mime_type="audio/mpeg",
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert "Audio summary:" in output.content
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+async def test_extract_audio_wav(model_name, mock_file_factory):
+    test_audio_file = mock_file_factory(MockFileFactoryMimeType.WAV)
+    extractor = paid_gemini_extractor(model_name=model_name)
+    output = await extractor.extract(
+        path=str(test_audio_file),
+        mime_type="audio/wav",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
@@ -293,4 +407,5 @@ async def test_provider_bad_request(tmp_path, model_name):
     with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
         await extractor.extract(
             path=temp_file.as_posix(),
+            mime_type="application/pdf",
         )

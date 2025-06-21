@@ -38,7 +38,8 @@ MIME_TYPES_SUPPORTED = {
     Kind.VIDEO: [
         "video/mp4",
         "video/mpeg",
-        "video/mov",
+        "video/mov",  # the correct type is video/quicktime, but Google lists it as video/mov
+        "video/quicktime",
         "video/avi",
         "video/x-flv",
         "video/mpg",
