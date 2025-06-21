@@ -17,6 +17,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
+from kiln_ai.tests.fixtures import MockFileFactoryMimeType, mock_file_factory
 
 
 @pytest.fixture
@@ -61,7 +62,8 @@ def mock_extractor_config(mock_project):
 
 
 @pytest.fixture
-def mock_document(test_pdf_file, mock_project) -> Document:
+def mock_document(mock_project, mock_file_factory) -> Document:
+    test_pdf_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     document = Document(
         name="test",
         description="test",
@@ -70,9 +72,7 @@ def mock_document(test_pdf_file, mock_project) -> Document:
             filename="test.pdf",
             size=100,
             mime_type="application/pdf",
-            attachment=KilnAttachmentModel(
-                path=test_pdf_file,
-            ),
+            attachment=KilnAttachmentModel.from_file(test_pdf_file),
         ),
         parent=mock_project,
     )

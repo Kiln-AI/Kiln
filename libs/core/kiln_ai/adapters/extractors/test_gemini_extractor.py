@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +11,7 @@ from kiln_ai.adapters.extractors.gemini_extractor import (
     Kind,
 )
 from kiln_ai.datamodel.extraction import ExtractorType
+from kiln_ai.tests.fixtures.attachment import MockFileFactoryMimeType, mock_file_factory
 from kiln_ai.utils.config import Config
 
 PROMPTS_FOR_KIND: dict[str, str] = {
@@ -43,12 +43,6 @@ def mock_gemini_extractor(mock_gemini_client):
             },
         ),
     )
-
-
-@pytest.fixture
-def test_data_dir():
-    """Return the path to the test data directory."""
-    return Path(__file__).parent.parent.parent / "tests" / "data"
 
 
 @pytest.mark.parametrize(
@@ -231,10 +225,11 @@ def paid_gemini_extractor(model_name: str):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_document(model_name, test_data_dir):
+async def test_extract_document(model_name, mock_file_factory):
+    test_pdf_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "1706.03762v7.pdf"),
+        path=str(test_pdf_file),
         mime_type="application/pdf",
     )
     assert not output.is_passthrough
@@ -244,10 +239,11 @@ async def test_extract_document(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_image(model_name, test_data_dir):
+async def test_extract_image(model_name, mock_file_factory):
+    test_image_file = mock_file_factory(MockFileFactoryMimeType.PNG)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "kodim23.png"),
+        path=str(test_image_file),
         mime_type="image/png",
     )
     assert not output.is_passthrough
@@ -257,10 +253,11 @@ async def test_extract_image(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_video(model_name, test_data_dir):
+async def test_extract_video(model_name, mock_file_factory):
+    test_video_file = mock_file_factory(MockFileFactoryMimeType.MP4)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "big_buck_bunny_sample.mp4"),
+        path=str(test_video_file),
         mime_type="video/mp4",
     )
     assert not output.is_passthrough
@@ -270,10 +267,11 @@ async def test_extract_video(model_name, test_data_dir):
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_audio(model_name, test_data_dir):
+async def test_extract_audio(model_name, mock_file_factory):
+    test_audio_file = mock_file_factory(MockFileFactoryMimeType.OGG)
     extractor = paid_gemini_extractor(model_name=model_name)
     output = await extractor.extract(
-        path=str(test_data_dir / "poacher.ogg"),
+        path=str(test_audio_file),
         mime_type="audio/ogg",
     )
     assert not output.is_passthrough
