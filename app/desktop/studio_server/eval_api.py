@@ -1,10 +1,11 @@
 import json
+import re
 from typing import Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import (
     BasePrompt,
@@ -13,7 +14,12 @@ from kiln_ai.datamodel import (
     Task,
     TaskRun,
 )
-from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.basemodel import (
+    ID_TYPE,
+    MAX_SHORT_NAME_LENGTH,
+    NAME_REGEX,
+    string_to_valid_name,
+)
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -24,7 +30,7 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
-from kiln_ai.datamodel.prompt_id import is_frozen_prompt
+from kiln_ai.datamodel.prompt_id import PromptGenerators, is_frozen_prompt
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -352,7 +358,11 @@ def connect_evals_api(app: FastAPI):
         request: CreateTaskRunConfigRequest,
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
-        name = request.name or generate_memorable_name()
+        name = request.name or generate_task_run_config_name(
+            request.run_config_properties.model_name,
+            request.run_config_properties.prompt_id,
+            task,
+        )
 
         parent_project = task.parent_project()
         if parent_project is None:
@@ -403,7 +413,9 @@ def connect_evals_api(app: FastAPI):
         request: CreateEvalConfigRequest,
     ) -> EvalConfig:
         eval = eval_from_id(project_id, task_id, eval_id)
-        name = request.name or generate_memorable_name()
+        name = request.name or generate_eval_config_name(
+            request.type, request.model_name
+        )
 
         eval_config = EvalConfig(
             name=name,
@@ -852,3 +864,118 @@ def connect_evals_api(app: FastAPI):
             partially_rated_count=partially_rated_count,
             not_rated_count=not_rated_count,
         )
+
+
+def generate_task_run_config_name(model_id: str, prompt_id: str, task: Task) -> str:
+    """Generate a descriptive name for a task run config in format: {model_name} - {prompt_name}
+
+    Args:
+        model_id: The model ID from the run config (e.g. "gpt-4o", "claude-3-5-sonnet")
+        prompt_id: The prompt ID from the run config properties
+        task: The task to use for prompt name resolution
+
+    Returns:
+        str: A descriptive name following NAME_REGEX and within MAX_SHORT_NAME_LENGTH
+    """
+    # Get human-readable model name
+    model_name = _get_model_display_name(model_id)
+
+    # Get prompt name
+    prompt_name = _get_prompt_display_name(prompt_id, task)
+
+    # Create base name
+    base_name = f"{model_name} - {prompt_name}"
+
+    # Ensure it follows NAME_REGEX and length constraints
+    return _sanitize_name(base_name)
+
+
+def generate_eval_config_name(eval_type: EvalConfigType, model_id: str) -> str:
+    """Generate a descriptive name for an eval config in format: {eval_method} - {model_name}
+
+    Args:
+        eval_type: The type of evaluation (g_eval, llm_as_judge)
+        model_id: The model ID from the eval config (e.g. "gpt-4o", "claude-3-5-sonnet")
+
+    Returns:
+        str: A descriptive name following NAME_REGEX and within MAX_SHORT_NAME_LENGTH
+    """
+    # Get human-readable eval method name
+    eval_method = _get_eval_method_display_name(eval_type)
+
+    # Get human-readable model name
+    model_name = _get_model_display_name(model_id)
+
+    # Create base name
+    base_name = f"{eval_method} - {model_name}"
+
+    # Ensure it follows NAME_REGEX and length constraints
+    return _sanitize_name(base_name)
+
+
+_prompt_generator_names = {
+    PromptGenerators.SIMPLE.value: "Basic Prompt",
+    PromptGenerators.SHORT.value: "Short Prompt",
+    PromptGenerators.FEW_SHOT.value: "Few Shot Prompt",
+    PromptGenerators.MULTI_SHOT.value: "Multi Shot Prompt",
+    PromptGenerators.REPAIRS.value: "Repairs Prompt",
+    PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT.value: "Basic CoT Prompt",
+    PromptGenerators.FEW_SHOT_CHAIN_OF_THOUGHT.value: "Few Shot CoT Prompt",
+    PromptGenerators.MULTI_SHOT_CHAIN_OF_THOUGHT.value: "Multi Shot CoT Prompt",
+}
+
+
+def _get_prompt_display_name(prompt_id: str, task: Task) -> str:
+    """Get a human-readable display name for a prompt ID"""
+    # Handle saved prompts (id::prompt_id)
+    if prompt_id.startswith("id::"):
+        actual_prompt_id = prompt_id[4:]
+        prompt_model = next(
+            (p for p in task.prompts(readonly=True) if p.id == actual_prompt_id),
+            None,
+        )
+        if prompt_model:
+            return prompt_model.name
+        return "Saved Prompt"
+
+    # Handle fine-tune prompts (fine_tune_prompt::fine_tune_id)
+    if prompt_id.startswith("fine_tune_prompt::"):
+        return "Fine Tune Prompt"
+
+    return _prompt_generator_names.get(prompt_id, "Unknown")
+
+
+def _get_eval_method_display_name(eval_type: EvalConfigType) -> str:
+    """Get a human-readable display name for an eval config type"""
+    eval_method_names = {
+        EvalConfigType.g_eval: "G-Eval",
+        EvalConfigType.llm_as_judge: "LLM as Judge",
+    }
+    return eval_method_names.get(eval_type, "Unknown")
+
+
+def _get_model_display_name(model_id: str) -> str:
+    """Get a human-readable display name for a model ID"""
+    # Search through all built-in models to find one with a matching model_id
+    for model in built_in_models:
+        if model.name == model_id:
+            return model.friendly_name
+
+    # If not found, return the model_id as-is (fallback)
+    return model_id
+
+
+def _sanitize_name(name: str) -> str:
+    """Sanitize a name to follow NAME_REGEX and MAX_SHORT_NAME_LENGTH constraints"""
+    # Use the existing string_to_valid_name function to handle regex compliance
+    valid_name = string_to_valid_name(name)
+
+    # Truncate if too long, preserving the most important parts
+    if len(valid_name) > MAX_SHORT_NAME_LENGTH:
+        valid_name = valid_name[:MAX_SHORT_NAME_LENGTH].rstrip()
+
+    # Ensure we have at least one character
+    if not valid_name:
+        return generate_memorable_name()
+
+    return valid_name
