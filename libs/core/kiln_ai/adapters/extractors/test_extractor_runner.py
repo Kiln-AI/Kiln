@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
@@ -17,16 +18,6 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
-from kiln_ai.tests.fixtures import MockFileFactoryMimeType, mock_file_factory
-
-
-@pytest.fixture
-def test_pdf_file(tmp_path) -> Path:
-    data_dir = Path(__file__).parent.parent.parent / "tests" / "data"
-    # copy to tmp_path
-    pdf_file = tmp_path / "1706.03762v7.pdf"
-    shutil.copy(data_dir / "1706.03762v7.pdf", pdf_file)
-    return pdf_file
 
 
 @pytest.fixture

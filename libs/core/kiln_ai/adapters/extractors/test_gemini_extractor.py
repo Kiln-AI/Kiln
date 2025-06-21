@@ -4,6 +4,7 @@ import pytest
 from google import genai
 from google.genai import types
 
+from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.base_extractor import ExtractionOutput, OutputFormat
 from kiln_ai.adapters.extractors.gemini_extractor import (
     ExtractorConfig,
@@ -11,7 +12,6 @@ from kiln_ai.adapters.extractors.gemini_extractor import (
     Kind,
 )
 from kiln_ai.datamodel.extraction import ExtractorType
-from kiln_ai.tests.fixtures.attachment import MockFileFactoryMimeType, mock_file_factory
 from kiln_ai.utils.config import Config
 
 PROMPTS_FOR_KIND: dict[str, str] = {
@@ -291,4 +291,5 @@ async def test_provider_bad_request(tmp_path, model_name):
     with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
         await extractor.extract(
             path=temp_file.as_posix(),
+            mime_type="application/pdf",
         )
