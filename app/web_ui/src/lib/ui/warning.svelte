@@ -11,6 +11,7 @@
   export let large_icon: boolean = false
   export let tight: boolean = false
   export let trusted: boolean = false
+  export let outline: boolean = false
 
   // Default to error if no color is provided
   $: color = warning_color || "error"
@@ -32,18 +33,18 @@
       .join("")
   }
 
-  function get_color() {
+  function get_color(type: "text" | "border" = "text") {
     switch (color) {
       case "error":
-        return "text-error"
+        return type === "text" ? "text-error" : "border-error"
       case "warning":
-        return "text-warning"
+        return type === "text" ? "text-warning" : "border-warning"
       case "success":
-        return "text-success"
+        return type === "text" ? "text-success" : "border-success"
       case "primary":
-        return "text-primary"
+        return type === "text" ? "text-primary" : "border-primary"
       case "gray":
-        return "text-gray-500"
+        return type === "text" ? "text-gray-500" : "border-gray-500"
       default:
         return ""
     }
@@ -51,7 +52,11 @@
 </script>
 
 {#if warning_message}
-  <div class="text-sm text-gray-500 flex flex-row items-center mt-2">
+  <div
+    class="text-sm text-gray-500 flex flex-row items-center {outline
+      ? `border-2 ${get_color('border')} rounded-lg px-4 py-2 mb-6`
+      : 'mt-2'}"
+  >
     {#if warning_icon === "exclaim" || warning_icon === "info"}
       <svg
         class="{large_icon
