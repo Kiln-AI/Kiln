@@ -54,9 +54,10 @@ NAME_FIELD = Field(
     pattern=NAME_REGEX,
     description="A name for this entity.",
 )
+MAX_SHORT_NAME_LENGTH = 32
 SHORT_NAME_FIELD = Field(
     min_length=1,
-    max_length=32,
+    max_length=MAX_SHORT_NAME_LENGTH,
     pattern=NAME_REGEX,
     description="A name for this entity",
 )
