@@ -53,7 +53,6 @@ SUPPORTED_MIME_TYPES = {
         "text/markdown",
         "text/html",
         "text/md",
-        "text/csv",
     },
     Kind.IMAGE: {
         "image/png",

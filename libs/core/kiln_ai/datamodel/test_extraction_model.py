@@ -480,7 +480,6 @@ def test_extraction_prompt_builder_invalid_kind():
         ("file.txt", "text/plain"),
         ("file.md", "text/markdown"),
         ("file.html", "text/html"),
-        ("file.csv", "text/csv"),
         ("file.png", "image/png"),
         ("file.jpeg", "image/jpeg"),
         ("file.mp4", "video/mp4"),
@@ -531,6 +530,10 @@ def test_document_valid_mime_type(
         (
             "file.avi",
             "video/x-msvideo",
+        ),
+        (
+            "file.csv",
+            "text/csv",
         ),
     ],
 )

@@ -54,7 +54,6 @@ def mock_gemini_extractor(mock_gemini_client):
         ("text/plain", Kind.DOCUMENT),
         ("text/html", Kind.DOCUMENT),
         ("text/css", Kind.DOCUMENT),
-        ("text/csv", Kind.DOCUMENT),
         ("text/xml", Kind.DOCUMENT),
         ("text/rtf", Kind.DOCUMENT),
         # images
@@ -235,20 +234,6 @@ async def test_extract_document_pdf(model_name, mock_file_factory):
     output = await extractor.extract(
         path=str(test_pdf_file),
         mime_type="application/pdf",
-    )
-    assert not output.is_passthrough
-    assert output.content_format == OutputFormat.MARKDOWN
-    assert "Document summary:" in output.content
-
-
-@pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_extract_csv(model_name, mock_file_factory):
-    test_csv_file = mock_file_factory(MockFileFactoryMimeType.CSV)
-    extractor = paid_gemini_extractor(model_name=model_name)
-    output = await extractor.extract(
-        path=str(test_csv_file),
-        mime_type="text/csv",
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN

@@ -159,7 +159,6 @@ async def test_extract_passthrough_output_format(mock_gemini_properties, output_
         ("test.txt", "text/plain", OutputFormat.MARKDOWN),
         ("test.txt", "text/markdown", OutputFormat.MARKDOWN),
         ("test.html", "text/html", OutputFormat.MARKDOWN),
-        ("test.csv", "text/csv", OutputFormat.MARKDOWN),
     ],
 )
 async def test_extract_non_passthrough(
