@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
 
+logger = logging.getLogger(__name__)
+
 
 class Kind(str, Enum):
     DOCUMENT = "document"
@@ -132,8 +134,6 @@ class Extraction(KilnParentedModel):
         return self.parent  # type: ignore
 
     async def output_content(self) -> str | None:
-        if not self.output.is_persisted:
-            return None
         if not self.path:
             raise ValueError(
                 "Failed to resolve the path of extraction output attachment because the extraction does not have a path."

@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel, Field, SerializationInfo, field_serializer
 
+from conftest import MockFileFactoryMimeType
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
 
 
@@ -37,27 +38,6 @@ def hash_file(p: Path) -> str:
 
 
 @pytest.fixture
-def test_media_files() -> dict[str, Path]:
-    data_dir = Path(__file__).parent.parent / "tests" / "data"
-    return {
-        "video": data_dir / "big_buck_bunny_sample.mp4",
-        "audio": data_dir / "poacher.ogg",
-        "image": data_dir / "kodim23.png",
-        "document": data_dir / "1706.03762v7.pdf",
-    }
-
-
-@pytest.fixture
-def test_media_file_paths(test_media_files) -> list[Path]:
-    return [p for p in test_media_files.values()]
-
-
-@pytest.fixture
-def test_media_file_document(test_media_files) -> Path:
-    return test_media_files["document"]
-
-
-@pytest.fixture
 def test_base_kiln_file(tmp_path) -> Path:
     test_file_path = tmp_path / "test_model.json"
     data = {"v": 1, "model_type": "kiln_base_model"}
@@ -68,20 +48,18 @@ def test_base_kiln_file(tmp_path) -> Path:
     return test_file_path
 
 
-def test_save_to_file_with_attachment_single(
-    test_base_kiln_file, test_media_file_document
-):
-    test_file = test_media_file_document
+def test_save_to_file_with_attachment_single(test_base_kiln_file, mock_file_factory):
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_file),
+        attachment=KilnAttachmentModel.from_file(test_file),
     )
 
-    assert not model.attachment.is_persisted
+    assert model.attachment.path is None
 
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -100,23 +78,29 @@ def test_save_to_file_with_attachment_single(
     assert filecmp.cmp(expected_full_path, test_file)
 
 
-def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_paths):
-    # we map hashes to their files, so we can find the corresponding file after the save
-    file_hashes = {hash_file(p): p for p in test_media_file_paths}
+def test_save_to_file_with_attachment_list(test_base_kiln_file, mock_file_factory):
+    media_file_paths = [
+        mock_file_factory(MockFileFactoryMimeType.PDF),
+        mock_file_factory(MockFileFactoryMimeType.PNG),
+        mock_file_factory(MockFileFactoryMimeType.MP4),
+        mock_file_factory(MockFileFactoryMimeType.OGG),
+    ]
 
-    test_files = [KilnAttachmentModel(path=p) for p in test_media_file_paths]
+    # we map hashes to their files, so we can find the corresponding file after the save
+    media_file_hashes = {hash_file(p): p for p in media_file_paths}
+
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment_list=test_files,
+        attachment_list=[KilnAttachmentModel.from_file(p) for p in media_file_paths],
     )
 
     for attachment in model.attachment_list:
-        assert not attachment.is_persisted
+        assert attachment.path is None
 
     model.save_to_file()
 
     for attachment in model.attachment_list:
-        assert attachment.is_persisted
+        assert attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -129,7 +113,7 @@ def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_
 
     # check all the files were persisted
     attachment_list = data["attachment_list"]
-    assert len(attachment_list) == len(test_media_file_paths)
+    assert len(attachment_list) == len(media_file_paths)
 
     # check the files are present and correct in model.path.parent
     for attachment in attachment_list:
@@ -144,29 +128,35 @@ def test_save_to_file_with_attachment_list(test_base_kiln_file, test_media_file_
         assert expected_full_path.exists()
 
         # find the original file it corresponds to, and check content hash is identical
-        original_file = file_hashes[hash_file(expected_full_path)]
+        original_file = media_file_hashes[hash_file(expected_full_path)]
         assert filecmp.cmp(expected_full_path, original_file)
 
 
-def test_save_to_file_with_attachment_dict(test_base_kiln_file, test_media_file_paths):
+def test_save_to_file_with_attachment_dict(test_base_kiln_file, mock_file_factory):
+    media_file_paths = [
+        mock_file_factory(MockFileFactoryMimeType.PDF),
+        mock_file_factory(MockFileFactoryMimeType.PNG),
+        mock_file_factory(MockFileFactoryMimeType.MP4),
+        mock_file_factory(MockFileFactoryMimeType.OGG),
+    ]
     # we map hashes to their files, so we can find the corresponding file after the save
-    file_hashes = {hash_file(p): p for p in test_media_file_paths}
+    media_file_hashes = {hash_file(p): p for p in media_file_paths}
 
-    test_files = {
-        f"file_{i}": KilnAttachmentModel(path=p)
-        for i, p in enumerate(test_media_file_paths)
+    attachment_dict = {
+        f"file_{i}": KilnAttachmentModel.from_file(p)
+        for i, p in enumerate(media_file_paths)
     }
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment_dict=test_files,
+        attachment_dict=attachment_dict,
     )
     for attachment in model.attachment_dict.values():
-        assert not attachment.is_persisted
+        assert attachment.path is None
 
     model.save_to_file()
 
     for attachment in model.attachment_dict.values():
-        assert attachment.is_persisted
+        assert attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -179,7 +169,7 @@ def test_save_to_file_with_attachment_dict(test_base_kiln_file, test_media_file_
 
     # check all the files were persisted
     attachment_dict = data["attachment_dict"]
-    assert len(attachment_dict) == len(test_media_file_paths)
+    assert len(attachment_dict) == len(media_file_paths)
 
     # check the files are present and correct in model.path.parent
     for attachment in attachment_dict.values():
@@ -194,24 +184,23 @@ def test_save_to_file_with_attachment_dict(test_base_kiln_file, test_media_file_
         assert expected_full_path.exists()
 
         # find the original file it corresponds to, and check content hash is identical
-        original_file = file_hashes[hash_file(expected_full_path)]
+        original_file = media_file_hashes[hash_file(expected_full_path)]
         assert filecmp.cmp(expected_full_path, original_file)
 
 
-def test_save_to_file_with_indirect_attachment(
-    test_base_kiln_file, test_media_file_document
-):
+def test_save_to_file_with_indirect_attachment(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithIndirectAttachment(
         path=test_base_kiln_file,
         container=ContainerModel(
-            indirect_attachment=KilnAttachmentModel(path=test_media_file_document)
+            indirect_attachment=KilnAttachmentModel.from_file(test_media_file_document)
         ),
     )
-    assert not model.container.indirect_attachment.is_persisted
+    assert model.container.indirect_attachment.path is None
 
     model.save_to_file()
 
-    assert model.container.indirect_attachment.is_persisted
+    assert model.container.indirect_attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -230,19 +219,20 @@ def test_save_to_file_with_indirect_attachment(
 
 
 def test_save_to_file_with_indirect_attachment_optional(
-    test_base_kiln_file, test_media_file_document
+    test_base_kiln_file, mock_file_factory
 ):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithIndirectAttachment(
         path=test_base_kiln_file,
         container_optional=ContainerModel(
-            indirect_attachment=KilnAttachmentModel(path=test_media_file_document)
+            indirect_attachment=KilnAttachmentModel.from_file(test_media_file_document)
         ),
     )
-    assert not model.container_optional.indirect_attachment.is_persisted
+    assert model.container_optional.indirect_attachment.path is None
 
     model.save_to_file()
 
-    assert model.container_optional.indirect_attachment.is_persisted
+    assert model.container_optional.indirect_attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
@@ -279,10 +269,11 @@ def test_save_to_file_with_indirect_attachment_optional_none(test_base_kiln_file
         mock_save_to_file.assert_not_called()
 
 
-def test_dump_dest_path(test_base_kiln_file, test_media_file_document):
+def test_dump_dest_path(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_media_file_document),
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
     )
 
     with pytest.raises(
@@ -316,10 +307,11 @@ def test_dump_dest_path(test_base_kiln_file, test_media_file_document):
     model.model_dump_json(context={"dest_path": test_base_kiln_file.parent})
 
 
-def test_resolve_path(test_base_kiln_file, test_media_file_document):
+def test_resolve_path(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_media_file_document),
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
     )
     assert (
         model.attachment.resolve_path(test_base_kiln_file.parent)
@@ -327,27 +319,28 @@ def test_resolve_path(test_base_kiln_file, test_media_file_document):
     )
 
 
-def test_create_from_data(test_base_kiln_file, test_media_file_document):
+def test_create_from_data(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     with open(test_media_file_document, "rb") as file:
         data = file.read()
 
     attachment = KilnAttachmentModel.from_data(data, "application/pdf")
-    assert attachment.path.exists()
+    assert attachment.resolve_path(test_base_kiln_file.parent).exists()
 
     model = ModelWithAttachment(
         path=test_base_kiln_file,
         attachment=attachment,
     )
-    assert not model.attachment.is_persisted
+    assert model.attachment.path is None
 
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
 
-    assert str(data["attachment"]["path"]) == str(attachment.path)
+    assert str(data["attachment"]["path"]) == str(model.attachment.path)
     assert filecmp.cmp(
         test_media_file_document, attachment.resolve_path(test_base_kiln_file.parent)
     )
@@ -358,7 +351,7 @@ def test_attachment_file_does_not_exist(test_base_kiln_file):
 
     # should raise when we assign a file that does not exist
     with pytest.raises(ValueError):
-        KilnAttachmentModel(path=not_found_file)
+        KilnAttachmentModel.from_file(not_found_file)
 
 
 def test_attachment_is_folder(test_base_kiln_file, tmp_path):
@@ -366,50 +359,114 @@ def test_attachment_is_folder(test_base_kiln_file, tmp_path):
     folder = tmp_path / "test_folder"
     folder.mkdir()
 
-    # create file in folder
-    file = folder / "test_file.txt"
-    file.touch()
-
     # should raise when we assign a folder
     with pytest.raises(ValueError):
         ModelWithAttachment(
             path=test_base_kiln_file,
-            attachment=KilnAttachmentModel(path=folder),
+            attachment=KilnAttachmentModel.from_file(folder),
         )
 
 
-def test_is_persisted_not_serialized(test_base_kiln_file, test_media_file_document):
+@pytest.mark.parametrize(
+    "mime_type",
+    [
+        MockFileFactoryMimeType.PDF,
+        MockFileFactoryMimeType.PNG,
+        MockFileFactoryMimeType.MP4,
+        MockFileFactoryMimeType.OGG,
+    ],
+)
+def test_attachment_lifecycle(test_base_kiln_file, mock_file_factory, mime_type):
+    test_media_file_document = mock_file_factory(mime_type)
     model = ModelWithAttachment(
         path=test_base_kiln_file,
-        attachment=KilnAttachmentModel(path=test_media_file_document),
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
     )
+
+    # before save, the attachment has an absolute path and its stable path does not exist yet
+    assert model.attachment.input_path is not None
+    assert model.attachment.path is None
+
+    # before save, resolve_path should resolve to the original absolute path
+    path_resolved_pre_saved = model.attachment.resolve_path(test_base_kiln_file.parent)
+    assert path_resolved_pre_saved is not None
+    assert filecmp.cmp(path_resolved_pre_saved, test_media_file_document)
+
+    # check it also returns the absolute path when we don't provide the parent path
+    path_resolved_pre_saved_no_parent = model.attachment.resolve_path()
+    assert path_resolved_pre_saved_no_parent is not None
+    assert filecmp.cmp(path_resolved_pre_saved_no_parent, test_media_file_document)
+
+    assert path_resolved_pre_saved_no_parent == path_resolved_pre_saved
+
+    # now we save the model, the attachment is persisted to disk, the absolute path is cleared,
+    # and the stable path (relative to the model's path) is set
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    # after save, the attachment has a stable path and its absolute path is cleared
+    assert model.attachment.path is not None
+    assert model.attachment.input_path is None
 
+    # when we load the model from file, the attachment has its stable relative path, and no absolute path
+    model_loaded_from_file = ModelWithAttachment.load_from_file(test_base_kiln_file)
+    assert model_loaded_from_file.attachment.path is not None
+    assert model_loaded_from_file.attachment.input_path is None
+
+    # the attachment is not aware of its full absolute path, so we need to resolve it, and it should reconstruct it
+    path_resolved_post_saved = model_loaded_from_file.attachment.resolve_path(
+        test_base_kiln_file.parent
+    )
+    assert path_resolved_post_saved is not None
+    assert filecmp.cmp(path_resolved_post_saved, test_media_file_document)
+
+    # verify the model JSON file does not contain the input_path
     with open(test_base_kiln_file, "r") as file:
         data = json.load(file)
+    assert "input_path" not in data["attachment"]
+    assert "path" in data["attachment"]
 
-    assert "is_persisted" not in data["attachment"]
+    # test idempotency - saving again should not change the attachment path
+    model.save_to_file()
+    assert model.attachment.path is not None
+    assert model.attachment.path == Path(data["attachment"]["path"])
+
+    model_loaded_from_file = ModelWithAttachment.load_from_file(test_base_kiln_file)
+    assert model_loaded_from_file.attachment.path is not None
+    assert model_loaded_from_file.attachment.input_path is None
+    assert model_loaded_from_file.attachment.path == Path(data["attachment"]["path"])
+    assert filecmp.cmp(
+        model_loaded_from_file.attachment.resolve_path(test_base_kiln_file.parent),
+        test_media_file_document,
+    )
 
 
-def test_loading_from_file(test_base_kiln_file, test_media_file_document):
+def test_attachment_rejects_relative_path_input(mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
+    # the input path should be absolute, and we should reject relative paths
+    with pytest.raises(ValueError):
+        KilnAttachmentModel.from_file(
+            test_media_file_document.relative_to(test_media_file_document.parent)
+        )
+
+
+def test_loading_from_file(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     root_path = test_base_kiln_file.parent
     json_path = root_path / "test_model.json"
     model = ModelWithAttachment(
         path=json_path,
-        attachment=KilnAttachmentModel(path=test_media_file_document),
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
     )
-    assert not model.attachment.is_persisted
+    assert model.attachment.path is None
 
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     # check we can load the model from the file
     model = ModelWithAttachment.load_from_file(json_path)
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
     # when we load from JSON, the attachment path is only the relative segment
     assert filecmp.cmp(root_path / model.attachment.path, test_media_file_document)
@@ -418,7 +475,7 @@ def test_loading_from_file(test_base_kiln_file, test_media_file_document):
     # won't think the file does not exist during validation
     model.save_to_file()
 
-    assert model.attachment.is_persisted
+    assert model.attachment.path is not None
 
 
 class ModelWithAttachmentNameOverride(KilnBaseModel):
@@ -433,12 +490,13 @@ class ModelWithAttachmentNameOverride(KilnBaseModel):
         return attachment.model_dump(mode="json", context=context)
 
 
-def test_attachment_filename_override(test_base_kiln_file, test_media_file_document):
+def test_attachment_filename_override(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     root_path = test_base_kiln_file.parent
     json_path = root_path / "test_model.json"
     model = ModelWithAttachmentNameOverride(
         path=json_path,
-        attachment=KilnAttachmentModel(path=test_media_file_document),
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
     )
 
     model.save_to_file()
@@ -467,12 +525,20 @@ class ModelWithAttachmentNameOverrideList(KilnBaseModel):
         ]
 
 
-def test_attachment_filename_override_list(test_base_kiln_file, test_media_file_paths):
+def test_attachment_filename_override_list(test_base_kiln_file, mock_file_factory):
+    test_media_file_paths = [
+        mock_file_factory(MockFileFactoryMimeType.PDF),
+        mock_file_factory(MockFileFactoryMimeType.PNG),
+        mock_file_factory(MockFileFactoryMimeType.MP4),
+        mock_file_factory(MockFileFactoryMimeType.OGG),
+    ]
     root_path = test_base_kiln_file.parent
     json_path = root_path / "test_model.json"
     model = ModelWithAttachmentNameOverrideList(
         path=json_path,
-        attachment_list=[KilnAttachmentModel(path=p) for p in test_media_file_paths],
+        attachment_list=[
+            KilnAttachmentModel.from_file(p) for p in test_media_file_paths
+        ],
     )
 
     model.save_to_file()
@@ -492,12 +558,13 @@ class ModelWithAttachmentNoNameOverride(KilnBaseModel):
     attachment: KilnAttachmentModel = Field(default=None)
 
 
-def test_attachment_filename_no_override(test_base_kiln_file, test_media_file_document):
+def test_attachment_filename_no_override(test_base_kiln_file, mock_file_factory):
+    test_media_file_document = mock_file_factory(MockFileFactoryMimeType.PDF)
     root_path = test_base_kiln_file.parent
     json_path = root_path / "test_model.json"
     model = ModelWithAttachmentNoNameOverride(
         path=json_path,
-        attachment=KilnAttachmentModel(path=test_media_file_document),
+        attachment=KilnAttachmentModel.from_file(test_media_file_document),
     )
 
     model.save_to_file()

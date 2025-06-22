@@ -297,7 +297,7 @@ def mock_attachment_factory(tmp_path):
         filename = f"test_{str(uuid.uuid4())}.txt"
         with open(tmp_path / filename, "w") as f:
             f.write("test")
-        return KilnAttachmentModel(path=tmp_path / filename)
+        return KilnAttachmentModel.from_file(tmp_path / filename)
 
     return _create_mock_attachment
 

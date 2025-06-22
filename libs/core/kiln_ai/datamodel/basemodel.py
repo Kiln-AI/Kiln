@@ -69,28 +69,62 @@ def string_to_valid_name(name: str) -> str:
 
 
 class KilnAttachmentModel(BaseModel):
-    path: Path = Field(description="The path to the attachment")
+    path: Path | None = Field(
+        default=None,
+        description="The path to the attachment relative to the parent model's path",
+    )
 
-    is_persisted: bool = Field(
-        default=False,
-        exclude=True,
-        description="Whether the attachment is persisted to its permanent location on disk. This is set automatically when the attachment is loaded from a file.",
+    input_path: Path | None = Field(
+        default=None,
+        description="The input absolute path to the attachment. The file will be copied to its permanent location when the model is saved.",
     )
 
     @model_validator(mode="after")
     def check_file_exists(self, info: ValidationInfo) -> Self:
         context = info.context or {}
-        self.is_persisted = False
+
+        if self.path is None and self.input_path is None:
+            raise ValueError("Path or input path is not set")
+        if self.path is not None and self.input_path is not None:
+            raise ValueError("Path and input path cannot both be set")
+
+        # when loading from file, we only know the relative path so we cannot check if it exists
+        # without knowing the parent path
         if context.get("loading_from_file", False):
-            # if we load from file, we assume it is persisted correctly
-            self.is_persisted = True
+            if isinstance(self.path, str):
+                self.path = Path(self.path)
+            self.input_path = None
             return self
-        if isinstance(self.path, str):
-            self.path = Path(self.path)
-        if not os.path.exists(self.path):
-            raise ValueError(f"File does not exist: {self.path}")
-        if not os.path.isfile(self.path):
-            raise ValueError(f"Path is not a file: {self.path}")
+
+        # when creating a new attachment, the path is not set yet (it is set when the model is saved)
+        # so we only expect the absolute path to be set
+        if self.input_path is not None:
+            if isinstance(self.input_path, str):
+                self.input_path = Path(self.input_path)
+            if not self.input_path.is_absolute():
+                raise ValueError(f"Input path is not absolute: {self.input_path}")
+            if not os.path.exists(self.input_path):
+                raise ValueError(f"Input path does not exist: {self.input_path}")
+            if not os.path.isfile(self.input_path):
+                raise ValueError(f"Input path is not a file: {self.input_path}")
+
+            # this normalizes the path and resolves symlinks
+            self.input_path = self.input_path.resolve()
+
+            return self
+
+        if self.path is not None:
+            if isinstance(self.path, str):
+                self.path = Path(self.path)
+            if self.path.is_absolute():
+                raise ValueError(
+                    f"Path is absolute but should be relative: {self.path}"
+                )
+            if not os.path.exists(self.path):
+                raise ValueError(f"Path does not exist: {self.path}")
+            if not os.path.isfile(self.path):
+                raise ValueError(f"Path is not a file: {self.path}")
+
         return self
 
     @model_serializer
@@ -105,7 +139,10 @@ class KilnAttachmentModel(BaseModel):
         # explicitly set save_attachments to True if they want to save attachments
         save_attachments: bool = context.get("save_attachments", False)
         if not save_attachments:
-            return {"path": self.path}
+            path_val = self.path if self.path is not None else self.input_path
+            if path_val is None:
+                raise ValueError("Attachment has no path")
+            return {"path": path_val}
 
         dest_path: Path | None = context.get("dest_path", None)
         if not dest_path or not isinstance(dest_path, Path):
@@ -117,25 +154,28 @@ class KilnAttachmentModel(BaseModel):
 
         # the attachment is already in the parent folder, so we don't need to copy it
         # if the path is already relative, we consider it has been copied already
-        if self.is_persisted:
+        if self.path is not None:
             return {"path": self.path}
 
         # copy file and update the path to be relative to the dest_path
         new_path = self.copy_file_to(dest_path, context.get("filename_prefix", None))
 
         self.path = new_path.relative_to(dest_path)
-        self.is_persisted = True
+        self.input_path = None
 
         return {"path": self.path}
 
     def copy_file_to(
         self, dest_folder: Path, filename_prefix: str | None = None
     ) -> Path:
-        filename = f"{str(uuid.uuid4().int)[:12]}{self.path.suffix}"
+        if self.input_path is None:
+            raise ValueError("Attachment has no input path to copy")
+
+        filename = f"{str(uuid.uuid4().int)[:12]}{self.input_path.suffix}"
         if filename_prefix:
             filename = f"{filename_prefix}_{filename}"
         target_path = dest_folder / filename
-        shutil.copy(self.path, target_path)
+        shutil.copy(self.input_path, target_path)
         return target_path
 
     @classmethod
@@ -152,18 +192,37 @@ class KilnAttachmentModel(BaseModel):
         else:
             temp_file.write(data)
         temp_file.close()
-        return cls(path=Path(temp_file.name))
+        return cls(input_path=Path(temp_file.name))
 
-    def resolve_path(self, parent_path: Path) -> Path:
+    @classmethod
+    def from_file(cls, path: Path | str) -> Self:
+        """Create an attachment from a file path. The attachment is persisted to
+        its permanent location when the model is saved.
+        """
+        if isinstance(path, str):
+            path = Path(path)
+        return cls(input_path=path)
+
+    def resolve_path(self, parent_path: Path | None = None) -> Path:
         """
         Resolve the path of the attachment relative to the parent path. The attachment does not know
         its parent, so we need to call this to get the full path.
         Args:
-            parent_path (Path): The path to the parent folder
+            parent_path (Path): The absolute path to the parent folder. Must be provided if the model is saved to disk.
         Returns:
             Path: The resolved path of the attachment
         """
-        return parent_path / self.path
+        if self.input_path is not None:
+            return self.input_path
+        if self.path is None:
+            raise ValueError("Attachment path is not set")
+        if parent_path is None:
+            raise ValueError("Parent path is not set")
+        if not parent_path.is_absolute():
+            raise ValueError(
+                f"Failed to resolve attachment path for {self.path} because parent path is not absolute: {parent_path}"
+            )
+        return (parent_path / self.path).resolve()
 
 
 class KilnBaseModel(BaseModel):
