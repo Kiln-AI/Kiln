@@ -127,13 +127,12 @@
   {:else}
     <div>
       {#if extractor_config?.is_archived}
-        <div class="border-2 border-warning rounded-lg p-4 pt-2 mb-6">
-          <Warning
-            warning_message="This extractor is archived. You may unarchive it to use it again."
-            large_icon={true}
-            warning_color="warning"
-          />
-        </div>
+        <Warning
+          warning_message="This extractor is archived. You may unarchive it to use it again."
+          large_icon={true}
+          warning_color="warning"
+          outline={true}
+        />
       {/if}
       <div class="flex flex-col md:flex-row gap-16">
         <div class="grid grid-cols-1 gap-4">

@@ -2,6 +2,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
   import type { ExtractorConfig } from "$lib/types"
+  import Warning from "$lib/ui/warning.svelte"
 
   export let btn_size: "normal" | "mid" = "mid"
   export let project_id: string
@@ -61,7 +62,7 @@
         icon: "play" | "loading" | null
         action: () => void
         isPrimary: boolean
-      }
+      } | null
     > = {
       not_started: {
         label: "Run",
@@ -87,14 +88,7 @@
           progress_dialog?.show()
         },
       },
-      complete: {
-        label: "Completed",
-        icon: null,
-        isPrimary: false,
-        action: () => {
-          progress_dialog?.show()
-        },
-      },
+      complete: null,
       incomplete: {
         label: "Retry",
         icon: "play",
@@ -154,11 +148,11 @@
 
 <Dialog
   bind:this={run_confirm_dialog}
-  title="Extract all documents?"
+  title="Extract All Documents?"
   action_buttons={[
     { label: "Cancel", isCancel: true },
     {
-      label: "Yes, start extraction",
+      label: "Extract All",
       action: () => {
         extractorProgressStore.run_extractor(project_id, extractor_config_id)
         run_confirm_dialog?.close()
@@ -169,11 +163,13 @@
   ]}
 >
   <div class="flex flex-col gap-2 font-light mt-4">
-    <div>
-      This may take a while, depending on the number of documents. We won't
-      extract documents that have already been extracted.
-    </div>
-    <div>If you close this page, you will need to re-run the extractor.</div>
+    <div>This may take a while, depending on the number of documents.</div>
+    <div>Leave the page open while extraction is running.</div>
+    <Warning
+      warning_color="warning"
+      warning_message="This may use considerable compute/credits."
+      tight={true}
+    />
   </div>
 </Dialog>
 
