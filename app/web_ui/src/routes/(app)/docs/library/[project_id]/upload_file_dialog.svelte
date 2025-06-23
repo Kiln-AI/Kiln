@@ -12,7 +12,6 @@
   let description: string | null = null
   const supported_file_types = [
     ".pdf",
-    ".csv",
     ".txt",
     ".md",
     ".html",
@@ -140,7 +139,7 @@
           are supported:
         </p>
         <ul class="list-disc list-inside mt-2">
-          <li>Documents: .pdf, .csv, .txt, .md, .html</li>
+          <li>Documents: .pdf, .txt, .md, .html</li>
           <li>Images: .jpg, .jpeg, .png</li>
           <li>Videos: .mp4, .mov</li>
           <li>Audio: .mp3, .wav, .ogg</li>

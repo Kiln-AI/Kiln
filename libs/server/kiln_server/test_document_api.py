@@ -1,6 +1,7 @@
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 
+from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import connect_document_api
 
@@ -514,7 +516,6 @@ async def test_delete_documents_success(client, document_setup):
         ("document.txt", "text/plain", "document"),
         ("document.md", "text/markdown", "document"),
         ("document.html", "text/html", "document"),
-        ("document.csv", "text/csv", "document"),
         ("image.png", "image/png", "image"),
         ("image.jpeg", "image/jpeg", "image"),
         ("video.mp4", "video/mp4", "video"),
@@ -554,3 +555,34 @@ async def test_create_document_content_type_detection(
     result = response.json()
     assert result["kind"] == expected_kind
     assert result["original_file"]["mime_type"] == expected_content_type
+
+
+@pytest.mark.asyncio
+async def test_create_document_filetype_not_supported(
+    client, project_setup, mock_file_factory
+):
+    project = project_setup
+    test_content = await anyio.Path(
+        mock_file_factory(MockFileFactoryMimeType.CSV)
+    ).read_bytes()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = {
+            "file": (
+                "file.csv",
+                io.BytesIO(test_content),
+                "text/csv",
+            )
+        }
+        data = {"name": "Test File", "description": "Test description"}
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents", files=files, data=data
+        )
+
+    assert response.status_code == 422, response.text
+    assert "Unsupported mime type: text/csv" in response.json()["message"]
