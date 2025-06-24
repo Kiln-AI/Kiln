@@ -14,8 +14,14 @@ from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 @pytest.fixture
 def client():
-    # a client based on a mock studio path
-    with tempfile.TemporaryDirectory() as temp_dir:
+    # a client based on a mock studio path (skipping remote model list loading)
+    with (
+        tempfile.TemporaryDirectory() as temp_dir,
+        patch(
+            "app.desktop.desktop_server.load_remote_models"
+        ) as mock_load_remote_models,
+    ):
+        mock_load_remote_models.return_value = None
         os.makedirs(temp_dir, exist_ok=True)
         with patch(
             "app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir
