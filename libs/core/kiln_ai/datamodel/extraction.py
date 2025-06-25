@@ -21,10 +21,12 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
+from kiln_ai.datamodel.chunk import DocumentChunked
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from kiln_ai.datamodel.chunk import DocumentChunked
     from kiln_ai.datamodel.project import Project
 
 logger = logging.getLogger(__name__)
@@ -116,7 +118,9 @@ class ExtractionSource(str, Enum):
     PASSTHROUGH = "passthrough"
 
 
-class Extraction(KilnParentedModel):
+class Extraction(
+    KilnParentedModel, KilnParentModel, parent_of={"documents_chunked": DocumentChunked}
+):
     source: ExtractionSource = Field(
         description="The source of the extraction.",
     )
@@ -147,6 +151,9 @@ class Extraction(KilnParentedModel):
                 f"Failed to read extraction output for {full_path}: {e}", exc_info=True
             )
             raise ValueError(f"Failed to read extraction output: {e}")
+
+    def documents_chunked(self, readonly: bool = False) -> list[DocumentChunked]:
+        return super().documents_chunked(readonly=readonly)  # type: ignore
 
 
 class ExtractorConfig(KilnParentedModel):
