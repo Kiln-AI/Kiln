@@ -34,7 +34,7 @@ class FixedWindowChunkerProperties(BaseModel):
     @model_validator(mode="after")
     def validate_chunk_overlap(self):
         if self.chunk_overlap < 0:
-            raise ValueError("Chunk overlap must be greater than 0.")
+            raise ValueError("Chunk overlap must be greater than or equal to 0.")
         if self.chunk_size < 0:
             raise ValueError("Chunk size must be greater than 0.")
         if self.chunk_overlap >= self.chunk_size:
