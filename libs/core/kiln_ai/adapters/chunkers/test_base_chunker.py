@@ -1,6 +1,10 @@
 import pytest
 
-from kiln_ai.adapters.chunkers.base_chunker import BaseChunker, Chunk, ChunkOutput
+from kiln_ai.adapters.chunkers.base_chunker import (
+    BaseChunker,
+    ChunkingResult,
+    TextChunk,
+)
 from kiln_ai.datamodel.chunk import (
     ChunkerConfig,
     ChunkerType,
@@ -18,8 +22,8 @@ def config() -> ChunkerConfig:
 
 
 class WhitespaceChunker(BaseChunker):
-    async def _chunk(self, text: str) -> ChunkOutput:
-        return ChunkOutput(chunks=[Chunk(text=chunk) for chunk in text.split()])
+    async def _chunk(self, text: str) -> ChunkingResult:
+        return ChunkingResult(chunks=[TextChunk(text=chunk) for chunk in text.split()])
 
 
 @pytest.fixture
@@ -28,7 +32,7 @@ def chunker(config: ChunkerConfig) -> WhitespaceChunker:
 
 
 async def test_base_chunker_chunk_empty_text(chunker: WhitespaceChunker):
-    assert await chunker.chunk("") == ChunkOutput(chunks=[])
+    assert await chunker.chunk("") == ChunkingResult(chunks=[])
 
 
 async def test_base_chunker_concrete_chunker(chunker: WhitespaceChunker):

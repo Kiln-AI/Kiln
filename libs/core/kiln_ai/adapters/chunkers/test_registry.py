@@ -5,7 +5,7 @@ from kiln_ai.adapters.chunkers.registry import chunker_adapter_from_type
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 
 
-def test_extractor_adapter_from_type():
+def test_chunker_adapter_from_type():
     chunker = chunker_adapter_from_type(
         ChunkerType.FIXED_WINDOW,
         ChunkerConfig(

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from llama_index.core.text_splitter import SentenceSplitter
 
-from kiln_ai.adapters.chunkers.base_chunker import ChunkOutput
+from kiln_ai.adapters.chunkers.base_chunker import ChunkingResult
 from kiln_ai.adapters.chunkers.fixed_window_chunker import FixedWindowChunker
 from kiln_ai.datamodel.chunk import (
     ChunkerConfig,
@@ -35,7 +35,7 @@ async def test_fixed_window_chunker_chunk_empty_text(
     # we should not even be calling the splitter if the text is empty
     chunker = mock_fixed_window_chunker_factory(100, 10)
     with patch.object(SentenceSplitter, "split_text") as mock_split_text:
-        assert await chunker.chunk("") == ChunkOutput(chunks=[])
+        assert await chunker.chunk("") == ChunkingResult(chunks=[])
         mock_split_text.assert_not_called()
 
 

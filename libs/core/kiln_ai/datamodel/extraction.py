@@ -26,7 +26,6 @@ from kiln_ai.datamodel.chunk import DocumentChunked
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from kiln_ai.datamodel.chunk import DocumentChunked
     from kiln_ai.datamodel.project import Project
 
 logger = logging.getLogger(__name__)
