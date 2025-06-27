@@ -36,9 +36,10 @@ def mock_extractor_config(mock_project):
         description="test",
         output_format=OutputFormat.TEXT,
         passthrough_mimetypes=[],
-        extractor_type=ExtractorType.GEMINI,
+        extractor_type=ExtractorType.LITELLM,
         parent=mock_project,
         properties={
+            "model_provider_name": "gemini",
             "model_name": "gemini-2.0-flash",
             "prompt_document": "Extract the text from the document",
             "prompt_image": "Extract the text from the image",
@@ -157,9 +158,10 @@ def test_collect_jobs_multiple_extractor_configs(
         description="test2",
         output_format=OutputFormat.TEXT,
         passthrough_mimetypes=[],
-        extractor_type=ExtractorType.GEMINI,
+        extractor_type=ExtractorType.LITELLM,
         parent=mock_project,
         properties={
+            "model_provider_name": "gemini",
             "model_name": "gemini-2.0-flash",
             "prompt_document": "Extract the text from the document",
             "prompt_image": "Extract the text from the image",

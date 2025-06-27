@@ -39,7 +39,7 @@ def project_setup(tmp_path):
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
-    project = Project(name="Test Project", path=str(project_path))
+    project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
     return project
@@ -78,8 +78,9 @@ def extractor_config_setup(project_setup):
         description="Test extractor description",
         output_format=OutputFormat.TEXT,
         passthrough_mimetypes=[OutputFormat.TEXT],
-        extractor_type=ExtractorType.GEMINI,
+        extractor_type=ExtractorType.LITELLM,
         properties={
+            "model_provider_name": "gemini",
             "model_name": "gemini-2.0-flash",
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
@@ -93,6 +94,8 @@ def extractor_config_setup(project_setup):
 
 
 def check_attachment_saved(document: Document, test_content: bytes):
+    if document.path is None:
+        raise ValueError("Document path is not set")
     attachment_path = document.original_file.attachment.resolve_path(
         document.path.parent
     )
@@ -339,9 +342,10 @@ async def test_create_extractor_config_success(client, project_setup):
             "name": "Test Extractor",
             "description": "Test description",
             "output_format": "text/plain",
-            "extractor_type": "gemini",
+            "extractor_type": "litellm",
             "passthrough_mimetypes": ["text/plain"],
             "properties": {
+                "model_provider_name": "gemini",
                 "model_name": "gemini-2.0-flash",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
@@ -359,8 +363,9 @@ async def test_create_extractor_config_success(client, project_setup):
     assert result["name"] == "Test Extractor"
     assert result["description"] == "Test description"
     assert result["output_format"] == "text/plain"
-    assert result["extractor_type"] == "gemini"
+    assert result["extractor_type"] == "litellm"
     assert result["passthrough_mimetypes"] == ["text/plain"]
+    assert result["properties"]["model_provider_name"] == "gemini"
     assert result["properties"]["model_name"] == "gemini-2.0-flash"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"

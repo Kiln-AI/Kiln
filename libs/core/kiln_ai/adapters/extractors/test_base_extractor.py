@@ -4,12 +4,16 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
+from kiln_ai.adapters.extractors.base_extractor import (
+    BaseExtractor,
+    ExtractionInput,
+    ExtractionOutput,
+)
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, OutputFormat
 
 
 class MockBaseExtractor(BaseExtractor):
-    async def _extract(self, path: Path, mime_type: str) -> ExtractionOutput:
+    async def _extract(self, input: ExtractionInput) -> ExtractionOutput:
         return ExtractionOutput(
             is_passthrough=False,
             content="mock concrete extractor output",
@@ -18,24 +22,25 @@ class MockBaseExtractor(BaseExtractor):
 
 
 @pytest.fixture
-def mock_gemini_properties():
+def mock_litellm_properties():
     return {
         "prompt_document": "mock prompt for document",
         "prompt_image": "mock prompt for image",
         "prompt_video": "mock prompt for video",
         "prompt_audio": "mock prompt for audio",
         "model_name": "gemini-2.0-flash",
+        "model_provider_name": "gemini",
     }
 
 
 @pytest.fixture
-def mock_extractor(mock_gemini_properties):
+def mock_extractor(mock_litellm_properties):
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
-            extractor_type=ExtractorType.GEMINI,
+            extractor_type=ExtractorType.LITELLM,
             output_format=OutputFormat.MARKDOWN,
-            properties=mock_gemini_properties,
+            properties=mock_litellm_properties,
         )
     )
 
@@ -48,7 +53,7 @@ def mock_extractor_with_passthroughs(
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
-            extractor_type=ExtractorType.GEMINI,
+            extractor_type=ExtractorType.LITELLM,
             passthrough_mimetypes=mimetypes,
             output_format=output_format,
             properties=properties,
@@ -56,9 +61,9 @@ def mock_extractor_with_passthroughs(
     )
 
 
-def test_should_passthrough(mock_gemini_properties):
+def test_should_passthrough(mock_litellm_properties):
     extractor = mock_extractor_with_passthroughs(
-        mock_gemini_properties,
+        mock_litellm_properties,
         [OutputFormat.TEXT, OutputFormat.MARKDOWN],
         OutputFormat.TEXT,
     )
@@ -74,14 +79,14 @@ def test_should_passthrough(mock_gemini_properties):
     assert not extractor._should_passthrough("image/jpeg")
 
 
-async def test_extract_passthrough(mock_gemini_properties):
+async def test_extract_passthrough(mock_litellm_properties):
     """
     Tests that when a file's MIME type is configured for passthrough, the extractor skips
     the concrete extraction method and returns the file's contents directly with the
     correct passthrough output format.
     """
     extractor = mock_extractor_with_passthroughs(
-        mock_gemini_properties,
+        mock_litellm_properties,
         [OutputFormat.TEXT, OutputFormat.MARKDOWN],
         OutputFormat.TEXT,
     )
@@ -100,7 +105,13 @@ async def test_extract_passthrough(mock_gemini_properties):
             return_value=b"test content",
         ),
     ):
-        result = await extractor.extract(path="test.txt", mime_type="text/plain")
+        result = await extractor.extract(
+            ExtractionInput(
+                path="test.txt",
+                mime_type="text/plain",
+                model_slug="mock/model",
+            )
+        )
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -118,9 +129,11 @@ async def test_extract_passthrough(mock_gemini_properties):
         "text/markdown",
     ],
 )
-async def test_extract_passthrough_output_format(mock_gemini_properties, output_format):
+async def test_extract_passthrough_output_format(
+    mock_litellm_properties, output_format
+):
     extractor = mock_extractor_with_passthroughs(
-        mock_gemini_properties,
+        mock_litellm_properties,
         [OutputFormat.TEXT, OutputFormat.MARKDOWN],
         output_format,
     )
@@ -139,7 +152,13 @@ async def test_extract_passthrough_output_format(mock_gemini_properties, output_
             return_value="test content",
         ),
     ):
-        result = await extractor.extract(path="test.txt", mime_type="text/plain")
+        result = await extractor.extract(
+            ExtractionInput(
+                path="test.txt",
+                mime_type="text/plain",
+                model_slug="mock/model",
+            )
+        )
 
         # Verify _extract was not called
         mock_extract.assert_not_called()
@@ -176,21 +195,33 @@ async def test_extract_non_passthrough(
         ) as mock_extract,
     ):
         # first we call the base class extract method
-        result = await mock_extractor.extract(path=path, mime_type=mime_type)
+        result = await mock_extractor.extract(
+            ExtractionInput(
+                path=path,
+                mime_type=mime_type,
+                model_slug="mock/model",
+            )
+        )
 
         # then we call the subclass _extract method and add validated mime_type
-        mock_extract.assert_called_once_with(path=Path(path), mime_type=mime_type)
+        mock_extract.assert_called_once_with(
+            ExtractionInput(
+                path=path,
+                mime_type=mime_type,
+                model_slug="mock/model",
+            )
+        )
 
         assert not result.is_passthrough
         assert result.content == "mock concrete extractor output"
         assert result.content_format == output_format
 
 
-async def test_default_output_format(mock_gemini_properties):
+async def test_default_output_format(mock_litellm_properties):
     config = ExtractorConfig(
         name="mock",
-        extractor_type=ExtractorType.GEMINI,
-        properties=mock_gemini_properties,
+        extractor_type=ExtractorType.LITELLM,
+        properties=mock_litellm_properties,
     )
     assert config.output_format == OutputFormat.MARKDOWN
 
@@ -202,4 +233,10 @@ async def test_extract_failure_from_concrete_extractor(mock_extractor):
         side_effect=Exception("error from concrete extractor"),
     ):
         with pytest.raises(ValueError, match="error from concrete extractor"):
-            await mock_extractor.extract(path="test.txt", mime_type="text/plain")
+            await mock_extractor.extract(
+                ExtractionInput(
+                    path="test.txt",
+                    mime_type="text/plain",
+                    model_slug="mock/model",
+                )
+            )
