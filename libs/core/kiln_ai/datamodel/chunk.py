@@ -125,7 +125,7 @@ class Chunk(BaseModel):
         return attachment.model_dump(mode="json", context=context)
 
 
-class DocumentChunked(KilnParentedModel):
+class ChunkedDocument(KilnParentedModel):
     name: str = NAME_FIELD
     description: str | None = Field(
         default=None,

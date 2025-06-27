@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
-from kiln_ai.datamodel.chunk import Chunk, ChunkerConfig, ChunkerType, DocumentChunked
+from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -58,7 +58,7 @@ class TestIntegration:
             chunk2 = Chunk(attachment=attachment)
 
             # Create chunk document
-            doc = DocumentChunked(
+            doc = ChunkedDocument(
                 chunks=[chunk1, chunk2],
                 chunker_config_id=config.id,
                 name="test-document-chunked",
@@ -153,19 +153,19 @@ class TestIntegration:
         # Create some chunks
         chunks = [Chunk(attachment=KilnAttachmentModel.from_file(tmp_path))] * 3
 
-        document_chunked = DocumentChunked(
+        chunked_document = ChunkedDocument(
             parent=extraction,
             chunks=chunks,
             chunker_config_id=config.id,
             name="test-document-chunked",
             description="Test document chunked",
         )
-        document_chunked.save_to_file()
+        chunked_document.save_to_file()
 
         # Check that the document chunked is associated with the correct extraction
-        assert document_chunked.parent_extraction().id == extraction.id
+        assert chunked_document.parent_extraction().id == extraction.id
 
-        for document_chunked_found in extraction.documents_chunked():
-            assert document_chunked.id == document_chunked_found.id
+        for chunked_document_found in extraction.chunked_documents():
+            assert chunked_document.id == chunked_document_found.id
 
-        assert len(extraction.documents_chunked()) == 1
+        assert len(extraction.chunked_documents()) == 1

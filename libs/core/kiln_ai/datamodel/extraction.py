@@ -21,7 +21,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
-from kiln_ai.datamodel.chunk import DocumentChunked
+from kiln_ai.datamodel.chunk import ChunkedDocument
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class ExtractionSource(str, Enum):
 
 
 class Extraction(
-    KilnParentedModel, KilnParentModel, parent_of={"documents_chunked": DocumentChunked}
+    KilnParentedModel, KilnParentModel, parent_of={"chunked_documents": ChunkedDocument}
 ):
     source: ExtractionSource = Field(
         description="The source of the extraction.",
@@ -151,8 +151,8 @@ class Extraction(
             )
             raise ValueError(f"Failed to read extraction output: {e}")
 
-    def documents_chunked(self, readonly: bool = False) -> list[DocumentChunked]:
-        return super().documents_chunked(readonly=readonly)  # type: ignore
+    def chunked_documents(self, readonly: bool = False) -> list[ChunkedDocument]:
+        return super().chunked_documents(readonly=readonly)  # type: ignore
 
 
 class ExtractorConfig(KilnParentedModel):

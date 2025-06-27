@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
-from kiln_ai.datamodel.chunk import Chunk, ChunkerConfig, ChunkerType, DocumentChunked
+from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.project import Project
 
 
@@ -258,13 +258,13 @@ class TestChunk:
                 Chunk(attachment=None)
 
 
-class TestDocumentChunked:
-    """Test the DocumentChunked class."""
+class TestChunkedDocument:
+    """Test the ChunkedDocument class."""
 
     def test_required_fields(self):
         """Test that required fields are properly validated."""
         chunks = []
-        doc = DocumentChunked(
+        doc = ChunkedDocument(
             chunks=chunks, chunker_config_id="fake-id", name="test-document-chunked"
         )
         assert doc.chunks == chunks
@@ -281,7 +281,7 @@ class TestDocumentChunked:
             chunk2 = Chunk(attachment=attachment)
 
             chunks = [chunk1, chunk2]
-            doc = DocumentChunked(
+            doc = ChunkedDocument(
                 chunks=chunks, chunker_config_id="fake-id", name="test-document-chunked"
             )
             assert doc.chunks == chunks
@@ -289,14 +289,14 @@ class TestDocumentChunked:
 
     def test_parent_extraction_method_no_parent(self):
         """Test parent_extraction method when no parent is set."""
-        doc = DocumentChunked(
+        doc = ChunkedDocument(
             chunks=[], chunker_config_id="fake-id", name="test-document-chunked"
         )
         assert doc.parent_extraction() is None
 
     def test_empty_chunks_list(self):
         """Test that empty chunks list is valid."""
-        doc = DocumentChunked(
+        doc = ChunkedDocument(
             chunks=[], chunker_config_id="fake-id", name="test-document-chunked"
         )
         assert doc.chunks == []
@@ -314,7 +314,7 @@ class TestDocumentChunked:
             chunk = Chunk(attachment=attachment)
             chunks = [chunk]
 
-            doc = DocumentChunked(
+            doc = ChunkedDocument(
                 chunks=chunks,
                 chunker_config_id="fake-id",
                 name="test-document-chunked",
@@ -323,7 +323,7 @@ class TestDocumentChunked:
 
             # Test that chunks must be a list
             with pytest.raises(ValueError):
-                DocumentChunked(
+                ChunkedDocument(
                     chunks=chunk,
                     chunker_config_id="fake-id",
                     name="test-document-chunked",
