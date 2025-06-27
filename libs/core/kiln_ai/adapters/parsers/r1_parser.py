@@ -1,5 +1,4 @@
 from kiln_ai.adapters.parsers.base_parser import BaseParser
-from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
 
 

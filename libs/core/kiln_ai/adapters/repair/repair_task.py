@@ -1,13 +1,8 @@
 import json
-from typing import Type
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.adapters.prompt_builders import (
-    BasePromptBuilder,
-    SavedPromptBuilder,
-    prompt_builder_from_id,
-)
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
 
