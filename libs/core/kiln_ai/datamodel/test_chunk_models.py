@@ -80,6 +80,15 @@ class TestFixedWindowChunkerProperties:
                 properties={"chunk_size": -1, "chunk_overlap": -1},
             )
 
+    def test_validation_zero_chunk_size(self):
+        """Test that zero chunk size is rejected."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": 0, "chunk_overlap": 0},
+            )
+
     def test_validation_overlap_greater_than_chunk_size(self):
         """Test that overlap is greater than chunk size."""
         with pytest.raises(ValueError):

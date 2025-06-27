@@ -45,7 +45,7 @@ def validate_fixed_window_chunker_properties(
     if chunk_size is not None:
         if not isinstance(chunk_size, int):
             raise ValueError("Chunk size must be an integer.")
-        if chunk_size < 0:
+        if chunk_size <= 0:
             raise ValueError("Chunk size must be greater than 0.")
 
     if (
