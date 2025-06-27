@@ -9,6 +9,7 @@ dependencies = [
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
+    "llama-index-core>=0.12.42",
 ]
 
 [dependency-groups]
