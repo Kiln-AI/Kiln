@@ -27,13 +27,14 @@ def valid_extractor_config_data():
     return {
         "name": "Test Extractor Config",
         "description": "Test description",
-        "extractor_type": ExtractorType.GEMINI,
+        "extractor_type": ExtractorType.LITELLM,
         "properties": {
             "prompt_document": "Transcribe the document.",
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
             "prompt_image": "Describe the image.",
             "model_name": "gemini-2.0-flash",
+            "model_provider_name": "gemini",
         },
     }
 
@@ -60,7 +61,7 @@ def test_extractor_config_description_empty(valid_extractor_config_data):
 def test_extractor_config_valid(valid_extractor_config):
     assert valid_extractor_config.name == "Test Extractor Config"
     assert valid_extractor_config.description == "Test description"
-    assert valid_extractor_config.extractor_type == ExtractorType.GEMINI
+    assert valid_extractor_config.extractor_type == ExtractorType.LITELLM
     assert (
         valid_extractor_config.properties["prompt_document"]
         == "Transcribe the document."
@@ -105,31 +106,31 @@ def test_extractor_config_empty_model_name(
         }
 
 
-def test_extractor_config_invalid_model_name(
-    valid_extractor_config, valid_extractor_config_data
-):
-    with pytest.raises(
-        ValueError, match='Gemini: "invalid-model-name" is not supported'
-    ):
-        valid_extractor_config.properties = {
-            "model_name": "invalid-model-name",
-        }
-
-
 @pytest.mark.parametrize(
-    "model_name",
-    ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
+    "model_provider_name, model_name",
+    [
+        ("gemini", "gemini-2.0-flash-lite"),
+        ("gemini", "gemini-2.0-flash"),
+        ("gemini", "gemini-2.5-pro"),
+        ("gemini", "gemini-2.5-flash"),
+    ],
 )
-def test_extractor_config_valid_model_name(valid_extractor_config, model_name):
+def test_extractor_config_valid_model_name(
+    valid_extractor_config, model_provider_name, model_name
+):
     valid_extractor_config.properties = {
         "model_name": model_name,
+        "model_provider_name": model_provider_name,
     }
     assert valid_extractor_config.properties["model_name"] == model_name
 
 
 def test_extractor_config_missing_prompts(valid_extractor_config):
     # should not raise an error - prompts will be set to defaults
-    valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
+    valid_extractor_config.properties = {
+        "model_name": "gemini-2.0-flash",
+        "model_provider_name": "gemini",
+    }
 
     #  check each prompt type is set to a default (string, non-empty)
     assert valid_extractor_config.properties["prompt_document"]
@@ -165,6 +166,7 @@ def test_extractor_config_invalid_prompt(valid_extractor_config):
             "prompt_video": "Transcribe the video.",
             "prompt_image": "Describe the image.",
             "model_name": "gemini-2.0-flash",
+            "model_provider_name": "gemini",
         }
 
 
@@ -175,6 +177,7 @@ def test_extractor_config_missing_single_prompt(valid_extractor_config):
         "prompt_video": "Transcribe the video.",
         # missing image
         "model_name": "gemini-2.0-flash",
+        "model_provider_name": "gemini",
     }
 
     # check prompt_image is set to a default (string, non-empty)
@@ -275,13 +278,14 @@ def mock_extractor_config_factory(mock_project):
         extractor_config = ExtractorConfig(
             name=name,
             description="Test description",
-            extractor_type=ExtractorType.GEMINI,
+            extractor_type=ExtractorType.LITELLM,
             properties={
                 "prompt_document": "Transcribe the document.",
                 "prompt_audio": "Transcribe the audio.",
                 "prompt_video": "Transcribe the video.",
                 "prompt_image": "Describe the image.",
                 "model_name": "gemini-2.0-flash",
+                "model_provider_name": "gemini",
             },
             parent=mock_project,
         )

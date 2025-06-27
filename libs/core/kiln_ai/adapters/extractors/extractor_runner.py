@@ -1,9 +1,10 @@
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Set
 
-from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
@@ -76,8 +77,16 @@ class ExtractorRunner:
                 raise ValueError("Document path is not set")
 
             output = await extractor.extract(
-                path=job.doc.original_file.attachment.resolve_path(job.doc.path.parent),
-                mime_type=job.doc.original_file.mime_type,
+                extraction_input=ExtractionInput(
+                    path=Path(
+                        job.doc.original_file.attachment.resolve_path(
+                            job.doc.path.parent
+                        )
+                    ),
+                    mime_type=job.doc.original_file.mime_type,
+                    # TODO: replace this with the mapping coming from chunk-embedding PR
+                    model_slug=f"{job.extractor_config.model_provider_name}/{job.extractor_config.model_name}",
+                )
             )
 
             extraction = Extraction(

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { ExtractorType, OutputFormat } from "$lib/types"
+  import type { OutputFormat } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import FormElement from "$lib/utils/form_element.svelte"
   import AppPage from "../../../../app_page.svelte"
@@ -13,19 +13,19 @@
   let extractor_options = [
     {
       label: "Gemini: Gemini 2.5 Pro",
-      value: "gemini:::gemini-2.5-pro",
+      value: "gemini/gemini-2.5-pro",
     },
     {
       label: "Gemini: Gemini 2.5 Flash",
-      value: "gemini:::gemini-2.5-flash",
+      value: "gemini/gemini-2.5-flash",
     },
     {
       label: "Gemini: Gemini 2.0 Flash",
-      value: "gemini:::gemini-2.0-flash",
+      value: "gemini/gemini-2.0-flash",
     },
     {
       label: "Gemini: Gemini 2.0 Flash Lite",
-      value: "gemini:::gemini-2.0-flash-lite",
+      value: "gemini/gemini-2.0-flash-lite",
     },
   ]
 
@@ -40,12 +40,13 @@
   let prompt_video: string | null = null
   let prompt_audio: string | null = null
 
-  $: extractor_type = selected_extractor_option.split(":::")[0]
-  $: model_name = selected_extractor_option.split(":::")[1]
-
   async function create_extractor_config() {
     try {
       loading = true
+
+      const _model_name = selected_extractor_option.split("/")[1]
+      const _model_provider_name = selected_extractor_option.split("/")[0]
+
       const { error: create_extractor_error } = await client.POST(
         "/api/projects/{project_id}/create_extractor_config",
         {
@@ -57,10 +58,11 @@
           body: {
             name: name || null,
             description: description || null,
-            extractor_type: extractor_type as unknown as ExtractorType,
+            extractor_type: "litellm",
             output_format: output_format as unknown as OutputFormat,
             properties: {
-              model_name,
+              model_name: _model_name,
+              model_provider_name: _model_provider_name,
               prompt_document: prompt_document || null,
               prompt_image: prompt_image || null,
               prompt_video: prompt_video || null,

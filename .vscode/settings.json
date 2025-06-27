@@ -19,6 +19,14 @@
   "python.analysis.autoImportCompletions": true,
   "python.analysis.extraPaths": ["./"],
   "python.analysis.ignore": ["**/test_*.py"],
+  "cursorpyright.analysis.autoImportCompletions": true,
+  "cursorpyright.analysis.extraPaths": [
+    "./"
+  ],
+  "cursorpyright.analysis.ignore": [
+    "**/test_*.py"
+  ],
+  "cursorpyright.analysis.typeCheckingMode": "basic",
   "files.exclude": {
     "**/__pycache__": true,
     "**/.pytest_cache": true,

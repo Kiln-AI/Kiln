@@ -2300,7 +2300,7 @@ export interface components {
          * ExtractorType
          * @enum {string}
          */
-        ExtractorType: "gemini";
+        ExtractorType: "litellm";
         /** FileInfo */
         FileInfo: {
             /**
