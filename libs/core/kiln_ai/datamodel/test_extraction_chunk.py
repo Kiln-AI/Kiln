@@ -61,7 +61,6 @@ class TestIntegration:
             doc = ChunkedDocument(
                 chunks=[chunk1, chunk2],
                 chunker_config_id=config.id,
-                name="test-document-chunked",
             )
 
             # Verify the complete structure
@@ -157,8 +156,6 @@ class TestIntegration:
             parent=extraction,
             chunks=chunks,
             chunker_config_id=config.id,
-            name="test-document-chunked",
-            description="Test document chunked",
         )
         chunked_document.save_to_file()
 

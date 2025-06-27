@@ -264,9 +264,7 @@ class TestChunkedDocument:
     def test_required_fields(self):
         """Test that required fields are properly validated."""
         chunks = []
-        doc = ChunkedDocument(
-            chunks=chunks, chunker_config_id="fake-id", name="test-document-chunked"
-        )
+        doc = ChunkedDocument(chunks=chunks, chunker_config_id="fake-id")
         assert doc.chunks == chunks
 
     def test_with_chunks(self):
@@ -281,24 +279,18 @@ class TestChunkedDocument:
             chunk2 = Chunk(attachment=attachment)
 
             chunks = [chunk1, chunk2]
-            doc = ChunkedDocument(
-                chunks=chunks, chunker_config_id="fake-id", name="test-document-chunked"
-            )
+            doc = ChunkedDocument(chunks=chunks, chunker_config_id="fake-id")
             assert doc.chunks == chunks
             assert len(doc.chunks) == 2
 
     def test_parent_extraction_method_no_parent(self):
         """Test parent_extraction method when no parent is set."""
-        doc = ChunkedDocument(
-            chunks=[], chunker_config_id="fake-id", name="test-document-chunked"
-        )
+        doc = ChunkedDocument(chunks=[], chunker_config_id="fake-id")
         assert doc.parent_extraction() is None
 
     def test_empty_chunks_list(self):
         """Test that empty chunks list is valid."""
-        doc = ChunkedDocument(
-            chunks=[], chunker_config_id="fake-id", name="test-document-chunked"
-        )
+        doc = ChunkedDocument(chunks=[], chunker_config_id="fake-id")
         assert doc.chunks == []
         assert len(doc.chunks) == 0
 
@@ -317,7 +309,6 @@ class TestChunkedDocument:
             doc = ChunkedDocument(
                 chunks=chunks,
                 chunker_config_id="fake-id",
-                name="test-document-chunked",
             )
             assert doc.chunks == chunks
 
@@ -326,5 +317,4 @@ class TestChunkedDocument:
                 ChunkedDocument(
                     chunks=chunk,
                     chunker_config_id="fake-id",
-                    name="test-document-chunked",
                 )

@@ -126,11 +126,6 @@ class Chunk(BaseModel):
 
 
 class ChunkedDocument(KilnParentedModel):
-    name: str = NAME_FIELD
-    description: str | None = Field(
-        default=None,
-        description="The description of the document chunked.",
-    )
     chunker_config_id: ID_TYPE = Field(
         description="The ID of the chunker config that was used to chunk the document.",
     )
