@@ -8,9 +8,7 @@ from pydantic import (
     ValidationInfo,
     field_serializer,
     field_validator,
-    model_validator,
 )
-from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
