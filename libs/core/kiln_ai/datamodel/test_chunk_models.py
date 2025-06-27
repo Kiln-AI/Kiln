@@ -6,13 +6,7 @@ from pathlib import Path
 import pytest
 
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
-from kiln_ai.datamodel.chunk import (
-    Chunk,
-    ChunkerConfig,
-    ChunkerType,
-    DocumentChunked,
-    FixedWindowChunkerProperties,
-)
+from kiln_ai.datamodel.chunk import Chunk, ChunkerConfig, ChunkerType, DocumentChunked
 from kiln_ai.datamodel.project import Project
 
 
@@ -34,36 +28,114 @@ class TestFixedWindowChunkerProperties:
 
     def test_default_values(self):
         """Test that default values are set correctly."""
-        props = FixedWindowChunkerProperties()
-        assert props.chunk_size == 256
-        assert props.chunk_overlap == 10
+        config = ChunkerConfig(
+            name="test-chunker",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={},
+        )
+        assert config.properties == {
+            "chunk_size": 256,
+            "chunk_overlap": 10,
+        }
+
+        assert config.chunk_size() == 256
+        assert config.chunk_overlap() == 10
 
     def test_custom_values(self):
         """Test that custom values can be set."""
-        props = FixedWindowChunkerProperties(chunk_size=512, chunk_overlap=20)
-        assert props.chunk_size == 512
-        assert props.chunk_overlap == 20
+        config = ChunkerConfig(
+            name="test-chunker",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={"chunk_size": 512, "chunk_overlap": 20},
+        )
+        assert config.properties == {
+            "chunk_size": 512,
+            "chunk_overlap": 20,
+        }
+
+        assert config.chunk_size() == 512
+        assert config.chunk_overlap() == 20
 
     def test_validation_positive_values(self):
         """Test that positive values are accepted."""
-        props = FixedWindowChunkerProperties(chunk_size=1, chunk_overlap=0)
-        assert props.chunk_size == 1
-        assert props.chunk_overlap == 0
+        config = ChunkerConfig(
+            name="test-chunker",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={"chunk_size": 1, "chunk_overlap": 0},
+        )
+        assert config.properties == {
+            "chunk_size": 1,
+            "chunk_overlap": 0,
+        }
+
+        assert config.chunk_size() == 1
+        assert config.chunk_overlap() == 0
 
     def test_validation_negative_values(self):
         """Test that negative values are rejected."""
         with pytest.raises(ValueError):
-            FixedWindowChunkerProperties(chunk_size=-1, chunk_overlap=-1)
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": -1, "chunk_overlap": -1},
+            )
 
     def test_validation_overlap_greater_than_chunk_size(self):
         """Test that overlap is greater than chunk size."""
         with pytest.raises(ValueError):
-            FixedWindowChunkerProperties(chunk_size=100, chunk_overlap=101)
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": 100, "chunk_overlap": 101},
+            )
 
     def test_validation_overlap_less_than_zero(self):
         """Test that overlap is less than zero."""
         with pytest.raises(ValueError):
-            FixedWindowChunkerProperties(chunk_size=100, chunk_overlap=-1)
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": 100, "chunk_overlap": -1},
+            )
+
+    def test_validation_overlap_without_chunk_size(self):
+        """Test that overlap without chunk size is rejected."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_overlap": 10},
+            )
+
+    def test_validation_chunk_size_without_overlap(self):
+        """Test that chunk size without overlap will set overlap to default."""
+        config = ChunkerConfig(
+            name="test-chunker",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={"chunk_size": 100},
+        )
+        assert config.properties == {
+            "chunk_size": 100,
+            "chunk_overlap": 10,
+        }
+
+    def test_validation_wrong_type(self):
+        """Test that wrong type is rejected."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": "100", "chunk_overlap": 10},
+            )
+
+    def test_validation_none_values(self):
+        """Reject none values - we prefer not to have the properties rather than a None."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": None, "chunk_overlap": 15},
+            )
 
 
 class TestChunkerType:
@@ -93,18 +165,21 @@ class TestChunkerConfig:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={},
         )
         assert config.name == "test-chunker"
         assert config.chunker_type == ChunkerType.FIXED_WINDOW
-        assert isinstance(config.properties, FixedWindowChunkerProperties)
+        assert config.properties == {
+            "chunk_size": 256,
+            "chunk_overlap": 10,
+        }
 
     def test_optional_description(self):
         """Test that description is optional."""
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={},
         )
         assert config.description is None
 
@@ -112,7 +187,7 @@ class TestChunkerConfig:
             name="test-chunker",
             description="A test chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={},
         )
         assert config_with_desc.description == "A test chunker"
 
@@ -122,7 +197,7 @@ class TestChunkerConfig:
         config = ChunkerConfig(
             name="valid-name_123",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={},
         )
         assert config.name == "valid-name_123"
 
@@ -131,7 +206,7 @@ class TestChunkerConfig:
             ChunkerConfig(
                 name="invalid@name",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties=FixedWindowChunkerProperties(),
+                properties={},
             )
 
         # Test empty name
@@ -139,7 +214,7 @@ class TestChunkerConfig:
             ChunkerConfig(
                 name="",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties=FixedWindowChunkerProperties(),
+                properties={},
             )
 
     def test_parent_project_method_no_parent(self):
@@ -147,7 +222,7 @@ class TestChunkerConfig:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={},
         )
         assert config.parent_project() is None
 

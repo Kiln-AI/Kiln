@@ -5,13 +5,7 @@ from pathlib import Path
 import pytest
 
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
-from kiln_ai.datamodel.chunk import (
-    Chunk,
-    ChunkerConfig,
-    ChunkerType,
-    DocumentChunked,
-    FixedWindowChunkerProperties,
-)
+from kiln_ai.datamodel.chunk import Chunk, ChunkerConfig, ChunkerType, DocumentChunked
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -41,7 +35,7 @@ class TestIntegration:
     def test_full_workflow(self):
         """Test a complete workflow with all classes."""
         # Create chunker properties
-        properties = FixedWindowChunkerProperties(chunk_size=256, chunk_overlap=10)
+        properties = {"chunk_size": 256, "chunk_overlap": 10}
 
         # Create chunker config
         config = ChunkerConfig(
@@ -73,14 +67,15 @@ class TestIntegration:
             # Verify the complete structure
             assert config.name == "test-chunker"
             assert config.chunker_type == ChunkerType.FIXED_WINDOW
-            assert config.properties.chunk_size == 256
+            assert config.chunk_size() == 256
+            assert config.chunk_overlap() == 10
             assert len(doc.chunks) == 2
             assert doc.chunks[0].attachment == attachment
             assert doc.chunks[1].attachment == attachment
 
     def test_serialization(self, mock_project):
         """Test that models can be serialized and deserialized."""
-        properties = FixedWindowChunkerProperties(chunk_size=512, chunk_overlap=20)
+        properties = {"chunk_size": 512, "chunk_overlap": 20}
         config = ChunkerConfig(
             name="serialization-test",
             chunker_type=ChunkerType.FIXED_WINDOW,
@@ -96,10 +91,8 @@ class TestIntegration:
 
         assert config_restored.name == config.name
         assert config_restored.chunker_type == config.chunker_type
-        assert config_restored.properties.chunk_size == config.properties.chunk_size
-        assert (
-            config_restored.properties.chunk_overlap == config.properties.chunk_overlap
-        )
+        assert config_restored.chunk_size() == config.chunk_size()
+        assert config_restored.chunk_overlap() == config.chunk_overlap()
         assert config_restored.parent_project().id == mock_project.id
 
     def test_enum_serialization(self):
@@ -107,7 +100,7 @@ class TestIntegration:
         config = ChunkerConfig(
             name="enum-test",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={"chunk_size": 512, "chunk_overlap": 20},
         )
 
         config_dict = config.model_dump()
@@ -123,7 +116,7 @@ class TestIntegration:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=FixedWindowChunkerProperties(),
+            properties={"chunk_size": 512, "chunk_overlap": 20},
             parent=mock_project,
         )
         config.save_to_file()

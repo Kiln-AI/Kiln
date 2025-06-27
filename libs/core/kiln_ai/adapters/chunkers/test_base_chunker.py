@@ -5,11 +5,7 @@ from kiln_ai.adapters.chunkers.base_chunker import (
     ChunkingResult,
     TextChunk,
 )
-from kiln_ai.datamodel.chunk import (
-    ChunkerConfig,
-    ChunkerType,
-    FixedWindowChunkerProperties,
-)
+from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 
 
 @pytest.fixture
@@ -17,7 +13,7 @@ def config() -> ChunkerConfig:
     return ChunkerConfig(
         name="test-chunker",
         chunker_type=ChunkerType.FIXED_WINDOW,
-        properties=FixedWindowChunkerProperties(chunk_size=100, chunk_overlap=10),
+        properties={"chunk_size": 100, "chunk_overlap": 10},
     )
 
 

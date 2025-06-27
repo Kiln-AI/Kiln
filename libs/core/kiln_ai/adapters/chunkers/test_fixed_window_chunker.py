@@ -6,11 +6,7 @@ from llama_index.core.text_splitter import SentenceSplitter
 
 from kiln_ai.adapters.chunkers.base_chunker import ChunkingResult
 from kiln_ai.adapters.chunkers.fixed_window_chunker import FixedWindowChunker
-from kiln_ai.datamodel.chunk import (
-    ChunkerConfig,
-    ChunkerType,
-    FixedWindowChunkerProperties,
-)
+from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 
 
 @pytest.fixture
@@ -20,13 +16,24 @@ def mock_fixed_window_chunker_factory() -> Callable[[int, int], FixedWindowChunk
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties=FixedWindowChunkerProperties(
-                    chunk_size=chunk_size, chunk_overlap=chunk_overlap
-                ),
+                properties={"chunk_size": chunk_size, "chunk_overlap": chunk_overlap},
             )
         )
 
     return create_chunker
+
+
+async def test_fixed_window_chunker_wrong_chunker_type(
+    mock_fixed_window_chunker_factory,
+):
+    with pytest.raises(ValueError):
+        FixedWindowChunker(
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type="wrong-chunker-type",
+                properties={"chunk_size": 100, "chunk_overlap": 10},
+            )
+        )
 
 
 async def test_fixed_window_chunker_chunk_empty_text(
