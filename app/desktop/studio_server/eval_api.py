@@ -174,8 +174,8 @@ class EvalConfigCompareSummary(BaseModel):
 
 class EvalConfigResult(BaseModel):
     eval_config_id: ID_TYPE
-    # output_score_id -> ScoreSummary
-    results: Dict[str, ScoreSummary]
+    # output_score_id -> ScoreSummary | None (None when no data available)
+    results: Dict[str, ScoreSummary | None]
     # percent of the dataset that has been processed
     percent_complete: float
 
@@ -929,8 +929,13 @@ def connect_evals_api(app: FastAPI):
                     if incomplete:
                         partial_incomplete_count += 1
 
-                # Convert to score summaries
-                results: Dict[str, ScoreSummary] = {}
+                # Initialize results with all expected score keys as None
+                results: Dict[str, ScoreSummary | None] = {}
+                for output_score in eval.output_scores:
+                    score_key = output_score.json_key()
+                    results[score_key] = None
+
+                # Convert to score summaries where we have data
                 for output_score_id, score in total_scores.items():
                     count = score_counts[output_score_id]
                     if count > 0:

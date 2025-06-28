@@ -1631,7 +1631,7 @@ export interface components {
             eval_config_id: string | null;
             /** Results */
             results: {
-                [key: string]: components["schemas"]["ScoreSummary"];
+                [key: string]: components["schemas"]["ScoreSummary"] | null;
             };
             /** Percent Complete */
             percent_complete: number;

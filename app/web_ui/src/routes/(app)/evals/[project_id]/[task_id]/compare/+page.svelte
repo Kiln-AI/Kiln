@@ -267,7 +267,7 @@
     let bestCompleteness = 0
 
     evalResult.eval_config_results.forEach((configResult: EvalConfigResult) => {
-      const score: ScoreSummary | undefined = configResult.results[scoreKey]
+      const score: ScoreSummary | null = configResult.results[scoreKey]
       if (score && configResult.percent_complete > bestCompleteness) {
         bestScore = score.mean_score
         bestCompleteness = configResult.percent_complete
