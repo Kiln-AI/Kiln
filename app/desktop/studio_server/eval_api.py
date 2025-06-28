@@ -124,6 +124,13 @@ class ScoreSummary(BaseModel):
     mean_score: float
 
 
+class MeanUsage(BaseModel):
+    mean_input_tokens: float | None = None
+    mean_output_tokens: float | None = None
+    mean_total_tokens: float | None = None
+    mean_cost: float | None = None
+
+
 class EvalRunResult(BaseModel):
     results: List[EvalRun]
     eval: Eval
@@ -189,6 +196,8 @@ class RunConfigEvalResult(BaseModel):
 
 class RunConfigEvalScoresSummary(BaseModel):
     eval_results: List[RunConfigEvalResult]
+    # mean usage statistics across all eval runs for this run config
+    mean_usage: MeanUsage | None = None
 
 
 class UpdateEvalRequest(BaseModel):
@@ -879,8 +888,24 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
+        # Build a map from dataset_id -> TaskRun to access usage data
+        task_runs_by_id: Dict[ID_TYPE, TaskRun] = {
+            task_run.id: task_run for task_run in task.runs(readonly=True)
+        }
+
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
+
+        # Usage tracking across all eval configs for this run config
+        total_input_tokens = 0.0
+        total_output_tokens = 0.0
+        total_total_tokens = 0.0
+        total_cost = 0.0
+        input_tokens_count = 0
+        output_tokens_count = 0
+        total_tokens_count = 0
+        cost_count = 0
+        total_eval_runs = 0
 
         for eval in evals:
             # Get the dataset size for this eval
@@ -911,6 +936,25 @@ def connect_evals_api(app: FastAPI):
                         continue
                     else:
                         remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+
+                    total_eval_runs += 1
+
+                    # Get usage data from the corresponding TaskRun
+                    task_run = task_runs_by_id.get(eval_run.dataset_id)
+                    if task_run and eval_run.task_run_usage:
+                        usage = eval_run.task_run_usage
+                        if usage.input_tokens is not None:
+                            total_input_tokens += usage.input_tokens
+                            input_tokens_count += 1
+                        if usage.output_tokens is not None:
+                            total_output_tokens += usage.output_tokens
+                            output_tokens_count += 1
+                        if usage.total_tokens is not None:
+                            total_total_tokens += usage.total_tokens
+                            total_tokens_count += 1
+                        if usage.cost is not None:
+                            total_cost += usage.cost
+                            cost_count += 1
 
                     incomplete = False
                     for output_score in eval.output_scores:
@@ -970,6 +1014,24 @@ def connect_evals_api(app: FastAPI):
                 )
             )
 
+        # Calculate mean usage across all eval runs for this run config (only include values where >= 50% of samples have data)
+        mean_usage = None
+        if total_eval_runs > 0:
+            threshold = total_eval_runs * 0.5
+            mean_usage = MeanUsage(
+                mean_input_tokens=total_input_tokens / input_tokens_count
+                if input_tokens_count >= threshold
+                else None,
+                mean_output_tokens=total_output_tokens / output_tokens_count
+                if output_tokens_count >= threshold
+                else None,
+                mean_total_tokens=total_total_tokens / total_tokens_count
+                if total_tokens_count >= threshold
+                else None,
+                mean_cost=total_cost / cost_count if cost_count >= threshold else None,
+            )
+
         return RunConfigEvalScoresSummary(
             eval_results=eval_results,
+            mean_usage=mean_usage,
         )

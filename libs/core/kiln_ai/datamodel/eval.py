@@ -14,6 +14,7 @@ from kiln_ai.datamodel.basemodel import (
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -109,6 +110,10 @@ class EvalRun(KilnParentedModel):
     )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
+    )
+    task_run_usage: Usage | None = Field(
+        default=None,
+        description="The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
     )
 
     def parent_eval_config(self) -> Union["EvalConfig", None]:
