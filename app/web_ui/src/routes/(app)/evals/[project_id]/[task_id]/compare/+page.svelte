@@ -11,6 +11,12 @@
     PromptResponse,
     TaskRunConfig,
   } from "$lib/types"
+  import type { components } from "$lib/api_schema"
+
+  type RunConfigEvalScoresSummary =
+    components["schemas"]["RunConfigEvalScoresSummary"]
+  type EvalConfigResult = components["schemas"]["EvalConfigResult"]
+  type ScoreSummary = components["schemas"]["ScoreSummary"]
   import {
     model_info,
     load_model_info,
@@ -39,6 +45,11 @@
   let task_run_configs: TaskRunConfig[] | null = null
   let loading = true
   let error: KilnError | null = null
+
+  // Eval scores cache and state
+  let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
+  let eval_scores_loading: Record<string, boolean> = {}
+  let eval_scores_errors: Record<string, string> = {}
 
   onMount(async () => {
     // Load data needed for the page
@@ -73,6 +84,109 @@
     } finally {
       loading = false
     }
+  }
+
+  async function fetch_eval_scores(run_config_id: string) {
+    if (
+      eval_scores_cache[run_config_id] ||
+      eval_scores_loading[run_config_id]
+    ) {
+      return // Already cached or loading
+    }
+
+    try {
+      eval_scores_loading[run_config_id] = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              run_config_id,
+            },
+          },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      eval_scores_cache[run_config_id] = data
+      delete eval_scores_errors[run_config_id]
+    } catch (err) {
+      const kilnError = createKilnError(err)
+      eval_scores_errors[run_config_id] =
+        kilnError.getMessage() || "Failed to fetch eval scores"
+    } finally {
+      eval_scores_loading[run_config_id] = false
+    }
+  }
+
+  // Reactively fetch eval scores when models are selected
+  $: {
+    selectedModels.forEach((modelId) => {
+      if (
+        modelId &&
+        !eval_scores_cache[modelId] &&
+        !eval_scores_loading[modelId]
+      ) {
+        fetch_eval_scores(modelId)
+      }
+    })
+  }
+
+  // Generate comparison features dynamically from eval_scores
+  $: comparisonFeatures = generateComparisonFeatures(
+    selectedModels,
+    eval_scores_cache,
+  )
+
+  function generateComparisonFeatures(
+    models: (string | null)[],
+    scores_cache: Record<string, RunConfigEvalScoresSummary>,
+  ) {
+    const features: {
+      category: string
+      items: { label: string; key: string }[]
+    }[] = []
+    const evalCategories: Record<string, Set<string>> = {}
+
+    // Collect all evals and their scores from selected models
+    models.forEach((modelId) => {
+      if (!modelId || !scores_cache[modelId]) return
+
+      const evalScores = scores_cache[modelId]
+      evalScores.eval_results.forEach((evalResult) => {
+        if (!evalCategories[evalResult.eval_name]) {
+          evalCategories[evalResult.eval_name] = new Set()
+        }
+
+        evalResult.eval_config_results.forEach((configResult) => {
+          Object.keys(configResult.results).forEach((scoreKey) => {
+            evalCategories[evalResult.eval_name].add(scoreKey)
+          })
+        })
+      })
+    })
+
+    // Convert to comparison features format
+    Object.entries(evalCategories).forEach(([evalName, scoreKeys]) => {
+      const items = Array.from(scoreKeys).map((scoreKey) => ({
+        label: scoreKey
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase()),
+        key: `${evalName}::${scoreKey}`,
+      }))
+
+      if (items.length > 0) {
+        features.push({
+          category: evalName,
+          items,
+        })
+      }
+    })
+
+    return features
   }
 
   // Generate dropdown options from run configs
@@ -122,37 +236,6 @@
     }))
   }
 
-  // Mock comparison features/metrics placeholder data
-  const comparisonFeatures = [
-    {
-      category: "Performance",
-      items: [
-        { label: "Accuracy Score", key: "accuracy" },
-        { label: "Response Time", key: "response_time" },
-        { label: "Throughput", key: "throughput" },
-      ],
-    },
-    {
-      category: "Capabilities",
-      items: [
-        { label: "Context Length", key: "context_length" },
-        { label: "Function Calling", key: "function_calling" },
-        { label: "Code Generation", key: "code_generation" },
-        { label: "Reasoning", key: "reasoning" },
-      ],
-    },
-    {
-      category: "Cost",
-      items: [
-        { label: "Input Cost (per 1K tokens)", key: "input_cost" },
-        { label: "Output Cost (per 1K tokens)", key: "output_cost" },
-      ],
-    },
-  ]
-
-  // Mock data for different models - will be replaced with actual run config data
-  const modelData: Record<string, Record<string, string>> = {}
-
   function addColumn() {
     if (columns < 4) {
       columns++
@@ -168,8 +251,34 @@
   }
 
   function getModelValue(modelKey: string | null, dataKey: string): string {
-    if (!modelKey || !modelData[modelKey]) return "—"
-    return modelData[modelKey][dataKey] || "—"
+    if (!modelKey || !eval_scores_cache[modelKey]) return "—"
+
+    const [evalName, scoreKey] = dataKey.split("::")
+    if (!evalName || !scoreKey) return "—"
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find(
+      (e) => e.eval_name === evalName,
+    )
+    if (!evalResult) return "—"
+
+    // Find the best available score from any eval config
+    let bestScore: number | null = null
+    let bestCompleteness = 0
+
+    evalResult.eval_config_results.forEach((configResult: EvalConfigResult) => {
+      const score: ScoreSummary | undefined = configResult.results[scoreKey]
+      if (score && configResult.percent_complete > bestCompleteness) {
+        bestScore = score.mean_score
+        bestCompleteness = configResult.percent_complete
+      }
+    })
+
+    if (bestScore !== null) {
+      return (bestScore as number).toFixed(2)
+    }
+
+    return "—"
   }
 
   function getSelectedRunConfig(modelKey: string | null): TaskRunConfig | null {
@@ -254,102 +363,135 @@
 
       <!-- Comparison Table -->
       {#if selectedModels.some((model) => model !== null)}
-        <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <!-- Model Names Header -->
+        {@const hasSelectedModels = selectedModels.filter((m) => m !== null)}
+        {@const allSelectedLoading = hasSelectedModels.every(
+          (modelId) =>
+            eval_scores_loading[modelId] ||
+            (!eval_scores_cache[modelId] && !eval_scores_errors[modelId]),
+        )}
+        {@const anyLoadedData = hasSelectedModels.some(
+          (modelId) => eval_scores_cache[modelId],
+        )}
+
+        {#if allSelectedLoading && !anyLoadedData}
+          <!-- Big centered loading spinner when no data is loaded yet -->
           <div
-            class="grid gap-4 border-b border-gray-200 bg-gray-50"
-            style="grid-template-columns: 200px repeat({columns}, 1fr);"
+            class="bg-white border border-gray-200 rounded-lg p-12 flex flex-col items-center justify-center min-h-[400px]"
           >
-            <div class="px-6 py-4 font-semibold text-gray-900">Run Method</div>
-            {#each Array(columns) as _, i}
-              {@const selectedConfig = getSelectedRunConfig(selectedModels[i])}
-              <div class="px-6 py-4 text-center">
-                {#if selectedConfig}
-                  {@const prompt_info_text =
-                    getRunConfigPromptInfoText(selectedConfig)}
-                  {@const prompt_link_url = prompt_link(
-                    project_id,
-                    task_id,
-                    `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
-                  )}
-                  <div class="font-semibold text-gray-900">
-                    {model_name(
-                      selectedConfig.run_config_properties?.model_name,
-                      $model_info,
-                    ) || "Unknown Model"}
-                  </div>
-                  <div class="text-sm text-gray-500 font-normal">
-                    {#if prompt_link_url}
-                      <a
-                        href={prompt_link_url}
-                        class="text-gray-500 font-normal link"
-                      >
+            <div class="loading loading-spinner loading-lg mb-4"></div>
+            <div class="text-gray-600">Loading evaluation scores...</div>
+          </div>
+        {:else}
+          <div
+            class="bg-white border border-gray-200 rounded-lg overflow-hidden"
+          >
+            <!-- Model Names Header -->
+            <div
+              class="grid gap-4 border-b border-gray-200 bg-gray-50"
+              style="grid-template-columns: 200px repeat({columns}, 1fr);"
+            >
+              <div class="px-6 py-4 font-semibold text-gray-900"></div>
+              {#each Array(columns) as _, i}
+                {@const selectedConfig = getSelectedRunConfig(
+                  selectedModels[i],
+                )}
+                <div class="px-6 py-4 text-center">
+                  {#if selectedConfig}
+                    {@const prompt_info_text =
+                      getRunConfigPromptInfoText(selectedConfig)}
+                    {@const prompt_link_url = prompt_link(
+                      project_id,
+                      task_id,
+                      `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
+                    )}
+                    <div class="font-semibold text-gray-900">
+                      {model_name(
+                        selectedConfig.run_config_properties?.model_name,
+                        $model_info,
+                      ) || "Unknown Model"}
+                    </div>
+                    <div class="text-sm text-gray-500 font-normal">
+                      {#if prompt_link_url}
+                        <a
+                          href={prompt_link_url}
+                          class="text-gray-500 font-normal link"
+                        >
+                          Prompt: {getRunConfigPromptDisplayName(
+                            selectedConfig,
+                            $current_task_prompts,
+                          )}
+                        </a>
+                      {:else}
                         Prompt: {getRunConfigPromptDisplayName(
                           selectedConfig,
                           $current_task_prompts,
                         )}
-                      </a>
-                    {:else}
-                      Prompt: {getRunConfigPromptDisplayName(
-                        selectedConfig,
-                        $current_task_prompts,
-                      )}
-                    {/if}
-                    {#if prompt_info_text}
-                      <InfoTooltip
-                        tooltip_text={prompt_info_text}
-                        position="bottom"
-                        no_pad={true}
-                      />
-                    {/if}
-                  </div>
-                  <div class="badge bg-gray-200 text-gray-500">
-                    {selectedConfig.name}
-                  </div>
-                {:else}
-                  <div class="font-semibold text-gray-900">—</div>
-                {/if}
-              </div>
-            {/each}
-          </div>
-
-          {#each comparisonFeatures as section}
-            <!-- Section Header -->
-            <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
-              <h4
-                class="text-sm font-semibold text-gray-900 uppercase tracking-wide"
-              >
-                {section.category}
-              </h4>
+                      {/if}
+                      {#if prompt_info_text}
+                        <InfoTooltip
+                          tooltip_text={prompt_info_text}
+                          position="bottom"
+                          no_pad={true}
+                        />
+                      {/if}
+                    </div>
+                    <div class="badge bg-gray-200 text-gray-500">
+                      {selectedConfig.name}
+                    </div>
+                  {:else}
+                    <div class="font-semibold text-gray-900">—</div>
+                  {/if}
+                </div>
+              {/each}
             </div>
 
-            <!-- Section Rows -->
-            {#each section.items as item}
-              <div
-                class="grid gap-4 border-b border-gray-100 last:border-b-0"
-                style="grid-template-columns: 200px repeat({columns}, 1fr);"
-              >
-                <!-- Feature Label -->
-                <div
-                  class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center"
+            {#each comparisonFeatures as section}
+              <!-- Section Header -->
+              <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
+                <h4
+                  class="text-sm font-semibold text-gray-900 uppercase tracking-wide"
                 >
-                  {item.label}
-                </div>
-
-                <!-- Model Values -->
-                {#each Array(columns) as _, i}
-                  <div
-                    class="px-6 py-4 text-center flex items-center justify-center"
-                  >
-                    <span class="text-gray-900">
-                      {getModelValue(selectedModels[i], item.key)}
-                    </span>
-                  </div>
-                {/each}
+                  {section.category}
+                </h4>
               </div>
+
+              <!-- Section Rows -->
+              {#each section.items as item}
+                <div
+                  class="grid gap-4 border-b border-gray-100 last:border-b-0"
+                  style="grid-template-columns: 200px repeat({columns}, 1fr);"
+                >
+                  <!-- Feature Label -->
+                  <div
+                    class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center"
+                  >
+                    {item.label}
+                  </div>
+
+                  <!-- Model Values -->
+                  {#each Array(columns) as _, i}
+                    <div
+                      class="px-6 py-4 text-center flex items-center justify-center"
+                    >
+                      {#if selectedModels[i] && eval_scores_loading[selectedModels[i]]}
+                        <!-- Column loading spinner -->
+                        <div class="loading loading-spinner loading-sm"></div>
+                      {:else if selectedModels[i] && eval_scores_errors[selectedModels[i]]}
+                        <!-- Error state -->
+                        <span class="text-error text-sm">Error</span>
+                      {:else}
+                        <!-- Normal value -->
+                        <span class="text-gray-900">
+                          {getModelValue(selectedModels[i], item.key)}
+                        </span>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/each}
             {/each}
-          {/each}
-        </div>
+          </div>
+        {/if}
       {:else}
         <!-- Empty State -->
         <div

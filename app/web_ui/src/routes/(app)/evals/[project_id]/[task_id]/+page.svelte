@@ -141,6 +141,10 @@
     ? []
     : [
         {
+          label: "Compare Run Methods",
+          href: `/evals/${project_id}/${task_id}/compare`,
+        },
+        {
           label: "New Evaluator",
           href: `/evals/${project_id}/${task_id}/create_evaluator`,
           primary: true,

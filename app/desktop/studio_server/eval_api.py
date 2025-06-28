@@ -172,6 +172,25 @@ class EvalConfigCompareSummary(BaseModel):
     not_rated_count: int
 
 
+class EvalConfigResult(BaseModel):
+    eval_config_id: ID_TYPE
+    # output_score_id -> ScoreSummary
+    results: Dict[str, ScoreSummary]
+    # percent of the dataset that has been processed
+    percent_complete: float
+
+
+class RunConfigEvalResult(BaseModel):
+    eval_id: ID_TYPE
+    eval_name: str
+    dataset_size: int
+    eval_config_results: List[EvalConfigResult]
+
+
+class RunConfigEvalScoresSummary(BaseModel):
+    eval_results: List[RunConfigEvalResult]
+
+
 class UpdateEvalRequest(BaseModel):
     name: str
     description: str | None = None
@@ -845,4 +864,107 @@ def connect_evals_api(app: FastAPI):
             fully_rated_count=fully_rated_count,
             partially_rated_count=partially_rated_count,
             not_rated_count=not_rated_count,
+        )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores"
+    )
+    async def get_run_config_eval_scores(
+        project_id: str,
+        task_id: str,
+        run_config_id: str,
+    ) -> RunConfigEvalScoresSummary:
+        task = task_from_id(project_id, task_id)
+
+        # Verify the run config exists
+        task_run_config_from_id(project_id, task_id, run_config_id)
+
+        evals = task.evals()
+        eval_results: List[RunConfigEvalResult] = []
+
+        for eval in evals:
+            # Get the dataset size for this eval
+            expected_dataset_ids = dataset_ids_in_filter(
+                task, eval.eval_set_filter_id, readonly=True
+            )
+            dataset_size = len(expected_dataset_ids)
+
+            eval_config_results: List[EvalConfigResult] = []
+            eval_configs = eval.configs(readonly=True)
+
+            for eval_config in eval_configs:
+                # Track which dataset items we've seen for this eval_config
+                remaining_expected_dataset_ids = set(expected_dataset_ids)
+                partial_incomplete_count = 0
+
+                # output_score_json_key -> score/total for calculating the mean score
+                total_scores: Dict[str, float] = {}
+                score_counts: Dict[str, int] = {}
+
+                for eval_run in eval_config.runs(readonly=True):
+                    # Only include eval_runs for our specific run_config
+                    if eval_run.task_run_config_id != run_config_id:
+                        continue
+
+                    # Check if this dataset_id is expected for this eval
+                    if eval_run.dataset_id not in remaining_expected_dataset_ids:
+                        continue
+                    else:
+                        remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+
+                    incomplete = False
+                    for output_score in eval.output_scores:
+                        score_key = output_score.json_key()
+                        if score_key not in total_scores:
+                            total_scores[score_key] = 0
+                            score_counts[score_key] = 0
+
+                        if score_key in eval_run.scores:
+                            total_scores[score_key] += eval_run.scores[score_key]
+                            score_counts[score_key] += 1
+                        else:
+                            # We're missing a required score, so this eval_run is incomplete
+                            incomplete = True
+
+                    if incomplete:
+                        partial_incomplete_count += 1
+
+                # Convert to score summaries
+                results: Dict[str, ScoreSummary] = {}
+                for output_score_id, score in total_scores.items():
+                    count = score_counts[output_score_id]
+                    if count > 0:
+                        results[output_score_id] = ScoreSummary(
+                            mean_score=score / count
+                        )
+
+                # Calculate the percent of the dataset that has been processed
+                incomplete_count = partial_incomplete_count + len(
+                    remaining_expected_dataset_ids
+                )
+                if dataset_size > 0:
+                    percent_incomplete = incomplete_count / dataset_size
+                    percent_complete = 1 - percent_incomplete
+                else:
+                    percent_complete = 0.0
+
+                eval_config_results.append(
+                    EvalConfigResult(
+                        eval_config_id=eval_config.id,
+                        results=results,
+                        percent_complete=percent_complete,
+                    )
+                )
+
+            eval_results.append(
+                RunConfigEvalResult(
+                    eval_id=eval.id,
+                    eval_name=eval.name,
+                    dataset_size=dataset_size,
+                    eval_config_results=eval_config_results,
+                )
+            )
+
+        return RunConfigEvalScoresSummary(
+            eval_results=eval_results,
         )
