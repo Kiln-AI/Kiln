@@ -55,7 +55,7 @@
   // Track if we're initializing from URL to avoid updating URL during initial load
   let isInitializing = true
 
-  // Initialize state from URL parameters
+  // Initialize basic state from URL parameters (columns only)
   function initializeFromURL() {
     const urlParams = new URLSearchParams($page.url.search)
 
@@ -68,18 +68,33 @@
       }
     }
 
-    // Get models from URL
+    // Initialize selectedModels array with correct length
+    selectedModels = new Array(columns).fill(null)
+  }
+
+  // Restore model selections from URL after data is loaded
+  function restoreStateFromURL() {
+    if (!task_run_configs) return
+
+    const urlParams = new URLSearchParams($page.url.search)
     const urlModels = urlParams.get("models")
+
     if (urlModels) {
       const modelIds = urlModels.split(",").map((id) => (id === "" ? null : id))
-      // Ensure we have the right number of slots
-      selectedModels = new Array(columns).fill(null)
+
+      // Validate each model ID exists in task_run_configs
       for (let i = 0; i < Math.min(modelIds.length, columns); i++) {
-        selectedModels[i] = modelIds[i]
+        const modelId = modelIds[i]
+        if (
+          modelId &&
+          task_run_configs.find((config) => config.id === modelId)
+        ) {
+          selectedModels[i] = modelId
+        }
       }
-    } else {
-      // Initialize with correct number of columns
-      selectedModels = new Array(columns).fill(null)
+
+      // Trigger reactivity
+      selectedModels = [...selectedModels]
     }
   }
 
@@ -107,7 +122,7 @@
   }
 
   onMount(async () => {
-    // Initialize state from URL first
+    // Initialize basic state from URL first (columns)
     initializeFromURL()
 
     // Load data needed for the page
@@ -117,6 +132,9 @@
       load_available_models(),
     ])
     await get_task_run_configs()
+
+    // Now that data is loaded, restore full state from URL
+    restoreStateFromURL()
 
     // Mark initialization as complete
     isInitializing = false
