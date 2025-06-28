@@ -183,18 +183,15 @@
   {:else}
     <div class="max-w-7xl mx-auto">
       <!-- Column Headers with Dropdowns -->
-      <div
-        class="grid gap-4 mb-8"
-        style="grid-template-columns: repeat({columns}, 1fr) {columns < 4
-          ? 'auto'
-          : ''};"
-      >
+      <div class="flex flex-row flex-wrap gap-4 mb-8">
         {#each Array(columns) as _, i}
-          <div class="bg-white border border-gray-200 rounded-lg p-6 relative">
+          <div
+            class="bg-white border border-gray-200 rounded-lg p-6 relative flex-1 min-w-[200px] max-w-md"
+          >
             {#if columns > 2}
               <button
                 on:click={() => removeColumn(i)}
-                class="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-600 text-sm font-bold"
+                class="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold"
                 title="Remove column"
               >
                 ×
