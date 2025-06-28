@@ -4,6 +4,7 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type {
@@ -51,7 +52,64 @@
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
 
+  // Track if we're initializing from URL to avoid updating URL during initial load
+  let isInitializing = true
+
+  // Initialize state from URL parameters
+  function initializeFromURL() {
+    const urlParams = new URLSearchParams($page.url.search)
+
+    // Get columns from URL
+    const urlColumns = urlParams.get("columns")
+    if (urlColumns) {
+      const parsedColumns = parseInt(urlColumns, 10)
+      if (parsedColumns >= 2 && parsedColumns <= 4) {
+        columns = parsedColumns
+      }
+    }
+
+    // Get models from URL
+    const urlModels = urlParams.get("models")
+    if (urlModels) {
+      const modelIds = urlModels.split(",").map((id) => (id === "" ? null : id))
+      // Ensure we have the right number of slots
+      selectedModels = new Array(columns).fill(null)
+      for (let i = 0; i < Math.min(modelIds.length, columns); i++) {
+        selectedModels[i] = modelIds[i]
+      }
+    } else {
+      // Initialize with correct number of columns
+      selectedModels = new Array(columns).fill(null)
+    }
+  }
+
+  // Update URL with current state
+  function updateURL() {
+    if (isInitializing) return
+
+    const urlParams = new URLSearchParams($page.url.search)
+
+    // Update columns
+    urlParams.set("columns", columns.toString())
+
+    // Update models (empty string for null values)
+    const modelIds = selectedModels.map((id) => id || "")
+    urlParams.set("models", modelIds.join(","))
+
+    // Use replace to avoid creating new history entries
+    const newURL = `${$page.url.pathname}?${urlParams.toString()}`
+    goto(newURL, { replaceState: true })
+  }
+
+  // Reactive statements to update URL when state changes
+  $: if (!isInitializing && (columns || selectedModels)) {
+    updateURL()
+  }
+
   onMount(async () => {
+    // Initialize state from URL first
+    initializeFromURL()
+
     // Load data needed for the page
     await Promise.all([
       load_model_info(),
@@ -59,6 +117,9 @@
       load_available_models(),
     ])
     await get_task_run_configs()
+
+    // Mark initialization as complete
+    isInitializing = false
   })
 
   async function get_task_run_configs() {
@@ -243,7 +304,7 @@
         return {
           label: `${modelName} • ${promptName}`, // First line: model name + prompt name
           value: config.id || "",
-          description: `'${modelName}' running the prompt '${promptName}'.`,
+          description: config.name,
         }
       }),
     }))
