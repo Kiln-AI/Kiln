@@ -1,5 +1,3 @@
-import json
-
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import (
@@ -8,13 +6,9 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.repair.repair_task import RepairTaskRun
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-)
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.utils.config import Config
 from kiln_server.run_api import model_provider_from_string, task_and_run_from_id
 from pydantic import BaseModel, ConfigDict, Field, ValidationError

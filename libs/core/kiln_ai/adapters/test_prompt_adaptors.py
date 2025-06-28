@@ -13,10 +13,6 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmConfig,
 )
 from kiln_ai.adapters.ollama_tools import ollama_online
-from kiln_ai.adapters.prompt_builders import (
-    BasePromptBuilder,
-    SimpleChainOfThoughtPromptBuilder,
-)
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.task import RunConfigProperties
 

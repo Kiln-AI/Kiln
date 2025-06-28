@@ -6,13 +6,7 @@ from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
-from kiln_ai.datamodel import (
-    BasePrompt,
-    DataSource,
-    DataSourceType,
-    Task,
-    TaskRun,
-)
+from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
