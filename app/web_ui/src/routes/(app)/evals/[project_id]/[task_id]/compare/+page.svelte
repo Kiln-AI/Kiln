@@ -6,7 +6,11 @@
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRunConfig } from "$lib/types"
+  import type {
+    AvailableModels,
+    PromptResponse,
+    TaskRunConfig,
+  } from "$lib/types"
   import {
     model_info,
     load_model_info,
@@ -14,12 +18,15 @@
     provider_name_from_id,
     current_task_prompts,
     load_available_prompts,
+    load_available_models,
+    available_models,
   } from "$lib/stores"
   import {
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import { prompt_link } from "$lib/utils/link_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -34,7 +41,12 @@
   let error: KilnError | null = null
 
   onMount(async () => {
-    await Promise.all([load_model_info(), load_available_prompts()])
+    // Load data needed for the page
+    await Promise.all([
+      load_model_info(),
+      load_available_prompts(),
+      load_available_models(),
+    ])
     await get_task_run_configs()
   })
 
@@ -64,10 +76,16 @@
   }
 
   // Generate dropdown options from run configs
-  $: modelOptions = generateRunConfigOptions(task_run_configs)
+  $: modelOptions = generateRunConfigOptions(
+    task_run_configs,
+    $current_task_prompts,
+    $available_models,
+  )
 
   function generateRunConfigOptions(
     configs: TaskRunConfig[] | null,
+    task_prompts: PromptResponse | null,
+    _: AvailableModels[],
   ): OptionGroup[] {
     if (!configs || configs.length === 0) {
       return []
@@ -93,15 +111,12 @@
         const modelName =
           model_name(config.run_config_properties?.model_name, $model_info) ||
           "Unknown Model"
-        const promptName = getRunConfigPromptDisplayName(
-          config,
-          $current_task_prompts,
-        )
+        const promptName = getRunConfigPromptDisplayName(config, task_prompts)
 
         return {
           label: `${modelName} • ${promptName}`, // First line: model name + prompt name
           value: config.id || "",
-          description: `The model '${modelName}', running the prompt '${promptName}', on the provider '${provider}'.`,
+          description: `'${modelName}' running the prompt '${promptName}'.`,
         }
       }),
     }))
@@ -165,7 +180,7 @@
 
 <AppPage
   title="Compare Run Methods"
-  subtitle="Use evals to find the best run method for your task"
+  subtitle="Compare run methods for your task using evals"
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -252,6 +267,11 @@
                 {#if selectedConfig}
                   {@const prompt_info_text =
                     getRunConfigPromptInfoText(selectedConfig)}
+                  {@const prompt_link_url = prompt_link(
+                    project_id,
+                    task_id,
+                    `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
+                  )}
                   <div class="font-semibold text-gray-900">
                     {model_name(
                       selectedConfig.run_config_properties?.model_name,
@@ -259,10 +279,22 @@
                     ) || "Unknown Model"}
                   </div>
                   <div class="text-sm text-gray-500 font-normal">
-                    {getRunConfigPromptDisplayName(
-                      selectedConfig,
-                      $current_task_prompts,
-                    )}
+                    {#if prompt_link_url}
+                      <a
+                        href={prompt_link_url}
+                        class="text-gray-500 font-normal link"
+                      >
+                        Prompt: {getRunConfigPromptDisplayName(
+                          selectedConfig,
+                          $current_task_prompts,
+                        )}
+                      </a>
+                    {:else}
+                      Prompt: {getRunConfigPromptDisplayName(
+                        selectedConfig,
+                        $current_task_prompts,
+                      )}
+                    {/if}
                     {#if prompt_info_text}
                       <InfoTooltip
                         tooltip_text={prompt_info_text}
@@ -270,6 +302,9 @@
                         no_pad={true}
                       />
                     {/if}
+                  </div>
+                  <div class="badge bg-gray-200 text-gray-500">
+                    {selectedConfig.name}
                   </div>
                 {:else}
                   <div class="font-semibold text-gray-900">—</div>
