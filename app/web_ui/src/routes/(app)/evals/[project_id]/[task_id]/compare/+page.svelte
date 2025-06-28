@@ -101,10 +101,7 @@
         return {
           label: `${modelName} • ${promptName}`, // First line: model name + prompt name
           value: config.id || "",
-          description: getRunConfigPromptDisplayName(
-            config,
-            $current_task_prompts,
-          ), // Second line: run config name
+          description: `The model '${modelName}', running the prompt '${promptName}', on the provider '${provider}'.`,
         }
       }),
     }))
@@ -327,18 +324,24 @@
           class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-12 text-center"
         >
           <svg
-            class="mx-auto h-12 w-12 text-gray-400"
+            class="mx-auto h-12 w-24 text-gray-400"
+            viewBox="0 0 1730 800"
             fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
           >
             <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 00-2-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+              d="M140 400C140 283.438 140 225.159 158.148 180.638C174.11 141.477 199.582 109.638 230.911 89.6844C266.527 67 313.151 67 406.4 67H539.6C632.85 67 679.473 67 715.091 89.6844C746.42 109.638 771.891 141.477 787.852 180.638C806 225.159 806 283.438 806 400C806 516.562 806 574.842 787.852 619.364C771.891 658.525 746.42 690.364 715.091 710.314C679.473 733 632.85 733 539.6 733H406.4C313.151 733 266.527 733 230.911 710.314C199.582 690.364 174.11 658.525 158.148 619.364C140 574.842 140 516.562 140 400Z"
+              stroke="currentColor"
+              stroke-width="50"
+            />
+            <path
+              d="M924 400C924 283.438 924 225.159 942.148 180.638C958.11 141.477 983.582 109.638 1014.91 89.6844C1050.53 67 1097.15 67 1190.4 67H1323.6C1416.85 67 1463.47 67 1499.09 89.6844C1530.42 109.638 1555.89 141.477 1571.85 180.638C1590 225.159 1590 283.438 1590 400C1590 516.562 1590 574.842 1571.85 619.364C1555.89 658.525 1530.42 690.364 1499.09 710.314C1463.47 733 1416.85 733 1323.6 733H1190.4C1097.15 733 1050.53 733 1014.91 710.314C983.582 690.364 958.11 658.525 942.148 619.364C924 574.842 924 516.562 924 400Z"
+              stroke="currentColor"
+              stroke-width="50"
+              stroke-dasharray="100 100"
             />
           </svg>
+
           <h3 class="mt-4 text-lg font-medium text-gray-900">
             Select run methods to compare
           </h3>
