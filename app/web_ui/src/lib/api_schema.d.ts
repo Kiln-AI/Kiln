@@ -1758,6 +1758,8 @@ export interface components {
             scores: {
                 [key: string]: number;
             };
+            /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
+            task_run_usage?: components["schemas"]["Usage"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -2046,6 +2048,17 @@ export interface components {
             created_by?: string;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** MeanUsage */
+        MeanUsage: {
+            /** Mean Input Tokens */
+            mean_input_tokens?: number | null;
+            /** Mean Output Tokens */
+            mean_output_tokens?: number | null;
+            /** Mean Total Tokens */
+            mean_total_tokens?: number | null;
+            /** Mean Cost */
+            mean_cost?: number | null;
         };
         /** ModelDetails */
         ModelDetails: {
@@ -2337,6 +2350,7 @@ export interface components {
         RunConfigEvalScoresSummary: {
             /** Eval Results */
             eval_results: components["schemas"]["RunConfigEvalResult"][];
+            mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
          * RunConfigProperties

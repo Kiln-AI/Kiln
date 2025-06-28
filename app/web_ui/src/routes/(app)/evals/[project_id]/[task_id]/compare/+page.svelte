@@ -186,6 +186,19 @@
       }
     })
 
+    // Add Cost section (always last)
+    const costItems = [
+      { label: "Input Tokens", key: "cost::mean_input_tokens" },
+      { label: "Output Tokens", key: "cost::mean_output_tokens" },
+      { label: "Total Tokens", key: "cost::mean_total_tokens" },
+      { label: "Cost (USD)", key: "cost::mean_cost" },
+    ]
+
+    features.push({
+      category: "Mean Usage",
+      items: costItems,
+    })
+
     return features
   }
 
@@ -253,12 +266,48 @@
   function getModelValue(modelKey: string | null, dataKey: string): string {
     if (!modelKey || !eval_scores_cache[modelKey]) return "—"
 
-    const [evalName, scoreKey] = dataKey.split("::")
-    if (!evalName || !scoreKey) return "—"
+    const [category, scoreKey] = dataKey.split("::")
+    if (!category || !scoreKey) return "—"
 
     const evalScores = eval_scores_cache[modelKey]
+
+    // Handle cost metrics
+    if (category === "cost") {
+      if (!evalScores.mean_usage) return "—"
+
+      const meanUsage = evalScores.mean_usage
+      let value: number | null | undefined = null
+
+      switch (scoreKey) {
+        case "mean_input_tokens":
+          value = meanUsage.mean_input_tokens
+          break
+        case "mean_output_tokens":
+          value = meanUsage.mean_output_tokens
+          break
+        case "mean_total_tokens":
+          value = meanUsage.mean_total_tokens
+          break
+        case "mean_cost":
+          value = meanUsage.mean_cost
+          break
+      }
+
+      if (value !== null && value !== undefined) {
+        // Format cost with currency symbol, others as whole numbers
+        if (scoreKey === "mean_cost") {
+          return `$${value.toFixed(7)}`
+        } else {
+          return value.toFixed(1)
+        }
+      }
+
+      return "—"
+    }
+
+    // Handle eval metrics (existing logic)
     const evalResult = evalScores.eval_results.find(
-      (e) => e.eval_name === evalName,
+      (e) => e.eval_name === category,
     )
     if (!evalResult) return "—"
 
