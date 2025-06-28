@@ -195,7 +195,7 @@
     ]
 
     features.push({
-      category: "Mean Usage",
+      category: "Avg Usage",
       items: costItems,
     })
 
