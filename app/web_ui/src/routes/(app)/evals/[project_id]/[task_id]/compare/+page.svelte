@@ -413,6 +413,49 @@
     if (!modelKey || !task_run_configs) return null
     return task_run_configs.find((config) => config.id === modelKey) || null
   }
+
+  function getPercentageDifference(
+    baseValue: string,
+    compareValue: string,
+  ): string {
+    // Return empty if either value is unavailable
+    if (baseValue === "—" || compareValue === "—") return ""
+
+    // Parse numeric values, handling currency formatting
+    const parseValue = (val: string): number | null => {
+      if (val === "—") return null
+      // Remove currency symbol and parse
+      const cleaned = val.replace(/^\$/, "")
+      const parsed = parseFloat(cleaned)
+      return isNaN(parsed) ? null : parsed
+    }
+
+    const base = parseValue(baseValue)
+    const compare = parseValue(compareValue)
+
+    if (base === null || compare === null) return ""
+
+    // Handle division by zero
+    if (base === 0) {
+      if (compare === 0) return "even"
+      return compare > 0 ? "+∞%" : "-∞%"
+    }
+
+    const percentDiff = ((compare - base) / base) * 100
+
+    // Handle very small differences (less than 0.01%)
+    if (Math.abs(percentDiff) < 0.01) return "even"
+
+    // Format the percentage
+    const formatted =
+      Math.abs(percentDiff) < 1
+        ? percentDiff.toFixed(2)
+        : Math.abs(percentDiff) < 10
+          ? percentDiff.toFixed(1)
+          : percentDiff.toFixed(0)
+
+    return percentDiff >= 0 ? `+${formatted}%` : `${formatted}%`
+  }
 </script>
 
 <AppPage
@@ -523,7 +566,7 @@
                 {@const selectedConfig = getSelectedRunConfig(
                   selectedModels[i],
                 )}
-                <div class="px-6 py-4 text-center">
+                <div class="px-6 py-4 text-center overflow-hidden">
                   {#if selectedConfig}
                     {@const prompt_info_text =
                       getRunConfigPromptInfoText(selectedConfig)}
@@ -563,7 +606,9 @@
                         />
                       {/if}
                     </div>
-                    <div class="badge bg-gray-200 text-gray-500">
+                    <div
+                      class="badge bg-gray-200 text-gray-500 whitespace-nowrap"
+                    >
                       {selectedConfig.name}
                     </div>
                   {:else}
@@ -609,9 +654,30 @@
                         <span class="text-error text-sm">Error</span>
                       {:else}
                         <!-- Normal value -->
-                        <span class="text-gray-900">
-                          {getModelValue(selectedModels[i], item.key)}
-                        </span>
+                        <div class="flex flex-col items-center">
+                          <span class="text-gray-900">
+                            {getModelValue(selectedModels[i], item.key)}
+                          </span>
+                          {#if i > 0 && selectedModels[0] !== null}
+                            {@const baseValue = getModelValue(
+                              selectedModels[0],
+                              item.key,
+                            )}
+                            {@const currentValue = getModelValue(
+                              selectedModels[i],
+                              item.key,
+                            )}
+                            {@const percentDiff = getPercentageDifference(
+                              baseValue,
+                              currentValue,
+                            )}
+                            {#if percentDiff}
+                              <span class="text-xs text-gray-500 mt-1">
+                                {percentDiff}
+                              </span>
+                            {/if}
+                          {/if}
+                        </div>
                       {/if}
                     </div>
                   {/each}
