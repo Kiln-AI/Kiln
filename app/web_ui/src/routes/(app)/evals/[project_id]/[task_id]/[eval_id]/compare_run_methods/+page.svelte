@@ -20,7 +20,6 @@
     load_model_info,
     model_name,
     provider_name_from_id,
-    prompt_name_from_id,
     current_task_prompts,
     load_available_prompts,
     load_available_models,
@@ -29,6 +28,10 @@
     current_task,
     load_task,
   } from "$lib/stores"
+  import {
+    getRunConfigPromptDisplayName,
+    getRunConfigPromptInfoText,
+  } from "$lib/utils/run_config_formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
   import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
@@ -636,12 +639,9 @@
                 {@const percent_complete =
                   score_summary?.run_config_percent_complete?.[
                     "" + task_run_config.id
-                  ]}{@const prompt_name =
-                  task_run_config.prompt?.name ||
-                  prompt_name_from_id(
-                    task_run_config?.run_config_properties?.prompt_id,
-                    $current_task_prompts,
-                  )}
+                  ]}
+                {@const prompt_info_text =
+                  getRunConfigPromptInfoText(task_run_config)}
                 <tr
                   class="hover cursor-pointer"
                   on:click={() => {
@@ -659,22 +659,16 @@
                     </div>
 
                     <div class="text-sm text-gray-500">
-                      Prompt:
-                      {#if task_run_config?.prompt?.generator_id && task_run_config?.run_config_properties?.prompt_id?.startsWith("task_run_config::")}
-                        <!-- Special description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
-                        {prompt_name_from_id(
-                          task_run_config?.prompt?.generator_id,
-                          $current_task_prompts,
-                        )}
+                      Prompt: {getRunConfigPromptDisplayName(
+                        task_run_config,
+                        $current_task_prompts,
+                      )}
+                      {#if prompt_info_text}
                         <InfoTooltip
-                          tooltip_text={'The exact prompt was saved under the name "' +
-                            prompt_name +
-                            '". See the Prompt tab for details.'}
+                          tooltip_text={prompt_info_text}
                           position="right"
                           no_pad={true}
                         />
-                      {:else}
-                        {prompt_name}
                       {/if}
                     </div>
                     <div class="text-sm text-gray-500">

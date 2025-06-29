@@ -352,6 +352,43 @@ def test_litellm_model_id_unknown_provider(config, mock_task):
                 adapter.litellm_model_id()
 
 
+@pytest.mark.parametrize(
+    "provider_name,expected_usage_param",
+    [
+        (ModelProviderName.openrouter, {"usage": {"include": True}}),
+        (ModelProviderName.openai, {}),
+        (ModelProviderName.anthropic, {}),
+        (ModelProviderName.groq, {}),
+    ],
+)
+def test_build_extra_body_openrouter_usage(
+    config, mock_task, provider_name, expected_usage_param
+):
+    """Test build_extra_body includes usage parameter for OpenRouter providers"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a mock provider with the specified name and minimal required attributes
+    mock_provider = Mock()
+    mock_provider.name = provider_name
+    mock_provider.thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+
+    # Call build_extra_body
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    # Verify the usage parameter is included only for OpenRouter
+    for key, value in expected_usage_param.items():
+        assert extra_body.get(key) == value
+
+    # Verify non-OpenRouter providers don't have the usage parameter
+    if provider_name != ModelProviderName.openrouter:
+        assert "usage" not in extra_body
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_task):
     """Test build_completion_kwargs with custom temperature and top_p values"""
@@ -474,6 +511,17 @@ async def test_build_completion_kwargs(
         ({"prompt_tokens": 10}, None, None),
         # Invalid cost type (should be ignored)
         (None, "0.5", None),
+        # Cost in OpenRouter format
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=10,
+                completion_tokens=20,
+                total_tokens=30,
+                cost=0.5,
+            ),
+            None,
+            Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.5),
+        ),
     ],
 )
 def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_usage):
