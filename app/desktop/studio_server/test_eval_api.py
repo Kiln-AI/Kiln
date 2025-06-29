@@ -1843,6 +1843,8 @@ async def test_get_run_config_eval_scores_with_usage(
     mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
     mock_eval_for_api.output_scores = mock_eval.output_scores
 
+    mock_eval.current_config_id = mock_eval_config.id
+
     # Patch the task_from_id to return our mock
     with (
         patch(
@@ -1881,9 +1883,9 @@ async def test_get_run_config_eval_scores_with_usage(
     assert len(eval_results) == 1
 
     eval_result = eval_results[0]
-    assert "eval_config_results" in eval_result
-    eval_config_results = eval_result["eval_config_results"]
-    assert len(eval_config_results) == 1
+    assert "eval_config_result" in eval_result
+    eval_config_result = eval_result["eval_config_result"]
+    assert eval_config_result is not None
 
     # Check that mean_usage is at the top level of the response
     assert "mean_usage" in data

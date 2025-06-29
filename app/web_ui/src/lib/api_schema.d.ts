@@ -2343,8 +2343,9 @@ export interface components {
             eval_name: string;
             /** Dataset Size */
             dataset_size: number;
-            /** Eval Config Results */
-            eval_config_results: components["schemas"]["EvalConfigResult"][];
+            eval_config_result: components["schemas"]["EvalConfigResult"] | null;
+            /** Missing Default Eval Config */
+            missing_default_eval_config: boolean;
         };
         /** RunConfigEvalScoresSummary */
         RunConfigEvalScoresSummary: {

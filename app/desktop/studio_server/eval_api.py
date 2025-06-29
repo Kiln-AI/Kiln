@@ -191,7 +191,8 @@ class RunConfigEvalResult(BaseModel):
     eval_id: ID_TYPE
     eval_name: str
     dataset_size: int
-    eval_config_results: List[EvalConfigResult]
+    eval_config_result: EvalConfigResult | None
+    missing_default_eval_config: bool
 
 
 class RunConfigEvalScoresSummary(BaseModel):
@@ -888,11 +889,6 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
-        # Build a map from dataset_id -> TaskRun to access usage data
-        task_runs_by_id: Dict[ID_TYPE, TaskRun] = {
-            task_run.id: task_run for task_run in task.runs(readonly=True)
-        }
-
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
 
@@ -914,103 +910,119 @@ def connect_evals_api(app: FastAPI):
             )
             dataset_size = len(expected_dataset_ids)
 
-            eval_config_results: List[EvalConfigResult] = []
-            eval_configs = eval.configs(readonly=True)
-
-            for eval_config in eval_configs:
-                # Track which dataset items we've seen for this eval_config
-                remaining_expected_dataset_ids = set(expected_dataset_ids)
-                partial_incomplete_count = 0
-
-                # output_score_json_key -> score/total for calculating the mean score
-                total_scores: Dict[str, float] = {}
-                score_counts: Dict[str, int] = {}
-
-                for eval_run in eval_config.runs(readonly=True):
-                    # Only include eval_runs for our specific run_config
-                    if eval_run.task_run_config_id != run_config_id:
-                        continue
-
-                    # Check if this dataset_id is expected for this eval
-                    if eval_run.dataset_id not in remaining_expected_dataset_ids:
-                        continue
-                    else:
-                        remaining_expected_dataset_ids.remove(eval_run.dataset_id)
-
-                    total_eval_runs += 1
-
-                    # Get usage data from the corresponding TaskRun
-                    task_run = task_runs_by_id.get(eval_run.dataset_id)
-                    if task_run and eval_run.task_run_usage:
-                        usage = eval_run.task_run_usage
-                        if usage.input_tokens is not None:
-                            total_input_tokens += usage.input_tokens
-                            input_tokens_count += 1
-                        if usage.output_tokens is not None:
-                            total_output_tokens += usage.output_tokens
-                            output_tokens_count += 1
-                        if usage.total_tokens is not None:
-                            total_total_tokens += usage.total_tokens
-                            total_tokens_count += 1
-                        if usage.cost is not None:
-                            total_cost += usage.cost
-                            cost_count += 1
-
-                    incomplete = False
-                    for output_score in eval.output_scores:
-                        score_key = output_score.json_key()
-                        if score_key not in total_scores:
-                            total_scores[score_key] = 0
-                            score_counts[score_key] = 0
-
-                        if score_key in eval_run.scores:
-                            total_scores[score_key] += eval_run.scores[score_key]
-                            score_counts[score_key] += 1
-                        else:
-                            # We're missing a required score, so this eval_run is incomplete
-                            incomplete = True
-
-                    if incomplete:
-                        partial_incomplete_count += 1
-
-                # Initialize results with all expected score keys as None
-                results: Dict[str, ScoreSummary | None] = {}
-                for output_score in eval.output_scores:
-                    score_key = output_score.json_key()
-                    results[score_key] = None
-
-                # Convert to score summaries where we have data
-                for output_score_id, score in total_scores.items():
-                    count = score_counts[output_score_id]
-                    if count > 0:
-                        results[output_score_id] = ScoreSummary(
-                            mean_score=score / count
-                        )
-
-                # Calculate the percent of the dataset that has been processed
-                incomplete_count = partial_incomplete_count + len(
-                    remaining_expected_dataset_ids
+            # Only process the default eval config if one is set
+            default_eval_config = None
+            if eval.current_config_id:
+                default_eval_config = next(
+                    (
+                        config
+                        for config in eval.configs(readonly=True)
+                        if config.id == eval.current_config_id
+                    ),
+                    None,
                 )
-                if dataset_size > 0:
-                    percent_incomplete = incomplete_count / dataset_size
-                    percent_complete = 1 - percent_incomplete
-                else:
-                    percent_complete = 0.0
 
-                eval_config_results.append(
-                    EvalConfigResult(
-                        eval_config_id=eval_config.id,
-                        results=results,
-                        percent_complete=percent_complete,
+            if not default_eval_config:
+                # No default eval config set, so we can't process this eval. Still return it so UI can show an error
+                eval_results.append(
+                    RunConfigEvalResult(
+                        eval_id=eval.id,
+                        eval_name=eval.name,
+                        dataset_size=dataset_size,
+                        eval_config_result=None,
+                        missing_default_eval_config=True,
                     )
                 )
+                continue
+
+            eval_config = default_eval_config
+            # Track which dataset items we've seen for this eval_config
+            remaining_expected_dataset_ids = set(expected_dataset_ids)
+            partial_incomplete_count = 0
+
+            # output_score_json_key -> score/total for calculating the mean score
+            total_scores: Dict[str, float] = {}
+            score_counts: Dict[str, int] = {}
+
+            for eval_run in eval_config.runs(readonly=True):
+                # Only include eval_runs for our specific run_config
+                if eval_run.task_run_config_id != run_config_id:
+                    continue
+
+                # Check if this dataset_id is expected for this eval
+                if eval_run.dataset_id not in remaining_expected_dataset_ids:
+                    continue
+                else:
+                    remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+
+                total_eval_runs += 1
+
+                # Get usage data from the corresponding TaskRun
+                if eval_run.task_run_usage:
+                    usage = eval_run.task_run_usage
+                    if usage.input_tokens is not None:
+                        total_input_tokens += usage.input_tokens
+                        input_tokens_count += 1
+                    if usage.output_tokens is not None:
+                        total_output_tokens += usage.output_tokens
+                        output_tokens_count += 1
+                    if usage.total_tokens is not None:
+                        total_total_tokens += usage.total_tokens
+                        total_tokens_count += 1
+                    if usage.cost is not None:
+                        total_cost += usage.cost
+                        cost_count += 1
+
+                incomplete = False
+                for output_score in eval.output_scores:
+                    score_key = output_score.json_key()
+                    if score_key not in total_scores:
+                        total_scores[score_key] = 0
+                        score_counts[score_key] = 0
+
+                    if score_key in eval_run.scores:
+                        total_scores[score_key] += eval_run.scores[score_key]
+                        score_counts[score_key] += 1
+                    else:
+                        # We're missing a required score, so this eval_run is incomplete
+                        incomplete = True
+
+                if incomplete:
+                    partial_incomplete_count += 1
+
+            # Initialize results with all expected score keys as None
+            results: Dict[str, ScoreSummary | None] = {}
+            for output_score in eval.output_scores:
+                score_key = output_score.json_key()
+                results[score_key] = None
+
+            # Convert to score summaries where we have data
+            for output_score_id, score in total_scores.items():
+                count = score_counts[output_score_id]
+                if count > 0:
+                    results[output_score_id] = ScoreSummary(mean_score=score / count)
+
+            # Calculate the percent of the dataset that has been processed
+            incomplete_count = partial_incomplete_count + len(
+                remaining_expected_dataset_ids
+            )
+            if dataset_size > 0:
+                percent_incomplete = incomplete_count / dataset_size
+                percent_complete = 1 - percent_incomplete
+            else:
+                percent_complete = 0.0
 
             eval_results.append(
                 RunConfigEvalResult(
                     eval_id=eval.id,
                     eval_name=eval.name,
                     dataset_size=dataset_size,
-                    eval_config_results=eval_config_results,
+                    missing_default_eval_config=False,
+                    eval_config_result=EvalConfigResult(
+                        eval_config_id=eval_config.id,
+                        results=results,
+                        percent_complete=percent_complete,
+                    ),
                 )
             )
 

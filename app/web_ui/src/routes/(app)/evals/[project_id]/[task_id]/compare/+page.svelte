@@ -16,7 +16,6 @@
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
-  type EvalConfigResult = components["schemas"]["EvalConfigResult"]
   type ScoreSummary = components["schemas"]["ScoreSummary"]
   import {
     model_info,
@@ -240,11 +239,11 @@
           evalCategories[evalResult.eval_name] = new Set()
         }
 
-        evalResult.eval_config_results.forEach((configResult) => {
-          Object.keys(configResult.results).forEach((scoreKey) => {
+        Object.keys(evalResult.eval_config_result?.results || {}).forEach(
+          (scoreKey) => {
             evalCategories[evalResult.eval_name].add(scoreKey)
-          })
-        })
+          },
+        )
       })
     })
 
@@ -390,20 +389,10 @@
     )
     if (!evalResult) return "—"
 
-    // Find the best available score from any eval config
-    let bestScore: number | null = null
-    let bestCompleteness = 0
-
-    evalResult.eval_config_results.forEach((configResult: EvalConfigResult) => {
-      const score: ScoreSummary | null = configResult.results[scoreKey]
-      if (score && configResult.percent_complete > bestCompleteness) {
-        bestScore = score.mean_score
-        bestCompleteness = configResult.percent_complete
-      }
-    })
-
-    if (bestScore !== null) {
-      return (bestScore as number).toFixed(2)
+    const score: ScoreSummary | null | undefined =
+      evalResult.eval_config_result?.results[scoreKey]
+    if (score) {
+      return score.mean_score.toFixed(2)
     }
 
     return "—"

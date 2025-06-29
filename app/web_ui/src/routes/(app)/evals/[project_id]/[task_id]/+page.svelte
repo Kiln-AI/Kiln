@@ -134,6 +134,7 @@
 
 <AppPage
   title="Evals"
+  subtitle="Evaluate the quality of your prompts, models and tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
   sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
   action_buttons={is_empty
