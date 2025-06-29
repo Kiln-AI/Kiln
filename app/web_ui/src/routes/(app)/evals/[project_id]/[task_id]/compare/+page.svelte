@@ -566,7 +566,7 @@
                 {@const selectedConfig = getSelectedRunConfig(
                   selectedModels[i],
                 )}
-                <div class="px-6 py-4 text-center overflow-hidden">
+                <div class="px-6 py-4 text-center">
                   {#if selectedConfig}
                     {@const prompt_info_text =
                       getRunConfigPromptInfoText(selectedConfig)}
