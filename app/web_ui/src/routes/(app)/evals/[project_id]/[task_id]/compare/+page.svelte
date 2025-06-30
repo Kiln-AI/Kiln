@@ -227,8 +227,12 @@
     const features: {
       category: string
       items: { label: string; key: string }[]
+      has_default_eval_config: boolean | undefined
+      eval_id: string | null
     }[] = []
     const evalCategories: Record<string, Set<string>> = {}
+    const hasDefaultEvalConfig: Record<string, boolean> = {}
+    const evalIds: Record<string, string | null> = {}
 
     // Collect all evals and their scores from selected models
     models.forEach((modelId) => {
@@ -236,6 +240,10 @@
 
       const evalScores = scores_cache[modelId]
       evalScores.eval_results.forEach((evalResult) => {
+        hasDefaultEvalConfig[evalResult.eval_name] =
+          !evalResult.missing_default_eval_config
+        evalIds[evalResult.eval_name] = evalResult.eval_id
+
         if (!evalCategories[evalResult.eval_name]) {
           evalCategories[evalResult.eval_name] = new Set()
         }
@@ -257,12 +265,12 @@
         key: `${evalName}::${scoreKey}`,
       }))
 
-      if (items.length > 0) {
-        features.push({
-          category: evalName,
-          items,
-        })
-      }
+      features.push({
+        category: evalName,
+        items,
+        has_default_eval_config: hasDefaultEvalConfig[evalName],
+        eval_id: evalIds[evalName],
+      })
     })
 
     // Add Cost section (always last)
@@ -276,6 +284,8 @@
     features.push({
       category: "Average Usage & Cost",
       items: costItems,
+      has_default_eval_config: undefined,
+      eval_id: null,
     })
 
     return features
@@ -640,6 +650,31 @@
                   {section.category}
                 </h4>
               </div>
+
+              {#if section.items.length == 0}
+                <div
+                  class="grid gap-4 border-b border-gray-100 last:border-b-0"
+                  style="grid-template-columns: 200px repeat(1, 1fr);"
+                >
+                  <!-- Empty section for visual consistency -->
+                  <div
+                    class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center"
+                  ></div>
+                  <div class="px-6 py-4 text-center">
+                    {#if section.has_default_eval_config === false}
+                      <div>Select a default eval config to compare scores.</div>
+                      <a
+                        href={`/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
+                        class="btn btn-xs rounded-full"
+                      >
+                        Manage Eval Configs
+                      </a>
+                    {:else}
+                      Unknown issue - no scores found
+                    {/if}
+                  </div>
+                </div>
+              {/if}
 
               <!-- Section Rows -->
               {#each section.items as item}
