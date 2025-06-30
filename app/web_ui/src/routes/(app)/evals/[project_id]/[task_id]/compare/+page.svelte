@@ -14,6 +14,7 @@
   } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import AddRunMethod from "../[eval_id]/compare_run_methods/add_run_method.svelte"
+  import RunEval from "../[eval_id]/run_eval.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -227,8 +228,12 @@
     const features: {
       category: string
       items: { label: string; key: string }[]
+      has_default_eval_config: boolean | undefined
+      eval_id: string
     }[] = []
     const evalCategories: Record<string, Set<string>> = {}
+    const hasDefaultEvalConfig: Record<string, boolean> = {}
+    const evalIds: Record<string, string> = {}
 
     // Collect all evals and their scores from selected models
     models.forEach((modelId) => {
@@ -236,6 +241,10 @@
 
       const evalScores = scores_cache[modelId]
       evalScores.eval_results.forEach((evalResult) => {
+        hasDefaultEvalConfig[evalResult.eval_name] =
+          !evalResult.missing_default_eval_config
+        evalIds[evalResult.eval_name] = evalResult.eval_id || ""
+
         if (!evalCategories[evalResult.eval_name]) {
           evalCategories[evalResult.eval_name] = new Set()
         }
@@ -257,12 +266,12 @@
         key: `${evalName}::${scoreKey}`,
       }))
 
-      if (items.length > 0) {
-        features.push({
-          category: evalName,
-          items,
-        })
-      }
+      features.push({
+        category: evalName,
+        items,
+        has_default_eval_config: hasDefaultEvalConfig[evalName],
+        eval_id: evalIds[evalName],
+      })
     })
 
     // Add Cost section (always last)
@@ -276,6 +285,8 @@
     features.push({
       category: "Average Usage & Cost",
       items: costItems,
+      has_default_eval_config: undefined,
+      eval_id: "kiln_cost_section",
     })
 
     return features
@@ -321,9 +332,9 @@
           const promptName = getRunConfigPromptDisplayName(config, task_prompts)
 
           return {
-            label: `${modelName} • ${promptName}`, // First line: model name + prompt name
+            label: modelName,
             value: config.id || "",
-            description: config.name,
+            description: `With the prompt '${promptName}'. Method named '${config.name}'.`,
           }
         }),
       }),
@@ -422,6 +433,36 @@
     return "—"
   }
 
+  function getModelPercentComplete(
+    modelKey: string | null,
+    evalID: string | null,
+  ): number {
+    if (evalID === "kiln_cost_section") return 1.0
+    if (!modelKey || !eval_scores_cache[modelKey]) return 0.0
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
+
+    if (!evalResult) return 0.0
+
+    return evalResult.eval_config_result?.percent_complete || 0.0
+  }
+
+  function getModelDefaultEvalConfigID(
+    modelKey: string | null,
+    evalID: string | null,
+  ): string | null | undefined {
+    if (evalID === "kiln_cost_section") return null
+    if (!modelKey || !eval_scores_cache[modelKey]) return null
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
+
+    if (!evalResult) return null
+
+    return evalResult.eval_config_result?.eval_config_id
+  }
+
   function getSelectedRunConfig(modelKey: string | null): TaskRunConfig | null {
     if (!modelKey || !task_run_configs) return null
     return task_run_configs.find((config) => config.id === modelKey) || null
@@ -489,46 +530,35 @@
       </div>
     </div>
   {:else}
+    {@const hasSelectedModels = selectedModels.filter((m) => m !== null)}
+    {@const allSelectedLoading = hasSelectedModels.every(
+      (modelId) =>
+        eval_scores_loading[modelId] ||
+        (!eval_scores_cache[modelId] && !eval_scores_errors[modelId]),
+    )}
+    {@const anyLoadedData = hasSelectedModels.some(
+      (modelId) => eval_scores_cache[modelId],
+    )}
     <div class="max-w-7xl mx-auto">
-      <!-- Column Headers with Dropdowns -->
-      <div class="flex flex-row flex-wrap gap-4 mb-8">
-        {#each Array(columns) as _, i}
-          <div
-            class="bg-white border border-gray-200 rounded-lg p-6 relative flex-1 min-w-[200px] max-w-md"
-          >
-            {#if columns > 2}
-              <button
-                on:click={() => removeColumn(i)}
-                class="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold"
-                title="Remove column"
-              >
-                ×
-              </button>
-            {/if}
-
-            <div class="mb-4">
-              <div class="block text-sm font-medium text-gray-700 mb-2">
-                Select Run Method {i + 1}
-              </div>
-              <FancySelect
-                options={modelOptions}
-                bind:selected={selectedModels[i]}
-                empty_label="Choose a run method..."
-              />
-            </div>
-          </div>
-        {/each}
-
-        <!-- Add Column Button -->
-        {#if columns < 4}
-          <div class="flex items-center justify-center">
+      {#if allSelectedLoading && !anyLoadedData && hasSelectedModels.length > 0}
+        <!-- Big centered loading spinner when no data is loaded yet -->
+        <div
+          class="bg-white border border-gray-200 rounded-lg p-12 flex flex-col items-center justify-center min-h-[400px]"
+        >
+          <div class="loading loading-spinner loading-lg mb-4"></div>
+          <div class="text-gray-600">Loading evaluation scores...</div>
+        </div>
+      {:else}
+        <!-- Add Column Button - positioned above table on the right -->
+        <div class="flex justify-end mb-4">
+          {#if columns < 4}
             <button
               on:click={addColumn}
-              class="w-16 h-16 rounded-full border-2 border-dashed border-gray-300 hover:border-gray-400 flex items-center justify-center text-gray-500 hover:text-gray-600 transition-colors"
+              class="btn btn-sm btn-outline gap-2"
               title="Add comparison column"
             >
               <svg
-                class="w-8 h-8"
+                class="w-4 h-4"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -540,46 +570,33 @@
                   d="M12 6v6m0 0v6m0-6h6m-6 0H6"
                 />
               </svg>
+              Add Column
             </button>
-          </div>
-        {/if}
-      </div>
+          {/if}
+        </div>
 
-      <!-- Comparison Table -->
-      {#if selectedModels.some((model) => model !== null)}
-        {@const hasSelectedModels = selectedModels.filter((m) => m !== null)}
-        {@const allSelectedLoading = hasSelectedModels.every(
-          (modelId) =>
-            eval_scores_loading[modelId] ||
-            (!eval_scores_cache[modelId] && !eval_scores_errors[modelId]),
-        )}
-        {@const anyLoadedData = hasSelectedModels.some(
-          (modelId) => eval_scores_cache[modelId],
-        )}
+        <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <!-- Model Selection Header Row -->
+          <div
+            class="grid border-b border-gray-200 bg-gray-50"
+            style="grid-template-columns: 200px repeat({columns}, 1fr);"
+          >
+            <div class="px-6 py-4 font-semibold text-gray-900"></div>
+            {#each Array(columns) as _, i}
+              <div class="px-6 py-4 relative">
+                <div class="w-full mx-auto">
+                  <FancySelect
+                    options={modelOptions}
+                    bind:selected={selectedModels[i]}
+                    empty_label="Choose a run method..."
+                  />
+                </div>
 
-        {#if allSelectedLoading && !anyLoadedData}
-          <!-- Big centered loading spinner when no data is loaded yet -->
-          <div
-            class="bg-white border border-gray-200 rounded-lg p-12 flex flex-col items-center justify-center min-h-[400px]"
-          >
-            <div class="loading loading-spinner loading-lg mb-4"></div>
-            <div class="text-gray-600">Loading evaluation scores...</div>
-          </div>
-        {:else}
-          <div
-            class="bg-white border border-gray-200 rounded-lg overflow-hidden"
-          >
-            <!-- Model Names Header -->
-            <div
-              class="grid gap-4 border-b border-gray-200 bg-gray-50"
-              style="grid-template-columns: 200px repeat({columns}, 1fr);"
-            >
-              <div class="px-6 py-4 font-semibold text-gray-900"></div>
-              {#each Array(columns) as _, i}
-                {@const selectedConfig = getSelectedRunConfig(
-                  selectedModels[i],
-                )}
-                <div class="px-6 py-4 text-center">
+                <!-- Show selected model info below dropdown -->
+                {#if selectedModels[i]}
+                  {@const selectedConfig = getSelectedRunConfig(
+                    selectedModels[i],
+                  )}
                   {#if selectedConfig}
                     {@const prompt_info_text =
                       getRunConfigPromptInfoText(selectedConfig)}
@@ -588,49 +605,63 @@
                       task_id,
                       `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
                     )}
-                    <div class="font-semibold text-gray-900">
-                      {model_name(
-                        selectedConfig.run_config_properties?.model_name,
-                        $model_info,
-                      ) || "Unknown Model"}
-                    </div>
-                    <div class="text-sm text-gray-500 font-normal">
-                      {#if prompt_link_url}
-                        <a
-                          href={prompt_link_url}
-                          class="text-gray-500 font-normal link"
-                        >
+                    <div class="mt-3 text-center">
+                      <div class="font-semibold text-gray-900 text-sm">
+                        {model_name(
+                          selectedConfig.run_config_properties?.model_name,
+                          $model_info,
+                        ) || "Unknown Model"}
+                      </div>
+                      <div class="text-xs text-gray-500 font-normal mt-1">
+                        {#if prompt_link_url}
+                          <a
+                            href={prompt_link_url}
+                            class="text-gray-500 font-normal link"
+                          >
+                            Prompt: {getRunConfigPromptDisplayName(
+                              selectedConfig,
+                              $current_task_prompts,
+                            )}
+                          </a>
+                        {:else}
                           Prompt: {getRunConfigPromptDisplayName(
                             selectedConfig,
                             $current_task_prompts,
                           )}
-                        </a>
-                      {:else}
-                        Prompt: {getRunConfigPromptDisplayName(
-                          selectedConfig,
-                          $current_task_prompts,
-                        )}
-                      {/if}
-                      {#if prompt_info_text}
-                        <InfoTooltip
-                          tooltip_text={prompt_info_text}
-                          position="bottom"
-                          no_pad={true}
-                        />
-                      {/if}
+                        {/if}
+                        {#if prompt_info_text}
+                          <InfoTooltip
+                            tooltip_text={prompt_info_text}
+                            position="bottom"
+                            no_pad={true}
+                          />
+                        {/if}
+                      </div>
+                      <div>
+                        <div
+                          class="badge bg-gray-200 text-gray-500 whitespace-nowrap text-xs"
+                        >
+                          {selectedConfig.name}
+                        </div>
+                      </div>
                     </div>
-                    <div
-                      class="badge bg-gray-200 text-gray-500 whitespace-nowrap"
-                    >
-                      {selectedConfig.name}
-                    </div>
-                  {:else}
-                    <div class="font-semibold text-gray-900">—</div>
                   {/if}
-                </div>
-              {/each}
-            </div>
+                {/if}
+                {#if columns > 2}
+                  <button
+                    on:click={() => removeColumn(i)}
+                    class="mt-2 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition-colors mx-auto"
+                    title="Remove column"
+                  >
+                    ×
+                  </button>
+                {/if}
+              </div>
+            {/each}
+          </div>
 
+          <!-- Comparison Data - only show if models are selected -->
+          {#if hasSelectedModels.length > 0}
             {#each comparisonFeatures as section}
               <!-- Section Header -->
               <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
@@ -641,95 +672,177 @@
                 </h4>
               </div>
 
-              <!-- Section Rows -->
-              {#each section.items as item}
+              {#if section.items.length == 0}
                 <div
                   class="grid gap-4 border-b border-gray-100 last:border-b-0"
-                  style="grid-template-columns: 200px repeat({columns}, 1fr);"
+                  style="grid-template-columns: 200px repeat(1, 1fr);"
                 >
-                  <!-- Feature Label -->
+                  <!-- Empty section for visual consistency -->
                   <div
                     class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center"
-                  >
-                    {item.label}
+                  ></div>
+                  <div class="px-6 py-4 text-center">
+                    {#if section.has_default_eval_config === false}
+                      <div>Select a default eval config to compare scores.</div>
+                      <a
+                        href={`/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
+                        class="btn btn-xs rounded-full"
+                      >
+                        Manage Eval Configs
+                      </a>
+                    {:else}
+                      Unknown issue - no scores found
+                    {/if}
                   </div>
+                </div>
+              {/if}
 
-                  <!-- Model Values -->
-                  {#each Array(columns) as _, i}
+              <!-- Section Rows -->
+              {#if section.items.length > 0}
+                <div
+                  class="grid"
+                  style="grid-template-columns: 200px repeat({columns}, 1fr);"
+                >
+                  {#each section.items as item, item_index}
+                    <!-- Feature Label -->
                     <div
-                      class="px-6 py-4 text-center flex items-center justify-center"
+                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
                     >
-                      {#if selectedModels[i] && eval_scores_loading[selectedModels[i]]}
-                        <!-- Column loading spinner -->
-                        <div class="loading loading-spinner loading-sm"></div>
-                      {:else if selectedModels[i] && eval_scores_errors[selectedModels[i]]}
-                        <!-- Error state -->
-                        <span class="text-error text-sm">Error</span>
-                      {:else}
-                        <!-- Normal value -->
-                        <div class="flex flex-col items-center">
-                          <span class="text-gray-900">
-                            {getModelValue(selectedModels[i], item.key)}
-                          </span>
-                          {#if i > 0 && selectedModels[0] !== null}
-                            {@const baseValue = getModelValue(
-                              selectedModels[0],
-                              item.key,
-                            )}
-                            {@const currentValue = getModelValue(
-                              selectedModels[i],
-                              item.key,
-                            )}
-                            {@const percentDiff = getPercentageDifference(
-                              baseValue,
-                              currentValue,
-                            )}
-                            {#if percentDiff}
-                              <span class="text-xs text-gray-500 mt-1">
-                                {percentDiff}
-                              </span>
+                      {item.label}
+                    </div>
+
+                    <!-- Model Values -->
+                    {#each Array(columns) as _, i}
+                      {@const loading =
+                        selectedModels[i] &&
+                        eval_scores_loading[selectedModels[i]]}
+                      {@const error =
+                        selectedModels[i] &&
+                        eval_scores_errors[selectedModels[i]]}
+                      {@const percentComplete =
+                        (selectedModels[i] &&
+                          getModelPercentComplete(
+                            selectedModels[i],
+                            section.eval_id,
+                          )) ||
+                        0.0}
+                      {#if selectedModels[i] && (loading || error || percentComplete < 1.0)}
+                        <!-- These cells merge vertically for error states -->
+                        {#if item_index === 0}
+                          <div
+                            class="px-6 py-4 text-center flex items-center justify-center border-b border-gray-100"
+                            style="grid-row: span {section.items.length};"
+                          >
+                            {#if loading}
+                              <!-- Column loading spinner -->
+                              <div
+                                class="loading loading-spinner loading-sm"
+                              ></div>
+                            {:else if error}
+                              <!-- Error state -->
+                              <span class="text-error text-sm">Error</span>
+                            {:else if percentComplete < 1.0}
+                              <div class="flex flex-col items-center gap-1">
+                                <div class="text-warning text-sm font-medium">
+                                  Eval Incomplete
+                                </div>
+                                <div class="text-left">
+                                  <RunEval
+                                    eval_id={section.eval_id}
+                                    run_config_ids={[
+                                      getSelectedRunConfig(selectedModels[i])
+                                        ?.id || "",
+                                    ]}
+                                    {project_id}
+                                    {task_id}
+                                    current_eval_config_id={getModelDefaultEvalConfigID(
+                                      selectedModels[i],
+                                      section.eval_id,
+                                    )}
+                                    eval_type="run_method"
+                                    btn_size="xs"
+                                    btn_primary={false}
+                                    on_run_complete={() => {
+                                      // Clear cache and reload eval scores for this run config
+                                      const runConfigId = selectedModels[i]
+                                      if (runConfigId) {
+                                        delete eval_scores_cache[runConfigId]
+                                        delete eval_scores_errors[runConfigId]
+                                        fetch_eval_scores(runConfigId)
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
                             {/if}
-                          {/if}
+                          </div>
+                        {/if}
+                      {:else}
+                        <div
+                          class="px-6 py-4 text-center flex items-center justify-center border-b border-gray-100"
+                        >
+                          <!-- Normal value -->
+                          <div class="flex flex-col items-center">
+                            <span class="text-gray-900">
+                              {getModelValue(selectedModels[i], item.key)}
+                            </span>
+                            {#if i > 0 && selectedModels[0] !== null}
+                              {@const baseValue = getModelValue(
+                                selectedModels[0],
+                                item.key,
+                              )}
+                              {@const currentValue = getModelValue(
+                                selectedModels[i],
+                                item.key,
+                              )}
+                              {@const percentDiff = getPercentageDifference(
+                                baseValue,
+                                currentValue,
+                              )}
+                              {#if percentDiff}
+                                <span class="text-xs text-gray-500 mt-1">
+                                  {percentDiff}
+                                </span>
+                              {/if}
+                            {/if}
+                          </div>
                         </div>
                       {/if}
-                    </div>
+                    {/each}
                   {/each}
                 </div>
-              {/each}
+              {/if}
             {/each}
-          </div>
-        {/if}
-      {:else}
-        <!-- Empty State -->
-        <div
-          class="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-12 text-center"
-        >
-          <svg
-            class="mx-auto h-12 w-24 text-gray-400"
-            viewBox="0 0 1730 800"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M140 400C140 283.438 140 225.159 158.148 180.638C174.11 141.477 199.582 109.638 230.911 89.6844C266.527 67 313.151 67 406.4 67H539.6C632.85 67 679.473 67 715.091 89.6844C746.42 109.638 771.891 141.477 787.852 180.638C806 225.159 806 283.438 806 400C806 516.562 806 574.842 787.852 619.364C771.891 658.525 746.42 690.364 715.091 710.314C679.473 733 632.85 733 539.6 733H406.4C313.151 733 266.527 733 230.911 710.314C199.582 690.364 174.11 658.525 158.148 619.364C140 574.842 140 516.562 140 400Z"
-              stroke="currentColor"
-              stroke-width="50"
-            />
-            <path
-              d="M924 400C924 283.438 924 225.159 942.148 180.638C958.11 141.477 983.582 109.638 1014.91 89.6844C1050.53 67 1097.15 67 1190.4 67H1323.6C1416.85 67 1463.47 67 1499.09 89.6844C1530.42 109.638 1555.89 141.477 1571.85 180.638C1590 225.159 1590 283.438 1590 400C1590 516.562 1590 574.842 1571.85 619.364C1555.89 658.525 1530.42 690.364 1499.09 710.314C1463.47 733 1416.85 733 1323.6 733H1190.4C1097.15 733 1050.53 733 1014.91 710.314C983.582 690.364 958.11 658.525 942.148 619.364C924 574.842 924 516.562 924 400Z"
-              stroke="currentColor"
-              stroke-width="50"
-              stroke-dasharray="100 100"
-            />
-          </svg>
-
-          <h3 class="mt-4 text-lg font-medium text-gray-900">
-            Select run methods to compare
-          </h3>
-          <p class="mt-2 text-gray-500">
-            Choose run methods from the dropdowns above to see a detailed
-            comparison
-          </p>
+          {:else}
+            <!-- Empty state message within the table -->
+            <div class="px-6 py-12 text-center text-gray-500">
+              <svg
+                class="mx-auto h-12 w-24 text-gray-400 mb-4"
+                viewBox="0 0 1730 800"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M140 400C140 283.438 140 225.159 158.148 180.638C174.11 141.477 199.582 109.638 230.911 89.6844C266.527 67 313.151 67 406.4 67H539.6C632.85 67 679.473 67 715.091 89.6844C746.42 109.638 771.891 141.477 787.852 180.638C806 225.159 806 283.438 806 400C806 516.562 806 574.842 787.852 619.364C771.891 658.525 746.42 690.364 715.091 710.314C679.473 733 632.85 733 539.6 733H406.4C313.151 733 266.527 733 230.911 710.314C199.582 690.364 174.11 658.525 158.148 619.364C140 574.842 140 516.562 140 400Z"
+                  stroke="currentColor"
+                  stroke-width="50"
+                />
+                <path
+                  d="M924 400C924 283.438 924 225.159 942.148 180.638C958.11 141.477 983.582 109.638 1014.91 89.6844C1050.53 67 1097.15 67 1190.4 67H1323.6C1416.85 67 1463.47 67 1499.09 89.6844C1530.42 109.638 1555.89 141.477 1571.85 180.638C1590 225.159 1590 283.438 1590 400C1590 516.562 1590 574.842 1571.85 619.364C1555.89 658.525 1530.42 690.364 1499.09 710.314C1463.47 733 1416.85 733 1323.6 733H1190.4C1097.15 733 1050.53 733 1014.91 710.314C983.582 690.364 958.11 658.525 942.148 619.364C924 574.842 924 516.562 924 400Z"
+                  stroke="currentColor"
+                  stroke-width="50"
+                  stroke-dasharray="100 100"
+                />
+              </svg>
+              <div class="text-lg font-medium text-gray-900 mb-2">
+                Select run methods to compare
+              </div>
+              <div class="text-gray-500">
+                Choose run methods from the dropdowns above to see a detailed
+                comparison
+              </div>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
