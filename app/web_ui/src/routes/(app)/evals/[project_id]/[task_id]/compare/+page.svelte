@@ -14,6 +14,7 @@
   } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import AddRunMethod from "../[eval_id]/compare_run_methods/add_run_method.svelte"
+  import RunEval from "../[eval_id]/run_eval.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -228,11 +229,11 @@
       category: string
       items: { label: string; key: string }[]
       has_default_eval_config: boolean | undefined
-      eval_id: string | null
+      eval_id: string
     }[] = []
     const evalCategories: Record<string, Set<string>> = {}
     const hasDefaultEvalConfig: Record<string, boolean> = {}
-    const evalIds: Record<string, string | null> = {}
+    const evalIds: Record<string, string> = {}
 
     // Collect all evals and their scores from selected models
     models.forEach((modelId) => {
@@ -242,7 +243,7 @@
       evalScores.eval_results.forEach((evalResult) => {
         hasDefaultEvalConfig[evalResult.eval_name] =
           !evalResult.missing_default_eval_config
-        evalIds[evalResult.eval_name] = evalResult.eval_id
+        evalIds[evalResult.eval_name] = evalResult.eval_id || ""
 
         if (!evalCategories[evalResult.eval_name]) {
           evalCategories[evalResult.eval_name] = new Set()
@@ -285,7 +286,7 @@
       category: "Average Usage & Cost",
       items: costItems,
       has_default_eval_config: undefined,
-      eval_id: null,
+      eval_id: "kiln_cost_section",
     })
 
     return features
@@ -430,6 +431,36 @@
     }
 
     return "—"
+  }
+
+  function getModelPercentComplete(
+    modelKey: string | null,
+    evalID: string | null,
+  ): number {
+    if (evalID === "kiln_cost_section") return 1.0
+    if (!modelKey || !eval_scores_cache[modelKey]) return 0.0
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
+
+    if (!evalResult) return 0.0
+
+    return evalResult.eval_config_result?.percent_complete || 0.0
+  }
+
+  function getModelDefaultEvalConfigID(
+    modelKey: string | null,
+    evalID: string | null,
+  ): string | null | undefined {
+    if (evalID === "kiln_cost_section") return null
+    if (!modelKey || !eval_scores_cache[modelKey]) return null
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
+
+    if (!evalResult) return null
+
+    return evalResult.eval_config_result?.eval_config_id
   }
 
   function getSelectedRunConfig(modelKey: string | null): TaskRunConfig | null {
@@ -581,7 +612,7 @@
           >
             <!-- Model Names Header -->
             <div
-              class="grid gap-4 border-b border-gray-200 bg-gray-50"
+              class="grid border-b border-gray-200 bg-gray-50"
               style="grid-template-columns: 200px repeat({columns}, 1fr);"
             >
               <div class="px-6 py-4 font-semibold text-gray-900"></div>
@@ -677,60 +708,120 @@
               {/if}
 
               <!-- Section Rows -->
-              {#each section.items as item}
+              {#if section.items.length > 0}
                 <div
-                  class="grid gap-4 border-b border-gray-100 last:border-b-0"
+                  class="grid"
                   style="grid-template-columns: 200px repeat({columns}, 1fr);"
                 >
-                  <!-- Feature Label -->
-                  <div
-                    class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center"
-                  >
-                    {item.label}
-                  </div>
-
-                  <!-- Model Values -->
-                  {#each Array(columns) as _, i}
+                  {#each section.items as item, item_index}
+                    <!-- Feature Label -->
                     <div
-                      class="px-6 py-4 text-center flex items-center justify-center"
+                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
                     >
-                      {#if selectedModels[i] && eval_scores_loading[selectedModels[i]]}
-                        <!-- Column loading spinner -->
-                        <div class="loading loading-spinner loading-sm"></div>
-                      {:else if selectedModels[i] && eval_scores_errors[selectedModels[i]]}
-                        <!-- Error state -->
-                        <span class="text-error text-sm">Error</span>
-                      {:else}
-                        <!-- Normal value -->
-                        <div class="flex flex-col items-center">
-                          <span class="text-gray-900">
-                            {getModelValue(selectedModels[i], item.key)}
-                          </span>
-                          {#if i > 0 && selectedModels[0] !== null}
-                            {@const baseValue = getModelValue(
-                              selectedModels[0],
-                              item.key,
-                            )}
-                            {@const currentValue = getModelValue(
-                              selectedModels[i],
-                              item.key,
-                            )}
-                            {@const percentDiff = getPercentageDifference(
-                              baseValue,
-                              currentValue,
-                            )}
-                            {#if percentDiff}
-                              <span class="text-xs text-gray-500 mt-1">
-                                {percentDiff}
-                              </span>
+                      {item.label}
+                    </div>
+
+                    <!-- Model Values -->
+                    {#each Array(columns) as _, i}
+                      {@const loading =
+                        selectedModels[i] &&
+                        eval_scores_loading[selectedModels[i]]}
+                      {@const error =
+                        selectedModels[i] &&
+                        eval_scores_errors[selectedModels[i]]}
+                      {@const percentComplete =
+                        (selectedModels[i] &&
+                          getModelPercentComplete(
+                            selectedModels[i],
+                            section.eval_id,
+                          )) ||
+                        0.0}
+                      {#if selectedModels[i] && (loading || error || percentComplete < 1.0)}
+                        <!-- These cells merge vertically for error states -->
+                        {#if item_index === 0}
+                          <div
+                            class="px-6 py-4 text-center flex items-center justify-center border-b border-gray-100"
+                            style="grid-row: span {section.items.length};"
+                          >
+                            {#if loading}
+                              <!-- Column loading spinner -->
+                              <div
+                                class="loading loading-spinner loading-sm"
+                              ></div>
+                            {:else if error}
+                              <!-- Error state -->
+                              <span class="text-error text-sm">Error</span>
+                            {:else if percentComplete < 1.0}
+                              <div class="flex flex-col items-center gap-1">
+                                <div class="text-warning text-sm font-medium">
+                                  Eval Incomplete
+                                </div>
+                                <div class="text-left">
+                                  <RunEval
+                                    eval_id={section.eval_id}
+                                    run_config_ids={[
+                                      getSelectedRunConfig(selectedModels[i])
+                                        ?.id || "",
+                                    ]}
+                                    {project_id}
+                                    {task_id}
+                                    current_eval_config_id={getModelDefaultEvalConfigID(
+                                      selectedModels[i],
+                                      section.eval_id,
+                                    )}
+                                    eval_type="run_method"
+                                    btn_size="xs"
+                                    btn_primary={false}
+                                    on_run_complete={() => {
+                                      // Clear cache and reload eval scores for this run config
+                                      const runConfigId = selectedModels[i]
+                                      if (runConfigId) {
+                                        delete eval_scores_cache[runConfigId]
+                                        delete eval_scores_errors[runConfigId]
+                                        fetch_eval_scores(runConfigId)
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
                             {/if}
-                          {/if}
+                          </div>
+                        {/if}
+                      {:else}
+                        <div
+                          class="px-6 py-4 text-center flex items-center justify-center border-b border-gray-100"
+                        >
+                          <!-- Normal value -->
+                          <div class="flex flex-col items-center">
+                            <span class="text-gray-900">
+                              {getModelValue(selectedModels[i], item.key)}
+                            </span>
+                            {#if i > 0 && selectedModels[0] !== null}
+                              {@const baseValue = getModelValue(
+                                selectedModels[0],
+                                item.key,
+                              )}
+                              {@const currentValue = getModelValue(
+                                selectedModels[i],
+                                item.key,
+                              )}
+                              {@const percentDiff = getPercentageDifference(
+                                baseValue,
+                                currentValue,
+                              )}
+                              {#if percentDiff}
+                                <span class="text-xs text-gray-500 mt-1">
+                                  {percentDiff}
+                                </span>
+                              {/if}
+                            {/if}
+                          </div>
                         </div>
                       {/if}
-                    </div>
+                    {/each}
                   {/each}
                 </div>
-              {/each}
+              {/if}
             {/each}
           </div>
         {/if}
