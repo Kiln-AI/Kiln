@@ -1886,6 +1886,8 @@ async def test_get_run_config_eval_scores_with_usage(
     assert "eval_config_result" in eval_result
     eval_config_result = eval_result["eval_config_result"]
     assert eval_config_result is not None
+    assert eval_config_result["results"]["score1"]["mean_score"] == 4.0
+    assert eval_config_result["results"]["overall_rating"]["mean_score"] == 4.0
 
     # Check that mean_usage is at the top level of the response
     assert "mean_usage" in data
