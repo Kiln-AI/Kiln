@@ -11,8 +11,6 @@
     ProviderModels,
     TaskRunConfig,
     EvalResultSummary,
-    StructuredOutputMode,
-    AvailableModels,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import {
@@ -23,26 +21,19 @@
     current_task_prompts,
     load_available_prompts,
     load_available_models,
-    available_model_details,
-    available_models,
-    current_task,
     load_task,
   } from "$lib/stores"
   import {
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import RunEval from "../run_eval.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import RunOptions from "$lib/ui/run_options.svelte"
+  import AddRunMethod from "./add_run_method.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -91,6 +82,8 @@
     // This needs the selected eval config id, set from above requests
     get_score_summary()
   })
+
+  let add_run_method_component: AddRunMethod | null = null
 
   async function get_eval() {
     try {
@@ -354,77 +347,6 @@
     | "complete_with_errors" = "not_started"
   $: run_eval_url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
 
-  let task_run_config_model_name = ""
-  let task_run_config_provider_name = ""
-  let task_run_config_prompt_method = "simple_prompt_builder"
-  let task_run_config_long_prompt_name_provider = ""
-  let task_run_config_temperature: number
-  let task_run_config_top_p: number
-  let task_run_config_structured_output_mode: StructuredOutputMode
-
-  // Update structured_output_mode when model changes
-  $: update_structured_output_mode(
-    task_run_config_model_name,
-    task_run_config_provider_name,
-    $available_models,
-  )
-  function update_structured_output_mode(
-    model_name: string,
-    provider: string,
-    available_models: AvailableModels[],
-  ) {
-    task_run_config_structured_output_mode =
-      available_model_details(model_name, provider, available_models)
-        ?.structured_output_mode || "default"
-  }
-
-  let add_task_config_dialog: Dialog | null = null
-  let add_task_config_error: KilnError | null = null
-  async function add_task_config(): Promise<boolean> {
-    if (
-      !task_run_config_model_name ||
-      !task_run_config_provider_name ||
-      !task_run_config_prompt_method
-    ) {
-      add_task_config_error = new KilnError("Missing required fields", null)
-      return false
-    }
-
-    try {
-      const { error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-          body: {
-            run_config_properties: {
-              model_name: task_run_config_model_name,
-              // @ts-expect-error not checking types here, server will check them
-              model_provider_name: task_run_config_provider_name,
-              prompt_id: task_run_config_prompt_method,
-              temperature: task_run_config_temperature,
-              top_p: task_run_config_top_p,
-              structured_output_mode: task_run_config_structured_output_mode,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      // Load the updated list of task run configs after success
-      get_task_run_configs()
-    } catch (error) {
-      add_task_config_error = createKilnError(error)
-      return false
-    }
-    return true
-  }
-
   function show_incomplete_warning(
     score_summary: EvalResultSummary | null,
   ): boolean {
@@ -578,7 +500,7 @@
             <button
               class="btn btn-mid mr-2"
               on:click={() => {
-                add_task_config_dialog?.show()
+                add_run_method_component?.show()
               }}>Add Run Method</button
             >
             <RunEval
@@ -741,7 +663,7 @@
             ? 'btn-primary'
             : ''}"
           on:click={() => {
-            add_task_config_dialog?.show()
+            add_run_method_component?.show()
           }}
         >
           Add Run Method
@@ -751,50 +673,11 @@
   {/if}
 </AppPage>
 
-<Dialog
-  bind:this={add_task_config_dialog}
-  title="Add a Task Run Method"
-  action_buttons={[
-    {
-      label: "Cancel",
-      isCancel: true,
-    },
-    {
-      label: "Create",
-      isPrimary: true,
-      asyncAction: add_task_config,
-    },
-  ]}
->
-  <h4 class="text-sm text-gray-500">
-    Define a method of running this task (model+prompt).
-  </h4>
-  <h4 class="text-sm text-gray-500 mt-1">
-    Your evaluator can compare multiple run methods to find which one produces
-    the highest scores on your eval dataset.
-  </h4>
-  <div class="flex flex-col gap-2 pt-6">
-    <AvailableModelsDropdown
-      bind:model_name={task_run_config_model_name}
-      bind:provider_name={task_run_config_provider_name}
-      bind:model={task_run_config_long_prompt_name_provider}
-    />
-    <PromptTypeSelector
-      bind:prompt_method={task_run_config_prompt_method}
-      bind:linked_model_selection={task_run_config_long_prompt_name_provider}
-    />
-    <Collapse title="Advanced Options">
-      <RunOptions
-        bind:temperature={task_run_config_temperature}
-        bind:top_p={task_run_config_top_p}
-        bind:structured_output_mode={task_run_config_structured_output_mode}
-        has_structured_output={!!$current_task?.output_json_schema}
-      />
-    </Collapse>
-    {#if add_task_config_error}
-      <div class="text-error text-sm">
-        {add_task_config_error.getMessage() || "An unknown error occurred"}
-      </div>
-    {/if}
-  </div>
-</Dialog>
+<AddRunMethod
+  bind:this={add_run_method_component}
+  {project_id}
+  {task_id}
+  run_method_added={() => {
+    get_task_run_configs()
+  }}
+/>
