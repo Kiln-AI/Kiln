@@ -61,8 +61,17 @@
 
   $: should_select_eval_config =
     task_run_configs?.length && !evaluator?.current_run_config_id
+
+  // Check if all run configs are 100% complete
+  $: all_run_configs_complete = score_summary?.run_config_percent_complete
+    ? Object.values(score_summary.run_config_percent_complete).every(
+        (percent) => percent >= 1.0,
+      )
+    : false
+
   $: focus_select_eval_config = !!(
-    should_select_eval_config && eval_state?.includes("complete")
+    should_select_eval_config &&
+    (eval_state?.includes("complete") || all_run_configs_complete)
   )
 
   onMount(async () => {
@@ -510,6 +519,7 @@
               {eval_id}
               {current_eval_config_id}
               run_all={true}
+              btn_primary={!focus_select_eval_config}
               eval_type="run_method"
               on_run_complete={() => {
                 get_score_summary()

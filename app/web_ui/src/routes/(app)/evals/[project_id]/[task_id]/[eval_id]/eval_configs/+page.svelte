@@ -63,7 +63,15 @@
     eval_configs?.length && !evaluator?.current_config_id
   )
   $: focus_select_eval_config = !!(
-    should_select_eval_config && eval_state?.includes("complete")
+    should_select_eval_config &&
+    (eval_state?.includes("complete") ||
+      (eval_configs &&
+        score_summary &&
+        eval_configs.every(
+          (config) =>
+            (score_summary!.eval_config_percent_complete?.["" + config.id] ||
+              0.0) >= 1.0,
+        )))
   )
 
   // Update sorting when score_type or score_summary changes
@@ -499,6 +507,7 @@
                 task_id={$page.params.task_id}
                 eval_id={$page.params.eval_id}
                 run_all={true}
+                btn_primary={!focus_select_eval_config}
                 eval_type="eval_config"
                 on_run_complete={() => {
                   get_score_summary()
