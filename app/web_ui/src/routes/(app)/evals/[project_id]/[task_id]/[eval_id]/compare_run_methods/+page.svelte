@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
@@ -345,7 +345,6 @@
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
-  $: run_eval_url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
 
   function show_incomplete_warning(
     score_summary: EvalResultSummary | null,
@@ -503,9 +502,15 @@
                 add_run_method_component?.show()
               }}>Add Run Method</button
             >
+
             <RunEval
               bind:eval_state
-              bind:run_url={run_eval_url}
+              {project_id}
+              {task_id}
+              {eval_id}
+              {current_eval_config_id}
+              run_all={true}
+              eval_type="run_method"
               on_run_complete={() => {
                 get_score_summary()
               }}
@@ -521,7 +526,7 @@
               data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run Eval' to generate missing results.`}
+                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Eval' to generate missing results.`}
                 tight={true}
               />
             </button>
@@ -529,7 +534,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as default' below to select a winner."
+              warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon="info"
               large_icon={focus_select_eval_config}
@@ -539,13 +544,14 @@
         {/if}
 
         <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
+          <table class="table table-fixed">
             <thead>
               <tr>
-                <th>
+                <th class="max-w-[400px]">
                   <div>Run Method</div>
                   <div class="font-normal">How task output is generated</div>
                 </th>
+                <th class="text-center">Status</th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
@@ -561,17 +567,10 @@
                 {@const percent_complete =
                   score_summary?.run_config_percent_complete?.[
                     "" + task_run_config.id
-                  ]}
+                  ] || 0.0}
                 {@const prompt_info_text =
                   getRunConfigPromptInfoText(task_run_config)}
-                <tr
-                  class="hover cursor-pointer"
-                  on:click={() => {
-                    goto(
-                      `/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`,
-                    )
-                  }}
-                >
+                <tr class="max-w-[400px]">
                   <td>
                     <div class="font-medium">
                       {model_name(
@@ -602,38 +601,61 @@
                     <div class="text-sm text-gray-500">
                       Run Method Name: {task_run_config.name}
                     </div>
-                    {#if percent_complete}
-                      {#if percent_complete < 1.0}
-                        <div class="text-sm 'text-error'">
-                          Progress: {(percent_complete * 100.0).toFixed(1)}%
-                        </div>
-                      {/if}
-                    {:else if score_summary}
-                      <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">Progress: 0%</div>
+                  </td>
+                  <td class="text-sm text-center">
+                    {#if percent_complete < 1.0}
+                      <div class="text-error">
+                        {(percent_complete * 100.0).toFixed(0)}% Complete
+                      </div>
+                      <div class="mt-1">
+                        <RunEval
+                          {project_id}
+                          {task_id}
+                          {eval_id}
+                          {current_eval_config_id}
+                          run_config_ids={[task_run_config.id || ""]}
+                          eval_type="run_method"
+                          btn_size="xs"
+                          btn_primary={false}
+                          btn_class="min-w-[120px]"
+                          on_run_complete={() => {
+                            get_score_summary()
+                          }}
+                        />
+                      </div>
+                    {:else}
+                      <div>Complete</div>
                     {/if}
                     {#if task_run_config.id == evaluator.current_run_config_id}
                       <button
-                        class="badge badge-primary mt-2"
-                        on:click={(event) => {
-                          event.stopPropagation()
+                        class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
+                        on:click={() => {
                           set_current_run_config("None")
                         }}
                       >
-                        Default <span class="pl-2">&#x2715;</span>
+                        Default <span class="">&#x2715;</span>
                       </button>
                     {:else}
                       <button
-                        class="badge mt-1 {focus_select_eval_config
-                          ? 'badge-primary'
-                          : 'badge-secondary badge-outline'}"
-                        on:click={(event) => {
-                          event.stopPropagation()
+                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
+                          ? 'btn-primary'
+                          : 'btn-secondary btn-outline'}"
+                        on:click={() => {
                           set_current_run_config(task_run_config.id)
                         }}
                       >
-                        Set as default
+                        Set as Default
                       </button>
+                    {/if}
+                    {#if percent_complete > 0}
+                      <div class="mt-1">
+                        <a
+                          href={`/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`}
+                          class="btn btn-xs btn-outline rounded-full min-w-[120px]"
+                        >
+                          View Data
+                        </a>
+                      </div>
                     {/if}
                   </td>
                   {#each evaluator.output_scores as output_score}

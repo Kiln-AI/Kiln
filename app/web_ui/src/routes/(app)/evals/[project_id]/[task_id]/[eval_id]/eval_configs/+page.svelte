@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
@@ -53,7 +53,6 @@
 
   $: loading = eval_loading || eval_configs_loading // Score summary not blocking whole UI
   $: error = eval_error || eval_configs_error || score_summary_error
-  $: run_eval_url = `${base_url}/api/projects/${$page.params.project_id}/tasks/${$page.params.task_id}/eval/${$page.params.eval_id}/run_eval_config_eval`
 
   let eval_state:
     | "not_started"
@@ -329,7 +328,7 @@
         : 1.0
     if (minComplete < 1.0) {
       warnings.push(
-        "You evals are incomplete. Click 'Run Evals' to generate scores for the missing items.",
+        "You evals are incomplete. Click 'Run All Eval' to generate scores for the missing items.",
       )
     }
 
@@ -496,7 +495,11 @@
               <RunEval
                 btn_size="normal"
                 bind:eval_state
-                bind:run_url={run_eval_url}
+                project_id={$page.params.project_id}
+                task_id={$page.params.task_id}
+                eval_id={$page.params.eval_id}
+                run_all={true}
+                eval_type="eval_config"
                 on_run_complete={() => {
                   get_score_summary()
                 }}
@@ -522,7 +525,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as default' below to select a winner."
+              warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon={focus_select_eval_config ? "exclaim" : "info"}
               large_icon={focus_select_eval_config}
@@ -532,13 +535,14 @@
         {/if}
 
         <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
+          <table class="table table-fixed">
             <thead>
               <tr>
-                <th>
+                <th class="max-w-[400px]">
                   <div>Eval Method</div>
                   <div class="font-normal">How task output is evaluated</div>
                 </th>
+                <th class="text-center">Status</th>
                 <th> Eval Instructions </th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
@@ -559,9 +563,9 @@
                 {@const percent_complete =
                   score_summary?.eval_config_percent_complete?.[
                     "" + eval_config.id
-                  ]}
+                  ] || 0.0}
                 <tr>
-                  <td>
+                  <td class="max-w-[400px]">
                     <div class="font-medium">
                       {model_name(eval_config?.model_name, $model_info)}
                     </div>
@@ -576,35 +580,34 @@
                     <div class="text-sm text-gray-500">
                       Name: {eval_config.name}
                     </div>
-                    {#if percent_complete}
-                      {#if percent_complete < 1.0}
-                        <div class="text-sm text-error">
-                          Progress: {(percent_complete * 100.0).toFixed(1)}%
-                        </div>
-                      {/if}
-                    {:else if score_summary}
-                      <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">Progress: 0%</div>
+                  </td>
+                  <td class="text-center text-sm">
+                    {#if percent_complete < 1.0}
+                      <div class="text-error">
+                        {(percent_complete * 100.0).toFixed(0)}% Complete
+                      </div>
+                    {:else}
+                      <div>Complete</div>
                     {/if}
                     {#if eval_config.id == evaluator.current_config_id}
                       <button
-                        class="badge badge-primary mt-2"
+                        class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
                         on:click={() => {
                           set_current_eval_config(null)
                         }}
                       >
-                        Default <span class="pl-2">&#x2715;</span>
+                        Default <span class="pl-[1px]">&#x2715;</span>
                       </button>
                     {:else}
                       <button
-                        class="badge mt-1 {focus_select_eval_config
-                          ? 'badge-primary'
-                          : 'badge-secondary badge-outline'}"
+                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
+                          ? 'btn-primary'
+                          : 'btn-secondary btn-outline'}"
                         on:click={() => {
                           set_current_eval_config(eval_config.id)
                         }}
                       >
-                        Set as default
+                        Set as Default
                       </button>
                     {/if}
                   </td>
@@ -679,7 +682,7 @@
                       {:else}
                         None
                         <InfoTooltip
-                          tooltip_text="No scores were found for this eval method. Click 'Run Eval' to generate scores and ensure your golden dataset has human ratings."
+                          tooltip_text="No scores were found for this eval method. Click 'Run All Eval' to generate scores and ensure your golden dataset has human ratings."
                           no_pad={true}
                         />
                       {/if}
@@ -741,7 +744,7 @@
     <div class="font-bold text-xl">Quick Start</div>
     <div>
       Add a variety of eval methods with different options (model, algorithm,
-      instructions). Then click 'Run Eval' to generate scores from each eval
+      instructions). Then click 'Run All Eval' to generate scores from each eval
       method on your eval method dataset.
     </div>
     <div>
