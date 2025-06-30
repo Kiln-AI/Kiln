@@ -356,8 +356,10 @@
     ]
   }
 
+  let target_new_run_config_col: number | null = null
   let add_run_method_component: AddRunMethod | null = null
   $: if (selectedModels.includes("kiln_add_run_config")) {
+    target_new_run_config_col = selectedModels.indexOf("kiln_add_run_config")
     add_run_method_component?.show()
     selectedModels = selectedModels.filter((m) => m !== "kiln_add_run_config")
   }
@@ -853,7 +855,13 @@
   bind:this={add_run_method_component}
   {project_id}
   {task_id}
-  run_method_added={() => {
+  run_method_added={(task_run_config) => {
+    if (
+      target_new_run_config_col !== null &&
+      target_new_run_config_col < columns
+    ) {
+      selectedModels[target_new_run_config_col] = task_run_config.id || null
+    }
     get_task_run_configs()
   }}
 />
