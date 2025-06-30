@@ -273,7 +273,7 @@
     ]
 
     features.push({
-      category: "Avg Usage",
+      category: "Average Usage & Cost",
       items: costItems,
     })
 
@@ -427,7 +427,7 @@
     // Handle division by zero
     if (base === 0) {
       if (compare === 0) return "even"
-      return compare > 0 ? "+∞%" : "-∞%"
+      return "N/A"
     }
 
     const percentDiff = ((compare - base) / base) * 100
