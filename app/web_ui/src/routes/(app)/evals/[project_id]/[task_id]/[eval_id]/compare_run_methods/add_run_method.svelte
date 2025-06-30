@@ -59,6 +59,8 @@
   let add_task_config_dialog: Dialog | null = null
   let add_task_config_error: KilnError | null = null
   async function add_task_config(): Promise<boolean> {
+    add_task_config_error = null
+
     if (
       !task_run_config_model_name ||
       !task_run_config_provider_name ||
@@ -106,6 +108,7 @@
   }
 
   export function show() {
+    add_task_config_error = null
     add_task_config_dialog?.show()
   }
 </script>
