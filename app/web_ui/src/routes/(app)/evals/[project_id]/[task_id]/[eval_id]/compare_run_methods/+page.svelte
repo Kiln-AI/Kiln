@@ -709,7 +709,7 @@
   bind:this={add_run_method_component}
   {project_id}
   {task_id}
-  run_method_added={() => {
+  run_method_added={(_) => {
     get_task_run_configs()
   }}
 />

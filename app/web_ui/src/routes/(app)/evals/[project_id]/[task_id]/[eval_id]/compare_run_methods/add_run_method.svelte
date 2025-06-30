@@ -16,10 +16,11 @@
   import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import RunOptions from "$lib/ui/run_options.svelte"
+  import type { TaskRunConfig } from "$lib/types"
 
   export let project_id: string
   export let task_id: string
-  export let run_method_added: () => void
+  export let run_method_added: (task_run_config: TaskRunConfig) => void
 
   onMount(async () => {
     // Wait for page params to load
@@ -71,7 +72,7 @@
     }
 
     try {
-      const { error } = await client.POST(
+      const { error, data } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
         {
           params: {
@@ -98,7 +99,7 @@
       }
       // Load the updated list of task run configs after success
       if (run_method_added) {
-        run_method_added()
+        run_method_added(data)
       }
     } catch (error) {
       add_task_config_error = createKilnError(error)
