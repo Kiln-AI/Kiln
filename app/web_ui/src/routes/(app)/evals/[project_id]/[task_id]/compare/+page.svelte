@@ -13,6 +13,7 @@
     TaskRunConfig,
   } from "$lib/types"
   import type { components } from "$lib/api_schema"
+  import AddRunMethod from "../[eval_id]/compare_run_methods/add_run_method.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -310,21 +311,44 @@
       providerGroups[provider].push(config)
     })
 
-    return Object.entries(providerGroups).map(([provider, configs]) => ({
-      label: provider,
-      options: configs.map((config) => {
-        const modelName =
-          model_name(config.run_config_properties?.model_name, $model_info) ||
-          "Unknown Model"
-        const promptName = getRunConfigPromptDisplayName(config, task_prompts)
+    const providerOptions = Object.entries(providerGroups).map(
+      ([provider, configs]) => ({
+        label: provider,
+        options: configs.map((config) => {
+          const modelName =
+            model_name(config.run_config_properties?.model_name, $model_info) ||
+            "Unknown Model"
+          const promptName = getRunConfigPromptDisplayName(config, task_prompts)
 
-        return {
-          label: `${modelName} • ${promptName}`, // First line: model name + prompt name
-          value: config.id || "",
-          description: config.name,
-        }
+          return {
+            label: `${modelName} • ${promptName}`, // First line: model name + prompt name
+            value: config.id || "",
+            description: config.name,
+          }
+        }),
       }),
-    }))
+    )
+
+    // Add "Add New" option group at the first position
+    return [
+      {
+        label: "Add New",
+        options: [
+          {
+            label: "New Run Method",
+            value: "kiln_add_run_config",
+            description: "Compare an additional model and prompt",
+          },
+        ],
+      },
+      ...providerOptions,
+    ]
+  }
+
+  let add_run_method_component: AddRunMethod | null = null
+  $: if (selectedModels.includes("kiln_add_run_config")) {
+    add_run_method_component?.show()
+    selectedModels = selectedModels.filter((m) => m !== "kiln_add_run_config")
   }
 
   function addColumn() {
@@ -711,3 +735,12 @@
     </div>
   {/if}
 </AppPage>
+
+<AddRunMethod
+  bind:this={add_run_method_component}
+  {project_id}
+  {task_id}
+  run_method_added={() => {
+    get_task_run_configs()
+  }}
+/>
