@@ -3,7 +3,6 @@
   import {
     computePosition,
     autoUpdate,
-    flip,
     shift,
     offset,
     size,
@@ -109,6 +108,9 @@
     cleanupAutoUpdate = null
   }
 
+  // Threshold for when to start expanding upward (adjust as needed)
+  const minSpaceThreshold = 1200
+
   function setupFloatingPosition() {
     if (!selectedElement || !dropdownElement) return
 
@@ -118,8 +120,31 @@
         strategy: "fixed",
         middleware: [
           offset(2), // Small gap between trigger and dropdown
-          flip(), // Flip to top if not enough space below
-          shift({ padding: 8 }), // Shift to stay in viewport
+          // Custom positioning middleware to handle expansion upward instead of flipping
+          {
+            name: "customPositioning",
+            fn: ({ x, y, rects, elements: _ }) => {
+              const viewportHeight = window.innerHeight
+              const referenceRect = rects.reference
+              const padding = 10
+
+              // Calculate available spaces
+              const spaceBelow =
+                viewportHeight -
+                (referenceRect.y + referenceRect.height) -
+                padding
+
+              if (spaceBelow >= minSpaceThreshold) {
+                // Enough space below, position normally below the reference
+                return { x, y }
+              } else {
+                // Not enough space below, position to start from top of viewport
+                const targetY = padding
+                return { x, y: targetY }
+              }
+            },
+          },
+          shift({ padding: 8 }), // Shift to stay in viewport horizontally
           size({
             apply({ availableHeight, availableWidth: _, elements, rects }) {
               // Get viewport dimensions and reference element position
@@ -133,22 +158,19 @@
                 (referenceRect.y + referenceRect.height) -
                 padding
 
-              // Calculate available space above the reference element
-              const spaceAbove = referenceRect.y - padding
-
-              // Calculate total available space (what we can use if we grow both ways)
-              const totalAvailableSpace = spaceAbove + spaceBelow
-
-              // Determine max height based on our logic:
-              // 1. Prefer to fit below if possible
-              // 2. Otherwise use total available space (will flip to top or grow both ways)
+              // Determine max height based on our custom logic:
+              // 1. If enough space below, use space below
+              // 2. If not enough space below, position from top with equal padding
               let maxHeight
-              if (availableHeight <= spaceBelow) {
-                // It fits below, use the available space below
+              if (spaceBelow >= minSpaceThreshold) {
+                // Enough space below, limit to space below
                 maxHeight = Math.min(availableHeight, spaceBelow)
               } else {
-                // It doesn't fit below, use total available space
-                maxHeight = Math.min(availableHeight, totalAvailableSpace)
+                // Not enough space below, position from top with 10px padding at top and bottom
+                maxHeight = Math.min(
+                  availableHeight,
+                  viewportHeight - 2 * padding,
+                )
               }
 
               // Apply maxHeight to the dropdown container
@@ -323,7 +345,7 @@
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
       : ''}"
     bind:this={selectedElement}
-    on:mousedown={() => {
+    on:click={() => {
       listVisible = true
     }}
     on:blur={(_) => {
