@@ -19,7 +19,6 @@
   let menuElement: HTMLElement
   let dropdownElement: HTMLElement
   let selectedElement: HTMLElement
-  let portalContainer: HTMLElement
   let scrolling = false
   let scrollInterval: number | null = null
   let focusedIndex = -1
@@ -28,26 +27,14 @@
   let mounted = false
   const id = Math.random().toString(36).substring(2, 15)
 
-  // Portal setup
   onMount(() => {
     mounted = true
-    // Create portal container at document body level
-    portalContainer = document.createElement("div")
-    portalContainer.style.position = "absolute"
-    portalContainer.style.top = "0"
-    portalContainer.style.left = "0"
-    portalContainer.style.zIndex = "1000"
-    portalContainer.style.pointerEvents = "none"
-    document.body.appendChild(portalContainer)
   })
 
   onDestroy(() => {
     stopScroll()
     if (cleanupAutoUpdate) {
       cleanupAutoUpdate()
-    }
-    if (portalContainer) {
-      document.body.removeChild(portalContainer)
     }
   })
 
@@ -95,12 +82,12 @@
   }
 
   function setupFloatingPosition() {
-    if (!selectedElement || !dropdownElement || !portalContainer) return
+    if (!selectedElement || !dropdownElement) return
 
     const updatePosition = () => {
       computePosition(selectedElement, dropdownElement, {
         placement: "bottom-start",
-        strategy: "fixed", // Use fixed strategy for portals
+        strategy: "fixed",
         middleware: [
           offset(4), // Small gap between trigger and dropdown
           flip(), // Flip to top if not enough space below
@@ -227,21 +214,6 @@
     }
   }
 
-  // Portal action to render element inside portal container
-  function portal(node: HTMLElement) {
-    if (portalContainer) {
-      portalContainer.appendChild(node)
-    }
-
-    return {
-      destroy() {
-        if (node.parentNode) {
-          node.parentNode.removeChild(node)
-        }
-      },
-    }
-  }
-
   // Handle click outside to close dropdown
   function handleDocumentClick(event: MouseEvent) {
     if (
@@ -331,102 +303,90 @@
       })()}
     </span>
   </div>
-</div>
 
-{#if listVisible && mounted}
-  {#if portalContainer}
-    {#key listVisible}
-      <div
-        bind:this={dropdownElement}
-        style="pointer-events: auto;"
-        class="portal-dropdown"
-        use:portal
+  {#if listVisible && mounted}
+    <div
+      bind:this={dropdownElement}
+      class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col fixed"
+      style="width: {selectedElement?.offsetWidth ||
+        0}px; max-height: var(--dropdown-max-height, 300px);"
+    >
+      <ul
+        class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
+        use:scrollableCheck
+        style="max-height: calc(var(--dropdown-max-height, 300px) - 1rem);"
       >
-        <div
-          class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col"
-          style="width: {selectedElement?.offsetWidth ||
-            0}px; max-height: var(--dropdown-max-height, 300px);"
-        >
-          <ul
-            class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
-            use:scrollableCheck
-            style="max-height: calc(var(--dropdown-max-height, 300px) - 1rem);"
-          >
-            {#each options as option, sectionIndex}
-              <li class="menu-title pl-1 sticky top-0 bg-white z-10">
-                {option.label}
-              </li>
-              {#each option.options as item, index}
-                {@const overallIndex =
-                  options
-                    .slice(0, sectionIndex)
-                    .reduce((count, group) => count + group.options.length, 0) +
-                  index}
-                <li id={`option-${id}-${overallIndex}`}>
-                  <button
-                    role="option"
-                    aria-selected={focusedIndex === overallIndex}
-                    class="flex flex-col text-left gap-[1px] pointer-events-auto {focusedIndex ===
-                    overallIndex
-                      ? ' active'
-                      : 'hover:bg-transparent'}"
-                    on:mousedown={(event) => {
-                      event.stopPropagation()
-                      selectOption(item.value)
-                    }}
-                    on:mouseenter={() => {
-                      focusedIndex = overallIndex
-                    }}
-                  >
-                    <div class="w-full">
-                      {item.label}
-                    </div>
-                    {#if item.description}
-                      <div
-                        class="text-xs font-medium text-base-content/40 w-full"
-                      >
-                        {item.description}
-                      </div>
-                    {/if}
-                  </button>
-                </li>
-              {/each}
-            {/each}
-          </ul>
-
-          <!-- Scroll indicator - only show if scrollable -->
-          {#if isMenuScrollable}
-            <div class="h-5">&nbsp;</div>
-            <!--svelte-ignore a11y-no-static-element-interactions -->
-            <div
-              class="absolute bottom-0 left-0 right-0 pointer-events-auto rounded-b-md stroke-[2px] hover:stroke-[4px] border-t border-base-200"
-              on:mouseenter={startScroll}
-              on:mouseleave={stopScroll}
-            >
-              <div
-                class="bg-gradient-to-b from-transparent to-white w-full flex justify-center items-center py-1 cursor-pointer rounded-b-xl"
+        {#each options as option, sectionIndex}
+          <li class="menu-title pl-1 sticky top-0 bg-white z-10">
+            {option.label}
+          </li>
+          {#each option.options as item, index}
+            {@const overallIndex =
+              options
+                .slice(0, sectionIndex)
+                .reduce((count, group) => count + group.options.length, 0) +
+              index}
+            <li id={`option-${id}-${overallIndex}`}>
+              <button
+                role="option"
+                aria-selected={focusedIndex === overallIndex}
+                class="flex flex-col text-left gap-[1px] pointer-events-auto {focusedIndex ===
+                overallIndex
+                  ? ' active'
+                  : 'hover:bg-transparent'}"
+                on:mousedown={(event) => {
+                  event.stopPropagation()
+                  selectOption(item.value)
+                }}
+                on:mouseenter={() => {
+                  focusedIndex = overallIndex
+                }}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="opacity-60"
-                >
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </div>
-            </div>
-          {/if}
+                <div class="w-full">
+                  {item.label}
+                </div>
+                {#if item.description}
+                  <div class="text-xs font-medium text-base-content/40 w-full">
+                    {item.description}
+                  </div>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        {/each}
+      </ul>
+
+      <!-- Scroll indicator - only show if scrollable -->
+      {#if isMenuScrollable}
+        <div class="h-5">&nbsp;</div>
+        <!--svelte-ignore a11y-no-static-element-interactions -->
+        <div
+          class="absolute bottom-0 left-0 right-0 pointer-events-auto rounded-b-md stroke-[2px] hover:stroke-[4px] border-t border-base-200"
+          on:mouseenter={startScroll}
+          on:mouseleave={stopScroll}
+        >
+          <div
+            class="bg-gradient-to-b from-transparent to-white w-full flex justify-center items-center py-1 cursor-pointer rounded-b-xl"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="opacity-60"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
         </div>
-      </div>
-    {/key}
+      {/if}
+    </div>
   {/if}
-{/if}
+</div>
 
 <style>
   /* Custom scrollbar styling */
@@ -447,13 +407,5 @@
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: rgba(115, 115, 115, 0.5) transparent;
-  }
-
-  /* Portal dropdown styling */
-  :global(.portal-dropdown) {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 1000;
   }
 </style>
