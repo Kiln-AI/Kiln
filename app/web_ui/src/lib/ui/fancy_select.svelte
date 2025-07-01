@@ -89,7 +89,7 @@
         placement: "bottom-start",
         strategy: "fixed",
         middleware: [
-          offset(4), // Small gap between trigger and dropdown
+          offset(2), // Small gap between trigger and dropdown
           flip(), // Flip to top if not enough space below
           shift({ padding: 8 }), // Shift to stay in viewport
           size({
@@ -242,7 +242,7 @@
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : 'border-none'}"
+      : ''}"
     bind:this={selectedElement}
     on:mousedown={() => {
       listVisible = true
