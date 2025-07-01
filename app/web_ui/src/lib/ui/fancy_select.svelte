@@ -27,6 +27,34 @@
   let mounted = false
   const id = Math.random().toString(36).substring(2, 15)
 
+  // Search functionality variables
+  let searchText = ""
+  let isSearching = false
+  let searchInputElement: HTMLInputElement
+
+  // Computed filtered options based on search
+  $: filteredOptions = searchText.trim()
+    ? options
+        .map((group) => ({
+          ...group,
+          options: group.options.filter(
+            (option) =>
+              option.label.toLowerCase().includes(searchText.toLowerCase()) ||
+              (option.description &&
+                option.description
+                  .toLowerCase()
+                  .includes(searchText.toLowerCase())),
+          ),
+        }))
+        .filter((group) => group.options.length > 0)
+    : options
+
+  // Reset search when dropdown closes
+  $: if (!listVisible) {
+    searchText = ""
+    isSearching = false
+  }
+
   onMount(() => {
     mounted = true
   })
@@ -214,6 +242,55 @@
     }
   }
 
+  // Handle clear search
+  function clearSearch() {
+    searchText = ""
+    isSearching = false
+    focusedIndex = 0
+    if (searchInputElement) {
+      searchInputElement.blur()
+    }
+  }
+
+  // Handle key input when dropdown is open
+  function handleKeyInput(event: KeyboardEvent) {
+    // Don't interfere with navigation keys or if we're already focused on search input
+    if (isSearching && document.activeElement === searchInputElement) {
+      return
+    }
+
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      event.key === "Enter" ||
+      event.key === "Escape" ||
+      event.key === "Tab"
+    ) {
+      return
+    }
+
+    // If it's a printable character, start search mode
+    if (
+      event.key.length === 1 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault()
+      if (!isSearching) {
+        isSearching = true
+        searchText = event.key
+        focusedIndex = 0
+        // Focus the search input after it's rendered
+        setTimeout(() => {
+          if (searchInputElement) {
+            searchInputElement.focus()
+          }
+        }, 0)
+      }
+    }
+  }
+
   // Handle click outside to close dropdown
   function handleDocumentClick(event: MouseEvent) {
     if (
@@ -230,8 +307,10 @@
   $: if (mounted) {
     if (listVisible) {
       document.addEventListener("click", handleDocumentClick)
+      document.addEventListener("keydown", handleKeyInput)
     } else {
       document.removeEventListener("click", handleDocumentClick)
+      document.removeEventListener("keydown", handleKeyInput)
     }
   }
 </script>
@@ -279,7 +358,7 @@
         event.preventDefault()
         focusedIndex = Math.min(
           focusedIndex + 1,
-          options.flatMap((group) => group.options).length - 1,
+          filteredOptions.flatMap((group) => group.options).length - 1,
         )
         scrollToFocusedIndex()
       } else if (event.key === "ArrowUp") {
@@ -288,7 +367,7 @@
         scrollToFocusedIndex()
       } else if (event.key === "Enter") {
         selectOption(
-          options.flatMap((group) => group.options)[focusedIndex].value,
+          filteredOptions.flatMap((group) => group.options)[focusedIndex].value,
         )
       }
     }}
@@ -311,18 +390,80 @@
       style="width: {selectedElement?.offsetWidth ||
         0}px; max-height: var(--dropdown-max-height, 300px);"
     >
+      <!-- Search input - only show when searching -->
+      {#if isSearching}
+        <div
+          class="flex items-center gap-2 p-2 border-b border-base-200 bg-base-100 sticky top-0 z-20"
+        >
+          <input
+            bind:this={searchInputElement}
+            bind:value={searchText}
+            type="text"
+            placeholder="Search..."
+            class="input input-sm flex-1 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            on:keydown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault()
+                clearSearch()
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault()
+                focusedIndex = Math.min(
+                  focusedIndex + 1,
+                  filteredOptions.flatMap((group) => group.options).length - 1,
+                )
+                scrollToFocusedIndex()
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault()
+                focusedIndex = Math.max(focusedIndex - 1, 0)
+                scrollToFocusedIndex()
+              } else if (event.key === "Enter") {
+                event.preventDefault()
+                const flatFiltered = filteredOptions.flatMap(
+                  (group) => group.options,
+                )
+                if (flatFiltered[focusedIndex]) {
+                  selectOption(flatFiltered[focusedIndex].value)
+                }
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-square"
+            on:click={clearSearch}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      {/if}
+
       <ul
         class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
         use:scrollableCheck
-        style="max-height: calc(var(--dropdown-max-height, 300px) - 1rem);"
+        style="max-height: calc(var(--dropdown-max-height, 300px) - {isSearching
+          ? '4rem'
+          : '1rem'});"
       >
-        {#each options as option, sectionIndex}
+        {#each filteredOptions as option, sectionIndex}
           <li class="menu-title pl-1 sticky top-0 bg-white z-10">
             {option.label}
           </li>
           {#each option.options as item, index}
             {@const overallIndex =
-              options
+              filteredOptions
                 .slice(0, sectionIndex)
                 .reduce((count, group) => count + group.options.length, 0) +
               index}
@@ -354,6 +495,13 @@
             </li>
           {/each}
         {/each}
+
+        <!-- Show "No results" message when filtering returns empty -->
+        {#if isSearching && filteredOptions.length === 0}
+          <li class="p-4 text-center text-base-content/60">
+            No results found for "{searchText}"
+          </li>
+        {/if}
       </ul>
 
       <!-- Scroll indicator - only show if scrollable -->
