@@ -910,17 +910,21 @@ def connect_evals_api(app: FastAPI):
             )
             dataset_size = len(expected_dataset_ids)
 
-            # Only process the default eval config if one is set
+            # Only process the default eval config (only if only one eval config, or default is set explicitly if many)
             default_eval_config = None
-            if eval.current_config_id:
-                default_eval_config = next(
-                    (
-                        config
-                        for config in eval.configs(readonly=True)
-                        if config.id == eval.current_config_id
-                    ),
-                    None,
-                )
+            eval_configs = eval.configs(readonly=True)
+            if len(eval_configs) == 1:
+                default_eval_config = eval_configs[0]
+            else:
+                if eval.current_config_id:
+                    default_eval_config = next(
+                        (
+                            config
+                            for config in eval_configs
+                            if config.id == eval.current_config_id
+                        ),
+                        None,
+                    )
 
             if not default_eval_config:
                 # No default eval config set, so we can't process this eval. Still return it so UI can show an error
