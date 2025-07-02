@@ -119,7 +119,9 @@ class BaseEval:
                         property["minimum"] = 1
                         property["maximum"] = 5
                     else:
-                        property["enum"] = [1, 2, 3, 4, 5]
+                        property["type"] = "integer"
+                        property["minimum"] = 1
+                        property["maximum"] = 5
 
                     property["description"] = (
                         f"{output_score.instruction}\n\nThe rating should be between 1 and 5, with 1 being the worst and 5 being the best."
@@ -134,6 +136,7 @@ class BaseEval:
                         )
                     else:
                         property["enum"] = ["pass", "fail"]
+                        property["type"] = "string"
                         property["description"] = (
                             f"{output_score.instruction}\n\nThe rating should be either 'pass' or 'fail'."
                         )
@@ -147,6 +150,7 @@ class BaseEval:
                         )
                     else:
                         property["enum"] = ["pass", "fail", "critical"]
+                        property["type"] = "string"
                         property["description"] = (
                             f"{output_score.instruction}\n\nThe rating should be either 'pass', 'fail', or 'critical' where critical a very severe failure."
                         )
