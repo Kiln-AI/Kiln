@@ -146,7 +146,7 @@
           },
           shift({ padding: 8 }), // Shift to stay in viewport horizontally
           size({
-            apply({ availableHeight, availableWidth: _, elements, rects }) {
+            apply({ availableHeight, availableWidth, elements, rects }) {
               // Get viewport dimensions and reference element position
               const viewportHeight = window.innerHeight
               const referenceRect = rects.reference
@@ -173,16 +173,27 @@
                 )
               }
 
-              // Apply maxHeight to the dropdown container
+              // Calculate width - minimum 300px or reference width, whichever is larger
+              const minWidth = 300
+              const referenceWidth = referenceRect.width
+              const desiredWidth = Math.max(minWidth, referenceWidth)
+              const maxWidth = Math.min(desiredWidth, availableWidth)
+
+              // Apply dimensions to the dropdown container
               Object.assign(elements.floating.style, {
                 maxHeight: `${maxHeight}px`,
+                width: `${maxWidth}px`,
               })
 
-              // Also set a CSS custom property that we can use for the inner menu
+              // Also set CSS custom properties that we can use for the inner menu
               elements.floating.style.setProperty(
                 "--dropdown-max-height",
                 `${maxHeight - 32}px`,
               ) // Account for padding
+              elements.floating.style.setProperty(
+                "--dropdown-width",
+                `${maxWidth}px`,
+              )
             },
             padding: 10, // Match our edge padding
           }),
@@ -409,13 +420,13 @@
     <div
       bind:this={dropdownElement}
       class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col fixed"
-      style="width: {selectedElement?.offsetWidth ||
-        0}px; max-height: var(--dropdown-max-height, 300px);"
+      style="width: var(--dropdown-width, {selectedElement?.offsetWidth ||
+        0}px); max-height: var(--dropdown-max-height, 300px);"
     >
       <!-- Search input - only show when searching -->
       {#if isSearching}
         <div
-          class="flex items-center gap-2 p-2 border-b border-base-200 bg-base-100 sticky top-0 z-20"
+          class="flex items-center gap-2 p-2 border-b border-base-200 bg-base-100 mt-2"
         >
           <input
             bind:this={searchInputElement}
