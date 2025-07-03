@@ -31,22 +31,35 @@
   let isSearching = false
   let searchInputElement: HTMLInputElement
 
+  // Filter options based on search text - supports multi-word searches
+  function filterOptions(
+    options: OptionGroup[],
+    searchText: string,
+  ): OptionGroup[] {
+    if (!searchText.trim()) {
+      return options
+    }
+
+    // Split search text into words for flexible matching
+    const searchWords = searchText.toLowerCase().trim().split(/\s+/)
+
+    return options
+      .map((group) => ({
+        ...group,
+        options: group.options.filter((option) => {
+          const labelText = option.label.toLowerCase()
+          const descriptionText = option.description?.toLowerCase() || ""
+          const combinedText = labelText + " " + descriptionText
+
+          // Check if all search words are present in the combined text
+          return searchWords.every((word) => combinedText.includes(word))
+        }),
+      }))
+      .filter((group) => group.options.length > 0)
+  }
+
   // Computed filtered options based on search
-  $: filteredOptions = searchText.trim()
-    ? options
-        .map((group) => ({
-          ...group,
-          options: group.options.filter(
-            (option) =>
-              option.label.toLowerCase().includes(searchText.toLowerCase()) ||
-              (option.description &&
-                option.description
-                  .toLowerCase()
-                  .includes(searchText.toLowerCase())),
-          ),
-        }))
-        .filter((group) => group.options.length > 0)
-    : options
+  $: filteredOptions = filterOptions(options, searchText)
 
   // Reset search when dropdown closes
   $: if (!listVisible) {
@@ -282,6 +295,10 @@
     focusedIndex = 0
     if (searchInputElement) {
       searchInputElement.blur()
+    }
+    // Return focus to the main select element so escape key works properly
+    if (selectedElement) {
+      selectedElement.focus()
     }
   }
 

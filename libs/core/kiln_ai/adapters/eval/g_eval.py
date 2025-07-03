@@ -102,6 +102,18 @@ class GEval(BaseEval):
 
         self.geval_task = GEvalTask(eval_config)
 
+    def generate_run_description(self, eval_input: str, eval_output: str) -> str:
+        return f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+The model produced the following output for the task:
+<eval_data>
+{eval_output}
+</eval_data>
+"""
+
     async def run_eval(
         self, task_run: TaskRun
     ) -> tuple[EvalScores, Dict[str, str] | None]:
@@ -145,19 +157,12 @@ class GEval(BaseEval):
             ),
         )
 
-        input = f"""The model was given the following input for the task: 
-<eval_data>
-{task_run.input}
-</eval_data>
-
-The model produced the following output for the task:
-<eval_data>
-{task_run.output}
-</eval_data>
-"""
+        run_description = self.generate_run_description(
+            task_run.input, task_run.output.output
+        )
 
         # We don't need the run, but invoke_returning_run_output() runs validations for us over _run()
-        _, run_output = await adapter.invoke_returning_run_output(input)
+        _, run_output = await adapter.invoke_returning_run_output(run_description)
 
         if self.eval_config.config_type == EvalConfigType.llm_as_judge:
             return self.build_llm_as_judge_score(
