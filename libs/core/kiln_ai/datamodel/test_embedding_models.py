@@ -50,21 +50,21 @@ class TestEmbeddingConfig:
         """Test that required fields are set correctly."""
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
         )
         assert config.name == "test-embedding"
-        assert config.model_provider == "openai"
-        assert config.model_name == "text-embedding-3"
+        assert config.model_provider_name == "openai"
+        assert config.model_name == "openai_text_embedding_3_small"
         assert config.properties == {"dimensions": 1536}
 
     def test_optional_description(self):
         """Test that description is optional."""
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
         )
         assert config.description is None
@@ -72,8 +72,8 @@ class TestEmbeddingConfig:
         config_with_desc = EmbeddingConfig(
             name="test-embedding",
             description="A test embedding config",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
         )
         assert config_with_desc.description == "A test embedding config"
@@ -83,8 +83,8 @@ class TestEmbeddingConfig:
         # Test valid name
         config = EmbeddingConfig(
             name="valid-name_123",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
         )
         assert config.name == "valid-name_123"
@@ -93,8 +93,8 @@ class TestEmbeddingConfig:
         with pytest.raises(ValueError):
             EmbeddingConfig(
                 name="invalid@name",
-                model_provider="openai",
-                model_name="text-embedding-3",
+                model_provider_name="openai",
+                model_name="openai_text_embedding_3_small",
                 properties={"dimensions": 1536},
             )
 
@@ -102,8 +102,8 @@ class TestEmbeddingConfig:
         with pytest.raises(ValueError):
             EmbeddingConfig(
                 name="",
-                model_provider="openai",
-                model_name="text-embedding-3",
+                model_provider_name="openai",
+                model_name="openai_text_embedding_3_small",
                 properties={"dimensions": 1536},
             )
 
@@ -112,8 +112,8 @@ class TestEmbeddingConfig:
         # Test with valid properties
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={
                 "dimensions": 1536,
             },
@@ -125,8 +125,8 @@ class TestEmbeddingConfig:
         # Test with empty properties
         config_empty = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={},
         )
         assert config_empty.properties == {}
@@ -135,8 +135,8 @@ class TestEmbeddingConfig:
         """Test parent_project method when no parent is set."""
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
         )
         assert config.parent_project() is None
@@ -145,32 +145,93 @@ class TestEmbeddingConfig:
         """Test parent_project method when parent is a Project."""
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
             parent=mock_project,
         )
         assert config.parent_project() == mock_project
 
-    def test_model_provider_validation(self, mock_project):
-        """Test model_provider field validation."""
+    def test_model_provider_name_validation(self, mock_project):
+        """Test model_provider_name field validation."""
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={},
             parent=mock_project,
         )
-        assert config.model_provider == "openai"
+        assert config.model_provider_name == "openai"
 
         with pytest.raises(ValueError):
             EmbeddingConfig(
                 name="test-embedding",
-                model_provider="invalid-provider",
-                model_name="text-embedding-3",
+                model_provider_name="invalid-provider",
+                model_name="openai_text_embedding_3_small",
                 parent=mock_project,
                 properties={},
             )
+
+    def test_custom_dimensions_validation(self):
+        """Test that custom dimensions are properly validated."""
+
+        # this model supports custom dimensions
+        config = EmbeddingConfig(
+            name="test-embedding",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
+            properties={"dimensions": 1536},
+        )
+        assert config.properties == {"dimensions": 1536}
+
+        # this model does not support custom dimensions
+        with pytest.raises(
+            ValueError,
+            match="The model gemini_text_embedding_004 does not support custom dimensions",
+        ):
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider_name="gemini_api",
+                model_name="gemini_text_embedding_004",
+                properties={"dimensions": 512},
+            )
+
+        # dimensions is negative
+        with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider_name="openai",
+                model_name="openai_text_embedding_3_small",
+                properties={"dimensions": -1},
+            )
+
+        # dimensions is not an integer
+        with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider_name="openai",
+                model_name="openai_text_embedding_3_small",
+                properties={"dimensions": 1.5},
+            )
+
+        # dimensions is not a positive integer
+        with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider_name="openai",
+                model_name="openai_text_embedding_3_small",
+                properties={"dimensions": "512"},
+            )
+
+    def test_dimensions_optional(self):
+        """Test that dimensions is optional and should be ignored if not provided."""
+        config = EmbeddingConfig(
+            name="test-embedding",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
+            properties={},
+        )
+        assert config.properties == {}
 
 
 class TestEmbedding:
@@ -347,15 +408,15 @@ class TestEmbeddingIntegration:
         config = EmbeddingConfig(
             name="test-embedding",
             description="Test embedding configuration",
-            model_provider="openai",
-            model_name="text-embedding-3",
-            properties={"dimensions": 1536, "batch_size": 32},
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
+            properties={"dimensions": 1536},
             parent=mock_project,
         )
         assert config.parent_project() == mock_project
         assert config.name == "test-embedding"
-        assert config.model_provider == "openai"
-        assert config.model_name == "text-embedding-3"
+        assert config.model_provider_name == "openai"
+        assert config.model_name == "openai_text_embedding_3_small"
 
     def test_chunk_embeddings_with_chunked_document_parent(self, mock_chunked_document):
         """Test ChunkEmbeddings with ChunkedDocument parent."""
@@ -380,8 +441,8 @@ class TestEmbeddingIntegration:
         embedding_config = EmbeddingConfig(
             name="test-embedding-config",
             description="Test embedding configuration for workflow",
-            model_provider="openai",
-            model_name="text-embedding-3",
+            model_provider_name="openai",
+            model_name="openai_text_embedding_3_small",
             properties={"dimensions": 1536},
             parent=mock_project,
         )

@@ -7,6 +7,13 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    KilnEmbeddingModel,
+    KilnEmbeddingModelFamily,
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -2298,3 +2305,140 @@ async def test_connect_wandb_request_exception(mock_config_shared, mock_requests
         not hasattr(mock_config, "wandb_api_key")
         or mock_config.wandb_api_key != "test-api-key"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_available_embedding_models(app, client):
+    # Mock Config.shared()
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    # Mock provider_warnings
+    mock_provider_warnings = {
+        ModelProviderName.openai: MagicMock(required_config_keys=["key1"]),
+        ModelProviderName.amazon_bedrock: MagicMock(required_config_keys=["key2"]),
+        ModelProviderName.gemini_api: MagicMock(required_config_keys=["key3"]),
+    }
+
+    # Mock built_in_models
+    mock_built_in_embedding_models = [
+        KilnEmbeddingModel(
+            name="model1",
+            friendly_name="Model 1",
+            family="",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="oai1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=True,
+                )
+            ],
+        ),
+        KilnEmbeddingModel(
+            name="model2",
+            friendly_name="Model 2",
+            family="",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.amazon_bedrock,
+                    model_id="bedrock1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                ),
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.gemini_api,
+                    model_id="gemini1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                ),
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_embedding_models",
+            mock_built_in_embedding_models,
+        ),
+    ):
+        response = client.get("/api/available_embedding_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "openai",
+            "provider_name": "OpenAI",
+            "models": [
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": True,
+                }
+            ],
+        },
+        {
+            "provider_id": "amazon_bedrock",
+            "provider_name": "Amazon Bedrock",
+            "models": [
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": False,
+                }
+            ],
+        },
+        {
+            "provider_id": "gemini_api",
+            "provider_name": "Gemini API",
+            "models": [
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": False,
+                }
+            ],
+        },
+    ]
+
+
+def test_get_providers_embedding_models(client):
+    response = client.get("/api/providers/embedding_models")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "models" in data
+
+    # Check if all built-in embedding models are present in the response
+    for model in built_in_embedding_models:
+        assert model.name in data["models"]
+        assert data["models"][model.name]["id"] == model.name
+        assert data["models"][model.name]["name"] == model.friendly_name
+
+    # Check if the number of models in the response matches the number of built-in embedding models
+    assert len(data["models"]) == len(built_in_embedding_models)
+
+    if EmbeddingModelName.openai_text_embedding_3_small in data["models"]:
+        assert (
+            data["models"][EmbeddingModelName.openai_text_embedding_3_small]["id"]
+            == EmbeddingModelName.openai_text_embedding_3_small
+        )
+        assert (
+            data["models"][EmbeddingModelName.openai_text_embedding_3_small]["name"]
+            == "text-embedding-3-small"
+        )

@@ -645,6 +645,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/providers/embedding_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Embedding Models */
+        get: operations["get_providers_embedding_models_api_providers_embedding_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_embedding_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Embedding Models */
+        get: operations["get_available_embedding_models_api_available_embedding_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider/ollama/connect": {
         parameters: {
             query?: never;
@@ -1336,6 +1370,15 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
+        /** AvailableEmbeddingModels */
+        AvailableEmbeddingModels: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["EmbeddingModelDetails"][];
+        };
         /** AvailableModels */
         AvailableModels: {
             /** Provider Name */
@@ -1825,6 +1868,25 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** EmbeddingModelDetails */
+        EmbeddingModelDetails: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** N Dimensions */
+            n_dimensions: number;
+            /** Max Input Tokens */
+            max_input_tokens: number;
+            /** Supports Custom Dimensions */
+            supports_custom_dimensions: boolean;
+        };
+        /**
+         * EmbeddingModelName
+         * @description Enumeration of specific model versions supported by the system.
+         * @enum {string}
+         */
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004";
         /** Eval */
         Eval: {
             /**
@@ -2774,6 +2836,13 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+        };
+        /** ProviderEmbeddingModels */
+        ProviderEmbeddingModels: {
+            /** Models */
+            models: {
+                [key: string]: components["schemas"]["ProviderModel"];
+            };
         };
         /** ProviderModel */
         ProviderModel: {
@@ -4887,6 +4956,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AvailableModels"][];
+                };
+            };
+        };
+    };
+    get_providers_embedding_models_api_providers_embedding_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderEmbeddingModels"];
+                };
+            };
+        };
+    };
+    get_available_embedding_models_api_available_embedding_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableEmbeddingModels"][];
                 };
             };
         };
