@@ -18,6 +18,7 @@ The eval submodule contains the code for evaluating the performance of a model.
 
 from . import (
     chat,
+    chunkers,
     data_gen,
     eval,
     extractors,
@@ -29,6 +30,7 @@ from . import (
 )
 
 __all__ = [
+    "chunkers",
     "model_adapters",
     "chat",
     "data_gen",
