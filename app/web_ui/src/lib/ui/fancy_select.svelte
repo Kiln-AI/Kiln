@@ -296,6 +296,10 @@
     if (searchInputElement) {
       searchInputElement.blur()
     }
+    // Return focus to the main select element so escape key works properly
+    if (selectedElement) {
+      selectedElement.focus()
+    }
   }
 
   // Handle key input when dropdown is open
