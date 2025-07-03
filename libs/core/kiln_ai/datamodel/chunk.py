@@ -15,7 +15,9 @@ from kiln_ai.datamodel.basemodel import (
     NAME_FIELD,
     KilnAttachmentModel,
     KilnParentedModel,
+    KilnParentModel,
 )
+from kiln_ai.datamodel.embedding import ChunkEmbeddings
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.extraction import Extraction
@@ -111,7 +113,9 @@ class Chunk(BaseModel):
         return content.model_dump(mode="json", context=context)
 
 
-class ChunkedDocument(KilnParentedModel):
+class ChunkedDocument(
+    KilnParentedModel, KilnParentModel, parent_of={"chunk_embeddings": ChunkEmbeddings}
+):
     chunker_config_id: ID_TYPE = Field(
         description="The ID of the chunker config that was used to chunk the document.",
     )
@@ -121,3 +125,6 @@ class ChunkedDocument(KilnParentedModel):
         if self.parent is None or self.parent.__class__.__name__ != "Extraction":
             return None
         return self.parent  # type: ignore
+
+    def chunk_embeddings(self, readonly: bool = False) -> list[ChunkEmbeddings]:
+        return super().chunk_embeddings(readonly=readonly)  # type: ignore
