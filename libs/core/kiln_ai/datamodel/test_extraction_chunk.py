@@ -121,55 +121,55 @@ class TestIntegration:
         config.save_to_file()
 
         # Dummy file we will use as attachment
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
             tmp_file.write(b"test content")
             tmp_path = Path(tmp_file.name)
 
-        # Create a document
-        document = Document(
-            name="test-document",
-            description="Test document",
-            parent=mock_project,
-            original_file=FileInfo(
-                filename="test.txt",
-                size=100,
-                mime_type="text/plain",
-                attachment=KilnAttachmentModel.from_file(tmp_path),
-            ),
-            kind=Kind.DOCUMENT,
-        )
-        document.save_to_file()
+            # Create a document
+            document = Document(
+                name="test-document",
+                description="Test document",
+                parent=mock_project,
+                original_file=FileInfo(
+                    filename="test.txt",
+                    size=100,
+                    mime_type="text/plain",
+                    attachment=KilnAttachmentModel.from_file(tmp_path),
+                ),
+                kind=Kind.DOCUMENT,
+            )
+            document.save_to_file()
 
-        # Create an extraction
-        extraction = Extraction(
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=config.id,
-            output=KilnAttachmentModel.from_file(tmp_path),
-            parent=document,
-        )
-        extraction.save_to_file()
+            # Create an extraction
+            extraction = Extraction(
+                source=ExtractionSource.PROCESSED,
+                extractor_config_id=config.id,
+                output=KilnAttachmentModel.from_file(tmp_path),
+                parent=document,
+            )
+            extraction.save_to_file()
 
-        # Create some chunks
-        chunks = [Chunk(content=KilnAttachmentModel.from_file(tmp_path))] * 3
+            # Create some chunks
+            chunks = [Chunk(content=KilnAttachmentModel.from_file(tmp_path))] * 3
 
-        chunked_document = ChunkedDocument(
-            parent=extraction,
-            chunks=chunks,
-            chunker_config_id=config.id,
-        )
-        chunked_document.save_to_file()
+            chunked_document = ChunkedDocument(
+                parent=extraction,
+                chunks=chunks,
+                chunker_config_id=config.id,
+            )
+            chunked_document.save_to_file()
 
-        assert len(chunked_document.chunks) == 3
+            assert len(chunked_document.chunks) == 3
 
-        # Check that the document chunked is associated with the correct extraction
-        assert chunked_document.parent_extraction().id == extraction.id
+            # Check that the document chunked is associated with the correct extraction
+            assert chunked_document.parent_extraction().id == extraction.id
 
-        for chunked_document_found in extraction.chunked_documents():
-            assert chunked_document.id == chunked_document_found.id
+            for chunked_document_found in extraction.chunked_documents():
+                assert chunked_document.id == chunked_document_found.id
 
-        assert len(extraction.chunked_documents()) == 1
+            assert len(extraction.chunked_documents()) == 1
 
-        # the chunks should have a filename prefixed with content_
-        for chunk in chunked_document.chunks:
-            filename = chunk.content.path.name
-            assert filename.startswith("content_")
+            # the chunks should have a filename prefixed with content_
+            for chunk in chunked_document.chunks:
+                filename = chunk.content.path.name
+                assert filename.startswith("content_")
