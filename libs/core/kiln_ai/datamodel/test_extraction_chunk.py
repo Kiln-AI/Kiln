@@ -6,6 +6,7 @@ import pytest
 
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig, ChunkerType
+from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -173,3 +174,33 @@ class TestIntegration:
             for chunk in chunked_document.chunks:
                 filename = chunk.content.path.name
                 assert filename.startswith("content_")
+
+            # create an embedding config
+            embedding_config = EmbeddingConfig(
+                name="test-embedding-config",
+                description="Test embedding config",
+                parent=mock_project,
+                model_name="test-model",
+                model_provider="test-provider",
+                properties={},
+            )
+            embedding_config.save_to_file()
+
+            # create chunk embeddings
+            chunk_embeddings = ChunkEmbeddings(
+                parent=chunked_document,
+                embedding_config_id=embedding_config.id,
+                embeddings=[Embedding(vector=[1.0] * 1536) for _ in range(3)],
+            )
+            chunk_embeddings.save_to_file()
+
+            retrieved_chunk_embeddings = chunked_document.chunk_embeddings()
+            assert isinstance(retrieved_chunk_embeddings, list)
+            assert len(retrieved_chunk_embeddings) == 1
+
+            # check project has the embedding config and the chunker config
+            assert (
+                mock_project.embedding_configs(readonly=True)[0].id
+                == embedding_config.id
+            )
+            assert mock_project.chunker_configs(readonly=True)[0].id == config.id
