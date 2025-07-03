@@ -23,7 +23,7 @@
     {
       name: "Edit Task",
       description:
-        "Edit the currently task, including the prompt and requirements.",
+        "Edit the currently selected task, including the prompt and requirements.",
       button_text: "Edit Current Task",
       href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
     },

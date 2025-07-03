@@ -4,8 +4,8 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
-from kiln_ai.adapters.parsers.request_formatters import request_formatter_from_id
 from kiln_ai.datamodel import Task
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
 
 
@@ -179,41 +179,6 @@ async def test_prompt_builder_json_instructions(
     )
 
 
-@pytest.mark.parametrize(
-    "cot_prompt,has_structured_output,reasoning_capable,expected",
-    [
-        # COT and normal LLM
-        ("think carefully", False, False, ("cot_two_call", "think carefully")),
-        # Structured output with thinking-capable LLM
-        ("think carefully", True, True, ("cot_as_message", "think carefully")),
-        # Structured output with normal LLM
-        ("think carefully", True, False, ("cot_two_call", "think carefully")),
-        # Basic cases - no COT
-        (None, True, True, ("basic", None)),
-        (None, False, False, ("basic", None)),
-        (None, True, False, ("basic", None)),
-        (None, False, True, ("basic", None)),
-        # Edge case - COT prompt exists but structured output is False and reasoning_capable is True
-        ("think carefully", False, True, ("cot_as_message", "think carefully")),
-    ],
-)
-async def test_run_strategy(
-    adapter, cot_prompt, has_structured_output, reasoning_capable, expected
-):
-    """Test that run_strategy returns correct strategy based on conditions"""
-    # Mock dependencies
-    adapter.prompt_builder.chain_of_thought_prompt = MagicMock(return_value=cot_prompt)
-    adapter.has_structured_output = MagicMock(return_value=has_structured_output)
-
-    provider = MagicMock()
-    provider.reasoning_capable = reasoning_capable
-    adapter.model_provider = MagicMock(return_value=provider)
-
-    # Test
-    result = adapter.run_strategy()
-    assert result == expected
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "formatter_id,expected_input,expected_calls",
@@ -351,3 +316,130 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
         # Restore the original fields
         RunConfigProperties.model_fields.clear()
         RunConfigProperties.model_fields.update(original_fields)
+
+
+@pytest.mark.parametrize(
+    "cot_prompt,tuned_strategy,reasoning_capable,expected_formatter_class",
+    [
+        # No COT prompt -> always single turn
+        (None, None, False, "SingleTurnFormatter"),
+        (None, ChatStrategy.two_message_cot, False, "SingleTurnFormatter"),
+        (None, ChatStrategy.single_turn_r1_thinking, True, "SingleTurnFormatter"),
+        # With COT prompt:
+        # - Tuned strategy takes precedence (except single turn)
+        (
+            "think step by step",
+            ChatStrategy.two_message_cot,
+            False,
+            "TwoMessageCotFormatter",
+        ),
+        (
+            "think step by step",
+            ChatStrategy.single_turn_r1_thinking,
+            False,
+            "SingleTurnR1ThinkingFormatter",
+        ),
+        # - Tuned single turn is ignored when COT exists
+        (
+            "think step by step",
+            ChatStrategy.single_turn,
+            True,
+            "SingleTurnR1ThinkingFormatter",
+        ),
+        # - Reasoning capable -> single turn R1 thinking
+        ("think step by step", None, True, "SingleTurnR1ThinkingFormatter"),
+        # - Not reasoning capable -> two message COT
+        ("think step by step", None, False, "TwoMessageCotFormatter"),
+    ],
+)
+def test_build_chat_formatter(
+    adapter,
+    cot_prompt,
+    tuned_strategy,
+    reasoning_capable,
+    expected_formatter_class,
+):
+    """Test chat formatter strategy selection based on COT prompt, tuned strategy, and model capabilities"""
+    # Mock the prompt builder
+    mock_prompt_builder = MagicMock()
+    mock_prompt_builder.chain_of_thought_prompt.return_value = cot_prompt
+    mock_prompt_builder.build_prompt.return_value = "system message"
+    adapter.prompt_builder = mock_prompt_builder
+
+    # Mock the model provider
+    mock_provider = MagicMock()
+    mock_provider.tuned_chat_strategy = tuned_strategy
+    mock_provider.reasoning_capable = reasoning_capable
+    adapter.model_provider = MagicMock(return_value=mock_provider)
+
+    # Get the formatter
+    formatter = adapter.build_chat_formatter("test input")
+
+    # Verify the formatter type
+    assert formatter.__class__.__name__ == expected_formatter_class
+
+    # Verify the formatter was created with correct parameters
+    assert formatter.system_message == "system message"
+    assert formatter.user_input == "test input"
+    # Only check thinking_instructions for formatters that use it
+    if expected_formatter_class == "TwoMessageCotFormatter":
+        if cot_prompt:
+            assert formatter.thinking_instructions == cot_prompt
+        else:
+            assert formatter.thinking_instructions is None
+    # For other formatters, don't assert thinking_instructions
+
+    # Verify prompt builder was called correctly
+    mock_prompt_builder.build_prompt.assert_called_once()
+    mock_prompt_builder.chain_of_thought_prompt.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "initial_mode,expected_mode",
+    [
+        (
+            StructuredOutputMode.json_schema,
+            StructuredOutputMode.json_schema,
+        ),  # Should not change
+        (
+            StructuredOutputMode.unknown,
+            StructuredOutputMode.json_mode,
+        ),  # Should update to default
+    ],
+)
+async def test_update_run_config_unknown_structured_output_mode(
+    base_task, initial_mode, expected_mode
+):
+    """Test that unknown structured output mode is updated to the default for the model provider"""
+    # Create a run config with the initial mode
+    run_config = RunConfig(
+        task=base_task,
+        model_name="test_model",
+        model_provider_name="openai",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode=initial_mode,
+        temperature=0.7,  # Add some other properties to verify they're preserved
+        top_p=0.9,
+    )
+
+    # Mock the default mode lookup
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.default_structured_output_mode_for_model_provider"
+    ) as mock_default:
+        mock_default.return_value = StructuredOutputMode.json_mode
+
+        # Create the adapter
+        adapter = MockAdapter(run_config=run_config)
+
+        # Verify the mode was updated correctly
+        assert adapter.run_config.structured_output_mode == expected_mode
+
+        # Verify other properties were preserved
+        assert adapter.run_config.temperature == 0.7
+        assert adapter.run_config.top_p == 0.9
+
+        # Verify the default mode lookup was only called when needed
+        if initial_mode == StructuredOutputMode.unknown:
+            mock_default.assert_called_once_with("test_model", "openai")
+        else:
+            mock_default.assert_not_called()

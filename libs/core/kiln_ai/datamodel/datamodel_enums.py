@@ -57,22 +57,23 @@ class FineTuneStatusType(str, Enum):
     failed = "failed"
 
 
-class FinetuneDataStrategy(str, Enum):
-    """Strategy for what data to include when fine-tuning a model."""
+class ChatStrategy(str, Enum):
+    """Strategy for how a chat is structured."""
 
-    # Only train on the final response, ignoring any intermediate steps or chain of thought
-    final_only = "final_only"
+    # Single turn, immediately return the answer
+    single_turn = "final_only"
+    # Two turn, first turn is the thinking, second turn is the answer. Legacy format - used for old fine tunes but not new trains.
+    two_message_cot_legacy = "final_and_intermediate"
+    # Two turn, first turn is the thinking, second turn is the answer. New format - used for new trains.
+    two_message_cot = "two_message_cot"
+    # Single turn, with both the thinking and the answer in the same message, using R1-style thinking format in <think> tags
+    single_turn_r1_thinking = "final_and_intermediate_r1_compatible"
 
-    # Train on both the final response and any intermediate steps/chain of thought
-    final_and_intermediate = "final_and_intermediate"
 
-    # Train using R1-style thinking format, which includes the reasoning in <think> tags in the message
-    final_and_intermediate_r1_compatible = "final_and_intermediate_r1_compatible"
-
-
-THINKING_DATA_STRATEGIES: list[FinetuneDataStrategy] = [
-    FinetuneDataStrategy.final_and_intermediate,
-    FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+THINKING_DATA_STRATEGIES: list[ChatStrategy] = [
+    ChatStrategy.two_message_cot_legacy,
+    ChatStrategy.single_turn_r1_thinking,
+    ChatStrategy.two_message_cot,
 ]
 
 

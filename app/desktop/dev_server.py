@@ -7,6 +7,9 @@ import uvicorn
 
 from app.desktop.desktop_server import make_app
 
+# Skip remote model loading when running the dev server (unless explicitly set)
+os.environ.setdefault("KILN_SKIP_REMOTE_MODEL_LIST", "true")
+
 # top level app object, as that's needed by auto-reload
 dev_app = make_app()
 

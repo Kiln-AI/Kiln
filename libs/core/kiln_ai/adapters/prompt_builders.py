@@ -1,6 +1,4 @@
-import json
 from abc import ABCMeta, abstractmethod
-from typing import Dict
 
 from kiln_ai.datamodel import PromptGenerators, PromptId, Task, TaskRun
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -52,20 +50,6 @@ class BasePromptBuilder(metaclass=ABCMeta):
             str: The constructed prompt.
         """
         pass
-
-    def build_user_message(self, input: Dict | str) -> str:
-        """Build a user message from the input.
-
-        Args:
-            input (Union[Dict, str]): The input to format into a message.
-
-        Returns:
-            str: The formatted user message.
-        """
-        if isinstance(input, Dict):
-            return f"The input is:\n{json.dumps(input, indent=2, ensure_ascii=False)}"
-
-        return f"The input is:\n{input}"
 
     def chain_of_thought_prompt(self) -> str | None:
         """Build and return the chain of thought prompt string.

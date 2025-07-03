@@ -19,7 +19,6 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.datamodel import (
     DatasetSplit,
     Finetune,
-    FinetuneDataStrategy,
     Project,
     Task,
     TaskOutput,
@@ -27,6 +26,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
@@ -179,8 +179,8 @@ def test_finetune_provider_model_defaults():
     )
 
     assert model.data_strategies_supported == [
-        FinetuneDataStrategy.final_only,
-        FinetuneDataStrategy.final_and_intermediate,
+        ChatStrategy.single_turn,
+        ChatStrategy.two_message_cot,
     ]
 
 
@@ -545,15 +545,17 @@ def mock_finetune_adapter():
 
 
 @pytest.mark.parametrize(
-    "data_strategy,custom_thinking_instructions,expected_thinking_instructions",
+    "data_strategy,custom_thinking_instructions,expected_thinking_instructions,expect_error",
     [
-        (FinetuneDataStrategy.final_only, None, None),
+        (ChatStrategy.single_turn, None, None, False),
         (
-            FinetuneDataStrategy.final_and_intermediate,
+            ChatStrategy.two_message_cot,
             None,
             "Think step by step, explaining your reasoning.",
+            False,
         ),  # Our default
-        (FinetuneDataStrategy.final_and_intermediate, "CTI", "CTI"),
+        (ChatStrategy.two_message_cot, "CTI", "CTI", False),
+        (ChatStrategy.two_message_cot_legacy, "CTI", "CTI", True),
     ],
 )
 async def test_create_finetune(
@@ -565,6 +567,7 @@ async def test_create_finetune(
     data_strategy,
     custom_thinking_instructions,
     expected_thinking_instructions,
+    expect_error,
 ):
     mock_finetune_registry["test_provider"] = mock_finetune_adapter
 
@@ -585,6 +588,10 @@ async def test_create_finetune(
     response = client.post(
         "/api/projects/project1/tasks/task1/finetunes", json=request_data
     )
+
+    if expect_error:
+        assert response.status_code == 422
+        return
 
     assert response.status_code == 200
     result = response.json()
@@ -673,7 +680,7 @@ def test_create_finetune_request_validation():
         provider="test_provider",
         base_model_id="base_model_1",
         custom_system_message="Test system message",
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
     assert request.name == "Test Finetune"
     assert request.description == "Test description"
@@ -688,7 +695,7 @@ def test_create_finetune_request_validation():
         provider="test_provider",
         base_model_id="base_model_1",
         custom_system_message="Test system message",
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
     )
     assert request.name is None
     assert request.description is None
@@ -851,7 +858,7 @@ def mock_dataset_formatter():
 
 @pytest.mark.parametrize(
     "data_strategy",
-    [FinetuneDataStrategy.final_only, FinetuneDataStrategy.final_and_intermediate],
+    [ChatStrategy.single_turn, ChatStrategy.two_message_cot_legacy],
 )
 def test_download_dataset_jsonl(
     client,
@@ -1098,33 +1105,47 @@ def test_thinking_instructions_non_cot_strategy():
     task = Mock(spec=Task)
     result = thinking_instructions_from_request(
         task=task,
-        data_strategy=FinetuneDataStrategy.final_only,
+        data_strategy=ChatStrategy.single_turn,
         custom_thinking_instructions="custom instructions",
     )
     assert result is None
 
 
-def test_thinking_instructions_custom():
+@pytest.mark.parametrize(
+    "data_strategy",
+    [
+        ChatStrategy.two_message_cot_legacy,
+        ChatStrategy.two_message_cot,
+    ],
+)
+def test_thinking_instructions_custom(data_strategy):
     """Test that custom instructions are returned when provided"""
     task = Mock(spec=Task)
     custom_instructions = "My custom thinking instructions"
     result = thinking_instructions_from_request(
         task=task,
-        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        data_strategy=data_strategy,
         custom_thinking_instructions=custom_instructions,
     )
     assert result == custom_instructions
 
 
+@pytest.mark.parametrize(
+    "data_strategy",
+    [
+        ChatStrategy.two_message_cot_legacy,
+        ChatStrategy.two_message_cot,
+    ],
+)
 @patch("app.desktop.studio_server.finetune_api.chain_of_thought_prompt")
-def test_thinking_instructions_default(mock_cot):
+def test_thinking_instructions_default(mock_cot, data_strategy):
     """Test that default chain of thought prompt is used when no custom instructions"""
     task = Mock(spec=Task)
     mock_cot.return_value = "Default COT instructions"
 
     result = thinking_instructions_from_request(
         task=task,
-        data_strategy=FinetuneDataStrategy.final_and_intermediate,
+        data_strategy=data_strategy,
         custom_thinking_instructions=None,
     )
 
@@ -1405,8 +1426,8 @@ def mock_available_models():
             "gpt-4.1-2025-04-14",
             "openai",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate,
+                ChatStrategy.single_turn,
+                ChatStrategy.two_message_cot,
             ],
         ),
         (
@@ -1414,8 +1435,8 @@ def mock_available_models():
             "gpt-4.1-mini-2025-04-14",
             "openai",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate,
+                ChatStrategy.single_turn,
+                ChatStrategy.two_message_cot,
             ],
         ),
         (
@@ -1423,8 +1444,8 @@ def mock_available_models():
             "fake-model-id",
             "fake-provider",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate,
+                ChatStrategy.single_turn,
+                ChatStrategy.two_message_cot,
             ],
         ),
         # this model has an R1 parser, should be r1 compatible
@@ -1432,7 +1453,7 @@ def mock_available_models():
             "qwq-32b-xxx",
             "huggingface",
             [
-                FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+                ChatStrategy.single_turn_r1_thinking,
             ],
         ),
         # for fireworks_ai models, we infer the data strategies from the model name
@@ -1441,8 +1462,8 @@ def mock_available_models():
             "some-model-id",
             "fireworks_ai",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate,
+                ChatStrategy.single_turn,
+                ChatStrategy.two_message_cot,
             ],
         ),
         (
@@ -1450,7 +1471,7 @@ def mock_available_models():
             "some-model-with-r1-in-id",
             "fireworks_ai",
             [
-                FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+                ChatStrategy.single_turn_r1_thinking,
             ],
         ),
         (
@@ -1458,7 +1479,7 @@ def mock_available_models():
             "some-model-with-qwq-in-id",
             "fireworks_ai",
             [
-                FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+                ChatStrategy.single_turn_r1_thinking,
             ],
         ),
     ],
@@ -1467,7 +1488,7 @@ def test_infer_data_strategies(
     mock_available_models,
     model_id: str,
     provider: str,
-    expected_data_strategies: list[FinetuneDataStrategy],
+    expected_data_strategies: list[ChatStrategy],
 ):
     assert (
         infer_data_strategies_for_model(mock_available_models, model_id, provider)
@@ -1479,70 +1500,70 @@ def test_infer_data_strategies(
     "model_id, expected_data_strategies",
     [
         # R1 style models
-        ("qwq-32b", [FinetuneDataStrategy.final_and_intermediate_r1_compatible]),
+        ("qwq-32b", [ChatStrategy.single_turn_r1_thinking]),
         (
             "deepseek-r1-distill-qwen-32b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-basic",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-distill-llama-70b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-distill-llama-8b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-distill-qwen-14b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-distill-qwen-1p5b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-distill-qwen-32b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         (
             "deepseek-r1-distill-qwen-7b",
-            [FinetuneDataStrategy.final_and_intermediate_r1_compatible],
+            [ChatStrategy.single_turn_r1_thinking],
         ),
         # non-R1 style models
         (
             "deepseek-v3",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate,
+                ChatStrategy.single_turn,
+                ChatStrategy.two_message_cot,
             ],
         ),
         (
             "deepseek-v3-0324",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate,
+                ChatStrategy.single_turn,
+                ChatStrategy.two_message_cot,
             ],
         ),
         # optional R1 style
         (
             "qwen3-30b-a3b",
             [
-                FinetuneDataStrategy.final_only,
-                FinetuneDataStrategy.final_and_intermediate_r1_compatible,
+                ChatStrategy.single_turn,
+                ChatStrategy.single_turn_r1_thinking,
             ],
         ),
     ],
 )
 def test_data_strategies_from_finetune_id(
-    model_id: str, expected_data_strategies: list[FinetuneDataStrategy]
+    model_id: str, expected_data_strategies: list[ChatStrategy]
 ):
     assert data_strategies_from_finetune_id(model_id) == expected_data_strategies
 

@@ -25,6 +25,14 @@ def use_temp_settings_dir(tmp_path):
         yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_logging():
+    from kiln_ai.utils.logging import setup_litellm_logging
+
+    setup_litellm_logging("test_model_calls.log")
+    yield
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--runpaid",

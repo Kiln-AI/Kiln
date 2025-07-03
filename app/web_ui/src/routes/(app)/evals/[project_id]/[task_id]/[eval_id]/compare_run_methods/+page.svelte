@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
@@ -11,8 +11,6 @@
     ProviderModels,
     TaskRunConfig,
     EvalResultSummary,
-    StructuredOutputMode,
-    AvailableModels,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import {
@@ -20,26 +18,22 @@
     load_model_info,
     model_name,
     provider_name_from_id,
-    prompt_name_from_id,
     current_task_prompts,
     load_available_prompts,
     load_available_models,
-    available_model_details,
-    available_models,
-    current_task,
     load_task,
   } from "$lib/stores"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
+  import {
+    getRunConfigPromptDisplayName,
+    getRunConfigPromptInfoText,
+  } from "$lib/utils/run_config_formatters"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import RunEval from "../run_eval.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import RunOptions from "$lib/ui/run_options.svelte"
+  import AddRunMethod from "./add_run_method.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -67,8 +61,17 @@
 
   $: should_select_eval_config =
     task_run_configs?.length && !evaluator?.current_run_config_id
+
+  // Check if all run configs are 100% complete
+  $: all_run_configs_complete = score_summary?.run_config_percent_complete
+    ? Object.values(score_summary.run_config_percent_complete).every(
+        (percent) => percent >= 1.0,
+      )
+    : false
+
   $: focus_select_eval_config = !!(
-    should_select_eval_config && eval_state?.includes("complete")
+    should_select_eval_config &&
+    (eval_state?.includes("complete") || all_run_configs_complete)
   )
 
   onMount(async () => {
@@ -88,6 +91,8 @@
     // This needs the selected eval config id, set from above requests
     get_score_summary()
   })
+
+  let add_run_method_component: AddRunMethod | null = null
 
   async function get_eval() {
     try {
@@ -349,78 +354,6 @@
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
-  $: run_eval_url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}/eval_config/${current_eval_config_id}/run_task_run_eval?all_run_configs=true`
-
-  let task_run_config_model_name = ""
-  let task_run_config_provider_name = ""
-  let task_run_config_prompt_method = "simple_prompt_builder"
-  let task_run_config_long_prompt_name_provider = ""
-  let task_run_config_temperature: number
-  let task_run_config_top_p: number
-  let task_run_config_structured_output_mode: StructuredOutputMode
-
-  // Update structured_output_mode when model changes
-  $: update_structured_output_mode(
-    task_run_config_model_name,
-    task_run_config_provider_name,
-    $available_models,
-  )
-  function update_structured_output_mode(
-    model_name: string,
-    provider: string,
-    available_models: AvailableModels[],
-  ) {
-    task_run_config_structured_output_mode =
-      available_model_details(model_name, provider, available_models)
-        ?.structured_output_mode || "default"
-  }
-
-  let add_task_config_dialog: Dialog | null = null
-  let add_task_config_error: KilnError | null = null
-  async function add_task_config(): Promise<boolean> {
-    if (
-      !task_run_config_model_name ||
-      !task_run_config_provider_name ||
-      !task_run_config_prompt_method
-    ) {
-      add_task_config_error = new KilnError("Missing required fields", null)
-      return false
-    }
-
-    try {
-      const { error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-          body: {
-            run_config_properties: {
-              model_name: task_run_config_model_name,
-              // @ts-expect-error not checking types here, server will check them
-              model_provider_name: task_run_config_provider_name,
-              prompt_id: task_run_config_prompt_method,
-              temperature: task_run_config_temperature,
-              top_p: task_run_config_top_p,
-              structured_output_mode: task_run_config_structured_output_mode,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      // Load the updated list of task run configs after success
-      get_task_run_configs()
-    } catch (error) {
-      add_task_config_error = createKilnError(error)
-      return false
-    }
-    return true
-  }
 
   function show_incomplete_warning(
     score_summary: EvalResultSummary | null,
@@ -575,12 +508,19 @@
             <button
               class="btn btn-mid mr-2"
               on:click={() => {
-                add_task_config_dialog?.show()
+                add_run_method_component?.show()
               }}>Add Run Method</button
             >
+
             <RunEval
               bind:eval_state
-              bind:run_url={run_eval_url}
+              {project_id}
+              {task_id}
+              {eval_id}
+              {current_eval_config_id}
+              run_all={true}
+              btn_primary={!focus_select_eval_config}
+              eval_type="run_method"
               on_run_complete={() => {
                 get_score_summary()
               }}
@@ -596,7 +536,7 @@
               data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run Eval' to generate missing results.`}
+                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Eval' to generate missing results.`}
                 tight={true}
               />
             </button>
@@ -604,7 +544,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as default' below to select a winner."
+              warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon="info"
               large_icon={focus_select_eval_config}
@@ -614,13 +554,14 @@
         {/if}
 
         <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
+          <table class="table table-fixed">
             <thead>
               <tr>
-                <th>
+                <th class="max-w-[400px]">
                   <div>Run Method</div>
                   <div class="font-normal">How task output is generated</div>
                 </th>
+                <th class="text-center">Status</th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
@@ -636,20 +577,10 @@
                 {@const percent_complete =
                   score_summary?.run_config_percent_complete?.[
                     "" + task_run_config.id
-                  ]}{@const prompt_name =
-                  task_run_config.prompt?.name ||
-                  prompt_name_from_id(
-                    task_run_config?.run_config_properties?.prompt_id,
-                    $current_task_prompts,
-                  )}
-                <tr
-                  class="hover cursor-pointer"
-                  on:click={() => {
-                    goto(
-                      `/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`,
-                    )
-                  }}
-                >
+                  ] || 0.0}
+                {@const prompt_info_text =
+                  getRunConfigPromptInfoText(task_run_config)}
+                <tr class="max-w-[400px]">
                   <td>
                     <div class="font-medium">
                       {model_name(
@@ -659,22 +590,16 @@
                     </div>
 
                     <div class="text-sm text-gray-500">
-                      Prompt:
-                      {#if task_run_config?.prompt?.generator_id && task_run_config?.run_config_properties?.prompt_id?.startsWith("task_run_config::")}
-                        <!-- Special description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
-                        {prompt_name_from_id(
-                          task_run_config?.prompt?.generator_id,
-                          $current_task_prompts,
-                        )}
+                      Prompt: {getRunConfigPromptDisplayName(
+                        task_run_config,
+                        $current_task_prompts,
+                      )}
+                      {#if prompt_info_text}
                         <InfoTooltip
-                          tooltip_text={'The exact prompt was saved under the name "' +
-                            prompt_name +
-                            '". See the Prompt tab for details.'}
+                          tooltip_text={prompt_info_text}
                           position="right"
                           no_pad={true}
                         />
-                      {:else}
-                        {prompt_name}
                       {/if}
                     </div>
                     <div class="text-sm text-gray-500">
@@ -686,38 +611,61 @@
                     <div class="text-sm text-gray-500">
                       Run Method Name: {task_run_config.name}
                     </div>
-                    {#if percent_complete}
-                      {#if percent_complete < 1.0}
-                        <div class="text-sm 'text-error'">
-                          Progress: {(percent_complete * 100.0).toFixed(1)}%
-                        </div>
-                      {/if}
-                    {:else if score_summary}
-                      <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">Progress: 0%</div>
+                  </td>
+                  <td class="text-sm text-center">
+                    {#if percent_complete < 1.0}
+                      <div class="text-error">
+                        {(percent_complete * 100.0).toFixed(0)}% Complete
+                      </div>
+                      <div class="mt-1">
+                        <RunEval
+                          {project_id}
+                          {task_id}
+                          {eval_id}
+                          {current_eval_config_id}
+                          run_config_ids={[task_run_config.id || ""]}
+                          eval_type="run_method"
+                          btn_size="xs"
+                          btn_primary={false}
+                          btn_class="min-w-[120px]"
+                          on_run_complete={() => {
+                            get_score_summary()
+                          }}
+                        />
+                      </div>
+                    {:else}
+                      <div>Complete</div>
                     {/if}
                     {#if task_run_config.id == evaluator.current_run_config_id}
                       <button
-                        class="badge badge-primary mt-2"
-                        on:click={(event) => {
-                          event.stopPropagation()
+                        class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
+                        on:click={() => {
                           set_current_run_config("None")
                         }}
                       >
-                        Default <span class="pl-2">&#x2715;</span>
+                        Default <span class="">&#x2715;</span>
                       </button>
                     {:else}
                       <button
-                        class="badge mt-1 {focus_select_eval_config
-                          ? 'badge-primary'
-                          : 'badge-secondary badge-outline'}"
-                        on:click={(event) => {
-                          event.stopPropagation()
+                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
+                          ? 'btn-primary'
+                          : 'btn-secondary btn-outline'}"
+                        on:click={() => {
                           set_current_run_config(task_run_config.id)
                         }}
                       >
-                        Set as default
+                        Set as Default
                       </button>
+                    {/if}
+                    {#if percent_complete > 0}
+                      <div class="mt-1">
+                        <a
+                          href={`/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`}
+                          class="btn btn-xs btn-outline rounded-full min-w-[120px]"
+                        >
+                          View Data
+                        </a>
+                      </div>
                     {/if}
                   </td>
                   {#each evaluator.output_scores as output_score}
@@ -747,7 +695,7 @@
             ? 'btn-primary'
             : ''}"
           on:click={() => {
-            add_task_config_dialog?.show()
+            add_run_method_component?.show()
           }}
         >
           Add Run Method
@@ -757,50 +705,11 @@
   {/if}
 </AppPage>
 
-<Dialog
-  bind:this={add_task_config_dialog}
-  title="Add a Task Run Method"
-  action_buttons={[
-    {
-      label: "Cancel",
-      isCancel: true,
-    },
-    {
-      label: "Create",
-      isPrimary: true,
-      asyncAction: add_task_config,
-    },
-  ]}
->
-  <h4 class="text-sm text-gray-500">
-    Define a method of running this task (model+prompt).
-  </h4>
-  <h4 class="text-sm text-gray-500 mt-1">
-    Your evaluator can compare multiple run methods to find which one produces
-    the highest scores on your eval dataset.
-  </h4>
-  <div class="flex flex-col gap-2 pt-6">
-    <AvailableModelsDropdown
-      bind:model_name={task_run_config_model_name}
-      bind:provider_name={task_run_config_provider_name}
-      bind:model={task_run_config_long_prompt_name_provider}
-    />
-    <PromptTypeSelector
-      bind:prompt_method={task_run_config_prompt_method}
-      bind:linked_model_selection={task_run_config_long_prompt_name_provider}
-    />
-    <Collapse title="Advanced Options">
-      <RunOptions
-        bind:temperature={task_run_config_temperature}
-        bind:top_p={task_run_config_top_p}
-        bind:structured_output_mode={task_run_config_structured_output_mode}
-        has_structured_output={!!$current_task?.output_json_schema}
-      />
-    </Collapse>
-    {#if add_task_config_error}
-      <div class="text-error text-sm">
-        {add_task_config_error.getMessage() || "An unknown error occurred"}
-      </div>
-    {/if}
-  </div>
-</Dialog>
+<AddRunMethod
+  bind:this={add_run_method_component}
+  {project_id}
+  {task_id}
+  run_method_added={(_) => {
+    get_task_run_configs()
+  }}
+/>

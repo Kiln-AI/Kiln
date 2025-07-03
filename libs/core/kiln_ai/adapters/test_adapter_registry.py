@@ -35,6 +35,7 @@ def mock_finetune_from_id():
     with patch("kiln_ai.adapters.provider_tools.finetune_from_id") as mock:
         mock.return_value.provider = ModelProviderName.openai
         mock.return_value.fine_tune_model_id = "test-model"
+        mock.return_value.data_strategy = "final_only"
         yield mock
 
 

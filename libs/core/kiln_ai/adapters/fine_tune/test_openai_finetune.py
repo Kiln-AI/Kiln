@@ -12,11 +12,11 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetF
 from kiln_ai.adapters.fine_tune.openai_finetune import OpenAIFinetune
 from kiln_ai.datamodel import (
     DatasetSplit,
-    FinetuneDataStrategy,
     StructuredOutputMode,
     Task,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
 from kiln_ai.utils.config import Config
 
@@ -35,7 +35,7 @@ def openai_finetune(tmp_path):
             system_message="Test system message",
             fine_tune_model_id="ft-123",
             path=tmp_file,
-            data_strategy=FinetuneDataStrategy.final_only,
+            data_strategy=ChatStrategy.single_turn,
         ),
     )
     return finetune
@@ -247,7 +247,7 @@ async def test_generate_and_upload_jsonl_success(
         mock_formatter.dump_to_file.assert_called_once_with(
             "train",
             DatasetFormat.OPENAI_CHAT_JSONL,
-            FinetuneDataStrategy.final_only,
+            ChatStrategy.single_turn,
         )
 
         # Verify file was opened and uploaded
@@ -299,7 +299,7 @@ async def test_generate_and_upload_jsonl_schema_success(
         mock_formatter.dump_to_file.assert_called_once_with(
             "train",
             DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL,
-            FinetuneDataStrategy.final_only,
+            ChatStrategy.single_turn,
         )
 
         # Verify file was opened and uploaded
@@ -555,8 +555,8 @@ async def test_status_updates_latest_status(openai_finetune, mock_response):
 @pytest.mark.parametrize(
     "data_strategy,thinking_instructions",
     [
-        (FinetuneDataStrategy.final_and_intermediate, "Custom thinking instructions"),
-        (FinetuneDataStrategy.final_only, None),
+        (ChatStrategy.two_message_cot, "Custom thinking instructions"),
+        (ChatStrategy.single_turn, None),
     ],
 )
 async def test_generate_and_upload_jsonl_with_data_strategy(

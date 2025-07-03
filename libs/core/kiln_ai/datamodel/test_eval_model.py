@@ -1,7 +1,6 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel import BasePrompt
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -11,9 +10,7 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
 )
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.task_output import (
-    TaskOutputRatingType,
-)
+from kiln_ai.datamodel.task_output import TaskOutputRatingType
 
 
 @pytest.fixture

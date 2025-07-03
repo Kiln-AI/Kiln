@@ -27,10 +27,10 @@ from kiln_ai.adapters.provider_tools import (
 )
 from kiln_ai.datamodel import (
     Finetune,
-    FinetuneDataStrategy,
     StructuredOutputMode,
     Task,
 )
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
@@ -72,7 +72,7 @@ def mock_finetune():
         finetune.provider = ModelProviderName.openai
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
-        finetune.data_strategy = FinetuneDataStrategy.final_only
+        finetune.data_strategy = ChatStrategy.single_turn
         mock.return_value = finetune
         yield mock
 
@@ -84,7 +84,7 @@ def mock_finetune_final_and_intermediate():
         finetune.provider = ModelProviderName.openai
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
-        finetune.data_strategy = FinetuneDataStrategy.final_and_intermediate
+        finetune.data_strategy = ChatStrategy.two_message_cot
         mock.return_value = finetune
         yield mock
 
@@ -96,9 +96,7 @@ def mock_finetune_r1_compatible():
         finetune.provider = ModelProviderName.ollama
         finetune.fine_tune_model_id = "ft:deepseek-r1:671b:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
-        finetune.data_strategy = (
-            FinetuneDataStrategy.final_and_intermediate_r1_compatible
-        )
+        finetune.data_strategy = ChatStrategy.single_turn_r1_thinking
         mock.return_value = finetune
         yield mock
 
@@ -583,7 +581,7 @@ def test_finetune_provider_model_structured_mode(
     finetune.provider = provider_name
     finetune.fine_tune_model_id = "fireworks-model-123"
     finetune.structured_output_mode = structured_output_mode
-    finetune.data_strategy = FinetuneDataStrategy.final_only
+    finetune.data_strategy = ChatStrategy.single_turn
     mock_finetune.return_value = finetune
 
     provider = finetune_provider_model("project-123::task-456::finetune-789")
@@ -918,7 +916,7 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     finetune.provider = ModelProviderName.vertex
     finetune.fine_tune_model_id = "projects/123/locations/us-central1/endpoints/456"
     finetune.structured_output_mode = StructuredOutputMode.json_mode
-    finetune.data_strategy = FinetuneDataStrategy.final_only
+    finetune.data_strategy = ChatStrategy.single_turn
     mock_finetune.return_value = finetune
 
     provider = finetune_provider_model("project-123::task-456::finetune-789")

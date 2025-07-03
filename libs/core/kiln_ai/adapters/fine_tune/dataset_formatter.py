@@ -1,14 +1,14 @@
 import json
 import tempfile
-from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
 
-from kiln_ai.adapters.model_adapters.base_adapter import COT_FINAL_ANSWER_PROMPT
-from kiln_ai.datamodel import DatasetSplit, FinetuneDataStrategy, TaskRun
-from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES
+from kiln_ai.adapters.chat.chat_formatter import ChatMessage, get_chat_formatter
+from kiln_ai.datamodel import DatasetSplit, TaskRun
+from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class DatasetFormat(str, Enum):
@@ -35,45 +35,23 @@ class DatasetFormat(str, Enum):
     VERTEX_GEMINI = "vertex_gemini"
 
 
-@dataclass
-class ModelTrainingData:
-    input: str
-    system_message: str
-    final_output: str
-    # These 3 are optional, and used for COT/Thinking style multi-message responses
-    thinking_instructions: str | None = None
-    thinking: str | None = None
-    thinking_final_answer_prompt: str | None = None
-    thinking_r1_style: bool = False
-
-    def supports_cot(self) -> bool:
-        if self.thinking_r1_style:
-            raise ValueError("R1 style does not support COT")
-
-        return (
-            self.thinking_instructions is not None
-            and self.thinking is not None
-            and self.thinking_final_answer_prompt is not None
-        )
-
-
 class FormatGenerator(Protocol):
     """Protocol for format generators"""
 
     def __call__(
         self,
-        training_data: ModelTrainingData,
+        training_chat: list[ChatMessage],
     ) -> Dict[str, Any]: ...
 
 
-def build_training_data(
+def build_training_chat(
     task_run: TaskRun,
     system_message: str,
-    data_strategy: FinetuneDataStrategy,
+    data_strategy: ChatStrategy,
     thinking_instructions: str | None = None,
-) -> ModelTrainingData:
+) -> list[ChatMessage]:
     """
-    Generate data for training.
+    Generate chat message list for training.
 
     For final output, get the best task output from the task run, preferring repaired output if available.
 
@@ -84,52 +62,53 @@ def build_training_data(
         final_output = task_run.repaired_output.output
 
     thinking = None
-    thinking_final_answer_prompt = None
-    thinking_r1_style = False
-    parent_task = task_run.parent_task()
 
-    if data_strategy in THINKING_DATA_STRATEGIES:
-        # Prefer reasoning to cot if both are present
-        thinking = task_run.thinking_training_data()
+    chat_formatter = get_chat_formatter(
+        data_strategy,
+        system_message,
+        task_run.input,
+        thinking_instructions,
+    )
+    # First turn already has it's content (user message)
+    chat_formatter.next_turn(None)
 
-        if data_strategy == FinetuneDataStrategy.final_and_intermediate_r1_compatible:
-            if not task_run.has_thinking_training_data() or not thinking:
-                raise ValueError(
-                    "Thinking data is required when fine-tuning thinking models (R1, QwQ, etc). Please ensure your fine-tuning dataset contains reasoning or chain of thought output for every entry."
-                )
+    match data_strategy:
+        case ChatStrategy.single_turn:
+            chat_formatter.next_turn(final_output)
+        case ChatStrategy.two_message_cot:
+            thinking = get_thinking_data(task_run)
+            chat_formatter.next_turn(thinking)
+            chat_formatter.next_turn(final_output)
+        case ChatStrategy.two_message_cot_legacy:
+            thinking = get_thinking_data(task_run)
+            chat_formatter.next_turn(thinking)
+            chat_formatter.next_turn(final_output)
+        case ChatStrategy.single_turn_r1_thinking:
             if thinking_instructions:
                 raise ValueError(
                     "Thinking instructions are not supported when fine-tuning thinking models (R1, QwQ, etc). Please remove the thinking instructions."
                 )
-            thinking_r1_style = True
-        elif (
-            data_strategy == FinetuneDataStrategy.final_and_intermediate
-            and task_run.has_thinking_training_data()
-        ):
-            if not parent_task:
-                raise ValueError(
-                    "TaskRuns for training required a parent Task for building a chain of thought prompts. Train without COT, or save this TaskRun to a parent Task."
-                )
 
-            thinking_final_answer_prompt = COT_FINAL_ANSWER_PROMPT
+            thinking = get_thinking_data(task_run)
+            response_msg = serialize_r1_style_message(thinking, final_output)
+            chat_formatter.next_turn(response_msg)
+        case _:
+            raise_exhaustive_enum_error(data_strategy)
 
-            # Always use the passed thinking instructions, but check they are present for COT
-            if not thinking_instructions:
-                raise ValueError(
-                    "Thinking instructions are required when data_strategy is final_and_intermediate"
-                )
-        else:
-            raise ValueError(f"Unsupported data strategy: {data_strategy}")
+    return chat_formatter.messages
 
-    return ModelTrainingData(
-        input=task_run.input,
-        system_message=system_message,
-        final_output=final_output,
-        thinking=thinking,
-        thinking_instructions=thinking_instructions,
-        thinking_final_answer_prompt=thinking_final_answer_prompt,
-        thinking_r1_style=thinking_r1_style,
-    )
+
+def get_thinking_data(task_run: TaskRun) -> str:
+    """
+    Raises an error if thinking data is not present.
+    """
+    thinking = task_run.thinking_training_data()
+    if thinking is None:
+        raise ValueError(
+            "Thinking data is required when fine-tuning thinking models. Please ensure your fine-tuning dataset contains reasoning or chain of thought output for every entry."
+        )
+
+    return thinking
 
 
 def serialize_r1_style_message(thinking: str | None, final_output: str):
@@ -141,125 +120,78 @@ def serialize_r1_style_message(thinking: str | None, final_output: str):
     return f"<think>\n{thinking}\n</think>\n\n{final_output}"
 
 
+def generate_chat_message_list(
+    training_chat: list[ChatMessage],
+) -> list[dict[str, str | None]]:
+    """Generate OpenAI chat list. Not the full OpenAI body, just the list of messages."""
+
+    messages: list[dict[str, str | None]] = []
+
+    for msg in training_chat:
+        if msg.role not in ["user", "assistant", "system"]:
+            raise ValueError(f"Unsupported role for OpenAI chat format: {msg.role}")
+
+        messages.append(
+            {
+                "role": msg.role,
+                "content": msg.content,
+            }
+        )
+
+    return messages
+
+
 def generate_chat_message_response(
-    training_data: ModelTrainingData,
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with plaintext response"""
 
-    messages: list[dict[str, str | None]] = [
-        {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
-    ]
-
-    if training_data.thinking_r1_style:
-        messages.extend(
-            [
-                {
-                    "role": "assistant",
-                    "content": serialize_r1_style_message(
-                        thinking=training_data.thinking,
-                        final_output=training_data.final_output,
-                    ),
-                }
-            ]
-        )
-
-        return {"messages": messages}
-    elif training_data.supports_cot():
-        messages.extend(
-            [
-                {"role": "user", "content": training_data.thinking_instructions},
-                {"role": "assistant", "content": training_data.thinking},
-                {
-                    "role": "user",
-                    "content": training_data.thinking_final_answer_prompt,
-                },
-            ]
-        )
-
-    messages.append({"role": "assistant", "content": training_data.final_output})
+    messages: list[dict[str, str | None]] = generate_chat_message_list(training_chat)
 
     return {"messages": messages}
+
+
+def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
+    """Get the structured content of the last message"""
+    if len(training_chat) < 1:
+        raise ValueError("Training chat is empty")
+    try:
+        json_data = json.loads(training_chat[-1].content or "")
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Last message is not JSON (structured), and this format expects structured data: {e}"
+        )
+    if not isinstance(json_data, dict):
+        raise ValueError(
+            "Last message is not a JSON Dictionary (structured data), and this format expects structured_data."
+        )
+    return json_data
 
 
 def generate_json_schema_message(
-    training_data: ModelTrainingData,
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with validated JSON response"""
     # Load and dump to ensure it's valid JSON and goes to 1 line
-    try:
-        json_data = json.loads(training_data.final_output)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Invalid JSON in JSON Schema training set: {e}\nOutput Data: {training_data.final_output}"
-        ) from e
-    json_string = json.dumps(json_data, ensure_ascii=False)
+    last_msg_data = last_message_structured_content(training_chat)
 
-    messages: list[dict[str, str | None]] = [
-        {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
-    ]
+    # re-format the json string in the last message for consistency
+    json_string = json.dumps(last_msg_data, ensure_ascii=False)
+    training_chat[-1].content = json_string
 
-    if training_data.thinking_r1_style:
-        messages.extend(
-            [
-                {
-                    "role": "assistant",
-                    "content": serialize_r1_style_message(
-                        thinking=training_data.thinking,
-                        final_output=training_data.final_output,
-                    ),
-                }
-            ]
-        )
-
-        return {"messages": messages}
-    elif training_data.supports_cot():
-        messages.extend(
-            [
-                {"role": "user", "content": training_data.thinking_instructions},
-                {"role": "assistant", "content": training_data.thinking},
-                {
-                    "role": "user",
-                    "content": training_data.thinking_final_answer_prompt,
-                },
-            ]
-        )
-
-    messages.append({"role": "assistant", "content": json_string})
-
-    return {"messages": messages}
+    return generate_chat_message_response(training_chat)
 
 
 def generate_chat_message_toolcall(
-    training_data: ModelTrainingData,
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with tool call response"""
-    try:
-        arguments = json.loads(training_data.final_output)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in for tool call: {e}") from e
+    last_message_data = last_message_structured_content(training_chat)
 
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
-    ]
+    messages: list[dict[str, Any]] = generate_chat_message_list(training_chat)
 
-    if training_data.thinking_r1_style:
-        raise ValueError(
-            "R1 style thinking is not supported for tool call downloads. Please use a different training strategy."
-        )
-    elif training_data.supports_cot():
-        messages.extend(
-            [
-                {"role": "user", "content": training_data.thinking_instructions},
-                {"role": "assistant", "content": training_data.thinking},
-                {
-                    "role": "user",
-                    "content": training_data.thinking_final_answer_prompt,
-                },
-            ]
-        )
+    # remove the last message, we're going to replace it with a toolcall
+    messages = messages[:-1]
 
     messages.append(
         {
@@ -271,8 +203,7 @@ def generate_chat_message_toolcall(
                     "type": "function",
                     "function": {
                         "name": "task_response",
-                        # Yes we parse then dump again. This ensures it's valid JSON, and ensures it goes to 1 line
-                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                        "arguments": json.dumps(last_message_data, ensure_ascii=False),
                     },
                 }
             ],
@@ -283,76 +214,26 @@ def generate_chat_message_toolcall(
 
 
 def generate_huggingface_chat_template(
-    training_data: ModelTrainingData,
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template"""
 
-    conversations: list[dict[str, Any]] = [
-        {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
-    ]
-
-    if training_data.thinking_r1_style:
-        conversations.extend(
-            [
-                {
-                    "role": "assistant",
-                    "content": serialize_r1_style_message(
-                        thinking=training_data.thinking,
-                        final_output=training_data.final_output,
-                    ),
-                }
-            ]
-        )
-        return {"conversations": conversations}
-
-    if training_data.supports_cot():
-        conversations.extend(
-            [
-                {"role": "user", "content": training_data.thinking_instructions},
-                {"role": "assistant", "content": training_data.thinking},
-                {
-                    "role": "user",
-                    "content": training_data.thinking_final_answer_prompt,
-                },
-            ]
-        )
-
-    conversations.append({"role": "assistant", "content": training_data.final_output})
+    conversations: list[dict[str, Any]] = generate_chat_message_list(training_chat)
 
     return {"conversations": conversations}
 
 
 def generate_huggingface_chat_template_toolcall(
-    training_data: ModelTrainingData,
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template with tool calls"""
-    try:
-        arguments = json.loads(training_data.final_output)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in for tool call: {e}") from e
+    last_message_data = last_message_structured_content(training_chat)
 
     # See https://huggingface.co/docs/transformers/en/chat_templating
-    conversations: list[dict[str, Any]] = [
-        {"role": "system", "content": training_data.system_message},
-        {"role": "user", "content": training_data.input},
-    ]
+    conversations: list[dict[str, Any]] = generate_chat_message_list(training_chat)
 
-    if training_data.thinking_r1_style:
-        raise ValueError(
-            "R1 style thinking is not supported for tool call downloads. Please use a different training strategy."
-        )
-    elif training_data.supports_cot():
-        conversations.extend(
-            [
-                {"role": "user", "content": training_data.thinking_instructions},
-                {"role": "assistant", "content": training_data.thinking},
-                {
-                    "role": "user",
-                    "content": training_data.thinking_final_answer_prompt,
-                },
-            ]
-        )
+    # remove the last message, we're going to replace it with a toolcall
+    conversations = conversations[:-1]
 
     conversations.append(
         {
@@ -363,7 +244,7 @@ def generate_huggingface_chat_template_toolcall(
                     "function": {
                         "name": "task_response",
                         "id": str(uuid4()).replace("-", "")[:9],
-                        "arguments": arguments,
+                        "arguments": last_message_data,
                     },
                 }
             ],
@@ -373,60 +254,41 @@ def generate_huggingface_chat_template_toolcall(
     return {"conversations": conversations}
 
 
+VERTEX_GEMINI_ROLE_MAP = {
+    "system": "system",
+    "user": "user",
+    "assistant": "model",
+}
+
+
 def generate_vertex_gemini(
-    training_data: ModelTrainingData,
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
-    """Generate Vertex Gemini 1.5 format (flash and pro)"""
+    """Generate Vertex Gemini format (flash and pro)"""
     # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning-prepare
 
-    system_instruction = {
-        "role": "system",
-        "parts": [
+    # System message get's it's own entry in top level UI
+    system_instruction = training_chat[0].content
+
+    messages: list[Dict[str, Any]] = []
+    for msg in training_chat[1:]:
+        messages.append(
             {
-                "text": training_data.system_message,
+                "role": VERTEX_GEMINI_ROLE_MAP[msg.role],
+                "parts": [{"text": msg.content}],
             }
-        ],
-    }
-    contents = [
-        {
-            "role": "user",
-            "parts": [
-                {
-                    "text": training_data.input,
-                }
-            ],
-        }
-    ]
-
-    if training_data.thinking_r1_style:
-        raise ValueError(
-            "R1 style thinking is not supported for Vertex Gemini. Please use a different training strategy."
         )
-    elif training_data.supports_cot():
-        contents.extend(
-            [
-                {
-                    "role": "user",
-                    "parts": [{"text": training_data.thinking_instructions}],
-                },
-                {"role": "model", "parts": [{"text": training_data.thinking}]},
-                {
-                    "role": "user",
-                    "parts": [{"text": training_data.thinking_final_answer_prompt}],
-                },
-            ]
-        )
-
-    contents.append(
-        {
-            "role": "model",
-            "parts": [{"text": training_data.final_output}],
-        }
-    )
 
     return {
-        "systemInstruction": system_instruction,
-        "contents": contents,
+        "systemInstruction": {
+            "role": "system",
+            "parts": [
+                {
+                    "text": system_instruction,
+                }
+            ],
+        },
+        "contents": messages,
     }
 
 
@@ -462,7 +324,7 @@ class DatasetFormatter:
         self,
         split_name: str,
         format_type: DatasetFormat,
-        data_strategy: FinetuneDataStrategy,
+        data_strategy: ChatStrategy,
         path: Path | None = None,
     ) -> Path:
         """
@@ -508,13 +370,13 @@ class DatasetFormatter:
                         f"Task run {run_id} not found. This is required by this dataset."
                     )
 
-                training_data = build_training_data(
+                training_chat = build_training_chat(
                     task_run=task_run,
                     system_message=self.system_message,
                     data_strategy=data_strategy,
                     thinking_instructions=self.thinking_instructions,
                 )
-                example = generator(training_data)
+                example = generator(training_chat)
                 # Allow non-ascii characters in the dataset.
                 # Better readability for non-English users. If you don't support UTF-8... you should.
                 f.write(json.dumps(example, ensure_ascii=False) + "\n")
