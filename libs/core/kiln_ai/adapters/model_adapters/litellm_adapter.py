@@ -285,6 +285,8 @@ class LiteLlmAdapter(BaseAdapter):
 
         return extra_body
 
+    # TODO: refactor this to be shared with other implementations of LiteLLM adapters
+    # for example, embedding adapter for LiteLLM, and also Exractor adapter for LiteLLM
     def litellm_model_id(self) -> str:
         # The model ID is an interesting combination of format and url endpoint.
         # It specifics the provider URL/host, but this is overridden if you manually set an api url

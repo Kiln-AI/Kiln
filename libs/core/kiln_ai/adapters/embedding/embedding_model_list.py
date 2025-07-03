@@ -23,7 +23,7 @@ class EmbeddingModelName(str, Enum):
     """
 
     # Embedding models
-    openai_text_embedding_3 = "openai_text_embedding_3"
+    openai_text_embedding_3_small = "openai_text_embedding_3_small"
     gemini_text_embedding_004 = "gemini_text_embedding_004"
 
 
@@ -59,15 +59,15 @@ class KilnEmbeddingModel(BaseModel):
 embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.openai,
-        name=EmbeddingModelName.openai_text_embedding_3,
-        friendly_name="text-embedding-3",
+        name=EmbeddingModelName.openai_text_embedding_3_small,
+        friendly_name="text-embedding-3-small",
         providers=[
             KilnEmbeddingModelProvider(
                 # TODO: wondering if should use separate enum for the ModelProviderName,
                 # but since the hooking up of providers is global, maybe reusing is
                 # best?
                 name=ModelProviderName.openai,
-                model_id="text-embedding-3",
+                model_id="text-embedding-3-small",
                 supports_custom_dimensions=True,
                 max_input_tokens=8192,
             ),
@@ -94,3 +94,14 @@ def get_model_by_name(name: EmbeddingModelName) -> KilnEmbeddingModel:
         if model.name == name:
             return model
     raise ValueError(f"Embedding model {name} not found in the list of built-in models")
+
+
+def built_in_embedding_models_from_provider(
+    provider: ModelProviderName, model_id: str
+) -> KilnEmbeddingModelProvider | None:
+    for model in embedding_models:
+        if model.family == provider and model.name == model_id:
+            for p in model.providers:
+                if p.name == provider:
+                    return p
+    return None
