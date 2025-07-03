@@ -21,47 +21,33 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.extraction import Extraction
     from kiln_ai.datamodel.project import Project
 
-DEFAULT_CHUNK_SIZE = 256
-DEFAULT_CHUNK_OVERLAP = 10
-
 
 def validate_fixed_window_chunker_properties(
     properties: dict[str, str | int | float | bool],
 ) -> dict[str, str | int | float | bool]:
     """Validate the properties for the fixed window chunker and set defaults if needed."""
     chunk_overlap = properties.get("chunk_overlap")
+    if chunk_overlap is None:
+        raise ValueError("Chunk overlap is required.")
+
     chunk_size = properties.get("chunk_size")
+    if chunk_size is None:
+        raise ValueError("Chunk size is required.")
 
-    # avoid a situation where user provides a chunk_overlap > DEFAULT_CHUNK_SIZE
-    if chunk_overlap is not None and chunk_size is None:
-        raise ValueError("Chunk size is required if chunk overlap is provided.")
+    if not isinstance(chunk_overlap, int):
+        raise ValueError("Chunk overlap must be an integer.")
+    if chunk_overlap < 0:
+        raise ValueError("Chunk overlap must be greater than or equal to 0.")
 
-    if chunk_overlap is not None:
-        if not isinstance(chunk_overlap, int):
-            raise ValueError("Chunk overlap must be an integer.")
-        if chunk_overlap < 0:
-            raise ValueError("Chunk overlap must be greater than or equal to 0.")
+    if not isinstance(chunk_size, int):
+        raise ValueError("Chunk size must be an integer.")
+    if chunk_size <= 0:
+        raise ValueError("Chunk size must be greater than 0.")
 
-    if chunk_size is not None:
-        if not isinstance(chunk_size, int):
-            raise ValueError("Chunk size must be an integer.")
-        if chunk_size <= 0:
-            raise ValueError("Chunk size must be greater than 0.")
-
-    if (
-        isinstance(chunk_overlap, int)
-        and isinstance(chunk_size, int)
-        and chunk_overlap >= chunk_size
-    ):
+    if chunk_overlap >= chunk_size:
         raise ValueError("Chunk overlap must be less than chunk size.")
 
-    def default_if_none(value: int | None, default: int) -> int:
-        return value if value is not None else default
-
-    return {
-        "chunk_overlap": default_if_none(chunk_overlap, DEFAULT_CHUNK_OVERLAP),
-        "chunk_size": default_if_none(chunk_size, DEFAULT_CHUNK_SIZE),
-    }
+    return properties
 
 
 class ChunkerType(str, Enum):

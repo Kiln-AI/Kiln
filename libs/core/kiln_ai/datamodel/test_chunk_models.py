@@ -26,20 +26,14 @@ def mock_project(tmp_path):
 class TestFixedWindowChunkerProperties:
     """Test the FixedWindowChunkerProperties class."""
 
-    def test_default_values(self):
-        """Test that default values are set correctly."""
-        config = ChunkerConfig(
-            name="test-chunker",
-            chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={},
-        )
-        assert config.properties == {
-            "chunk_size": 256,
-            "chunk_overlap": 10,
-        }
-
-        assert config.chunk_size() == 256
-        assert config.chunk_overlap() == 10
+    def test_required_fields(self):
+        """Test that required fields are set correctly."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={},
+            )
 
     def test_custom_values(self):
         """Test that custom values can be set."""
@@ -117,16 +111,13 @@ class TestFixedWindowChunkerProperties:
             )
 
     def test_validation_chunk_size_without_overlap(self):
-        """Test that chunk size without overlap will set overlap to default."""
-        config = ChunkerConfig(
-            name="test-chunker",
-            chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 100},
-        )
-        assert config.properties == {
-            "chunk_size": 100,
-            "chunk_overlap": 10,
-        }
+        """Test that chunk size without overlap will raise an error."""
+        with pytest.raises(ValueError, match="Chunk overlap is required."):
+            ChunkerConfig(
+                name="test-chunker",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={"chunk_size": 100},
+            )
 
     def test_validation_wrong_type(self):
         """Test that wrong type is rejected."""
@@ -168,27 +159,15 @@ class TestChunkerType:
 class TestChunkerConfig:
     """Test the ChunkerConfig class."""
 
-    def test_required_fields(self):
-        """Test that required fields are properly validated."""
-        # Should work with all required fields
-        config = ChunkerConfig(
-            name="test-chunker",
-            chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={},
-        )
-        assert config.name == "test-chunker"
-        assert config.chunker_type == ChunkerType.FIXED_WINDOW
-        assert config.properties == {
-            "chunk_size": 256,
-            "chunk_overlap": 10,
-        }
-
     def test_optional_description(self):
         """Test that description is optional."""
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={},
+            properties={
+                "chunk_size": 100,
+                "chunk_overlap": 10,
+            },
         )
         assert config.description is None
 
@@ -196,7 +175,10 @@ class TestChunkerConfig:
             name="test-chunker",
             description="A test chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={},
+            properties={
+                "chunk_size": 100,
+                "chunk_overlap": 10,
+            },
         )
         assert config_with_desc.description == "A test chunker"
 
@@ -206,7 +188,10 @@ class TestChunkerConfig:
         config = ChunkerConfig(
             name="valid-name_123",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={},
+            properties={
+                "chunk_size": 100,
+                "chunk_overlap": 10,
+            },
         )
         assert config.name == "valid-name_123"
 
@@ -231,7 +216,10 @@ class TestChunkerConfig:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={},
+            properties={
+                "chunk_size": 100,
+                "chunk_overlap": 10,
+            },
         )
         assert config.parent_project() is None
 
