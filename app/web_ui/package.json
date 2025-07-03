@@ -40,6 +40,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@floating-ui/dom": "^1.7.2",
     "highlight.js": "^11.10.0",
     "openapi-fetch": "^0.12.2",
     "posthog-js": "^1.184.2"

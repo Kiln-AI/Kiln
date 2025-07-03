@@ -1,13 +1,16 @@
 import argparse
-import asyncio
 import json
+import logging
 import os
+import threading
 from pathlib import Path
 from typing import List
 
 import requests
 
 from .ml_model_list import KilnModel, built_in_models
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_config(models: List[KilnModel], path: str | Path) -> None:
@@ -40,19 +43,16 @@ def load_remote_models(url: str) -> None:
     if os.environ.get("KILN_SKIP_REMOTE_MODEL_LIST") == "true":
         return
 
-    async def fetch_and_replace() -> None:
+    def fetch_and_replace() -> None:
         try:
-            models = await asyncio.to_thread(load_from_url, url)
+            models = load_from_url(url)
             built_in_models[:] = models
         except Exception as exc:
             # Do not crash startup, but surface the issue
-            import logging
+            logger.warning("Failed to fetch remote model list from %s: %s", url, exc)
 
-            logging.getLogger(__name__).warning(
-                "Failed to fetch remote model list from %s: %s", url, exc
-            )
-
-    asyncio.get_event_loop().create_task(fetch_and_replace())
+    thread = threading.Thread(target=fetch_and_replace, daemon=True)
+    thread.start()
 
 
 def main() -> None:

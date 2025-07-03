@@ -77,6 +77,11 @@ class CorrelationCalculator:
             return None
         x = [score.measured_score for score in self.scores]
         y = [score.human_score for score in self.scores]
+
+        # Check for constant arrays (no variation)
+        if len(set(x)) <= 1 or len(set(y)) <= 1:
+            return None
+
         result = stats.spearmanr(x, y)
         # library doesn't support proper types
         correlation = result.__getattribute__("correlation")
@@ -91,6 +96,11 @@ class CorrelationCalculator:
             return None
         x = [score.measured_score for score in self.scores]
         y = [score.human_score for score in self.scores]
+
+        # Check for constant arrays (no variation)
+        if len(set(x)) <= 1 or len(set(y)) <= 1:
+            return None
+
         result = stats.pearsonr(x, y)
         if math.isnan(result.correlation):
             # Very small samples may have a NaN result (unknown correlation)
@@ -103,6 +113,11 @@ class CorrelationCalculator:
             return None
         x = [score.measured_score for score in self.scores]
         y = [score.human_score for score in self.scores]
+
+        # Check for constant arrays (no variation)
+        if len(set(x)) <= 1 or len(set(y)) <= 1:
+            return None
+
         result = stats.kendalltau(x, y)
         if math.isnan(result.correlation):
             # Very small samples may have a NaN result (unknown correlation)

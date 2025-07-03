@@ -254,7 +254,7 @@ async def test_connect_openrouter():
 
 @pytest.fixture
 def mock_environ():
-    with patch("app.desktop.studio_server.provider_api.os.environ", {}) as mock_env:
+    with patch("os.environ", {}) as mock_env:
         yield mock_env
 
 

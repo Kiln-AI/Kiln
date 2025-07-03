@@ -502,3 +502,41 @@ async def test_all_built_in_models_logprobs_geval(
         model_name,
         provider_name.value,
     )
+
+
+def check_supports_llm_as_judge(model_name: str, provider_name: str):
+    for model in built_in_models:
+        if model.name != model_name:
+            continue
+        for provider in model.providers:
+            if provider.name != provider_name:
+                continue
+            if not provider.supports_structured_output:
+                pytest.skip(
+                    f"Skipping {model.name} {provider.name} because it does not support llm_as_judge (structured_output_mode)"
+                )
+            return
+    raise RuntimeError(f"No model {model_name} {provider_name} found")
+
+
+@pytest.mark.paid
+@pytest.mark.ollama
+@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
+async def test_all_built_in_models_llm_as_judge(
+    model_name,
+    provider_name,
+    test_task,
+    test_eval_config,
+    test_task_run,
+    test_run_config,
+):
+    check_supports_llm_as_judge(model_name, provider_name)
+    await run_g_eval_test(
+        test_task,
+        test_eval_config,
+        test_task_run,
+        EvalConfigType.llm_as_judge,
+        test_run_config,
+        model_name,
+        provider_name.value,
+    )

@@ -6,13 +6,7 @@ from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
-from kiln_ai.datamodel import (
-    BasePrompt,
-    DataSource,
-    DataSourceType,
-    Task,
-    TaskRun,
-)
+from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
@@ -130,6 +124,13 @@ class ScoreSummary(BaseModel):
     mean_score: float
 
 
+class MeanUsage(BaseModel):
+    mean_input_tokens: float | None = None
+    mean_output_tokens: float | None = None
+    mean_total_tokens: float | None = None
+    mean_cost: float | None = None
+
+
 class EvalRunResult(BaseModel):
     results: List[EvalRun]
     eval: Eval
@@ -176,6 +177,28 @@ class EvalConfigCompareSummary(BaseModel):
     fully_rated_count: int
     partially_rated_count: int
     not_rated_count: int
+
+
+class EvalConfigResult(BaseModel):
+    eval_config_id: ID_TYPE
+    # output_score_id -> ScoreSummary | None (None when no data available)
+    results: Dict[str, ScoreSummary | None]
+    # percent of the dataset that has been processed
+    percent_complete: float
+
+
+class RunConfigEvalResult(BaseModel):
+    eval_id: ID_TYPE
+    eval_name: str
+    dataset_size: int
+    eval_config_result: EvalConfigResult | None
+    missing_default_eval_config: bool
+
+
+class RunConfigEvalScoresSummary(BaseModel):
+    eval_results: List[RunConfigEvalResult]
+    # mean usage statistics across all eval runs for this run config
+    mean_usage: MeanUsage | None = None
 
 
 class UpdateEvalRequest(BaseModel):
@@ -851,4 +874,180 @@ def connect_evals_api(app: FastAPI):
             fully_rated_count=fully_rated_count,
             partially_rated_count=partially_rated_count,
             not_rated_count=not_rated_count,
+        )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores"
+    )
+    async def get_run_config_eval_scores(
+        project_id: str,
+        task_id: str,
+        run_config_id: str,
+    ) -> RunConfigEvalScoresSummary:
+        task = task_from_id(project_id, task_id)
+
+        # Verify the run config exists
+        task_run_config_from_id(project_id, task_id, run_config_id)
+
+        evals = task.evals()
+        eval_results: List[RunConfigEvalResult] = []
+
+        # Usage tracking across all eval configs for this run config
+        total_input_tokens = 0.0
+        total_output_tokens = 0.0
+        total_total_tokens = 0.0
+        total_cost = 0.0
+        input_tokens_count = 0
+        output_tokens_count = 0
+        total_tokens_count = 0
+        cost_count = 0
+        total_eval_runs = 0
+
+        for eval in evals:
+            # Get the dataset size for this eval
+            expected_dataset_ids = dataset_ids_in_filter(
+                task, eval.eval_set_filter_id, readonly=True
+            )
+            dataset_size = len(expected_dataset_ids)
+
+            # Only process the default eval config (only if only one eval config, or default is set explicitly if many)
+            default_eval_config = None
+            eval_configs = eval.configs(readonly=True)
+            if len(eval_configs) == 1:
+                default_eval_config = eval_configs[0]
+            else:
+                if eval.current_config_id:
+                    default_eval_config = next(
+                        (
+                            config
+                            for config in eval_configs
+                            if config.id == eval.current_config_id
+                        ),
+                        None,
+                    )
+
+            if not default_eval_config:
+                # No default eval config set, so we can't process this eval. Still return it so UI can show an error
+                eval_results.append(
+                    RunConfigEvalResult(
+                        eval_id=eval.id,
+                        eval_name=eval.name,
+                        dataset_size=dataset_size,
+                        eval_config_result=None,
+                        missing_default_eval_config=True,
+                    )
+                )
+                continue
+
+            eval_config = default_eval_config
+            # Track which dataset items we've seen for this eval_config
+            remaining_expected_dataset_ids = set(expected_dataset_ids)
+            partial_incomplete_count = 0
+
+            # output_score_json_key -> score/total for calculating the mean score
+            total_scores: Dict[str, float] = {}
+            score_counts: Dict[str, int] = {}
+
+            for eval_run in eval_config.runs(readonly=True):
+                # Only include eval_runs for our specific run_config
+                if eval_run.task_run_config_id != run_config_id:
+                    continue
+
+                # Check if this dataset_id is expected for this eval
+                if eval_run.dataset_id not in remaining_expected_dataset_ids:
+                    continue
+                else:
+                    remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+
+                total_eval_runs += 1
+
+                # Get usage data from the corresponding TaskRun
+                if eval_run.task_run_usage:
+                    usage = eval_run.task_run_usage
+                    if usage.input_tokens is not None:
+                        total_input_tokens += usage.input_tokens
+                        input_tokens_count += 1
+                    if usage.output_tokens is not None:
+                        total_output_tokens += usage.output_tokens
+                        output_tokens_count += 1
+                    if usage.total_tokens is not None:
+                        total_total_tokens += usage.total_tokens
+                        total_tokens_count += 1
+                    if usage.cost is not None:
+                        total_cost += usage.cost
+                        cost_count += 1
+
+                incomplete = False
+                for output_score in eval.output_scores:
+                    score_key = output_score.json_key()
+                    if score_key not in total_scores:
+                        total_scores[score_key] = 0
+                        score_counts[score_key] = 0
+
+                    if score_key in eval_run.scores:
+                        total_scores[score_key] += eval_run.scores[score_key]
+                        score_counts[score_key] += 1
+                    else:
+                        # We're missing a required score, so this eval_run is incomplete
+                        incomplete = True
+
+                if incomplete:
+                    partial_incomplete_count += 1
+
+            # Initialize results with all expected score keys as None
+            results: Dict[str, ScoreSummary | None] = {}
+            for output_score in eval.output_scores:
+                score_key = output_score.json_key()
+                results[score_key] = None
+
+            # Convert to score summaries where we have data
+            for output_score_id, score in total_scores.items():
+                count = score_counts[output_score_id]
+                if count > 0:
+                    results[output_score_id] = ScoreSummary(mean_score=score / count)
+
+            # Calculate the percent of the dataset that has been processed
+            incomplete_count = partial_incomplete_count + len(
+                remaining_expected_dataset_ids
+            )
+            if dataset_size > 0:
+                percent_incomplete = incomplete_count / dataset_size
+                percent_complete = 1 - percent_incomplete
+            else:
+                percent_complete = 0.0
+
+            eval_results.append(
+                RunConfigEvalResult(
+                    eval_id=eval.id,
+                    eval_name=eval.name,
+                    dataset_size=dataset_size,
+                    missing_default_eval_config=False,
+                    eval_config_result=EvalConfigResult(
+                        eval_config_id=eval_config.id,
+                        results=results,
+                        percent_complete=percent_complete,
+                    ),
+                )
+            )
+
+        # Calculate mean usage across all eval runs for this run config (only include values where >= 50% of samples have data)
+        mean_usage = None
+        if total_eval_runs > 0:
+            threshold = total_eval_runs * 0.5
+            mean_usage = MeanUsage(
+                mean_input_tokens=total_input_tokens / input_tokens_count
+                if input_tokens_count >= threshold
+                else None,
+                mean_output_tokens=total_output_tokens / output_tokens_count
+                if output_tokens_count >= threshold
+                else None,
+                mean_total_tokens=total_total_tokens / total_tokens_count
+                if total_tokens_count >= threshold
+                else None,
+                mean_cost=total_cost / cost_count if cost_count >= threshold else None,
+            )
+
+        return RunConfigEvalScoresSummary(
+            eval_results=eval_results,
+            mean_usage=mean_usage,
         )

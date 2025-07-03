@@ -14,8 +14,8 @@ headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
 
 echo "${headerStart}Checking Python: Ruff, format, check${headerEnd}"
-# I is import sorting
-uvx  ruff check --select I
+# I is import sorting, F401 is unused imports
+uvx  ruff check --select I,F401
 uvx ruff format --check .
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
