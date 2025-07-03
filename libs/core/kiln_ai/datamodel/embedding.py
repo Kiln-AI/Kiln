@@ -1,8 +1,9 @@
-from typing import TYPE_CHECKING, Any, List, Union
+from typing import TYPE_CHECKING, List, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.chunk import ChunkedDocument
@@ -14,10 +15,14 @@ class EmbeddingConfig(KilnParentedModel):
     description: str | None = Field(
         default=None, description="The description of the embedding config"
     )
-    model_provider: Any = Field(
+    model_provider: ModelProviderName = Field(
         description="The provider to use to generate embeddings.",
     )
-    model_name: Any = Field(
+    # TODO: should model_name be the EmbeddingModelName enum instead of a string?
+    # in the TaskRunConfigProperties, we store model_name as a plain string:
+    # https://github.com/Kiln-AI/Kiln/blob/b92dde56d9259aa47ba4f71a820f90138bd86c6e/libs/core/kiln_ai/datamodel/task.py#L55
+    # maybe for backward compatibility when we deprecate old models?
+    model_name: str = Field(
         description="The model to use to generate embeddings.",
     )
     properties: dict[str, str | int | float | bool] = Field(
@@ -35,7 +40,8 @@ class EmbeddingConfig(KilnParentedModel):
     def validate_properties(
         cls, properties: dict[str, str | int | float | bool], info: ValidationInfo
     ) -> dict[str, str | int | float | bool]:
-        # TODO: no properties for now
+        # TODO: validate optionally provided value for dimensions
+        # based on whether the model supports_custom_dimensions
         return properties
 
 

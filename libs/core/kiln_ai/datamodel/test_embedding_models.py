@@ -152,6 +152,26 @@ class TestEmbeddingConfig:
         )
         assert config.parent_project() == mock_project
 
+    def test_model_provider_validation(self, mock_project):
+        """Test model_provider field validation."""
+        config = EmbeddingConfig(
+            name="test-embedding",
+            model_provider="openai",
+            model_name="text-embedding-3",
+            properties={},
+            parent=mock_project,
+        )
+        assert config.model_provider == "openai"
+
+        with pytest.raises(ValueError):
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider="invalid-provider",
+                model_name="text-embedding-3",
+                parent=mock_project,
+                properties={},
+            )
+
 
 class TestEmbedding:
     """Test the Embedding class."""
