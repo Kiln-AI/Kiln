@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, List, Union
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, NAME_FIELD, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -15,7 +15,7 @@ class EmbeddingConfig(KilnParentedModel):
     description: str | None = Field(
         default=None, description="The description of the embedding config"
     )
-    model_provider: ModelProviderName = Field(
+    model_provider_name: ModelProviderName = Field(
         description="The provider to use to generate embeddings.",
     )
     # TODO: should model_name be the EmbeddingModelName enum instead of a string?
@@ -35,14 +35,37 @@ class EmbeddingConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    @field_validator("properties")
-    @classmethod
-    def validate_properties(
-        cls, properties: dict[str, str | int | float | bool], info: ValidationInfo
-    ) -> dict[str, str | int | float | bool]:
-        # TODO: validate optionally provided value for dimensions
-        # based on whether the model supports_custom_dimensions
-        return properties
+    @model_validator(mode="after")
+    def validate_properties(self):
+        # FIXME: not ideal to import here, but if we import normally, we get a circular import
+        # We should probably move the ml model lists out of the adapters package, since they are
+        # base constructs with no dependencies (and we seem to be getting a circular import due
+        # to the __init__.py rather than due to intrinsic circularity)
+        from kiln_ai.adapters.ml_embedding_model_list import (
+            built_in_embedding_models_from_provider,
+        )
+
+        model_provider = built_in_embedding_models_from_provider(
+            self.model_provider_name, self.model_name
+        )
+
+        if model_provider is None:
+            raise ValueError(
+                f"Model provider {self.model_provider_name} not found in the list of built-in models"
+            )
+
+        if "dimensions" in self.properties:
+            if not model_provider.supports_custom_dimensions:
+                raise ValueError(
+                    f"The model {self.model_name} does not support custom dimensions"
+                )
+            if (
+                not isinstance(self.properties["dimensions"], int)
+                or self.properties["dimensions"] <= 0
+            ):
+                raise ValueError("Dimensions must be a positive integer")
+
+        return self
 
 
 class Embedding(BaseModel):

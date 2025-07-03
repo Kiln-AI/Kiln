@@ -22,8 +22,11 @@ class EmbeddingModelName(str, Enum):
     Enumeration of specific model versions supported by the system.
     """
 
-    # Embedding models
-    openai_text_embedding_3 = "openai_text_embedding_3"
+    # Embedding model names are often generic (e.g., "text-embedding"),
+    # so we prefix them with the provider name (e.g., "openai_") to ensure
+    # uniqueness across providers now and in the future
+    openai_text_embedding_3_small = "openai_text_embedding_3_small"
+    openai_text_embedding_3_large = "openai_text_embedding_3_large"
     gemini_text_embedding_004 = "gemini_text_embedding_004"
 
 
@@ -34,7 +37,7 @@ class KilnEmbeddingModelProvider(BaseModel):
 
     max_input_tokens: int | None = None
 
-    supported_dimensions: List[int] | None = Field(
+    n_dimensions: int | None = Field(
         default=None,
         description="The number of dimensions in the output embedding. If the model allows picking between different options, provide the list of available dimensions.",
     )
@@ -50,26 +53,41 @@ class KilnEmbeddingModel(BaseModel):
     Configuration for a specific embedding model.
     """
 
-    family: KilnEmbeddingModelFamily
+    family: str
     name: str
     friendly_name: str
     providers: List[KilnEmbeddingModelProvider]
 
 
-embedding_models: List[KilnEmbeddingModel] = [
+built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.openai,
-        name=EmbeddingModelName.openai_text_embedding_3,
-        friendly_name="text-embedding-3",
+        name=EmbeddingModelName.openai_text_embedding_3_small,
+        friendly_name="text-embedding-3-small",
         providers=[
             KilnEmbeddingModelProvider(
                 # TODO: wondering if should use separate enum for the ModelProviderName,
                 # but since the hooking up of providers is global, maybe reusing is
                 # best?
                 name=ModelProviderName.openai,
-                model_id="text-embedding-3",
-                supports_custom_dimensions=True,
+                model_id="text-embedding-3-small",
+                n_dimensions=1536,
                 max_input_tokens=8192,
+                supports_custom_dimensions=True,
+            ),
+        ],
+    ),
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.openai,
+        name=EmbeddingModelName.openai_text_embedding_3_large,
+        friendly_name="text-embedding-3-large",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openai,
+                model_id="text-embedding-3-large",
+                n_dimensions=3072,
+                max_input_tokens=8192,
+                supports_custom_dimensions=True,
             ),
         ],
     ),
@@ -81,7 +99,7 @@ embedding_models: List[KilnEmbeddingModel] = [
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="text-embedding-004",
-                supported_dimensions=[768],
+                n_dimensions=768,
                 max_input_tokens=2048,
             ),
         ],
@@ -90,7 +108,18 @@ embedding_models: List[KilnEmbeddingModel] = [
 
 
 def get_model_by_name(name: EmbeddingModelName) -> KilnEmbeddingModel:
-    for model in embedding_models:
+    for model in built_in_embedding_models:
         if model.name == name:
             return model
     raise ValueError(f"Embedding model {name} not found in the list of built-in models")
+
+
+def built_in_embedding_models_from_provider(
+    provider_name: ModelProviderName, model_name: str
+) -> KilnEmbeddingModelProvider | None:
+    for model in built_in_embedding_models:
+        if model.name == model_name:
+            for p in model.providers:
+                if p.name == provider_name:
+                    return p
+    return None

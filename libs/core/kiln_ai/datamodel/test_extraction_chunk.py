@@ -180,8 +180,8 @@ class TestIntegration:
                 name="test-embedding-config",
                 description="Test embedding config",
                 parent=mock_project,
-                model_name="test-model",
-                model_provider="openai",
+                model_name="openai_text_embedding_3_small",
+                model_provider_name="openai",
                 properties={},
             )
             embedding_config.save_to_file()
