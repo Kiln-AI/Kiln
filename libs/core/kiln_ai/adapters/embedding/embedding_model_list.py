@@ -23,7 +23,7 @@ class EmbeddingModelName(str, Enum):
     """
 
     # Embedding models
-    openai_text_embedding_3 = "openai_text_embedding_3_small"
+    openai_text_embedding_3 = "openai_text_embedding_3"
     gemini_text_embedding_004 = "gemini_text_embedding_004"
 
 
@@ -74,12 +74,12 @@ embedding_models: List[KilnEmbeddingModel] = [
         ],
     ),
     KilnEmbeddingModel(
-        family=KilnEmbeddingModelFamily.openai,
+        family=KilnEmbeddingModelFamily.gemini,
         name=EmbeddingModelName.gemini_text_embedding_004,
         friendly_name="text-embedding-004",
         providers=[
             KilnEmbeddingModelProvider(
-                name=ModelProviderName.openai,
+                name=ModelProviderName.gemini_api,
                 model_id="text-embedding-004",
                 supported_dimensions=[768],
                 max_input_tokens=2048,
