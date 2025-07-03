@@ -98,15 +98,17 @@ class ChunkerConfig(KilnParentedModel):
 
 
 class Chunk(BaseModel):
-    attachment: KilnAttachmentModel = Field(description="The attachment of the chunk.")
+    content: KilnAttachmentModel = Field(
+        description="The content of the chunk, stored as an attachment."
+    )
 
-    @field_serializer("attachment")
-    def serialize_attachment(
-        self, attachment: KilnAttachmentModel, info: SerializationInfo
+    @field_serializer("content")
+    def serialize_content(
+        self, content: KilnAttachmentModel, info: SerializationInfo
     ) -> dict:
         context = info.context or {}
-        context["filename_prefix"] = "chunk_attachment"
-        return attachment.model_dump(mode="json", context=context)
+        context["filename_prefix"] = "content"
+        return content.model_dump(mode="json", context=context)
 
 
 class ChunkedDocument(KilnParentedModel):

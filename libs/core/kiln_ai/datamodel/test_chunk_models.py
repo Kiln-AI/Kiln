@@ -229,17 +229,17 @@ class TestChunk:
 
     def test_required_fields(self):
         """Test that required fields are properly validated."""
-        # Create a temporary file for the attachment
+        # Create a temporary file for the content
         with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
             tmp_file.write(b"test content")
             tmp_path = Path(tmp_file.name)
 
             attachment = KilnAttachmentModel.from_file(tmp_path)
-            chunk = Chunk(attachment=attachment)
-            assert chunk.attachment == attachment
+            chunk = Chunk(content=attachment)
+            assert chunk.content == attachment
 
-    def test_attachment_validation(self):
-        """Test that attachment field is properly validated."""
+    def test_content_validation(self):
+        """Test that content field is properly validated."""
         # Create a temporary file for the attachment
         with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
             tmp_file.write(b"test content")
@@ -247,12 +247,12 @@ class TestChunk:
 
             # Test with valid attachment
             attachment = KilnAttachmentModel.from_file(tmp_path)
-            chunk = Chunk(attachment=attachment)
-            assert chunk.attachment == attachment
+            chunk = Chunk(content=attachment)
+            assert chunk.content == attachment
 
             # Test that attachment is required
             with pytest.raises(ValueError):
-                Chunk(attachment=None)
+                Chunk(content=None)
 
 
 class TestChunkedDocument:
@@ -272,8 +272,8 @@ class TestChunkedDocument:
             tmp_path = Path(tmp_file.name)
 
             attachment = KilnAttachmentModel.from_file(tmp_path)
-            chunk1 = Chunk(attachment=attachment)
-            chunk2 = Chunk(attachment=attachment)
+            chunk1 = Chunk(content=attachment)
+            chunk2 = Chunk(content=attachment)
 
             chunks = [chunk1, chunk2]
             doc = ChunkedDocument(chunks=chunks, chunker_config_id="fake-id")
@@ -300,7 +300,7 @@ class TestChunkedDocument:
 
             # Test with valid list of chunks
             attachment = KilnAttachmentModel.from_file(tmp_path)
-            chunk = Chunk(attachment=attachment)
+            chunk = Chunk(content=attachment)
             chunks = [chunk]
 
             doc = ChunkedDocument(

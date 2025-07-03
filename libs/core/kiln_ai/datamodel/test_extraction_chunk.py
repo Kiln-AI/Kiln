@@ -54,8 +54,8 @@ class TestIntegration:
             attachment = KilnAttachmentModel.from_file(tmp_path)
 
             # Create chunks
-            chunk1 = Chunk(attachment=attachment)
-            chunk2 = Chunk(attachment=attachment)
+            chunk1 = Chunk(content=attachment)
+            chunk2 = Chunk(content=attachment)
 
             # Create chunk document
             doc = ChunkedDocument(
@@ -69,8 +69,8 @@ class TestIntegration:
             assert config.chunk_size() == 256
             assert config.chunk_overlap() == 10
             assert len(doc.chunks) == 2
-            assert doc.chunks[0].attachment == attachment
-            assert doc.chunks[1].attachment == attachment
+            assert doc.chunks[0].content == attachment
+            assert doc.chunks[1].content == attachment
 
     def test_serialization(self, mock_project):
         """Test that models can be serialized and deserialized."""
@@ -150,7 +150,7 @@ class TestIntegration:
         extraction.save_to_file()
 
         # Create some chunks
-        chunks = [Chunk(attachment=KilnAttachmentModel.from_file(tmp_path))] * 3
+        chunks = [Chunk(content=KilnAttachmentModel.from_file(tmp_path))] * 3
 
         chunked_document = ChunkedDocument(
             parent=extraction,
