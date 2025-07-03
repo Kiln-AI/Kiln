@@ -181,7 +181,7 @@ class TestIntegration:
                 description="Test embedding config",
                 parent=mock_project,
                 model_name="test-model",
-                model_provider="test-provider",
+                model_provider="openai",
                 properties={},
             )
             embedding_config.save_to_file()
