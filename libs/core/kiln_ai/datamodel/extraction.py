@@ -79,19 +79,19 @@ class ExtractionModel(BaseModel):
 EXTRACTION_MODEL_LIST = {
     ExtractorType.GEMINI: [
         ExtractionModel(
-            name="gemini-2.5-pro",
+            name="gemini/gemini-2.5-pro",
             label="Gemini 2.5 Pro",
         ),
         ExtractionModel(
-            name="gemini-2.5-flash",
+            name="gemini/gemini-2.5-flash",
             label="Gemini 2.5 Flash",
         ),
         ExtractionModel(
-            name="gemini-2.0-flash",
+            name="gemini/gemini-2.0-flash",
             label="Gemini 2.0 Flash",
         ),
         ExtractionModel(
-            name="gemini-2.0-flash-lite",
+            name="gemini/gemini-2.0-flash-lite",
             label="Gemini 2.0 Flash Lite",
         ),
     ],
