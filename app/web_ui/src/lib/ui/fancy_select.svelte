@@ -1,12 +1,6 @@
 <script lang="ts">
   import type { OptionGroup } from "./fancy_select_types"
-  import {
-    computePosition,
-    autoUpdate,
-    shift,
-    offset,
-    size,
-  } from "@floating-ui/dom"
+  import { computePosition, autoUpdate, shift, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
   export let options: OptionGroup[] = []
@@ -24,6 +18,7 @@
   let listVisible = false
   let cleanupAutoUpdate: (() => void) | null = null
   let mounted = false
+  let naturalDropdownHeight: number | null = null
   const id = Math.random().toString(36).substring(2, 15)
 
   // Search functionality variables
@@ -65,6 +60,7 @@
   $: if (!listVisible) {
     searchText = ""
     isSearching = false
+    naturalDropdownHeight = null // Reset cached height when dropdown closes
   }
 
   onMount(() => {
@@ -121,9 +117,6 @@
     cleanupAutoUpdate = null
   }
 
-  // Threshold for when to start expanding upward (adjust as needed)
-  const minSpaceThreshold = 1200
-
   function setupFloatingPosition() {
     if (!selectedElement || !dropdownElement) return
 
@@ -133,83 +126,72 @@
         strategy: "fixed",
         middleware: [
           offset(2), // Small gap between trigger and dropdown
-          // Custom positioning middleware to handle expansion upward instead of flipping
+          // Custom positioning and sizing middleware to handle the 3 cases
           {
-            name: "customPositioning",
-            fn: ({ x, y, rects, elements: _ }) => {
+            name: "customPositioningAndSizing",
+            fn: ({ x, y, rects, elements }) => {
               const viewportHeight = window.innerHeight
               const referenceRect = rects.reference
               const padding = 10
+              const floatingEl = elements.floating
 
-              // Calculate available spaces
+              // Calculate space below reference element
               const spaceBelow =
-                viewportHeight -
-                (referenceRect.y + referenceRect.height) -
-                padding
+                viewportHeight - (referenceRect.y + referenceRect.height) - 2 // 2px gap
 
-              if (spaceBelow >= minSpaceThreshold) {
-                // Enough space below, position normally below the reference
-                return { x, y }
-              } else {
-                // Not enough space below, position to start from top of viewport
-                const targetY = padding
-                return { x, y: targetY }
-              }
-            },
-          },
-          shift({ padding: 8 }), // Shift to stay in viewport horizontally
-          size({
-            apply({ availableHeight, availableWidth, elements, rects }) {
-              // Get viewport dimensions and reference element position
-              const viewportHeight = window.innerHeight
-              const referenceRect = rects.reference
-              const padding = 10 // 10px from edges
-
-              // Calculate available space below the reference element
-              const spaceBelow =
-                viewportHeight -
-                (referenceRect.y + referenceRect.height) -
-                padding
-
-              // Determine max height based on our custom logic:
-              // 1. If enough space below, use space below
-              // 2. If not enough space below, position from top with equal padding
-              let maxHeight
-              if (spaceBelow >= minSpaceThreshold) {
-                // Enough space below, limit to space below
-                maxHeight = Math.min(availableHeight, spaceBelow)
-              } else {
-                // Not enough space below, position from top with 10px padding at top and bottom
-                maxHeight = Math.min(
-                  availableHeight,
-                  viewportHeight - 2 * padding,
-                )
+              // Get the natural height of the dropdown content (measure only once)
+              if (naturalDropdownHeight === null) {
+                // First time measuring - temporarily set max height to auto to get natural height
+                floatingEl.style.maxHeight = "none"
+                naturalDropdownHeight = floatingEl.scrollHeight
               }
 
               // Calculate width - minimum 300px or reference width, whichever is larger
               const minWidth = 300
               const referenceWidth = referenceRect.width
               const desiredWidth = Math.max(minWidth, referenceWidth)
-              const maxWidth = Math.min(desiredWidth, availableWidth)
-
-              // Apply dimensions to the dropdown container
-              Object.assign(elements.floating.style, {
-                maxHeight: `${maxHeight}px`,
-                width: `${maxWidth}px`,
-              })
-
-              // Also set CSS custom properties that we can use for the inner menu
-              elements.floating.style.setProperty(
-                "--dropdown-max-height",
-                `${maxHeight - 32}px`,
-              ) // Account for padding
-              elements.floating.style.setProperty(
-                "--dropdown-width",
-                `${maxWidth}px`,
+              const maxWidth = Math.min(
+                desiredWidth,
+                window.innerWidth - 2 * padding,
               )
+
+              let finalHeight
+              let finalY = y
+
+              // CASE 1: Content fits below reference element
+              if (naturalDropdownHeight <= spaceBelow) {
+                finalHeight = naturalDropdownHeight
+                finalY = y // Normal positioning (2px below reference)
+              }
+              // CASE 2: Doesn't fit below but shorter than viewport - 20px
+              else if (naturalDropdownHeight <= viewportHeight - 20) {
+                finalHeight = naturalDropdownHeight
+                // Anchor to bottom of viewport with 10px padding
+                finalY = viewportHeight - naturalDropdownHeight - padding
+              }
+              // CASE 3: Taller than viewport - 20px
+              else {
+                finalHeight = viewportHeight - 2 * padding
+                // Position from top of viewport with 10px padding
+                finalY = padding
+              }
+
+              // Add some height for the search input
+              if (isSearching) {
+                finalHeight = finalHeight + 80
+              }
+
+              // Set CSS custom properties for the height and width of the dropdown
+              floatingEl.style.setProperty(
+                "--dropdown-max-height",
+                `${finalHeight}px`,
+              ) // Account for padding
+              floatingEl.style.setProperty("--dropdown-width", `${maxWidth}px`)
+
+              return { x, y: finalY }
             },
-            padding: 10, // Match our edge padding
-          }),
+          },
+          shift({ padding: 8 }), // Shift to stay in viewport horizontally
         ],
       }).then(({ x, y }) => {
         Object.assign(dropdownElement.style, {
@@ -438,7 +420,7 @@
       bind:this={dropdownElement}
       class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col fixed"
       style="width: var(--dropdown-width, {selectedElement?.offsetWidth ||
-        0}px); max-height: var(--dropdown-max-height, 300px);"
+        0}px); max-height: var(--dropdown-max-height, 2000px);"
     >
       <!-- Search input - only show when searching -->
       {#if isSearching}
@@ -503,9 +485,6 @@
       <ul
         class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
         use:scrollableCheck
-        style="max-height: calc(var(--dropdown-max-height, 300px) - {isSearching
-          ? '4rem'
-          : '1rem'});"
       >
         {#each filteredOptions as option, sectionIndex}
           <li class="menu-title pl-1 sticky top-0 bg-white z-10">
