@@ -2466,7 +2466,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
