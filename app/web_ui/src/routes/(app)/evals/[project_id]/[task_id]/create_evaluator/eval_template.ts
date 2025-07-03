@@ -6,4 +6,6 @@ export type EvalTemplateResult = {
   name: string
   description: string
   output_scores: EvalOutputScore[]
+  default_eval_tag: string
+  default_golden_tag: string
 }

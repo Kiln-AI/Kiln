@@ -29,6 +29,7 @@ class EvalTemplateId(str, Enum):
     """
 
     kiln_requirements = "kiln_requirements"
+    issue = "kiln_issue"
     toxicity = "toxicity"
     bias = "bias"
     maliciousness = "maliciousness"
