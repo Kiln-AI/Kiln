@@ -159,6 +159,8 @@ class TestIntegration:
         )
         chunked_document.save_to_file()
 
+        assert len(chunked_document.chunks) == 3
+
         # Check that the document chunked is associated with the correct extraction
         assert chunked_document.parent_extraction().id == extraction.id
 
@@ -166,3 +168,8 @@ class TestIntegration:
             assert chunked_document.id == chunked_document_found.id
 
         assert len(extraction.chunked_documents()) == 1
+
+        # the chunks should have a filename prefixed with content_
+        for chunk in chunked_document.chunks:
+            filename = chunk.content.path.name
+            assert filename.startswith("content_")
