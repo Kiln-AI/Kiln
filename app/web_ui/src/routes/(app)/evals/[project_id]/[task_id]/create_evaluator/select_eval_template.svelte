@@ -62,6 +62,7 @@
         ],
         default_eval_tag: "eval_set",
         default_golden_tag: "golden",
+        template_properties: {},
       },
     },
     {
@@ -81,6 +82,7 @@
         ],
         default_eval_tag: "toxicity_eval_set",
         default_golden_tag: "toxicity_golden",
+        template_properties: {},
       },
     },
     {
@@ -102,6 +104,7 @@
         ],
         default_eval_tag: "bias_eval_set",
         default_golden_tag: "bias_golden",
+        template_properties: {},
       },
     },
     {
@@ -123,6 +126,7 @@
         ],
         default_eval_tag: "maliciousness_eval_set",
         default_golden_tag: "maliciousness_golden",
+        template_properties: {},
       },
     },
     {
@@ -144,6 +148,7 @@
         ],
         default_eval_tag: "factual_eval_set",
         default_golden_tag: "factual_golden",
+        template_properties: {},
       },
     },
     {
@@ -166,6 +171,7 @@
         ],
         default_eval_tag: "jailbreak_eval_set",
         default_golden_tag: "jailbreak_golden",
+        template_properties: {},
       },
     },
   ]
@@ -228,6 +234,7 @@
         output_scores: output_scores,
         default_eval_tag: "eval_set",
         default_golden_tag: "golden",
+        template_properties: {},
       })
       return
     }
@@ -291,6 +298,11 @@
       default_eval_tag: "eval_" + generate_issue_eval_tag(issue_eval_name),
       default_golden_tag:
         "eval_golden_" + generate_issue_eval_tag(issue_eval_name),
+      template_properties: {
+        issue_prompt: issue_eval_prompt,
+        failure_example: failure_example,
+        pass_example: pass_example,
+      },
     })
   }
 </script>

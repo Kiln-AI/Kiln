@@ -1224,6 +1224,10 @@ export interface components {
             eval_set_filter_id: string;
             /** Eval Configs Filter Id */
             eval_configs_filter_id: string;
+            /** Template Properties */
+            template_properties: {
+                [key: string]: string | number | boolean;
+            };
         };
         /**
          * CreateFinetuneRequest
@@ -1549,6 +1553,14 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /**
+             * Template Properties
+             * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
+             * @default {}
+             */
+            template_properties: {
+                [key: string]: string | number | boolean;
+            };
             /** Model Type */
             readonly model_type: string;
         };

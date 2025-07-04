@@ -286,6 +286,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
+    template_properties: dict[str, str | int | bool | float] = Field(
+        default={},
+        description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
+    )
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -309,4 +313,28 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_template_properties(self) -> Self:
+        print(f"val template_properties: {self.template_properties}")
+
+        # Check for properties that are required for the issue template
+        if self.template == EvalTemplateId.issue:
+            if "issue_prompt" not in self.template_properties or not isinstance(
+                self.template_properties["issue_prompt"], str
+            ):
+                raise ValueError("issue_prompt is required for issue template")
+            if "failure_example" in self.template_properties and not isinstance(
+                self.template_properties["failure_example"], str
+            ):
+                raise ValueError(
+                    "failure_example is optional for issue template, but if provided must be a string"
+                )
+            if "pass_example" in self.template_properties and not isinstance(
+                self.template_properties["pass_example"], str
+            ):
+                raise ValueError(
+                    "pass_example is optional for issue template, but if provided must be a string"
+                )
         return self

@@ -8,6 +8,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalOutputScore,
     EvalRun,
+    EvalTemplateId,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
@@ -630,3 +631,147 @@ def test_eval_run_eval_config_eval_validation():
             output="test output",
             scores={"score": 1.0},
         )
+
+
+@pytest.mark.parametrize(
+    "template_properties,should_raise,expected_error",
+    [
+        # Valid cases
+        (
+            {"issue_prompt": "Test issue prompt"},
+            False,
+            None,
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": "Test failure example",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": "Test failure example",
+                "pass_example": "Test pass example",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "issue_prompt": "",
+                "failure_example": "",
+                "pass_example": "",
+            },
+            False,
+            None,
+        ),
+        # Invalid cases
+        (
+            {},
+            True,
+            "issue_prompt is required for issue template",
+        ),
+        (
+            {"failure_example": "Test failure example"},
+            True,
+            "issue_prompt is required for issue template",
+        ),
+        (
+            {"issue_prompt": 123},
+            True,
+            "issue_prompt is required for issue template",
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": 456,
+            },
+            True,
+            "failure_example is optional for issue template, but if provided must be a string",
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": "Test failure example",
+                "pass_example": 789,
+            },
+            True,
+            "pass_example is optional for issue template, but if provided must be a string",
+        ),
+    ],
+)
+def test_eval_template_properties_issue_template_validation(
+    template_properties, should_raise, expected_error
+):
+    """Test issue template validation with various property combinations"""
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            Eval(
+                name="Test Eval",
+                template=EvalTemplateId.issue,
+                eval_set_filter_id="tag::tag1",
+                eval_configs_filter_id="tag::tag2",
+                output_scores=[
+                    EvalOutputScore(
+                        name="score",
+                        type=TaskOutputRatingType.pass_fail,
+                    )
+                ],
+                template_properties=template_properties,
+            )
+    else:
+        eval = Eval(
+            name="Test Eval",
+            template=EvalTemplateId.issue,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="score",
+                    type=TaskOutputRatingType.pass_fail,
+                )
+            ],
+            template_properties=template_properties,
+        )
+        assert eval.template == EvalTemplateId.issue
+        for key, value in template_properties.items():
+            assert eval.template_properties[key] == value
+
+
+@pytest.mark.parametrize(
+    "template,template_properties",
+    [
+        (EvalTemplateId.kiln_requirements, {"random_property": "random_value"}),
+        (EvalTemplateId.toxicity, {}),
+        (EvalTemplateId.bias, {"some_property": 123}),
+        (EvalTemplateId.maliciousness, {"test": True}),
+        (EvalTemplateId.factual_correctness, {"score": 4.5}),
+        (EvalTemplateId.jailbreak, {"prompt": "test"}),
+        (
+            None,
+            {"issue_prompt": "This should not be validated", "failure_example": 123},
+        ),
+    ],
+)
+def test_eval_template_properties_non_issue_templates(template, template_properties):
+    """Test that non-issue templates pass validation regardless of template_properties"""
+    eval = Eval(
+        name="Test Eval",
+        template=template,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        template_properties=template_properties,
+    )
+
+    assert eval.template == template
+    for key, value in template_properties.items():
+        assert eval.template_properties[key] == value
