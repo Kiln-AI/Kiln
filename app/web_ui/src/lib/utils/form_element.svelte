@@ -115,7 +115,7 @@
       </div>
       {#if description || error_message}
         <div class="text-xs text-gray-500">
-          {description}
+          {description || ""}
           {#if error_message}
             <span class="text-error">
               <InfoTooltip tooltip_text={error_message} position="bottom" />
