@@ -249,32 +249,34 @@
     return true
   }
 
-  const DEFAULT_ISSUE_EVAL_PROMPT =
-    "The response should not [describe issue].\n\nHere is an example of a failure: [example - recommended].\n\nHere is an example of a pass: [example - optional]."
   let issue_eval_dialog: Dialog | undefined = undefined
   let issue_eval_name = ""
-  let issue_eval_prompt = DEFAULT_ISSUE_EVAL_PROMPT
+  let issue_eval_prompt = ""
+  let failure_example = ""
+  let pass_example = ""
   let issue_eval_create_complete = false
 
   function generate_issue_eval_tag(name: string) {
     return name.toLowerCase().replace(/ /g, "_")
   }
 
-  function validate_issue_eval_prompt(): string | null {
-    if (issue_eval_prompt.includes("[example - recommended]")) {
-      return "Please fill in the '[example - recommended]' section with an example of the issue failure, or remove this section of the template."
-    }
-    if (issue_eval_prompt.includes("[example - optional]")) {
-      return "Please fill in the '[example - optional]' section with an example of the issue success, or remove this section of the template."
-    }
-    if (issue_eval_prompt.includes("[describe issue]")) {
-      return "Please fill in the '[describe issue]' section with a description of the issue, or remove this section of the template."
-    }
-    return null
-  }
-
   function create_issue_eval() {
     issue_eval_create_complete = true
+
+    let prompt = issue_eval_prompt
+    if (failure_example) {
+      prompt +=
+        "\n\nHere is an example of a failure:\n<failure_example>\n" +
+        failure_example +
+        "\n</failure_example>"
+    }
+    if (pass_example) {
+      prompt +=
+        "\n\nHere is an example of a pass:\n<pass_example>\n" +
+        pass_example +
+        "\n</pass_example>"
+    }
+
     selected_template_callback({
       template_id: "kiln_issue",
       name: "Issue - " + issue_eval_name,
@@ -283,7 +285,7 @@
         {
           name: issue_eval_name,
           type: "pass_fail",
-          instruction: issue_eval_prompt,
+          instruction: prompt,
         },
       ],
       default_eval_tag: "eval_" + generate_issue_eval_tag(issue_eval_name),
@@ -389,7 +391,7 @@
     on:submit={create_issue_eval}
     warn_before_unload={!!(
       !issue_eval_create_complete &&
-      (issue_eval_name || issue_eval_prompt !== DEFAULT_ISSUE_EVAL_PROMPT)
+      (issue_eval_name || issue_eval_prompt || failure_example || pass_example)
     )}
   >
     <div class="font-light text-sm">
@@ -406,13 +408,28 @@
     />
     <FormElement
       label="Issue Prompt"
-      description="Fill in the template below. This prompt will be passed to the Judge model to check for the issue."
-      info_description="We suggest filling in the template format with a detailed description of the issue, and a failure example."
+      description="Describe the issue you're trying to catch. This prompt will be passed to the judge model to check for the issue."
       inputType="textarea"
-      tall="medium"
-      validator={validate_issue_eval_prompt}
       id="prompt"
       bind:value={issue_eval_prompt}
+    />
+    <FormElement
+      label="Failure Example - Recommended"
+      description="An example of model output that should fail the eval."
+      info_description="Including an example helps the judge model understand the issue."
+      inputType="textarea"
+      id="failure_example"
+      optional={true}
+      bind:value={failure_example}
+    />
+    <FormElement
+      label="Passing Example"
+      description="An example of model output that should pass the eval."
+      info_description="Including an example helps the judge model understand the issue."
+      inputType="textarea"
+      id="pass_example"
+      optional={true}
+      bind:value={pass_example}
     />
   </FormContainer>
 </Dialog>
