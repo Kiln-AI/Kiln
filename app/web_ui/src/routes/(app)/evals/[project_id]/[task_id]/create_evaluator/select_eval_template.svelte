@@ -270,20 +270,6 @@
   function create_issue_eval() {
     issue_eval_create_complete = true
 
-    let prompt = issue_eval_prompt
-    if (failure_example) {
-      prompt +=
-        "\n\nHere is an example of a failure:\n<failure_example>\n" +
-        failure_example +
-        "\n</failure_example>"
-    }
-    if (pass_example) {
-      prompt +=
-        "\n\nHere is an example of a pass:\n<pass_example>\n" +
-        pass_example +
-        "\n</pass_example>"
-    }
-
     selected_template_callback({
       template_id: "kiln_issue",
       name: "Issue - " + issue_eval_name,
@@ -292,7 +278,7 @@
         {
           name: issue_eval_name,
           type: "pass_fail",
-          instruction: prompt,
+          instruction: issue_eval_prompt,
         },
       ],
       default_eval_tag: "eval_" + generate_issue_eval_tag(issue_eval_name),
@@ -421,6 +407,7 @@
     <FormElement
       label="Issue Prompt"
       description="Describe the issue you're trying to catch. This prompt will be passed to the judge model to check for the issue."
+      info_description="A good prompt is clear, specific, and focused on a single issue. Try starting with 'The output should not...' or 'The output should always...'."
       inputType="textarea"
       id="prompt"
       bind:value={issue_eval_prompt}
