@@ -36,12 +36,18 @@
   })
 
   let selected_template: EvalTemplateId | "none" | null = null
+  let default_eval_tag: string | undefined = undefined
+  let default_golden_tag: string | undefined = undefined
+  let template_properties: Record<string, string | number | boolean> = {}
   function on_selected_template(template: EvalTemplateResult) {
     // Populate out model from the template
     name = template.name
     description = template.description
     output_scores = template.output_scores
     selected_template = template.template_id
+    default_eval_tag = template.default_eval_tag
+    default_golden_tag = template.default_golden_tag
+    template_properties = template.template_properties
   }
 
   // Data for the creation
@@ -93,6 +99,7 @@
               template: selected_template === "none" ? null : selected_template,
               eval_set_filter_id,
               eval_configs_filter_id,
+              template_properties,
             },
           },
         )
@@ -113,29 +120,8 @@
     }
   }
 
-  // Default tags for each eval template
-  const eval_set_default_tags: Record<EvalTemplateId | "none", string> = {
-    kiln_requirements: "eval_set",
-    toxicity: "toxicity_eval_set",
-    bias: "bias_eval_set",
-    maliciousness: "maliciousness_eval_set",
-    factual_correctness: "factual_eval_set",
-    jailbreak: "jailbreak_eval_set",
-    none: "eval_set",
-  }
-  $: suggested_eval_set_tag =
-    eval_set_default_tags[selected_template ?? "none"] || "eval_set"
-  const config_set_default_tags: Record<EvalTemplateId | "none", string> = {
-    kiln_requirements: "golden",
-    toxicity: "toxicity_golden",
-    bias: "bias_golden",
-    maliciousness: "maliciousness_golden",
-    factual_correctness: "factual_golden",
-    jailbreak: "jailbreak_golden",
-    none: "golden",
-  }
-  $: suggested_config_set_tag =
-    config_set_default_tags[selected_template ?? "none"] || "golden"
+  $: suggested_eval_set_tag = default_eval_tag || "eval_set"
+  $: suggested_config_set_tag = default_golden_tag || "golden"
 </script>
 
 <div class="max-w-[1400px]">
