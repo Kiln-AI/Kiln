@@ -117,6 +117,17 @@
     cleanupAutoUpdate = null
   }
 
+  function getEffectiveViewportHeight(element: HTMLElement): number {
+    // Check if we're inside a Kiln Dialog.svelte or DaisyUI dialog element
+    const dialog = element.closest(".modal-box")
+    if (dialog) {
+      return dialog.clientHeight
+    }
+
+    // Fall back to window height if not in a dialog
+    return window.innerHeight
+  }
+
   function setupFloatingPosition() {
     if (!selectedElement || !dropdownElement) return
 
@@ -130,7 +141,8 @@
           {
             name: "customPositioningAndSizing",
             fn: ({ x, y, rects, elements }) => {
-              const viewportHeight = window.innerHeight
+              // Find the effective viewport height - could be constrained by a dialog/modal
+              const viewportHeight = getEffectiveViewportHeight(selectedElement)
               const referenceRect = rects.reference
               const padding = 10
               const floatingEl = elements.floating

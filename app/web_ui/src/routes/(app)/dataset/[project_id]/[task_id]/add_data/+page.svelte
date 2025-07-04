@@ -76,9 +76,16 @@
     } else if (id === "run_task") {
       goto("/run")
     } else if (id === "synthetic") {
-      goto(
-        `/generate/${$page.params.project_id}/${$page.params.task_id}?reason=${reason}&splits=${$page.url.searchParams.get("splits")}`,
-      )
+      const params = new URLSearchParams()
+      if (reason) params.set("reason", reason)
+      const template_id = $page.url.searchParams.get("template_id")
+      if (template_id) params.set("template_id", template_id)
+      const splits_param = $page.url.searchParams.get("splits")
+      if (splits_param) params.set("splits", splits_param)
+
+      const query_string = params.toString()
+      const url = `/generate/${$page.params.project_id}/${$page.params.task_id}?${query_string}`
+      goto(url)
     }
   }
 
