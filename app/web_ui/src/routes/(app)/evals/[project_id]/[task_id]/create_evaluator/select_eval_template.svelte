@@ -9,6 +9,7 @@
   import { page } from "$app/stores"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import { generate_issue_eval_tag } from "./eval_utils"
 
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
@@ -263,12 +264,9 @@
   let pass_example = ""
   let issue_eval_create_complete = false
 
-  function generate_issue_eval_tag(name: string) {
-    return name.toLowerCase().replace(/ /g, "_")
-  }
-
   function create_issue_eval() {
     issue_eval_create_complete = true
+    const eval_tag = generate_issue_eval_tag(issue_eval_name)
 
     selected_template_callback({
       template_id: "kiln_issue",
@@ -281,9 +279,8 @@
           instruction: issue_eval_prompt,
         },
       ],
-      default_eval_tag: "eval_" + generate_issue_eval_tag(issue_eval_name),
-      default_golden_tag:
-        "eval_golden_" + generate_issue_eval_tag(issue_eval_name),
+      default_eval_tag: "eval_" + eval_tag,
+      default_golden_tag: "eval_golden_" + eval_tag,
       template_properties: {
         issue_prompt: issue_eval_prompt,
         failure_example: failure_example,
