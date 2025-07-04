@@ -181,6 +181,7 @@ class KilnModelProvider(BaseModel):
     reasoning_capable: bool = False
     supports_logprobs: bool = False
     suggested_for_evals: bool = False
+    suggested_for_uncensored: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
 
     # TODO P1: Need a more generalized way to handle custom provider parameters.
@@ -1950,12 +1951,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 model_id="dolphin-mixtral:8x22b",
+                suggested_for_uncensored=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="cognitivecomputations/dolphin-mixtral-8x22b",
+                suggested_for_uncensored=True,
             ),
         ],
     ),
@@ -1972,6 +1975,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
+                suggested_for_uncensored=True,
             ),
         ],
     ),
@@ -1987,6 +1991,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_uncensored=True,
             ),
         ],
     ),

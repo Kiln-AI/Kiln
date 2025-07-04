@@ -1,4 +1,5 @@
 import asyncio
+import os
 from unittest.mock import patch
 
 import pytest
@@ -50,6 +51,7 @@ def test_dump_builtin_config(tmp_path):
 
 @pytest.mark.asyncio
 async def test_load_remote_models_success(monkeypatch):
+    del os.environ["KILN_SKIP_REMOTE_MODEL_LIST"]
     original = built_in_models.copy()
     sample_models = [built_in_models[0]]
 

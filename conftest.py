@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 import litellm
@@ -9,6 +10,16 @@ from kiln_ai.utils.config import Config
 @pytest.fixture(autouse=True)
 def _clear_httpx_clients() -> None:
     litellm.in_memory_llm_clients_cache.flush_cache()
+
+
+@pytest.fixture(autouse=True)
+def skip_remote_model_list():
+    """Set environment variable to skip remote model list fetching during tests"""
+    os.environ["KILN_SKIP_REMOTE_MODEL_LIST"] = "true"
+    yield
+    # Clean up after the test
+    if "KILN_SKIP_REMOTE_MODEL_LIST" in os.environ:
+        del os.environ["KILN_SKIP_REMOTE_MODEL_LIST"]
 
 
 @pytest.fixture(scope="session", autouse=True)
