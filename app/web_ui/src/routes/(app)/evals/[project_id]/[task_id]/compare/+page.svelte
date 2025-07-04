@@ -304,8 +304,9 @@
     task_prompts: PromptResponse | null,
     _: AvailableModels[],
   ): OptionGroup[] {
-    if (!configs || configs.length === 0) {
-      return []
+    // Default to empty, so we still get default "Add New" option group
+    if (!configs) {
+      configs = []
     }
 
     // Group by provider
