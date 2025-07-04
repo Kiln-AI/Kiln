@@ -26,7 +26,7 @@
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let tall: boolean | "medium" = false
+  export let tall: boolean | "medium" | "xl" = false
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -134,9 +134,11 @@
         {id}
         class="textarea text-base textarea-bordered w-full {tall === true
           ? 'h-60'
-          : tall === 'medium'
-            ? 'h-36'
-            : 'h-18'} wrap-pre text-left align-top
+          : tall === 'xl'
+            ? 'h-96'
+            : tall === 'medium'
+              ? 'h-36'
+              : 'h-18'} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
         on:input={run_validator}

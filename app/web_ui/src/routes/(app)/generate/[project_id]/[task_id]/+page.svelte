@@ -15,11 +15,11 @@
   import { type SampleData } from "./gen_model"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
   import Splits from "$lib/ui/splits.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
   import DataGenIntro from "./data_gen_intro.svelte"
+  import SynthDataGuidance from "./synth_data_guidance.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -52,7 +52,7 @@
     }
   }
 
-  let human_guidance_dialog: Dialog | null = null
+  let human_guidance_dialog: SynthDataGuidance | null = null
 
   // Empty to start but will be populated from IndexedDB after task is loaded
   let root_node: Writable<SampleDataNode> = writable({
@@ -304,11 +304,6 @@
       const error = createKilnError(e)
       return { saved_id: null, error }
     }
-  }
-
-  function clear_human_guidance() {
-    human_guidance = ""
-    return true
   }
 
   $: is_empty =
@@ -572,40 +567,4 @@
   </form>
 </dialog>
 
-<Dialog
-  bind:this={human_guidance_dialog}
-  title="Human Guidance"
-  action_buttons={[
-    {
-      label: "Clear",
-      action: clear_human_guidance,
-      disabled: human_guidance.length == 0,
-    },
-    {
-      label: "Done",
-      isPrimary: true,
-    },
-  ]}
->
-  <div>
-    <div class="text-sm text-gray-500">
-      Add human guidance to improve or steer the AI-generated data. Learn more
-      and see examples <a
-        href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
-        target="_blank"
-        class="link">in the docs</a
-      >.
-    </div>
-
-    <div class="flex flex-col gap-2 w-full mt-4">
-      <label for="human_guidance" class="label font-medium p-0 text-sm"
-        >Guidance to help the model generate relevant data:</label
-      >
-      <textarea
-        id="human_guidance"
-        bind:value={human_guidance}
-        class="input input-bordered h-[200px] py-2"
-      />
-    </div>
-  </div>
-</Dialog>
+<SynthDataGuidance bind:human_guidance bind:this={human_guidance_dialog} />
