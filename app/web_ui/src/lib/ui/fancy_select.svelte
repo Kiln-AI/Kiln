@@ -162,31 +162,27 @@
               if (naturalDropdownHeight <= spaceBelow) {
                 finalHeight = naturalDropdownHeight
                 finalY = y // Normal positioning (2px below reference)
+                // Add some height for the search input, allowing it to grow downwards. The max-height isn't really used in this case as it will be it's natural height.
+                finalHeight = finalHeight + 100
               }
-              // CASE 2: Doesn't fit below but shorter than viewport - 20px
+              // CASE 2: Doesn't fit below but shorter than viewport - 20px (padding)
               else if (naturalDropdownHeight <= viewportHeight - 20) {
                 finalHeight = naturalDropdownHeight
                 // Anchor to bottom of viewport with 10px padding
                 finalY = viewportHeight - naturalDropdownHeight - padding
               }
-              // CASE 3: Taller than viewport - 20px
+              // CASE 3: Taller than viewport - 20px (padding)
               else {
                 finalHeight = viewportHeight - 2 * padding
                 // Position from top of viewport with 10px padding
                 finalY = padding
               }
 
-              // Add some height for the search input
-              if (isSearching) {
-                finalHeight = finalHeight + 80
-              }
-
-              // Set CSS custom properties for the height and width of the dropdown
-              floatingEl.style.setProperty(
-                "--dropdown-max-height",
-                `${finalHeight}px`,
-              ) // Account for padding
+              // Set the width of the dropdown
               floatingEl.style.setProperty("--dropdown-width", `${maxWidth}px`)
+
+              // Also set max-height directly on the dropdown element for immediate effect
+              floatingEl.style.maxHeight = `${finalHeight}px`
 
               return { x, y: finalY }
             },
@@ -420,7 +416,7 @@
       bind:this={dropdownElement}
       class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col fixed"
       style="width: var(--dropdown-width, {selectedElement?.offsetWidth ||
-        0}px); max-height: var(--dropdown-max-height, 2000px);"
+        0}px);"
     >
       <!-- Search input - only show when searching -->
       {#if isSearching}
