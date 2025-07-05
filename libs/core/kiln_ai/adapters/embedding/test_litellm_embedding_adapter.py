@@ -18,8 +18,8 @@ from kiln_ai.utils.config import Config
 def mock_embedding_config():
     return EmbeddingConfig(
         name="test-embedding",
-        model_provider=ModelProviderName.openai,
-        model_name="text-embedding-3",
+        model_provider_name=ModelProviderName.openai,
+        model_name="openai_text_embedding_3_small",
         properties={},
     )
 
@@ -60,8 +60,8 @@ class TestLitellmEmbeddingAdapter:
     def test_init_success(self, mock_embedding_config):
         """Test successful initialization of the adapter."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
-        assert adapter.model_provider == ModelProviderName.openai
-        assert adapter.model_name == "text-embedding-3"
+        assert adapter.model_provider_name == ModelProviderName.openai
+        assert adapter.model_name == "openai_text_embedding_3_small"
         assert adapter.properties == {}
         assert adapter.embedding_config == mock_embedding_config
 
@@ -70,13 +70,13 @@ class TestLitellmEmbeddingAdapter:
         # Create a config with a valid provider first, then modify it to None
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider=ModelProviderName.openai,
-            model_name="text-embedding-3",
+            model_provider_name=ModelProviderName.openai,
+            model_name="openai_text_embedding_3_small",
             properties={},
         )
         # Manually set the provider to None to test the adapter's validation
         # Use __dict__ to bypass pydantic validation
-        config.__dict__["model_provider"] = None
+        config.__dict__["model_provider_name"] = None
         with pytest.raises(ValueError, match="Provider must be set"):
             LitellmEmbeddingAdapter(config)
 
@@ -85,8 +85,8 @@ class TestLitellmEmbeddingAdapter:
         # Create a config with a valid model_name first, then modify it to None
         config = EmbeddingConfig(
             name="test-embedding",
-            model_provider=ModelProviderName.openai,
-            model_name="text-embedding-3",
+            model_provider_name=ModelProviderName.openai,
+            model_name="openai_text_embedding_3_small",
             properties={},
         )
         # Manually set the model_name to None to test the adapter's validation
@@ -107,20 +107,6 @@ class TestLitellmEmbeddingAdapter:
         options = adapter.build_options()
         assert options.dimensions == 1536
 
-    def test_build_options_invalid_dimensions_type(self, mock_embedding_config):
-        """Test build_options fails when dimensions is not an integer."""
-        mock_embedding_config.properties = {"dimensions": "1536"}  # type: ignore
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
-        with pytest.raises(ValueError, match="Dimensions must be an integer"):
-            adapter.build_options()
-
-    def test_build_options_float_dimensions(self, mock_embedding_config):
-        """Test build_options fails when dimensions is a float."""
-        mock_embedding_config.properties = {"dimensions": 1536.0}  # type: ignore
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
-        with pytest.raises(ValueError, match="Dimensions must be an integer"):
-            adapter.build_options()
-
     async def test_embed_empty_list(self, mock_litellm_adapter):
         """Test embed method with empty text list."""
         result = await mock_litellm_adapter.embed([])
@@ -131,8 +117,8 @@ class TestLitellmEmbeddingAdapter:
         """Test successful embedding generation."""
         mock_response = AsyncMock()
         mock_response.data = [
-            AsyncMock(index=0, embedding=[0.1, 0.2, 0.3]),
-            AsyncMock(index=1, embedding=[0.4, 0.5, 0.6]),
+            {"index": 0, "embedding": [0.1, 0.2, 0.3]},
+            {"index": 1, "embedding": [0.4, 0.5, 0.6]},
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
@@ -150,7 +136,7 @@ class TestLitellmEmbeddingAdapter:
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
 
         mock_response = AsyncMock()
-        mock_response.data = [AsyncMock(index=0, embedding=[0.1] * 1536)]
+        mock_response.data = [{"index": 0, "embedding": [0.1] * 1536}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
@@ -158,9 +144,8 @@ class TestLitellmEmbeddingAdapter:
 
         # Verify litellm.aembedding was called with correct parameters
         mock_aembedding.assert_called_once_with(
-            model="text-embedding-3",
+            model="openai/text-embedding-3-small",
             input=["test text"],
-            encoding_format="float",
             dimensions=1536,
         )
 
@@ -179,7 +164,7 @@ class TestLitellmEmbeddingAdapter:
         """Test that embedding fails when response data length doesn't match input."""
         mock_response = AsyncMock()
         mock_response.data = [
-            AsyncMock(index=0, embedding=[0.1, 0.2, 0.3])
+            {"index": 0, "embedding": [0.1, 0.2, 0.3]}
         ]  # Only one embedding
 
         with patch("litellm.aembedding", return_value=mock_response):
@@ -199,9 +184,9 @@ class TestLitellmEmbeddingAdapter:
         """Test that embeddings are sorted by index."""
         mock_response = AsyncMock()
         mock_response.data = [
-            AsyncMock(index=2, embedding=[0.3, 0.4, 0.5]),
-            AsyncMock(index=0, embedding=[0.1, 0.2, 0.3]),
-            AsyncMock(index=1, embedding=[0.2, 0.3, 0.4]),
+            {"index": 2, "embedding": [0.3, 0.4, 0.5]},
+            {"index": 0, "embedding": [0.1, 0.2, 0.3]},
+            {"index": 1, "embedding": [0.2, 0.3, 0.4]},
         ]
         mock_response.usage = Usage(prompt_tokens=15, total_tokens=15)
 
@@ -217,7 +202,7 @@ class TestLitellmEmbeddingAdapter:
     async def test_embed_single_text(self, mock_litellm_adapter):
         """Test embedding a single text."""
         mock_response = AsyncMock()
-        mock_response.data = [AsyncMock(index=0, embedding=[0.1, 0.2, 0.3])]
+        mock_response.data = [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
@@ -225,9 +210,8 @@ class TestLitellmEmbeddingAdapter:
 
         # The call should not include dimensions since the fixture has empty properties
         mock_aembedding.assert_called_once_with(
-            model="text-embedding-3",
+            model="openai/text-embedding-3-small",
             input=["single text"],
-            encoding_format="float",
         )
 
         assert len(result.embeddings) == 1
@@ -238,7 +222,7 @@ class TestLitellmEmbeddingAdapter:
         """Test embedding with exactly the maximum batch size."""
         mock_response = AsyncMock()
         mock_response.data = [
-            AsyncMock(index=i, embedding=[0.1, 0.2, 0.3]) for i in range(MAX_BATCH_SIZE)
+            {"index": i, "embedding": [0.1, 0.2, 0.3]} for i in range(MAX_BATCH_SIZE)
         ]
         mock_response.usage = Usage(
             prompt_tokens=MAX_BATCH_SIZE * 5, total_tokens=MAX_BATCH_SIZE * 5
@@ -260,7 +244,7 @@ class TestLitellmEmbeddingAdapter:
     async def test_embed_method_integration(self, mock_litellm_adapter):
         """Test the public embed method integration."""
         mock_response = AsyncMock()
-        mock_response.data = [AsyncMock(index=0, embedding=[0.1, 0.2, 0.3])]
+        mock_response.data = [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response):
@@ -278,7 +262,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         """Test embedding when litellm returns None usage."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         mock_response = AsyncMock()
-        mock_response.data = [AsyncMock(index=0, embedding=[0.1, 0.2, 0.3])]
+        mock_response.data = [{"index": 0, "embedding": [0.1, 0.2, 0.3]}]
         mock_response.usage = None
 
         with patch("litellm.aembedding", return_value=mock_response):
@@ -291,7 +275,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         """Test embedding with empty vector."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         mock_response = AsyncMock()
-        mock_response.data = [AsyncMock(index=0, embedding=[])]
+        mock_response.data = [{"index": 0, "embedding": []}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response):
@@ -305,8 +289,8 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         mock_response = AsyncMock()
         mock_response.data = [
-            AsyncMock(index=0, embedding=[0.1, 0.2, 0.3]),
-            AsyncMock(index=0, embedding=[0.4, 0.5, 0.6]),  # Duplicate index
+            {"index": 0, "embedding": [0.1, 0.2, 0.3]},
+            {"index": 0, "embedding": [0.4, 0.5, 0.6]},  # Duplicate index
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
@@ -344,11 +328,11 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
 
         mock_response = AsyncMock()
-        mock_response.data = [AsyncMock(index=0, embedding=[0.1] * 1536)]
+        mock_response.data = [{"index": 0, "embedding": [0.1] * 1536}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
-            result = await adapter._embed(["test text"])
+            await adapter._embed(["test text"])
 
         # Only dimensions should be passed to litellm
         call_args = mock_aembedding.call_args
@@ -359,26 +343,32 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert "boolean_property" not in call_args[1]
 
 
-# Supported paid embedding models for OpenAI
-PAID_EMBEDDING_MODELS = [
-    (ModelProviderName.openai, "openai_text_embedding_3_small", 512),
-    # (ModelProviderName.openai, "text-embedding-3", 512),
-    # (ModelProviderName.gemini_api, "text-embedding-004", None),
-]
-
-
 @pytest.mark.paid
-@pytest.mark.parametrize("provider,model_name,expected_dim", PAID_EMBEDDING_MODELS)
+@pytest.mark.parametrize(
+    "provider,model_name,expected_dim",
+    [
+        (ModelProviderName.openai, "openai_text_embedding_3_small", 1536),
+        (ModelProviderName.openai, "openai_text_embedding_3_large", 3072),
+        (ModelProviderName.gemini_api, "gemini_text_embedding_004", 768),
+    ],
+)
 @pytest.mark.asyncio
 async def test_paid_embed_basic(provider, model_name, expected_dim):
-    api_key = Config.shared().open_ai_api_key
-    if not api_key:
+    openai_key = Config.shared().open_ai_api_key
+    if not openai_key:
         pytest.skip("OPENAI_API_KEY not set")
     # Set the API key for litellm
-    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_API_KEY"] = openai_key
+
+    # gemini key
+    gemini_key = Config.shared().gemini_api_key
+    if not gemini_key:
+        pytest.skip("GEMINI_API_KEY not set")
+    os.environ["GEMINI_API_KEY"] = gemini_key
+
     config = EmbeddingConfig(
         name="paid-embedding",
-        model_provider=provider,
+        model_provider_name=provider,
         model_name=model_name,
         properties={},
     )
@@ -392,16 +382,32 @@ async def test_paid_embed_basic(provider, model_name, expected_dim):
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("provider,model_name,expected_dim", PAID_EMBEDDING_MODELS)
+@pytest.mark.parametrize(
+    "provider,model_name,expected_dim",
+    [
+        (ModelProviderName.openai, "openai_text_embedding_3_small", 256),
+        (ModelProviderName.openai, "openai_text_embedding_3_small", 512),
+        (ModelProviderName.openai, "openai_text_embedding_3_large", 256),
+        (ModelProviderName.openai, "openai_text_embedding_3_large", 512),
+        (ModelProviderName.openai, "openai_text_embedding_3_large", 1024),
+        (ModelProviderName.openai, "openai_text_embedding_3_large", 2048),
+    ],
+)
 @pytest.mark.asyncio
-async def test_paid_embed_with_dimensions(provider, model_name, expected_dim):
+async def test_paid_embed_with_custom_dimensions_supported(
+    provider, model_name, expected_dim
+):
+    """
+    Some models support custom dimensions - where the provider shortens the dimensions to match
+    the desired custom number of dimensions. Ref: https://openai.com/index/new-embedding-models-and-api-updates/
+    """
     api_key = Config.shared().open_ai_api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         pytest.skip("OPENAI_API_KEY not set")
     os.environ["OPENAI_API_KEY"] = api_key
     config = EmbeddingConfig(
         name="paid-embedding",
-        model_provider=provider,
+        model_provider_name=provider,
         model_name=model_name,
         properties={"dimensions": expected_dim},
     )
@@ -412,3 +418,33 @@ async def test_paid_embed_with_dimensions(provider, model_name, expected_dim):
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == expected_dim
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "provider,model_name,expected_dim",
+    [
+        (ModelProviderName.gemini_api, "gemini_text_embedding_004", 256),
+    ],
+)
+@pytest.mark.asyncio
+async def test_paid_embed_with_custom_dimensions_not_supported(
+    provider, model_name, expected_dim
+):
+    """Models that do not support custom dimensions will throw an error."""
+    gemini_key = Config.shared().gemini_api_key or os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        pytest.skip("GEMINI_API_KEY not set")
+    os.environ["GEMINI_API_KEY"] = gemini_key
+    config = EmbeddingConfig(
+        name="paid-embedding",
+        model_provider_name=provider,
+        model_name=model_name,
+        properties={"dimensions": expected_dim},
+    )
+    adapter = LitellmEmbeddingAdapter(config)
+    text = ["Kiln is an open-source evaluation platform for LLMs."]
+    with pytest.raises(
+        ValueError, match=f"The model {model_name} does not support custom dimensions"
+    ):
+        await adapter.embed(text)

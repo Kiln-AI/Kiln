@@ -8,7 +8,7 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import (
     EmbeddingResult,
     GeneratedEmbedding,
 )
-from kiln_ai.adapters.embedding.embedding_model_list import (
+from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
 )
@@ -28,8 +28,8 @@ class EmbeddingOptions(BaseModel):
 
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
     def __init__(self, embedding_config: EmbeddingConfig):
-        model_provider = embedding_config.model_provider
-        if model_provider is None:
+        model_provider_name = embedding_config.model_provider_name
+        if model_provider_name is None:
             raise ValueError("Provider must be set")
 
         model_name = embedding_config.model_name
@@ -37,7 +37,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             raise ValueError("Model name must be set")
 
         super().__init__(embedding_config)
-        self.model_provider = model_provider
+        self.model_provider_name = model_provider_name
         self.model_name = model_name
         self.properties = embedding_config.properties
 
@@ -54,7 +54,6 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         response = await litellm.aembedding(
             model=self.litellm_model_id(),
             input=text,
-            encoding_format="float",
             **self.build_options().model_dump(exclude_none=True),
         )
 
@@ -71,8 +70,9 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
     def build_options(self) -> EmbeddingOptions:
         dimensions = self.properties.get("dimensions", None)
-        if dimensions is not None and not isinstance(dimensions, int):
-            raise ValueError("Dimensions must be an integer")
+        if dimensions is not None:
+            if not isinstance(dimensions, int) or dimensions <= 0:
+                raise ValueError("Dimensions must be a positive integer")
 
         return EmbeddingOptions(
             dimensions=dimensions,
@@ -80,7 +80,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
     def _resolve_model_provider(self) -> KilnEmbeddingModelProvider:
         model = built_in_embedding_models_from_provider(
-            self.model_provider, self.model_name
+            self.model_provider_name, self.model_name
         )
         if model is None:
             raise ValueError(
