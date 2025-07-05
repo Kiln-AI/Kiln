@@ -19,6 +19,9 @@
 
   let model: string = $ui_state.selected_model
 
+  export let data_gen_model_dropdown_mode: "data_gen" | "uncensored_data_gen" =
+    "data_gen"
+
   // Unique ID for this node
   const id = crypto.randomUUID()
 
@@ -316,6 +319,7 @@
         {task_id}
         {human_guidance}
         {triggerSave}
+        {data_gen_model_dropdown_mode}
         bind:num_subtopics_to_generate
         bind:num_samples_to_generate
         on:delete_topic={handleChildDeleteTopic}
@@ -358,7 +362,9 @@
           </div>
           <AvailableModelsDropdown
             requires_data_gen={true}
-            suggested_mode="data_gen"
+            suggested_mode={data_gen_model_dropdown_mode}
+            requires_uncensored_data_gen={data_gen_model_dropdown_mode ===
+              "uncensored_data_gen"}
             bind:model
           />
           <button
@@ -401,6 +407,9 @@
     {model}
     {num_samples_to_generate}
     {custom_topics_string}
+    suggested_mode={data_gen_model_dropdown_mode}
+    requires_uncensored_data_gen={data_gen_model_dropdown_mode ===
+      "uncensored_data_gen"}
     on_completed={handleGenerateSamplesCompleted}
     cascade_mode={generate_samples_cascade_mode}
   />

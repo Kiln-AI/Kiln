@@ -27,13 +27,19 @@
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
+  export let requires_uncensored_data_gen: boolean = false
   export let error_message: string | null = null
-  export let suggested_mode: "data_gen" | "evals" | null = null
+  export let suggested_mode:
+    | "data_gen"
+    | "evals"
+    | "uncensored_data_gen"
+    | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || {},
     requires_structured_output,
     requires_data_gen,
+    requires_uncensored_data_gen,
     requires_logprobs,
     $ui_state.current_task_id,
     $recent_model_store,
@@ -88,6 +94,7 @@
     providers: AvailableModels[],
     structured_output: boolean,
     requires_data_gen: boolean,
+    requires_uncensored_data_gen: boolean,
     requires_logprobs: boolean,
     current_task_id: string | null,
     recent_models: RecentModel[],
@@ -138,31 +145,27 @@
           })
           continue
         }
-        if (requires_data_gen && !model.supports_data_gen) {
+
+        const unsupported =
+          (requires_data_gen && !model.supports_data_gen) ||
+          (structured_output && !model.supports_structured_output) ||
+          (requires_logprobs && !model.supports_logprobs) ||
+          (requires_uncensored_data_gen && !model.uncensored)
+        if (unsupported) {
           unsupported_models.push({
             value: id,
             label: long_label,
           })
           continue
         }
-        if (structured_output && !model.supports_structured_output) {
-          unsupported_models.push({
-            value: id,
-            label: long_label,
-          })
-          continue
-        }
-        if (requires_logprobs && !model.supports_logprobs) {
-          unsupported_models.push({
-            value: id,
-            label: long_label,
-          })
-          continue
-        }
+
         let model_name = model.name
-        if (suggested_mode === "data_gen" && model.suggested_for_data_gen) {
-          model_name = model.name + "  —  Recommended"
-        } else if (suggested_mode === "evals" && model.suggested_for_evals) {
+        if (
+          (suggested_mode === "data_gen" && model.suggested_for_data_gen) ||
+          (suggested_mode === "evals" && model.suggested_for_evals) ||
+          (suggested_mode === "uncensored_data_gen" &&
+            model.suggested_for_uncensored_data_gen)
+        ) {
           model_name = model.name + "  —  Recommended"
         }
         model_list.push({
@@ -187,13 +190,17 @@
 
     if (unsupported_models.length > 0) {
       let not_recommended_label = "Not Recommended"
-      if (requires_data_gen) {
+      if (requires_uncensored_data_gen) {
+        not_recommended_label =
+          "Not Recommended - Uncensored Data Gen Not Supported"
+      } else if (requires_data_gen) {
         not_recommended_label = "Not Recommended - Data Gen Not Supported"
       } else if (requires_structured_output) {
         not_recommended_label = "Not Recommended - Structured Output Fails"
       } else if (requires_logprobs) {
         not_recommended_label = "Not Recommended - Logprobs Not Supported"
       }
+
       options.push({
         label: not_recommended_label,
         options: unsupported_models,
@@ -222,6 +229,10 @@
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_data_gen || false
 
+  $: selected_model_suggested_uncensored_data_gen =
+    available_model_details(model_name, provider_name, $available_models)
+      ?.suggested_for_uncensored_data_gen || false
+
   $: selected_model_suggested_evals =
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_evals || false
@@ -244,7 +255,11 @@
       warning_message="This model has not been tested with Kiln. It may not work as expected."
     />
   {:else if selected_model_unsupported}
-    {#if requires_data_gen}
+    {#if requires_uncensored_data_gen}
+      <Warning
+        warning_message="This model is not recommended for the current data gen template. It will refuse to follow instructions for sensitive topics."
+      />
+    {:else if requires_data_gen}
       <Warning
         warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."
       />
@@ -268,6 +283,20 @@
           ? "success"
           : "warning"}
       warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+    />
+  {:else if suggested_mode === "uncensored_data_gen"}
+    <Warning
+      warning_icon={!model
+        ? "info"
+        : selected_model_suggested_uncensored_data_gen
+          ? "check"
+          : "exclaim"}
+      warning_color={!model
+        ? "gray"
+        : selected_model_suggested_uncensored_data_gen
+          ? "success"
+          : "warning"}
+      warning_message="For this data gen template we suggest a large uncensored model like Grok 3."
     />
   {:else if suggested_mode === "evals"}
     <Warning

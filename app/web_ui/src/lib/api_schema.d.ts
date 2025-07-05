@@ -2088,6 +2088,10 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Uncensored */
+            uncensored: boolean;
+            /** Suggested For Uncensored Data Gen */
+            suggested_for_uncensored_data_gen: boolean;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
