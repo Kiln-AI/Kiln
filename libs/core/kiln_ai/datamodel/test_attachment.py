@@ -576,3 +576,74 @@ def test_attachment_filename_no_override(test_base_kiln_file, mock_file_factory)
     assert data["attachment"]["path"].split(".")[0].isdigit()
     assert data["attachment"]["path"].endswith(".pdf")
     assert filecmp.cmp(root_path / data["attachment"]["path"], test_media_file_document)
+
+
+@pytest.mark.parametrize(
+    "mime_type, extension",
+    [
+        (MockFileFactoryMimeType.PDF, ".pdf"),
+        (MockFileFactoryMimeType.PNG, ".png"),
+        (MockFileFactoryMimeType.MP4, ".mp4"),
+        (MockFileFactoryMimeType.OGG, ".ogg"),
+        (MockFileFactoryMimeType.MD, ".md"),
+        (MockFileFactoryMimeType.TXT, ".txt"),
+        (MockFileFactoryMimeType.HTML, ".html"),
+        (MockFileFactoryMimeType.CSV, ".csv"),
+        (MockFileFactoryMimeType.JPEG, ".jpeg"),
+        (MockFileFactoryMimeType.MP3, ".mp3"),
+        (MockFileFactoryMimeType.WAV, ".wav"),
+        (MockFileFactoryMimeType.OGG, ".ogg"),
+        (MockFileFactoryMimeType.MOV, ".mov"),
+    ],
+)
+def test_attachment_extension_from_data(
+    test_base_kiln_file, mock_file_factory, mime_type, extension
+):
+    test_media_file_document = mock_file_factory(mime_type)
+    root_path = test_base_kiln_file.parent
+    json_path = root_path / "test_model.json"
+
+    data_bytes = test_media_file_document.read_bytes()
+
+    model = ModelWithAttachment(
+        path=json_path,
+        attachment=KilnAttachmentModel.from_data(data_bytes, mime_type),
+    )
+    model.save_to_file()
+
+    with open(test_base_kiln_file, "r") as file:
+        data = json.load(file)
+
+    assert data["attachment"]["path"].endswith(extension), (
+        f"{data['attachment']['path']} does not end with {extension}"
+    )
+    assert filecmp.cmp(root_path / data["attachment"]["path"], test_media_file_document)
+
+
+@pytest.mark.parametrize(
+    "mime_type, extension",
+    [
+        ("application/octet-stream", ".unknown"),
+        ("fake-mimetype", ".unknown"),
+    ],
+)
+def test_attachment_extension_from_data_unknown_mime_type(
+    test_base_kiln_file, mock_file_factory, mime_type, extension
+):
+    root_path = test_base_kiln_file.parent
+    json_path = root_path / "test_model.json"
+
+    data_bytes = b"fake data"
+
+    model = ModelWithAttachment(
+        path=json_path,
+        attachment=KilnAttachmentModel.from_data(data_bytes, mime_type),
+    )
+    model.save_to_file()
+
+    with open(test_base_kiln_file, "r") as file:
+        data = json.load(file)
+
+    assert data["attachment"]["path"].endswith(extension), (
+        f"{data['attachment']['path']} does not end with {extension}"
+    )

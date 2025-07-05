@@ -110,7 +110,7 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip_ollama)
 
 
-class MockFileFactoryMimeType(Enum):
+class MockFileFactoryMimeType(str, Enum):
     # documents
     PDF = "application/pdf"
     CSV = "text/csv"

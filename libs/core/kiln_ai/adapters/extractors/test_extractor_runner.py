@@ -118,9 +118,7 @@ def test_collect_jobs_excludes_already_run_extraction(
         parent=mock_document,
         source=ExtractionSource.PROCESSED,
         extractor_config_id="other-extractor-config-id",
-        output=KilnAttachmentModel.from_data(
-            "test extraction output", "text/plain", ".txt"
-        ),
+        output=KilnAttachmentModel.from_data("test extraction output", "text/plain"),
     ).save_to_file()
 
     # should get the one job, since the document was not already extracted with this extractor config
@@ -134,9 +132,7 @@ def test_collect_jobs_excludes_already_run_extraction(
         parent=mock_document,
         source=ExtractionSource.PROCESSED,
         extractor_config_id=mock_extractor_config.id,
-        output=KilnAttachmentModel.from_data(
-            "test extraction output", "text/plain", ".txt"
-        ),
+        output=KilnAttachmentModel.from_data("test extraction output", "text/plain"),
     ).save_to_file()
 
     jobs = mock_extractor_runner.collect_jobs()
