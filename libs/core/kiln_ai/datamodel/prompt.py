@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 
 
 class BasePrompt(BaseModel):
@@ -10,7 +10,7 @@ class BasePrompt(BaseModel):
     The "Prompt" model name is reserved for the custom prompts parented by a task.
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the prompt.")
     description: str | None = Field(
         default=None,
         description="A more detailed description of the prompt.",
