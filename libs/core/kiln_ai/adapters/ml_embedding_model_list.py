@@ -118,7 +118,8 @@ def built_in_embedding_models_from_provider(
     provider_name: ModelProviderName, model_name: str
 ) -> KilnEmbeddingModelProvider | None:
     for model in embedding_models:
-        for p in model.providers:
-            if model.name == model_name and p.name == provider_name:
-                return p
+        if model.name == model_name:
+            for p in model.providers:
+                if p.name == provider_name:
+                    return p
     return None
