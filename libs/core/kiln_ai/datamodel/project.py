@@ -2,6 +2,7 @@ from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig
+from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.task import Task
 
@@ -13,6 +14,7 @@ class Project(
         "documents": Document,
         "extractor_configs": ExtractorConfig,
         "chunker_configs": ChunkerConfig,
+        "embedding_configs": EmbeddingConfig,
     },
 ):
     """
@@ -40,3 +42,6 @@ class Project(
 
     def chunker_configs(self, readonly: bool = False) -> list[ChunkerConfig]:
         return super().chunker_configs(readonly=readonly)  # type: ignore
+
+    def embedding_configs(self, readonly: bool = False) -> list[EmbeddingConfig]:
+        return super().embedding_configs(readonly=readonly)  # type: ignore
