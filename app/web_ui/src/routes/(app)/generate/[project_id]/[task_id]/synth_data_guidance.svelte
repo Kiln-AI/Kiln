@@ -258,7 +258,7 @@ None of the generated topics, inputs, or outputs should specifically mention fac
         description="Guidance to help the model generate relevant data"
         inputType={"textarea"}
         optional={true}
-        tall={"xl"}
+        tall={true}
         bind:value={human_guidance}
       />
       {#if selected_template_info?.suggest_uncensored}

@@ -42,14 +42,16 @@
   let num_subtopics_to_generate: number = 8
   let num_samples_to_generate: number = 8
 
+  // Data gen guidance
+  let suggest_uncensored = false
+  let data_gen_model_dropdown_mode: "data_gen" | "uncensored_data_gen" =
+    "data_gen"
+  $: data_gen_model_dropdown_mode = suggest_uncensored
+    ? "uncensored_data_gen"
+    : "data_gen"
+
   function show_human_guidance_dialog() {
     human_guidance_dialog?.show()
-    const text_area = document.getElementById(
-      "human_guidance",
-    ) as HTMLTextAreaElement
-    if (text_area) {
-      text_area.focus()
-    }
   }
 
   let human_guidance_dialog: SynthDataGuidance | null = null
@@ -386,6 +388,7 @@
           {task_id}
           {human_guidance}
           {triggerSave}
+          bind:data_gen_model_dropdown_mode
           bind:num_subtopics_to_generate
           bind:num_samples_to_generate
           bind:this={root_node_component}
@@ -547,6 +550,7 @@
           requires_structured_output={task?.output_json_schema ? true : false}
           bind:model
         />
+
         <PromptTypeSelector bind:prompt_method />
         <FormElement
           id="save_all_samples_mode_element"
@@ -567,4 +571,8 @@
   </form>
 </dialog>
 
-<SynthDataGuidance bind:human_guidance bind:this={human_guidance_dialog} />
+<SynthDataGuidance
+  bind:human_guidance
+  bind:this={human_guidance_dialog}
+  bind:suggest_uncensored
+/>

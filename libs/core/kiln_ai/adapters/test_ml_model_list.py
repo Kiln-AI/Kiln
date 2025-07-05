@@ -158,12 +158,19 @@ class TestDefaultStructuredOutputModeForModelProvider:
         assert result == first_provider.structured_output_mode
 
 
-def test_suggested_for_uncensored():
-    """Test that suggested_for_uncensored is set correctly"""
+def test_uncensored():
+    """Test that uncensored is set correctly"""
     model = get_model_by_name(ModelName.grok_3_mini)
     for provider in model.providers:
-        assert provider.suggested_for_uncensored
+        assert provider.uncensored
+        assert not provider.suggested_for_uncensored_data_gen
 
     model = get_model_by_name(ModelName.gpt_4_1_nano)
     for provider in model.providers:
-        assert not provider.suggested_for_uncensored
+        assert not provider.uncensored
+        assert not provider.suggested_for_uncensored_data_gen
+
+    model = get_model_by_name(ModelName.grok_3)
+    for provider in model.providers:
+        assert provider.uncensored
+        assert provider.suggested_for_uncensored_data_gen

@@ -7,6 +7,9 @@
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormElement from "../../../../../lib/utils/form_element.svelte"
 
+  export let suggested_mode: "data_gen" | "uncensored_data_gen" | null = null
+  export let requires_uncensored_data_gen: boolean = false
+
   // the number of workers to use for parallel generation
   const PARALLEL_WORKER_COUNT = 5
 
@@ -261,8 +264,9 @@
         </div>
         <AvailableModelsDropdown
           requires_data_gen={true}
+          {requires_uncensored_data_gen}
           bind:model
-          suggested_mode="data_gen"
+          {suggested_mode}
         />
         {#if cascade_mode}
           <!-- parallelization only makes sense in cascade mode -->
