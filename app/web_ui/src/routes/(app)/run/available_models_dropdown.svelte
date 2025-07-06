@@ -159,18 +159,19 @@
           continue
         }
 
-        let model_name = model.name
+        let badge: string | undefined = undefined
         if (
           (suggested_mode === "data_gen" && model.suggested_for_data_gen) ||
           (suggested_mode === "evals" && model.suggested_for_evals) ||
           (suggested_mode === "uncensored_data_gen" &&
             model.suggested_for_uncensored_data_gen)
         ) {
-          model_name = model.name + "  —  Recommended"
+          badge = "Recommended"
         }
         model_list.push({
           value: id,
-          label: model_name,
+          label: model.name,
+          badge: badge,
         })
       }
       if (model_list.length > 0) {
