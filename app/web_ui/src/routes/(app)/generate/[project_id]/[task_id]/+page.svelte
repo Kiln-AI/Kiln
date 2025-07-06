@@ -32,6 +32,8 @@
   let task_error: KilnError | null = null
   let task_loading = true
 
+  let synth_data_loading = false
+
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
@@ -334,7 +336,7 @@
         : []),
     ]}
   >
-    {#if task_loading}
+    {#if task_loading || synth_data_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -537,12 +539,14 @@
         {#if human_guidance.length > 0}
           {#if prompt_method.includes("::")}
             <Warning
-              warning_message="Human guidance is enabled, but you've selected a custom prompt with a fixed string. Human guidance will not be applied."
+              warning_message="Guidance is enabled but won't be applied as you've selected a custom prompt with a fixed string."
+              warning_color="warning"
             />
           {:else}
             <Warning
-              warning_message="Human guidance is enabled. Your guidance will be passed to the model and used to influence output."
-              warning_color="warning"
+              warning_message="Guidance is enabled. Your guidance will be passed to the model and used to influence output."
+              warning_color="success"
+              warning_icon="info"
             />
           {/if}
         {/if}
@@ -575,4 +579,5 @@
   bind:human_guidance
   bind:this={human_guidance_dialog}
   bind:suggest_uncensored
+  bind:loading={synth_data_loading}
 />

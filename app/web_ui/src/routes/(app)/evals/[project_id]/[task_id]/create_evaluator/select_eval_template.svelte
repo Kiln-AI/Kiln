@@ -402,7 +402,7 @@
       bind:value={issue_eval_name}
     />
     <FormElement
-      label="Issue Prompt"
+      label="Issue Prompt / Description"
       description="Describe the issue you're trying to catch. This prompt will be passed to the judge model to check for the issue."
       info_description="A good prompt is clear, specific, and focused on a single issue. Try starting with 'The output should not...' or 'The output should always...'."
       inputType="textarea"
