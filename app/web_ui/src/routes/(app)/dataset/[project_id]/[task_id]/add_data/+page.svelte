@@ -80,6 +80,8 @@
       if (reason) params.set("reason", reason)
       const template_id = $page.url.searchParams.get("template_id")
       if (template_id) params.set("template_id", template_id)
+      const issue_eval_id = $page.url.searchParams.get("issue_eval_id")
+      if (issue_eval_id) params.set("issue_eval_id", issue_eval_id)
       const splits_param = $page.url.searchParams.get("splits")
       if (splits_param) params.set("splits", splits_param)
 

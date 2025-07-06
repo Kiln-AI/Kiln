@@ -5,6 +5,8 @@
   import Warning from "$lib/ui/warning.svelte"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
+  import type { Eval } from "$lib/types"
+  import { client } from "$lib/api_client"
 
   export let human_guidance: string = ""
 
@@ -25,7 +27,43 @@
     if (template_id && static_templates.find((t) => t.id == template_id)) {
       selected_template = template_id
     }
+
+    const issue_eval_id = $page.url.searchParams.get("issue_eval_id")
+    if (issue_eval_id) {
+      get_issue_eval(issue_eval_id)
+    }
   })
+
+  let issue_eval: Eval | null = null
+  export let loading: boolean = false
+  async function get_issue_eval(issue_eval_id: string) {
+    try {
+      loading = true
+      const [project_id, task_id, eval_id] = issue_eval_id.split("::")
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              eval_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      issue_eval = data
+      // Jump to the issue eval template
+      selected_template = "issue_eval"
+    } catch (error) {
+      console.error(error)
+    } finally {
+      loading = false
+    }
+  }
 
   type StaticTemplates = {
     id: string
@@ -169,8 +207,25 @@ None of the generated topics, inputs, or outputs should specifically mention fac
   ]
 
   let selected_template: string = "custom"
-  function build_select_options(templates: StaticTemplates[]): OptionGroup[] {
+  function build_select_options(
+    templates: StaticTemplates[],
+    issue: Eval | null,
+  ): OptionGroup[] {
     const groups: OptionGroup[] = []
+
+    if (issue) {
+      groups.push({
+        label: "Issue Eval",
+        options: [
+          {
+            label: "Issue Eval",
+            value: "issue_eval",
+            description:
+              "Generate data expected to trigger a specific issue, for an eval to detect that issue.",
+          },
+        ],
+      })
+    }
 
     groups.push({
       label: "Custom Guidance",
@@ -196,7 +251,7 @@ None of the generated topics, inputs, or outputs should specifically mention fac
 
     return groups
   }
-  $: select_options = build_select_options(static_templates)
+  $: select_options = build_select_options(static_templates, issue_eval)
 
   $: apply_selected_template(selected_template)
   function apply_selected_template(template: string) {
@@ -204,10 +259,63 @@ None of the generated topics, inputs, or outputs should specifically mention fac
       human_guidance = ""
     }
 
+    if (template == "issue_eval" && issue_eval) {
+      human_guidance = issue_eval_template(issue_eval)
+      return
+    }
+
     const static_template = static_templates.find((t) => t.id == template)
     if (static_template) {
       human_guidance = static_template.template
     }
+  }
+
+  function issue_eval_template(issue: Eval): string {
+    console.log(issue)
+    let template = `We are building a dataset for a AI eval. We've observed an issue with an AI model, and want to generate data that will trigger that issue.
+
+If possible, when generating topics, generate topics that are likely to trigger the issue. This may take some creativity, but it's important to make sure the issue is triggered.
+
+If possible, generate inputs that are likely to trigger the issue. This may take some creativity, but it's important to make sure the issue is triggered.
+
+When generating model outputs, generate outputs that contain the issue.
+
+The issue is named: 
+<issue_name>
+${issue.name}
+</issue_name>`
+
+    const issue_description = issue.template_properties["issue_prompt"]
+    if (issue_description) {
+      template += `
+
+The issue is described as (we want to generate data that triggers this issue):
+<issue_description>
+${issue_description}
+</issue_description>`
+    }
+
+    const issue_failure_example = issue.template_properties["failure_example"]
+    if (issue_failure_example) {
+      template += `
+
+Here is an example of model output that triggers the issue:
+<issue_example>
+${issue_failure_example}
+</issue_example>`
+    }
+
+    const issue_success_example = issue.template_properties["pass_example"]
+    if (issue_success_example) {
+      template += `
+
+Here is an example of model output that doesn't trigger the issue:
+<no_issue_example>
+${issue_success_example}
+</no_issue_example>`
+    }
+
+    return template
   }
 
   $: selected_template_info = static_templates.find(
