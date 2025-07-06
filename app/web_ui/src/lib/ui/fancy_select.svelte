@@ -159,7 +159,7 @@
               }
 
               // Calculate width - minimum 300px or reference width, whichever is larger
-              const minWidth = 300
+              const minWidth = 320
               const referenceWidth = referenceRect.width
               const desiredWidth = Math.max(minWidth, referenceWidth)
               const maxWidth = Math.min(
@@ -520,8 +520,19 @@
                   focusedIndex = overallIndex
                 }}
               >
-                <div class="w-full">
-                  {item.label}
+                <div class="w-full flex flex-row gap-2">
+                  <div class="flex-grow">
+                    {item.label}
+                  </div>
+                  {#if item.badge}
+                    <div
+                      class="badge badge-sm px-2 {item.badge_color === 'primary'
+                        ? 'badge-primary'
+                        : 'badge-ghost'}"
+                    >
+                      {item.badge}
+                    </div>
+                  {/if}
                 </div>
                 {#if item.description}
                   <div class="text-xs font-medium text-base-content/40 w-full">

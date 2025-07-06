@@ -62,9 +62,10 @@
         options: [
           {
             value: fine_tune_prompt_id,
-            label: "Fine-Tune Specific Prompt",
-            description:
-              "Recommended: The prompt used to fine-tune this model.",
+            label: "Fine-Tune Prompt",
+            description: "The exact prompt used to fine-tune this model.",
+            badge: "Recommended",
+            badge_color: "primary",
           },
         ],
       })
