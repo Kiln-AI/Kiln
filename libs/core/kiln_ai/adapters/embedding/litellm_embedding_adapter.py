@@ -89,7 +89,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         return model
 
     # TODO: refactor this to be shared with other implementations of LiteLLM adapters
-    # for example, embedding adapter for LiteLLM, and also Exractor adapter for LiteLLM
+    # for example, embedding adapter for LiteLLM, and also Extractor adapter for LiteLLM
     def litellm_model_id(self) -> str:
         provider = self._resolve_model_provider()
         if not provider:
