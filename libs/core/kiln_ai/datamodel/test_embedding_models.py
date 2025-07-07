@@ -26,21 +26,23 @@ def mock_project(tmp_path):
 @pytest.fixture
 def mock_chunked_document(tmp_path):
     # Create a temporary file for the attachment
-    with tempfile.TemporaryDirectory(delete=False) as tmp_dir:
-        tmp_path_file = Path(tmp_dir) / f"{uuid.uuid4()}.txt"
-        tmp_path_file.write_text("test content")
+    tmp_dir = tmp_path / str(uuid.uuid4())
+    tmp_dir.mkdir()
 
-        attachment = KilnAttachmentModel.from_file(tmp_path_file)
-        chunks = [Chunk(content=attachment) for _ in range(3)]
+    tmp_path_file = Path(tmp_dir) / f"{uuid.uuid4()}.txt"
+    tmp_path_file.write_text("test content")
 
-        doc = ChunkedDocument(
-            chunks=chunks,
-            chunker_config_id="fake-chunker-id",
-            path=Path(tmp_dir) / "chunked_document.kiln",
-        )
-        doc.save_to_file()
+    attachment = KilnAttachmentModel.from_file(tmp_path_file)
+    chunks = [Chunk(content=attachment) for _ in range(3)]
 
-        return doc
+    doc = ChunkedDocument(
+        chunks=chunks,
+        chunker_config_id="fake-chunker-id",
+        path=Path(tmp_dir) / "chunked_document.kiln",
+    )
+    doc.save_to_file()
+
+    return doc
 
 
 class TestEmbeddingConfig:
