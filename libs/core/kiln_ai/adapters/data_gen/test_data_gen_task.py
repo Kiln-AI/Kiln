@@ -3,7 +3,10 @@ import json
 import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.data_gen.data_gen_prompts import generate_topic_tree_prompt
+from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    generate_sample_generation_prompt,
+    generate_topic_tree_prompt,
+)
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
@@ -60,7 +63,7 @@ def test_data_gen_categories_task_input_default_values(base_task):
 
 def test_data_gen_categories_task_initialization():
     # Act
-    task = DataGenCategoriesTask(gen_type="training", specific_guidance="Test guidance")
+    task = DataGenCategoriesTask(gen_type="training", guidance="Test guidance")
 
     # Assert
     assert task.name == "DataGen"
@@ -75,7 +78,7 @@ def test_data_gen_categories_task_initialization():
 
 def test_data_gen_categories_task_schemas():
     # Act
-    task = DataGenCategoriesTask(gen_type="eval", specific_guidance="Test guidance")
+    task = DataGenCategoriesTask(gen_type="eval", guidance="Test guidance")
 
     assert "I want to evaluate a large language model" in task.instruction
     assert "Test guidance" in task.instruction
@@ -108,7 +111,7 @@ async def test_data_gen_all_models_providers(
         # pass if the model doesn't support data gen (testing the support flag is part of this)
         return
 
-    data_gen_task = DataGenCategoriesTask(gen_type="training", specific_guidance=None)
+    data_gen_task = DataGenCategoriesTask(gen_type="training", guidance=None)
     data_gen_input = DataGenCategoriesTaskInput.from_task(base_task, num_subtopics=6)
 
     adapter = adapter_for_task(
@@ -133,20 +136,17 @@ def test_data_gen_sample_task_input_initialization(base_task):
     # Arrange
     topic = ["cowboys", "hats"]
     num_samples = 4
-    human_guidance = "Test guidance"
 
     # Act
     input_model = DataGenSampleTaskInput.from_task(
         task=base_task,
         topic=topic,
         num_samples=num_samples,
-        human_guidance=human_guidance,
     )
 
     # Assert
     assert input_model.topic == topic
     assert input_model.num_samples == num_samples
-    assert input_model.human_guidance == human_guidance
     assert isinstance(input_model.system_prompt, str)
     assert "Reply like a cowboy" in input_model.system_prompt
 
@@ -157,19 +157,22 @@ def test_data_gen_sample_task_input_default_values(base_task):
 
     # Assert
     assert input_model.num_samples == 8
-    assert input_model.human_guidance is None
     assert input_model.topic == []
 
 
 def test_data_gen_sample_task_initialization(base_task):
     # Act
-    task = DataGenSampleTask(target_task=base_task)
+    task = DataGenSampleTask(
+        target_task=base_task, gen_type="eval", guidance="Test guidance"
+    )
 
     # Assert
     assert task.name == "DataGenSample"
     assert isinstance(task.parent, Project)
     assert task.description is not None
     assert task.instruction is not None
+    assert "I want to evaluate a large language model" in task.instruction
+    assert "Test guidance" in task.instruction
 
     input_schema = json.loads(task.input_json_schema)
     output_schema = json.loads(task.output_json_schema)
@@ -372,15 +375,13 @@ def test_generate_topic_tree_prompt_eval_type():
     assert "The guidance is:" not in prompt  # Should not have specific guidance
 
 
-def test_generate_topic_tree_prompt_with_specific_guidance():
-    """Test generate_topic_tree_prompt with specific_guidance provided"""
+def test_generate_topic_tree_prompt_with_guidance():
+    """Test generate_topic_tree_prompt with guidance provided"""
     # Arrange
-    specific_guidance = "Focus on technical topics related to artificial intelligence and machine learning"
+    guidance = "Focus on technical topics related to artificial intelligence and machine learning"
 
     # Act
-    prompt = generate_topic_tree_prompt(
-        gen_type="training", specific_guidance=specific_guidance
-    )
+    prompt = generate_topic_tree_prompt(gen_type="training", guidance=guidance)
 
     # Assert
     assert isinstance(prompt, str)
@@ -389,16 +390,16 @@ def test_generate_topic_tree_prompt_with_specific_guidance():
         in prompt
     )
     assert "## Specific Guidance" in prompt
-    assert f"The guidance is: {specific_guidance}" in prompt
+    assert f"The guidance is: {guidance}" in prompt
     assert (
         "When generating subtopics, remain somewhat vague." not in prompt
     )  # Should not have default guidance
 
 
-def test_generate_topic_tree_prompt_with_empty_specific_guidance():
-    """Test generate_topic_tree_prompt with empty string specific_guidance"""
+def test_generate_topic_tree_prompt_with_empty_guidance():
+    """Test generate_topic_tree_prompt with empty string guidance"""
     # Act
-    prompt = generate_topic_tree_prompt(gen_type="eval", specific_guidance="")
+    prompt = generate_topic_tree_prompt(gen_type="eval", guidance="")
 
     # Assert
     assert isinstance(prompt, str)
@@ -467,3 +468,142 @@ def test_generate_topic_tree_prompt_structure_consistency():
     assert "evaluate a large language model" in eval_prompt
     assert "generate training data" in training_prompt
     assert "generate eval data" in eval_prompt
+
+
+def test_generate_sample_generation_prompt_training_type():
+    """Test generate_sample_generation_prompt with gen_type='training'"""
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="training")
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to train a large language model and you should help me generate training data for it."
+        in prompt
+    )
+    assert "## Task Description" in prompt
+    assert "Your job is to generate a list of potential inputs" in prompt
+    assert "The guidance is:" not in prompt  # Should not have specific guidance
+
+
+def test_generate_sample_generation_prompt_eval_type():
+    """Test generate_sample_generation_prompt with gen_type='eval'"""
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="eval")
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to evaluate a large language model and you should help me generate eval data for it."
+        in prompt
+    )
+    assert "## Task Description" in prompt
+    assert "Your job is to generate a list of potential inputs" in prompt
+    assert "The guidance is:" not in prompt  # Should not have specific guidance
+
+
+def test_generate_sample_generation_prompt_with_guidance():
+    """Test generate_sample_generation_prompt with guidance provided"""
+    # Arrange
+    guidance = "Focus on generating diverse examples with varying complexity levels"
+
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="training", guidance=guidance)
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to train a large language model and you should help me generate training data for it."
+        in prompt
+    )
+    assert "## Specific Guidance" in prompt
+    assert f"The guidance is: {guidance}" in prompt
+
+
+def test_generate_sample_generation_prompt_with_empty_guidance():
+    """Test generate_sample_generation_prompt with empty string guidance"""
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="eval", guidance="")
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to evaluate a large language model and you should help me generate eval data for it."
+        in prompt
+    )
+    assert "## Specific Guidance" not in prompt
+
+
+def test_generate_sample_generation_prompt_contains_examples():
+    """Test that the prompt contains the expected examples"""
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="training")
+
+    # Assert
+    # Check for the tweet classification example
+    assert "You are an assistant that classifies the tone of a tweet" in prompt
+    assert "positive" in prompt
+    assert "negative" in prompt
+    assert "neutral" in prompt
+    assert "Technology" in prompt
+    assert "New iPhone Event" in prompt
+    assert "New iPhone looks amazing! I need that camera." in prompt
+    assert "Another boring event from Apple." in prompt
+
+
+def test_generate_sample_generation_prompt_contains_required_sections():
+    """Test that the prompt contains all required sections"""
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="training")
+
+    # Assert
+    assert "## Task Description" in prompt
+    assert "system_prompt" in prompt
+    assert "topic" in prompt
+    assert "num_samples" in prompt
+    assert "generated_samples" in prompt
+    assert "The output must be formatted:" in prompt
+    assert "Do not include any other text or break the schema in any way." in prompt
+    assert (
+        "Note how the output of this task is data to input to the system prompt"
+        in prompt
+    )
+
+
+def test_generate_sample_generation_prompt_structure_consistency():
+    """Test that the prompt structure is consistent between training and eval types"""
+    # Act
+    training_prompt = generate_sample_generation_prompt(gen_type="training")
+    eval_prompt = generate_sample_generation_prompt(gen_type="eval")
+
+    # Assert
+    # Both should have the same structure, just different goal descriptions
+    assert "## Task Description" in training_prompt
+    assert "## Task Description" in eval_prompt
+
+    # The main difference should be in the goal description
+    assert "train a large language model" in training_prompt
+    assert "evaluate a large language model" in eval_prompt
+    assert "generate training data" in training_prompt
+    assert "generate eval data" in eval_prompt
+
+    # Both should have the same core content
+    assert "Your job is to generate a list of potential inputs" in training_prompt
+    assert "Your job is to generate a list of potential inputs" in eval_prompt
+    assert "generated_samples" in training_prompt
+    assert "generated_samples" in eval_prompt
+
+
+def test_generate_sample_generation_prompt_with_none_guidance():
+    """Test generate_sample_generation_prompt with None guidance"""
+    # Act
+    prompt = generate_sample_generation_prompt(gen_type="training", guidance=None)
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to train a large language model and you should help me generate training data for it."
+        in prompt
+    )
+    assert "## Specific Guidance" not in prompt
+    assert "The guidance is:" not in prompt

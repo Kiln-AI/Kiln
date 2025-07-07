@@ -1289,10 +1289,10 @@ export interface components {
              */
             gen_type: "eval" | "training";
             /**
-             * Human Guidance
+             * Guidance
              * @description Optional human guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
@@ -1324,10 +1324,16 @@ export interface components {
              */
             num_samples: number;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
              */
-            human_guidance?: string | null;
+            gen_type: "training" | "eval";
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
             /**
              * Model Name
              * @description The name of the model to use
@@ -1377,10 +1383,10 @@ export interface components {
              */
             prompt_method: string;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Guidance
+             * @description Optional custom guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Tags
              * @description Tags to add to the sample

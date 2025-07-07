@@ -9,6 +9,7 @@
 
   export let suggested_mode: "data_gen" | "uncensored_data_gen" | null = null
   export let requires_uncensored_data_gen: boolean = false
+  export let gen_type: "training" | "eval" = "training"
 
   // the number of workers to use for parallel generation
   const PARALLEL_WORKER_COUNT = 5
@@ -107,7 +108,8 @@
               num_samples: num_samples_to_generate,
               model_name: model_name,
               provider: model_provider,
-              human_guidance: human_guidance ? human_guidance : null, // clear empty string
+              guidance: human_guidance ? human_guidance : null, // clear empty string
+              gen_type: gen_type,
             },
             params: {
               path: {

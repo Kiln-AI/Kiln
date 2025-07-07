@@ -7,7 +7,7 @@ from kiln_ai.adapters.prompt_builders import SimplePromptBuilder
 from kiln_ai.datamodel import Project, Task
 
 from .data_gen_prompts import (
-    SAMPLE_GENERATION_PROMPT,
+    generate_sample_generation_prompt,
     generate_topic_tree_prompt,
 )
 
@@ -72,15 +72,11 @@ class DataGenCategoriesTask(Task, parent_of={}):
     training data for model learning.
     """
 
-    def __init__(
-        self, gen_type: Literal["training", "eval"], specific_guidance: str | None
-    ):
+    def __init__(self, gen_type: Literal["training", "eval"], guidance: str | None):
         # Keep the typechecker happy. TODO: shouldn't need this or parent_of above.
         tmp_project = Project(name="DataGen")
 
-        instruction = generate_topic_tree_prompt(
-            gen_type=gen_type, specific_guidance=specific_guidance
-        )
+        instruction = generate_topic_tree_prompt(gen_type=gen_type, guidance=guidance)
         print("GENERATE TOPIC TREE PROMPT", instruction)
 
         super().__init__(
@@ -104,13 +100,11 @@ class DataGenSampleTaskInput(BaseModel):
         topic: List of strings representing the topic path
         system_prompt: System prompt to guide the AI generation
         num_samples: Number of samples to generate
-        human_guidance: Optional human guidance to influence generation
     """
 
     topic: list[str]
     system_prompt: str
     num_samples: int
-    human_guidance: str | None = None
 
     @classmethod
     def from_task(
@@ -118,7 +112,6 @@ class DataGenSampleTaskInput(BaseModel):
         task: Task,
         topic: list[str] = [],
         num_samples: int = 8,
-        human_guidance: str | None = None,
     ) -> "DataGenSampleTaskInput":
         """Create a DataGenSampleTaskInput instance from a Task.
 
@@ -135,7 +128,6 @@ class DataGenSampleTaskInput(BaseModel):
         return cls(
             topic=topic,
             num_samples=num_samples,
-            human_guidance=human_guidance,
             system_prompt=prompt_builder.build_prompt(include_json_instructions=False),
         )
 
@@ -176,14 +168,25 @@ class DataGenSampleTask(Task, parent_of={}):
     Generates synthetic data samples based on provided topics and subtopics.
     """
 
-    def __init__(self, target_task: Task, num_samples: int = 8):
+    def __init__(
+        self,
+        target_task: Task,
+        gen_type: Literal["training", "eval"],
+        guidance: str | None,
+        num_samples: int = 8,
+    ):
         # Keep the typechecker happy. TODO: shouldn't need this or parent_of above.
         tmp_project = Project(name="DataGenSample")
+
+        instruction = generate_sample_generation_prompt(
+            gen_type=gen_type, guidance=guidance
+        )
+
         super().__init__(
             name="DataGenSample",
             parent=tmp_project,
             description="A task which generates synthetic data samples for a given topic (and optional subtopic).",
-            instruction=SAMPLE_GENERATION_PROMPT,
+            instruction=instruction,
             input_json_schema=json.dumps(DataGenSampleTaskInput.model_json_schema()),
             output_json_schema=list_json_schema_for_task(target_task),
         )

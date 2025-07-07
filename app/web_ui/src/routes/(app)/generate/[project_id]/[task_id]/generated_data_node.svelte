@@ -143,7 +143,7 @@
               model_name: model_name,
               provider: model_provider,
               gen_type: gen_type,
-              human_guidance: human_guidance ? human_guidance : null, // clear empty string
+              guidance: human_guidance ? human_guidance : null, // clear empty string
               existing_topics:
                 existing_topics.length > 0 ? existing_topics : null, // clear empty array
             },
@@ -410,6 +410,7 @@
     {model}
     {num_samples_to_generate}
     {custom_topics_string}
+    {gen_type}
     suggested_mode={data_gen_model_dropdown_mode}
     requires_uncensored_data_gen={data_gen_model_dropdown_mode ===
       "uncensored_data_gen"}

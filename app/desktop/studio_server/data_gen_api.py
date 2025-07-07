@@ -28,7 +28,7 @@ class DataGenCategoriesApiInput(BaseModel):
     gen_type: Literal["eval", "training"] = Field(
         description="The type of task to generate topics for"
     )
-    human_guidance: str | None = Field(
+    guidance: str | None = Field(
         description="Optional human guidance for generation",
         default=None,
     )
@@ -46,8 +46,11 @@ class DataGenCategoriesApiInput(BaseModel):
 class DataGenSampleApiInput(BaseModel):
     topic: list[str] = Field(description="Topic path for sample generation", default=[])
     num_samples: int = Field(description="Number of samples to generate", default=8)
-    human_guidance: str | None = Field(
-        description="Optional human guidance for generation",
+    gen_type: Literal["training", "eval"] = Field(
+        description="The type of task to generate topics for"
+    )
+    guidance: str | None = Field(
+        description="Optional custom guidance for generation",
         default=None,
     )
     model_name: str = Field(description="The name of the model to use")
@@ -73,8 +76,8 @@ class DataGenSaveSamplesApiInput(BaseModel):
     prompt_method: PromptId = Field(
         description="The prompt method used to generate the output"
     )
-    human_guidance: str | None = Field(
-        description="Optional human guidance for generation",
+    guidance: str | None = Field(
+        description="Optional custom guidance for generation",
         default=None,
     )
     tags: list[str] | None = Field(
@@ -91,7 +94,7 @@ def connect_data_gen_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         categories_task = DataGenCategoriesTask(
-            gen_type=input.gen_type, specific_guidance=input.human_guidance
+            gen_type=input.gen_type, guidance=input.guidance
         )
 
         task_input = DataGenCategoriesTaskInput.from_task(
@@ -122,13 +125,17 @@ def connect_data_gen_api(app: FastAPI):
         project_id: str, task_id: str, input: DataGenSampleApiInput
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
-        sample_task = DataGenSampleTask(target_task=task, num_samples=input.num_samples)
+        sample_task = DataGenSampleTask(
+            target_task=task,
+            gen_type=input.gen_type,
+            guidance=input.guidance,
+            num_samples=input.num_samples,
+        )
 
         task_input = DataGenSampleTaskInput.from_task(
             task=task,
             topic=input.topic,
             num_samples=input.num_samples,
-            human_guidance=input.human_guidance,
         )
 
         adapter = adapter_for_task(
@@ -157,9 +164,9 @@ def connect_data_gen_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         # Wrap the task instuctions with human guidance, if provided
-        if sample.human_guidance is not None and sample.human_guidance.strip() != "":
+        if sample.guidance is not None and sample.guidance.strip() != "":
             task.instruction = wrap_task_with_guidance(
-                task.instruction, sample.human_guidance
+                task.instruction, sample.guidance
             )
 
         adapter = adapter_for_task(

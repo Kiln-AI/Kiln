@@ -6,19 +6,24 @@
 from typing import Literal
 
 
+def generate_goal_description(gen_type: Literal["training", "eval"]) -> str:
+    """
+    Generate a goal description for the given generation type.
+    """
+    if gen_type == "training":
+        return "I want to train a large language model and you should help me generate training data for it."
+    elif gen_type == "eval":
+        return "I want to evaluate a large language model and you should help me generate eval data for it."
+
+
 def generate_topic_tree_prompt(
-    gen_type: Literal["training", "eval"], specific_guidance: str | None = None
+    gen_type: Literal["training", "eval"], guidance: str | None = None
 ) -> str:
     """
     Generate a prompt for generating a topic tree.
     """
 
-    if gen_type == "training":
-        goal_description = "I want to train a large language model and you should help me generate training data for it."
-    elif gen_type == "eval":
-        goal_description = "I want to evaluate a large language model and you should help me generate eval data for it."
-
-    prompt = goal_description
+    prompt = generate_goal_description(gen_type)
 
     prompt += """
 
@@ -55,14 +60,14 @@ desired number of subtopics: 6
 subtopics: ["Recipes", "Asian Food", "Favourite Dishes", "Cookbooks", "Kitchen Gadgets", "Vegan Cooking"]
 """
 
-    if specific_guidance:
+    if guidance:
         prompt += f"""
 
 ## Specific Guidance
 
 For this specific run we have additional guidance about the style of topics we should generate. It's very important we follow this guidance when generating topics.
 
-The guidance is: {specific_guidance}
+The guidance is: {guidance}
 """
     else:
         prompt += """
@@ -85,15 +90,24 @@ The user message will contain the following:
     return prompt
 
 
-SAMPLE_GENERATION_PROMPT = """I want to train a large language model and you should help me generate training data for it. 
+def generate_sample_generation_prompt(
+    gen_type: Literal["training", "eval"], guidance: str | None = None
+) -> str:
+    """
+    Generate a prompt for generating samples.
+    """
 
+    prompt = generate_goal_description(gen_type)
+
+    prompt += """
+
+## Task Description
 Your job is to generate a list of potential inputs to the provided system prompt. They should be diverse and relevant to the system prompt, and the topic if provided.
 
 In the user message we'll provide the following:
  - The system prompt as system_prompt
  - A potential topic to generate samples for. This will be a list of strings from most general to most specific. For example, the topic ["Small Talk Topics", "Hobbies", "Cooking"] would represent the topic "Cooking" in the "Hobbies" category of "Small Talk Topics". The list may be empty, in which case you should generate samples using the system prompt alone.
  - The number of samples to generate as num_samples. If greater than 1, generate a range of samples that are diverse and relevant to the system prompt, and the topic if provided.
- - The user message may optionally contain human_guidance, which is a string that contains additional instructions for how to generate the samples.
 
 The output must be formatted:
  - in the provided structured format, as an object with a single property "generated_samples" that maps to a list of generated samples that would be inputs to the provided system prompt.
@@ -106,6 +120,16 @@ Example inputs:
  - num_samples: 2
 Example output: {"generated_samples": ["New iPhone looks amazing! I need that camera.", "Another boring event from Apple.", "New iPhone looks interesting, but I'm waiting for reviews."]}
 
-
 Note how the output of this task is data to input to the system prompt, not the expected output of the system prompt.
 """
+
+    if guidance:
+        prompt += f"""
+
+## Specific Guidance
+For this specific run we have additional guidance about the style of data we should generate. It's very important we follow this guidance when generating data.
+
+The guidance is: {guidance}
+"""
+
+    return prompt
