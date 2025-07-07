@@ -1,5 +1,5 @@
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from litellm import Usage
@@ -67,31 +67,19 @@ class TestLitellmEmbeddingAdapter:
 
     def test_init_missing_provider(self):
         """Test initialization fails when provider is None."""
-        # Create a config with a valid provider first, then modify it to None
-        config = EmbeddingConfig(
-            name="test-embedding",
-            model_provider_name=ModelProviderName.openai,
-            model_name="openai_text_embedding_3_small",
-            properties={},
-        )
-        # Manually set the provider to None to test the adapter's validation
-        # Use __dict__ to bypass pydantic validation
-        config.__dict__["model_provider_name"] = None
+        config = MagicMock()
+        config.model_provider_name = None
+        config.model_name = "openai_text_embedding_3_small"
+        config.properties = {}
         with pytest.raises(ValueError, match="Provider must be set"):
             LitellmEmbeddingAdapter(config)
 
     def test_init_missing_model_name(self):
         """Test initialization fails when model_name is None."""
-        # Create a config with a valid model_name first, then modify it to None
-        config = EmbeddingConfig(
-            name="test-embedding",
-            model_provider_name=ModelProviderName.openai,
-            model_name="openai_text_embedding_3_small",
-            properties={},
-        )
-        # Manually set the model_name to None to test the adapter's validation
-        # Use __dict__ to bypass pydantic validation
-        config.__dict__["model_name"] = None
+        config = MagicMock()
+        config.model_provider_name = ModelProviderName.openai
+        config.model_name = None
+        config.properties = {}
         with pytest.raises(ValueError, match="Model name must be set"):
             LitellmEmbeddingAdapter(config)
 
