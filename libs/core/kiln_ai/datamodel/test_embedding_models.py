@@ -26,7 +26,7 @@ def mock_project(tmp_path):
 @pytest.fixture
 def mock_chunked_document(tmp_path):
     # Create a temporary file for the attachment
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(delete=False) as tmp_dir:
         tmp_path_file = Path(tmp_dir) / f"{uuid.uuid4()}.txt"
         tmp_path_file.write_text("test content")
 
