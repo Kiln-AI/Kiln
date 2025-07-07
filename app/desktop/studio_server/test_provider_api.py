@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
     KilnEmbeddingModel,
-    KilnEmbeddingModelFamily,
     KilnEmbeddingModelProvider,
     built_in_embedding_models,
 )

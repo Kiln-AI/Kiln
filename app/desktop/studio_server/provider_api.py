@@ -249,8 +249,8 @@ def connect_provider_api(app: FastAPI):
                             EmbeddingModelDetails(
                                 id=model.name,
                                 name=model.friendly_name,
-                                n_dimensions=provider.n_dimensions or 0,
-                                max_input_tokens=provider.max_input_tokens or 0,
+                                n_dimensions=provider.n_dimensions,
+                                max_input_tokens=provider.max_input_tokens,
                                 supports_custom_dimensions=provider.supports_custom_dimensions,
                             )
                         )
