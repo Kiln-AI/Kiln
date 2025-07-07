@@ -3,6 +3,8 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
+  import { onDestroy } from "svelte"
+  import { writable } from "svelte/store"
 
   export let guidance_type: "topics" | "inputs" | "outputs"
 
@@ -11,9 +13,14 @@
   let guidance_dialog: Dialog | null = null
 
   // Local reference to the store needed for svelte syntax
-  const selected_template_store = guidance_data.selected_template
-  const guidance_store = guidance_data.guidance_store_for_type(guidance_type)
+  let selected_template_store = guidance_data.selected_template
+  let guidance_store = guidance_data.guidance_store_for_type(guidance_type)
   const select_options_store = guidance_data.select_options
+  // Disconnect our local reference from the store when the component is destroyed or else the bind: below will set them to undefined
+  onDestroy(() => {
+    selected_template_store = writable("")
+    guidance_store = writable("")
+  })
 
   function clear_guidance() {
     guidance_data.set_guidance_for_type(guidance_type, null, "custom")
@@ -39,7 +46,7 @@
     on:click={show_guidance_dialog}
     tabindex="0"
   >
-    {guidance_data.guidance_label($selected_template_store)}
+    {guidance_data.guidance_label($selected_template_store, $guidance_store)}
   </button>
 </div>
 

@@ -251,7 +251,9 @@
     <p class="text-sm font-light mb-8">
       Add synthetic data samples
       {#if path.length > 0}
-        to {cascade_mode ? "each subtopic of " : ""}{path.join(" → ")}
+        to {cascade_mode ? "each subtopic of " : ""}<span
+          class="font-mono text-xs bg-gray-100">{path.join(" → ")}</span
+        >
       {/if}
     </p>
     {#if sample_generating}

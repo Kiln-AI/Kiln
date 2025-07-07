@@ -390,7 +390,7 @@ def test_generate_topic_tree_prompt_with_guidance():
         in prompt
     )
     assert "## Specific Guidance" in prompt
-    assert f"The guidance is: {guidance}" in prompt
+    assert f"<guidance>\n{guidance}\n</guidance>" in prompt
     assert (
         "When generating subtopics, remain somewhat vague." not in prompt
     )  # Should not have default guidance
@@ -516,8 +516,8 @@ def test_generate_sample_generation_prompt_with_guidance():
         "I want to train a large language model and you should help me generate training data for it."
         in prompt
     )
-    assert "## Specific Guidance" in prompt
-    assert f"The guidance is: {guidance}" in prompt
+    assert "## Custom Guidance" in prompt
+    assert f"<guidance>\n{guidance}\n</guidance>" in prompt
 
 
 def test_generate_sample_generation_prompt_with_empty_guidance():
@@ -565,7 +565,7 @@ def test_generate_sample_generation_prompt_contains_required_sections():
     assert "The output must be formatted:" in prompt
     assert "Do not include any other text or break the schema in any way." in prompt
     assert (
-        "Note how the output of this task is data to input to the system prompt"
+        "Note how the output of this task is data to input into the system prompt"
         in prompt
     )
 
