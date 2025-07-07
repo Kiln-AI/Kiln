@@ -138,6 +138,4 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             str(litellm_provider_name) + "/" + str(provider.model_id)
         )
 
-        print(f"litellm_model_id: {self._litellm_model_id}")
-
         return self._litellm_model_id
