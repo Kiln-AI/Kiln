@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -7,7 +8,7 @@ from kiln_ai.datamodel import Project, Task
 
 from .data_gen_prompts import (
     SAMPLE_GENERATION_PROMPT,
-    TREE_GENERATION_PROMPT,
+    generate_topic_tree_prompt,
 )
 
 
@@ -18,14 +19,12 @@ class DataGenCategoriesTaskInput(BaseModel):
         node_path: List of strings representing the hierarchical path to current node
         system_prompt: System prompt to guide the AI generation
         num_subtopics: Number of subtopics to generate
-        human_guidance: Optional human guidance to influence generation
         existing_topics: Optional list of existing topics to avoid duplication
     """
 
     node_path: list[str]
     system_prompt: str
     num_subtopics: int
-    human_guidance: str | None = None
     existing_topics: list[str] | None = None
 
     @classmethod
@@ -34,7 +33,6 @@ class DataGenCategoriesTaskInput(BaseModel):
         task: Task,
         node_path: list[str] = [],
         num_subtopics: int = 6,
-        human_guidance: str | None = None,
         existing_topics: list[str] | None = None,
     ) -> "DataGenCategoriesTaskInput":
         """Create a DataGenCategoriesTaskInput instance from a Task.
@@ -43,7 +41,6 @@ class DataGenCategoriesTaskInput(BaseModel):
             task: The source Task object
             node_path: Path to current node in topic hierarchy
             num_subtopics: Number of subtopics to generate
-            human_guidance: Optional guidance for generation
             existing_topics: Optional list of existing topics
 
         Returns:
@@ -53,7 +50,6 @@ class DataGenCategoriesTaskInput(BaseModel):
         return cls(
             node_path=node_path,
             num_subtopics=num_subtopics,
-            human_guidance=human_guidance,
             existing_topics=existing_topics,
             system_prompt=prompt_builder.build_prompt(include_json_instructions=False),
         )
@@ -76,14 +72,22 @@ class DataGenCategoriesTask(Task, parent_of={}):
     training data for model learning.
     """
 
-    def __init__(self):
+    def __init__(
+        self, gen_type: Literal["training", "eval"], specific_guidance: str | None
+    ):
         # Keep the typechecker happy. TODO: shouldn't need this or parent_of above.
         tmp_project = Project(name="DataGen")
+
+        instruction = generate_topic_tree_prompt(
+            gen_type=gen_type, specific_guidance=specific_guidance
+        )
+        print("GENERATE TOPIC TREE PROMPT", instruction)
+
         super().__init__(
             name="DataGen",
             parent=tmp_project,
             description="A task which generates synthetic data categories, which in turn are used to generate training data for a model to learn from.",
-            instruction=TREE_GENERATION_PROMPT,
+            instruction=instruction,
             input_json_schema=json.dumps(
                 DataGenCategoriesTaskInput.model_json_schema()
             ),

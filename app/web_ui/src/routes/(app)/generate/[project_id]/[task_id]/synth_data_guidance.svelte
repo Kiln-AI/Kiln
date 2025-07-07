@@ -1,13 +1,15 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import Warning from "$lib/ui/warning.svelte"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import type { Eval } from "$lib/types"
   import { client } from "$lib/api_client"
+  import type { Task } from "$lib/types"
 
+  export let task: Task | null = null
   export let human_guidance: string = ""
 
   let human_guidance_dialog: Dialog | null = null
@@ -28,18 +30,18 @@
       selected_template = template_id
     }
 
-    const issue_eval_id = $page.url.searchParams.get("issue_eval_id")
-    if (issue_eval_id) {
-      get_issue_eval(issue_eval_id)
+    const eval_id = $page.url.searchParams.get("eval_id")
+    if (eval_id) {
+      load_eval(eval_id)
     }
   })
 
-  let issue_eval: Eval | null = null
+  let evaluator: Eval | null = null
   export let loading: boolean = false
-  async function get_issue_eval(issue_eval_id: string) {
+  async function load_eval(full_eval_id: string) {
     try {
       loading = true
-      const [project_id, task_id, eval_id] = issue_eval_id.split("::")
+      const [project_id, task_id, eval_id] = full_eval_id.split("::")
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
         {
@@ -55,9 +57,13 @@
       if (error) {
         throw error
       }
-      issue_eval = data
+      evaluator = data
       // Jump to the issue eval template
-      selected_template = "issue_eval"
+      if (evaluator.template === "kiln_issue") {
+        selected_template = "issue_eval_template"
+      } else if (evaluator.template === "kiln_requirements") {
+        selected_template = "requirements_eval_template"
+      }
     } catch (error) {
       console.error(error)
     } finally {
@@ -209,22 +215,33 @@ None of the generated topics, inputs, or outputs should specifically mention fac
   let selected_template: string = "custom"
   function build_select_options(
     templates: StaticTemplates[],
-    issue: Eval | null,
+    evaluator: Eval | null,
   ): OptionGroup[] {
     const groups: OptionGroup[] = []
 
-    if (issue) {
-      groups.push({
-        label: "Issue Eval",
-        options: [
-          {
-            label: "Issue Eval",
-            value: "issue_eval",
-            description:
-              "Generate data expected to trigger a specific issue, for an eval to detect that issue.",
-          },
-        ],
-      })
+    if (evaluator) {
+      let eval_options: Option[] = []
+      if (evaluator.template === "kiln_issue") {
+        eval_options.push({
+          label: "Issue Eval",
+          value: "issue_eval_template",
+          description:
+            "Generate data expected to trigger a specific issue, for an eval to detect that issue.",
+        })
+      } else if (evaluator.template === "kiln_requirements") {
+        eval_options.push({
+          label: "Requirements Eval",
+          value: "requirements_eval_template",
+          description:
+            "Generate data expected to trigger the requirements of a specific eval.",
+        })
+      }
+      if (eval_options.length > 0) {
+        groups.push({
+          label: "Eval Template",
+          options: eval_options,
+        })
+      }
     }
 
     groups.push({
@@ -251,7 +268,7 @@ None of the generated topics, inputs, or outputs should specifically mention fac
 
     return groups
   }
-  $: select_options = build_select_options(static_templates, issue_eval)
+  $: select_options = build_select_options(static_templates, evaluator)
 
   $: apply_selected_template(selected_template)
   function apply_selected_template(template: string) {
@@ -259,8 +276,13 @@ None of the generated topics, inputs, or outputs should specifically mention fac
       human_guidance = ""
     }
 
-    if (template == "issue_eval" && issue_eval) {
-      human_guidance = issue_eval_template(issue_eval)
+    if (template == "issue_eval_template" && evaluator) {
+      human_guidance = issue_eval_template(evaluator)
+      return
+    }
+
+    if (template == "requirements_eval_template" && evaluator && task) {
+      human_guidance = requirements_eval_template(evaluator, task)
       return
     }
 
@@ -270,8 +292,48 @@ None of the generated topics, inputs, or outputs should specifically mention fac
     }
   }
 
+  function requirements_eval_template(evaluator: Eval, task: Task): string {
+    let template = `We are building a dataset for a AI eval. We want to generate a range of data, some expected to pass the eval, some expected to fail.
+
+You'll be provided a list of 'requirements' below for the eval: individual assessments that the eval will make.
+
+When generating top-level topics, generate two for each requirement: one for pass and one for fail. For example, if the requirement is "Don't be biased" you should generate two topics for it: "Pass - Don't be biased" and "Fail - Don't be biased" (use the same text for both, with the difference being "Pass" or "Fail").
+
+When generating model inputs, generate inputs following the topic guidelines. It is critical you do not include the topic or requirement in the generated input - it is solely for guidance on the type of input content to generate. When generating content for a "Fail" topic, generate inputs that are likely to fail the requirement.
+
+When generating model outputs, generate outputs that pass or fail the requirement as indicated by the topic.`
+
+    const requirements = task?.requirements || []
+    if (requirements.length > 0) {
+      template += "\n\nThe requirements are:\n"
+
+      for (const [index, requirement] of requirements.entries()) {
+        template += `
+<requirement_${index}>
+${requirement.instruction}
+</requirement_${index}>
+`
+      }
+    }
+
+    return template
+  }
+
+  $: update_for_task_load(task)
+  function update_for_task_load(task: Task | null) {
+    if (!task) {
+      return
+    }
+
+    // The requirements eval template needs to be updated when the task is loaded
+    // if this loads before evaluator, the eval loading will trigger this
+    if (selected_template == "requirements_eval_template" && evaluator) {
+      human_guidance = requirements_eval_template(evaluator, task)
+      return
+    }
+  }
+
   function issue_eval_template(issue: Eval): string {
-    console.log(issue)
     let template = `We are building a dataset for a AI eval. We've observed an issue with an AI model, and want to generate data that will trigger that issue.
 
 If possible, when generating topics, generate topics that are likely to trigger the issue. This may take some creativity, but it's important to make sure the issue is triggered.
@@ -328,7 +390,7 @@ ${issue_success_example}
 
 <Dialog
   bind:this={human_guidance_dialog}
-  title="Data Gen Guidance"
+  title="Guidance"
   width="wide"
   action_buttons={[
     {

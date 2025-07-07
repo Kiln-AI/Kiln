@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import FastAPI
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
@@ -23,6 +25,9 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Path to the node in the category tree", default=[]
     )
     num_subtopics: int = Field(description="Number of subtopics to generate", default=6)
+    gen_type: Literal["eval", "training"] = Field(
+        description="The type of task to generate topics for"
+    )
     human_guidance: str | None = Field(
         description="Optional human guidance for generation",
         default=None,
@@ -84,13 +89,15 @@ def connect_data_gen_api(app: FastAPI):
         project_id: str, task_id: str, input: DataGenCategoriesApiInput
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
-        categories_task = DataGenCategoriesTask()
+
+        categories_task = DataGenCategoriesTask(
+            gen_type=input.gen_type, specific_guidance=input.human_guidance
+        )
 
         task_input = DataGenCategoriesTaskInput.from_task(
             task=task,
             node_path=input.node_path,
             num_subtopics=input.num_subtopics,
-            human_guidance=input.human_guidance,
             existing_topics=input.existing_topics,
         )
 

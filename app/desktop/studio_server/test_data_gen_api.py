@@ -102,6 +102,7 @@ def test_generate_categories_success(
         node_path=["parent", "child"],
         num_subtopics=4,
         human_guidance="Generate tech categories",
+        gen_type="eval",
         model_name="gpt-4",
         provider="openai",
     )

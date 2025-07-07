@@ -36,6 +36,9 @@
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
+  let gen_type: "training" | "eval" = "training"
+  $: gen_type =
+    $page.url.searchParams.get("reason") === "eval" ? "eval" : "training"
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
@@ -389,6 +392,7 @@
           {project_id}
           {task_id}
           {human_guidance}
+          bind:gen_type
           {triggerSave}
           bind:data_gen_model_dropdown_mode
           bind:num_subtopics_to_generate
@@ -580,4 +584,5 @@
   bind:this={human_guidance_dialog}
   bind:suggest_uncensored
   bind:loading={synth_data_loading}
+  bind:task
 />

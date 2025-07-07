@@ -3,6 +3,7 @@ import json
 import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.data_gen.data_gen_prompts import generate_topic_tree_prompt
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
@@ -33,20 +34,17 @@ def test_data_gen_categories_task_input_initialization(base_task):
     # Arrange
     node_path = ["root", "branch", "leaf"]
     num_subtopics = 4
-    human_guidance = "Test guidance"
 
     # Act
     input_model = DataGenCategoriesTaskInput.from_task(
         task=base_task,
         node_path=node_path,
         num_subtopics=num_subtopics,
-        human_guidance=human_guidance,
     )
 
     # Assert
     assert input_model.node_path == node_path
     assert input_model.num_subtopics == num_subtopics
-    assert input_model.human_guidance == human_guidance
     assert isinstance(input_model.system_prompt, str)
     assert "Reply like a cowboy" in input_model.system_prompt
 
@@ -57,13 +55,12 @@ def test_data_gen_categories_task_input_default_values(base_task):
 
     # Assert
     assert input_model.num_subtopics == 6
-    assert input_model.human_guidance is None
     assert input_model.node_path == []
 
 
 def test_data_gen_categories_task_initialization():
     # Act
-    task = DataGenCategoriesTask()
+    task = DataGenCategoriesTask(gen_type="training", specific_guidance="Test guidance")
 
     # Assert
     assert task.name == "DataGen"
@@ -72,11 +69,16 @@ def test_data_gen_categories_task_initialization():
     assert task.instruction is not None
     assert isinstance(task.input_json_schema, str)
     assert isinstance(task.output_json_schema, str)
+    assert "I want to train a large language model" in task.instruction
+    assert "Test guidance" in task.instruction
 
 
 def test_data_gen_categories_task_schemas():
     # Act
-    task = DataGenCategoriesTask()
+    task = DataGenCategoriesTask(gen_type="eval", specific_guidance="Test guidance")
+
+    assert "I want to evaluate a large language model" in task.instruction
+    assert "Test guidance" in task.instruction
 
     # Assert
     input_schema = json.loads(task.input_json_schema)
@@ -106,7 +108,7 @@ async def test_data_gen_all_models_providers(
         # pass if the model doesn't support data gen (testing the support flag is part of this)
         return
 
-    data_gen_task = DataGenCategoriesTask()
+    data_gen_task = DataGenCategoriesTask(gen_type="training", specific_guidance=None)
     data_gen_input = DataGenCategoriesTaskInput.from_task(base_task, num_subtopics=6)
 
     adapter = adapter_for_task(
@@ -332,3 +334,136 @@ async def test_data_gen_sample_all_models_providers_with_structured_output(
         assert "tweet" in sample
         assert isinstance(sample["username"], str)
         assert isinstance(sample["tweet"], str)
+
+
+def test_generate_topic_tree_prompt_training_type():
+    """Test generate_topic_tree_prompt with gen_type='training'"""
+    # Act
+    prompt = generate_topic_tree_prompt(gen_type="training")
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to train a large language model and you should help me generate training data for it."
+        in prompt
+    )
+    assert "## Task Description" in prompt
+    assert "Your job is the following:" in prompt
+    assert "## Next Step" in prompt
+    assert "When generating subtopics, remain somewhat vague." in prompt
+    assert "The guidance is:" not in prompt  # Should not have specific guidance
+
+
+def test_generate_topic_tree_prompt_eval_type():
+    """Test generate_topic_tree_prompt with gen_type='eval'"""
+    # Act
+    prompt = generate_topic_tree_prompt(gen_type="eval")
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to evaluate a large language model and you should help me generate eval data for it."
+        in prompt
+    )
+    assert "## Task Description" in prompt
+    assert "Your job is the following:" in prompt
+    assert "## Next Step" in prompt
+    assert "When generating subtopics, remain somewhat vague." in prompt
+    assert "The guidance is:" not in prompt  # Should not have specific guidance
+
+
+def test_generate_topic_tree_prompt_with_specific_guidance():
+    """Test generate_topic_tree_prompt with specific_guidance provided"""
+    # Arrange
+    specific_guidance = "Focus on technical topics related to artificial intelligence and machine learning"
+
+    # Act
+    prompt = generate_topic_tree_prompt(
+        gen_type="training", specific_guidance=specific_guidance
+    )
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to train a large language model and you should help me generate training data for it."
+        in prompt
+    )
+    assert "## Specific Guidance" in prompt
+    assert f"The guidance is: {specific_guidance}" in prompt
+    assert (
+        "When generating subtopics, remain somewhat vague." not in prompt
+    )  # Should not have default guidance
+
+
+def test_generate_topic_tree_prompt_with_empty_specific_guidance():
+    """Test generate_topic_tree_prompt with empty string specific_guidance"""
+    # Act
+    prompt = generate_topic_tree_prompt(gen_type="eval", specific_guidance="")
+
+    # Assert
+    assert isinstance(prompt, str)
+    assert (
+        "I want to evaluate a large language model and you should help me generate eval data for it."
+        in prompt
+    )
+    assert "## Specific Guidance" not in prompt
+    assert (
+        "When generating subtopics, remain somewhat vague." in prompt
+    )  # Should have default guidance
+
+
+def test_generate_topic_tree_prompt_contains_examples():
+    """Test that the prompt contains the expected examples"""
+    # Act
+    prompt = generate_topic_tree_prompt(gen_type="training")
+
+    # Assert
+    # Check for news examples
+    assert "News Topics" in prompt
+    assert "Sports" in prompt
+    assert "Football" in prompt
+    assert "College Football" in prompt
+    assert "Entertainment" in prompt
+    assert "Tom Hanks" in prompt
+
+    # Check for smalltalk examples
+    assert "Small Talk Topics" in prompt
+    assert "Weather" in prompt
+    assert "Family" in prompt
+    assert "Hobbies" in prompt
+    assert "Cooking" in prompt
+    assert "Asian Food" in prompt
+
+
+def test_generate_topic_tree_prompt_contains_required_sections():
+    """Test that the prompt contains all required sections"""
+    # Act
+    prompt = generate_topic_tree_prompt(gen_type="training")
+
+    # Assert
+    assert "## Task Description" in prompt
+    assert "## Next Step" in prompt
+    assert "system_prompt" in prompt
+    assert "node_path" in prompt
+    assert "num_subtopics" in prompt
+    assert "existing_topics" in prompt
+
+
+def test_generate_topic_tree_prompt_structure_consistency():
+    """Test that the prompt structure is consistent between training and eval types"""
+    # Act
+    training_prompt = generate_topic_tree_prompt(gen_type="training")
+    eval_prompt = generate_topic_tree_prompt(gen_type="eval")
+
+    # Assert
+    # Both should have the same structure, just different goal descriptions
+    assert "## Task Description" in training_prompt
+    assert "## Task Description" in eval_prompt
+    assert "## Next Step" in training_prompt
+    assert "## Next Step" in eval_prompt
+
+    # The main difference should be in the goal description
+    assert "train a large language model" in training_prompt
+    assert "evaluate a large language model" in eval_prompt
+    assert "generate training data" in training_prompt
+    assert "generate eval data" in eval_prompt

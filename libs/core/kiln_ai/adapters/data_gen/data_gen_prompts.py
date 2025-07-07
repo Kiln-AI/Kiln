@@ -3,9 +3,29 @@
 # These libraries are licensed under the Apache License 2.0. Any modifications
 # are licensed under the kiln AI Core license (MIT at time of writing). See /libs/core/LICENSE.txt for details.
 
+from typing import Literal
 
-TREE_GENERATION_PROMPT = """I want to train a large language model and I am using another, bigger large language model to generate training data for this. However, if we always ask the bigger model to generate training data with the same prompt, it will end up generating very repetitive training samples. Therefore, we will slightly modify our prompt for each sampling procedure according to some aspects. For instance, when asking the model to generate news articles, we could modify the prompt to let the model tell news articles about particular topics, such as business or politics. To further generate training data, we will do this recursively, and generate submodifications to the prompt. For instance, within the domain of business, we could adapt the prompt to generate news about the stock market or business scandals, and within politics, we could ask the model to generate articles for subtopics like elections or climate policy. We do this recursively, and therefore, we get a tree-like structure of topics.
-Your job is the following: I will give you a path of nodes down the topic tree - you should then come up with a list of new subtopics for this given node and return it as a python list. Here are a few examples of what your outputs should look like, related to the news example I just gave you:
+
+def generate_topic_tree_prompt(
+    gen_type: Literal["training", "eval"], specific_guidance: str | None = None
+) -> str:
+    """
+    Generate a prompt for generating a topic tree.
+    """
+
+    if gen_type == "training":
+        goal_description = "I want to train a large language model and you should help me generate training data for it."
+    elif gen_type == "eval":
+        goal_description = "I want to evaluate a large language model and you should help me generate eval data for it."
+
+    prompt = goal_description
+
+    prompt += """
+
+## Task Description
+I am using a large language model to generate synthetic data. However, if we always ask the model to generate synthetic data with the same prompt, it will end up generating very repetitive samples. Therefore, we will slightly modify our prompt for each sampling procedure according to some aspects. For instance, when asking the model to generate news articles, we could modify the prompt to let the model tell news articles about particular topics, such as business or politics. To further generate training data, we will do this recursively, and generate submodifications to the prompt. For instance, within the domain of business, we could adapt the prompt to generate news about the stock market or business scandals, and within politics, we could ask the model to generate articles for subtopics like elections or climate policy. We do this recursively, and therefore, we get a tree-like structure of topics.
+
+Your job is the following: I will give you a path of nodes down the topic tree - you should then come up with a list of new subtopics for this given node and return it as a list of strings. Here are a few examples of what your outputs should look like, related to the news example I just gave you:
 
 Example 1:
 node path: "News Topics" -> "Sports" -> "Football"
@@ -16,7 +36,6 @@ Example 2:
 node path: "News Topics" -> "Entertainment" -> "Movies" -> "Star Portraits"
 desired number of subtopics: 8
 subtopics: ["Tom Hanks", "Meryl Streep", "Leonardo DiCaprio", "Jennifer Lawrence", "Denzel Washington", "Charlize Theron", "Robert Downey Jr.", "Emma Stone"]
-
 
 Here are three new examples, this time for generating smalltalk topics for a friendly chat assistant:
 
@@ -34,17 +53,36 @@ Example 3:
 node path: "Small Talk Topics" -> "Hobbies" -> "Cooking"
 desired number of subtopics: 6
 subtopics: ["Recipes", "Asian Food", "Favourite Dishes", "Cookbooks", "Kitchen Gadgets", "Vegan Cooking"]
+"""
+
+    if specific_guidance:
+        prompt += f"""
+
+## Specific Guidance
+
+For this specific run we have additional guidance about the style of topics we should generate. It's very important we follow this guidance when generating topics.
+
+The guidance is: {specific_guidance}
+"""
+    else:
+        prompt += """
+
+When generating subtopics, remain somewhat vague. Things can only be tangentially related and they don't have to be interpreted in a single way. Importantly, make sure that the subtopics fit the system prompt.
+"""
+
+    prompt += """
+
+## Next Step
 
 The user message will contain the following:
  - The system prompt for the model we want to train as system_prompt.
  - The node path as node_path. It will be formated as a list of strings from most general to most specific. For example, the node_path for Example 3 above would be ["Small Talk Topics", "Hobbies", "Cooking"]. If empty, the node path is the root node.
  - The desired number of subtopics for this node as num_subtopics. Return exactly this number of subtopics.
- - Optionally, it may contain human_guidance, which is a string that contains additional instructions for how to generate the subtopics.
  - Optionally, it may contain existing_topics, which is a list of subtopics that already exist at this node. You should not generate subtopics that are in this list.
 
-
-When generating subtopics, remain somewhat vague. Things can only be tangentially related and they don't have to be interpreted in a single way. Importantly, make sure that the subtopics fit the system prompt.
 """
+
+    return prompt
 
 
 SAMPLE_GENERATION_PROMPT = """I want to train a large language model and you should help me generate training data for it. 

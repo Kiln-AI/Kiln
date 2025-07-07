@@ -15,6 +15,7 @@
   export let project_id: string
   export let task_id: string
   export let human_guidance: string | null = null
+  export let gen_type: "training" | "eval"
   export let triggerSave: () => void
 
   let model: string = $ui_state.selected_model
@@ -141,6 +142,7 @@
               num_subtopics: num_subtopics_to_generate,
               model_name: model_name,
               provider: model_provider,
+              gen_type: gen_type,
               human_guidance: human_guidance ? human_guidance : null, // clear empty string
               existing_topics:
                 existing_topics.length > 0 ? existing_topics : null, // clear empty array
@@ -318,6 +320,7 @@
         {project_id}
         {task_id}
         {human_guidance}
+        {gen_type}
         {triggerSave}
         {data_gen_model_dropdown_mode}
         bind:num_subtopics_to_generate

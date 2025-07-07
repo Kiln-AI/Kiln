@@ -1283,6 +1283,12 @@ export interface components {
              */
             num_subtopics: number;
             /**
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
+             */
+            gen_type: "eval" | "training";
+            /**
              * Human Guidance
              * @description Optional human guidance for generation
              */
