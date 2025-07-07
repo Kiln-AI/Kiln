@@ -19,11 +19,14 @@
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
   import DataGenIntro from "./data_gen_intro.svelte"
+  import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
-  let human_guidance = ""
+  let guidance_data: SynthDataGuidanceDataModel =
+    new SynthDataGuidanceDataModel()
+
   let splits: Record<string, number> = {}
   let splits_subtitle: string | undefined = undefined
   let split_object: Splits | null = null
@@ -55,12 +58,6 @@
     ? "uncensored_data_gen"
     : "data_gen"
 
-  function show_human_guidance_dialog() {
-    human_guidance_dialog?.show()
-  }
-
-  let human_guidance_dialog: SynthDataGuidance | null = null
-
   // Empty to start but will be populated from IndexedDB after task is loaded
   let root_node: Writable<SampleDataNode> = writable({
     topic: "",
@@ -71,9 +68,6 @@
   function clear_all() {
     let msg =
       "Are you sure you want to clear all topics and data samples? This action cannot be undone."
-    if (human_guidance.length > 0) {
-      msg += " This will not remove your human guidance."
-    }
 
     if (confirm(msg)) {
       root_node.set({
@@ -89,8 +83,12 @@
     root_node.update((n) => n)
   }
 
-  onMount(() => {
-    get_task()
+  onMount(async () => {
+    await get_task()
+    if (!task) {
+      // TODO
+      throw new Error("Task not found")
+    }
 
     if (project_id && task_id) {
       // Setup the root node store
@@ -101,6 +99,16 @@
         sub_topics: [],
       })
     }
+
+    // Load the data model we use for synth data guidance
+    await guidance_data.load(
+      $page.url.searchParams.get("template_id"),
+      $page.url.searchParams.get("eval_id"),
+      project_id,
+      task_id,
+      gen_type,
+      task,
+    )
   })
 
   async function get_task() {
@@ -265,9 +273,11 @@
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
-      const save_sample_guidance =
-        human_guidance.length > 0 ? human_guidance : undefined
+      // TODO
+      //const save_sample_guidance =
+      // human_guidance.length > 0 ? human_guidance : undefined
       // Get a random split tag, if splits are defined
+      const save_sample_guidance = undefined
       const split_tag = split_object?.get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
       const {
@@ -294,7 +304,7 @@
             output_provider: provider,
             prompt_method,
             topic_path: topic_path || [],
-            human_guidance: save_sample_guidance,
+            guidance: save_sample_guidance,
             tags,
           },
         },
@@ -326,18 +336,6 @@
     sub_subtitle_link="https://docs.getkiln.ai/docs/synthetic-data-generation"
     sub_subtitle="Read the Docs"
     no_y_padding
-    action_buttons={[
-      ...(is_empty
-        ? [
-            {
-              label:
-                human_guidance.length > 0 ? "Edit Guidance" : "Add Guidance",
-              notice: human_guidance.length > 0,
-              handler: show_human_guidance_dialog,
-            },
-          ]
-        : []),
-    ]}
   >
     {#if task_loading || synth_data_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -364,14 +362,6 @@
           class="flex flex-row py-1 mb-4 gap-2 justify-end sticky top-0 z-10 backdrop-blur"
         >
           <button class="btn btn-mid" on:click={clear_all}>Clear</button>
-          <button class="btn btn-mid" on:click={show_human_guidance_dialog}>
-            {#if human_guidance.length > 0}
-              <span class="bg-primary rounded-full w-3 h-3 mr-1" />
-              Edit Guidance
-            {:else}
-              Add Guidance
-            {/if}
-          </button>
           <button
             class="btn btn-mid"
             on:click={() => {
@@ -389,10 +379,7 @@
         <GeneratedDataNode
           data={$root_node}
           path={[]}
-          {project_id}
-          {task_id}
-          {human_guidance}
-          bind:gen_type
+          {guidance_data}
           {triggerSave}
           bind:data_gen_model_dropdown_mode
           bind:num_subtopics_to_generate
@@ -540,7 +527,8 @@
             {/if}
           </div>
         </div>
-        {#if human_guidance.length > 0}
+        <!-- TODO_P0 -->
+        {#if false}
           {#if prompt_method.includes("::")}
             <Warning
               warning_message="Guidance is enabled but won't be applied as you've selected a custom prompt with a fixed string."
@@ -558,8 +546,12 @@
           requires_structured_output={task?.output_json_schema ? true : false}
           bind:model
         />
+        <div>
+          <SynthDataGuidance guidance_type="outputs" {guidance_data} />
+        </div>
 
         <PromptTypeSelector bind:prompt_method />
+
         <FormElement
           id="save_all_samples_mode_element"
           inputType="select"
@@ -578,11 +570,3 @@
     <button>close</button>
   </form>
 </dialog>
-
-<SynthDataGuidance
-  bind:human_guidance
-  bind:this={human_guidance_dialog}
-  bind:suggest_uncensored
-  bind:loading={synth_data_loading}
-  bind:task
-/>

@@ -8,14 +8,17 @@
   import { createEventDispatcher } from "svelte"
   import IncrementUi from "./increment_ui.svelte"
   import GenerateSamplesModal from "./generate_samples_modal.svelte"
+  import SynthDataGuidance from "./synth_data_guidance.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
+  import { get } from "svelte/store"
 
+  let custom_topic_mode: boolean = false
+
+  export let guidance_data: SynthDataGuidanceDataModel
   export let data: SampleDataNode
   export let path: string[]
   $: depth = path.length
-  export let project_id: string
-  export let task_id: string
-  export let human_guidance: string | null = null
-  export let gen_type: "training" | "eval"
   export let triggerSave: () => void
 
   let model: string = $ui_state.selected_model
@@ -61,6 +64,8 @@
     topic_generation_error = null
     await tick()
     const modal = document.getElementById(`${id}-generate-subtopics`)
+    // Always start in normal mode
+    custom_topic_mode = false
     // @ts-expect-error dialog is not a standard element
     modal?.showModal()
   }
@@ -133,6 +138,7 @@
         throw new KilnError("Invalid model selected.", null)
       }
       const existing_topics = data.sub_topics.map((t) => t.topic)
+      const topic_guidance = get(guidance_data.topic_guidance)
       const { data: generate_response, error: generate_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/generate_categories",
@@ -142,15 +148,15 @@
               num_subtopics: num_subtopics_to_generate,
               model_name: model_name,
               provider: model_provider,
-              gen_type: gen_type,
-              guidance: human_guidance ? human_guidance : null, // clear empty string
+              gen_type: guidance_data.gen_type,
+              guidance: topic_guidance ? topic_guidance : null, // clear empty string
               existing_topics:
                 existing_topics.length > 0 ? existing_topics : null, // clear empty array
             },
             params: {
               path: {
-                project_id,
-                task_id,
+                project_id: guidance_data.project_id,
+                task_id: guidance_data.task_id,
               },
             },
           },
@@ -317,10 +323,7 @@
       <svelte:self
         data={sub_node}
         path={[...path, sub_node.topic]}
-        {project_id}
-        {task_id}
-        {human_guidance}
-        {gen_type}
+        {guidance_data}
         {triggerSave}
         {data_gen_model_dropdown_mode}
         bind:num_subtopics_to_generate
@@ -340,28 +343,51 @@
           >✕</button
         >
       </form>
-      <h3 class="text-lg font-bold">Add Subtopics</h3>
+      <h3 class="text-lg font-bold">
+        {#if custom_topic_mode}
+          Add Custom Topics
+        {:else}
+          Generate Topics
+        {/if}
+      </h3>
       <p class="text-sm font-light mb-8">
-        Add a list of subtopics
-        {#if path.length > 0}
-          to {path.join(" → ")}
+        {#if path.length == 0}
+          Adding topics will help generate diverse data. They can be nested,
+          forming a topic tree.
+        {:else}
+          Add a list of subtopics to {path.join(" → ")}
         {/if}
       </p>
       {#if topic_generating}
         <div class="flex flex-row justify-center">
           <div class="loading loading-spinner loading-lg my-12"></div>
         </div>
+      {:else if custom_topic_mode}
+        <div class="flex flex-col gap-4">
+          <FormElement
+            id="custom_topics"
+            label="Custom topics"
+            description="Comma separated list of topics to add to this node"
+            bind:value={custom_topics_string}
+          />
+          <button
+            class="btn btn-primary {custom_topics_string ? 'btn-primary' : ''}"
+            on:click={add_custom_topics}>Add Custom Topics</button
+          >
+        </div>
       {:else}
-        <div class="flex flex-col gap-2">
+        <div class="flex flex-col gap-4">
           {#if topic_generation_error}
             <div class="alert alert-error">
               {topic_generation_error.message}
             </div>
           {/if}
-          <div class="flex-grow font-medium">Generate topics</div>
-          <div class="flex flex-row items-center gap-4 mt-4 mb-2">
+          <div class="flex flex-row items-center gap-4">
             <div class="flex-grow font-medium text-sm">Topic Count</div>
             <IncrementUi bind:value={num_subtopics_to_generate} />
+          </div>
+          <div>
+            <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
           <AvailableModelsDropdown
             requires_data_gen={true}
@@ -370,26 +396,18 @@
               "uncensored_data_gen"}
             bind:model
           />
-          <button
-            class="btn btn-sm mt-2 {custom_topics_string ? '' : 'btn-primary'}"
-            on:click={generate_topics}
-          >
+          <button class="btn mt-2 btn-primary" on:click={generate_topics}>
             Generate {num_subtopics_to_generate} Topics
           </button>
-          <div class="divider">OR</div>
-          <div class="flex flex-col">
-            <div class="flex-grow font-medium">Custom topics</div>
-            <div class="text-xs text-gray-500">Comma separated list</div>
+          <div class="text-center">
+            <button
+              class="link text-sm text-gray-500"
+              on:click={() => (custom_topic_mode = true)}
+              tabindex="0"
+            >
+              or manually add topics
+            </button>
           </div>
-          <input
-            type="text"
-            bind:value={custom_topics_string}
-            class="input input-bordered input-sm"
-          />
-          <button
-            class="btn btn-sm {custom_topics_string ? 'btn-primary' : ''}"
-            on:click={add_custom_topics}>Add Custom Topics</button
-          >
         </div>
       {/if}
     </div>
@@ -404,13 +422,10 @@
     {id}
     {data}
     {path}
-    {project_id}
-    {task_id}
-    {human_guidance}
     {model}
+    {guidance_data}
     {num_samples_to_generate}
     {custom_topics_string}
-    {gen_type}
     suggested_mode={data_gen_model_dropdown_mode}
     requires_uncensored_data_gen={data_gen_model_dropdown_mode ===
       "uncensored_data_gen"}
@@ -427,23 +442,5 @@
   .data-row-collapsed:hover .hover-action {
     display: flex;
     visibility: visible;
-  }
-
-  .divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    color: #666;
-    font-size: 0.875rem;
-    margin: 0.5rem 0;
-    padding: 2.5rem 0 1.5rem 0;
-  }
-
-  .divider::before,
-  .divider::after {
-    content: "";
-    flex: 1;
-    border-bottom: 1px solid #ddd;
-    margin: 0 0.75rem;
   }
 </style>

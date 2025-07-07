@@ -6,10 +6,12 @@
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormElement from "../../../../../lib/utils/form_element.svelte"
+  import SynthDataGuidance from "./synth_data_guidance.svelte"
+  import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
 
   export let suggested_mode: "data_gen" | "uncensored_data_gen" | null = null
   export let requires_uncensored_data_gen: boolean = false
-  export let gen_type: "training" | "eval" = "training"
+  export let guidance_data: SynthDataGuidanceDataModel
 
   // the number of workers to use for parallel generation
   const PARALLEL_WORKER_COUNT = 5
@@ -27,9 +29,6 @@
   export let id: string
   export let data: SampleDataNode
   export let path: string[]
-  export let project_id: string
-  export let task_id: string
-  export let human_guidance: string | null = null
   export let model: string
   export let num_samples_to_generate: number = 8
   export let custom_topics_string: string | null = null
@@ -99,6 +98,7 @@
       if (!model_name || !model_provider) {
         throw new KilnError("Invalid model selected.", null)
       }
+      const input_guidance = guidance_data.guidance_for_type("inputs")
       const { data: generate_response, error: generate_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/generate_samples",
@@ -108,13 +108,13 @@
               num_samples: num_samples_to_generate,
               model_name: model_name,
               provider: model_provider,
-              guidance: human_guidance ? human_guidance : null, // clear empty string
-              gen_type: gen_type,
+              guidance: input_guidance ? input_guidance : null, // clear empty string
+              gen_type: guidance_data.gen_type,
             },
             params: {
               path: {
-                project_id,
-                task_id,
+                project_id: guidance_data.project_id,
+                task_id: guidance_data.task_id,
               },
             },
           },
@@ -263,6 +263,9 @@
         <div class="flex flex-row items-center gap-4 mt-4 mb-2">
           <div class="flex-grow font-medium text-sm">Sample Count</div>
           <IncrementUi bind:value={num_samples_to_generate} />
+        </div>
+        <div>
+          <SynthDataGuidance guidance_type="inputs" {guidance_data} />
         </div>
         <AvailableModelsDropdown
           requires_data_gen={true}
