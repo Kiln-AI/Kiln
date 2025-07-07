@@ -33,12 +33,15 @@ class EmbeddingModelName(str, Enum):
 class KilnEmbeddingModelProvider(BaseModel):
     name: ModelProviderName
 
-    model_id: str | None = None
+    model_id: str = Field(
+        description="The model ID for the embedding model. This is the ID used to identify the model in the provider's API.",
+    )
 
-    max_input_tokens: int | None = None
+    max_input_tokens: int = Field(
+        description="The maximum number of tokens that can be input to the model. If the model allows picking between different options, provide the list of available options.",
+    )
 
-    n_dimensions: int | None = Field(
-        default=None,
+    n_dimensions: int = Field(
         description="The number of dimensions in the output embedding. If the model allows picking between different options, provide the list of available dimensions.",
     )
 

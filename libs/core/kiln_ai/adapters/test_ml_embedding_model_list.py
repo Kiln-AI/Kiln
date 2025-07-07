@@ -49,39 +49,20 @@ class TestKilnEmbeddingModelProvider:
         assert provider.n_dimensions == 1536
         assert provider.supports_custom_dimensions is True
 
-    def test_provider_with_optional_fields_none(self):
-        """Test creating a provider with optional fields set to None"""
+    def test_provider_with_optional_fields_unspecified(self):
+        """Test creating a provider with optional fields not specified"""
         provider = KilnEmbeddingModelProvider(
             name=ModelProviderName.gemini_api,
+            model_id="text-embedding-004",
+            max_input_tokens=2048,
+            n_dimensions=768,
         )
 
         assert provider.name == ModelProviderName.gemini_api
-        assert provider.model_id is None
-        assert provider.max_input_tokens is None
-        assert provider.n_dimensions is None
+        assert provider.model_id == "text-embedding-004"
+        assert provider.max_input_tokens == 2048
+        assert provider.n_dimensions == 768
         assert provider.supports_custom_dimensions is False
-
-    def test_provider_default_values(self):
-        """Test that default values are correctly set"""
-        provider = KilnEmbeddingModelProvider(
-            name=ModelProviderName.openai,
-        )
-
-        assert provider.supports_custom_dimensions is False
-        assert provider.n_dimensions is None
-
-    def test_provider_field_descriptions(self):
-        """Test that field descriptions are properly set"""
-        # This test verifies the Field descriptions are accessible
-        provider = KilnEmbeddingModelProvider(
-            name=ModelProviderName.openai,
-            n_dimensions=1536,
-            supports_custom_dimensions=True,
-        )
-
-        # The descriptions are in the Field metadata, but we can test the behavior
-        assert provider.n_dimensions == 1536
-        assert provider.supports_custom_dimensions is True
 
 
 class TestKilnEmbeddingModel:
@@ -94,6 +75,7 @@ class TestKilnEmbeddingModel:
                 name=ModelProviderName.openai,
                 model_id="text-embedding-3-small",
                 n_dimensions=1536,
+                max_input_tokens=8192,
             )
         ]
 
@@ -115,13 +97,15 @@ class TestKilnEmbeddingModel:
         providers = [
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openai,
-                model_id="text-embedding-3-small",
+                model_id="model-1",
                 n_dimensions=1536,
+                max_input_tokens=8192,
             ),
             KilnEmbeddingModelProvider(
-                name=ModelProviderName.anthropic,  # Hypothetical provider
-                model_id="text-embedding-3-small",
+                name=ModelProviderName.anthropic,
+                model_id="model-1",
                 n_dimensions=1536,
+                max_input_tokens=8192,
             ),
         ]
 
