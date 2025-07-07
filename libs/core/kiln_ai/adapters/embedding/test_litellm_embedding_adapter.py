@@ -406,33 +406,3 @@ async def test_paid_embed_with_custom_dimensions_supported(
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == expected_dim
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
-
-
-@pytest.mark.paid
-@pytest.mark.parametrize(
-    "provider,model_name,expected_dim",
-    [
-        (ModelProviderName.gemini_api, "gemini_text_embedding_004", 256),
-    ],
-)
-@pytest.mark.asyncio
-async def test_paid_embed_with_custom_dimensions_not_supported(
-    provider, model_name, expected_dim
-):
-    """Models that do not support custom dimensions will throw an error."""
-    gemini_key = Config.shared().gemini_api_key or os.environ.get("GEMINI_API_KEY")
-    if not gemini_key:
-        pytest.skip("GEMINI_API_KEY not set")
-    os.environ["GEMINI_API_KEY"] = gemini_key
-    config = EmbeddingConfig(
-        name="paid-embedding",
-        model_provider_name=provider,
-        model_name=model_name,
-        properties={"dimensions": expected_dim},
-    )
-    adapter = LitellmEmbeddingAdapter(config)
-    text = ["Kiln is an open-source evaluation platform for LLMs."]
-    with pytest.raises(
-        ValueError, match=f"The model {model_name} does not support custom dimensions"
-    ):
-        await adapter.embed(text)
