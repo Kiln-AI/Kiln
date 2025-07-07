@@ -41,6 +41,14 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         self.model_name = model_name
         self.properties = embedding_config.properties
 
+        self.model_provider = built_in_embedding_models_from_provider(
+            self.model_provider_name, self.model_name
+        )
+        if self.model_provider is None:
+            raise ValueError(
+                f"Embedding model {self.model_name} not found in the list of built-in models"
+            )
+
     async def _embed(self, text: List[str]) -> EmbeddingResult:
         # TODO: providers will throw if the text input is too long - goes over the max tokens for the model
         # we should validate that upstream to prevent this from bricking the whole pipeline if the user's dataset
@@ -78,20 +86,10 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             dimensions=dimensions,
         )
 
-    def _resolve_model_provider(self) -> KilnEmbeddingModelProvider:
-        model = built_in_embedding_models_from_provider(
-            self.model_provider_name, self.model_name
-        )
-        if model is None:
-            raise ValueError(
-                f"Embedding model {self.model_name} not found in the list of built-in models"
-            )
-        return model
-
     # TODO: refactor this to be shared with other implementations of LiteLLM adapters
     # for example, embedding adapter for LiteLLM, and also Extractor adapter for LiteLLM
     def litellm_model_id(self) -> str:
-        provider = self._resolve_model_provider()
+        provider = self.model_provider
         if not provider:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
