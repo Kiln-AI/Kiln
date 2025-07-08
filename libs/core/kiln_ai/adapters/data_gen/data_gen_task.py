@@ -172,7 +172,6 @@ class DataGenSampleTask(Task, parent_of={}):
         target_task: Task,
         gen_type: Literal["training", "eval"],
         guidance: str | None,
-        num_samples: int = 8,
     ):
         # Keep the typechecker happy. TODO: shouldn't need this or parent_of above.
         tmp_project = Project(name="DataGenSample")

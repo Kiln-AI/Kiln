@@ -129,7 +129,6 @@ def test_generate_samples_success(
     # Arrange
     input_data = DataGenSampleApiInput(
         topic=["technology", "AI"],
-        num_samples=5,
         gen_type="training",
         guidance="Make long samples",
         model_name="gpt-4",

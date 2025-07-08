@@ -129,7 +129,6 @@ def connect_data_gen_api(app: FastAPI):
             target_task=task,
             gen_type=input.gen_type,
             guidance=input.guidance,
-            num_samples=input.num_samples,
         )
 
         task_input = DataGenSampleTaskInput.from_task(
