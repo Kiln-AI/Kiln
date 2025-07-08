@@ -14,7 +14,6 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Warning from "$lib/ui/warning.svelte"
   import Splits from "$lib/ui/splits.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
@@ -518,21 +517,6 @@
             {/if}
           </div>
         </div>
-        <!-- TODO_P0 -->
-        {#if false}
-          {#if prompt_method.includes("::")}
-            <Warning
-              warning_message="Guidance is enabled but won't be applied as you've selected a custom prompt with a fixed string."
-              warning_color="warning"
-            />
-          {:else}
-            <Warning
-              warning_message="Guidance is enabled. Your guidance will be passed to the model and used to influence output."
-              warning_color="success"
-              warning_icon="info"
-            />
-          {/if}
-        {/if}
         <AvailableModelsDropdown
           requires_structured_output={task?.output_json_schema ? true : false}
           bind:model

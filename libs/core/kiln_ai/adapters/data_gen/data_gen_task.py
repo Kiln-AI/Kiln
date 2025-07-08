@@ -77,7 +77,6 @@ class DataGenCategoriesTask(Task, parent_of={}):
         tmp_project = Project(name="DataGen")
 
         instruction = generate_topic_tree_prompt(gen_type=gen_type, guidance=guidance)
-        print("GENERATE TOPIC TREE PROMPT", instruction)
 
         super().__init__(
             name="DataGen",
