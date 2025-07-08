@@ -389,7 +389,7 @@ def test_generate_topic_tree_prompt_with_guidance():
         "I want to train a large language model and you should help me generate training data for it."
         in prompt
     )
-    assert "## Specific Guidance" in prompt
+    assert "## Custom Guidance" in prompt
     assert f"<guidance>\n{guidance}\n</guidance>" in prompt
     assert (
         "When generating subtopics, remain somewhat vague." not in prompt
