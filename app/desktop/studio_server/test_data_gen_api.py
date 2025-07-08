@@ -312,3 +312,122 @@ def test_topic_path_conversions():
     # Test single item path
     assert topic_path_to_string(["AI"]) == "AI"
     assert topic_path_from_string("AI") == ["AI"]
+
+
+@pytest.mark.parametrize(
+    "guidance,topic_path,initial_instruction,expected_wrapped_call,expected_final_instruction,should_call_wrap",
+    [
+        # Test 1: Only guidance provided (no topic path)
+        (
+            "Custom guidance for generation",
+            [],
+            "Test Instruction",
+            "Custom guidance for generation",
+            "wrapped_instruction",
+            True,
+        ),
+        # Test 2: Only topic path provided (no guidance)
+        (
+            None,
+            ["AI", "Machine Learning"],
+            "Original instruction",
+            """
+## Topic Path
+The topic path for this sample is:
+["AI", "Machine Learning"]
+""",
+            "wrapped_instruction_with_topic",
+            True,
+        ),
+        # Test 3: Both guidance and topic path provided
+        (
+            "Focus on technical accuracy",
+            ["Technology", "AI"],
+            "Original instruction",
+            """Focus on technical accuracy
+## Topic Path
+The topic path for this sample is:
+["Technology", "AI"]
+""",
+            "wrapped_instruction_combined",
+            True,
+        ),
+        # Test 4: Neither guidance nor topic path provided
+        (
+            None,
+            [],
+            "Original instruction",
+            None,  # Won't be called
+            "Original instruction",  # Should remain unchanged
+            False,
+        ),
+        # Test 5: Empty guidance string (should be treated as no guidance)
+        (
+            "",
+            [],
+            "Original instruction",
+            None,  # Won't be called
+            "Original instruction",  # Should remain unchanged
+            False,
+        ),
+    ],
+    ids=[
+        "only_guidance",
+        "only_topic_path",
+        "both_guidance_and_topic_path",
+        "neither_guidance_nor_topic_path",
+        "empty_guidance",
+    ],
+)
+def test_save_sample_guidance_generation(
+    mock_task_from_id,
+    mock_langchain_adapter,
+    client,
+    mock_task_run,
+    test_task,
+    guidance,
+    topic_path,
+    initial_instruction,
+    expected_wrapped_call,
+    expected_final_instruction,
+    should_call_wrap,
+):
+    """Test that guidance is properly generated and applied in save_sample function"""
+    from unittest.mock import patch
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.wrap_task_with_guidance"
+    ) as mock_wrap:
+        # Set up the mock return value and initial task instruction
+        mock_wrap.return_value = expected_final_instruction
+        test_task.instruction = initial_instruction
+
+        input_data = DataGenSaveSamplesApiInput(
+            input="Test input",
+            input_model_name="gpt-4",
+            input_provider="openai",
+            output_model_name="gpt-4",
+            output_provider="openai",
+            prompt_method="simple_prompt_builder",
+            topic_path=topic_path,
+            guidance=guidance,
+        )
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/save_sample",
+            json=input_data.model_dump(),
+        )
+
+        assert response.status_code == 200
+
+        if should_call_wrap:
+            # Verify wrap_task_with_guidance was called with expected parameters
+            mock_wrap.assert_called_once_with(
+                initial_instruction, expected_wrapped_call
+            )
+        else:
+            # Verify wrap_task_with_guidance was NOT called
+            mock_wrap.assert_not_called()
+
+        # Verify task instruction final state
+        assert test_task.instruction == expected_final_instruction
