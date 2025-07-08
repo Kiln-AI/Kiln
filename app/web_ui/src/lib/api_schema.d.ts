@@ -592,7 +592,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/generate_samples": {
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs": {
         parameters: {
             query?: never;
             header?: never;
@@ -602,7 +602,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Generate Samples */
-        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post"];
+        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1283,10 +1283,16 @@ export interface components {
              */
             num_subtopics: number;
             /**
-             * Human Guidance
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
+             */
+            gen_type: "eval" | "training";
+            /**
+             * Guidance
              * @description Optional human guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
@@ -1318,10 +1324,16 @@ export interface components {
              */
             num_samples: number;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
              */
-            human_guidance?: string | null;
+            gen_type: "training" | "eval";
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
             /**
              * Model Name
              * @description The name of the model to use
@@ -1371,10 +1383,10 @@ export interface components {
              */
             prompt_method: string;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Guidance
+             * @description Optional custom guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Tags
              * @description Tags to add to the sample
@@ -4223,7 +4235,7 @@ export interface operations {
             };
         };
     };
-    generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post: {
+    generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post: {
         parameters: {
             query?: never;
             header?: never;

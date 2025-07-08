@@ -6,9 +6,12 @@
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormElement from "../../../../../lib/utils/form_element.svelte"
+  import SynthDataGuidance from "./synth_data_guidance.svelte"
+  import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
 
-  export let suggested_mode: "data_gen" | "uncensored_data_gen" | null = null
-  export let requires_uncensored_data_gen: boolean = false
+  export let guidance_data: SynthDataGuidanceDataModel
+  // Local instance for dynamic reactive updates
+  const selected_template = guidance_data.selected_template
 
   // the number of workers to use for parallel generation
   const PARALLEL_WORKER_COUNT = 5
@@ -26,9 +29,6 @@
   export let id: string
   export let data: SampleDataNode
   export let path: string[]
-  export let project_id: string
-  export let task_id: string
-  export let human_guidance: string | null = null
   export let model: string
   export let num_samples_to_generate: number = 8
   export let custom_topics_string: string | null = null
@@ -98,21 +98,23 @@
       if (!model_name || !model_provider) {
         throw new KilnError("Invalid model selected.", null)
       }
+      const input_guidance = guidance_data.guidance_for_type("inputs")
       const { data: generate_response, error: generate_error } =
         await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/generate_samples",
+          "/api/projects/{project_id}/tasks/{task_id}/generate_inputs",
           {
             body: {
               topic: topic.path,
               num_samples: num_samples_to_generate,
               model_name: model_name,
               provider: model_provider,
-              human_guidance: human_guidance ? human_guidance : null, // clear empty string
+              guidance: input_guidance ? input_guidance : null, // clear empty string
+              gen_type: guidance_data.gen_type,
             },
             params: {
               path: {
-                project_id,
-                task_id,
+                project_id: guidance_data.project_id,
+                task_id: guidance_data.task_id,
               },
             },
           },
@@ -249,7 +251,9 @@
     <p class="text-sm font-light mb-8">
       Add synthetic data samples
       {#if path.length > 0}
-        to {cascade_mode ? "each subtopic of " : ""}{path.join(" → ")}
+        to {cascade_mode ? "each subtopic of " : ""}<span
+          class="font-mono text-xs bg-gray-100">{path.join(" → ")}</span
+        >
       {/if}
     </p>
     {#if sample_generating}
@@ -262,11 +266,18 @@
           <div class="flex-grow font-medium text-sm">Sample Count</div>
           <IncrementUi bind:value={num_samples_to_generate} />
         </div>
+        <div>
+          <SynthDataGuidance guidance_type="inputs" {guidance_data} />
+        </div>
         <AvailableModelsDropdown
           requires_data_gen={true}
-          {requires_uncensored_data_gen}
+          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
+            $selected_template,
+          )}
           bind:model
-          {suggested_mode}
+          suggested_mode={guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen"}
         />
         {#if cascade_mode}
           <!-- parallelization only makes sense in cascade mode -->

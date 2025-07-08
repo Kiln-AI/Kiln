@@ -337,9 +337,7 @@
     if (evaluator.template) {
       params.set("template_id", evaluator.template)
     }
-    if (evaluator.template === "kiln_issue") {
-      params.set("issue_eval_id", `${project_id}::${task_id}::${eval_id}`)
-    }
+    params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
     params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
     params.set("eval_link", window.location.pathname)
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`

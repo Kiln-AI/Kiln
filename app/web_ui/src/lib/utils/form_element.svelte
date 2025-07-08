@@ -8,6 +8,7 @@
     | "textarea"
     | "select"
     | "fancy_select"
+    | "header_only"
     | "checkbox" = "input"
   export let id: string
   export let label: string

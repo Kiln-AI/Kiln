@@ -35,7 +35,7 @@
     </div>
 
     {#if let_me_in || reason}
-      <div class="font-medium text-lg">Synthetic Data Tips</div>
+      <div class="font-medium text-lg text-center">Synthetic Data Tips</div>
       <div>
         1. Adding topics will help generate diverse data. They can be nested,
         forming a topic tree. <a
@@ -66,9 +66,7 @@
         Read the Docs
       </a>
     {:else}
-      <div class="font-medium text-lg">
-        Generate Synthetic Data for Training or Evaluations
-      </div>
+      <div class="font-medium text-lg text-center">Generate Synthetic Data</div>
       <div>
         We suggest adding synthetic data as part of creating an eval or creating
         a fine-tuning training set.
