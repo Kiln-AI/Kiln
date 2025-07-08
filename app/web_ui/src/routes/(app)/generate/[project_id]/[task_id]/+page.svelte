@@ -50,14 +50,6 @@
   let num_subtopics_to_generate: number = 8
   let num_samples_to_generate: number = 8
 
-  // Data gen guidance
-  let suggest_uncensored = false
-  let data_gen_model_dropdown_mode: "data_gen" | "uncensored_data_gen" =
-    "data_gen"
-  $: data_gen_model_dropdown_mode = suggest_uncensored
-    ? "uncensored_data_gen"
-    : "data_gen"
-
   // Empty to start but will be populated from IndexedDB after task is loaded
   let root_node: Writable<SampleDataNode> = writable({
     topic: "",
@@ -378,7 +370,6 @@
           path={[]}
           {guidance_data}
           {triggerSave}
-          bind:data_gen_model_dropdown_mode
           bind:num_subtopics_to_generate
           bind:num_samples_to_generate
           bind:this={root_node_component}

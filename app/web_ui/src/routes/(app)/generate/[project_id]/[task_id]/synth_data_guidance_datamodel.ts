@@ -192,7 +192,6 @@ export class SynthDataGuidanceDataModel {
   }
 
   public suggest_uncensored(selected_template: string): boolean {
-    // TODO: also for issue and requirements??
     const static_template = static_templates.find(
       (t) => t.id == selected_template,
     )

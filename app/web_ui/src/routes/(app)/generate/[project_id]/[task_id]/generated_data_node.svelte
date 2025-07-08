@@ -16,15 +16,15 @@
   let custom_topic_mode: boolean = false
 
   export let guidance_data: SynthDataGuidanceDataModel
+  // Local instance for dynamic reactive updates
+  const selected_template = guidance_data.selected_template
+
   export let data: SampleDataNode
   export let path: string[]
   $: depth = path.length
   export let triggerSave: () => void
 
   let model: string = $ui_state.selected_model
-
-  export let data_gen_model_dropdown_mode: "data_gen" | "uncensored_data_gen" =
-    "data_gen"
 
   // Unique ID for this node
   const id = crypto.randomUUID()
@@ -325,7 +325,6 @@
         path={[...path, sub_node.topic]}
         {guidance_data}
         {triggerSave}
-        {data_gen_model_dropdown_mode}
         bind:num_subtopics_to_generate
         bind:num_samples_to_generate
         on:delete_topic={handleChildDeleteTopic}
@@ -391,9 +390,12 @@
           </div>
           <AvailableModelsDropdown
             requires_data_gen={true}
-            suggested_mode={data_gen_model_dropdown_mode}
-            requires_uncensored_data_gen={data_gen_model_dropdown_mode ===
-              "uncensored_data_gen"}
+            suggested_mode={guidance_data.suggest_uncensored($selected_template)
+              ? "uncensored_data_gen"
+              : "data_gen"}
+            requires_uncensored_data_gen={guidance_data.suggest_uncensored(
+              $selected_template,
+            )}
             bind:model
           />
           <button class="btn mt-2 btn-primary" on:click={generate_topics}>
@@ -426,9 +428,6 @@
     {guidance_data}
     {num_samples_to_generate}
     {custom_topics_string}
-    suggested_mode={data_gen_model_dropdown_mode}
-    requires_uncensored_data_gen={data_gen_model_dropdown_mode ===
-      "uncensored_data_gen"}
     on_completed={handleGenerateSamplesCompleted}
     cascade_mode={generate_samples_cascade_mode}
   />

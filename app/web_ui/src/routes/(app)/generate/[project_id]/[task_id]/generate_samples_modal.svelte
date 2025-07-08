@@ -9,9 +9,9 @@
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
 
-  export let suggested_mode: "data_gen" | "uncensored_data_gen" | null = null
-  export let requires_uncensored_data_gen: boolean = false
   export let guidance_data: SynthDataGuidanceDataModel
+  // Local instance for dynamic reactive updates
+  const selected_template = guidance_data.selected_template
 
   // the number of workers to use for parallel generation
   const PARALLEL_WORKER_COUNT = 5
@@ -271,9 +271,13 @@
         </div>
         <AvailableModelsDropdown
           requires_data_gen={true}
-          {requires_uncensored_data_gen}
+          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
+            $selected_template,
+          )}
           bind:model
-          {suggested_mode}
+          suggested_mode={guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen"}
         />
         {#if cascade_mode}
           <!-- parallelization only makes sense in cascade mode -->
