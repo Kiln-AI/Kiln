@@ -20,11 +20,15 @@
   import DataGenIntro from "./data_gen_intro.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
+  import { onDestroy } from "svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
+  onDestroy(() => {
+    guidance_data.destroy()
+  })
   // Local instance for dynamic reactive updates
   const loading_error = guidance_data.loading_error
 
