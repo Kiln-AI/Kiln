@@ -78,8 +78,11 @@
   onMount(async () => {
     await get_task()
     if (!task) {
-      // TODO
-      throw new Error("Task not found")
+      task_error = new KilnError(
+        "Could not load task. It may belong to a project you don't have access to.",
+        null,
+      )
+      return
     }
 
     if (project_id && task_id) {
@@ -330,6 +333,15 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
+    {:else if task_error || !task}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Task</div>
+        <div class="text-error text-sm">
+          {task_error?.getMessage() || "An unknown error occurred"}
+        </div>
+      </div>
     {:else if task}
       {#if is_empty}
         <div
@@ -393,15 +405,6 @@
           </button>.
         </div>
       {/if}
-    {:else if task_error}
-      <div
-        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-      >
-        <div class="font-medium">Error Loading Task</div>
-        <div class="text-error text-sm">
-          {task_error.getMessage() || "An unknown error occurred"}
-        </div>
-      </div>
     {/if}
   </AppPage>
 </div>
