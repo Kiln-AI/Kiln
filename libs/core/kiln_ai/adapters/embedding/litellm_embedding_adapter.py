@@ -9,7 +9,6 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import (
     GeneratedEmbedding,
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
-    KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
