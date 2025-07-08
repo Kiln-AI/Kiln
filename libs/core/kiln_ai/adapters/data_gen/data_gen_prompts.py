@@ -63,7 +63,7 @@ subtopics: ["Recipes", "Asian Food", "Favorite Dishes", "Cookbooks", "Kitchen Ga
     if guidance:
         prompt += f"""
 
-## Specific Guidance
+## Custom Guidance
 
 For this specific run we have additional guidance about the style of topics we should generate. It's very important we follow this guidance when generating topics.
 
