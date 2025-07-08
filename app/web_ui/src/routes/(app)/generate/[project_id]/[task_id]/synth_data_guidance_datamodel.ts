@@ -2,6 +2,7 @@ import { client } from "$lib/api_client"
 import type { Eval, Task } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 /**
  * Data model for the synth data guidance component.
@@ -30,6 +31,7 @@ export class SynthDataGuidanceDataModel {
   public input_guidance: Writable<string | null> = writable(null)
   public output_guidance: Writable<string | null> = writable(null)
   public select_options: Writable<OptionGroup[]> = writable([])
+  public loading_error: Writable<KilnError | null> = writable(null)
 
   constructor() {
     // Subscribe to selected_template changes and call apply_selected_template
@@ -107,8 +109,7 @@ export class SynthDataGuidanceDataModel {
         this.selected_template.set("requirements_eval_template")
       }
     } catch (error) {
-      // TODO
-      console.error(error)
+      this.loading_error.set(createKilnError(error))
     } finally {
       this.loading.set(false)
     }

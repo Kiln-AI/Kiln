@@ -25,6 +25,8 @@
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
+  // Local instance for dynamic reactive updates
+  const loading_error = guidance_data.loading_error
 
   let splits: Record<string, number> = {}
   let splits_subtitle: string | undefined = undefined
@@ -33,6 +35,8 @@
   let task: Task | null = null
   let task_error: KilnError | null = null
   let task_loading = true
+
+  $: error = $loading_error || task_error
 
   let synth_data_loading = false
 
@@ -332,13 +336,14 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if task_error || !task}
+    {:else if error || !task}
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
         <div class="font-medium">Error Loading Task</div>
         <div class="text-error text-sm">
-          {task_error?.getMessage() || "An unknown error occurred"}
+          {error?.getMessage() ||
+            "An unknown error occurred loading the task. You may not have access to it."}
         </div>
       </div>
     {:else if task}

@@ -35,7 +35,7 @@
     </div>
 
     {#if let_me_in || reason}
-      <div class="font-medium text-lg">Synthetic Data Tips</div>
+      <div class="font-medium text-lg text-center">Synthetic Data Tips</div>
       <div>
         1. Adding topics will help generate diverse data. They can be nested,
         forming a topic tree. <a
