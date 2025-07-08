@@ -138,7 +138,7 @@ def test_generate_samples_success(
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/generate_samples",
+        "/api/projects/proj-ID/tasks/task-ID/generate_inputs",
         json=input_data.model_dump(),
     )
 

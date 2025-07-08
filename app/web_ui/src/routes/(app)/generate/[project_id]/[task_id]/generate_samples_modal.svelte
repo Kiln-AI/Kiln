@@ -101,7 +101,7 @@
       const input_guidance = guidance_data.guidance_for_type("inputs")
       const { data: generate_response, error: generate_error } =
         await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/generate_samples",
+          "/api/projects/{project_id}/tasks/{task_id}/generate_inputs",
           {
             body: {
               topic: topic.path,

@@ -259,7 +259,6 @@ For the top level topics, we want to use the exact requirement name. Here is the
       }
 
       template += `
-
 For top level topics, always return the list above. You can disregard the topic count if it's not the same length as the list above.
 
 ## Lower Level Topic Generation
@@ -297,9 +296,9 @@ Apply the same approach to generate inputs for the provided system prompt, eval 
     } else if (task_type == "outputs") {
       template += `When generating model outputs, generate outputs that:
 
-1) if the top level topic is "Overall Score" and the second level is a target score ("3 star"), generate an output aiming for that score
-2) if an eval requirement is specified by the top level topic, generate an output that fails that eval requirement. If the second level topic is specified, use it to guide the output.
-3) if an eval requirement is not specified by the topic, generate an output that fails any eval requirement.
+1) If the top level topic is "Overall Score" and the second level is a target score ("3 star"), generate an output aiming for that score
+2) If an eval requirement is specified by the top level topic, generate an output that fails that eval requirement. If the second level topic is specified, use it to guide the output. See example below.
+3) If an eval requirement is not specified by the topic, generate an output that fails any eval requirement.
 
 Here is an example of outputs generated from an example task/system prompt, eval requirement, and task inputs:
 
@@ -317,7 +316,7 @@ Apply the same approach to generate outputs which fail the eval requirement.
     }
 
     template +=
-      "\n\n## All Requirements\nThe requirements of the eval are listed below. Note: you may only need one of these depending on the provided topic.\n"
+      "\n## All Requirements\nThe requirements of the eval are listed below. Note: you may only need one of these depending on the provided topic.\n"
 
     for (const [index, requirement] of requirements.entries()) {
       template += `

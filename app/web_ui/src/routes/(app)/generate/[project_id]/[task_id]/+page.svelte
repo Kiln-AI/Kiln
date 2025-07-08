@@ -273,11 +273,8 @@
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
-      // TODO
-      //const save_sample_guidance =
-      // human_guidance.length > 0 ? human_guidance : undefined
+      const save_sample_guidance = guidance_data.guidance_for_type("outputs")
       // Get a random split tag, if splits are defined
-      const save_sample_guidance = undefined
       const split_tag = split_object?.get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
       const {
@@ -304,7 +301,7 @@
             output_provider: provider,
             prompt_method,
             topic_path: topic_path || [],
-            guidance: save_sample_guidance,
+            guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
             tags,
           },
         },

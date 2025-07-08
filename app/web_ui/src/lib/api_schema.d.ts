@@ -592,7 +592,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/generate_samples": {
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs": {
         parameters: {
             query?: never;
             header?: never;
@@ -602,7 +602,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Generate Samples */
-        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post"];
+        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4235,7 +4235,7 @@ export interface operations {
             };
         };
     };
-    generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post: {
+    generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post: {
         parameters: {
             query?: never;
             header?: never;

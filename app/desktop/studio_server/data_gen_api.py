@@ -120,7 +120,7 @@ def connect_data_gen_api(app: FastAPI):
         categories_run = await adapter.invoke(task_input.model_dump())
         return categories_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_samples")
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_inputs")
     async def generate_samples(
         project_id: str, task_id: str, input: DataGenSampleApiInput
     ) -> TaskRun:
@@ -163,11 +163,16 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        # Wrap the task instuctions with human guidance, if provided
-        if sample.guidance is not None and sample.guidance.strip() != "":
-            task.instruction = wrap_task_with_guidance(
-                task.instruction, sample.guidance
-            )
+        guidance = sample.guidance or ""
+        if len(sample.topic_path) > 0:
+            guidance += f"""
+## Topic Path
+The topic path for this sample is:
+[{", ".join(f'"{topic}"' for topic in sample.topic_path)}]
+"""
+
+        if guidance.strip() != "":
+            task.instruction = wrap_task_with_guidance(task.instruction, guidance)
 
         adapter = adapter_for_task(
             task,
