@@ -334,6 +334,9 @@ Description: ${requirement.instruction}
     issue: Eval,
     task_type: "topics" | "inputs" | "outputs",
   ): string {
+    const issue_failure_example = issue.template_properties["failure_example"]
+    const issue_success_example = issue.template_properties["pass_example"]
+
     let template =
       "We are building a dataset for an AI eval. We've observed an issue with an AI model, and want to generate data that will trigger that issue.\n\n"
 
@@ -369,6 +372,11 @@ Here are two examples of topics generated from an example task/system prompt and
       - "Messages including 'walk me through'"
       - "Messages including 'help me understand everything about'"
 `
+
+      if (issue_failure_example || issue_success_example) {
+        template +=
+          "\n\nThe examples provided below are only to help you understand the issue; they are not samples of the data you should generate. Your job is still to generate topics that are likely to trigger the issue."
+      }
     } else if (task_type == "inputs") {
       template += `When generating model inputs, generate inputs that are likely to trigger the issue. This may take some creativity, but it's important to make sure the issue is triggered.
 
@@ -393,6 +401,10 @@ Here are two examples of inputs generated from an example task/system prompt, is
 
 Apply the same approach to generate inputs for the provided system prompt, issue description, and topic path.
   `
+      if (issue_failure_example || issue_success_example) {
+        template +=
+          "\n\nThe examples provided below are only to help you understand the issue; they are not samples of the data you should generate. Your job is still to generate inputs that are likely to trigger the issue."
+      }
     } else if (task_type == "outputs") {
       template += `When generating model outputs, generate outputs that contain the issue.
 
@@ -430,21 +442,19 @@ ${issue_description}
 </issue_description>`
     }
 
-    const issue_failure_example = issue.template_properties["failure_example"]
     if (issue_failure_example) {
       template += `
 
-Here is an example of model output that ${goal_description} the issue:
+Here is an example of model output that ${goal_description} the issue to help you understand the issue:
 <issue_example>
 ${issue_failure_example}
 </issue_example>`
     }
 
-    const issue_success_example = issue.template_properties["pass_example"]
     if (issue_success_example) {
       template += `
 
-Here is an example of model output that doesn't ${goal_description} the issue:
+Here is an example of model output that doesn't ${goal_description} the issue to help you understand the issue:
 <no_issue_example>
 ${issue_success_example}
 </no_issue_example>`
