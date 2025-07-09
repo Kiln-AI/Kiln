@@ -147,10 +147,10 @@ def test_data_gen_sample_task_input_initialization(base_task):
     )
 
     # Assert
-    assert input_model.topic == topic
-    assert input_model.num_samples == num_samples
-    assert isinstance(input_model.system_prompt, str)
-    assert "Reply like a cowboy" in input_model.system_prompt
+    assert input_model.kiln_data_gen_topic_path == topic
+    assert input_model.kiln_data_gen_num_samples == num_samples
+    assert isinstance(input_model.kiln_data_gen_system_prompt, str)
+    assert "Reply like a cowboy" in input_model.kiln_data_gen_system_prompt
 
 
 def test_data_gen_sample_task_input_default_values(base_task):
@@ -158,8 +158,8 @@ def test_data_gen_sample_task_input_default_values(base_task):
     input_model = DataGenSampleTaskInput.from_task(task=base_task)
 
     # Assert
-    assert input_model.num_samples == 8
-    assert input_model.topic == []
+    assert input_model.kiln_data_gen_num_samples == 8
+    assert input_model.kiln_data_gen_topic_path == []
 
 
 def test_data_gen_sample_task_initialization(base_task):
@@ -183,12 +183,12 @@ def test_data_gen_sample_task_initialization(base_task):
     assert isinstance(output_schema, dict)
     assert output_schema["type"] == "object"
     assert output_schema["properties"]["generated_samples"]["type"] == "array"
-    assert input_schema["properties"]["topic"]["type"] == "array"
-    assert input_schema["properties"]["num_samples"]["type"] == "integer"
+    assert input_schema["properties"]["kiln_data_gen_topic_path"]["type"] == "array"
+    assert input_schema["properties"]["kiln_data_gen_num_samples"]["type"] == "integer"
     assert set(input_schema["required"]) == {
-        "topic",
-        "num_samples",
-        "system_prompt",
+        "kiln_data_gen_topic_path",
+        "kiln_data_gen_num_samples",
+        "kiln_data_gen_system_prompt",
     }
 
 

@@ -99,15 +99,17 @@ class DataGenCategoriesTask(Task, parent_of={}):
 class DataGenSampleTaskInput(BaseModel):
     """Input model for generating data samples for a kiln task.
 
+    Note: the field names are very verbose to avoid accidental conflicts with the system prompt or user guidance.
+
     Attributes:
-        topic: List of strings representing the topic path
-        system_prompt: System prompt to guide the AI generation
-        num_samples: Number of samples to generate
+        kiln_data_gen_topic_path: List of strings representing the topic path
+        kiln_data_gen_system_prompt: System prompt to guide the AI generation
+        kiln_data_gen_num_samples: Number of samples to generate
     """
 
-    topic: list[str]
-    system_prompt: str
-    num_samples: int
+    kiln_data_gen_topic_path: list[str]
+    kiln_data_gen_system_prompt: str
+    kiln_data_gen_num_samples: int
 
     @classmethod
     def from_task(
@@ -129,9 +131,11 @@ class DataGenSampleTaskInput(BaseModel):
         """
         prompt_builder = SimplePromptBuilder(task=task)
         return cls(
-            topic=topic,
-            num_samples=num_samples,
-            system_prompt=prompt_builder.build_prompt(include_json_instructions=False),
+            kiln_data_gen_topic_path=topic,
+            kiln_data_gen_num_samples=num_samples,
+            kiln_data_gen_system_prompt=prompt_builder.build_prompt(
+                include_json_instructions=False
+            ),
         )
 
 
