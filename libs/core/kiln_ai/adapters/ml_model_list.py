@@ -2438,7 +2438,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                model_id="deepseek-ai/DeepSeek-R1", #Note: Together remapped the R1 endpoint to this 0528 model
+                model_id="deepseek-ai/DeepSeek-R1",  # Note: Together remapped the R1 endpoint to this 0528 model
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 reasoning_capable=True,
