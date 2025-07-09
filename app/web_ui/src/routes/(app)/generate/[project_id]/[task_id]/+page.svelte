@@ -377,10 +377,14 @@
               root_node_component?.open_generate_samples_modal(true)
             }}
           >
-            Add Data to All
+            {#if $root_node.sub_topics.length > 0}
+              Generate Model Inputs (All Topics)
+            {:else}
+              Generate Model Inputs (Root Topic)
+            {/if}
           </button>
           <button class="btn btn-mid" on:click={show_save_all_modal}>
-            Save All
+            Save Model Outputs
           </button>
         </div>
       {/if}
@@ -507,12 +511,13 @@
         {/if}
       </div>
     {:else}
-      <h3 class="text-lg font-bold">Save All Items</h3>
+      <h3 class="text-lg font-bold">Generate Model Outputs</h3>
       <p class="text-sm font-light mb-8">
-        Run the generation and add all items to your dataset.
+        Run your task on each generated model input, saving the resulting
+        input/output pairs to your dataset.
       </p>
       <FormContainer
-        submit_label="Run and Save"
+        submit_label="Generate and Save"
         bind:submitting={save_all_running}
         bind:error={save_all_error}
         on:submit={save_all_samples}

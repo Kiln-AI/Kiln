@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { OptionGroup } from "./fancy_select_types"
-  import { computePosition, autoUpdate, shift, offset } from "@floating-ui/dom"
+  import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
   export let options: OptionGroup[] = []
@@ -199,7 +199,6 @@
               return { x, y: finalY }
             },
           },
-          shift({ padding: 8 }), // Shift to stay in viewport horizontally
         ],
       }).then(({ x, y }) => {
         Object.assign(dropdownElement.style, {

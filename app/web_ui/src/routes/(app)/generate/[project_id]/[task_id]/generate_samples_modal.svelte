@@ -247,13 +247,12 @@
         >✕</button
       >
     </form>
-    <h3 class="text-lg font-bold">Generate Data</h3>
+    <h3 class="text-lg font-bold">Generate Model Inputs</h3>
     <p class="text-sm font-light mb-8">
-      Add synthetic data samples
+      Add synthetic model inputs: the inputs which will be passed to the task.
       {#if path.length > 0}
-        to {cascade_mode ? "each subtopic of " : ""}<span
-          class="font-mono text-xs bg-gray-100">{path.join(" → ")}</span
-        >
+        {cascade_mode ? "For each subtopic of: " : "For the topic: "}
+        <span class="font-mono text-xs bg-gray-100">{path.join(" → ")}</span>
       {/if}
     </p>
     {#if sample_generating}
@@ -334,7 +333,7 @@
           class="btn mt-6 {custom_topics_string ? '' : 'btn-primary'}"
           on:click={generate_samples}
         >
-          Generate {num_samples_to_generate} Samples
+          Generate {num_samples_to_generate} Model Inputs
           {#if cascade_mode}
             For Each Topic
           {/if}
