@@ -1750,15 +1750,6 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                model_id="deepseek-ai/DeepSeek-R1",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
-            ),
         ],
     ),
     # DeepSeek R1 Distill Qwen 32B
@@ -2444,6 +2435,15 @@ built_in_models: List[KilnModel] = [
                 parser=ModelParserID.r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-R1", #Note: Together remapped the R1 endpoint to this 0528 model
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+                reasoning_capable=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
