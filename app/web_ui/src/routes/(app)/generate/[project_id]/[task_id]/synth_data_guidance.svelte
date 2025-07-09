@@ -6,7 +6,8 @@
   import { onDestroy } from "svelte"
   import { writable } from "svelte/store"
 
-  export let guidance_type: "topics" | "inputs" | "outputs"
+  type GuidanceType = "topics" | "inputs" | "outputs"
+  export let guidance_type: GuidanceType
 
   export let guidance_data: SynthDataGuidanceDataModel
 
@@ -31,37 +32,39 @@
     guidance_dialog?.show()
   }
 
+  type GuidanceStrings = {
+    title: string
+    description: string
+    description_plural: string
+  }
+  const guidance_type_strings: Record<GuidanceType, GuidanceStrings> = {
+    topics: {
+      title: "Guidance for Topic Generation",
+      description: "topic",
+      description_plural: "topics",
+    },
+    inputs: {
+      title: "Guidance for Input Generation",
+      description: "task input",
+      description_plural: "task inputs",
+    },
+    outputs: {
+      title: "Guidance for Output Generation",
+      description: "task output",
+      description_plural: "task outputs",
+    },
+  }
+
   function title(): string {
-    if (guidance_type === "topics") {
-      return "Guidance for Topic Generation"
-    } else if (guidance_type === "inputs") {
-      return "Guidance for Input Generation"
-    } else if (guidance_type === "outputs") {
-      return "Guidance for Output Generation"
-    }
-    return "Guidance"
+    return guidance_type_strings[guidance_type].title
   }
 
   function description(): string {
-    if (guidance_type === "topics") {
-      return "topic"
-    } else if (guidance_type === "inputs") {
-      return "task input"
-    } else if (guidance_type === "outputs") {
-      return "task output"
-    }
-    return "data"
+    return guidance_type_strings[guidance_type].description
   }
 
   function description_plural(): string {
-    if (guidance_type === "topics") {
-      return "topics"
-    } else if (guidance_type === "inputs") {
-      return "task inputs"
-    } else if (guidance_type === "outputs") {
-      return "task outputs"
-    }
-    return "data"
+    return guidance_type_strings[guidance_type].description_plural
   }
 </script>
 
