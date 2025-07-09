@@ -268,14 +268,19 @@
     >
       <button class="link" on:click={delete_topic}>Delete</button>
       <button class="link" on:click={() => open_generate_subtopics_modal()}>
-        Add subtopics
+        Add Subtopics
       </button>
-      <button class="link" on:click={() => open_generate_samples_modal()}>
-        Add data
-      </button>
+
       {#if data.sub_topics.length > 0}
+        <button class="link" on:click={() => open_generate_samples_modal()}>
+          Generate Model Inputs (Only This Topic)
+        </button>
         <button class="link" on:click={() => open_generate_samples_modal(true)}>
-          Add data to all subtopics
+          Generate Model Inputs (All Subtopics)
+        </button>
+      {:else}
+        <button class="link" on:click={() => open_generate_samples_modal()}>
+          Generate Model Inputs
         </button>
       {/if}
     </div>

@@ -56,7 +56,7 @@
         Add Topics
       </button>
       <button class="btn" on:click={() => generate_samples()}>
-        Add Data Without Topics
+        Generate Model Inputs
       </button>
       <a
         href="https://docs.getkiln.ai/docs/synthetic-data-generation"
