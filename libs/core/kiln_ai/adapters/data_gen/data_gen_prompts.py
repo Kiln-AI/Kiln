@@ -33,31 +33,31 @@ I am using a large language model to generate synthetic data. However, if we alw
 Your job is the following: I will give you a path of nodes down the topic tree - you should then come up with a list of new subtopics for this given node and return it as a list of strings. Here are a few examples of what your outputs should look like, related to the news example I just gave you:
 
 Example 1:
-node path: "News Topics" -> "Sports" -> "Football"
-desired number of subtopics: 5
-subtopics: ["College Football", "Football Stadiums", "Football Health Consequences", "Seattle Seahawks", "Football Sponsorships"]
+kiln_data_gen_topic_path: ["News Topics", "Sports", "Football"]
+kiln_data_gen_num_subtopics: 5
+Generated subtopics (output): ["College Football", "Football Stadiums", "Football Health Consequences", "Seattle Seahawks", "Football Sponsorships"]
 
 Example 2:
-node path: "News Topics" -> "Entertainment" -> "Movies" -> "Star Portraits"
-desired number of subtopics: 8
-subtopics: ["Tom Hanks", "Meryl Streep", "Leonardo DiCaprio", "Jennifer Lawrence", "Denzel Washington", "Charlize Theron", "Robert Downey Jr.", "Emma Stone"]
+kiln_data_gen_topic_path: ["News Topics", "Entertainment", "Movies", "Star Portraits"]
+kiln_data_gen_num_subtopics: 8
+Generated subtopics (output): ["Tom Hanks", "Meryl Streep", "Leonardo DiCaprio", "Jennifer Lawrence", "Denzel Washington", "Charlize Theron", "Robert Downey Jr.", "Emma Stone"]
 
 Here are three new examples, this time for generating small talk topics for a friendly chat assistant:
 
 Example 1:
-node path: "Small Talk Topics"
-desired number of subtopics: 7
-subtopics: ["Weather", "Weekend Plans", "Hobbies", "Family", "Books", "Food", "Music"]
+kiln_data_gen_topic_path: ["Small Talk Topics"]
+kiln_data_gen_num_subtopics: 7
+Generated subtopics (output): ["Weather", "Weekend Plans", "Hobbies", "Family", "Books", "Food", "Music"]
 
 Example 2:
-node path: "Small Talk Topics" -> "Family"
-desired number of subtopics: 5
-subtopics: ["Parents", "Grandparents", "Siblings", "Family Traditions", "Family Vacations"]
+kiln_data_gen_topic_path: ["Small Talk Topics", "Family"]
+kiln_data_gen_num_subtopics: 5
+Generated subtopics (output): ["Parents", "Grandparents", "Siblings", "Family Traditions", "Family Vacations"]
 
 Example 3:
-node path: "Small Talk Topics" -> "Hobbies" -> "Cooking"
-desired number of subtopics: 6
-subtopics: ["Recipes", "Asian Food", "Favorite Dishes", "Cookbooks", "Kitchen Gadgets", "Vegan Cooking"]
+kiln_data_gen_topic_path: ["Small Talk Topics", "Hobbies", "Cooking"]
+kiln_data_gen_num_subtopics: 6
+Generated subtopics (output): ["Recipes", "Asian Food", "Favorite Dishes", "Cookbooks", "Kitchen Gadgets", "Vegan Cooking"]
 """
 
     if guidance:
@@ -83,10 +83,10 @@ When generating subtopics, remain somewhat vague. Things can only be tangentiall
 ## Next Step
 
 The user message will contain the following:
- - The system prompt for the model we want to train as system_prompt.
- - The node path as node_path. It will be formatted as a list of strings from most general to most specific. For example, the node_path for Example 3 above would be ["Small Talk Topics", "Hobbies", "Cooking"]. If empty, the node path is the root node.
- - The desired number of subtopics for this node as num_subtopics. Return exactly this number of subtopics.
- - Optionally, it may contain existing_topics, which is a list of subtopics that already exist at this node. You should not generate subtopics that are in this list.
+ - The system prompt of the task we're generating data for as kiln_data_gen_system_prompt.
+ - The topic node path as kiln_data_gen_topic_path. It will be formatted as a list of strings from most general to most specific. For example, the path `"Small Talk Topics" -> "Hobbies" -> "Cooking"` would be formatted as `["Small Talk Topics", "Hobbies", "Cooking"]`. If empty, the topic node path is the root node.
+ - The desired number of subtopics to generate as kiln_data_gen_num_subtopics. Return exactly this number of subtopics.
+ - Optionally, it may contain kiln_data_gen_existing_topics, which is a list of subtopics that already exist at this node. You should not generate subtopics that are in this list.
 
 """
 

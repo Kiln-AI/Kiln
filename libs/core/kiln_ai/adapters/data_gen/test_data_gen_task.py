@@ -46,10 +46,10 @@ def test_data_gen_categories_task_input_initialization(base_task):
     )
 
     # Assert
-    assert input_model.node_path == node_path
-    assert input_model.num_subtopics == num_subtopics
-    assert isinstance(input_model.system_prompt, str)
-    assert "Reply like a cowboy" in input_model.system_prompt
+    assert input_model.kiln_data_gen_topic_path == node_path
+    assert input_model.kiln_data_gen_num_subtopics == num_subtopics
+    assert isinstance(input_model.kiln_data_gen_system_prompt, str)
+    assert "Reply like a cowboy" in input_model.kiln_data_gen_system_prompt
 
 
 def test_data_gen_categories_task_input_default_values(base_task):
@@ -57,8 +57,8 @@ def test_data_gen_categories_task_input_default_values(base_task):
     input_model = DataGenCategoriesTaskInput.from_task(task=base_task)
 
     # Assert
-    assert input_model.num_subtopics == 6
-    assert input_model.node_path == []
+    assert input_model.kiln_data_gen_num_subtopics == 6
+    assert input_model.kiln_data_gen_topic_path == []
 
 
 def test_data_gen_categories_task_initialization():
@@ -91,12 +91,14 @@ def test_data_gen_categories_task_schemas():
     assert isinstance(output_schema, dict)
     assert output_schema["type"] == "object"
     assert output_schema["properties"]["subtopics"]["type"] == "array"
-    assert input_schema["properties"]["node_path"]["type"] == "array"
-    assert input_schema["properties"]["num_subtopics"]["type"] == "integer"
+    assert input_schema["properties"]["kiln_data_gen_topic_path"]["type"] == "array"
+    assert (
+        input_schema["properties"]["kiln_data_gen_num_subtopics"]["type"] == "integer"
+    )
     assert set(input_schema["required"]) == {
-        "node_path",
-        "num_subtopics",
-        "system_prompt",
+        "kiln_data_gen_topic_path",
+        "kiln_data_gen_num_subtopics",
+        "kiln_data_gen_system_prompt",
     }
 
 
@@ -445,8 +447,8 @@ def test_generate_topic_tree_prompt_contains_required_sections():
     assert "## Task Description" in prompt
     assert "## Next Step" in prompt
     assert "system_prompt" in prompt
-    assert "node_path" in prompt
-    assert "num_subtopics" in prompt
+    assert "kiln_data_gen_topic_path" in prompt
+    assert "kiln_data_gen_num_subtopics" in prompt
     assert "existing_topics" in prompt
 
 
