@@ -162,14 +162,14 @@ class CreateEmbeddingConfigRequest(BaseModel):
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
-        description="The description of the embedding config",
+        description="A description for your reference, not shared with embedding models.",
         default=None,
     )
     model_provider_name: ModelProviderName = Field(
-        description="The provider of the embedding model",
+        description="The name of the embedding model provider to use.",
     )
     model_name: EmbeddingModelName = Field(
-        description="The name of the embedding model",
+        description="The name of the embedding model to use.",
     )
     properties: dict[str, str | int | float | bool] = Field(
         default_factory=dict,

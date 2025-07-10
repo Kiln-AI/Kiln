@@ -21,7 +21,7 @@ MAX_BATCH_SIZE = 2048
 class EmbeddingOptions(BaseModel):
     dimensions: int | None = Field(
         default=None,
-        description="Some models support requesting vectors of different dimensions.",
+        description="The number of dimensions to return for embeddings. Some models support requesting vectors of different dimensions.",
     )
 
 

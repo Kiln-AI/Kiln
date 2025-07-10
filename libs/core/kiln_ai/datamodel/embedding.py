@@ -13,15 +13,12 @@ if TYPE_CHECKING:
 class EmbeddingConfig(KilnParentedModel):
     name: str = NAME_FIELD
     description: str | None = Field(
-        default=None, description="The description of the embedding config"
+        default=None,
+        description="A description for your reference, not shared with embedding models.",
     )
     model_provider_name: ModelProviderName = Field(
         description="The provider to use to generate embeddings.",
     )
-    # TODO: should model_name be the EmbeddingModelName enum instead of a string?
-    # in the TaskRunConfigProperties, we store model_name as a plain string:
-    # https://github.com/Kiln-AI/Kiln/blob/b92dde56d9259aa47ba4f71a820f90138bd86c6e/libs/core/kiln_ai/datamodel/task.py#L55
-    # maybe for backward compatibility when we deprecate old models?
     model_name: str = Field(
         description="The model to use to generate embeddings.",
     )
