@@ -11,7 +11,7 @@ User docs: https://docs.getkiln.ai/developers/kiln-datamodel
 
 from __future__ import annotations
 
-from kiln_ai.datamodel import chunk, dataset_split, eval, extraction, strict_mode
+from kiln_ai.datamodel import chunk, dataset_split, eval, extraction, rag, strict_mode
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     Priority,
@@ -44,6 +44,7 @@ __all__ = [
     "chunk",
     "eval",
     "extraction",
+    "rag",
     "Task",
     "Project",
     "TaskRun",

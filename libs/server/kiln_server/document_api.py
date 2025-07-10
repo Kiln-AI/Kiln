@@ -12,12 +12,16 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
+from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     NAME_REGEX,
     KilnAttachmentModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -27,6 +31,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
     get_kind_from_mime_type,
 )
+from kiln_ai.datamodel.rag import RAGPipeline
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -103,6 +108,72 @@ class ExtractionSummary(BaseModel):
     source: str
     output_content: str
     extractor: ExtractorSummary
+
+
+class CreateRAGPipelineRequest(BaseModel):
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the document pipeline",
+        default=None,
+    )
+    extractor_config_id: ID_TYPE = Field(
+        description="The extractor config to use for the document pipeline",
+    )
+    chunker_config_id: ID_TYPE = Field(
+        description="The chunker config to use for the document pipeline",
+    )
+    embedding_config_id: ID_TYPE = Field(
+        description="The embedding config to use for the document pipeline",
+    )
+
+
+class CreateChunkerConfigRequest(BaseModel):
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the chunker config",
+        default=None,
+    )
+    chunker_type: ChunkerType = Field(
+        description="The type of the chunker",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
+
+
+class CreateEmbeddingConfigRequest(BaseModel):
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the embedding config",
+        default=None,
+    )
+    model_provider_name: ModelProviderName = Field(
+        description="The provider of the embedding model",
+    )
+    model_name: EmbeddingModelName = Field(
+        description="The name of the embedding model",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
 
 
 class CreateExtractorConfigRequest(BaseModel):
@@ -671,3 +742,106 @@ def connect_document_api(app: FastAPI):
         extractor_config.save_to_file()
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
+
+    @app.post("/api/projects/{project_id}/create_chunker_config")
+    async def create_chunker_config(
+        project_id: str,
+        request: CreateChunkerConfigRequest,
+    ) -> ChunkerConfig:
+        project = project_from_id(project_id)
+
+        chunker_config = ChunkerConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            chunker_type=request.chunker_type,
+            properties=request.properties,
+        )
+        chunker_config.save_to_file()
+
+        return chunker_config
+
+    @app.get("/api/projects/{project_id}/chunker_configs")
+    async def get_chunker_configs(
+        project_id: str,
+    ) -> list[ChunkerConfig]:
+        project = project_from_id(project_id)
+        return project.chunker_configs(readonly=True)
+
+    @app.post("/api/projects/{project_id}/create_embedding_config")
+    async def create_embedding_config(
+        project_id: str,
+        request: CreateEmbeddingConfigRequest,
+    ) -> EmbeddingConfig:
+        project = project_from_id(project_id)
+
+        embedding_config = EmbeddingConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            model_provider_name=request.model_provider_name,
+            model_name=request.model_name,
+            properties=request.properties,
+        )
+        embedding_config.save_to_file()
+
+        return embedding_config
+
+    @app.get("/api/projects/{project_id}/embedding_configs")
+    async def get_embedding_configs(
+        project_id: str,
+    ) -> list[EmbeddingConfig]:
+        project = project_from_id(project_id)
+        return project.embedding_configs(readonly=True)
+
+    @app.post("/api/projects/{project_id}/rag_pipelines/create_rag_pipeline")
+    async def create_rag_pipeline(
+        project_id: str,
+        request: CreateRAGPipelineRequest,
+    ) -> RAGPipeline:
+        project = project_from_id(project_id)
+
+        # check that the extractor, chunker, and embedding configs exist
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            str(request.extractor_config_id), project.path
+        )
+        if not extractor_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extractor config {request.extractor_config_id} not found",
+            )
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            str(request.chunker_config_id), project.path
+        )
+        if not chunker_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chunker config {request.chunker_config_id} not found",
+            )
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            str(request.embedding_config_id), project.path
+        )
+        if not embedding_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding config {request.embedding_config_id} not found",
+            )
+
+        rag_pipeline = RAGPipeline(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            extractor_config_id=extractor_config.id,
+            chunker_config_id=chunker_config.id,
+            embedding_config_id=embedding_config.id,
+        )
+        rag_pipeline.save_to_file()
+
+        return rag_pipeline
+
+    @app.get("/api/projects/{project_id}/rag_pipelines")
+    async def get_rag_pipelines(
+        project_id: str,
+    ) -> list[RAGPipeline]:
+        project = project_from_id(project_id)
+        return project.rag_pipelines(readonly=True)
