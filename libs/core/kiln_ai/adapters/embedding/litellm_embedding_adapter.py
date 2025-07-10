@@ -48,25 +48,25 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 f"Embedding model {self.model_name} not found in the list of built-in models"
             )
 
-    async def _embed(self, text: List[str]) -> EmbeddingResult:
+    async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         # TODO: providers will throw if the text input is too long - goes over the max tokens for the model
         # we should validate that upstream to prevent this from bricking the whole pipeline if the user's dataset
         # happens to include chunks that are too long.
 
         # documented on litellm: https://docs.litellm.ai/docs/embedding/supported_embedding
-        if len(text) > MAX_BATCH_SIZE:
+        if len(input_texts) > MAX_BATCH_SIZE:
             raise ValueError("Text is too long")
 
         # docs: https://docs.litellm.ai/docs/embedding/supported_embedding
         response = await litellm.aembedding(
             model=self.litellm_model_id(),
-            input=text,
+            input=input_texts,
             **self.build_options().model_dump(exclude_none=True),
         )
 
         # sanity check to ensure integrity as we should always have as many embeddings
         # as inputs
-        if len(response.data) != len(text):
+        if len(response.data) != len(input_texts):
             raise ValueError("Response data length does not match input text length")
 
         embeddings = []

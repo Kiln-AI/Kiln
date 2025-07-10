@@ -32,15 +32,15 @@ class BaseEmbeddingAdapter(ABC):
     def __init__(self, embedding_config: EmbeddingConfig):
         self.embedding_config = embedding_config
 
-    async def embed(self, text: List[str]) -> EmbeddingResult:
-        if not text:
+    async def generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
+        if not input_texts:
             return EmbeddingResult(
                 embeddings=[],
                 usage=None,
             )
 
-        return await self._embed(text)
+        return await self._generate_embeddings(input_texts)
 
     @abstractmethod
-    async def _embed(self, text: List[str]) -> EmbeddingResult:
+    async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         pass

@@ -97,7 +97,7 @@ class TestLitellmEmbeddingAdapter:
 
     async def test_embed_empty_list(self, mock_litellm_adapter):
         """Test embed method with empty text list."""
-        result = await mock_litellm_adapter.embed([])
+        result = await mock_litellm_adapter.generate_embeddings([])
         assert result.embeddings == []
         assert result.usage is None
 
@@ -111,7 +111,7 @@ class TestLitellmEmbeddingAdapter:
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await mock_litellm_adapter._embed(["text1", "text2"])
+            result = await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
         assert len(result.embeddings) == 2
         assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
@@ -128,7 +128,7 @@ class TestLitellmEmbeddingAdapter:
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
-            result = await adapter._embed(["test text"])
+            result = await adapter._generate_embeddings(["test text"])
 
         # Verify litellm.aembedding was called with correct parameters
         mock_aembedding.assert_called_once_with(
@@ -146,7 +146,7 @@ class TestLitellmEmbeddingAdapter:
         large_text_list = ["text"] * (MAX_BATCH_SIZE + 1)
 
         with pytest.raises(ValueError, match="Text is too long"):
-            await mock_litellm_adapter._embed(large_text_list)
+            await mock_litellm_adapter._generate_embeddings(large_text_list)
 
     async def test_embed_response_length_mismatch(self, mock_litellm_adapter):
         """Test that embedding fails when response data length doesn't match input."""
@@ -160,13 +160,13 @@ class TestLitellmEmbeddingAdapter:
                 ValueError,
                 match="Response data length does not match input text length",
             ):
-                await mock_litellm_adapter._embed(["text1", "text2"])
+                await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
     async def test_embed_litellm_exception(self, mock_litellm_adapter):
         """Test that litellm exceptions are properly raised."""
         with patch("litellm.aembedding", side_effect=Exception("litellm error")):
             with pytest.raises(Exception, match="litellm error"):
-                await mock_litellm_adapter._embed(["test text"])
+                await mock_litellm_adapter._generate_embeddings(["test text"])
 
     async def test_embed_sorts_by_index(self, mock_litellm_adapter):
         """Test that embeddings are sorted by index."""
@@ -179,7 +179,9 @@ class TestLitellmEmbeddingAdapter:
         mock_response.usage = Usage(prompt_tokens=15, total_tokens=15)
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await mock_litellm_adapter._embed(["text1", "text2", "text3"])
+            result = await mock_litellm_adapter._generate_embeddings(
+                ["text1", "text2", "text3"]
+            )
 
         # Verify embeddings are sorted by index
         assert len(result.embeddings) == 3
@@ -194,7 +196,7 @@ class TestLitellmEmbeddingAdapter:
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
-            result = await mock_litellm_adapter._embed(["single text"])
+            result = await mock_litellm_adapter._generate_embeddings(["single text"])
 
         # The call should not include dimensions since the fixture has empty properties
         mock_aembedding.assert_called_once_with(
@@ -219,7 +221,7 @@ class TestLitellmEmbeddingAdapter:
         large_text_list = ["text"] * MAX_BATCH_SIZE
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await mock_litellm_adapter._embed(large_text_list)
+            result = await mock_litellm_adapter._generate_embeddings(large_text_list)
 
         assert len(result.embeddings) == MAX_BATCH_SIZE
         assert result.usage == mock_response.usage
@@ -236,7 +238,7 @@ class TestLitellmEmbeddingAdapter:
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await mock_litellm_adapter.embed(["test text"])
+            result = await mock_litellm_adapter.generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
         assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
@@ -254,7 +256,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         mock_response.usage = None
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await adapter._embed(["test text"])
+            result = await adapter._generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
         assert result.usage is None
@@ -267,7 +269,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await adapter._embed(["test text"])
+            result = await adapter._generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
         assert result.embeddings[0].vector == []
@@ -283,7 +285,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
         with patch("litellm.aembedding", return_value=mock_response):
-            result = await adapter._embed(["text1", "text2"])
+            result = await adapter._generate_embeddings(["text1", "text2"])
 
         # Both embeddings should be present and match the order in response.data
         assert len(result.embeddings) == 2
@@ -320,7 +322,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
         with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
-            await adapter._embed(["test text"])
+            await adapter._generate_embeddings(["test text"])
 
         # Only dimensions should be passed to litellm
         call_args = mock_aembedding.call_args
@@ -362,7 +364,7 @@ async def test_paid_embed_basic(provider, model_name, expected_dim):
     )
     adapter = LitellmEmbeddingAdapter(config)
     text = ["Kiln is an open-source evaluation platform for LLMs."]
-    result = await adapter.embed(text)
+    result = await adapter.generate_embeddings(text)
     assert len(result.embeddings) == 1
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == expected_dim
@@ -401,7 +403,7 @@ async def test_paid_embed_with_custom_dimensions_supported(
     )
     adapter = LitellmEmbeddingAdapter(config)
     text = ["Kiln is an open-source evaluation platform for LLMs."]
-    result = await adapter.embed(text)
+    result = await adapter.generate_embeddings(text)
     assert len(result.embeddings) == 1
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == expected_dim
