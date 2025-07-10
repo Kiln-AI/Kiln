@@ -239,7 +239,7 @@
                 {@const score_value =
                   result.scores[string_to_json_key(score.name)]}
                 <td class="text-center">
-                  {score_value ? score_value.toFixed(2) : "N/A"}
+                  {score_value != null ? score_value.toFixed(2) : "N/A"}
                 </td>
               {/each}
             </tr>
