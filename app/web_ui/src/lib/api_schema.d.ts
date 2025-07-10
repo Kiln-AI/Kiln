@@ -611,7 +611,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/chunker_configs/{chunker_config_id}/create_chunker_config": {
+    "/api/projects/{project_id}/create_chunker_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -621,7 +621,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Chunker Config */
-        post: operations["create_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__create_chunker_config_post"];
+        post: operations["create_chunker_config_api_projects__project_id__create_chunker_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -645,7 +645,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}/create_embedding_config": {
+    "/api/projects/{project_id}/create_embedding_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -655,7 +655,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Embedding Config */
-        post: operations["create_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__create_embedding_config_post"];
+        post: operations["create_embedding_config_api_projects__project_id__create_embedding_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1658,6 +1658,8 @@ export interface components {
              * @description The description of the chunker config
              */
             description?: string | null;
+            /** @description The type of the chunker */
+            chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties?: {
                 [key: string]: string | number | boolean;
@@ -1685,9 +1687,13 @@ export interface components {
             name?: string | null;
             /**
              * Description
-             * @description The description of the embedding config
+             * @description A description for your reference, not shared with embedding models.
              */
             description?: string | null;
+            /** @description The name of the embedding model provider to use. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /** @description The name of the embedding model to use. */
+            model_name: components["schemas"]["EmbeddingModelName"];
             /** Properties */
             properties?: {
                 [key: string]: string | number | boolean;
@@ -2102,7 +2108,7 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description The description of the embedding config
+             * @description A description for your reference, not shared with embedding models.
              */
             description?: string | null;
             /** @description The provider to use to generate embeddings. */
@@ -5220,7 +5226,7 @@ export interface operations {
             };
         };
     };
-    create_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__create_chunker_config_post: {
+    create_chunker_config_api_projects__project_id__create_chunker_config_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5286,7 +5292,7 @@ export interface operations {
             };
         };
     };
-    create_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__create_embedding_config_post: {
+    create_embedding_config_api_projects__project_id__create_embedding_config_post: {
         parameters: {
             query?: never;
             header?: never;
