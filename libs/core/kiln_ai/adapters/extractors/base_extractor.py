@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.extraction import ExtractorConfig, OutputFormat
 
 logger = logging.getLogger(__name__)
@@ -63,3 +64,9 @@ class BaseExtractor(ABC):
         return mime_type.lower() in {
             mt.lower() for mt in self.extractor_config.passthrough_mimetypes
         }
+
+    def extractor_config_id(self) -> ID_TYPE:
+        return self.extractor_config.id
+
+    def output_format(self) -> OutputFormat:
+        return self.extractor_config.output_format
