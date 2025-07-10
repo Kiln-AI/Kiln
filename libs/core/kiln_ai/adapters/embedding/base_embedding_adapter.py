@@ -10,14 +10,12 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 logger = logging.getLogger(__name__)
 
 
-class GeneratedEmbedding(BaseModel):
+class Embedding(BaseModel):
     vector: list[float] = Field(description="The vector of the embedding.")
 
 
 class EmbeddingResult(BaseModel):
-    embeddings: list[GeneratedEmbedding] = Field(
-        description="The embeddings of the text."
-    )
+    embeddings: list[Embedding] = Field(description="The embeddings of the text.")
 
     usage: Usage | None = Field(default=None, description="The usage of the embedding.")
 
