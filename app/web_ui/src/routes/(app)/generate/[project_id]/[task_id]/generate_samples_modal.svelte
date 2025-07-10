@@ -5,16 +5,12 @@
   import { KilnError } from "../../../../../lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
-  import FormElement from "../../../../../lib/utils/form_element.svelte"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
   const selected_template = guidance_data.selected_template
-
-  // the number of workers to use for parallel generation
-  const PARALLEL_WORKER_COUNT = 5
 
   type GenerateSamplesOutcome = {
     topic: TopicNodeWithPath
@@ -37,11 +33,6 @@
    * If true, generate samples for each topic leaf descendant of the current topic.
    */
   export let cascade_mode: boolean = false
-
-  /**
-   * If true, generate samples in parallel.
-   */
-  export let generate_samples_mode: "parallel" | "sequential" = "parallel"
 
   let ui_show_errors = false
   let generate_samples_outcomes: Record<string, GenerateSamplesOutcome> = {}
@@ -191,11 +182,9 @@
       ? collect_leaf_topic_nodes()
       : [{ path, node: data }]
 
-    let parallelism =
-      generate_samples_mode === "parallel" ? PARALLEL_WORKER_COUNT : 1
-
-    // Create and start N workers
-    const workers = Array(parallelism)
+    // Create and start 5 workers
+    // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+    const workers = Array(5)
       .fill(null)
       .map(() => worker(queue))
 
@@ -260,7 +249,7 @@
         <div class="loading loading-spinner loading-lg my-12"></div>
       </div>
     {:else}
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-6">
         <div class="flex flex-row items-center gap-4 mt-4 mb-2">
           <div class="flex-grow font-medium text-sm">Sample Count</div>
           <IncrementUi bind:value={num_samples_to_generate} />
@@ -278,20 +267,6 @@
             ? "uncensored_data_gen"
             : "data_gen"}
         />
-        {#if cascade_mode}
-          <!-- parallelization only makes sense in cascade mode -->
-          <FormElement
-            id="generate_samples_mode_element"
-            inputType="select"
-            info_description="Parallel is ideal for APIs (OpenAI, Fireworks, etc.) as they can handle thousands of requests in parallel. Sequential is ideal for Ollama or other servers that can only handle one request at a time."
-            select_options={[
-              ["parallel", "Parallel - Ideal for APIs (OpenAI, Fireworks)"],
-              ["sequential", "Sequential - Ideal for Ollama"],
-            ]}
-            bind:value={generate_samples_mode}
-            label="Run Mode"
-          />
-        {/if}
 
         <!-- display errors after the generation has completed -->
         {#if topics_failed_to_generate_count > 0}

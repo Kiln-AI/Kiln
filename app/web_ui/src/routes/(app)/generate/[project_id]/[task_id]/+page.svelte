@@ -13,7 +13,6 @@
   import PromptTypeSelector from "../../../run/prompt_type_selector.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
-  import FormElement from "$lib/utils/form_element.svelte"
   import Splits from "$lib/ui/splits.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
@@ -195,7 +194,6 @@
   let save_all_error: KilnError | null = null
   let save_all_sub_errors: KilnError[] = []
   let save_all_completed = false
-  let save_all_samples_mode: "parallel" | "sequential" = "parallel"
   let ui_show_errors = false
 
   // Worker function that processes items until queue is empty
@@ -241,11 +239,10 @@
       const model_name = model.split("/").slice(1).join("/")
 
       const queue = [...samples_to_save]
-      // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
-      let parallelism = save_all_samples_mode === "parallel" ? 5 : 1
 
-      // Create and start N workers
-      const workers = Array(parallelism)
+      // Create and start 5 workers
+      // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+      const workers = Array(5)
         .fill(null)
         .map(() => worker(queue, model_name, provider, prompt_method))
 
@@ -539,19 +536,9 @@
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
         </div>
 
-        <PromptTypeSelector bind:prompt_method />
-
-        <FormElement
-          id="save_all_samples_mode_element"
-          inputType="select"
-          info_description="Parallel is ideal for APIs (OpenAI, Fireworks, etc.) as they can handle thousands of requests in parallel. Sequential is ideal for Ollama or other servers that can only handle one request at a time."
-          select_options={[
-            ["parallel", "Parallel - Ideal for APIs (OpenAI, Fireworks)"],
-            ["sequential", "Sequential - Ideal for Ollama"],
-          ]}
-          bind:value={save_all_samples_mode}
-          label="Run Mode"
-        />
+        <div class="mb-2">
+          <PromptTypeSelector bind:prompt_method />
+        </div>
       </FormContainer>
     {/if}
   </div>
