@@ -2,8 +2,8 @@ import pytest
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
     BaseEmbeddingAdapter,
+    Embedding,
     EmbeddingResult,
-    GeneratedEmbedding,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -16,7 +16,7 @@ class TestEmbeddingAdapter(BaseEmbeddingAdapter):
         # Simple test implementation that returns mock embeddings
         embeddings = []
         for i, _ in enumerate(text):
-            embeddings.append(GeneratedEmbedding(vector=[0.1 * (i + 1)] * 3))
+            embeddings.append(Embedding(vector=[0.1 * (i + 1)] * 3))
 
         return EmbeddingResult(embeddings=embeddings)
 
@@ -29,7 +29,7 @@ class TestEmbeddingAdapterWithUsage(BaseEmbeddingAdapter):
 
         embeddings = []
         for i, _ in enumerate(text):
-            embeddings.append(GeneratedEmbedding(vector=[0.1 * (i + 1)] * 3))
+            embeddings.append(Embedding(vector=[0.1 * (i + 1)] * 3))
 
         usage = Usage(prompt_tokens=len(text) * 10, total_tokens=len(text) * 10)
         return EmbeddingResult(embeddings=embeddings, usage=usage)
@@ -58,24 +58,24 @@ def test_adapter_with_usage(mock_embedding_config):
     return TestEmbeddingAdapterWithUsage(mock_embedding_config)
 
 
-class TestGeneratedEmbedding:
-    """Test the GeneratedEmbedding model."""
+class TestEmbedding:
+    """Test the Embedding model."""
 
     def test_creation(self):
-        """Test creating a GeneratedEmbedding with a vector."""
+        """Test creating a Embedding with a vector."""
         vector = [0.1, 0.2, 0.3]
-        embedding = GeneratedEmbedding(vector=vector)
+        embedding = Embedding(vector=vector)
         assert embedding.vector == vector
 
     def test_empty_vector(self):
-        """Test creating a GeneratedEmbedding with an empty vector."""
-        embedding = GeneratedEmbedding(vector=[])
+        """Test creating a Embedding with an empty vector."""
+        embedding = Embedding(vector=[])
         assert embedding.vector == []
 
     def test_large_vector(self):
-        """Test creating a GeneratedEmbedding with a large vector."""
+        """Test creating a Embedding with a large vector."""
         vector = [0.1] * 1536
-        embedding = GeneratedEmbedding(vector=vector)
+        embedding = Embedding(vector=vector)
         assert len(embedding.vector) == 1536
         assert all(v == 0.1 for v in embedding.vector)
 
@@ -86,8 +86,8 @@ class TestEmbeddingResult:
     def test_creation_with_embeddings(self):
         """Test creating an EmbeddingResult with embeddings."""
         embeddings = [
-            GeneratedEmbedding(vector=[0.1, 0.2, 0.3]),
-            GeneratedEmbedding(vector=[0.4, 0.5, 0.6]),
+            Embedding(vector=[0.1, 0.2, 0.3]),
+            Embedding(vector=[0.4, 0.5, 0.6]),
         ]
         result = EmbeddingResult(embeddings=embeddings)
         assert result.embeddings == embeddings
@@ -97,7 +97,7 @@ class TestEmbeddingResult:
         """Test creating an EmbeddingResult with usage information."""
         from litellm import Usage
 
-        embeddings = [GeneratedEmbedding(vector=[0.1, 0.2, 0.3])]
+        embeddings = [Embedding(vector=[0.1, 0.2, 0.3])]
         usage = Usage(prompt_tokens=10, total_tokens=10)
         result = EmbeddingResult(embeddings=embeddings, usage=usage)
         assert result.embeddings == embeddings

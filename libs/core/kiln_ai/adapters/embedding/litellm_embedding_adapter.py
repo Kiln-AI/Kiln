@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
     BaseEmbeddingAdapter,
+    Embedding,
     EmbeddingResult,
-    GeneratedEmbedding,
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models_from_provider,
@@ -71,7 +71,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
         embeddings = []
         for item in sorted(response.data, key=lambda x: x.get("index")):
-            embeddings.append(GeneratedEmbedding(vector=item.get("embedding")))
+            embeddings.append(Embedding(vector=item.get("embedding")))
 
         return EmbeddingResult(embeddings=embeddings, usage=response.usage)
 
