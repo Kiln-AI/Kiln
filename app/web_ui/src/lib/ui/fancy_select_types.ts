@@ -1,5 +1,5 @@
 export type OptionGroup = {
-  label: string
+  label?: string
   options: Option[]
 }
 export type Option = {

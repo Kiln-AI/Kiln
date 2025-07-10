@@ -50,6 +50,14 @@
     template_properties = template.template_properties
   }
 
+  // Update default tag when a default tag is set
+  $: if (default_eval_tag) {
+    eval_dataset = "tag::" + default_eval_tag
+  }
+  $: if (default_golden_tag) {
+    config_dataset = "tag::" + default_golden_tag
+  }
+
   // Data for the creation
   let name: string = ""
   let description: string = ""
@@ -163,14 +171,15 @@
         <div class="text-xl font-bold">Part 1: Evaluator Details</div>
         <FormElement
           label="Evaluator Name"
-          description="Give your evaluator a name that will help you identify it later."
+          description="A short name for your evaluator."
           inputType="input"
           id="name"
           bind:value={name}
         />
         <FormElement
           label="Evaluator Description"
-          description="Give your evaluator a description."
+          description="A short description of what this evaluator does."
+          info_description="This is just for your reference. It will not be provided to the judge model during evals and is not a prompt."
           inputType="textarea"
           id="description"
           bind:value={description}
@@ -251,21 +260,32 @@
         </div>
         <FormElement
           label="Evaluation Dataset"
-          inputType="select"
+          inputType="fancy_select"
           info_description="You can populate this dataset later by adding this tag to samples in your dataset."
           id="automatic_validation"
-          select_options={[
-            [
-              "tag::" + suggested_eval_set_tag,
-              "Filter dataset to the '" +
-                suggested_eval_set_tag +
-                "' tag (recommended)",
-            ],
-            ["custom_tag", "Filter dataset by a custom tag"],
-            [
-              "all",
-              "Use every dataset item in the evaluation (not recommended)",
-            ],
+          fancy_select_options={[
+            {
+              options: [
+                {
+                  label:
+                    "Filter dataset to the '" +
+                    suggested_eval_set_tag +
+                    "' tag",
+                  value: "tag::" + suggested_eval_set_tag,
+                  badge: "Recommended",
+                  badge_color: "primary",
+                },
+                {
+                  label: "Filter dataset by a custom tag",
+                  value: "custom_tag",
+                },
+                {
+                  label: "Use every dataset item in the evaluation",
+                  value: "all",
+                  badge: "Not Recommended",
+                },
+              ],
+            },
           ]}
           bind:value={eval_dataset}
         />
@@ -292,20 +312,31 @@
         <FormElement
           label="Evaluation Method Dataset"
           info_description="You can populate this dataset later. We recommend you have a person rate all of the samples in this dataset, so you can compare evaluation methods to human ratings."
-          inputType="select"
+          inputType="fancy_select"
           id="automatic_validation"
-          select_options={[
-            [
-              "tag::" + suggested_config_set_tag,
-              "Filter dataset to the '" +
-                suggested_config_set_tag +
-                "' tag (recommended)",
-            ],
-            ["custom_tag", "Filter dataset by a custom tag"],
-            [
-              "all",
-              "Use every dataset item in the evaluation (not recommended)",
-            ],
+          fancy_select_options={[
+            {
+              options: [
+                {
+                  label:
+                    "Filter dataset to the '" +
+                    suggested_config_set_tag +
+                    "' tag",
+                  value: "tag::" + suggested_config_set_tag,
+                  badge: "Recommended",
+                  badge_color: "primary",
+                },
+                {
+                  label: "Filter dataset by a custom tag",
+                  value: "custom_tag",
+                },
+                {
+                  label: "Use every dataset item in the evaluation",
+                  value: "all",
+                  badge: "Not Recommended",
+                },
+              ],
+            },
           ]}
           bind:value={config_dataset}
         />

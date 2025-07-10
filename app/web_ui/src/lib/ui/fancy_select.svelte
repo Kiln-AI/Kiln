@@ -423,9 +423,12 @@
   </div>
 
   {#if listVisible && mounted}
+    {@const first_group_has_label = filteredOptions[0]?.label}
     <div
       bind:this={dropdownElement}
-      class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col fixed"
+      class="bg-base-100 rounded-box z-[1000] p-2 {first_group_has_label
+        ? 'pt-0'
+        : ''} shadow border flex flex-col fixed"
       style="width: var(--dropdown-width, {selectedElement?.offsetWidth ||
         0}px);"
     >
@@ -494,9 +497,11 @@
         use:scrollableCheck
       >
         {#each filteredOptions as option, sectionIndex}
-          <li class="menu-title pl-1 sticky top-0 bg-white z-10">
-            {option.label}
-          </li>
+          {#if option.label}
+            <li class="menu-title pl-1 sticky top-0 bg-white z-10">
+              {option.label}
+            </li>
+          {/if}
           {#each option.options as item, index}
             {@const overallIndex =
               filteredOptions
@@ -519,7 +524,7 @@
                   focusedIndex = overallIndex
                 }}
               >
-                <div class="w-full flex flex-row gap-2">
+                <div class="w-full flex flex-row gap-2 items-center">
                   <div class="flex-grow">
                     {item.label}
                   </div>
