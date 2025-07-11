@@ -2307,7 +2307,7 @@ async def test_connect_wandb_request_exception(mock_config_shared, mock_requests
 
 
 @pytest.mark.asyncio
-async def test_get_available_embedding_models(app, client):
+async def test_get_embedding_providers(app, client):
     # Mock Config.shared()
     mock_config = MagicMock()
     mock_config.get_value.return_value = "mock_key"
@@ -2344,7 +2344,6 @@ async def test_get_available_embedding_models(app, client):
                     name=ModelProviderName.amazon_bedrock,
                     model_id="bedrock1",
                     n_dimensions=1536,
-                    max_input_tokens=8192,
                 ),
                 KilnEmbeddingModelProvider(
                     name=ModelProviderName.gemini_api,
@@ -2395,7 +2394,7 @@ async def test_get_available_embedding_models(app, client):
                     "id": "model2",
                     "name": "Model 2",
                     "n_dimensions": 1536,
-                    "max_input_tokens": 8192,
+                    "max_input_tokens": None,
                     "supports_custom_dimensions": False,
                 }
             ],

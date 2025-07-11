@@ -37,7 +37,8 @@ class KilnEmbeddingModelProvider(BaseModel):
         description="The model ID for the embedding model. This is the ID used to identify the model in the provider's API.",
     )
 
-    max_input_tokens: int = Field(
+    max_input_tokens: int | None = Field(
+        default=None,
         description="The maximum number of tokens that can be input to the model.",
     )
 
