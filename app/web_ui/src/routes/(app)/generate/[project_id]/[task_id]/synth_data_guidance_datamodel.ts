@@ -446,7 +446,7 @@ Here is an example of model output that doesn't ${goal_description} the issue to
 <no_issue_example>
 ${issue_success_example}
 </no_issue_example>`
-      
+
       if (task_type == "inputs") {
         template += `
 
