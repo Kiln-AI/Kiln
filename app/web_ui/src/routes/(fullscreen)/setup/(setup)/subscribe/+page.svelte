@@ -12,7 +12,6 @@
     loading = true
     error = null
     try {
-      console.log("Subscribing to newsletter local to remote", email)
       const res = await fetch(
         "https://getkiln.ai/api/subscribe_to_newsletter",
         {

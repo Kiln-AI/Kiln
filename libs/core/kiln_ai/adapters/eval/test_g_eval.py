@@ -274,6 +274,36 @@ def test_token_case():
         assert token.lower() == token
 
 
+def test_generate_run_description(test_eval_config, test_run_config, test_task_run):
+    """Test that generate_run_description correctly uses task_run.output.output (the string) rather than task_run.output (the object)."""
+    # Create G-Eval instance
+    g_eval = GEval(test_eval_config, test_run_config)
+
+    # Call generate_run_description
+    description = g_eval.generate_run_description(
+        test_task_run.input, test_task_run.output.output
+    )
+
+    # Verify that the actual string output is in the description
+    expected_output = "Why did the chicken cross the road? To get to the other side!"
+    assert expected_output in description
+
+    # Verify that the input is also in the description
+    assert "Tell me a chicken joke" in description
+
+    # Verify the description has the expected structure
+    assert "<eval_data>" in description
+    assert description.count("<eval_data>") == 2  # 2 opening tags
+    assert description.count("</eval_data>") == 2  # 2 closing tags
+    assert "The model was given the following input for the task:" in description
+    assert "The model produced the following output for the task:" in description
+
+    # Verify that we're getting the actual string value, not a Python object representation
+    # The string should not contain 'TaskOutput' or other object indicators
+    assert "TaskOutput" not in description
+    assert "output=" not in description  # Would appear if object __repr__ was used
+
+
 def test_metric_offsets_and_search_ranges(
     test_eval_config, test_run_config, test_task_run
 ):

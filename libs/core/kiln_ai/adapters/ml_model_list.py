@@ -181,6 +181,8 @@ class KilnModelProvider(BaseModel):
     reasoning_capable: bool = False
     supports_logprobs: bool = False
     suggested_for_evals: bool = False
+    uncensored: bool = False
+    suggested_for_uncensored_data_gen: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
 
     # TODO P1: Need a more generalized way to handle custom provider parameters.
@@ -257,7 +259,6 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4.1-mini-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
@@ -265,13 +266,11 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-4.1-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1-mini",
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
         ],
@@ -312,6 +311,8 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4o-2024-08-06",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -319,10 +320,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 logprobs_openrouter_options=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4o",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
@@ -658,13 +663,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.7-sonnet",
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-3-7-sonnet-20250219",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
             ),
         ],
     ),
@@ -1093,16 +1096,22 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.amazon_bedrock,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="mistral.mistral-large-2407-v1:0",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="mistralai/mistral-large",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="mistral-large",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
         ],
     ),
@@ -1679,10 +1688,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="mistralai/mistral-small-24b-instruct-2501",
+                uncensored=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="mistral-small:24b",
+                uncensored=True,
             ),
         ],
     ),
@@ -1950,12 +1961,16 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 model_id="dolphin-mixtral:8x22b",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="cognitivecomputations/dolphin-mixtral-8x22b",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
         ],
     ),
@@ -1972,6 +1987,8 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
         ],
     ),
@@ -1987,6 +2004,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
+                uncensored=True,
             ),
         ],
     ),

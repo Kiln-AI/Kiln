@@ -100,6 +100,7 @@ class CreateEvaluatorRequest(BaseModel):
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
     eval_configs_filter_id: DatasetFilterId
+    template_properties: dict[str, str | float | int | bool]
 
 
 class CreateEvalConfigRequest(BaseModel):
@@ -307,6 +308,7 @@ def connect_evals_api(app: FastAPI):
             output_scores=request.output_scores,
             eval_set_filter_id=request.eval_set_filter_id,
             eval_configs_filter_id=request.eval_configs_filter_id,
+            template_properties=request.template_properties,
             parent=task,
         )
         eval.save_to_file()

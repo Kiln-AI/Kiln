@@ -304,8 +304,9 @@
     task_prompts: PromptResponse | null,
     _: AvailableModels[],
   ): OptionGroup[] {
-    if (!configs || configs.length === 0) {
-      return []
+    // Default to empty, so we still get default "Add New" option group
+    if (!configs) {
+      configs = []
     }
 
     // Group by provider
@@ -541,7 +542,7 @@
     {@const anyLoadedData = hasSelectedModels.some(
       (modelId) => eval_scores_cache[modelId],
     )}
-    <div class="max-w-7xl mx-auto">
+    <div class="max-w-[1900px] mx-auto">
       {#if allSelectedLoading && !anyLoadedData && hasSelectedModels.length > 0}
         <!-- Big centered loading spinner when no data is loaded yet -->
         <div

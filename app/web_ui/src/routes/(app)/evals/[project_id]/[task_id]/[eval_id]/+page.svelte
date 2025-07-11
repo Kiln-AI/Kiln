@@ -128,6 +128,12 @@
         value: evaluator.description,
       })
     }
+    if (evaluator.template) {
+      properties.push({
+        name: "Template",
+        value: evaluator.template,
+      })
+    }
     properties.push({
       name: "ID",
       value: evaluator.id || "unknown",
@@ -325,11 +331,16 @@
       )
       return
     }
-    const url = `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${encodeURIComponent(
-      eval_tag,
-    )}:0.8,${encodeURIComponent(golden_tag)}:0.2&eval_link=${encodeURIComponent(
-      window.location.pathname,
-    )}`
+
+    const params = new URLSearchParams()
+    params.set("reason", "eval")
+    if (evaluator.template) {
+      params.set("template_id", evaluator.template)
+    }
+    params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
+    params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
+    params.set("eval_link", window.location.pathname)
+    const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)
   }
