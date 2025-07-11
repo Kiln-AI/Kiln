@@ -54,13 +54,12 @@ class TestKilnEmbeddingModelProvider:
         provider = KilnEmbeddingModelProvider(
             name=ModelProviderName.gemini_api,
             model_id="text-embedding-004",
-            max_input_tokens=2048,
             n_dimensions=768,
         )
 
         assert provider.name == ModelProviderName.gemini_api
         assert provider.model_id == "text-embedding-004"
-        assert provider.max_input_tokens == 2048
+        assert provider.max_input_tokens is None
         assert provider.n_dimensions == 768
         assert provider.supports_custom_dimensions is False
 

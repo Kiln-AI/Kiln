@@ -108,11 +108,11 @@ class EmbeddingModelDetails(BaseModel):
     id: str
     name: str
     n_dimensions: int
-    max_input_tokens: int
+    max_input_tokens: int | None
     supports_custom_dimensions: bool
 
 
-class AvailableEmbeddingModels(BaseModel):
+class EmbeddingProvider(BaseModel):
     provider_name: str
     provider_id: str
     models: List[EmbeddingModelDetails]
@@ -217,7 +217,7 @@ def connect_provider_api(app: FastAPI):
 
     # returns map, of provider name to list of model names
     @app.get("/api/available_embedding_models")
-    async def get_available_embedding_models() -> List[AvailableEmbeddingModels]:
+    async def get_available_embedding_models() -> List[EmbeddingProvider]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
 
@@ -230,8 +230,8 @@ def connect_provider_api(app: FastAPI):
             if has_keys:
                 key_providers.append(provider)
 
-        models: List[AvailableEmbeddingModels] = [
-            AvailableEmbeddingModels(
+        models: List[EmbeddingProvider] = [
+            EmbeddingProvider(
                 provider_name=provider_name_from_id(provider),
                 provider_id=provider,
                 models=[],
