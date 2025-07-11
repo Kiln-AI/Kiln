@@ -86,15 +86,10 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         super().__init__(embedding_config)
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
-        # TODO: providers will throw if the text input is too long - goes over the max tokens for the model
-        # we should validate that upstream to prevent this from bricking the whole pipeline if the user's dataset
-        # happens to include chunks that are too long.
-
         # documented on litellm: https://docs.litellm.ai/docs/embedding/supported_embedding
         if len(input_texts) > MAX_BATCH_SIZE:
             raise ValueError("Text is too long")
 
-        # docs: https://docs.litellm.ai/docs/embedding/supported_embedding
         response = await litellm.aembedding(
             model=self.litellm_model_id,
             input=input_texts,
