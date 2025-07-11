@@ -63,6 +63,9 @@
       if (settings["together_api_key"]) {
         connected_providers.push(["together_ai", "Together AI"])
       }
+      if (settings["siliconflow_cn_api_key"]) {
+        connected_providers.push(["siliconflow_cn", "SiliconFlow.cn"])
+      }
       // Skipping Ollama -- we pull all models from it automatically
       if (connected_providers.length > 0) {
         new_model_provider = connected_providers[0][0] || null
