@@ -44,6 +44,22 @@ def adapter_for_task(
                 ),
                 base_adapter_config=base_adapter_config,
             )
+        case ModelProviderName.siliconflow_cn:
+            return LiteLlmAdapter(
+                kiln_task=kiln_task,
+                config=LiteLlmConfig(
+                    run_config_properties=run_config_properties,
+                    base_url=getenv("SILICONFLOW_BASE_URL")
+                    or "https://api.siliconflow.cn/v1",
+                    default_headers={
+                        "HTTP-Referer": "https://getkiln.ai/siliconflow",
+                        "X-Title": "KilnAI",
+                    },
+                    additional_body_options={
+                        "api_key": Config.shared().siliconflow_cn_api_key,
+                    },
+                ),
+            )
         case ModelProviderName.openai:
             return LiteLlmAdapter(
                 kiln_task=kiln_task,
