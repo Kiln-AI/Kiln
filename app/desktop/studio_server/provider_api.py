@@ -8,6 +8,10 @@ import openai
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    built_in_embedding_models,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -100,6 +104,20 @@ class AvailableModels(BaseModel):
     models: List[ModelDetails]
 
 
+class EmbeddingModelDetails(BaseModel):
+    id: str
+    name: str
+    n_dimensions: int
+    max_input_tokens: int | None
+    supports_custom_dimensions: bool
+
+
+class EmbeddingProvider(BaseModel):
+    provider_name: str
+    provider_id: str
+    models: List[EmbeddingModelDetails]
+
+
 class ProviderModel(BaseModel):
     id: str
     name: str
@@ -107,6 +125,10 @@ class ProviderModel(BaseModel):
 
 class ProviderModels(BaseModel):
     models: Dict[ModelName, ProviderModel]
+
+
+class ProviderEmbeddingModels(BaseModel):
+    models: Dict[EmbeddingModelName, ProviderModel]
 
 
 def connect_provider_api(app: FastAPI):
@@ -184,6 +206,55 @@ def connect_provider_api(app: FastAPI):
         openai_compatible = openai_compatible_providers()
         models.extend(openai_compatible)
 
+        return models
+
+    @app.get("/api/providers/embedding_models")
+    async def get_providers_embedding_models() -> ProviderEmbeddingModels:
+        models = {}
+        for model in built_in_embedding_models:
+            models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
+        return ProviderEmbeddingModels(models=models)
+
+    # returns map, of provider name to list of model names
+    @app.get("/api/available_embedding_models")
+    async def get_available_embedding_models() -> List[EmbeddingProvider]:
+        # Providers with just keys can return all their models if keys are set
+        key_providers: List[str] = []
+
+        for provider, provider_warning in provider_warnings.items():
+            has_keys = True
+            for required_key in provider_warning.required_config_keys:
+                if Config.shared().get_value(required_key) is None:
+                    has_keys = False
+                    break
+            if has_keys:
+                key_providers.append(provider)
+
+        models: List[EmbeddingProvider] = [
+            EmbeddingProvider(
+                provider_name=provider_name_from_id(provider),
+                provider_id=provider,
+                models=[],
+            )
+            for provider in key_providers
+        ]
+
+        for model in built_in_embedding_models:
+            for provider in model.providers:
+                if provider.name in key_providers:
+                    available_models = next(
+                        (m for m in models if m.provider_id == provider.name), None
+                    )
+                    if available_models:
+                        available_models.models.append(
+                            EmbeddingModelDetails(
+                                id=model.name,
+                                name=model.friendly_name,
+                                n_dimensions=provider.n_dimensions,
+                                max_input_tokens=provider.max_input_tokens,
+                                supports_custom_dimensions=provider.supports_custom_dimensions,
+                            )
+                        )
         return models
 
     @app.get("/api/provider/ollama/connect")
