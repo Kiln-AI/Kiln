@@ -297,6 +297,8 @@ def connect_provider_api(app: FastAPI):
                 )
             case ModelProviderName.together_ai:
                 return await connect_together(parse_api_key(key_data))
+            case ModelProviderName.siliconflow_cn:
+                return await connect_siliconflow(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -352,6 +354,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().vertex_location = None
                 case ModelProviderName.together_ai:
                     Config.shared().together_api_key = None
+                case ModelProviderName.siliconflow_cn:
+                    Config.shared().siliconflow_cn_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -407,6 +411,46 @@ async def connect_openrouter(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to OpenRouter. Error: {str(e)}"},
+        )
+
+
+async def connect_siliconflow(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.get(
+            "https://api.siliconflow.cn/v1/models",
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to SiliconFlow. Invalid API key."
+                },
+            )
+        elif response.status_code == 200:
+            Config.shared().siliconflow_cn_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to SiliconFlow"},
+            )
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to SiliconFlow. Error: [{response.status_code}] {response.text}"
+                },
+            )
+    except Exception as e:
+        # unexpected error
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to SiliconFlow. Error: {str(e)}"},
         )
 
 

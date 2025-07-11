@@ -10,12 +10,8 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
-from kiln_ai.adapters.model_adapters.litellm_config import (
-    LiteLlmConfig,
-)
-from kiln_ai.adapters.ollama_tools import (
-    get_ollama_connection,
-)
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.registry import project_from_id
@@ -377,6 +373,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Google Vertex AI"
             case ModelProviderName.together_ai:
                 return "Together AI"
+            case ModelProviderName.siliconflow_cn:
+                return "SiliconFlow"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -434,5 +432,9 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.together_ai: ModelProviderWarning(
         required_config_keys=["together_api_key"],
         message="Attempted to use Together without an API key set. \nGet your API key from https://together.ai/settings/keys",
+    ),
+    ModelProviderName.siliconflow_cn: ModelProviderWarning(
+        required_config_keys=["siliconflow_cn_api_key"],
+        message="Attempted to use SiliconFlow without an API key set. \nGet your API key from https://cloud.siliconflow.cn/account/ak",
     ),
 }
