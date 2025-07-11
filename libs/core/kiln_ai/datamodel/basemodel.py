@@ -28,6 +28,7 @@ from typing_extensions import Self
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
+from kiln_ai.utils.mime_type import guess_extension
 
 # ID is a 12 digit random integer string.
 # Should be unique per item, at least inside the context of a parent/child relationship.
@@ -179,13 +180,11 @@ class KilnAttachmentModel(BaseModel):
         return target_path
 
     @classmethod
-    def from_data(
-        cls, data: str | bytes, mime_type: str, suffix: str | None = None
-    ) -> Self:
+    def from_data(cls, data: str | bytes, mime_type: str) -> Self:
         """Create an attachment from str or byte data, in a temp file. The attachment is persisted to
         its permanent location when the model is saved.
         """
-        extension = suffix or mimetypes.guess_extension(mime_type) or ".unknown"
+        extension = guess_extension(mime_type) or ".unknown"
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
         if isinstance(data, str):
             temp_file.write(data.encode("utf-8"))
