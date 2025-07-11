@@ -241,9 +241,6 @@ def connect_provider_api(app: FastAPI):
 
         for model in built_in_embedding_models:
             for provider in model.providers:
-                if not provider.model_id:
-                    # it's possible for models to not have an ID (fine-tune only model)
-                    continue
                 if provider.name in key_providers:
                     available_models = next(
                         (m for m in models if m.provider_id == provider.name), None
