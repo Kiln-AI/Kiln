@@ -370,9 +370,7 @@ Here are two examples of topics generated from an example task/system prompt and
       - "Messages including 'help me understand everything about'"
 `
     } else if (task_type == "inputs") {
-      template += `When generating model inputs, generate inputs that are likely to trigger the issue. This may take some creativity, but it's important to make sure the issue is triggered.
-
-Here are two examples of inputs generated from an example task/system prompt, issue description, and a topic path:
+      template += `Here are two examples of inputs generated from an example task/system prompt, issue description, and a topic path:
 
 ## Example 1
  - Task/System Prompt: "Generate news article headlines from a summary of the article, avoiding clickbait."
@@ -448,6 +446,12 @@ Here is an example of model output that doesn't ${goal_description} the issue to
 <no_issue_example>
 ${issue_success_example}
 </no_issue_example>`
+      
+      if (task_type == "inputs") {
+        template += `
+
+When generating model inputs, generate inputs that are likely to trigger the issue with the model output but still within the bounds of reasonable inputs that follow the input specification (realistic inputs). This may take some creativity, but it's important to make sure the issue is triggered.`
+      }
     }
 
     if (issue_failure_example || issue_success_example) {
