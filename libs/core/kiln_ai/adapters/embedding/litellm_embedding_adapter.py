@@ -1,7 +1,8 @@
 from functools import cached_property
-from typing import List
+from typing import List, Tuple
 
 import litellm
+from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
@@ -26,6 +27,60 @@ class EmbeddingOptions(BaseModel):
     )
 
 
+def validate_map_to_embeddings(
+    response: EmbeddingResponse,
+    expected_embedding_count: int,
+) -> List[Embedding]:
+    # LiteLLM has an Embedding type in litellm.types.utils, but the EmbeddingResponse data has a list of untyped dicts,
+    # which can be dangerous especially if we upgrade litellm, so we do some sanity checks here
+    if not isinstance(response, EmbeddingResponse):
+        raise RuntimeError(f"Expected EmbeddingResponse, got {type(response)}.")
+
+    list_to_validate = response.data
+    if len(list_to_validate) != expected_embedding_count:
+        raise RuntimeError(
+            f"Expected the number of embeddings in the response to be {expected_embedding_count}, got {len(list_to_validate)}."
+        )
+
+    validated_vectors: List[Tuple[list[float], int]] = []
+    for embedding_dict in list_to_validate:
+        object_type = embedding_dict.get("object")
+        if object_type != "embedding":
+            raise RuntimeError(
+                f"Embedding response data has an unexpected shape. Property 'object' is not 'embedding'. Got {object_type}."
+            )
+
+        embedding_property_value = embedding_dict.get("embedding")
+        if embedding_property_value is None:
+            raise RuntimeError(
+                "Embedding response data has an unexpected shape. Property 'embedding' is None in response data item."
+            )
+        if not isinstance(embedding_property_value, list):
+            raise RuntimeError(
+                f"Embedding response data has an unexpected shape. Property 'embedding' is not a list. Got {type(embedding_property_value)}."
+            )
+
+        index_property_value = embedding_dict.get("index")
+        if index_property_value is None:
+            raise RuntimeError(
+                "Embedding response data has an unexpected shape. Property 'index' is None in response data item."
+            )
+        if not isinstance(index_property_value, int):
+            raise RuntimeError(
+                f"Embedding response data has an unexpected shape. Property 'index' is not an integer. Got {type(index_property_value)}."
+            )
+
+        validated_vectors.append((embedding_property_value, index_property_value))
+
+    # sort by index, in place - the data should already be sorted by index,
+    # but litellm docs are not explicit about this
+    validated_vectors.sort(key=lambda x: x[1])
+
+    return [
+        Embedding(vector=embedding_vector) for embedding_vector, _ in validated_vectors
+    ]
+
+
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
     def __init__(self, embedding_config: EmbeddingConfig):
         super().__init__(embedding_config)
@@ -46,16 +101,14 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             **self.build_options().model_dump(exclude_none=True),
         )
 
-        # sanity check to ensure integrity as we should always have as many embeddings
-        # as inputs
-        if len(response.data) != len(input_texts):
-            raise ValueError("Response data length does not match input text length")
+        validated_embeddings = validate_map_to_embeddings(
+            response, expected_embedding_count=len(input_texts)
+        )
 
-        embeddings = []
-        for item in sorted(response.data, key=lambda x: x.get("index")):
-            embeddings.append(Embedding(vector=item.get("embedding")))
-
-        return EmbeddingResult(embeddings=embeddings, usage=response.usage)
+        return EmbeddingResult(
+            embeddings=validated_embeddings,
+            usage=response.usage,
+        )
 
     def build_options(self) -> EmbeddingOptions:
         dimensions = self.embedding_config.properties.get("dimensions", None)
