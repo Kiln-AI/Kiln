@@ -77,13 +77,13 @@ class TestLitellmEmbeddingAdapter:
         options = adapter.build_options()
         assert options.dimensions == 1536
 
-    async def test_embed_empty_list(self, mock_litellm_adapter):
+    async def test_generate_embeddings_empty_list(self, mock_litellm_adapter):
         """Test embed method with empty text list."""
         result = await mock_litellm_adapter.generate_embeddings([])
         assert result.embeddings == []
         assert result.usage is None
 
-    async def test_embed_success(self, mock_litellm_adapter):
+    async def test_generate_embeddings_success(self, mock_litellm_adapter):
         """Test successful embedding generation."""
         # mock the response type
         mock_response = AsyncMock(spec=EmbeddingResponse)
@@ -101,7 +101,7 @@ class TestLitellmEmbeddingAdapter:
         assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
         assert result.usage == mock_response.usage
 
-    async def test_embed_with_dimensions(self, mock_embedding_config):
+    async def test_generate_embeddings_with_dimensions(self, mock_embedding_config):
         """Test embedding with dimensions specified."""
         mock_embedding_config.properties = {"dimensions": 1536}
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
@@ -126,14 +126,16 @@ class TestLitellmEmbeddingAdapter:
         assert len(result.embeddings[0].vector) == 1536
         assert result.usage == mock_response.usage
 
-    async def test_embed_batch_size_exceeded(self, mock_litellm_adapter):
+    async def test_generate_embeddings_batch_size_exceeded(self, mock_litellm_adapter):
         """Test that embedding fails when batch size is exceeded."""
         large_text_list = ["text"] * (MAX_BATCH_SIZE + 1)
 
         with pytest.raises(ValueError, match="Text is too long"):
             await mock_litellm_adapter._generate_embeddings(large_text_list)
 
-    async def test_embed_response_length_mismatch(self, mock_litellm_adapter):
+    async def test_generate_embeddings_response_length_mismatch(
+        self, mock_litellm_adapter
+    ):
         """Test that embedding fails when response data length doesn't match input."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -147,13 +149,13 @@ class TestLitellmEmbeddingAdapter:
             ):
                 await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
-    async def test_embed_litellm_exception(self, mock_litellm_adapter):
+    async def test_generate_embeddings_litellm_exception(self, mock_litellm_adapter):
         """Test that litellm exceptions are properly raised."""
         with patch("litellm.aembedding", side_effect=Exception("litellm error")):
             with pytest.raises(Exception, match="litellm error"):
                 await mock_litellm_adapter._generate_embeddings(["test text"])
 
-    async def test_embed_sorts_by_index(self, mock_litellm_adapter):
+    async def test_generate_embeddings_sorts_by_index(self, mock_litellm_adapter):
         """Test that embeddings are sorted by index."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -174,7 +176,7 @@ class TestLitellmEmbeddingAdapter:
         assert result.embeddings[1].vector == [0.2, 0.3, 0.4]  # index 1
         assert result.embeddings[2].vector == [0.3, 0.4, 0.5]  # index 2
 
-    async def test_embed_single_text(self, mock_litellm_adapter):
+    async def test_generate_embeddings_single_text(self, mock_litellm_adapter):
         """Test embedding a single text."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -195,7 +197,7 @@ class TestLitellmEmbeddingAdapter:
         assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
         assert result.usage == mock_response.usage
 
-    async def test_embed_max_batch_size(self, mock_litellm_adapter):
+    async def test_generate_embeddings_max_batch_size(self, mock_litellm_adapter):
         """Test embedding with exactly the maximum batch size."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -219,7 +221,7 @@ class TestLitellmEmbeddingAdapter:
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         assert adapter.embedding_config == mock_embedding_config
 
-    async def test_embed_method_integration(self, mock_litellm_adapter):
+    async def test_generate_embeddings_method_integration(self, mock_litellm_adapter):
         """Test the public embed method integration."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -238,7 +240,7 @@ class TestLitellmEmbeddingAdapter:
 class TestLitellmEmbeddingAdapterEdgeCases:
     """Test edge cases and error conditions."""
 
-    async def test_embed_with_none_usage(self, mock_embedding_config):
+    async def test_generate_embeddings_with_none_usage(self, mock_embedding_config):
         """Test embedding when litellm returns None usage."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         mock_response = AsyncMock(spec=EmbeddingResponse)
@@ -253,7 +255,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert len(result.embeddings) == 1
         assert result.usage is None
 
-    async def test_embed_with_empty_embedding_vector(self, mock_embedding_config):
+    async def test_generate_embeddings_with_empty_embedding_vector(
+        self, mock_embedding_config
+    ):
         """Test embedding with empty vector."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         mock_response = AsyncMock(spec=EmbeddingResponse)
@@ -266,7 +270,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert len(result.embeddings) == 1
         assert result.embeddings[0].vector == []
 
-    async def test_embed_with_duplicate_indices(self, mock_embedding_config):
+    async def test_generate_embeddings_with_duplicate_indices(
+        self, mock_embedding_config
+    ):
         """Test embedding with duplicate indices (should still work due to sorting)."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
         mock_response = AsyncMock(spec=EmbeddingResponse)
@@ -288,7 +294,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
         assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
 
-    async def test_embed_with_complex_properties(self, mock_embedding_config):
+    async def test_generate_embeddings_with_complex_properties(
+        self, mock_embedding_config
+    ):
         """Test embedding with complex properties (only dimensions should be used)."""
         mock_embedding_config.properties = {
             "dimensions": 1536,
@@ -326,7 +334,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
     ],
 )
 @pytest.mark.asyncio
-async def test_paid_embed_basic(provider, model_name, expected_dim):
+async def test_paid_generate_embeddings_basic(provider, model_name, expected_dim):
     openai_key = Config.shared().open_ai_api_key
     if not openai_key:
         pytest.skip("OPENAI_API_KEY not set")
@@ -434,7 +442,7 @@ def test_litellm_model_id_custom_provider():
     ],
 )
 @pytest.mark.asyncio
-async def test_paid_embed_with_custom_dimensions_supported(
+async def test_paid_generate_embeddings_with_custom_dimensions_supported(
     provider, model_name, expected_dim
 ):
     """
@@ -562,7 +570,7 @@ def test_validate_map_to_embeddings_sorting():
     assert result == expected_embeddings
 
 
-def test_embed_response_not_embedding_response():
+def test_generate_embeddings_response_not_embedding_response():
     response = AsyncMock()
     response.data = [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}]
     response.usage = Usage(prompt_tokens=5, total_tokens=5)
