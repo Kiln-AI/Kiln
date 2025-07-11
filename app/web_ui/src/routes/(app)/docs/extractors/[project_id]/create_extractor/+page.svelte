@@ -13,19 +13,19 @@
   let extractor_options = [
     {
       label: "Gemini: Gemini 2.5 Pro",
-      value: "gemini:::gemini-2.5-pro",
+      value: "gemini:::gemini/gemini-2.5-pro",
     },
     {
       label: "Gemini: Gemini 2.5 Flash",
-      value: "gemini:::gemini-2.5-flash",
+      value: "gemini:::gemini/gemini-2.5-flash",
     },
     {
       label: "Gemini: Gemini 2.0 Flash",
-      value: "gemini:::gemini-2.0-flash",
+      value: "gemini:::gemini/gemini-2.0-flash",
     },
     {
       label: "Gemini: Gemini 2.0 Flash Lite",
-      value: "gemini:::gemini-2.0-flash-lite",
+      value: "gemini:::gemini/gemini-2.0-flash-lite",
     },
   ]
 

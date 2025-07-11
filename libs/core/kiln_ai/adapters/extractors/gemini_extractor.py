@@ -1,7 +1,10 @@
+import base64
 from pathlib import Path
+from typing import Any
 
+import litellm
 from google import genai
-from google.genai import types
+from litellm.types.utils import Choices, ModelResponse
 
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
@@ -112,23 +115,81 @@ class GeminiExtractor(BaseExtractor):
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
 
-        response = await self.gemini_client.aio.models.generate_content(
+        # FIXME: the supports_pdf_input check does not seem to work for gemini models
+        # if not supports_pdf_input(self.model_name):
+        #     raise ValueError(f"Model {self.model_name} does not support PDF input")
+
+        # FIXME: check vision support
+        # supports_vision(model=self.model_name)
+
+        def encode_file(path: Path, mime_type: str) -> dict[str, Any]:
+            def to_base64_url(mime_type: str, bytes: bytes) -> str:
+                base64_url = (
+                    f"data:{mime_type};base64,{base64.b64encode(bytes).decode('utf-8')}"
+                )
+                return base64_url
+
+            if mime_type == "application/pdf" or mime_type.startswith("image/"):
+                pdf_bytes = path.read_bytes()
+                return {
+                    "type": "file",
+                    "file": {
+                        "file_data": to_base64_url(mime_type, pdf_bytes),
+                    },
+                }
+            if mime_type.startswith("image/"):
+                image_bytes = path.read_bytes()
+                return {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": to_base64_url(mime_type, image_bytes),
+                    },
+                }
+            if mime_type.startswith("video/"):
+                video_bytes = path.read_bytes()
+                return {
+                    "type": "file",
+                    "file": {
+                        "file_data": to_base64_url(mime_type, video_bytes),
+                    },
+                }
+            if mime_type.startswith("audio/"):
+                audio_bytes = path.read_bytes()
+                return {
+                    "type": "file",
+                    "file": {
+                        "file_data": to_base64_url(mime_type, audio_bytes),
+                    },
+                }
+            raise ValueError(f"Unsupported MIME type: {mime_type} for {path}")
+
+        file_content = [
+            {"type": "text", "text": prompt},
+            encode_file(path, mime_type),
+        ]
+
+        response = await litellm.acompletion(
             model=self.model_name,
-            contents=[
-                types.Part.from_bytes(
-                    data=path.read_bytes(),
-                    mime_type=mime_type,
-                ),
-                prompt,
-            ],
+            messages=[{"role": "user", "content": file_content}],
+            api_key=Config.shared().gemini_api_key,
         )
 
-        if response.text is None:
+        if (
+            not isinstance(response, ModelResponse)
+            or not response.choices
+            or len(response.choices) == 0
+            or not isinstance(response.choices[0], Choices)
+        ):
+            raise RuntimeError(
+                f"Expected ModelResponse with Choices, got {type(response)}."
+            )
+
+        if response.choices[0].message.content is None:
             raise ValueError("No text returned from Gemini when extracting document")
 
         return ExtractionOutput(
             is_passthrough=False,
-            content=response.text,
+            content=response.choices[0].message.content,
             content_format=self.extractor_config.output_format,
         )
 
