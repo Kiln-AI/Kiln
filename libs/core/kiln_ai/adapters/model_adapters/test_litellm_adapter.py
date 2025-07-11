@@ -7,9 +7,7 @@ import pytest
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.adapters.model_adapters.litellm_config import (
-    LiteLlmConfig,
-)
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -344,7 +342,7 @@ def test_litellm_model_id_unknown_provider(config, mock_task):
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         with patch(
-            "kiln_ai.adapters.model_adapters.litellm_adapter.raise_exhaustive_enum_error"
+            "kiln_ai.utils.litellm.raise_exhaustive_enum_error"
         ) as mock_raise_error:
             mock_raise_error.side_effect = Exception("Test error")
 

@@ -186,18 +186,6 @@ class TestEmbeddingConfig:
         )
         assert config.properties == {"dimensions": 1536}
 
-        # this model does not support custom dimensions
-        with pytest.raises(
-            ValueError,
-            match="The model gemini_text_embedding_004 does not support custom dimensions",
-        ):
-            EmbeddingConfig(
-                name="test-embedding",
-                model_provider_name="gemini_api",
-                model_name="gemini_text_embedding_004",
-                properties={"dimensions": 512},
-            )
-
         # dimensions is negative
         with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
             EmbeddingConfig(

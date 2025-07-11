@@ -34,28 +34,7 @@ class EmbeddingConfig(KilnParentedModel):
 
     @model_validator(mode="after")
     def validate_properties(self):
-        # FIXME: not ideal to import here, but if we import normally, we get a circular import
-        # We should probably move the ml model lists out of the adapters package, since they are
-        # base constructs with no dependencies (and we seem to be getting a circular import due
-        # to the __init__.py rather than due to intrinsic circularity)
-        from kiln_ai.adapters.ml_embedding_model_list import (
-            built_in_embedding_models_from_provider,
-        )
-
-        model_provider = built_in_embedding_models_from_provider(
-            self.model_provider_name, self.model_name
-        )
-
-        if model_provider is None:
-            raise ValueError(
-                f"Model provider {self.model_provider_name} not found in the list of built-in models"
-            )
-
         if "dimensions" in self.properties:
-            if not model_provider.supports_custom_dimensions:
-                raise ValueError(
-                    f"The model {self.model_name} does not support custom dimensions"
-                )
             if (
                 not isinstance(self.properties["dimensions"], int)
                 or self.properties["dimensions"] <= 0
