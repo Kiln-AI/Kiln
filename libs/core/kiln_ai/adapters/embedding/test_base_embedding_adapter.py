@@ -12,10 +12,10 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 class TestEmbeddingAdapter(BaseEmbeddingAdapter):
     """Concrete implementation of BaseEmbeddingAdapter for testing purposes."""
 
-    async def _generate_embeddings(self, text: list[str]) -> EmbeddingResult:
+    async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
         # Simple test implementation that returns mock embeddings
         embeddings = []
-        for i, _ in enumerate(text):
+        for i, _ in enumerate(text_inputs):
             embeddings.append(Embedding(vector=[0.1 * (i + 1)] * 3))
 
         return EmbeddingResult(embeddings=embeddings)
@@ -24,14 +24,16 @@ class TestEmbeddingAdapter(BaseEmbeddingAdapter):
 class TestEmbeddingAdapterWithUsage(BaseEmbeddingAdapter):
     """Concrete implementation that includes usage information."""
 
-    async def _generate_embeddings(self, text: list[str]) -> EmbeddingResult:
+    async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
         from litellm import Usage
 
         embeddings = []
-        for i, _ in enumerate(text):
+        for i, _ in enumerate(text_inputs):
             embeddings.append(Embedding(vector=[0.1 * (i + 1)] * 3))
 
-        usage = Usage(prompt_tokens=len(text) * 10, total_tokens=len(text) * 10)
+        usage = Usage(
+            prompt_tokens=len(text_inputs) * 10, total_tokens=len(text_inputs) * 10
+        )
         return EmbeddingResult(embeddings=embeddings, usage=usage)
 
 
@@ -239,9 +241,11 @@ class TestBaseEmbeddingAdapterIntegration:
                 self._generate_embeddings_called = False
                 self._generate_embeddings_args = None
 
-            async def _generate_embeddings(self, text: list[str]) -> EmbeddingResult:
+            async def _generate_embeddings(
+                self, text_inputs: list[str]
+            ) -> EmbeddingResult:
                 self._generate_embeddings_called = True
-                self._generate_embeddings_args = text
+                self._generate_embeddings_args = text_inputs
                 return EmbeddingResult(embeddings=[])
 
         adapter = MockAdapter(mock_embedding_config)
@@ -264,7 +268,9 @@ class TestBaseEmbeddingAdapterIntegration:
                 super().__init__(config)
                 self._generate_embeddings_called = False
 
-            async def _generate_embeddings(self, text: list[str]) -> EmbeddingResult:
+            async def _generate_embeddings(
+                self, text_inputs: list[str]
+            ) -> EmbeddingResult:
                 self._generate_embeddings_called = True
                 return EmbeddingResult(embeddings=[])
 
