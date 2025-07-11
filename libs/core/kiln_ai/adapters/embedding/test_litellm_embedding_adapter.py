@@ -60,28 +60,7 @@ class TestLitellmEmbeddingAdapter:
     def test_init_success(self, mock_embedding_config):
         """Test successful initialization of the adapter."""
         adapter = LitellmEmbeddingAdapter(mock_embedding_config)
-        assert adapter.model_provider_name == ModelProviderName.openai
-        assert adapter.model_name == "openai_text_embedding_3_small"
-        assert adapter.properties == {}
         assert adapter.embedding_config == mock_embedding_config
-
-    def test_init_missing_provider(self):
-        """Test initialization fails when provider is None."""
-        config = MagicMock()
-        config.model_provider_name = None
-        config.model_name = "openai_text_embedding_3_small"
-        config.properties = {}
-        with pytest.raises(ValueError, match="Provider must be set"):
-            LitellmEmbeddingAdapter(config)
-
-    def test_init_missing_model_name(self):
-        """Test initialization fails when model_name is None."""
-        config = MagicMock()
-        config.model_provider_name = ModelProviderName.openai
-        config.model_name = None
-        config.properties = {}
-        with pytest.raises(ValueError, match="Model name must be set"):
-            LitellmEmbeddingAdapter(config)
 
     def test_build_options_no_dimensions(self, mock_litellm_adapter):
         """Test build_options when no dimensions are specified."""
@@ -292,21 +271,6 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
         assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
 
-    def test_properties_access(self, mock_embedding_config):
-        """Test that properties are correctly accessed from the config."""
-        mock_embedding_config.properties = {
-            "dimensions": 1536,
-            "custom_property": "value",
-            "numeric_property": 42,
-        }
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
-
-        assert adapter.properties == {
-            "dimensions": 1536,
-            "custom_property": "value",
-            "numeric_property": 42,
-        }
-
     async def test_embed_with_complex_properties(self, mock_embedding_config):
         """Test embedding with complex properties (only dimensions should be used)."""
         mock_embedding_config.properties = {
@@ -369,6 +333,73 @@ async def test_paid_embed_basic(provider, model_name, expected_dim):
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == expected_dim
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
+
+
+# test model_provider
+def test_model_provider():
+    mock_embedding_config = EmbeddingConfig(
+        name="test",
+        model_provider_name=ModelProviderName.openai,
+        model_name="openai_text_embedding_3_small",
+        properties={},
+    )
+    adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+    assert adapter.model_provider.name == ModelProviderName.openai
+    assert adapter.model_provider.model_id == "text-embedding-3-small"
+
+
+def test_model_provider_gemini():
+    config = EmbeddingConfig(
+        name="test",
+        model_provider_name=ModelProviderName.gemini_api,
+        model_name="gemini_text_embedding_004",
+        properties={},
+    )
+    adapter = LitellmEmbeddingAdapter(config)
+    assert adapter.model_provider.name == ModelProviderName.gemini_api
+    assert adapter.model_provider.model_id == "text-embedding-004"
+
+
+@pytest.mark.parametrize(
+    "provider,model_name,expected_model_id",
+    [
+        (
+            ModelProviderName.gemini_api,
+            "gemini_text_embedding_004",
+            "gemini/text-embedding-004",
+        ),
+        (
+            ModelProviderName.openai,
+            "openai_text_embedding_3_small",
+            "openai/text-embedding-3-small",
+        ),
+    ],
+)
+def test_litellm_model_id(provider, model_name, expected_model_id):
+    config = EmbeddingConfig(
+        name="test",
+        model_provider_name=provider,
+        model_name=model_name,
+        properties={},
+    )
+    adapter = LitellmEmbeddingAdapter(config)
+    assert adapter.litellm_model_id == expected_model_id
+
+
+def test_litellm_model_id_custom_provider():
+    config = EmbeddingConfig(
+        name="test",
+        model_provider_name=ModelProviderName.openai_compatible,
+        model_name="some-model",
+        properties={},
+    )
+    adapter = LitellmEmbeddingAdapter(config)
+
+    with pytest.raises(
+        ValueError,
+        match="Embedding model some-model not found in the list of built-in models",
+    ):
+        adapter.model_provider
 
 
 @pytest.mark.paid

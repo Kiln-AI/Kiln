@@ -20,6 +20,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.task import run_config_from_run_config_properties
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.litellm import get_litellm_provider_info
 
 logger = logging.getLogger(__name__)
 
@@ -285,72 +286,19 @@ class LiteLlmAdapter(BaseAdapter):
 
         return extra_body
 
-    # TODO: refactor this to be shared with other implementations of LiteLLM adapters
-    # for example, embedding adapter for LiteLLM, and also Extractor adapter for LiteLLM
     def litellm_model_id(self) -> str:
         # The model ID is an interesting combination of format and url endpoint.
         # It specifics the provider URL/host, but this is overridden if you manually set an api url
-
         if self._litellm_model_id:
             return self._litellm_model_id
 
-        provider = self.model_provider()
-        if not provider.model_id:
-            raise ValueError("Model ID is required for OpenAI compatible models")
-
-        litellm_provider_name: str | None = None
-        is_custom = False
-        match provider.name:
-            case ModelProviderName.openrouter:
-                litellm_provider_name = "openrouter"
-            case ModelProviderName.openai:
-                litellm_provider_name = "openai"
-            case ModelProviderName.groq:
-                litellm_provider_name = "groq"
-            case ModelProviderName.anthropic:
-                litellm_provider_name = "anthropic"
-            case ModelProviderName.ollama:
-                # We don't let litellm use the Ollama API and muck with our requests. We use Ollama's OpenAI compatible API.
-                # This is because we're setting detailed features like response_format=json_schema and want lower level control.
-                is_custom = True
-            case ModelProviderName.gemini_api:
-                litellm_provider_name = "gemini"
-            case ModelProviderName.fireworks_ai:
-                litellm_provider_name = "fireworks_ai"
-            case ModelProviderName.amazon_bedrock:
-                litellm_provider_name = "bedrock"
-            case ModelProviderName.azure_openai:
-                litellm_provider_name = "azure"
-            case ModelProviderName.huggingface:
-                litellm_provider_name = "huggingface"
-            case ModelProviderName.vertex:
-                litellm_provider_name = "vertex_ai"
-            case ModelProviderName.together_ai:
-                litellm_provider_name = "together_ai"
-            case ModelProviderName.openai_compatible:
-                is_custom = True
-            case ModelProviderName.kiln_custom_registry:
-                is_custom = True
-            case ModelProviderName.kiln_fine_tune:
-                is_custom = True
-            case _:
-                raise_exhaustive_enum_error(provider.name)
-
-        if is_custom:
-            if self._api_base is None:
-                raise ValueError(
-                    "Explicit Base URL is required for OpenAI compatible APIs (custom models, ollama, fine tunes, and custom registry models)"
-                )
-            # Use openai as it's only used for format, not url
-            litellm_provider_name = "openai"
-
-        # Sholdn't be possible but keep type checker happy
-        if litellm_provider_name is None:
+        litellm_provider_info = get_litellm_provider_info(self.model_provider())
+        if litellm_provider_info.is_custom and self._api_base is None:
             raise ValueError(
-                f"Provider name could not lookup valid litellm provider ID {provider.model_id}"
+                "Explicit Base URL is required for OpenAI compatible APIs (custom models, ollama, fine tunes, and custom registry models)"
             )
 
-        self._litellm_model_id = litellm_provider_name + "/" + provider.model_id
+        self._litellm_model_id = litellm_provider_info.litellm_model_id
         return self._litellm_model_id
 
     async def build_completion_kwargs(

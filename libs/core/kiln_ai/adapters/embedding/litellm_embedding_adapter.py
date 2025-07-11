@@ -1,3 +1,4 @@
+from functools import cached_property
 from typing import List
 
 import litellm
@@ -9,11 +10,11 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import (
     EmbeddingResult,
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
+    KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.litellm import get_litellm_provider_info
 
 MAX_BATCH_SIZE = 2048
 
@@ -27,26 +28,7 @@ class EmbeddingOptions(BaseModel):
 
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
     def __init__(self, embedding_config: EmbeddingConfig):
-        model_provider_name = embedding_config.model_provider_name
-        if model_provider_name is None:
-            raise ValueError("Provider must be set")
-
-        model_name = embedding_config.model_name
-        if model_name is None:
-            raise ValueError("Model name must be set")
-
         super().__init__(embedding_config)
-        self.model_provider_name = model_provider_name
-        self.model_name = model_name
-        self.properties = embedding_config.properties
-
-        self.model_provider = built_in_embedding_models_from_provider(
-            self.model_provider_name, self.model_name
-        )
-        if self.model_provider is None:
-            raise ValueError(
-                f"Embedding model {self.model_name} not found in the list of built-in models"
-            )
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         # TODO: providers will throw if the text input is too long - goes over the max tokens for the model
@@ -59,7 +41,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
         # docs: https://docs.litellm.ai/docs/embedding/supported_embedding
         response = await litellm.aembedding(
-            model=self.litellm_model_id(),
+            model=self.litellm_model_id,
             input=input_texts,
             **self.build_options().model_dump(exclude_none=True),
         )
@@ -76,7 +58,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         return EmbeddingResult(embeddings=embeddings, usage=response.usage)
 
     def build_options(self) -> EmbeddingOptions:
-        dimensions = self.properties.get("dimensions", None)
+        dimensions = self.embedding_config.properties.get("dimensions", None)
         if dimensions is not None:
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ValueError("Dimensions must be a positive integer")
@@ -85,54 +67,23 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             dimensions=dimensions,
         )
 
-    # TODO: refactor this to be shared with other implementations of LiteLLM adapters
-    # for example, embedding adapter for LiteLLM, and also Extractor adapter for LiteLLM
-    def litellm_model_id(self) -> str:
-        provider = self.model_provider
-        if not provider:
-            raise ValueError("Model ID is required for OpenAI compatible models")
-
-        litellm_provider_name: str | None = None
-        provider_not_supported = False
-        match provider.name:
-            case ModelProviderName.openrouter:
-                litellm_provider_name = "openrouter"
-            case ModelProviderName.openai:
-                litellm_provider_name = "openai"
-            case ModelProviderName.groq:
-                litellm_provider_name = "groq"
-            case ModelProviderName.anthropic:
-                litellm_provider_name = "anthropic"
-            case ModelProviderName.gemini_api:
-                litellm_provider_name = "gemini"
-            case ModelProviderName.fireworks_ai:
-                litellm_provider_name = "fireworks_ai"
-            case ModelProviderName.amazon_bedrock:
-                litellm_provider_name = "bedrock"
-            case ModelProviderName.azure_openai:
-                litellm_provider_name = "azure"
-            case ModelProviderName.huggingface:
-                litellm_provider_name = "huggingface"
-            case ModelProviderName.vertex:
-                litellm_provider_name = "vertex_ai"
-            case ModelProviderName.together_ai:
-                litellm_provider_name = "together_ai"
-            case ModelProviderName.openai_compatible:
-                provider_not_supported = True
-            case ModelProviderName.kiln_custom_registry:
-                provider_not_supported = True
-            case ModelProviderName.kiln_fine_tune:
-                provider_not_supported = True
-            case ModelProviderName.ollama:
-                provider_not_supported = True
-            case _:
-                raise_exhaustive_enum_error(provider.name)
-
-        if provider_not_supported:
-            raise ValueError(f"Provider {provider.name} is not supported by litellm")
-
-        self._litellm_model_id = (
-            str(litellm_provider_name) + "/" + str(provider.model_id)
+    @cached_property
+    def model_provider(self) -> KilnEmbeddingModelProvider:
+        provider = built_in_embedding_models_from_provider(
+            self.embedding_config.model_provider_name, self.embedding_config.model_name
         )
+        if provider is None:
+            raise ValueError(
+                f"Embedding model {self.embedding_config.model_name} not found in the list of built-in models"
+            )
+        return provider
 
-        return self._litellm_model_id
+    @cached_property
+    def litellm_model_id(self) -> str:
+        provider_info = get_litellm_provider_info(self.model_provider)
+        if provider_info.is_custom:
+            raise ValueError(
+                f"Provider {self.model_provider.name} is not supported by litellm for embeddings"
+            )
+
+        return provider_info.litellm_model_id
