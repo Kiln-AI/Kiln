@@ -33,6 +33,7 @@ class ModelFamily(str, Enum):
     deepseek = "deepseek"
     dolphin = "dolphin"
     grok = "grok"
+    hunyuan = "hunyuan"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -133,6 +134,7 @@ class ModelName(str, Enum):
     qwen_3_32b_no_thinking = "qwen_3_32b_no_thinking"
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
+    hunyuan_a13b_instruct = "hunyuan_a13b_instruct"
 
 
 class ModelParserID(str, Enum):
@@ -2217,6 +2219,13 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3-14B",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                reasoning_capable=True,
+            ),
         ],
     ),
     # Qwen 3 14B Non-Thinking
@@ -2239,6 +2248,13 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3-14B",
+                formatter=ModelFormatterID.qwen3_style_no_think,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
         ],
     ),
@@ -2433,6 +2449,23 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
+            ),
+        ],
+    ),
+    # Hunyuan A13B Instruct
+    KilnModel(
+        family=ModelFamily.hunyuan,
+        name=ModelName.hunyuan_a13b_instruct,
+        friendly_name="Hunyuan A13B Instruct",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="tencent/Hunyuan-A13B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=False,
+                suggested_for_data_gen=False,
+                suggested_for_evals=False,
+                reasoning_capable=True,
             ),
         ],
     ),
