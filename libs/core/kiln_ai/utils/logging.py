@@ -63,14 +63,14 @@ class CustomLiteLLMLogger(CustomLogger):
         # Print the formatted input data for the request in API format, pretty print
         try:
             self.logger.info(
-                f"Formatted Input Data (API):\n{json.dumps(data, indent=2)}"
+                f"Formatted Input Data (API):\n{json.dumps(data, indent=2, ensure_ascii=False)}"
             )
         except Exception as e:
             self.logger.info(f"Formatted Input Data (API): Could not print {e}")
 
         # Print the messages for the request in LiteLLM Message list, pretty print
         try:
-            json_messages = json.dumps(messages, indent=2)
+            json_messages = json.dumps(messages, indent=2, ensure_ascii=False)
             self.logger.info(f"Messages:\n{json_messages}")
         except Exception as e:
             self.logger.info(f"Messages: Could not print {e}")
@@ -115,7 +115,7 @@ class CustomLiteLLMLogger(CustomLogger):
                         # JSON format logs if possible
                         json_content = json.loads(content)
                         self.logger.info(
-                            f"Model Response Content:\n{json.dumps(json_content, indent=2)}"
+                            f"Model Response Content:\n{json.dumps(json_content, indent=2, ensure_ascii=False)}"
                         )
                     except Exception:
                         self.logger.info(f"Model Response Content:\n{content}")
