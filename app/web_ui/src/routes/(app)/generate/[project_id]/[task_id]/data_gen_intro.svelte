@@ -1,8 +1,8 @@
 <script lang="ts">
   import Intro from "$lib/ui/intro.svelte"
   import { client } from "$lib/api_client"
-  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import type { Eval } from "$lib/types"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import type { Eval, FinetuneDatasetInfo } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
 
   export let generate_subtopics: () => void
@@ -19,6 +19,8 @@
   let evals_error: KilnError | null = null
   async function get_evals() {
     try {
+      evals_loading = true
+      evals_error = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/evals",
         {
@@ -68,6 +70,83 @@
     gen_type = "eval"
 
     evals_dialog?.close()
+  }
+
+  let fine_tuning_dialog: Dialog | null = null
+  let finetune_dataset_info_loading: boolean = false
+  let finetune_dataset_info_error: KilnError | null = null
+  let finetuning_tags: Record<string, number> = {}
+
+  async function load_finetune_dataset_info() {
+    try {
+      finetune_dataset_info_loading = true
+      finetune_dataset_info_error = null
+      if (!project_id || !task_id) {
+        throw new Error("Project or task ID not set.")
+      }
+      const { data: finetune_dataset_info_response, error: get_error } =
+        await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info",
+          {
+            params: {
+              path: {
+                project_id,
+                task_id,
+              },
+            },
+          },
+        )
+      if (get_error) {
+        throw get_error
+      }
+      if (!finetune_dataset_info_response) {
+        throw new Error("Invalid response from server")
+      }
+      finetuning_tags = generate_fine_tuning_tags(
+        finetune_dataset_info_response,
+      )
+      const keys = Object.keys(finetuning_tags)
+      if (keys.length === 1 && keys[0] === "fine_tune_data") {
+        // Special case: there is only one tag, and it's the fine_tune_data tag.
+        // We don't need to show the dialog, just generate the data.
+        generate_fine_tuning_data_for_tag("fine_tune_data")
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Load failed")) {
+        finetune_dataset_info_error = new KilnError(
+          "Could not load fine-tune dataset info.",
+          null,
+        )
+      } else {
+        finetune_dataset_info_error = createKilnError(e)
+      }
+    } finally {
+      finetune_dataset_info_loading = false
+    }
+  }
+
+  function show_fine_tuning_dialog() {
+    fine_tuning_dialog?.show()
+    load_finetune_dataset_info()
+  }
+
+  function generate_fine_tuning_data_for_tag(tag: string) {
+    splits = {}
+    splits[tag] = 1.0
+    gen_type = "training"
+    fine_tuning_dialog?.close()
+  }
+
+  function generate_fine_tuning_tags(dataset_info: FinetuneDatasetInfo | null) {
+    // Always include the fine_tune_data tag, even if zero
+    let tags: Record<string, number> = {
+      fine_tune_data: 0,
+    }
+    for (const tag of dataset_info?.finetune_tags || []) {
+      tags[tag.tag] = tag.count
+    }
+    tags = Object.fromEntries(Object.entries(tags).sort((a, b) => b[1] - a[1]))
+    return tags
   }
 </script>
 
@@ -280,7 +359,10 @@
           </button>
         </div>
         <div class="">
-          <button class="btn btn-primary w-full mt-4">
+          <button
+            class="btn btn-primary w-full mt-4"
+            on:click={show_fine_tuning_dialog}
+          >
             Generate Fine-Tuning Data
           </button>
         </div>
@@ -337,8 +419,52 @@
     <div class="font-light">
       <p class="mt-2 mb-6 text-sm">
         Create an evaluator to get started. This helps us understand what
-        specific scenarios and edge cases to generate data for.
+        specific scenarios to generate data for.
       </p>
     </div>
+    <div class="flex items-center mt-4">
+      <a
+        href={`/evals/${project_id}/${task_id}/create_evaluator`}
+        class="btn btn-wide btn-primary mx-auto my-4"
+      >
+        Create a New Eval
+      </a>
+    </div>
+  {/if}
+</Dialog>
+
+<Dialog
+  title="Generate Synthetic Fine-Tuning Data"
+  bind:this={fine_tuning_dialog}
+>
+  {#if finetune_dataset_info_loading}
+    <div class="flex justify-center my-16">
+      <div class="loading loading-spinner loading-lg"></div>
+    </div>
+  {:else if finetune_dataset_info_error}
+    <div class="font-light">
+      There was an error loading the fine-tune info. Please try again.
+    </div>
+    <div class="font-light text-error">
+      {finetune_dataset_info_error.message ?? "Unknown error"}
+    </div>
+  {:else if Object.keys(finetuning_tags).length > 0}
+    <!-- The single tag case is handled above -->
+    <p class="font-light mt-2 mb-6 text-sm">
+      Your project has multiple tags used for fine-tuning data. Select one to
+      generate training data for:
+    </p>
+    {#each Object.keys(finetuning_tags) as tag}
+      <div class="flex items-center mt-4">
+        <button
+          class="btn btn-wide mx-auto {tag === 'fine_tune_data'
+            ? 'btn-primary'
+            : ''}"
+          on:click={() => generate_fine_tuning_data_for_tag(tag)}
+        >
+          Tag: {tag}
+        </button>
+      </div>
+    {/each}
   {/if}
 </Dialog>
