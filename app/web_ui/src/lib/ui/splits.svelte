@@ -1,10 +1,19 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { onMount, tick } from "svelte"
 
   export let splits: Record<string, number>
   export let subtitle: string | undefined
 
-  $: splits = (() => {
+  onMount(async () => {
+    await tick()
+    // Load from URL if not already set
+    if (Object.keys(splits).length === 0) {
+      splits = get_splits_from_url()
+    }
+  })
+
+  function get_splits_from_url() {
     const splitsParam = $page.url.searchParams.get("splits")
     if (!splitsParam) return {}
 
@@ -32,7 +41,7 @@
       console.warn("Invalid splits parameter, using default", e)
       return {}
     }
-  })()
+  }
 
   $: subtitle = (() => {
     if (Object.keys(splits).length === 0) return undefined

@@ -45,9 +45,12 @@
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
-  let gen_type: "training" | "eval" = "training"
-  $: gen_type =
-    $page.url.searchParams.get("reason") === "eval" ? "eval" : "training"
+  // TODO check these load propertly
+  const reason_param = $page.url.searchParams.get("reason")
+  let gen_type: "training" | "eval" | null =
+    reason_param === "training" || reason_param === "eval" ? reason_param : null
+  let eval_id: string | null = $page.url.searchParams.get("eval_id")
+  let template_id: string | null = $page.url.searchParams.get("template_id")
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
@@ -103,8 +106,8 @@
 
     // Load the data model we use for synth data guidance
     await guidance_data.load(
-      $page.url.searchParams.get("template_id"),
-      $page.url.searchParams.get("eval_id"),
+      template_id,
+      eval_id,
       project_id,
       task_id,
       gen_type,
@@ -361,6 +364,9 @@
             }}
             {project_id}
             {task_id}
+            bind:gen_type
+            bind:eval_id
+            bind:splits
           />
         </div>
       {:else}
