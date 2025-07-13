@@ -561,7 +561,7 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(options[0].label).toBe("Eval Template")
       expect(options[0].options[0].value).toBe("issue_eval_template")
       expect(options[1].label).toBe("Custom Guidance")
-      expect(options[2].label).toBe("Built-in Templates for Evals")
+      expect(options[2].label).toBe("Built-in Templates")
     })
 
     it("should build options with evaluator (requirements type)", () => {
@@ -584,7 +584,7 @@ describe("SynthDataGuidanceDataModel", () => {
       const options = get(model.select_options)
       expect(options).toHaveLength(2)
       expect(options[0].label).toBe("Custom Guidance")
-      expect(options[1].label).toBe("Built-in Templates for Evals")
+      expect(options[1].label).toBe("Built-in Templates")
     })
 
     it("should map static templates correctly", () => {
@@ -592,7 +592,7 @@ describe("SynthDataGuidanceDataModel", () => {
 
       const options = get(model.select_options)
       const builtInOptions = options.find(
-        (group) => group.label === "Built-in Templates for Evals",
+        (group) => group.label === "Built-in Templates",
       )
 
       expect(builtInOptions?.options).toHaveLength(2)

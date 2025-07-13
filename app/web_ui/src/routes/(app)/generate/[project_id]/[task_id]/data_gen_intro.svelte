@@ -144,7 +144,7 @@
   function generate_fine_tuning_data_for_tag(tag: string) {
     const splits: Record<string, number> = {}
     splits[tag] = 1.0
-    on_setup?.("training", null, null, project_id, task_id, splits)
+    on_setup?.("training", "fine_tuning", null, project_id, task_id, splits)
     fine_tuning_dialog?.close()
   }
 
