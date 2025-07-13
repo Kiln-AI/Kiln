@@ -13,13 +13,16 @@
   import PromptTypeSelector from "../../../run/prompt_type_selector.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
-  import Splits from "$lib/ui/splits.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
   import DataGenIntro from "./data_gen_intro.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import { onDestroy } from "svelte"
+  import {
+    get_splits_from_url_param,
+    get_splits_subtitle,
+  } from "$lib/utils/splits_util"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -31,9 +34,7 @@
   // Local instance for dynamic reactive updates
   const loading_error = guidance_data.loading_error
 
-  let splits: Record<string, number> = {}
   let splits_subtitle: string | undefined = undefined
-  let split_object: Splits | null = null
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -45,12 +46,7 @@
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
-  // TODO check these load propertly
-  const reason_param = $page.url.searchParams.get("reason")
-  let gen_type: "training" | "eval" | null =
-    reason_param === "training" || reason_param === "eval" ? reason_param : null
-  let eval_id: string | null = $page.url.searchParams.get("eval_id")
-  let template_id: string | null = $page.url.searchParams.get("template_id")
+  let is_setup = false
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
@@ -104,16 +100,46 @@
       })
     }
 
-    // Load the data model we use for synth data guidance
-    await guidance_data.load(
+    // Check if the URL has the fields we need for eval setup,
+    // otherwise we'll wait for the user to setup via UI
+    const reason_param = $page.url.searchParams.get("reason")
+    if (reason_param === "training" || reason_param === "eval") {
+      // These are optional, only gen_type is required
+      const eval_id: string | null = $page.url.searchParams.get("eval_id")
+      const template_id: string | null =
+        $page.url.searchParams.get("template_id")
+      const splitsParam = $page.url.searchParams.get("splits")
+      const splits = get_splits_from_url_param(splitsParam)
+      setup(reason_param, template_id, eval_id, project_id, task_id, splits)
+    }
+  })
+
+  function setup(
+    gen_type: "training" | "eval",
+    template_id: string | null,
+    eval_id: string | null,
+    project_id: string,
+    task_id: string,
+    splits: Record<string, number>,
+  ) {
+    if (!gen_type || !task) {
+      return
+    }
+    if (is_setup) {
+      console.error("Setup already called. This should not happen.")
+    }
+    is_setup = true
+    guidance_data.load(
       template_id,
       eval_id,
       project_id,
       task_id,
       gen_type,
       task,
+      splits,
     )
-  })
+    splits_subtitle = get_splits_subtitle(splits)
+  }
 
   async function get_task() {
     try {
@@ -277,7 +303,7 @@
         : sample.input
       const save_sample_guidance = guidance_data.guidance_for_type("outputs")
       // Get a random split tag, if splits are defined
-      const split_tag = split_object?.get_random_split_tag()
+      const split_tag = get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
       const {
         error: post_error,
@@ -325,9 +351,26 @@
   $: is_empty =
     $root_node.samples.length == 0 && $root_node.sub_topics.length == 0
   let root_node_component: GeneratedDataNode | null = null
+
+  function get_random_split_tag() {
+    const splits = guidance_data.splits
+    if (Object.keys(splits).length === 0) return undefined
+
+    const random = Math.random()
+    let cumulative = 0
+
+    for (const [tag, probability] of Object.entries(splits)) {
+      cumulative += probability
+      if (random <= cumulative) {
+        return tag
+      }
+    }
+
+    // Fallback (should never reach here if splits sum to 1)
+    return Object.keys(splits)[0]
+  }
 </script>
 
-<Splits bind:splits bind:subtitle={splits_subtitle} bind:this={split_object} />
 <div class="max-w-[1400px]">
   <AppPage
     title="Synthetic Data Generation"
@@ -364,9 +407,8 @@
             }}
             {project_id}
             {task_id}
-            bind:gen_type
-            bind:eval_id
-            bind:splits
+            on_setup={setup}
+            bind:is_setup
           />
         </div>
       {:else}

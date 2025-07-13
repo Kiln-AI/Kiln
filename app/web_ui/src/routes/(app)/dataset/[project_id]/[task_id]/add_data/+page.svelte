@@ -5,11 +5,22 @@
   import UploadDatasetDialog from "../../../[project_id]/[task_id]/upload_dataset_dialog.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import { goto } from "$app/navigation"
-  import Splits from "$lib/ui/splits.svelte"
   import OptionList from "$lib/ui/option_list.svelte"
+  import {
+    get_splits_from_url_param,
+    get_splits_subtitle,
+  } from "$lib/utils/splits_util"
+  import { onMount, tick } from "svelte"
 
   const validReasons = ["generic", "eval", "fine_tune"] as const
   type Reason = (typeof validReasons)[number]
+
+  onMount(async () => {
+    await tick()
+    const splitsParam = $page.url.searchParams.get("splits")
+    splits = get_splits_from_url_param(splitsParam)
+    splits_subtitle = get_splits_subtitle(splits)
+  })
 
   let manual_dialog: Dialog | null = null
   let upload_dataset_dialog: UploadDatasetDialog | null = null
@@ -110,7 +121,6 @@
 </script>
 
 <AppPage {title} sub_subtitle={splits_subtitle}>
-  <Splits bind:splits bind:subtitle={splits_subtitle} />
   {#if completed}
     <Completed
       title="Data Added"

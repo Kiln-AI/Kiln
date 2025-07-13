@@ -9,9 +9,18 @@
   export let generate_samples: () => void
   export let project_id: string
   export let task_id: string
-  export let gen_type: "training" | "eval" | null
-  export let eval_id: string | null
-  export let splits: Record<string, number>
+  export let is_setup: boolean
+
+  export let on_setup:
+    | ((
+        gen_type: "training" | "eval",
+        template_id: string | null,
+        eval_id: string | null,
+        project_id: string,
+        task_id: string,
+        splits: Record<string, number>,
+      ) => void)
+    | undefined = undefined
 
   let evals_dialog: Dialog | null = null
   let evals_loading: boolean = false
@@ -51,13 +60,13 @@
   function select_eval(evaluator: Eval) {
     const eval_set_filter_id = evaluator.eval_set_filter_id
     const eval_configs_filter_id = evaluator.eval_configs_filter_id
+    const splits: Record<string, number> = {}
     if (
       eval_set_filter_id.startsWith("tag::") &&
       eval_configs_filter_id.startsWith("tag::")
     ) {
       const eval_set_tag = eval_set_filter_id.split("::")[1]
       const eval_configs_tag = eval_configs_filter_id.split("::")[1]
-      splits = {}
       splits[eval_set_tag] = 0.8
       splits[eval_configs_tag] = 0.2
     } else {
@@ -66,8 +75,10 @@
       )
       return
     }
-    eval_id = evaluator.id ?? ""
-    gen_type = "eval"
+    const eval_id = project_id + "::" + task_id + "::" + (evaluator.id ?? "")
+    const template_id = evaluator.template ?? null
+
+    on_setup?.("eval", template_id, eval_id, project_id, task_id, splits)
 
     evals_dialog?.close()
   }
@@ -131,9 +142,9 @@
   }
 
   function generate_fine_tuning_data_for_tag(tag: string) {
-    splits = {}
+    const splits: Record<string, number> = {}
     splits[tag] = 1.0
-    gen_type = "training"
+    on_setup?.("training", null, null, project_id, task_id, splits)
     fine_tuning_dialog?.close()
   }
 
@@ -151,7 +162,7 @@
 </script>
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
-  {#if gen_type !== null}
+  {#if is_setup}
     <Intro
       title="Generate Data"
       description_paragraphs={[]}
