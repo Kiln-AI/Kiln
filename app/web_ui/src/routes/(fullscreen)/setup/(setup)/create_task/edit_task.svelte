@@ -7,7 +7,6 @@
   import SchemaSection from "./schema_section.svelte"
   import {
     current_project,
-    current_task_rating_options,
     load_current_task,
     load_rating_options,
   } from "$lib/stores"

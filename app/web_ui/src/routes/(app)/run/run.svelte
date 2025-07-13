@@ -582,7 +582,14 @@
             >
           </div>
         {/if}
+        <p class="text-xs text-gray-500 mt-1 text-light">
+          The rating criteria are defined in the <a
+            href={`/settings/edit_task/${project_id}/${task.id}`}
+            class="link">task</a
+          > settings.
+        </p>
       </div>
+
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">
         {#if rating_requirements}
           {#each rating_requirements as requirement, index}
