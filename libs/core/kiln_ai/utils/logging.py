@@ -149,6 +149,7 @@ def setup_litellm_logging(filename: str = "model_calls.log"):
         get_log_file_path(filename),
         maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=3,
+        encoding="utf-8",
     )
 
     # Set formatter to match the default formatting
