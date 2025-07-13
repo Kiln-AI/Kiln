@@ -505,7 +505,7 @@ ${issue_success_example}
     }))
 
     groups.push({
-      label: "Built-in Templates for Evals",
+      label: "Built-in Templates",
       options: built_in_options,
     })
 
@@ -528,6 +528,30 @@ type StaticTemplates = {
  * Editors note: these prompts contain harmful/false stereotypes and inappropriate language. They exist to help you build evals that ensure your models DO NOT produce harmful content like the samples included here. In order to prevent toxic content, we must test for it. In order to test for it, we must generate it. AKA: these are potentially harmful prompts, but they are designed build systems that are resistant to harmful prompts.
  */
 const static_templates: StaticTemplates[] = [
+  {
+    id: "fine_tuning",
+    name: "Fine Tuning",
+    description: "Data to fine-tune a model for this task",
+    suggest_uncensored: false,
+    topic_template: `We are building a dataset for fine-tuning a model for a specific task.
+
+When generating topics, generate topics that are likely to produce a useful distribution of data for the task (as inferred from the system prompt).
+
+If the system prompt has specific edge cases or issues to avoid, make the last top-level topic be "Issues & Edge Cases". When generating sub-topics for that topic, list edge cases from the system prompt as sub-topics, optionally adding additional possible edge cases.
+`,
+    input_template: `We are building a dataset for fine-tuning a model for a specific task.
+
+When generating inputs for general topics/themes, generate a range of inputs matching that topic which will give the fine-tuned model a wide distribution of data to learn from.
+
+When generating inputs for potential issues or edge cases, generate inputs that are likely to trigger the issue or edge case. Generating a range of problematic inputs it might encounter will help the fine-tuned model learn to respond appropriately.
+`,
+    output_template: `We are building a dataset for fine-tuning a model for a specific task.
+
+When generating model outputs, generate high quality outputs which demonstrate best practices, which the fine-tune should learn from.
+
+Even if the topic describes an issue or the input seems designed to generate an issue, the output you generate should be a high quality output following all the system prompt instructions. This allows the fine-tuned model to learn to respond appropriately to both good and bad inputs.
+`,
+  },
   {
     id: "toxicity",
     name: "Toxicity",
