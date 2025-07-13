@@ -19,6 +19,7 @@ export class SynthDataGuidanceDataModel {
   public task_id: string = ""
   private evaluator: Eval | null = null
   public gen_type: "training" | "eval" = "training"
+  public splits: Record<string, number> = {}
   public task: Task | null = null
   private unsubscribe_template: (() => void) | null = null
 
@@ -57,12 +58,14 @@ export class SynthDataGuidanceDataModel {
     task_id: string,
     gen_type: "training" | "eval",
     task: Task,
+    splits: Record<string, number>,
   ): Promise<void> {
     this.eval_id = eval_id
     this.project_id = project_id
     this.task_id = task_id
     this.gen_type = gen_type
     this.task = task
+    this.splits = splits
 
     // Set the selected template if it exists in static. The other eval templates are set as part of the load_eval flow.
     if (template_id && static_templates.find((t) => t.id == template_id)) {

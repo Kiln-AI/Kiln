@@ -87,7 +87,7 @@ describe("SynthDataGuidanceDataModel", () => {
     })
 
     it("should load with basic parameters", async () => {
-      await model.load(null, null, "proj1", "task1", "training", mockTask)
+      await model.load(null, null, "proj1", "task1", "training", mockTask, {})
 
       expect(model.project_id).toBe("proj1")
       expect(model.task_id).toBe("task1")
@@ -96,7 +96,15 @@ describe("SynthDataGuidanceDataModel", () => {
     })
 
     it("should set selected template when template_id matches static template", async () => {
-      await model.load("toxicity", null, "proj1", "task1", "training", mockTask)
+      await model.load(
+        "toxicity",
+        null,
+        "proj1",
+        "task1",
+        "training",
+        mockTask,
+        {},
+      )
 
       expect(get(model.selected_template)).toBe("toxicity")
     })
@@ -109,6 +117,7 @@ describe("SynthDataGuidanceDataModel", () => {
         "task1",
         "training",
         mockTask,
+        {},
       )
 
       expect(get(model.selected_template)).toBe("custom")
@@ -138,6 +147,7 @@ describe("SynthDataGuidanceDataModel", () => {
         "task1",
         "eval",
         mockTask,
+        {},
       )
 
       expect(mockClient.GET).toHaveBeenCalledWith(
@@ -174,6 +184,7 @@ describe("SynthDataGuidanceDataModel", () => {
         "task1",
         "eval",
         mockTask,
+        {},
       )
 
       expect(get(model.selected_template)).toBe("issue_eval_template")
@@ -199,6 +210,7 @@ describe("SynthDataGuidanceDataModel", () => {
         "task1",
         "eval",
         mockTask,
+        {},
       )
 
       expect(get(model.selected_template)).toBe("requirements_eval_template")
@@ -217,6 +229,7 @@ describe("SynthDataGuidanceDataModel", () => {
         "task1",
         "eval",
         mockTask,
+        {},
       )
 
       expect(get(model.loading_error)).toBeTruthy()
