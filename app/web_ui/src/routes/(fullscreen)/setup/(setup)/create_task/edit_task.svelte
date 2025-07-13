@@ -5,7 +5,12 @@
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import SchemaSection from "./schema_section.svelte"
-  import { current_project } from "$lib/stores"
+  import {
+    current_project,
+    current_task_rating_options,
+    load_current_task,
+    load_rating_options,
+  } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { ui_state, projects } from "$lib/stores"
@@ -36,7 +41,6 @@
   let error: KilnError | null = null
   let submitting = false
   export let saved: boolean = false
-
   // Warn before unload if there's any user input
   $: warn_before_unload =
     !saved &&
@@ -128,8 +132,15 @@
         ...get(ui_state),
         current_task_id: data.id,
         current_project_id: target_project_id,
+        current_task_rating_options: null,
       })
       saved = true
+
+      // reload the current task to make sure changes propagate throughout the UI
+      // e.g. the rating options
+      await load_current_task(get(current_project))
+      await load_rating_options()
+
       // Wait for the saved change to propagate to the warn_before_unload
       await tick()
       if (redirect_on_created) {
