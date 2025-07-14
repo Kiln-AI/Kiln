@@ -21,6 +21,8 @@
   import { onDestroy } from "svelte"
   import { get_splits_from_url_param } from "$lib/utils/splits_util"
   import DataGenDescription from "./data_gen_description.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -31,6 +33,7 @@
   })
   // Local instance for dynamic reactive updates
   const loading_error = guidance_data.loading_error
+  const splits = guidance_data.splits
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -51,29 +54,64 @@
   let num_subtopics_to_generate: number = 8
   let num_samples_to_generate: number = 8
 
+  type SavedDataGenState = {
+    gen_type: "training" | "eval" | null
+    template_id: string | null
+    eval_id: string | null
+    splits: Record<string, number>
+    root_node: SampleDataNode
+  }
   // Empty to start but will be populated from IndexedDB after task is loaded
-  let root_node: Writable<SampleDataNode> = writable({
-    topic: "",
-    samples: [],
-    sub_topics: [],
+  // Note: load the state vars into the guidance_data model and use that, this is just for the initial load/persistence
+  let saved_state: Writable<SavedDataGenState> = writable({
+    gen_type: null,
+    template_id: null,
+    eval_id: null,
+    splits: {},
+    root_node: { topic: "", samples: [], sub_topics: [] },
   })
+  // Reactivity: update state in indexedDB when splits is modified
+  $: saved_state.update((s) => ({
+    ...s,
+    splits: $splits,
+  }))
 
-  function clear_all() {
+  function clear_all_with_confirm() {
     let msg =
-      "Are you sure you want to clear all topics and data samples? This action cannot be undone."
+      "Are you sure you want to clear all synthetic data gen state? This action cannot be undone."
 
     if (confirm(msg)) {
-      root_node.set({
+      clear_all_state()
+      // Load the page again with clear URL params to get fresh state
+      window.location.href = `/generate/${project_id}/${task_id}`
+    }
+  }
+
+  function clear_all_state() {
+    saved_state.update((s) => ({
+      ...s,
+      root_node: {
         topic: "",
         samples: [],
         sub_topics: [],
-      })
-    }
+      },
+      gen_type: null,
+      template_id: null,
+      eval_id: null,
+      splits: {},
+    }))
+  }
+
+  function clear_state_and_reload() {
+    clear_all_state()
+    // reload the window keeping the same URL
+    window.location.reload()
+    return true
   }
 
   // Function to trigger save when data changes
   function triggerSave() {
-    root_node.update((n) => n)
+    saved_state.update((s) => s)
   }
 
   onMount(async () => {
@@ -88,27 +126,95 @@
 
     if (project_id && task_id) {
       // Setup the root node store
-      const synth_data_key = `synth_data_${project_id}_${task_id}`
-      root_node = indexedDBStore(synth_data_key, {
-        topic: "",
-        samples: [],
-        sub_topics: [],
+      const synth_data_key = `synth_data_${project_id}_${task_id}_v2`
+      const { store, initialized } = indexedDBStore(synth_data_key, {
+        gen_type: null,
+        template_id: null,
+        eval_id: null,
+        splits: {},
+        root_node: { topic: "", samples: [], sub_topics: [] },
       })
+      // Wait for the store to be initialized, then set the state
+      await initialized
+      saved_state = store
+
+      // Special case: if we have some state (goal) but no root_node data, we should reset the state
+      // Cleaner to give the user a fresh UI since there's very little data saved, and the clean UI is about picking goal
+      if (
+        $saved_state.root_node.samples.length === 0 &&
+        $saved_state.root_node.sub_topics.length === 0
+      ) {
+        clear_all_state()
+      }
     }
 
-    // Check if the URL has the fields we need for eval setup,
-    // otherwise we'll wait for the user to setup via UI
+    load_initial_state()
+  })
+
+  let clear_all_dialog: Dialog | null = null
+  let clear_existing_state_no_url_dialog: Dialog | null = null
+
+  function load_initial_state() {
+    // Complicated logic, but we want to handle all 5 loading states:
+    // 1. There is no saved state and URL has state: setup the URL state
+    // 2. URL state matches saved state: load the saved state
+    // 3. Saved state and URL state are different: show an alert to the user asking if they want to replace the saved state with the URL state
+    // 4. There's no URL state and there is saved state: setup the saved state (with a UI option to clear it)
+    // 5. No state, don't setup, and wait for the user to setup via UI
+
+    // The URL params can specify a specific setup for the data gen.
     const reason_param = $page.url.searchParams.get("reason")
     if (reason_param === "training" || reason_param === "eval") {
-      // These are optional, only gen_type is required
+      // These are optional, only gen_type is required.
       const eval_id: string | null = $page.url.searchParams.get("eval_id")
       const template_id: string | null =
         $page.url.searchParams.get("template_id")
       const splitsParam = $page.url.searchParams.get("splits")
       const splits = get_splits_from_url_param(splitsParam)
-      setup(reason_param, template_id, eval_id, project_id, task_id, splits)
+
+      const has_saved_state = $saved_state.gen_type !== null
+      if (!has_saved_state) {
+        // Case 1: No saved state: setup the URL state
+        setup(reason_param, template_id, eval_id, project_id, task_id, splits)
+        return
+      } else {
+        if (
+          $saved_state.gen_type === reason_param &&
+          $saved_state.template_id === template_id &&
+          $saved_state.eval_id === eval_id
+        ) {
+          // Case 2: URL state matches saved state: load the saved state
+          setup(
+            $saved_state.gen_type,
+            $saved_state.template_id,
+            $saved_state.eval_id,
+            project_id,
+            task_id,
+            $saved_state.splits,
+          )
+          return
+        } else {
+          // Case 3: Saved state and URL state are different.
+          // Show a dialog to the user asking if they want to replace the saved state with the URL state
+          clear_all_dialog?.show()
+          return
+        }
+      }
+    } else if ($saved_state.gen_type) {
+      // Case 4: There's no URL state and there is saved state, load saved state
+      setup(
+        $saved_state.gen_type,
+        $saved_state.template_id,
+        $saved_state.eval_id,
+        project_id,
+        task_id,
+        $saved_state.splits,
+      )
+      clear_existing_state_no_url_dialog?.show()
+      return
     }
-  })
+    // Case 5: No state - wait for the user to setup via UI
+  }
 
   function setup(
     gen_type: "training" | "eval",
@@ -136,6 +242,14 @@
     )
     // Trigger reactivity
     guidance_data = guidance_data
+    // Update state with the vars
+    saved_state.update((s) => ({
+      ...s,
+      gen_type,
+      template_id,
+      eval_id,
+      splits,
+    }))
   }
 
   async function get_task() {
@@ -213,7 +327,7 @@
     saved_count = 0
     already_saved_count = 0
     samples_to_save = []
-    visit_node_for_collection($root_node, [])
+    visit_node_for_collection($saved_state.root_node, [])
   }
 
   let save_all_running = false
@@ -346,7 +460,8 @@
   }
 
   $: is_empty =
-    $root_node.samples.length == 0 && $root_node.sub_topics.length == 0
+    $saved_state.root_node.samples.length == 0 &&
+    $saved_state.root_node.sub_topics.length == 0
   let root_node_component: GeneratedDataNode | null = null
 
   function get_random_split_tag() {
@@ -373,8 +488,16 @@
     title="Synthetic Data Generation"
     no_y_padding
     action_buttons={[
+      ...(is_setup
+        ? [
+            {
+              label: "Reset",
+              handler: clear_all_with_confirm,
+            },
+          ]
+        : []),
       {
-        label: "Read the Docs",
+        label: "Docs & Guide",
         href: "https://docs.getkiln.ai/docs/synthetic-data-generation",
       },
     ]}
@@ -414,29 +537,31 @@
         </div>
       {:else}
         <div
-          class="flex flex-row py-1 mb-4 gap-2 justify-end sticky top-0 z-10 backdrop-blur"
+          class="flex flex-row py-1 mt-4 mb-4 gap-2 justify-center sticky top-0 z-10 backdrop-blur"
         >
-          <button class="btn btn-mid" on:click={clear_all}>Clear</button>
           <button
-            class="btn btn-mid"
+            class="btn btn-mid btn-outline btn-primary"
             on:click={() => {
               root_node_component?.open_generate_samples_modal(true)
             }}
           >
-            {#if $root_node.sub_topics.length > 0}
+            {#if $saved_state.root_node.sub_topics.length > 0}
               Generate Model Inputs (All Topics)
             {:else}
               Generate Model Inputs (Root Topic)
             {/if}
           </button>
-          <button class="btn btn-mid" on:click={show_save_all_modal}>
-            Save Model Outputs
+          <button
+            class="btn btn-mid btn-outline btn-primary"
+            on:click={show_save_all_modal}
+          >
+            Save All Model Outputs
           </button>
         </div>
       {/if}
       <div class="flex flex-col">
         <GeneratedDataNode
-          data={$root_node}
+          data={$saved_state.root_node}
           path={[]}
           {guidance_data}
           {triggerSave}
@@ -459,7 +584,7 @@
             class="link"
             on:click={() => root_node_component?.open_generate_samples_modal()}
           >
-            add top level samples
+            add top level inputs
           </button>.
         </div>
       {/if}
@@ -595,3 +720,64 @@
     <button>close</button>
   </form>
 </dialog>
+
+<Dialog
+  title="Clear Existing Session?"
+  bind:this={clear_all_dialog}
+  action_buttons={[
+    {
+      label: "Keep Current Session",
+      action: () => {
+        // Load the page without URL params to get fresh state
+        window.location.href = `/generate/${project_id}/${task_id}`
+        return true
+      },
+    },
+    {
+      label: "New Session (Clear Existing)",
+      isWarning: true,
+      action: clear_state_and_reload,
+    },
+  ]}
+>
+  <div class="flex flex-col gap-2">
+    <div class="font-light flex flex-col gap-2">
+      <p>
+        Your existing synthetic data gen session is incompatible with your
+        current goal. You'll need to clear it's data to start a new session for
+        this goal.
+      </p>
+      <Warning warning_message="This action cannot be undone." />
+    </div>
+    <div class="flex flex-row gap-2"></div>
+  </div></Dialog
+>
+
+<Dialog
+  title="Existing Session"
+  bind:this={clear_existing_state_no_url_dialog}
+  action_buttons={[
+    {
+      label: "New Session",
+      action: () => {
+        clear_all_with_confirm()
+        return true
+      },
+    },
+    {
+      label: "Continue Session",
+      isPrimary: true,
+      action: () => {
+        clear_existing_state_no_url_dialog?.close()
+        return true
+      },
+    },
+  ]}
+>
+  <div class="flex flex-col gap-2">
+    <div class="font-light flex flex-col gap-2">
+      <p>A synthetic data generation session is already in progress.</p>
+    </div>
+    <div class="flex flex-row gap-2"></div>
+  </div></Dialog
+>

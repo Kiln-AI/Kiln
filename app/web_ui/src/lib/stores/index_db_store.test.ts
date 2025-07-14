@@ -116,8 +116,11 @@ describe("indexedDBStore", () => {
 
   describe("in browser environment", () => {
     it("should create a store with initial value", () => {
-      const store = indexedDBStore("test-key", "initial-value")
-      expect(get(store)).toBe("initial-value")
+      const { store: storeInstance } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
+      expect(get(storeInstance)).toBe("initial-value")
     })
 
     it("should initialize IndexedDB on first access", async () => {
@@ -161,7 +164,10 @@ describe("indexedDBStore", () => {
         return request
       })
 
-      const storeInstance = indexedDBStore("test-key", "initial-value")
+      const { store: storeInstance, initialized } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
 
       // Trigger the DB initialization success which will trigger getValue
       process.nextTick(() => {
@@ -171,7 +177,7 @@ describe("indexedDBStore", () => {
       })
 
       // Wait for all async operations to complete
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await initialized
 
       expect(get(storeInstance)).toBe(storedValue)
     })
@@ -179,7 +185,10 @@ describe("indexedDBStore", () => {
     it("should handle IndexedDB initialization errors gracefully", async () => {
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
-      const store = indexedDBStore("test-key", "initial-value")
+      const { store: storeInstance, initialized } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
 
       // Simulate DB initialization error
       if (mockRequest.onerror) {
@@ -188,10 +197,10 @@ describe("indexedDBStore", () => {
       }
 
       // Wait for error handling
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await initialized
 
       // Store should still work with initial value
-      expect(get(store)).toBe("initial-value")
+      expect(get(storeInstance)).toBe("initial-value")
       expect(consoleSpy).toHaveBeenCalledWith(
         "Failed to open IndexedDB:",
         expect.any(Error),
@@ -217,7 +226,10 @@ describe("indexedDBStore", () => {
         return request
       })
 
-      const storeInstance = indexedDBStore("test-key", "initial-value")
+      const { store: storeInstance, initialized } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
 
       // Trigger DB initialization success which will then allow getValue to proceed
       process.nextTick(() => {
@@ -226,7 +238,7 @@ describe("indexedDBStore", () => {
         }
       })
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await initialized
 
       // Should keep initial value on error
       expect(get(storeInstance)).toBe("initial-value")
@@ -249,7 +261,10 @@ describe("indexedDBStore", () => {
 
       mockObjectStore.get.mockReturnValue(mockGetRequest)
 
-      const store = indexedDBStore("test-key", "initial-value")
+      const { store: storeInstance, initialized } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
 
       // Simulate successful DB initialization and get
       setTimeout(() => {
@@ -263,10 +278,10 @@ describe("indexedDBStore", () => {
         }
       }, 0)
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await initialized
 
       // Should keep initial value when no stored value found
-      expect(get(store)).toBe("initial-value")
+      expect(get(storeInstance)).toBe("initial-value")
     })
 
     it("should create separate database connections for each store", async () => {
@@ -293,18 +308,24 @@ describe("indexedDBStore", () => {
     })
 
     it("should work without IndexedDB", () => {
-      const store = indexedDBStore("test-key", "initial-value")
-      expect(get(store)).toBe("initial-value")
+      const { store: storeInstance } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
+      expect(get(storeInstance)).toBe("initial-value")
 
       // Should not attempt to use IndexedDB
       expect(mockIndexedDB.open).not.toHaveBeenCalled()
     })
 
     it("should still be reactive without IndexedDB", () => {
-      const store = indexedDBStore("test-key", "initial-value")
+      const { store: storeInstance } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
 
-      store.set("new-value")
-      expect(get(store)).toBe("new-value")
+      storeInstance.set("new-value")
+      expect(get(storeInstance)).toBe("new-value")
     })
   })
 
@@ -318,12 +339,15 @@ describe("indexedDBStore", () => {
         },
       })
 
-      const store = indexedDBStore("test-key", "initial-value")
-      expect(get(store)).toBe("initial-value")
+      const { store: storeInstance } = indexedDBStore(
+        "test-key",
+        "initial-value",
+      )
+      expect(get(storeInstance)).toBe("initial-value")
 
       // Should not crash when IndexedDB is not available
-      store.set("new-value")
-      expect(get(store)).toBe("new-value")
+      storeInstance.set("new-value")
+      expect(get(storeInstance)).toBe("new-value")
     })
   })
 })

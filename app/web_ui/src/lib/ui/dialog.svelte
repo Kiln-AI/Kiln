@@ -13,6 +13,7 @@
     isCancel?: boolean
     isPrimary?: boolean
     isError?: boolean
+    isWarning?: boolean
     disabled?: boolean
   }
   export let action_buttons: ActionButton[] = []
@@ -143,7 +144,8 @@
                 class="btn btn-sm h-10 min-w-24 {button.isPrimary
                   ? 'btn-primary'
                   : ''}
-                  {button.isError ? 'btn-error' : ''}"
+                  {button.isError ? 'btn-error' : ''}
+                  {button.isWarning ? 'btn-warning' : ''}"
                 disabled={button.disabled}
                 on:click={() => perform_button_action(button)}
               >
