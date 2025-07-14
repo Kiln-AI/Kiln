@@ -36,7 +36,7 @@
     | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
-    $available_models || {},
+    $available_models || [],
     requires_structured_output,
     requires_data_gen,
     requires_uncensored_data_gen,
