@@ -34,6 +34,7 @@
   // Local instance for dynamic reactive updates
   const loading_error = guidance_data.loading_error
   const splits = guidance_data.splits
+  const selected_template = guidance_data.selected_template
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -683,7 +684,7 @@
       </div>
     {:else}
       <h3 class="text-lg font-bold">Generate Model Outputs</h3>
-      <p class="text-sm font-light mb-8">
+      <p class="text-sm font-light mb-5">
         Run your task on each generated model input, saving the resulting
         input/output pairs to your dataset.
       </p>
@@ -703,7 +704,14 @@
           </div>
         </div>
         <AvailableModelsDropdown
+          requires_data_gen={true}
+          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
+            $selected_template,
+          )}
           requires_structured_output={task?.output_json_schema ? true : false}
+          suggested_mode={guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen"}
           bind:model
         />
         <div>
