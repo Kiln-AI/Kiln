@@ -29,7 +29,9 @@ export function get_splits_from_url_param(splitsParam: string | null) {
 
 export function get_splits_subtitle(splits: Record<string, number>) {
   if (Object.keys(splits).length === 0) return undefined
-  return `Samples will be assigned the following tags: ${Object.entries(splits)
+  return `Added data will be assigned the following tags: ${Object.entries(
+    splits,
+  )
     .map(([name, value]) => `${Math.round(value * 100)}% ${name}`)
     .join(", ")}`
 }
