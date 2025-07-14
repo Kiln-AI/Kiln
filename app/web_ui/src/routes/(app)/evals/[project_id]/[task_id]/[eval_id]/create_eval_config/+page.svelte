@@ -14,6 +14,7 @@
   import { load_task } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { get_eval_steps } from "./eval_steps_utils"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   let combined_model_name: string | undefined = undefined
   let model_name: string | undefined = undefined
@@ -196,8 +197,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Add an Evaluation Method"
-    subtitle="An evaluation method specifies how an eval is run (algorithm, model, instructions, etc)."
+    title="Add a Judge"
+    subtitle="A judge specifies how an eval is run (algorithm, model, instructions, etc)."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
   >
@@ -217,13 +218,13 @@
     {:else}
       <FormContainer
         submit_visible={!!(selected_algo && combined_model_name)}
-        submit_label="Create Eval Method"
+        submit_label="Create Judge"
         on:submit={create_evaluator}
         bind:error={create_evaluator_error}
         bind:submitting={create_evaluator_loading}
         warn_before_unload={!complete && !!selected_algo}
       >
-        <div class="text-xl font-bold">Step 1: Select Evaluator Algorithm</div>
+        <div class="text-xl font-bold">Step 1: Select Judge Algorithm</div>
 
         <div class="form-control flex flex-col gap-2">
           {#each evaluator_algorithms as evaluator}
@@ -263,11 +264,11 @@
         {#if selected_algo}
           <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
             <div class="text-xl font-bold" id="requirements_part">
-              Step 2: Select Eval Model
+              Step 2: Select Judge Model
             </div>
             <div class="text-xs text-gray-500">
-              Specify which model will be used to run the evaluation. This is
-              not necessarily the model that will be used to run the task.
+              Specify which model will be used to run the judge. This is not
+              necessarily the model that will be used to run the task.
             </div>
           </div>
 
@@ -282,58 +283,72 @@
         {/if}
 
         {#if selected_algo && combined_model_name}
-          <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-            <div class="text-xl font-bold" id="requirements_part">
-              Step 3: Task Description
-            </div>
-            <div class="text-xs text-gray-500">
-              <div>
-                Include a short description of what this task does. The
-                evaluator will use this for context. Keep it short, ideally one
-                or two sentences. Include requirements for the eval below, not
-                in this description.
-              </div>
-            </div>
-          </div>
-          <FormElement
-            label=""
-            inputType="textarea"
-            id="task_description"
-            optional={true}
-            bind:value={task_description}
-          />
-
-          <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-            <div class="text-xl font-bold" id="requirements_part">
-              Step 4: Evaluation Instructions
-            </div>
-            <div class="text-xs text-gray-500">
-              This is a list of instructions to be used by the evaluator's
-              model. It will 'think' through each of these steps in order before
-              generating final scores.
-            </div>
-            {#if evaluator?.template}
-              <div class="text-xs text-gray-500">
-                We've pre-populated the evaluation steps for you based on the
-                template you selected ({evaluator.template}). Feel free to edit.
-              </div>
-            {/if}
-          </div>
-
-          <FormList
-            bind:content={eval_steps}
-            content_label="Evaluation Step"
-            empty_content={""}
-            let:item_index
+          <div class="mt-2"></div>
+          <Collapse
+            title="Advanced Options: Prompts and Instructions"
+            small={false}
           >
+            <div>
+              <Warning
+                warning_message="Customizing the prompts and thinking steps used by the evaluator can improve the quality of the eval. We've pre-populated steps based on your task and eval."
+                warning_color="success"
+                warning_icon="info"
+              />
+            </div>
+            <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+              <div class="text-xl font-bold" id="requirements_part">
+                Step 3: Task Description
+              </div>
+              <div class="text-xs text-gray-500">
+                <div>
+                  Include a short description of what this task does. The
+                  evaluator will use this for context. Keep it short, ideally
+                  one or two sentences. Include requirements for the eval below,
+                  not in this description.
+                </div>
+              </div>
+            </div>
             <FormElement
-              label="Model Instructions"
+              label=""
               inputType="textarea"
-              id="eval_step_{item_index}"
-              hide_label={true}
-              bind:value={eval_steps[item_index]}
+              id="task_description"
+              optional={true}
+              bind:value={task_description}
             />
-          </FormList>
+
+            <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+              <div class="text-xl font-bold" id="requirements_part">
+                Step 4: Evaluation Instructions
+              </div>
+              <div class="text-xs text-gray-500">
+                This is a list of instructions to be used by the evaluator's
+                model. It will 'think' through each of these steps in order
+                before generating final scores.
+              </div>
+              {#if evaluator?.template}
+                <div class="text-xs text-gray-500">
+                  We've pre-populated the evaluation steps for you based on the
+                  template you selected ({evaluator.template}). Feel free to
+                  edit.
+                </div>
+              {/if}
+            </div>
+
+            <FormList
+              bind:content={eval_steps}
+              content_label="Evaluation Step"
+              empty_content={""}
+              let:item_index
+            >
+              <FormElement
+                label="Model Instructions"
+                inputType="textarea"
+                id="eval_step_{item_index}"
+                hide_label={true}
+                bind:value={eval_steps[item_index]}
+              />
+            </FormList>
+          </Collapse>
         {/if}
       </FormContainer>
     {/if}
