@@ -5,6 +5,8 @@
 
   export let guidance_data: SynthDataGuidanceDataModel
   $: selected_template = guidance_data.selected_template
+  // reactive
+  const splits = guidance_data.splits
 
   let edit_splits_dialog: Dialog | null = null
 
@@ -24,12 +26,10 @@
 
   function edit_splits() {
     // Convert object to array format for easier editing, scaling to percentages
-    editable_splits = Object.entries(guidance_data.splits).map(
-      ([tag, percent]) => ({
-        tag,
-        percent: percent * 100, // Convert decimal to percentage
-      }),
-    )
+    editable_splits = Object.entries($splits).map(([tag, percent]) => ({
+      tag,
+      percent: percent * 100, // Convert decimal to percentage
+    }))
     edit_splits_dialog?.show()
   }
 
@@ -71,7 +71,7 @@
     editable_splits.forEach((split) => {
       new_splits[split.tag] = split.percent / 100 // Convert percentage to decimal
     })
-    guidance_data.splits = new_splits
+    guidance_data.splits.set(new_splits)
     edit_splits_dialog?.close()
     return true
   }
@@ -103,7 +103,7 @@
       </div>
       <div class="flex flex-col">
         <div class="text-xs text-gray-500 uppercase font-medium">Goal</div>
-        <div>
+        <div class="whitespace-nowrap">
           {get_gen_data_label(guidance_data.gen_type)}
           <InfoTooltip
             tooltip_text="The goal of the data generation task. This impacts the type of data that will be generated."
@@ -149,7 +149,7 @@
           <div class="text-xs text-gray-500 uppercase font-medium">
             Template
           </div>
-          <div>
+          <div class="whitespace-nowrap">
             {$selected_template}
             <InfoTooltip
               tooltip_text="A prompt template used to generate data. You can edit the template when generating topics, inputs, or outputs."
@@ -190,12 +190,12 @@
         <div class="text-xs text-gray-500 uppercase font-medium">Tags</div>
         <div>
           <button class="hover:underline text-left" on:click={edit_splits}>
-            {#if Object.keys(guidance_data.splits).length == 0}
+            {#if Object.keys($splits).length == 0}
               No tag assignments
             {:else}
-              {@const split_descriptions = Object.entries(
-                guidance_data.splits,
-              ).map(([split, percent]) => `${split} (${percent * 100}%)`)}
+              {@const split_descriptions = Object.entries($splits).map(
+                ([split, percent]) => `${split} (${percent * 100}%)`,
+              )}
               {split_descriptions.join(", ")}
             {/if}
           </button>
