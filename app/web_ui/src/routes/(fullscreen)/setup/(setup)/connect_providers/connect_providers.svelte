@@ -8,6 +8,7 @@
   import { client, base_url } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
+  import { get_provider_image } from "$lib/ui/provider_image"
 
   export let highlight_finetune = false
 
@@ -15,7 +16,6 @@
     name: string
     id: string
     description: string
-    image: string
     featured: boolean
     pill_text?: string
     api_key_steps?: string[]
@@ -29,7 +29,6 @@
       id: "openrouter",
       description:
         "Proxies requests to OpenAI, Anthropic, and more. Works with almost any model.",
-      image: "/images/openrouter.svg",
       featured: !highlight_finetune,
       api_key_steps: [
         "Go to https://openrouter.ai/settings/keys",
@@ -41,7 +40,6 @@
       name: "OpenAI",
       id: "openai",
       description: "The OG home to GPT-4o and more. Supports fine-tuning.",
-      image: "/images/openai.svg",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -57,7 +55,6 @@
       name: "Ollama",
       id: "ollama",
       description: "Run models locally. No API key required.",
-      image: "/images/ollama.svg",
       featured: false,
     },
     {
@@ -65,7 +62,6 @@
       id: "groq",
       description:
         "The fastest model host. Providing Llama, Gemma and Mistral models.",
-      image: "/images/groq.svg",
       featured: false,
       api_key_steps: [
         "Go to https://console.groq.com/keys",
@@ -77,7 +73,6 @@
       name: "Fireworks AI",
       id: "fireworks_ai",
       description: "Open models (Llama, Phi), plus the ability to fine-tune.",
-      image: "/images/fireworks.svg",
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
         "Go to https://fireworks.ai/account/api-keys",
@@ -92,7 +87,6 @@
       name: "Anthropic",
       id: "anthropic",
       description: "The home of Sonnet, Haiku, and Opus.",
-      image: "/images/anthropic.svg",
       featured: false,
       api_key_steps: [
         "Go to https://console.anthropic.com/settings/keys",
@@ -105,7 +99,6 @@
       name: "Gemini AI Studio",
       id: "gemini_api",
       description: "Google's Gemini API. Not to be confused with Vertex AI.",
-      image: "/images/gemini.svg",
       featured: false,
       api_key_steps: [
         "Go to https://aistudio.google.com/app/apikey",
@@ -118,7 +111,6 @@
       name: "Azure OpenAI",
       id: "azure_openai",
       description: "Microsoft's Azure OpenAI API.",
-      image: "/images/azure_openai.svg",
       featured: false,
       api_key_steps: [
         "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use. Create a new resource if you don't have one, we suggest 'East US2' for maximal model support.",
@@ -133,7 +125,6 @@
       name: "Hugging Face",
       id: "huggingface",
       description: "AI community hub, with many models.",
-      image: "/images/hugging_face.svg",
       featured: false,
       api_key_steps: [
         "Go to https://huggingface.co/settings/tokens",
@@ -147,7 +138,6 @@
       id: "vertex",
       description:
         "Google's Vertex AI API. Not to be confused with Gemini AI Studio.",
-      image: "/images/google_logo.svg",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -166,7 +156,6 @@
       name: "Together.ai",
       id: "together_ai",
       description: "Inference service from Together.ai",
-      image: "/images/together_ai.svg",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -180,7 +169,6 @@
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
-      image: "/images/aws.svg",
       featured: false,
       api_key_steps: [
         "Go to https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/overview - be sure to select us-west-2, as it has the most models, and Kiln defaults to this region",
@@ -196,7 +184,6 @@
       name: "Weights & Biases",
       id: "wandb",
       description: "Track and visualize your experiments.",
-      image: "/images/wandb.svg",
       featured: false,
       api_key_steps: [
         "Create a Weights & Biases account at https://wandb.ai, or host your own instance.",
@@ -211,7 +198,6 @@
       name: "Custom API",
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
-      image: "/images/api.svg",
       featured: false,
     },
   ]
@@ -770,7 +756,7 @@
           status[provider.id] && status[provider.id].connected}
         <div class="flex flex-row gap-4 items-center">
           <img
-            src={provider.image}
+            src={get_provider_image(provider.id)}
             alt={provider.name}
             class="flex-none p-1 {provider.featured
               ? 'size-12'
