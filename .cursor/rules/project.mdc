@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 - call me "boss"
 - We always use typescript, not javascript
 - Always assume pydantic 2 (not pydantic 1)
