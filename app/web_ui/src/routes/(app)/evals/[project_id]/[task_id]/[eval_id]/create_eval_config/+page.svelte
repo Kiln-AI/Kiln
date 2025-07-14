@@ -197,8 +197,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Add an Evaluation Method"
-    subtitle="An evaluation method specifies how an eval is run (algorithm, model, instructions, etc)."
+    title="Add a Judge"
+    subtitle="A judge specifies how an eval is run (algorithm, model, instructions, etc)."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
   >
@@ -218,13 +218,13 @@
     {:else}
       <FormContainer
         submit_visible={!!(selected_algo && combined_model_name)}
-        submit_label="Create Eval Method"
+        submit_label="Create Judge"
         on:submit={create_evaluator}
         bind:error={create_evaluator_error}
         bind:submitting={create_evaluator_loading}
         warn_before_unload={!complete && !!selected_algo}
       >
-        <div class="text-xl font-bold">Step 1: Select Evaluator Algorithm</div>
+        <div class="text-xl font-bold">Step 1: Select Judge Algorithm</div>
 
         <div class="form-control flex flex-col gap-2">
           {#each evaluator_algorithms as evaluator}
@@ -264,11 +264,11 @@
         {#if selected_algo}
           <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
             <div class="text-xl font-bold" id="requirements_part">
-              Step 2: Select Eval Model
+              Step 2: Select Judge Model
             </div>
             <div class="text-xs text-gray-500">
-              Specify which model will be used to run the evaluation. This is
-              not necessarily the model that will be used to run the task.
+              Specify which model will be used to run the judge. This is not
+              necessarily the model that will be used to run the task.
             </div>
           </div>
 

@@ -250,12 +250,11 @@
 
         <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
           <div class="text-xl font-bold" id="requirements_part">
-            Part 3: Task Evaluation Dataset
+            Part 3: Evaluation Dataset
           </div>
           <div class="text-xs text-gray-500">
-            Specify which which part of your dataset is used when evaluating
-            various methods of running your task. You can create this data
-            later.
+            Specify which which part of your dataset is used when running your
+            eval. You can create this data later.
           </div>
         </div>
         <FormElement
@@ -301,17 +300,16 @@
 
         <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
           <div class="text-xl font-bold" id="requirements_part">
-            Part 4: Dataset to Compare Evaluation Methods
+            Part 4: Golden Dataset
           </div>
           <div class="text-xs text-gray-500">
             Specify which which part of your dataset is used when trying to find
-            the best evaluation method for this task. You can create and rate
-            this data later.
+            the best eval judge. You'll create and rate this data later.
           </div>
         </div>
         <FormElement
-          label="Evaluation Method Dataset"
-          info_description="You can populate this dataset later. We recommend you have a person rate all of the samples in this dataset, so you can compare evaluation methods to human ratings."
+          label="Golden Dataset"
+          info_description="You can populate this dataset later. We recommend you have a person rate all of the samples in this dataset, so you can find the judge which best matches human preferences."
           inputType="fancy_select"
           id="automatic_validation"
           fancy_select_options={[
