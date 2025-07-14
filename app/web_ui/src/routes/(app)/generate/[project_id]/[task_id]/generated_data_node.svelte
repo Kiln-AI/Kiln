@@ -132,6 +132,9 @@
       if (!model) {
         throw new KilnError("No model selected.", null)
       }
+      if (!guidance_data.gen_type) {
+        throw new KilnError("No generation type selected.", null)
+      }
       const model_provider = model.split("/")[0]
       const model_name = model.split("/").slice(1).join("/")
       if (!model_name || !model_provider) {

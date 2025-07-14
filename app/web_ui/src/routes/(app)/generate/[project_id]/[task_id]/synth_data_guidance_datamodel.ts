@@ -18,7 +18,7 @@ export class SynthDataGuidanceDataModel {
   public project_id: string = ""
   public task_id: string = ""
   private evaluator: Eval | null = null
-  public gen_type: "training" | "eval" = "training"
+  public gen_type: "training" | "eval" | null = null
   public splits: Record<string, number> = {}
   public task: Task | null = null
   private unsubscribe_template: (() => void) | null = null
