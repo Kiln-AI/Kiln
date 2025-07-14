@@ -177,12 +177,6 @@
           onClick: () => generate_samples(),
           is_primary: false,
         },
-        {
-          label: "Read the Docs",
-          href: "https://docs.getkiln.ai/docs/synthetic-data-generation",
-          new_tab: true,
-          is_primary: false,
-        },
       ]}
     >
       <div slot="description">
@@ -349,14 +343,13 @@
         <!-- Descriptions Row -->
         <div class="">
           <p class="">
-            Generate synthetic data to help evaluate model performance. This is
-            generally data which has been known to cause issues.
+            Generate data to evaluate model performance, including edge cases
+            and challenging scenarios.
           </p>
         </div>
         <div class="">
           <p class="">
-            Generate synthetic data to help fine-tune your model. This is
-            generally high quality data to help your model learn.
+            Generate high-quality, diverse training examples for fine-tuning.
           </p>
         </div>
 

@@ -19,10 +19,8 @@
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import { onDestroy } from "svelte"
-  import {
-    get_splits_from_url_param,
-    get_splits_subtitle,
-  } from "$lib/utils/splits_util"
+  import { get_splits_from_url_param } from "$lib/utils/splits_util"
+  import DataGenDescription from "./data_gen_description.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -33,8 +31,6 @@
   })
   // Local instance for dynamic reactive updates
   const loading_error = guidance_data.loading_error
-
-  let splits_subtitle: string | undefined = undefined
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -138,7 +134,8 @@
       task,
       splits,
     )
-    splits_subtitle = get_splits_subtitle(splits)
+    // Trigger reactivity
+    guidance_data = guidance_data
   }
 
   async function get_task() {
@@ -374,10 +371,13 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Synthetic Data Generation"
-    subtitle={splits_subtitle}
-    sub_subtitle_link="https://docs.getkiln.ai/docs/synthetic-data-generation"
-    sub_subtitle="Read the Docs"
     no_y_padding
+    action_buttons={[
+      {
+        label: "Read the Docs",
+        href: "https://docs.getkiln.ai/docs/synthetic-data-generation",
+      },
+    ]}
   >
     {#if task_loading || synth_data_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -394,9 +394,10 @@
         </div>
       </div>
     {:else if task}
+      <DataGenDescription bind:guidance_data />
       {#if is_empty}
         <div
-          class="flex flex-col items-center justify-center min-h-[60vh] mt-12"
+          class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
         >
           <DataGenIntro
             generate_subtopics={() => {
