@@ -117,6 +117,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4 = "grok_4"
     qwen_3_0p6b = "qwen_3_0p6b"
     qwen_3_0p6b_no_thinking = "qwen_3_0p6b_no_thinking"
     qwen_3_1p7b = "qwen_3_1p7b"
@@ -1974,6 +1975,24 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4,
+        friendly_name="Grok 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
+            ),
+        ],
+    ),
     # Grok 3
     KilnModel(
         family=ModelFamily.grok,
@@ -1988,7 +2007,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 uncensored=True,
-                suggested_for_uncensored_data_gen=True,
             ),
         ],
     ),

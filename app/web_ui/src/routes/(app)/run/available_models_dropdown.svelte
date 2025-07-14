@@ -297,7 +297,7 @@
         : selected_model_suggested_uncensored_data_gen
           ? "success"
           : "warning"}
-      warning_message="For this data gen template we suggest a large uncensored model like Grok 3."
+      warning_message="For this data gen template we suggest a large uncensored model like Grok."
     />
   {:else if suggested_mode === "evals"}
     <Warning
