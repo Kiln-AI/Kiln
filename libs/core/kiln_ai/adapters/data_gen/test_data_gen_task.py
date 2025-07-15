@@ -255,11 +255,13 @@ async def test_data_gen_sample_all_models_providers(
     tmp_path, model_name, provider_name, base_task
 ):
     _, provider = get_model_and_provider(model_name, provider_name)
-    if not provider.supports_data_gen:
+    if provider is None or not provider.supports_data_gen:
         # pass if the model doesn't support data gen (testing the support flag is part of this)
         return
 
-    data_gen_task = DataGenSampleTask(target_task=base_task)
+    data_gen_task = DataGenSampleTask(
+        target_task=base_task, gen_type="training", guidance=None
+    )
     data_gen_input = DataGenSampleTaskInput.from_task(
         base_task, topic=["riding horses"], num_samples=4
     )
