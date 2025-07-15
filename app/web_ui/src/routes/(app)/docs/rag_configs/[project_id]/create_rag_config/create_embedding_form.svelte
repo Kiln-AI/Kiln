@@ -125,7 +125,10 @@
 <FormContainer
   submit_visible={true}
   submit_label="Create Embedding Config"
-  on:submit={create_embedding_config}
+  on:submit={async (e) => {
+    await create_embedding_config()
+    e.preventDefault()
+  }}
   {error}
   gap={4}
   bind:submitting={loading}

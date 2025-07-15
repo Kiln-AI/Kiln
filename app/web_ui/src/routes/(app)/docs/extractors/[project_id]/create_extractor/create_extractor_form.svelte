@@ -88,7 +88,10 @@
 <FormContainer
   submit_visible={true}
   submit_label="Create Extractor"
-  on:submit={create_extractor_config}
+  on:submit={async (e) => {
+    await create_extractor_config()
+    e.preventDefault()
+  }}
   {error}
   gap={4}
   bind:submitting={loading}

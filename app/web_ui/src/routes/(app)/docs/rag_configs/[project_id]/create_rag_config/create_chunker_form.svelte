@@ -56,7 +56,10 @@
 <FormContainer
   submit_visible={true}
   submit_label="Create Chunker"
-  on:submit={create_chunker_config}
+  on:submit={async (e) => {
+    await create_chunker_config()
+    e.preventDefault()
+  }}
   {error}
   gap={4}
   bind:submitting={loading}
