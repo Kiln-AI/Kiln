@@ -18,6 +18,14 @@ export function getRunConfigPromptDisplayName(
     )
   }
 
+  const prompt_name = prompt_name_from_id(
+    task_run_config?.run_config_properties?.prompt_id,
+    current_task_prompts,
+  )
+  if (prompt_name) {
+    return prompt_name
+  }
+
   return task_run_config.name || "Unnamed Run Method"
 }
 
