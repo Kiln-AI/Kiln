@@ -53,20 +53,22 @@
       }
 
       // Transform the API response into OptionGroup format
-      embeddingModels = data.map((provider: EmbeddingProvider) => ({
-        label: provider.provider_name,
-        options: provider.models.map((model: EmbeddingModelDetails) => ({
-          label: model.name,
-          value: {
-            model_name: model.id,
-            model_provider_name: provider.provider_id,
-            n_dimensions: model.n_dimensions,
-            max_input_tokens: model.max_input_tokens,
-            supports_custom_dimensions: model.supports_custom_dimensions,
-          },
-          description: `${model.n_dimensions} dimensions${model.max_input_tokens ? ` • ${model.max_input_tokens.toLocaleString()} max tokens` : ""}`,
-        })),
-      }))
+      embeddingModels = data
+        .filter((provider: EmbeddingProvider) => provider.models.length > 0)
+        .map((provider: EmbeddingProvider) => ({
+          label: provider.provider_name,
+          options: provider.models.map((model: EmbeddingModelDetails) => ({
+            label: model.name,
+            value: {
+              model_name: model.id,
+              model_provider_name: provider.provider_id,
+              n_dimensions: model.n_dimensions,
+              max_input_tokens: model.max_input_tokens,
+              supports_custom_dimensions: model.supports_custom_dimensions,
+            },
+            description: `${model.n_dimensions} dimensions${model.max_input_tokens ? ` • ${model.max_input_tokens.toLocaleString()} max tokens` : ""}`,
+          })),
+        }))
     } catch (err) {
       error = createKilnError(err)
     } finally {
