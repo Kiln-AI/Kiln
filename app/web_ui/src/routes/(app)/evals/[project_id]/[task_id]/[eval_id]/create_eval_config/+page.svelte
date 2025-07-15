@@ -415,7 +415,7 @@
                 {#if !is_unsupported}
                   <label class="label cursor-pointer">
                     <div
-                      class="card card-bordered border-base-300 shadow-md w-full flex flex-col gap-2 p-6 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[300px] aspect-[5/6]"
+                      class="card card-bordered border-base-300 shadow-md w-full flex flex-col gap-2 p-6 hover:shadow-lg hover:border-primary/50 transition-all duration-200 w-[260px] aspect-[5/6]"
                     >
                       <div class="flex flex-col gap-2 text-center items-center">
                         <input

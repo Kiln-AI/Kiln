@@ -315,7 +315,7 @@ The model produced the following output for the task:
         """
         primary_token_score = self.score_from_token_string(token_logprob.token)
         # check this is a real rating token, it could just be the ": ", "," or whitespace
-        if not primary_token_score:
+        if primary_token_score is None:
             return None
 
         total_score = 0.0

@@ -431,7 +431,7 @@ def test_rating_token_to_score(test_eval_config, test_run_config):
 
     # Test single token case
     token_logprob = MockTokenLogprob("5", [("5", 0.0)], logprob=1e-8)  # log(1) = 0
-    score = g_eval.rating_token_to_score(token_logprob)
+    score = g_eval.rating_token_to_score(token_logprob)  # type: ignore
     assert score == 5.0
 
     # Test weighted average case
@@ -443,20 +443,62 @@ def test_rating_token_to_score(test_eval_config, test_run_config):
         ],
         logprob=math.log(0.6),
     )
-    score = g_eval.rating_token_to_score(token_logprob)
+    score = g_eval.rating_token_to_score(token_logprob)  # type: ignore
     assert pytest.approx(score) == 4.4  # (4 * 0.6 + 5 * 0.4)
 
     # Test invalid token
     token_logprob = MockTokenLogprob(":", [(":", 0.0)], logprob=1e-8)
-    assert g_eval.rating_token_to_score(token_logprob) is None
+    assert g_eval.rating_token_to_score(token_logprob) is None  # type: ignore
 
     # Test missing from top logprobs
     token_logprob = MockTokenLogprob("5", [], logprob=1e-8)
-    assert pytest.approx(g_eval.rating_token_to_score(token_logprob)) == 5.0
+    assert pytest.approx(g_eval.rating_token_to_score(token_logprob)) == 5.0  # type: ignore
 
     # Test missing from top logprobs, with special case logprob
     token_logprob = MockTokenLogprob("5", [], logprob=-9999)
-    assert pytest.approx(g_eval.rating_token_to_score(token_logprob)) == 5.0
+    assert pytest.approx(g_eval.rating_token_to_score(token_logprob)) == 5.0  # type: ignore
+
+
+def test_rating_token_to_score_zero_score_bug_fix(test_eval_config, test_run_config):
+    """Test that rating_token_to_score correctly handles 0.0 scores (like 'fail') and doesn't return None.
+
+    This test verifies the fix for the bug where 'if not primary_token_score:' would incorrectly
+    treat 0.0 as falsy and return None, when it should only return None for actual None values.
+    """
+    g_eval = GEval(test_eval_config, test_run_config)
+
+    class MockTopLogprob:
+        def __init__(self, token, logprob):
+            self.token = token
+            self.logprob = logprob
+
+    class MockTokenLogprob:
+        def __init__(self, token, top_logprobs, logprob):
+            self.token = token
+            self.top_logprobs = [MockTopLogprob(t, lp) for t, lp in top_logprobs]
+            self.logprob = logprob
+
+    # Test that "fail" token (which maps to 0.0) is handled correctly
+    token_logprob = MockTokenLogprob("fail", [("fail", 0.0)], logprob=1e-8)
+    score = g_eval.rating_token_to_score(token_logprob)  # type: ignore
+    assert score == 0.0, f"Expected 0.0 for 'fail' token, got {score}"
+
+    # Test that "0" token (which maps to None) still returns None
+    token_logprob = MockTokenLogprob("0", [("0", 0.0)], logprob=1e-8)
+    score = g_eval.rating_token_to_score(token_logprob)  # type: ignore
+    assert score is None, f"Expected None for '0' token, got {score}"
+
+    # Test weighted average case with fail token
+    token_logprob = MockTokenLogprob(
+        "fail",
+        [
+            ("fail", math.log(0.7)),  # 70% probability for fail (0.0)
+            ("pass", math.log(0.3)),  # 30% probability for pass (1.0)
+        ],
+        logprob=math.log(0.7),
+    )
+    score = g_eval.rating_token_to_score(token_logprob)  # type: ignore
+    assert pytest.approx(score) == 0.3  # (0.0 * 0.7 + 1.0 * 0.3)
 
 
 def test_g_eval_system_instruction():
