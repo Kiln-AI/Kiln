@@ -23,6 +23,8 @@
   import DataGenDescription from "./data_gen_description.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { get } from "svelte/store"
+  import posthog from "posthog-js"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -251,6 +253,11 @@
       eval_id,
       splits,
     }))
+
+    posthog.capture("setup_data_gen", {
+      gen_type,
+      template: template_id,
+    })
   }
 
   async function get_task() {
@@ -452,6 +459,11 @@
       if (response.status !== 200 || !data.id) {
         throw new KilnError("Failed to save sample")
       }
+      posthog.capture("save_synthetic_data", {
+        model_name: model_name,
+        provider: provider,
+        prompt_method: prompt_method,
+      })
 
       return { saved_id: data.id, error: null }
     } catch (e) {
@@ -466,7 +478,7 @@
   let root_node_component: GeneratedDataNode | null = null
 
   function get_random_split_tag() {
-    const splits = guidance_data.splits
+    const splits = get(guidance_data.splits)
     if (Object.keys(splits).length === 0) return undefined
 
     const random = Math.random()
@@ -538,7 +550,7 @@
         </div>
       {:else}
         <div
-          class="flex flex-row py-1 mt-4 mb-4 gap-2 justify-center sticky top-0 z-10 backdrop-blur"
+          class="flex flex-row py-1 mt-4 mb-4 gap-2 justify-center sticky top-0 z-2 backdrop-blur"
         >
           <button
             class="btn btn-mid btn-outline btn-primary"
@@ -675,7 +687,9 @@
         class="flex flex-col items-center justify-center min-h-[150px] gap-2"
       >
         <div class="font-medium">No Items to Save</div>
-        <div class="font-light">Generate some data to get started.</div>
+        <div class="font-light">
+          Generate model inputs before attempting to save model outputs.
+        </div>
         {#if already_saved_count > 0}
           <div class="font-light text-sm">
             {already_saved_count} existing items already saved.
