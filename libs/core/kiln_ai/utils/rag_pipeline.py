@@ -158,7 +158,7 @@ class DocumentPipeline:
     def is_same_embedding_adapter(self, chunk_embeddings: ChunkEmbeddings) -> bool:
         return (
             chunk_embeddings.embedding_config_id
-            == self.configuration.embedding_adapter.embedding_config_id()
+            == self.configuration.embedding_adapter.embedding_config_id
         )
 
     async def _collect_documents_to_extract(self):
@@ -347,13 +347,15 @@ class DocumentPipeline:
             if chunks_text is None or len(chunks_text) == 0:
                 raise ValueError("No chunks text found")
 
-            chunk_embedding_result = await embedding_adapter.embed(text=chunks_text)
+            chunk_embedding_result = await embedding_adapter.generate_embeddings(
+                input_texts=chunks_text
+            )
             if chunk_embedding_result is None:
                 raise ValueError("Chunk embedding result is not set")
 
             chunk_embeddings = ChunkEmbeddings(
                 parent=chunked_document,
-                embedding_config_id=self.configuration.embedding_adapter.embedding_config_id(),
+                embedding_config_id=self.configuration.embedding_adapter.embedding_config_id,
                 embeddings=[
                     Embedding(
                         vector=embedding.vector,
