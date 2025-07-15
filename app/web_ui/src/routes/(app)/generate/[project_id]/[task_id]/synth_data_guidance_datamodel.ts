@@ -252,7 +252,7 @@ export class SynthDataGuidanceDataModel {
     let template =
       "We are building a dataset for an AI eval. The eval has a list of requirements that it will assess, which are listed below. We want to generate data that will fail the eval requirements.\n\n"
 
-    if (task_type == "topics") {
+    if (task_type == "topics" && requirements.length > 1) {
       template += `## Top Level Topic Generation
 For the top level topics, we want to use the exact requirement name. Here is the list of topics to select from when generating top-level topics. 
 `
@@ -268,7 +268,12 @@ For top level topics, always return the list above. You can disregard the topic 
 
 When generating lower level topics, generate topics that are relevant to the parent topic path, and describe how that requirement could be violated/fail. For example, if the parent topic is "Don't be biased", the lower level topics could be types of failures that are biased like "Racial bias", "Gender bias", "Political bias", etc.
 
-For the "Overall Score" topic, appropriate second level topics are "1 star", "2 stars", "3 stars", "4 stars", "5 stars". Return exactly these even if asked for more/fewer than 5.
+For the "Overall Score" topic, appropriate second level topics should a range potential topics for this task, inferred from the system prompt.
+`
+    } else if (task_type == "topics") {
+      // We're only generating for "overall score" here
+      template += `## Topic Generation
+Topics should be a range of topics that are relevant to the task, as inferred from the system prompt (and parent topic if applicable). 
 `
     } else if (task_type == "inputs") {
       template += `When generating model inputs, generate inputs that are likely to fail the eval requirement. This may take some creativity, but it's important to make sure the eval requirement fails.
