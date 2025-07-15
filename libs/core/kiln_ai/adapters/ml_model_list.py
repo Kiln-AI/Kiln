@@ -33,6 +33,7 @@ class ModelFamily(str, Enum):
     deepseek = "deepseek"
     dolphin = "dolphin"
     grok = "grok"
+    kimi = "kimi"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -137,6 +138,7 @@ class ModelName(str, Enum):
     qwen_3_32b_no_thinking = "qwen_3_32b_no_thinking"
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
+    kimi_k2 = "kimi_k2"
 
 
 class ModelParserID(str, Enum):
@@ -927,6 +929,52 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Llama 4 Maverick Basic
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_4_maverick,
+        friendly_name="Llama 4 Maverick",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta-llama/llama-4-maverick",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Llama 4 Scout Basic
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_4_scout,
+        friendly_name="Llama 4 Scout",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta-llama/llama-4-scout",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/llama4-scout-instruct-basic",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Llama 3.1-8b
     KilnModel(
         family=ModelFamily.llama,
@@ -1698,6 +1746,41 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek R1 0528
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_r1_0528,
+        friendly_name="DeepSeek R1 0528",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-r1-0528",
+                parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-r1-0528",
+                parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-R1",  # Note: Together remapped the R1 endpoint to this 0528 model
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+                reasoning_capable=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
     # DeepSeek 3
     KilnModel(
         family=ModelFamily.deepseek,
@@ -1727,7 +1810,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_r1,
-        friendly_name="DeepSeek R1",
+        friendly_name="DeepSeek R1 (Original)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2445,84 +2528,34 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # DeepSeek R1 0528
+    # Kimi K2 Instruct
     KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_r1_0528,
-        friendly_name="DeepSeek R1 0528",
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2,
+        friendly_name="Kimi K2",
         providers=[
             KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="deepseek/deepseek-r1-0528",
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                r1_openrouter_options=True,
-                require_openrouter_reasoning=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/deepseek-r1-0528",
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
-                model_id="deepseek-ai/DeepSeek-R1",  # Note: Together remapped the R1 endpoint to this 0528 model
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
-            ),
-        ],
-    ),
-    # Llama 4 Maverick Basic
-    KilnModel(
-        family=ModelFamily.llama,
-        name=ModelName.llama_4_maverick,
-        friendly_name="Llama 4 Maverick Basic",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="meta-llama/llama-4-maverick",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                model_id="moonshotai/Kimi-K2-Instruct",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/llama4-maverick-instruct-basic",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-        ],
-    ),
-    # Llama 4 Scout Basic
-    KilnModel(
-        family=ModelFamily.llama,
-        name=ModelName.llama_4_scout,
-        friendly_name="Llama 4 Scout Basic",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="meta-llama/llama-4-scout",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/llama4-scout-instruct-basic",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                model_id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                name=ModelProviderName.groq,
+                model_id="moonshotai/kimi-k2-instruct",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
     ),
