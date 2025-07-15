@@ -61,6 +61,7 @@ ui_state.subscribe((state) => {
     // invalidate task caches. Rating options will load on demand.
     current_task.set(null)
     current_task_rating_options.set(null)
+    current_task_prompts.set(null)
     load_current_task(get(current_project))
   }
   previous_ui_state = { ...state }
