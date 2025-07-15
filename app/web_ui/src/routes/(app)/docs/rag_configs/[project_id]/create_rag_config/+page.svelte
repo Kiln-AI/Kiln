@@ -1,0 +1,468 @@
+<script lang="ts">
+  import { page } from "$app/stores"
+  import { client } from "$lib/api_client"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import AppPage from "../../../../app_page.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import { goto } from "$app/navigation"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import { onMount } from "svelte"
+  import Dialog from "../../../../../../lib/ui/dialog.svelte"
+  import CreateExtractorForm from "../../../extractors/[project_id]/create_extractor/create_extractor_form.svelte"
+  import CreateChunkerForm from "./create_chunker_form.svelte"
+  import CreateEmbeddingForm from "./create_embedding_form.svelte"
+  import type {
+    ExtractorConfig,
+    ChunkerConfig,
+    EmbeddingConfig,
+  } from "../../../../../../lib/types"
+
+  $: project_id = $page.params.project_id
+
+  let loading: boolean = false
+  let error: KilnError | null = null
+  let name: string | null = null
+  let description: string = ""
+
+  let show_create_extractor_dialog: Dialog | null = null
+  let show_create_chunker_dialog: Dialog | null = null
+  let show_create_embedding_dialog: Dialog | null = null
+
+  // Selected configs
+  let selected_extractor_config_id: string | null = null
+  let selected_chunker_config_id: string | null = null
+  let selected_embedding_config_id: string | null = null
+
+  // Data for dropdowns
+  let extractor_configs: ExtractorConfig[] = []
+  let chunker_configs: ChunkerConfig[] = []
+  let embedding_configs: EmbeddingConfig[] = []
+
+  // Loading states for data fetching
+  let loading_extractors = false
+  let loading_chunkers = false
+  let loading_embedding = false
+
+  // Convert configs to option groups for fancy select
+  $: extractor_options = [
+    {
+      label: "Actions",
+      options: [
+        {
+          label: "Create New Extractor",
+          value: "create_new",
+          description: "Create a new extractor configuration",
+          badge: "Create",
+          badge_color: "primary",
+        },
+      ],
+    },
+
+    ...(extractor_configs.length > 0
+      ? [
+          {
+            label: "Extractors",
+            options: extractor_configs
+              .filter((config) => !config.is_archived)
+              .map((config) => ({
+                label: `${config.properties?.model_name} - ${config.output_format}`,
+                value: config.id,
+                description:
+                  config.name +
+                  (config.description ? " - " + config.description : ""),
+              })),
+          },
+        ]
+      : []),
+  ] as OptionGroup[]
+
+  $: chunker_options = [
+    {
+      label: "Actions",
+      options: [
+        {
+          label: "Create New Chunker",
+          value: "create_new",
+          description: "Create a new chunker configuration",
+          badge: "Create",
+          badge_color: "primary",
+        },
+      ],
+    },
+    ...(chunker_configs.length > 0
+      ? [
+          {
+            label: "Chunkers",
+            options: chunker_configs.map((config) => ({
+              label: `Chunk size: ${config.properties?.chunk_size} - Chunk overlap: ${config.properties?.chunk_overlap}`,
+              value: config.id,
+              description:
+                config.name +
+                (config.description ? " - " + config.description : ""),
+            })),
+          },
+        ]
+      : []),
+  ] as OptionGroup[]
+
+  $: embedding_options = [
+    {
+      label: "Actions",
+      options: [
+        {
+          label: "Create New Embedding Model",
+          value: "create_new",
+          description: "Create a new embedding configuration",
+          badge: "Create",
+          badge_color: "primary",
+        },
+      ],
+    },
+    ...(embedding_configs.length > 0
+      ? [
+          {
+            label: "Embedding Models",
+            options: embedding_configs.map((config) => ({
+              label:
+                `${config.model_name}` +
+                (config.properties?.dimensions
+                  ? `- shortened to ${config.properties?.dimensions} dimensions`
+                  : ""),
+              value: config.id,
+              description:
+                config.name +
+                (config.description ? " - " + config.description : ""),
+            })),
+          },
+        ]
+      : []),
+  ] as OptionGroup[]
+
+  // show the create extractor dialog when the user clicks the create new extractor button
+  $: if (selected_extractor_config_id === "create_new") {
+    show_create_extractor_dialog?.show()
+  } else {
+    show_create_extractor_dialog?.close()
+  }
+
+  // show the create chunker dialog when the user clicks the create new chunker button
+  $: if (selected_chunker_config_id === "create_new") {
+    show_create_chunker_dialog?.show()
+  } else {
+    show_create_chunker_dialog?.close()
+  }
+
+  // show the create embedding dialog when the user clicks the create new embedding button
+  $: if (selected_embedding_config_id === "create_new") {
+    show_create_embedding_dialog?.show()
+  } else {
+    show_create_embedding_dialog?.close()
+  }
+
+  // Load data on mount
+  onMount(async () => {
+    await Promise.all([
+      loadExtractorConfigs(),
+      loadChunkerConfigs(),
+      loadEmbeddingConfigs(),
+    ])
+  })
+
+  async function loadExtractorConfigs() {
+    try {
+      loading_extractors = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/extractor_configs",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (fetch_error) {
+        error = createKilnError(fetch_error)
+        return
+      }
+
+      extractor_configs = data || []
+    } finally {
+      loading_extractors = false
+    }
+  }
+
+  async function loadChunkerConfigs() {
+    try {
+      loading_chunkers = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/chunker_configs",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (fetch_error) {
+        error = createKilnError(fetch_error)
+        return
+      }
+
+      chunker_configs = data || []
+    } finally {
+      loading_chunkers = false
+    }
+  }
+
+  async function loadEmbeddingConfigs() {
+    try {
+      loading_embedding = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/embedding_configs",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (fetch_error) {
+        error = createKilnError(fetch_error)
+        return
+      }
+
+      embedding_configs = data || []
+    } finally {
+      loading_embedding = false
+    }
+  }
+
+  async function create_rag_pipeline() {
+    try {
+      loading = true
+      error = null
+
+      // Validate that all required configs are selected
+      if (!selected_extractor_config_id) {
+        error = createKilnError({
+          message: "Please select an extractor configuration",
+          status: 400,
+        })
+        return
+      }
+
+      if (!selected_chunker_config_id) {
+        error = createKilnError({
+          message: "Please select a chunker configuration",
+          status: 400,
+        })
+        return
+      }
+
+      if (!selected_embedding_config_id) {
+        error = createKilnError({
+          message: "Please select an embedding configuration",
+          status: 400,
+        })
+        return
+      }
+
+      const { error: create_error } = await client.POST(
+        "/api/projects/{project_id}/rag_pipelines/create_rag_pipeline",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+          body: {
+            name: name || null,
+            description: description || null,
+            extractor_config_id: selected_extractor_config_id,
+            chunker_config_id: selected_chunker_config_id,
+            embedding_config_id: selected_embedding_config_id,
+          },
+        },
+      )
+
+      if (create_error) {
+        error = createKilnError(create_error)
+        return
+      }
+
+      goto(`/docs/rag_configs/${project_id}`)
+    } finally {
+      loading = false
+    }
+  }
+</script>
+
+<AppPage
+  title="Create RAG Configuration"
+  subtitle="A configuration for extracting, chunking, and embedding your documents."
+>
+  {#if loading}
+    <div class="w-full min-h-[50vh] flex justify-center items-center">
+      <div class="loading loading-spinner loading-lg"></div>
+    </div>
+  {:else}
+    <div class="max-w-[900px]">
+      <FormContainer
+        submit_visible={true}
+        submit_label="Create RAG Configuration"
+        on:submit={create_rag_pipeline}
+        {error}
+        gap={4}
+        bind:submitting={loading}
+      >
+        <div class="flex flex-col gap-6">
+          <!-- Extractor Selection -->
+          <div class="flex flex-col gap-2">
+            {#if loading_extractors}
+              <div class="flex items-center gap-2">
+                <div class="loading loading-spinner loading-sm"></div>
+                <span class="text-sm">Loading extractors...</span>
+              </div>
+            {:else}
+              <FormElement
+                id="extractor_select"
+                label="Select Extractor"
+                description="Choose an extractor to convert your documents into text."
+                fancy_select_options={extractor_options}
+                bind:value={selected_extractor_config_id}
+                inputType="fancy_select"
+              />
+            {/if}
+          </div>
+
+          <!-- Chunker Selection -->
+          <div class="flex flex-col gap-2">
+            {#if loading_chunkers}
+              <div class="flex items-center gap-2">
+                <div class="loading loading-spinner loading-sm"></div>
+                <span class="text-sm">Loading chunkers...</span>
+              </div>
+            {:else}
+              <FormElement
+                id="chunker_select"
+                label="Select Chunker"
+                description="Choose a chunker to split your documents into smaller pieces for better retrieval."
+                fancy_select_options={chunker_options}
+                bind:value={selected_chunker_config_id}
+                inputType="fancy_select"
+              />
+            {/if}
+          </div>
+
+          <!-- Embedding Selection -->
+          <div class="flex flex-col gap-2">
+            {#if loading_embedding}
+              <div class="flex items-center gap-2">
+                <div class="loading loading-spinner loading-sm"></div>
+                <span class="text-sm">Loading embedding models...</span>
+              </div>
+            {:else}
+              <FormElement
+                id="embedding_select"
+                label="Select Embedding Model"
+                description="Choose an embedding model to convert your document chunks into vectors for similarity search."
+                fancy_select_options={embedding_options}
+                bind:value={selected_embedding_config_id}
+                inputType="fancy_select"
+              />
+            {/if}
+          </div>
+        </div>
+
+        <!-- Advanced -->
+        <div class="mt-6">
+          <div class="collapse collapse-arrow bg-base-200">
+            <input type="checkbox" class="peer" />
+            <div class="collapse-title font-medium">Advanced Options</div>
+            <div class="collapse-content flex flex-col gap-4">
+              <FormElement
+                label="Configuration Name"
+                description="Leave blank and we'll generate one for you."
+                optional={true}
+                inputType="input"
+                id="rag_config_name"
+                bind:value={name}
+              />
+              <FormElement
+                label="Description"
+                description="A description of the RAG configuration for you and your team. This will have no effect on the configuration's behavior."
+                optional={true}
+                inputType="textarea"
+                id="rag_config_description"
+                bind:value={description}
+              />
+            </div>
+          </div>
+        </div>
+      </FormContainer>
+    </div>
+  {/if}
+</AppPage>
+
+<Dialog
+  bind:this={show_create_extractor_dialog}
+  title="Create Extractor"
+  width="wide"
+>
+  <div class="font-light text-sm">
+    Extractors are used to convert your documents into text.
+  </div>
+
+  <CreateExtractorForm
+    on:success={async (e) => {
+      console.log("success", e)
+      await loadExtractorConfigs()
+      selected_extractor_config_id = e.detail.extractor_config_id
+    }}
+  />
+</Dialog>
+
+<Dialog
+  bind:this={show_create_chunker_dialog}
+  title="Create Chunker"
+  width="wide"
+>
+  <div class="font-light text-sm">
+    Chunkers are used to split your documents into smaller pieces for better
+    retrieval.
+  </div>
+
+  <CreateChunkerForm
+    on:success={async (e) => {
+      console.log("success", e)
+      await loadChunkerConfigs()
+      selected_chunker_config_id = e.detail.chunker_config_id
+    }}
+  />
+</Dialog>
+
+<Dialog
+  bind:this={show_create_embedding_dialog}
+  title="Create Embedding Configuration"
+  width="wide"
+>
+  <div class="font-light text-sm">
+    Embedding models are used to convert your document chunks into vectors for
+    similarity search.
+  </div>
+
+  <CreateEmbeddingForm
+    on:success={async (e) => {
+      console.log("success", e)
+      await loadEmbeddingConfigs()
+      selected_embedding_config_id = e.detail.embedding_config_id
+    }}
+  />
+</Dialog>
