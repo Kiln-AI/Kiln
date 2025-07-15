@@ -2537,8 +2537,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-instruct",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2550,13 +2549,13 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.together_ai,
                 model_id="moonshotai/Kimi-K2-Instruct",
                 supports_data_gen=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="moonshotai/kimi-k2-instruct",
                 supports_data_gen=True,
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                structured_output_mode=StructuredOutputMode.function_calling,
             ),
         ],
     ),
