@@ -33,6 +33,7 @@ class ModelFamily(str, Enum):
     deepseek = "deepseek"
     dolphin = "dolphin"
     grok = "grok"
+    kimi = "kimi"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -134,6 +135,7 @@ class ModelName(str, Enum):
     qwen_3_32b_no_thinking = "qwen_3_32b_no_thinking"
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
+    kimi_k2_instruct = "kimi_k2_instruct"
 
 
 class ModelParserID(str, Enum):
@@ -2451,6 +2453,38 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
+            ),
+        ],
+    ),
+    # Kimi K2 Instruct
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_instruct,
+        friendly_name="Kimi K2 Instruct",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K2-Instruct",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="moonshotai/kimi-k2-instruct",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
         ],
     ),
