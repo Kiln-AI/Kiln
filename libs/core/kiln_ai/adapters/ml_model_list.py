@@ -1189,12 +1189,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 model_id="llama3.2:1b",
             ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="meta-llama/Llama-3.2-1B-Instruct",
-                supports_structured_output=False,
-                supports_data_gen=False,
-            ),
         ],
     ),
     # Llama 3.2 3B
@@ -1219,12 +1213,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.ollama,
                 supports_data_gen=False,
                 model_id="llama3.2",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="meta-llama/Llama-3.2-3B-Instruct",
-                supports_structured_output=False,
-                supports_data_gen=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
