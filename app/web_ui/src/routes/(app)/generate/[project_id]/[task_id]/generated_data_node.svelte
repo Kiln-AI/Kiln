@@ -12,6 +12,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import { get } from "svelte/store"
+  import posthog from "posthog-js"
 
   let custom_topic_mode: boolean = false
 
@@ -167,6 +168,12 @@
       if (generate_error) {
         throw generate_error
       }
+      posthog.capture("generate_synthetic_topics", {
+        num_subtopics: num_subtopics_to_generate,
+        model_name: model_name,
+        provider: model_provider,
+        gen_type: guidance_data.gen_type,
+      })
       const response = JSON.parse(generate_response.output.output)
       if (
         !response ||

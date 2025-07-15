@@ -9,6 +9,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
   import { get_provider_image } from "$lib/ui/provider_image"
+  import posthog from "posthog-js"
 
   export let highlight_finetune = false
 
@@ -334,6 +335,10 @@
         throw disconnect_error
       }
 
+      posthog.capture("disconnect_provider", {
+        provider_id: provider.id,
+      })
+
       status[provider.id].connected = false
 
       // Clear the available models list
@@ -489,6 +494,10 @@
           data.message || "Failed to connect to provider. Unknown error."
         return
       }
+
+      posthog.capture("connect_provider", {
+        provider_id: provider_id,
+      })
 
       api_key_issue = false
       api_key_message = null

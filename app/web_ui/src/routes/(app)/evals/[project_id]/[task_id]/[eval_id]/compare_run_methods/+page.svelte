@@ -34,6 +34,7 @@
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import AddRunMethod from "./add_run_method.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -395,6 +396,7 @@
       if (error) {
         throw error
       }
+      posthog.capture("set_current_run_config", {})
       // Update the evaluator with the latest
       evaluator = data
     } catch (error) {

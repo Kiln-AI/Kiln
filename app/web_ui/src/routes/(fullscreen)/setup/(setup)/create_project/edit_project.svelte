@@ -8,6 +8,7 @@
   import { client } from "$lib/api_client"
   import type { Project } from "$lib/types"
   import { onMount, tick } from "svelte"
+  import posthog from "posthog-js"
 
   let importing = false
   onMount(() => {
@@ -60,6 +61,9 @@
         )
         data = post_data
         error = post_error
+        if (!error) {
+          posthog.capture("create_project", {})
+        }
       } else {
         const { data: put_data, error: put_error } = await client.PATCH(
           "/api/project/{project_id}",
@@ -75,6 +79,9 @@
         )
         data = put_data
         error = put_error
+        if (!error) {
+          posthog.capture("update_project", {})
+        }
       }
       if (error) {
         throw error
@@ -119,6 +126,8 @@
       if (post_error) {
         throw post_error
       }
+
+      posthog.capture("import_project", {})
 
       await load_projects()
       created = true

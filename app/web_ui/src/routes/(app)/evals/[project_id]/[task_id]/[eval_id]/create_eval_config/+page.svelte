@@ -18,6 +18,7 @@
   import type { AvailableModels } from "$lib/types"
   import { available_models, load_available_models } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
+  import posthog from "posthog-js"
 
   let combined_model_name: string | undefined = undefined
   let model_name: string | undefined = undefined
@@ -175,6 +176,11 @@
       if (error) {
         throw error
       }
+      posthog.capture("create_eval_config", {
+        algo: selected_algo,
+        model_name: model_name,
+        provider_name: provider_name,
+      })
       complete = true
       const next_page = $page.url.searchParams.get("next_page")
       if (next_page === "eval_configs") {

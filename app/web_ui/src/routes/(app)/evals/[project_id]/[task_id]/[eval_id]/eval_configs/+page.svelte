@@ -23,6 +23,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
+  import posthog from "posthog-js"
 
   let score_legend_dialog: Dialog | null = null
 
@@ -369,6 +370,9 @@
       if (error) {
         throw error
       }
+
+      posthog.capture("set_current_eval_config", {})
+
       // Update the evaluator with the latest
       evaluator = data
     } catch (error) {

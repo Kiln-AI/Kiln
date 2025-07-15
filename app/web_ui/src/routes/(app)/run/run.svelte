@@ -24,6 +24,7 @@
     rating_options_for_sample,
     current_task_rating_options,
   } from "$lib/stores"
+  import posthog from "posthog-js"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -202,6 +203,7 @@
       }
       updated_run = await patch_run(patch_body)
       save_rating_error = null
+      posthog.capture("save_ratings", {})
     } catch (err) {
       save_rating_error = createKilnError(err)
     }
