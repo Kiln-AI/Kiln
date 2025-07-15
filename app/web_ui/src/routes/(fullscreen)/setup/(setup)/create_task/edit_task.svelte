@@ -12,6 +12,7 @@
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
   import { tick } from "svelte"
+  import posthog from "posthog-js"
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
@@ -101,6 +102,9 @@
         )
         data = post_data
         network_error = post_error
+        if (!network_error) {
+          posthog.capture("create_task", {})
+        }
       } else {
         const { data: patch_data, error: patch_error } = await client.PATCH(
           "/api/projects/{project_id}/task/{task_id}",
@@ -117,6 +121,9 @@
         )
         data = patch_data
         network_error = patch_error
+        if (!network_error) {
+          posthog.capture("update_task", {})
+        }
       }
       if (network_error || !data) {
         throw network_error

@@ -15,6 +15,7 @@
   import { tick } from "svelte"
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
+  import posthog from "posthog-js"
 
   // Loading
   let loading_task = true
@@ -114,6 +115,9 @@
       if (post_error) {
         throw post_error
       }
+      posthog.capture("create_evaluator", {
+        template: selected_template,
+      })
       // Reload the rating options since the new eval may have added new options
       load_rating_options()
       // Redirect to add an eval config to this new eval

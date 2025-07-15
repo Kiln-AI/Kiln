@@ -22,6 +22,7 @@
   import RunInputForm from "./run_input_form.svelte"
   import RunOptions from "$lib/ui/run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import posthog from "posthog-js"
 
   // TODO: implement checking input content
   // let warn_before_unload
@@ -105,6 +106,11 @@
       if (fetch_error) {
         throw fetch_error
       }
+      posthog.capture("run_task", {
+        model_name: model_name,
+        provider: provider,
+        prompt_method: prompt_method,
+      })
       response = data
     } catch (e) {
       error = createKilnError(e)
