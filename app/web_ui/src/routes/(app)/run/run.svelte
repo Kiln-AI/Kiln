@@ -584,11 +584,11 @@
             >
           </div>
         {/if}
-        <p class="text-xs text-gray-500 mt-1 text-light">
-          The rating criteria are defined in the <a
+        <p class="text-xs text-gray-500 mt-1 font-light">
+          Ratings are defined in the <a
             href={`/settings/edit_task/${project_id}/${task.id}`}
-            class="link">task</a
-          > settings.
+            class="link">task settings</a
+          >.
         </p>
       </div>
 
