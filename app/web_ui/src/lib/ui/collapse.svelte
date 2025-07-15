@@ -4,12 +4,16 @@
 </script>
 
 <div
-  class="collapse collapse-arrow bg-base-200 {small ? 'collapse-sm' : ''}"
+  class="collapse collapse-arrow bg-base-200 {small
+    ? 'collapse-sm'
+    : 'collapse-md'}"
   style="overflow: visible;"
 >
   <input type="checkbox" class="peer min-h-[24px]" />
   <div
-    class="collapse-title font-medium flex items-center text-sm min-h-[24px]"
+    class="collapse-title font-medium flex items-center {small
+      ? 'text-sm'
+      : ''} min-h-[24px]"
   >
     {title}
   </div>
