@@ -315,7 +315,9 @@ async def test_data_gen_sample_all_models_providers_with_structured_output(
         # pass if the model doesn't support data gen (testing the support flag is part of this)
         return
 
-    data_gen_task = DataGenSampleTask(target_task=task)
+    data_gen_task = DataGenSampleTask(
+        target_task=task, gen_type="training", guidance=None
+    )
     data_gen_input = DataGenSampleTaskInput.from_task(
         task, topic=["Food"], num_samples=4
     )
