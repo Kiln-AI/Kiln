@@ -1,19 +1,21 @@
-from typing import List
+from functools import cached_property
+from typing import List, Tuple
 
 import litellm
+from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
     BaseEmbeddingAdapter,
+    Embedding,
     EmbeddingResult,
-    GeneratedEmbedding,
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
+    KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.litellm import get_litellm_provider_info
 
 MAX_BATCH_SIZE = 2048
 
@@ -21,62 +23,90 @@ MAX_BATCH_SIZE = 2048
 class EmbeddingOptions(BaseModel):
     dimensions: int | None = Field(
         default=None,
-        description="Some models support requesting vectors of different dimensions.",
+        description="The number of dimensions to return for embeddings. Some models support requesting vectors of different dimensions.",
     )
+
+
+def validate_map_to_embeddings(
+    response: EmbeddingResponse,
+    expected_embedding_count: int,
+) -> List[Embedding]:
+    # LiteLLM has an Embedding type in litellm.types.utils, but the EmbeddingResponse data has a list of untyped dicts,
+    # which can be dangerous especially if we upgrade litellm, so we do some sanity checks here
+    if not isinstance(response, EmbeddingResponse):
+        raise RuntimeError(f"Expected EmbeddingResponse, got {type(response)}.")
+
+    list_to_validate = response.data
+    if len(list_to_validate) != expected_embedding_count:
+        raise RuntimeError(
+            f"Expected the number of embeddings in the response to be {expected_embedding_count}, got {len(list_to_validate)}."
+        )
+
+    validated_vectors: List[Tuple[list[float], int]] = []
+    for embedding_dict in list_to_validate:
+        object_type = embedding_dict.get("object")
+        if object_type != "embedding":
+            raise RuntimeError(
+                f"Embedding response data has an unexpected shape. Property 'object' is not 'embedding'. Got {object_type}."
+            )
+
+        embedding_property_value = embedding_dict.get("embedding")
+        if embedding_property_value is None:
+            raise RuntimeError(
+                "Embedding response data has an unexpected shape. Property 'embedding' is None in response data item."
+            )
+        if not isinstance(embedding_property_value, list):
+            raise RuntimeError(
+                f"Embedding response data has an unexpected shape. Property 'embedding' is not a list. Got {type(embedding_property_value)}."
+            )
+
+        index_property_value = embedding_dict.get("index")
+        if index_property_value is None:
+            raise RuntimeError(
+                "Embedding response data has an unexpected shape. Property 'index' is None in response data item."
+            )
+        if not isinstance(index_property_value, int):
+            raise RuntimeError(
+                f"Embedding response data has an unexpected shape. Property 'index' is not an integer. Got {type(index_property_value)}."
+            )
+
+        validated_vectors.append((embedding_property_value, index_property_value))
+
+    # sort by index, in place - the data should already be sorted by index,
+    # but litellm docs are not explicit about this
+    validated_vectors.sort(key=lambda x: x[1])
+
+    return [
+        Embedding(vector=embedding_vector) for embedding_vector, _ in validated_vectors
+    ]
 
 
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
     def __init__(self, embedding_config: EmbeddingConfig):
-        model_provider_name = embedding_config.model_provider_name
-        if model_provider_name is None:
-            raise ValueError("Provider must be set")
-
-        model_name = embedding_config.model_name
-        if model_name is None:
-            raise ValueError("Model name must be set")
-
         super().__init__(embedding_config)
-        self.model_provider_name = model_provider_name
-        self.model_name = model_name
-        self.properties = embedding_config.properties
 
-        self.model_provider = built_in_embedding_models_from_provider(
-            self.model_provider_name, self.model_name
-        )
-        if self.model_provider is None:
-            raise ValueError(
-                f"Embedding model {self.model_name} not found in the list of built-in models"
-            )
-
-    async def _embed(self, text: List[str]) -> EmbeddingResult:
-        # TODO: providers will throw if the text input is too long - goes over the max tokens for the model
-        # we should validate that upstream to prevent this from bricking the whole pipeline if the user's dataset
-        # happens to include chunks that are too long.
-
+    async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         # documented on litellm: https://docs.litellm.ai/docs/embedding/supported_embedding
-        if len(text) > MAX_BATCH_SIZE:
+        if len(input_texts) > MAX_BATCH_SIZE:
             raise ValueError("Text is too long")
 
-        # docs: https://docs.litellm.ai/docs/embedding/supported_embedding
         response = await litellm.aembedding(
-            model=self.litellm_model_id(),
-            input=text,
+            model=self.litellm_model_id,
+            input=input_texts,
             **self.build_options().model_dump(exclude_none=True),
         )
 
-        # sanity check to ensure integrity as we should always have as many embeddings
-        # as inputs
-        if len(response.data) != len(text):
-            raise ValueError("Response data length does not match input text length")
+        validated_embeddings = validate_map_to_embeddings(
+            response, expected_embedding_count=len(input_texts)
+        )
 
-        embeddings = []
-        for item in sorted(response.data, key=lambda x: x.get("index")):
-            embeddings.append(GeneratedEmbedding(vector=item.get("embedding")))
-
-        return EmbeddingResult(embeddings=embeddings, usage=response.usage)
+        return EmbeddingResult(
+            embeddings=validated_embeddings,
+            usage=response.usage,
+        )
 
     def build_options(self) -> EmbeddingOptions:
-        dimensions = self.properties.get("dimensions", None)
+        dimensions = self.embedding_config.properties.get("dimensions", None)
         if dimensions is not None:
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ValueError("Dimensions must be a positive integer")
@@ -85,54 +115,23 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             dimensions=dimensions,
         )
 
-    # TODO: refactor this to be shared with other implementations of LiteLLM adapters
-    # for example, embedding adapter for LiteLLM, and also Extractor adapter for LiteLLM
-    def litellm_model_id(self) -> str:
-        provider = self.model_provider
-        if not provider:
-            raise ValueError("Model ID is required for OpenAI compatible models")
-
-        litellm_provider_name: str | None = None
-        provider_not_supported = False
-        match provider.name:
-            case ModelProviderName.openrouter:
-                litellm_provider_name = "openrouter"
-            case ModelProviderName.openai:
-                litellm_provider_name = "openai"
-            case ModelProviderName.groq:
-                litellm_provider_name = "groq"
-            case ModelProviderName.anthropic:
-                litellm_provider_name = "anthropic"
-            case ModelProviderName.gemini_api:
-                litellm_provider_name = "gemini"
-            case ModelProviderName.fireworks_ai:
-                litellm_provider_name = "fireworks_ai"
-            case ModelProviderName.amazon_bedrock:
-                litellm_provider_name = "bedrock"
-            case ModelProviderName.azure_openai:
-                litellm_provider_name = "azure"
-            case ModelProviderName.huggingface:
-                litellm_provider_name = "huggingface"
-            case ModelProviderName.vertex:
-                litellm_provider_name = "vertex_ai"
-            case ModelProviderName.together_ai:
-                litellm_provider_name = "together_ai"
-            case ModelProviderName.openai_compatible:
-                provider_not_supported = True
-            case ModelProviderName.kiln_custom_registry:
-                provider_not_supported = True
-            case ModelProviderName.kiln_fine_tune:
-                provider_not_supported = True
-            case ModelProviderName.ollama:
-                provider_not_supported = True
-            case _:
-                raise_exhaustive_enum_error(provider.name)
-
-        if provider_not_supported:
-            raise ValueError(f"Provider {provider.name} is not supported by litellm")
-
-        self._litellm_model_id = (
-            str(litellm_provider_name) + "/" + str(provider.model_id)
+    @cached_property
+    def model_provider(self) -> KilnEmbeddingModelProvider:
+        provider = built_in_embedding_models_from_provider(
+            self.embedding_config.model_provider_name, self.embedding_config.model_name
         )
+        if provider is None:
+            raise ValueError(
+                f"Embedding model {self.embedding_config.model_name} not found in the list of built-in models"
+            )
+        return provider
 
-        return self._litellm_model_id
+    @cached_property
+    def litellm_model_id(self) -> str:
+        provider_info = get_litellm_provider_info(self.model_provider)
+        if provider_info.is_custom:
+            raise ValueError(
+                f"Provider {self.model_provider.name} is not supported by litellm for embeddings"
+            )
+
+        return provider_info.litellm_model_id

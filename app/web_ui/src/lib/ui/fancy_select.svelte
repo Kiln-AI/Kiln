@@ -1,12 +1,6 @@
 <script lang="ts">
   import type { OptionGroup } from "./fancy_select_types"
-  import {
-    computePosition,
-    autoUpdate,
-    shift,
-    offset,
-    size,
-  } from "@floating-ui/dom"
+  import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
   export let options: OptionGroup[] = []
@@ -24,6 +18,7 @@
   let listVisible = false
   let cleanupAutoUpdate: (() => void) | null = null
   let mounted = false
+  let naturalDropdownHeight: number | null = null
   const id = Math.random().toString(36).substring(2, 15)
 
   // Search functionality variables
@@ -31,27 +26,41 @@
   let isSearching = false
   let searchInputElement: HTMLInputElement
 
+  // Filter options based on search text - supports multi-word searches
+  function filterOptions(
+    options: OptionGroup[],
+    searchText: string,
+  ): OptionGroup[] {
+    if (!searchText.trim()) {
+      return options
+    }
+
+    // Split search text into words for flexible matching
+    const searchWords = searchText.toLowerCase().trim().split(/\s+/)
+
+    return options
+      .map((group) => ({
+        ...group,
+        options: group.options.filter((option) => {
+          const labelText = option.label.toLowerCase()
+          const descriptionText = option.description?.toLowerCase() || ""
+          const combinedText = labelText + " " + descriptionText
+
+          // Check if all search words are present in the combined text
+          return searchWords.every((word) => combinedText.includes(word))
+        }),
+      }))
+      .filter((group) => group.options.length > 0)
+  }
+
   // Computed filtered options based on search
-  $: filteredOptions = searchText.trim()
-    ? options
-        .map((group) => ({
-          ...group,
-          options: group.options.filter(
-            (option) =>
-              option.label.toLowerCase().includes(searchText.toLowerCase()) ||
-              (option.description &&
-                option.description
-                  .toLowerCase()
-                  .includes(searchText.toLowerCase())),
-          ),
-        }))
-        .filter((group) => group.options.length > 0)
-    : options
+  $: filteredOptions = filterOptions(options, searchText)
 
   // Reset search when dropdown closes
   $: if (!listVisible) {
     searchText = ""
     isSearching = false
+    naturalDropdownHeight = null // Reset cached height when dropdown closes
   }
 
   onMount(() => {
@@ -108,8 +117,16 @@
     cleanupAutoUpdate = null
   }
 
-  // Threshold for when to start expanding upward (adjust as needed)
-  const minSpaceThreshold = 1200
+  function getEffectiveViewportHeight(element: HTMLElement): number {
+    // Check if we're inside a Kiln Dialog.svelte or DaisyUI dialog element
+    const dialog = element.closest(".modal-box")
+    if (dialog) {
+      return dialog.clientHeight
+    }
+
+    // Fall back to window height if not in a dialog
+    return window.innerHeight
+  }
 
   function setupFloatingPosition() {
     if (!selectedElement || !dropdownElement) return
@@ -120,83 +137,68 @@
         strategy: "fixed",
         middleware: [
           offset(2), // Small gap between trigger and dropdown
-          // Custom positioning middleware to handle expansion upward instead of flipping
+          // Custom positioning and sizing middleware to handle the 3 cases
           {
-            name: "customPositioning",
-            fn: ({ x, y, rects, elements: _ }) => {
-              const viewportHeight = window.innerHeight
+            name: "customPositioningAndSizing",
+            fn: ({ x, y, rects, elements }) => {
+              // Find the effective viewport height - could be constrained by a dialog/modal
+              const viewportHeight = getEffectiveViewportHeight(selectedElement)
               const referenceRect = rects.reference
               const padding = 10
+              const floatingEl = elements.floating
 
-              // Calculate available spaces
+              // Calculate space below reference element
               const spaceBelow =
-                viewportHeight -
-                (referenceRect.y + referenceRect.height) -
-                padding
+                viewportHeight - (referenceRect.y + referenceRect.height) - 2 // 2px gap
 
-              if (spaceBelow >= minSpaceThreshold) {
-                // Enough space below, position normally below the reference
-                return { x, y }
-              } else {
-                // Not enough space below, position to start from top of viewport
-                const targetY = padding
-                return { x, y: targetY }
-              }
-            },
-          },
-          shift({ padding: 8 }), // Shift to stay in viewport horizontally
-          size({
-            apply({ availableHeight, availableWidth, elements, rects }) {
-              // Get viewport dimensions and reference element position
-              const viewportHeight = window.innerHeight
-              const referenceRect = rects.reference
-              const padding = 10 // 10px from edges
-
-              // Calculate available space below the reference element
-              const spaceBelow =
-                viewportHeight -
-                (referenceRect.y + referenceRect.height) -
-                padding
-
-              // Determine max height based on our custom logic:
-              // 1. If enough space below, use space below
-              // 2. If not enough space below, position from top with equal padding
-              let maxHeight
-              if (spaceBelow >= minSpaceThreshold) {
-                // Enough space below, limit to space below
-                maxHeight = Math.min(availableHeight, spaceBelow)
-              } else {
-                // Not enough space below, position from top with 10px padding at top and bottom
-                maxHeight = Math.min(
-                  availableHeight,
-                  viewportHeight - 2 * padding,
-                )
+              // Get the natural height of the dropdown content (measure only once)
+              if (naturalDropdownHeight === null) {
+                // First time measuring - temporarily set max height to auto to get natural height
+                floatingEl.style.maxHeight = "none"
+                naturalDropdownHeight = floatingEl.scrollHeight
               }
 
               // Calculate width - minimum 300px or reference width, whichever is larger
-              const minWidth = 300
+              const minWidth = 320
               const referenceWidth = referenceRect.width
               const desiredWidth = Math.max(minWidth, referenceWidth)
-              const maxWidth = Math.min(desiredWidth, availableWidth)
-
-              // Apply dimensions to the dropdown container
-              Object.assign(elements.floating.style, {
-                maxHeight: `${maxHeight}px`,
-                width: `${maxWidth}px`,
-              })
-
-              // Also set CSS custom properties that we can use for the inner menu
-              elements.floating.style.setProperty(
-                "--dropdown-max-height",
-                `${maxHeight - 32}px`,
-              ) // Account for padding
-              elements.floating.style.setProperty(
-                "--dropdown-width",
-                `${maxWidth}px`,
+              const maxWidth = Math.min(
+                desiredWidth,
+                window.innerWidth - 2 * padding,
               )
+
+              let finalHeight
+              let finalY = y
+
+              // CASE 1: Content fits below reference element
+              if (naturalDropdownHeight <= spaceBelow) {
+                finalHeight = naturalDropdownHeight
+                finalY = y // Normal positioning (2px below reference)
+                // Add some height for the search input, allowing it to grow downwards. The max-height isn't really used in this case as it will be it's natural height.
+                finalHeight = finalHeight + 100
+              }
+              // CASE 2: Doesn't fit below but shorter than viewport - 20px (padding)
+              else if (naturalDropdownHeight <= viewportHeight - 20) {
+                finalHeight = naturalDropdownHeight
+                // Anchor to bottom of viewport with 10px padding
+                finalY = viewportHeight - naturalDropdownHeight - padding
+              }
+              // CASE 3: Taller than viewport - 20px (padding)
+              else {
+                finalHeight = viewportHeight - 2 * padding
+                // Position from top of viewport with 10px padding
+                finalY = padding
+              }
+
+              // Set the width of the dropdown
+              floatingEl.style.setProperty("--dropdown-width", `${maxWidth}px`)
+
+              // Also set max-height directly on the dropdown element for immediate effect
+              floatingEl.style.maxHeight = `${finalHeight}px`
+
+              return { x, y: finalY }
             },
-            padding: 10, // Match our edge padding
-          }),
+          },
         ],
       }).then(({ x, y }) => {
         Object.assign(dropdownElement.style, {
@@ -282,6 +284,10 @@
     focusedIndex = 0
     if (searchInputElement) {
       searchInputElement.blur()
+    }
+    // Return focus to the main select element so escape key works properly
+    if (selectedElement) {
+      selectedElement.focus()
     }
   }
 
@@ -417,11 +423,14 @@
   </div>
 
   {#if listVisible && mounted}
+    {@const first_group_has_label = filteredOptions[0]?.label}
     <div
       bind:this={dropdownElement}
-      class="bg-base-100 rounded-box z-[1000] p-2 pt-0 shadow border flex flex-col fixed"
+      class="bg-base-100 rounded-box z-[1000] p-2 {first_group_has_label
+        ? 'pt-0'
+        : ''} shadow border flex flex-col fixed"
       style="width: var(--dropdown-width, {selectedElement?.offsetWidth ||
-        0}px); max-height: var(--dropdown-max-height, 300px);"
+        0}px);"
     >
       <!-- Search input - only show when searching -->
       {#if isSearching}
@@ -486,14 +495,13 @@
       <ul
         class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
         use:scrollableCheck
-        style="max-height: calc(var(--dropdown-max-height, 300px) - {isSearching
-          ? '4rem'
-          : '1rem'});"
       >
         {#each filteredOptions as option, sectionIndex}
-          <li class="menu-title pl-1 sticky top-0 bg-white z-10">
-            {option.label}
-          </li>
+          {#if option.label}
+            <li class="menu-title pl-1 sticky top-0 bg-white z-10">
+              {option.label}
+            </li>
+          {/if}
           {#each option.options as item, index}
             {@const overallIndex =
               filteredOptions
@@ -516,8 +524,19 @@
                   focusedIndex = overallIndex
                 }}
               >
-                <div class="w-full">
-                  {item.label}
+                <div class="w-full flex flex-row gap-2 items-center">
+                  <div class="flex-grow">
+                    {item.label}
+                  </div>
+                  {#if item.badge}
+                    <div
+                      class="badge badge-sm px-2 {item.badge_color === 'primary'
+                        ? 'badge-primary'
+                        : 'badge-ghost'}"
+                    >
+                      {item.badge}
+                    </div>
+                  {/if}
                 </div>
                 {#if item.description}
                   <div class="text-xs font-medium text-base-content/40 w-full">

@@ -355,6 +355,9 @@ async def test_get_available_models(app, client):
                     supports_structured_output=False,
                     supports_data_gen=False,
                     structured_output_mode="json_instructions",
+                    suggested_for_evals=True,
+                    uncensored=True,
+                    suggested_for_uncensored_data_gen=True,
                 ),
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
@@ -409,6 +412,8 @@ async def test_get_available_models(app, client):
                     "supports_data_gen": True,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "uncensored": False,
+                    "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
                     "structured_output_mode": "json_schema",
                     "task_filter": None,
@@ -425,12 +430,14 @@ async def test_get_available_models(app, client):
                     "name": "Model 1",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
                     "structured_output_mode": "json_schema",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "uncensored": False,
                 }
             ],
         },
@@ -443,12 +450,14 @@ async def test_get_available_models(app, client):
                     "name": "Model 2",
                     "supports_structured_output": False,
                     "supports_data_gen": False,
+                    "suggested_for_uncensored_data_gen": True,
                     "supports_logprobs": False,
                     "structured_output_mode": "json_instructions",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,
-                    "suggested_for_evals": False,
+                    "suggested_for_evals": True,
+                    "uncensored": True,
                 }
             ],
         },
@@ -511,12 +520,14 @@ async def test_get_available_models_ollama_exception(app, client):
                     "name": "Model 1",
                     "supports_structured_output": True,
                     "supports_data_gen": True,
+                    "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
                     "structured_output_mode": "default",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "uncensored": False,
                 }
             ],
         },
@@ -1264,6 +1275,8 @@ def test_openai_compatible_providers():
                             untested_model=True,
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            uncensored=False,
+                            suggested_for_uncensored_data_gen=False,
                             structured_output_mode="json_instructions",
                         )
                     ],
@@ -2307,7 +2320,7 @@ async def test_connect_wandb_request_exception(mock_config_shared, mock_requests
 
 
 @pytest.mark.asyncio
-async def test_get_available_embedding_models(app, client):
+async def test_get_embedding_providers(app, client):
     # Mock Config.shared()
     mock_config = MagicMock()
     mock_config.get_value.return_value = "mock_key"
@@ -2344,7 +2357,6 @@ async def test_get_available_embedding_models(app, client):
                     name=ModelProviderName.amazon_bedrock,
                     model_id="bedrock1",
                     n_dimensions=1536,
-                    max_input_tokens=8192,
                 ),
                 KilnEmbeddingModelProvider(
                     name=ModelProviderName.gemini_api,
@@ -2395,7 +2407,7 @@ async def test_get_available_embedding_models(app, client):
                     "id": "model2",
                     "name": "Model 2",
                     "n_dimensions": 1536,
-                    "max_input_tokens": 8192,
+                    "max_input_tokens": None,
                     "supports_custom_dimensions": False,
                 }
             ],

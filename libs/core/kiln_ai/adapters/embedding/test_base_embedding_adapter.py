@@ -2,8 +2,8 @@ import pytest
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
     BaseEmbeddingAdapter,
+    Embedding,
     EmbeddingResult,
-    GeneratedEmbedding,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -12,11 +12,11 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 class TestEmbeddingAdapter(BaseEmbeddingAdapter):
     """Concrete implementation of BaseEmbeddingAdapter for testing purposes."""
 
-    async def _embed(self, text: list[str]) -> EmbeddingResult:
+    async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
         # Simple test implementation that returns mock embeddings
         embeddings = []
-        for i, _ in enumerate(text):
-            embeddings.append(GeneratedEmbedding(vector=[0.1 * (i + 1)] * 3))
+        for i, _ in enumerate(text_inputs):
+            embeddings.append(Embedding(vector=[0.1 * (i + 1)] * 3))
 
         return EmbeddingResult(embeddings=embeddings)
 
@@ -24,14 +24,16 @@ class TestEmbeddingAdapter(BaseEmbeddingAdapter):
 class TestEmbeddingAdapterWithUsage(BaseEmbeddingAdapter):
     """Concrete implementation that includes usage information."""
 
-    async def _embed(self, text: list[str]) -> EmbeddingResult:
+    async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
         from litellm import Usage
 
         embeddings = []
-        for i, _ in enumerate(text):
-            embeddings.append(GeneratedEmbedding(vector=[0.1 * (i + 1)] * 3))
+        for i, _ in enumerate(text_inputs):
+            embeddings.append(Embedding(vector=[0.1 * (i + 1)] * 3))
 
-        usage = Usage(prompt_tokens=len(text) * 10, total_tokens=len(text) * 10)
+        usage = Usage(
+            prompt_tokens=len(text_inputs) * 10, total_tokens=len(text_inputs) * 10
+        )
         return EmbeddingResult(embeddings=embeddings, usage=usage)
 
 
@@ -58,24 +60,24 @@ def test_adapter_with_usage(mock_embedding_config):
     return TestEmbeddingAdapterWithUsage(mock_embedding_config)
 
 
-class TestGeneratedEmbedding:
-    """Test the GeneratedEmbedding model."""
+class TestEmbedding:
+    """Test the Embedding model."""
 
     def test_creation(self):
-        """Test creating a GeneratedEmbedding with a vector."""
+        """Test creating a Embedding with a vector."""
         vector = [0.1, 0.2, 0.3]
-        embedding = GeneratedEmbedding(vector=vector)
+        embedding = Embedding(vector=vector)
         assert embedding.vector == vector
 
     def test_empty_vector(self):
-        """Test creating a GeneratedEmbedding with an empty vector."""
-        embedding = GeneratedEmbedding(vector=[])
+        """Test creating a Embedding with an empty vector."""
+        embedding = Embedding(vector=[])
         assert embedding.vector == []
 
     def test_large_vector(self):
-        """Test creating a GeneratedEmbedding with a large vector."""
+        """Test creating a Embedding with a large vector."""
         vector = [0.1] * 1536
-        embedding = GeneratedEmbedding(vector=vector)
+        embedding = Embedding(vector=vector)
         assert len(embedding.vector) == 1536
         assert all(v == 0.1 for v in embedding.vector)
 
@@ -86,8 +88,8 @@ class TestEmbeddingResult:
     def test_creation_with_embeddings(self):
         """Test creating an EmbeddingResult with embeddings."""
         embeddings = [
-            GeneratedEmbedding(vector=[0.1, 0.2, 0.3]),
-            GeneratedEmbedding(vector=[0.4, 0.5, 0.6]),
+            Embedding(vector=[0.1, 0.2, 0.3]),
+            Embedding(vector=[0.4, 0.5, 0.6]),
         ]
         result = EmbeddingResult(embeddings=embeddings)
         assert result.embeddings == embeddings
@@ -97,7 +99,7 @@ class TestEmbeddingResult:
         """Test creating an EmbeddingResult with usage information."""
         from litellm import Usage
 
-        embeddings = [GeneratedEmbedding(vector=[0.1, 0.2, 0.3])]
+        embeddings = [Embedding(vector=[0.1, 0.2, 0.3])]
         usage = Usage(prompt_tokens=10, total_tokens=10)
         result = EmbeddingResult(embeddings=embeddings, usage=usage)
         assert result.embeddings == embeddings
@@ -127,33 +129,33 @@ class TestBaseEmbeddingAdapter:
         with pytest.raises(TypeError):
             BaseEmbeddingAdapter(mock_embedding_config)
 
-    async def test_embed_empty_list(self, test_adapter):
+    async def test_generate_embeddings_empty_list(self, test_adapter):
         """Test embed method with empty text list."""
-        result = await test_adapter.embed([])
+        result = await test_adapter.generate_embeddings([])
         assert result.embeddings == []
         assert result.usage is None
 
-    async def test_embed_single_text(self, test_adapter):
+    async def test_generate_embeddings_single_text(self, test_adapter):
         """Test embed method with a single text."""
-        result = await test_adapter.embed(["hello world"])
+        result = await test_adapter.generate_embeddings(["hello world"])
         assert len(result.embeddings) == 1
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
         assert result.usage is None
 
-    async def test_embed_multiple_texts(self, test_adapter):
+    async def test_generate_embeddings_multiple_texts(self, test_adapter):
         """Test embed method with multiple texts."""
         texts = ["hello world", "my name is john", "i like to eat apples"]
-        result = await test_adapter.embed(texts)
+        result = await test_adapter.generate_embeddings(texts)
         assert len(result.embeddings) == 3
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
         assert result.embeddings[1].vector == [0.2, 0.2, 0.2]
         assert result.embeddings[2].vector == pytest.approx([0.3, 0.3, 0.3])
         assert result.usage is None
 
-    async def test_embed_with_usage(self, test_adapter_with_usage):
+    async def test_generate_embeddings_with_usage(self, test_adapter_with_usage):
         """Test embed method with usage information."""
         texts = ["hello", "world"]
-        result = await test_adapter_with_usage.embed(texts)
+        result = await test_adapter_with_usage.generate_embeddings(texts)
         assert len(result.embeddings) == 2
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
         assert result.embeddings[1].vector == [0.2, 0.2, 0.2]
@@ -161,26 +163,26 @@ class TestBaseEmbeddingAdapter:
         assert result.usage.prompt_tokens == 20
         assert result.usage.total_tokens == 20
 
-    async def test_embed_with_none_input(self, test_adapter):
+    async def test_generate_embeddings_with_none_input(self, test_adapter):
         """Test embed method with None input (should be treated as empty list)."""
-        result = await test_adapter.embed(None)  # type: ignore
+        result = await test_adapter.generate_embeddings(None)  # type: ignore
         assert result.embeddings == []
         assert result.usage is None
 
-    async def test_embed_with_whitespace_only_texts(self, test_adapter):
+    async def test_generate_embeddings_with_whitespace_only_texts(self, test_adapter):
         """Test embed method with texts containing only whitespace."""
         texts = ["   ", "\n", "\t"]
-        result = await test_adapter.embed(texts)
+        result = await test_adapter.generate_embeddings(texts)
         assert len(result.embeddings) == 3
         # Should still generate embeddings for whitespace-only texts
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
         assert result.embeddings[1].vector == [0.2, 0.2, 0.2]
         assert result.embeddings[2].vector == pytest.approx([0.3, 0.3, 0.3])
 
-    async def test_embed_with_duplicate_texts(self, test_adapter):
+    async def test_generate_embeddings_with_duplicate_texts(self, test_adapter):
         """Test embed method with duplicate texts."""
         texts = ["hello", "hello", "world"]
-        result = await test_adapter.embed(texts)
+        result = await test_adapter.generate_embeddings(texts)
         assert len(result.embeddings) == 3
         # Each text should get its own embedding, even if duplicate
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
@@ -191,26 +193,26 @@ class TestBaseEmbeddingAdapter:
 class TestBaseEmbeddingAdapterEdgeCases:
     """Test edge cases for BaseEmbeddingAdapter."""
 
-    async def test_embed_with_very_long_text(self, test_adapter):
+    async def test_generate_embeddings_with_very_long_text(self, test_adapter):
         """Test embed method with very long text."""
         long_text = "a" * 10000
-        result = await test_adapter.embed([long_text])
+        result = await test_adapter.generate_embeddings([long_text])
         assert len(result.embeddings) == 1
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
 
-    async def test_embed_with_special_characters(self, test_adapter):
+    async def test_generate_embeddings_with_special_characters(self, test_adapter):
         """Test embed method with special characters."""
         texts = ["hello\nworld", "test\twith\ttabs", "unicode: 🚀🌟"]
-        result = await test_adapter.embed(texts)
+        result = await test_adapter.generate_embeddings(texts)
         assert len(result.embeddings) == 3
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
         assert result.embeddings[1].vector == [0.2, 0.2, 0.2]
         assert result.embeddings[2].vector == pytest.approx([0.3, 0.3, 0.3])
 
-    async def test_embed_with_empty_strings(self, test_adapter):
+    async def test_generate_embeddings_with_empty_strings(self, test_adapter):
         """Test embed method with empty strings."""
         texts = ["", "", ""]
-        result = await test_adapter.embed(texts)
+        result = await test_adapter.generate_embeddings(texts)
         assert len(result.embeddings) == 3
         assert result.embeddings[0].vector == [0.1, 0.1, 0.1]
         assert result.embeddings[1].vector == [0.2, 0.2, 0.2]
@@ -227,32 +229,36 @@ class TestBaseEmbeddingAdapterEdgeCases:
 class TestBaseEmbeddingAdapterIntegration:
     """Integration tests for BaseEmbeddingAdapter."""
 
-    async def test_embed_method_calls_abstract_method(self, mock_embedding_config):
+    async def test_generate_embeddings_method_calls_abstract_method(
+        self, mock_embedding_config
+    ):
         """Test that embed method properly calls the abstract _embed method."""
 
         # Create a mock adapter that tracks if _embed was called
         class MockAdapter(BaseEmbeddingAdapter):
             def __init__(self, config):
                 super().__init__(config)
-                self._embed_called = False
-                self._embed_args = None
+                self._generate_embeddings_called = False
+                self._generate_embeddings_args = None
 
-            async def _embed(self, text: list[str]) -> EmbeddingResult:
-                self._embed_called = True
-                self._embed_args = text
+            async def _generate_embeddings(
+                self, text_inputs: list[str]
+            ) -> EmbeddingResult:
+                self._generate_embeddings_called = True
+                self._generate_embeddings_args = text_inputs
                 return EmbeddingResult(embeddings=[])
 
         adapter = MockAdapter(mock_embedding_config)
         texts = ["hello", "world"]
 
-        result = await adapter.embed(texts)
+        result = await adapter.generate_embeddings(texts)
 
-        assert adapter._embed_called
-        assert adapter._embed_args == texts
+        assert adapter._generate_embeddings_called
+        assert adapter._generate_embeddings_args == texts
         assert result.embeddings == []
         assert result.usage is None
 
-    async def test_embed_empty_list_does_not_call_abstract_method(
+    async def test_generate_embeddings_empty_list_does_not_call_abstract_method(
         self, mock_embedding_config
     ):
         """Test that embed method with empty list does not call _embed."""
@@ -260,16 +266,18 @@ class TestBaseEmbeddingAdapterIntegration:
         class MockAdapter(BaseEmbeddingAdapter):
             def __init__(self, config):
                 super().__init__(config)
-                self._embed_called = False
+                self._generate_embeddings_called = False
 
-            async def _embed(self, text: list[str]) -> EmbeddingResult:
-                self._embed_called = True
+            async def _generate_embeddings(
+                self, text_inputs: list[str]
+            ) -> EmbeddingResult:
+                self._generate_embeddings_called = True
                 return EmbeddingResult(embeddings=[])
 
         adapter = MockAdapter(mock_embedding_config)
 
-        result = await adapter.embed([])
+        result = await adapter.generate_embeddings([])
 
-        assert not adapter._embed_called
+        assert not adapter._generate_embeddings_called
         assert result.embeddings == []
         assert result.usage is None

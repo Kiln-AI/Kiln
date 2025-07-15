@@ -37,12 +37,13 @@ class KilnEmbeddingModelProvider(BaseModel):
         description="The model ID for the embedding model. This is the ID used to identify the model in the provider's API.",
     )
 
-    max_input_tokens: int = Field(
-        description="The maximum number of tokens that can be input to the model. If the model allows picking between different options, provide the list of available options.",
+    max_input_tokens: int | None = Field(
+        default=None,
+        description="The maximum number of tokens that can be input to the model.",
     )
 
     n_dimensions: int = Field(
-        description="The number of dimensions in the output embedding. If the model allows picking between different options, provide the list of available dimensions.",
+        description="The number of dimensions in the output embedding.",
     )
 
     supports_custom_dimensions: bool = Field(
@@ -69,9 +70,6 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
         friendly_name="text-embedding-3-small",
         providers=[
             KilnEmbeddingModelProvider(
-                # TODO: wondering if should use separate enum for the ModelProviderName,
-                # but since the hooking up of providers is global, maybe reusing is
-                # best?
                 name=ModelProviderName.openai,
                 model_id="text-embedding-3-small",
                 n_dimensions=1536,

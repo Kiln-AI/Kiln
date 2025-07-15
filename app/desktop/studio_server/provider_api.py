@@ -89,6 +89,8 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    uncensored: bool
+    suggested_for_uncensored_data_gen: bool
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
@@ -106,11 +108,11 @@ class EmbeddingModelDetails(BaseModel):
     id: str
     name: str
     n_dimensions: int
-    max_input_tokens: int
+    max_input_tokens: int | None
     supports_custom_dimensions: bool
 
 
-class AvailableEmbeddingModels(BaseModel):
+class EmbeddingProvider(BaseModel):
     provider_name: str
     provider_id: str
     models: List[EmbeddingModelDetails]
@@ -179,6 +181,8 @@ def connect_provider_api(app: FastAPI):
                                 suggested_for_data_gen=provider.suggested_for_data_gen,
                                 supports_logprobs=provider.supports_logprobs,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                uncensored=provider.uncensored,
+                                suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
                             )
                         )
@@ -213,7 +217,7 @@ def connect_provider_api(app: FastAPI):
 
     # returns map, of provider name to list of model names
     @app.get("/api/available_embedding_models")
-    async def get_available_embedding_models() -> List[AvailableEmbeddingModels]:
+    async def get_available_embedding_models() -> List[EmbeddingProvider]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
 
@@ -226,8 +230,8 @@ def connect_provider_api(app: FastAPI):
             if has_keys:
                 key_providers.append(provider)
 
-        models: List[AvailableEmbeddingModels] = [
-            AvailableEmbeddingModels(
+        models: List[EmbeddingProvider] = [
+            EmbeddingProvider(
                 provider_name=provider_name_from_id(provider),
                 provider_id=provider,
                 models=[],
@@ -237,9 +241,6 @@ def connect_provider_api(app: FastAPI):
 
         for model in built_in_embedding_models:
             for provider in model.providers:
-                if not provider.model_id:
-                    # it's possible for models to not have an ID (fine-tune only model)
-                    continue
                 if provider.name in key_providers:
                     available_models = next(
                         (m for m in models if m.provider_id == provider.name), None
@@ -931,6 +932,8 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            uncensored=False,
+                            suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
                             structured_output_mode=StructuredOutputMode.json_schema,
                         )
@@ -946,6 +949,8 @@ async def available_ollama_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    uncensored=False,
+                    suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
                     structured_output_mode=StructuredOutputMode.json_schema,
                 )
@@ -1003,6 +1008,8 @@ def custom_models() -> AvailableModels | None:
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    uncensored=False,
+                    suggested_for_uncensored_data_gen=False,
                     # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
                     structured_output_mode=StructuredOutputMode.json_instructions,
                 )
@@ -1039,6 +1046,8 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            uncensored=False,
+                            suggested_for_uncensored_data_gen=False,
                             structured_output_mode=(
                                 fine_tune_mode
                                 if (
@@ -1153,6 +1162,8 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        uncensored=False,
+                        suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
                         structured_output_mode=StructuredOutputMode.json_instructions,
                     )

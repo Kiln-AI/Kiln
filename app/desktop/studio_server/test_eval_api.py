@@ -193,6 +193,7 @@ def valid_evaluator_request():
         ],
         eval_set_filter_id="tag::eval_set",
         eval_configs_filter_id="tag::golden",
+        template_properties={"test_property": "test_value", "numeric_property": 42},
     )
 
 
@@ -214,17 +215,31 @@ async def test_create_evaluator(
 ):
     mock_task_from_id.return_value = mock_task
 
-    with patch.object(Eval, "save_to_file") as mock_save:
-        response = client.post(
-            "/api/projects/project1/tasks/task1/create_evaluator",
-            json=valid_evaluator_request.model_dump(),
-        )
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=valid_evaluator_request.model_dump(),
+    )
 
     assert response.status_code == 200
     result = response.json()
     assert result["name"] == valid_evaluator_request.name
     assert result["description"] == valid_evaluator_request.description
-    mock_save.assert_called_once()
+    assert result["template_properties"] == valid_evaluator_request.template_properties
+
+    # Verify the eval was created with the correct template_properties on disk
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.template == valid_evaluator_request.template
+    assert saved_eval.name == valid_evaluator_request.name
+    assert saved_eval.description == valid_evaluator_request.description
+    assert saved_eval.output_scores == valid_evaluator_request.output_scores
+    assert saved_eval.eval_set_filter_id == valid_evaluator_request.eval_set_filter_id
+    assert (
+        saved_eval.eval_configs_filter_id
+        == valid_evaluator_request.eval_configs_filter_id
+    )
+    assert saved_eval.template_properties == valid_evaluator_request.template_properties
+    assert saved_eval.template_properties["test_property"] == "test_value"
+    assert saved_eval.template_properties["numeric_property"] == 42
 
 
 @pytest.mark.asyncio

@@ -611,7 +611,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/chunker_configs/{chunker_config_id}/create_chunker_config": {
+    "/api/projects/{project_id}/create_chunker_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -621,7 +621,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Chunker Config */
-        post: operations["create_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__create_chunker_config_post"];
+        post: operations["create_chunker_config_api_projects__project_id__create_chunker_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -645,7 +645,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}/create_embedding_config": {
+    "/api/projects/{project_id}/create_embedding_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -655,7 +655,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Embedding Config */
-        post: operations["create_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__create_embedding_config_post"];
+        post: operations["create_embedding_config_api_projects__project_id__create_embedding_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -970,7 +970,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/generate_samples": {
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs": {
         parameters: {
             query?: never;
             header?: never;
@@ -980,7 +980,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Generate Samples */
-        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post"];
+        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1472,15 +1472,6 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
-        /** AvailableEmbeddingModels */
-        AvailableEmbeddingModels: {
-            /** Provider Name */
-            provider_name: string;
-            /** Provider Id */
-            provider_id: string;
-            /** Models */
-            models: components["schemas"]["EmbeddingModelDetails"][];
-        };
         /** AvailableModels */
         AvailableModels: {
             /** Provider Name */
@@ -1658,6 +1649,8 @@ export interface components {
              * @description The description of the chunker config
              */
             description?: string | null;
+            /** @description The type of the chunker */
+            chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties?: {
                 [key: string]: string | number | boolean;
@@ -1688,6 +1681,10 @@ export interface components {
              * @description The description of the embedding config
              */
             description?: string | null;
+            /** @description The provider of the embedding model */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /** @description The name of the embedding model */
+            model_name: components["schemas"]["EmbeddingModelName"];
             /** Properties */
             properties?: {
                 [key: string]: string | number | boolean;
@@ -1717,6 +1714,10 @@ export interface components {
             eval_set_filter_id: string;
             /** Eval Configs Filter Id */
             eval_configs_filter_id: string;
+            /** Template Properties */
+            template_properties: {
+                [key: string]: string | number | boolean;
+            };
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -1828,10 +1829,16 @@ export interface components {
              */
             num_subtopics: number;
             /**
-             * Human Guidance
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
+             */
+            gen_type: "eval" | "training";
+            /**
+             * Guidance
              * @description Optional human guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
@@ -1863,10 +1870,16 @@ export interface components {
              */
             num_samples: number;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
              */
-            human_guidance?: string | null;
+            gen_type: "training" | "eval";
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
             /**
              * Model Name
              * @description The name of the model to use
@@ -1916,10 +1929,10 @@ export interface components {
              */
             prompt_method: string;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Guidance
+             * @description Optional custom guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Tags
              * @description Tags to add to the sample
@@ -2102,7 +2115,7 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description The description of the embedding config
+             * @description A description for your reference, not shared with embedding models.
              */
             description?: string | null;
             /** @description The provider to use to generate embeddings. */
@@ -2131,7 +2144,7 @@ export interface components {
             /** N Dimensions */
             n_dimensions: number;
             /** Max Input Tokens */
-            max_input_tokens: number;
+            max_input_tokens: number | null;
             /** Supports Custom Dimensions */
             supports_custom_dimensions: boolean;
         };
@@ -2141,6 +2154,15 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004";
+        /** EmbeddingProvider */
+        EmbeddingProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["EmbeddingModelDetails"][];
+        };
         /** Eval */
         Eval: {
             /**
@@ -2202,6 +2224,14 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /**
+             * Template Properties
+             * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
+             * @default {}
+             */
+            template_properties: {
+                [key: string]: string | number | boolean;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2429,7 +2459,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /** ExtractionProgress */
         ExtractionProgress: {
             /** Document Count Total */
@@ -2858,6 +2888,10 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Uncensored */
+            uncensored: boolean;
+            /** Suggested For Uncensored Data Gen */
+            suggested_for_uncensored_data_gen: boolean;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
@@ -5220,7 +5254,7 @@ export interface operations {
             };
         };
     };
-    create_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__create_chunker_config_post: {
+    create_chunker_config_api_projects__project_id__create_chunker_config_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5286,7 +5320,7 @@ export interface operations {
             };
         };
     };
-    create_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__create_embedding_config_post: {
+    create_embedding_config_api_projects__project_id__create_embedding_config_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5493,7 +5527,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AvailableEmbeddingModels"][];
+                    "application/json": components["schemas"]["EmbeddingProvider"][];
                 };
             };
         };
@@ -5906,7 +5940,7 @@ export interface operations {
             };
         };
     };
-    generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post: {
+    generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post: {
         parameters: {
             query?: never;
             header?: never;
