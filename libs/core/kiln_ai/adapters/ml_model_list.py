@@ -1868,6 +1868,21 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek R1 (Pro)
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_r1_pro,
+        friendly_name="DeepSeek R1 0528 (Pro)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/deepseek-ai/DeepSeek-R1",
+                parser=ModelParserID.optional_r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # DeepSeek R1 0528 Distill Qwen 3 8B
     KilnModel(
         family=ModelFamily.deepseek,
@@ -1953,21 +1968,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.ollama,
                 model_id="deepseek-r1:671b",
                 parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-        ],
-    ),
-    # DeepSeek R1 (Pro)
-    KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_r1_pro,
-        friendly_name="DeepSeek R1 0528 (Pro)",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Pro/deepseek-ai/DeepSeek-R1",
-                parser=ModelParserID.optional_r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -2131,11 +2131,11 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # DeepSeek R1 Distill Qwen (Pro)
+    # DeepSeek R1 Distill Qwen 7B (Pro)
     KilnModel(
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_r1_distill_qwen_7b_pro,
-        friendly_name="DeepSeek R1 Distill Qwen (Pro)",
+        friendly_name="DeepSeek R1 Distill Qwen 7B (Pro)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
