@@ -160,7 +160,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 or "reasoning" not in parsed_output.intermediate_outputs
             )
             and not (
-                provider.siliconflow_thinking_optional_when_structure_output
+                provider.siliconflow_thinking_optional_for_structured_output
                 and self.output_schema is not None
             )
         ):
