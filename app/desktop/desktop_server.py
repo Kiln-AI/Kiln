@@ -70,17 +70,9 @@ def setup_certs():
     """
     Not all systems can find the root CA certs.
 
-    We bundle certifi's cacert.pem file with the desktop app (see build_desktop_app.sh),
-
-    We need to set the SSL_CERT_FILE environment variable to the path to the
-    bundled cacert.pem file.
+    We bundle certifi's cacert.pem file (Mozilla managed root CA certs)
     """
-    try:
-        # If bundled with PyInstaller, get path to bundled cacert.pem
-        bundled_cert = os.path.join(sys._MEIPASS, "certifi", "cacert.pem")  # type: ignore
-    except Exception:
-        # Running as a script, use certifi's cacert.pem
-        bundled_cert = certifi.where()
+    bundled_cert = certifi.where()
     os.environ["SSL_CERT_FILE"] = bundled_cert
 
 
