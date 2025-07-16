@@ -161,7 +161,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
             and not (
                 provider.siliconflow_thinking_optional_for_structured_output
-                and self.output_schema is not None
+                and self.has_structured_output()
             )
         ):
             raise RuntimeError(

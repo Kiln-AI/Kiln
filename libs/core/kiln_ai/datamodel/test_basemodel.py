@@ -608,3 +608,101 @@ async def test_invoke_parsing_flow(adapter):
             match="Reasoning is required for this model, but no reasoning was returned.",
         ):
             await adapter.invoke("test input")
+
+
+async def test_invoke_parsing_flow_no_reasoning_when_structured_output(adapter):
+    # Mock dependencies
+    mock_provider = MagicMock()
+    mock_provider.parser = "test_parser"
+    mock_provider.formatter = None
+    mock_provider.reasoning_capable = False
+
+    # test with reasoning required and not structured output
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"key": "value"}
+    )
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        # Execute
+        result = await adapter.invoke("test input")
+
+        # Verify parsing occurred
+        mock_parser.parse_output.assert_called_once()
+        parsed_args = mock_parser.parse_output.call_args[1]
+        assert isinstance(parsed_args["original_output"], RunOutput)
+        assert parsed_args["original_output"].output == "test output"
+
+        # Verify result contains parsed output
+        assert isinstance(result, TaskRun)
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"key": "value"}
+        assert result.input == "test input"
+
+    # test with no reasoning provided and structured output enabled
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"key": "value"}
+    )
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+        patch.object(adapter, "has_structured_output", return_value=True),
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        # Test with reasoning required, that we error if no reasoning is returned
+        # and we are not using structured output for the task
+        mock_provider.reasoning_capable = True
+        mock_provider.siliconflow_thinking_optional_for_structured_output = True
+
+        await adapter.invoke("test input")
+
+        assert result is not None
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"key": "value"}
+        assert result.input == "test input"
+
+    # test with reasoning provided and structured output enabled
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"reasoning": "value"}
+    )
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+        patch.object(adapter, "has_structured_output", return_value=True),
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        mock_provider.reasoning_capable = True
+        mock_provider.siliconflow_thinking_optional_for_structured_output = True
+
+        await adapter.invoke("test input")
+
+        assert result is not None
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"key": "value"}
+        assert result.input == "test input"
