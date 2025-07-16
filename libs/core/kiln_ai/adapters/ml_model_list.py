@@ -1996,14 +1996,6 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-r1:32b",
             ),
             KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                # TODO: this slug seems to refer to the wrong model?
-                model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
