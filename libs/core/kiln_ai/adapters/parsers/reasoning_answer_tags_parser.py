@@ -8,7 +8,7 @@ class ReasoningAnswerTagsParser(BaseParser):
 
     def parse_output(self, original_output: RunOutput) -> RunOutput:
         """
-        Parse the <think> </think> tags from the response into the intermediate and final outputs.
+        Parse the <answer> </answer> tags from the response into the intermediate and final outputs.
 
         Args:
             original_output: RunOutput containing the raw response string
@@ -20,9 +20,9 @@ class ReasoningAnswerTagsParser(BaseParser):
             ValueError: If response format is invalid (missing tags, multiple tags, or no content after closing tag)
         """
 
-        # Some models (Hunyuan) on Siliconflow allow disabling thinking, but when thinking is disabled, the output is
-        # wrapped in <answer> </answer> tags inside the reasoning_content and output is an empty string.
-        # This parser will extract the content between the tags and set it as the output, and nullify the reasoning_content.
+        # This parser extracts the answer between the <answer> </answer> tags and set it as the output, and nullify the reasoning_content.
+        # Some models (on Siliconflow) wrap the <answer> </answer> tags inside the reasoning_content and give an empty string as the output
+        # when thinking is disabled on our side.
         result = original_output.output
         if (
             original_output.intermediate_outputs is not None
