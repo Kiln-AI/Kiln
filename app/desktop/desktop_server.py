@@ -1,10 +1,12 @@
 import asyncio
 import contextlib
 import os
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
 
+import certifi
 import kiln_ai.datamodel.strict_mode as datamodel_strict_mode
 import kiln_server.server as kiln_server
 import uvicorn
@@ -48,6 +50,7 @@ def make_app():
     setup_litellm_logging()
 
     load_remote_models(REMOTE_MODEL_LIST_URL)
+    setup_certs()
 
     app = kiln_server.make_app(lifespan=lifespan)
     connect_provider_api(app)
@@ -61,6 +64,16 @@ def make_app():
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
+
+
+def setup_certs():
+    if getattr(sys, "frozen", False):
+        # If bundled with PyInstaller, get path to bundled cacert.pem
+        bundled_cert = os.path.join(sys._MEIPASS, "certifi", "cacert.pem")  # type: ignore
+    else:
+        # Running as a script, use certifi's cacert.pem
+        bundled_cert = certifi.where()
+    os.environ["SSL_CERT_FILE"] = bundled_cert
 
 
 def server_config(port=8757):
