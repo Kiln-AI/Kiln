@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any, Dict
 
@@ -8,6 +9,7 @@ from litellm.types.utils import Usage as LiteLlmUsage
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
+    ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
 )
@@ -108,7 +110,12 @@ class LiteLlmAdapter(BaseAdapter):
                 if tool_call:
                     prior_output = tool_call.function.arguments
 
-            if not prior_output:
+            if (
+                not prior_output
+                # when we are using this parser, we expect output to be empty as everything is in
+                # the reasoning_content
+                and provider.parser != ModelParserID.reasoning_answer_tags
+            ):
                 raise RuntimeError("No output returned from model")
 
         if response is None or prior_message is None:
@@ -284,6 +291,10 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.openrouter_skip_required_parameters:
             # Oddball case, R1 14/8/1.5B fail with this param, even though they support thinking params.
             provider_options["require_parameters"] = False
+
+        # Siliconflow uses a bool flag for thinking, for some models
+        if provider.siliconflow_enable_thinking is not None:
+            extra_body["enable_thinking"] = provider.siliconflow_enable_thinking
 
         if len(provider_options) > 0:
             extra_body["provider"] = provider_options

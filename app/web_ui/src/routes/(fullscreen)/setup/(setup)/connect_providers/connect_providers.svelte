@@ -196,11 +196,9 @@
       optional_fields: ["Base URL"],
     },
     {
-      name: "SiliconFlow.cn",
+      name: "SiliconFlow (硅基流动)",
       id: "siliconflow_cn",
-      description:
-        "SiliconFlow.cn is one of the most popular Chinese model providers.",
-      image: "/images/siliconflow.svg",
+      description: "One of China's most popular model providers.",
       featured: false,
       api_key_steps: [
         "Go to https://cloud.siliconflow.cn/account/ak",
