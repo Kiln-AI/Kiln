@@ -17,7 +17,7 @@ export type UpdateState = {
 
 export const default_update_state: UpdateState = {
   update_result: null,
-  update_loading: false,
+  update_loading: true,
   update_error: null,
 }
 

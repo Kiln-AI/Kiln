@@ -40,14 +40,21 @@
       ],
     },
     {
-      category: "AI & Models",
+      category: "Models & Providers",
       items: [
         {
-          name: "AI Providers & Models",
+          name: "AI Providers",
           description:
-            "Connect to AI providers like OpenAI, Anthropic, OpenRouter, or local models via Ollama.",
+            "Connect to over a dozen AI providers like Ollama, OpenRouter, Together, OpenAI and more.",
           href: "/settings/providers",
           button_text: "Manage Providers",
+        },
+        {
+          name: "Custom Models",
+          description:
+            "Add or remove custom models from one of your connected AI providers.",
+          href: "/settings/providers/add_models",
+          button_text: "Custom Models",
         },
       ],
     },
