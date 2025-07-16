@@ -7,9 +7,7 @@ import pytest
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.adapters.model_adapters.litellm_config import (
-    LiteLlmConfig,
-)
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -242,6 +240,8 @@ def test_tool_call_params_strict(config, mock_task):
         (ModelProviderName.huggingface, "huggingface"),
         (ModelProviderName.vertex, "vertex_ai"),
         (ModelProviderName.together_ai, "together_ai"),
+        # for openai-compatible providers, we expect openai as the provider name
+        (ModelProviderName.siliconflow_cn, "openai"),
     ],
 )
 def test_litellm_model_id_standard_providers(
@@ -552,3 +552,22 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+@pytest.mark.parametrize(
+    "enable_thinking",
+    [
+        True,
+        False,
+    ],
+)
+def test_build_extra_body_enable_thinking(config, mock_task, enable_thinking):
+    provider = Mock()
+    provider.name = ModelProviderName.siliconflow_cn
+    provider.siliconflow_enable_thinking = enable_thinking
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert extra_body["enable_thinking"] == enable_thinking
