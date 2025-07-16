@@ -12,4 +12,3 @@ def setup_certs():
     if getattr(sys, "frozen", False):
         # Set the SSL_CERT_FILE environment variable to use the certifi bundle
         os.environ["SSL_CERT_FILE"] = certifi.where()
-        print(f"SSL_CERT_FILE: {os.environ['SSL_CERT_FILE']}")
