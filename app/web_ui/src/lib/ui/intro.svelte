@@ -32,7 +32,7 @@
         <a
           href={button.href}
           class="btn {button.is_primary ? 'btn-primary' : ''}"
-          target={button.new_tab ? "_blank" : "_self"}
+          target={button.new_tab ? "_blank" : null}
         >
           {button.label}
         </a>

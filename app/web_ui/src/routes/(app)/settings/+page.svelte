@@ -116,7 +116,7 @@
             {#if item.href}
               <a
                 href={item.href}
-                target={item.is_external ? "_blank" : "_self"}
+                target={item.is_external ? "_blank" : null}
                 class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer"
               >
                 <div class="flex-1 min-w-0">
