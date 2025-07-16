@@ -5,7 +5,7 @@
 </script>
 
 <AppPage
-  title="AI Providers & Models"
+  title="AI Providers"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
   action_buttons={[
