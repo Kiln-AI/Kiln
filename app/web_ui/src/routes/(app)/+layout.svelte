@@ -25,6 +25,7 @@
     Generate,
     Run,
     FineTune,
+    Models,
     None,
   }
 
@@ -72,6 +73,8 @@
       section = Section.Prompts
     } else if (path_start("/evals", $page.url.pathname)) {
       section = Section.Evals
+    } else if (path_start("/models", $page.url.pathname)) {
+      section = Section.Models
     } else {
       section = Section.None
     }
@@ -396,6 +399,36 @@
           </svg>
           Prompts</a
         >
+      </li>
+      <li class="menu-lg">
+        <a href="/models" class={section == Section.Models ? "active" : ""}>
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524713/magnifer -->
+          <svg
+            class="w-6 h-6 mr-2"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            ><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g
+              id="SVGRepo_tracerCarrier"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ></g><g id="SVGRepo_iconCarrier">
+              <circle
+                cx="11.5"
+                cy="11.5"
+                r="9.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+              ></circle>
+              <path
+                d="M18.5 18.5L22 22"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              ></path>
+            </g></svg
+          >Models
+        </a>
       </li>
       <li class="menu-lg">
         <a
