@@ -161,7 +161,6 @@ class ModelName(str, Enum):
     glm_4_1v_9b_thinking_pro = "glm_4_1v_9b_thinking_pro"
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
-    glm_z1_rumination_32b_0414 = "glm_z1_rumination_32b_0414"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
@@ -232,10 +231,14 @@ class KilnModelProvider(BaseModel):
     anthropic_extended_thinking: bool = False
     gemini_reasoning_enabled: bool = False
 
-    # some models on siliconflow use a flag to enable / disable thinking
+    # some models on siliconflow allow dynamically disabling thinking
+    # currently only supported by Qwen3 and tencent/Hunyuan-A13B-Instruct
+    # ref: https://docs.siliconflow.cn/cn/api-reference/chat-completions/chat-completions
     siliconflow_enable_thinking: bool | None = None
-    # for some models, there is no thinking when structured output is requested
-    siliconflow_thinking_optional_when_structure_output: bool | None = None
+    # enable this flag to make reasoning optional for structured output
+    # some reasoning models on siliconflow do not return any reasoning for structured output
+    # this is not uniform nor documented, so we need to test each model
+    siliconflow_thinking_optional_for_structured_output: bool | None = None
 
 
 class KilnModel(BaseModel):
@@ -1894,7 +1897,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2000,7 +2003,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2071,7 +2074,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2127,7 +2130,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2142,7 +2145,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2425,7 +2428,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2488,7 +2491,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2572,7 +2575,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3-30B-A3B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2662,7 +2665,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2870,7 +2873,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Tongyi-Zhiwen/QwenLong-L1-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2941,7 +2944,7 @@ built_in_models: List[KilnModel] = [
                 model_id="moonshotai/Kimi-Dev-72B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2984,7 +2987,7 @@ built_in_models: List[KilnModel] = [
                 model_id="THUDM/GLM-Z1-32B-0414",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2999,7 +3002,7 @@ built_in_models: List[KilnModel] = [
                 model_id="THUDM/GLM-Z1-9B-0414",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -3028,7 +3031,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
-                siliconflow_thinking_optional_when_structure_output=True,
+                siliconflow_thinking_optional_for_structured_output=True,
             ),
         ],
     ),
