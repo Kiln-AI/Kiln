@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
+    "certifi>=2024.8.30",
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
