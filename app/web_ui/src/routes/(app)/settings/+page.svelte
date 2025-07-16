@@ -21,85 +21,163 @@
 
   let sections = [
     {
-      name: "Edit Task",
-      description:
-        "Edit the currently selected task, including the prompt and requirements.",
-      button_text: "Edit Current Task",
-      href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+      category: "Current Workspace",
+      items: [
+        {
+          name: "Edit Current Task",
+          description:
+            "Modify your current task's prompt, requirements, and configuration settings.",
+          button_text: "Edit Task",
+          href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+        },
+        {
+          name: "Edit Current Project",
+          description:
+            "Update your current project's name, description, and settings.",
+          button_text: "Edit Project",
+          href: "/settings/edit_project/" + $ui_state.current_project_id,
+        },
+      ],
     },
     {
-      name: "AI Providers & Models",
-      description:
-        "Connect to AI providers like OpenAI, OpenRouter, or Ollama.",
-      href: "/settings/providers",
-      button_text: "Manage Providers & Models",
+      category: "AI & Models",
+      items: [
+        {
+          name: "AI Providers & Models",
+          description:
+            "Connect to AI providers like OpenAI, Anthropic, OpenRouter, or local models via Ollama.",
+          href: "/settings/providers",
+          button_text: "Manage Providers",
+        },
+      ],
     },
     {
-      name: "Manage Projects",
-      description: "Add, remove or edit projects.",
-      href: "/settings/manage_projects",
-      button_text: "Manage Projects",
+      category: "Projects",
+      items: [
+        {
+          name: "Manage Projects",
+          description:
+            "Create new projects, organize existing ones, or remove projects you no longer need.",
+          href: "/settings/manage_projects",
+          button_text: "Manage Projects",
+        },
+      ],
     },
     {
-      name: "Edit Project",
-      description: "Edit the currently selected project.",
-      button_text: "Edit Current Project",
-      href: "/settings/edit_project/" + $ui_state.current_project_id,
-    },
-    {
-      name: "View Logs",
-      description: "View logs of the LLM calls or the application logs.",
-      button_text: "View Logs",
-      on_click: view_logs,
-    },
-    {
-      name: "App Updates",
-      description: "Check if there is a new version of the app available.",
-      href: "/settings/check_for_update",
-      button_text: "Check for Update",
-    },
-    {
-      name: "Replay Introduction",
-      description: "Watch the introduction slide-show.",
-      href: "/settings/intro",
-      button_text: "Play Intro",
-    },
-    {
-      name: "License",
-      description: "View the Kiln AI desktop app License Agreement.",
-      href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
-      button_text: "View EULA",
-      is_external: true,
+      category: "Tools & Support",
+      items: [
+        {
+          name: "Application Logs",
+          description:
+            "View detailed logs of LLM calls and application events for debugging and monitoring.",
+          button_text: "View Logs",
+          on_click: view_logs,
+        },
+        {
+          name: "App Updates",
+          description:
+            "Check for the latest version of Kiln AI and install updates when available.",
+          href: "/settings/check_for_update",
+          button_text: "Check for Update",
+        },
+        {
+          name: "Docs & Getting Started",
+          description:
+            "Read the docs, including our getting started guide and video tutorials.",
+          href: "https://docs.getkiln.ai",
+          button_text: "Docs & Guides",
+          is_external: true,
+        },
+        {
+          name: "License Agreement",
+          description:
+            "View the End User License Agreement (EULA) for the Kiln AI desktop application.",
+          href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
+          button_text: "View EULA",
+          is_external: true,
+        },
+      ],
     },
   ]
 </script>
 
 <AppPage title="Settings">
-  <div class="flex flex-col gap-8 max-w-[700px] mt-16">
+  <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
-      <div class="flex flex-col md:flex-row gap-4 md:items-center">
-        <div class="grow">
-          <h3 class="font-medium">{section.name}</h3>
-          <p class="text-sm text-gray-500">{section.description}</p>
+      <div class="space-y-6">
+        <!-- Category Header -->
+        <div class="pb-3 border-b border-gray-200">
+          <h2 class="text-lg font-medium text-gray-900">{section.category}</h2>
         </div>
-        {#if section.href}
-          <a
-            href={section.href}
-            class="btn"
-            style="min-width: 14rem"
-            target={section.is_external ? "_blank" : "_self"}
-          >
-            {section.button_text}
-          </a>
-        {:else if section.on_click}
-          <button
-            class="btn"
-            style="min-width: 14rem"
-            on:click={section.on_click}
-          >
-            {section.button_text}
-          </button>
-        {/if}
+
+        <!-- Category Items -->
+        <div class="space-y-1">
+          {#each section.items as item}
+            {#if item.href}
+              <a
+                href={item.href}
+                target={item.is_external ? "_blank" : "_self"}
+                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer"
+              >
+                <div class="flex-1 min-w-0">
+                  <h3 class="text-base font-medium text-gray-900 mb-1">
+                    {item.name}
+                  </h3>
+                  <p class="text-sm font-light text-gray-500 leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+
+                <div class="flex-shrink-0 ml-6">
+                  <div
+                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
+                    style="min-width: 12rem;"
+                  >
+                    {item.button_text}
+                    {#if item.is_external}
+                      <svg
+                        class="w-3 h-3"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                        ></path>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+              </a>
+            {:else if item.on_click}
+              <button
+                on:click={item.on_click}
+                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
+              >
+                <div class="flex-1 min-w-0">
+                  <h3 class="text-base font-medium text-gray-900 mb-1">
+                    {item.name}
+                  </h3>
+                  <p class="text-sm font-light text-gray-500 leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+
+                <div class="flex-shrink-0 ml-6">
+                  <div
+                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
+                    style="min-width: 12rem;"
+                  >
+                    {item.button_text}
+                  </div>
+                </div>
+              </button>
+            {/if}
+          {/each}
+        </div>
       </div>
     {/each}
   </div>
