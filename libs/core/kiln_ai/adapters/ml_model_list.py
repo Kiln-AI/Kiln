@@ -1895,6 +1895,14 @@ built_in_models: List[KilnModel] = [
         friendly_name="DeepSeek R1 0528 Distill Qwen 3 8B",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-r1-0528-qwen3-8b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2120,6 +2128,15 @@ built_in_models: List[KilnModel] = [
         friendly_name="DeepSeek R1 Distill Qwen 7B",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-r1-distill-qwen-7b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                supports_data_gen=False,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.ollama,
                 # Best mode, but fails to often to enable without warning
                 supports_structured_output=False,
@@ -2134,7 +2151,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                supports_structured_output=False,
+                supports_structured_output=True,
                 supports_data_gen=False,
                 siliconflow_thinking_optional_for_structured_output=True,
             ),
@@ -3032,6 +3049,13 @@ built_in_models: List[KilnModel] = [
         friendly_name="Ernie 4.5 300B A47B",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="baidu/ernie-4.5-300b-a47b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="baidu/ERNIE-4.5-300B-A47B",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -3045,6 +3069,9 @@ built_in_models: List[KilnModel] = [
         name=ModelName.hunyuan_a13b,
         friendly_name="Hunyuan A13B",
         providers=[
+            # Openrouter provider for this model exists but currently wrongly parses the answer
+            # it returns the reasoning at the right place, but wraps the answer (even JSON response)
+            # between <answer> and </answer> tags
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="tencent/Hunyuan-A13B-Instruct",
@@ -3077,8 +3104,16 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.minimax,
         name=ModelName.minimax_m1_80k,
-        friendly_name="Minimax M1 80K",
+        friendly_name="Minimax M1",
         providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+            ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="MiniMaxAI/MiniMax-M1-80k",
