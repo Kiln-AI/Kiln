@@ -3,10 +3,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-from kiln_ai.adapters.chat.chat_formatter import (
-    ChatFormatter,
-    get_chat_formatter,
-)
+from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
@@ -156,9 +153,16 @@ class BaseAdapter(metaclass=ABCMeta):
                 )
 
         # Validate reasoning content is present (if reasoning)
-        if provider.reasoning_capable and (
-            not parsed_output.intermediate_outputs
-            or "reasoning" not in parsed_output.intermediate_outputs
+        if (
+            provider.reasoning_capable
+            and (
+                not parsed_output.intermediate_outputs
+                or "reasoning" not in parsed_output.intermediate_outputs
+            )
+            and not (
+                provider.siliconflow_thinking_optional_when_structure_output
+                and self.output_schema is not None
+            )
         ):
             raise RuntimeError(
                 "Reasoning is required for this model, but no reasoning was returned."
