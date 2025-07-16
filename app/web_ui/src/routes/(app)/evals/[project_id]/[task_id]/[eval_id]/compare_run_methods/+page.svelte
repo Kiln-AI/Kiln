@@ -35,6 +35,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import AddRunMethod from "./add_run_method.svelte"
   import posthog from "posthog-js"
+  import { prompt_link } from "../../../../../../../lib/utils/link_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -592,10 +593,20 @@
                     </div>
 
                     <div class="text-sm text-gray-500">
-                      Prompt: {getRunConfigPromptDisplayName(
-                        task_run_config,
-                        $current_task_prompts,
-                      )}
+                      Prompt: <a
+                        href={prompt_link(
+                          $page.params.project_id,
+                          $page.params.task_id,
+                          task_run_config.run_config_properties.prompt_id,
+                        )}
+                        class="link"
+                      >
+                        {getRunConfigPromptDisplayName(
+                          task_run_config,
+                          $current_task_prompts,
+                        )}
+                      </a>
+
                       {#if prompt_info_text}
                         <InfoTooltip
                           tooltip_text={prompt_info_text}
