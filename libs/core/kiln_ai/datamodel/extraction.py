@@ -76,29 +76,6 @@ class ExtractionModel(BaseModel):
     label: str
 
 
-# TODO: merge this with ml_model_list.py
-EXTRACTION_MODEL_LIST: Dict[str, List[ExtractionModel]] = {
-    "gemini": [
-        ExtractionModel(
-            name="gemini/gemini-2.5-pro",
-            label="Gemini 2.5 Pro",
-        ),
-        ExtractionModel(
-            name="gemini/gemini-2.5-flash",
-            label="Gemini 2.5 Flash",
-        ),
-        ExtractionModel(
-            name="gemini/gemini-2.0-flash",
-            label="Gemini 2.0 Flash",
-        ),
-        ExtractionModel(
-            name="gemini/gemini-2.0-flash-lite",
-            label="Gemini 2.0 Flash Lite",
-        ),
-    ],
-}
-
-
 def validate_prompt(prompt: Any, name: str):
     if not isinstance(prompt, str):
         raise ValueError(f"{name} must be a string.")

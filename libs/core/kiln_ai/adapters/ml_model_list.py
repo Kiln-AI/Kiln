@@ -2748,6 +2748,18 @@ def get_model_by_name(name: ModelName) -> KilnModel:
     raise ValueError(f"Model {name} not found in the list of built-in models")
 
 
+# TODO: add tests for this
+def built_in_models_from_provider(
+    provider_name: ModelProviderName, model_name: str
+) -> KilnModelProvider | None:
+    for model in built_in_models:
+        if model.name == model_name:
+            for p in model.providers:
+                if p.name == provider_name:
+                    return p
+    return None
+
+
 def default_structured_output_mode_for_model_provider(
     model_name: str,
     provider: ModelProviderName,
