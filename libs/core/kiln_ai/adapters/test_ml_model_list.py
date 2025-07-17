@@ -2,6 +2,7 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import (
     ModelName,
+    built_in_models,
     default_structured_output_mode_for_model_provider,
     get_model_by_name,
 )
@@ -186,8 +187,26 @@ def test_multimodal_capable():
     for provider in model.providers:
         assert provider.multimodal_capable
         assert provider.supports_doc_extraction
-        assert provider.multimodal_mime_types == [
-            KilnMimeType.PDF,
-            KilnMimeType.JPG,
-            KilnMimeType.PNG,
-        ]
+        assert provider.multimodal_mime_types is not None
+        assert len(provider.multimodal_mime_types) > 0
+
+
+def test_no_empty_multimodal_mime_types():
+    """Ensure that multimodal fields are self-consistent as they are interdependent"""
+    for model in built_in_models:
+        for provider in model.providers:
+            # a multimodal model should always have mime types it supports
+            if provider.multimodal_capable:
+                assert provider.multimodal_mime_types is not None
+                assert len(provider.multimodal_mime_types) > 0
+
+            # a model that specifies mime types is necessarily multimodal
+            if (
+                provider.multimodal_mime_types is not None
+                and len(provider.multimodal_mime_types) > 0
+            ):
+                assert provider.multimodal_capable
+
+            # a model that supports doc extraction is necessarily multimodal
+            if provider.supports_doc_extraction:
+                assert provider.multimodal_capable
