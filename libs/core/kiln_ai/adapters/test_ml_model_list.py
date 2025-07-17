@@ -5,7 +5,11 @@ from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
     get_model_by_name,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import (
+    KilnMimeType,
+    ModelProviderName,
+    StructuredOutputMode,
+)
 
 
 class TestDefaultStructuredOutputModeForModelProvider:
@@ -174,3 +178,16 @@ def test_uncensored():
     for provider in model.providers:
         assert provider.uncensored
         assert provider.suggested_for_uncensored_data_gen
+
+
+def test_multimodal_capable():
+    """Test that multimodal_capable is set correctly"""
+    model = get_model_by_name(ModelName.gpt_4_1)
+    for provider in model.providers:
+        assert provider.multimodal_capable
+        assert provider.supports_doc_extraction
+        assert provider.multimodal_mime_types == [
+            KilnMimeType.PDF,
+            KilnMimeType.JPG,
+            KilnMimeType.PNG,
+        ]
