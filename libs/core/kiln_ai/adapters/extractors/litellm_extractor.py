@@ -1,3 +1,4 @@
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +11,11 @@ from kiln_ai.adapters.extractors.base_extractor import (
     ExtractionOutput,
 )
 from kiln_ai.adapters.extractors.encoding import to_base64_url
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.litellm import get_litellm_provider_info
 
 MIME_TYPES_SUPPORTED = {
     Kind.DOCUMENT: [
@@ -73,6 +77,12 @@ class LitellmExtractor(BaseExtractor):
                 f"LitellmExtractor must be initialized with a litellm extractor_type config. Got {extractor_config.extractor_type}"
             )
 
+        model_provider_name = extractor_config.model_provider_name()
+        if model_provider_name is None:
+            raise ValueError(
+                "properties.model_provider_name is required for LitellmExtractor"
+            )
+
         model_name = extractor_config.model_name()
         if model_name is None:
             raise ValueError("properties.model_name is required for GeminiExtractor")
@@ -113,7 +123,7 @@ class LitellmExtractor(BaseExtractor):
         kind = self._get_kind_from_mime_type(extraction_input.mime_type)
         if kind is None:
             raise ValueError(
-                f"Unsupported MIME type: {extraction_input.mime_type} for {extraction_input.path} with {extraction_input.model_slug}"
+                f"Unsupported MIME type: {extraction_input.mime_type} for {extraction_input.path}"
             )
 
         prompt = self.prompt_for_kind.get(kind)
@@ -126,7 +136,7 @@ class LitellmExtractor(BaseExtractor):
         # litellm.supports_audio_input(model=self.model_name) # https://github.com/BerriAI/litellm/issues/6303
 
         response = await litellm.acompletion(
-            model=extraction_input.model_slug,
+            model=self.litellm_model_slug(),
             messages=[
                 {
                     "role": "user",
@@ -159,3 +169,32 @@ class LitellmExtractor(BaseExtractor):
             content=response.choices[0].message.content,
             content_format=self.extractor_config.output_format,
         )
+
+    def litellm_model_slug(self) -> str:
+        kiln_model_provider_name = self.extractor_config.model_provider_name()
+        if kiln_model_provider_name is None:
+            raise ValueError(
+                "properties.model_provider_name is required for LitellmExtractor"
+            )
+
+        kiln_model_name = self.extractor_config.model_name()
+        if kiln_model_provider_name is None or kiln_model_name is None:
+            raise ValueError(
+                "properties.model_provider_name and properties.model_name are required for LitellmExtractor"
+            )
+
+        kiln_model_provider = built_in_models_from_provider(
+            ModelProviderName(kiln_model_provider_name), kiln_model_name
+        )
+
+        if kiln_model_provider is None:
+            raise ValueError(
+                f"Model provider {kiln_model_provider_name} not found in the list of built-in models"
+            )
+
+        # need to translate into LiteLLM model slug
+        litellm_provider_name = get_litellm_provider_info(
+            kiln_model_provider,
+        )
+
+        return litellm_provider_name.litellm_model_id

@@ -12,9 +12,6 @@ logger = logging.getLogger(__name__)
 class ExtractionInput(BaseModel):
     path: Path | str = Field(description="The absolute path to the file to extract.")
     mime_type: str = Field(description="The mime type of the file.")
-    model_slug: str = Field(
-        description="The slug of the model, including its provider prefix. E.g. openai/gpt-4o, anthropic/claude-3-5-sonnet-20240620, etc."
-    )
 
 
 class ExtractionOutput(BaseModel):

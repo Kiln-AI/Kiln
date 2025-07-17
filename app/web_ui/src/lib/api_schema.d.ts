@@ -1370,15 +1370,6 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
-        /** AvailableEmbeddingModels */
-        AvailableEmbeddingModels: {
-            /** Provider Name */
-            provider_name: string;
-            /** Provider Id */
-            provider_id: string;
-            /** Models */
-            models: components["schemas"]["EmbeddingModelDetails"][];
-        };
         /** AvailableModels */
         AvailableModels: {
             /** Provider Name */
@@ -1893,7 +1884,7 @@ export interface components {
             /** N Dimensions */
             n_dimensions: number;
             /** Max Input Tokens */
-            max_input_tokens: number;
+            max_input_tokens: number | null;
             /** Supports Custom Dimensions */
             supports_custom_dimensions: boolean;
         };
@@ -1903,6 +1894,15 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004";
+        /** EmbeddingProvider */
+        EmbeddingProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["EmbeddingModelDetails"][];
+        };
         /** Eval */
         Eval: {
             /**
@@ -2632,6 +2632,15 @@ export interface components {
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
             suggested_for_uncensored_data_gen: boolean;
+            /** Supports Doc Extraction */
+            supports_doc_extraction: boolean;
+            /**
+             * Multimodal Capable
+             * @default false
+             */
+            multimodal_capable: boolean;
+            /** Multimodal Mime Types */
+            multimodal_mime_types?: string[] | null;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
@@ -5023,7 +5032,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AvailableEmbeddingModels"][];
+                    "application/json": components["schemas"]["EmbeddingProvider"][];
                 };
             };
         };

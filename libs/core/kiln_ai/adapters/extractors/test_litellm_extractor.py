@@ -99,13 +99,16 @@ async def test_extract_success(mock_file_factory, mock_litellm_extractor):
     with (
         patch("pathlib.Path.read_bytes", return_value=test_pdf_file_bytes),
         patch("litellm.acompletion", return_value=mock_response) as mock_acompletion,
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.LitellmExtractor.litellm_model_slug",
+            return_value="provider-name/model-name",
+        ),
     ):
         # test the extract method
         result = await mock_litellm_extractor.extract(
             extraction_input=ExtractionInput(
                 path=str(test_pdf_file),
                 mime_type="application/pdf",
-                model_slug="provider-name/model-name",
             )
         )
 
@@ -141,6 +144,10 @@ async def test_extract_failure_from_litellm(mock_file_factory, mock_litellm_extr
     with (
         patch("pathlib.Path.read_bytes", return_value=b"test content"),
         patch("litellm.acompletion", side_effect=Exception("error from litellm")),
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.LitellmExtractor.litellm_model_slug",
+            return_value="provider-name/model-name",
+        ),
     ):
         # Mock litellm to raise an exception
         with pytest.raises(Exception, match="error from litellm"):
@@ -148,7 +155,6 @@ async def test_extract_failure_from_litellm(mock_file_factory, mock_litellm_extr
                 extraction_input=ExtractionInput(
                     path=str(test_pdf_file),
                     mime_type="application/pdf",
-                    model_slug="provider-name/model-name",
                 )
             )
 
@@ -163,6 +169,10 @@ async def test_extract_failure_from_bytes_read(mock_litellm_extractor):
             "pathlib.Path.read_bytes",
             side_effect=Exception("error from read_bytes"),
         ),
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.LitellmExtractor.litellm_model_slug",
+            return_value="provider-name/model-name",
+        ),
     ):
         # test the extract method
         with pytest.raises(ValueError, match="error from read_bytes"):
@@ -170,7 +180,6 @@ async def test_extract_failure_from_bytes_read(mock_litellm_extractor):
                 extraction_input=ExtractionInput(
                     path="test.pdf",
                     mime_type="application/pdf",
-                    model_slug="provider-name/model-name",
                 )
             )
 
@@ -186,7 +195,6 @@ async def test_extract_failure_unsupported_mime_type(mock_litellm_extractor):
                 extraction_input=ExtractionInput(
                     path="test.unsupported",
                     mime_type="unsupported/mimetype",
-                    model_slug="provider-name/model-name",
                 )
             )
 
@@ -307,7 +315,6 @@ async def test_extract_document_success(
         extraction_input=ExtractionInput(
             path=str(test_file),
             mime_type=mime_type,
-            model_slug=model_name,
         )
     )
     assert not output.is_passthrough
@@ -329,6 +336,5 @@ async def test_provider_bad_request(tmp_path, model_name):
             extraction_input=ExtractionInput(
                 path=temp_file.as_posix(),
                 mime_type="application/pdf",
-                model_slug=model_name,
             )
         )

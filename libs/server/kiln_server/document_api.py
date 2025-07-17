@@ -134,6 +134,9 @@ class CreateExtractorConfigRequest(BaseModel):
         default_factory=dict,
     )
 
+    # TODO: add a validator here to check the properties
+    # we can do model validation here
+
 
 class PatchExtractorConfigRequest(BaseModel):
     # FIXME: should use the centralized field for name, but the openapi codegen
@@ -318,6 +321,17 @@ def connect_document_api(app: FastAPI):
         request: CreateExtractorConfigRequest,
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
+
+        # TODO: check that the model / provider is valid here at creation
+        # since we cannot do it in the datamodel (due to loading possibly
+        # backwards incompatible models from disk)
+
+        # expected model is model_provider_name/model_name where the slugs
+        # are coming from our ml_model_list.py, not the same slugs
+        # as the provider's (e.g. LiteLLM)
+
+        # so need to add a translation layer between this and the target adapter (LiteLLM)
+        # downstream
 
         extractor_config = ExtractorConfig(
             parent=project,

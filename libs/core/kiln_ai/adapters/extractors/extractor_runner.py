@@ -84,8 +84,6 @@ class ExtractorRunner:
                         )
                     ),
                     mime_type=job.doc.original_file.mime_type,
-                    # TODO: replace this with the mapping coming from chunk-embedding PR
-                    model_slug=f"{job.extractor_config.model_provider_name}/{job.extractor_config.model_name}",
                 )
             )
 
