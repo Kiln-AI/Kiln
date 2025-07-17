@@ -21,8 +21,6 @@
   let prompt_video: string | null = null
   let prompt_audio: string | null = null
 
-  $: console.info({ selected_extractor_option })
-
   async function create_extractor_config() {
     try {
       loading = true

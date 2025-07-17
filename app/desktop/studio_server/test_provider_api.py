@@ -20,7 +20,6 @@ from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models,
 )
-from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.provider_api import (
