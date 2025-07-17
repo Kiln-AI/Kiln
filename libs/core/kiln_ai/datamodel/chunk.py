@@ -1,6 +1,8 @@
+import logging
 from enum import Enum
 from typing import TYPE_CHECKING, List, Union
 
+import anyio
 from pydantic import (
     BaseModel,
     Field,
@@ -18,6 +20,8 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.extraction import Extraction
@@ -128,3 +132,27 @@ class ChunkedDocument(
 
     def chunk_embeddings(self, readonly: bool = False) -> list[ChunkEmbeddings]:
         return super().chunk_embeddings(readonly=readonly)  # type: ignore
+
+    async def load_chunks_text(self) -> list[str]:
+        """Utility to return a list of text for each chunk, loaded from each chunk's content attachment."""
+        if not self.path:
+            raise ValueError(
+                "Failed to resolve the path of chunk content attachment because the chunk does not have a path."
+            )
+
+        chunks_text: list[str] = []
+        for chunk in self.chunks:
+            full_path = chunk.content.resolve_path(self.path.parent)
+
+            try:
+                chunks_text.append(
+                    await anyio.Path(full_path).read_text(encoding="utf-8")
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to read chunk content for {full_path}: {e}",
+                    exc_info=True,
+                )
+                raise ValueError(f"Failed to read chunk content: {e}")
+
+        return chunks_text

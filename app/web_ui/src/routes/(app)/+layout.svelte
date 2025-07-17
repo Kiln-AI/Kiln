@@ -17,6 +17,7 @@
     DocumentsMain,
     DocumentsLibrary,
     DocumentsExtractors,
+    DocumentsRAGPipelines,
     SettingsMain,
     SettingsProviders,
     SettingsManageProjects,
@@ -44,6 +45,7 @@
     Section.DocumentsMain,
     Section.DocumentsLibrary,
     Section.DocumentsExtractors,
+    Section.DocumentsRAGPipelines,
   ]
 
   function path_start(root: string, pathname: string): boolean {
@@ -85,6 +87,8 @@
       section = Section.DocumentsLibrary
     } else if (path_start("/docs/extractors", $page.url.pathname)) {
       section = Section.DocumentsExtractors
+    } else if (path_start("/docs/rag_configs", $page.url.pathname)) {
+      section = Section.DocumentsRAGPipelines
     } else if (path_start("/docs", $page.url.pathname)) {
       section = Section.DocumentsMain
     } else {
@@ -467,6 +471,14 @@
                 href={`/docs/extractors/${$ui_state.current_project_id}`}
               >
                 Extractors
+              </a>
+            </li>
+            <li class="menu-nested-sm">
+              <a
+                class={section == Section.DocumentsRAGPipelines ? "active" : ""}
+                href={`/docs/rag_configs/${$ui_state.current_project_id}`}
+              >
+                RAG Pipelines
               </a>
             </li>
           </ul>
