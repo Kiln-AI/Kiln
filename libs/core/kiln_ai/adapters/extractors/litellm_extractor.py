@@ -84,7 +84,7 @@ class LitellmExtractor(BaseExtractor):
 
         model_name = extractor_config.model_name()
         if model_name is None:
-            raise ValueError("properties.model_name is required for GeminiExtractor")
+            raise ValueError("properties.model_name is required for LitellmExtractor")
 
         # TODO: some models supports only a few kinds - maybe drop Kind altogether
         # and deal with mimetype directly instead
@@ -92,17 +92,17 @@ class LitellmExtractor(BaseExtractor):
         prompt_document = extractor_config.prompt_document()
         if prompt_document is None or prompt_document == "":
             raise ValueError(
-                "properties.prompt_document is required for GeminiExtractor"
+                "properties.prompt_document is required for LitellmExtractor"
             )
         prompt_video = extractor_config.prompt_video()
         if prompt_video is None or prompt_video == "":
-            raise ValueError("properties.prompt_video is required for GeminiExtractor")
+            raise ValueError("properties.prompt_video is required for LitellmExtractor")
         prompt_audio = extractor_config.prompt_audio()
         if prompt_audio is None or prompt_audio == "":
-            raise ValueError("properties.prompt_audio is required for GeminiExtractor")
+            raise ValueError("properties.prompt_audio is required for LitellmExtractor")
         prompt_image = extractor_config.prompt_image()
         if prompt_image is None or prompt_image == "":
-            raise ValueError("properties.prompt_image is required for GeminiExtractor")
+            raise ValueError("properties.prompt_image is required for LitellmExtractor")
 
         super().__init__(extractor_config)
         self.prompt_for_kind = {
@@ -134,8 +134,9 @@ class LitellmExtractor(BaseExtractor):
         # litellm.supports_pdf_input(model=self.model_name)
         # litellm.supports_audio_input(model=self.model_name) # https://github.com/BerriAI/litellm/issues/6303
 
+        model_slug = self.litellm_model_slug()
         response = await litellm.acompletion(
-            model=self.litellm_model_slug(),
+            model=model_slug,
             messages=[
                 {
                     "role": "user",
@@ -161,7 +162,7 @@ class LitellmExtractor(BaseExtractor):
             )
 
         if response.choices[0].message.content is None:
-            raise ValueError("No text returned from Gemini when extracting document")
+            raise ValueError("No text returned from LiteLLM when extracting document")
 
         return ExtractionOutput(
             is_passthrough=False,
@@ -177,7 +178,7 @@ class LitellmExtractor(BaseExtractor):
             )
 
         kiln_model_name = self.extractor_config.model_name()
-        if kiln_model_provider_name is None or kiln_model_name is None:
+        if kiln_model_name is None:
             raise ValueError(
                 "properties.model_provider_name and properties.model_name are required for LitellmExtractor"
             )
