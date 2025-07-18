@@ -6,9 +6,6 @@ from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
     get_model_by_name,
 )
-from kiln_ai.adapters.model_adapters.test_structured_output import (
-    get_all_models_and_providers,
-)
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
 
