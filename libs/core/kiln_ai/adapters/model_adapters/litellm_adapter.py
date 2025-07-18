@@ -251,6 +251,11 @@ class LiteLlmAdapter(BaseAdapter):
                 "exclude": False,
             }
 
+        if provider.gemini_reasoning_enabled:
+            extra_body["reasoning"] = {
+                "enabled": True,
+            }
+
         if provider.name == ModelProviderName.openrouter:
             # Ask OpenRouter to include usage in the response (cost)
             extra_body["usage"] = {"include": True}
