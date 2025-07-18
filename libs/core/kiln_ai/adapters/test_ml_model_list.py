@@ -2,8 +2,12 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import (
     ModelName,
+    built_in_models,
     default_structured_output_mode_for_model_provider,
     get_model_by_name,
+)
+from kiln_ai.adapters.model_adapters.test_structured_output import (
+    get_all_models_and_providers,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
@@ -174,3 +178,14 @@ def test_uncensored():
     for provider in model.providers:
         assert provider.uncensored
         assert provider.suggested_for_uncensored_data_gen
+
+
+def test_no_reasoning_for_structured_output():
+    """Test that no reasoning is returned for structured output"""
+    # get all models
+    for model in built_in_models:
+        for provider in model.providers:
+            if provider.reasoning_optional_for_structured_output is not None:
+                assert provider.reasoning_capable, (
+                    f"{model.name} {provider.name} has reasoning_optional_for_structured_output but is not reasoning capable. This field should only be defined for models that are reasoning capable."
+                )
