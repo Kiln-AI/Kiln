@@ -201,6 +201,7 @@ class KilnModelProvider(BaseModel):
     thinking_level: Literal["low", "medium", "high"] | None = None
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
+    gemini_reasoning_enabled: bool = False
 
 
 class KilnModel(BaseModel):
@@ -750,6 +751,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -757,9 +760,9 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
-                # TODO: Gemini API doesn't return reasoning here, so we don't ask for it. Strange.
-                # reasoning_capable=True,
-                # thinking_level="medium",
+                reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
@@ -767,9 +770,9 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
-                # TODO: Vertex doesn't return reasoning here, so we don't ask for it. Strange.
-                # reasoning_capable=True,
-                # thinking_level="medium",
+                reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
             ),
         ],
     ),
@@ -784,6 +787,7 @@ built_in_models: List[KilnModel] = [
                 model_id="google/gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
+                gemini_reasoning_enabled=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,

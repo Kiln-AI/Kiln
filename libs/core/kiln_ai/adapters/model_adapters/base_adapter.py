@@ -3,10 +3,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-from kiln_ai.adapters.chat.chat_formatter import (
-    ChatFormatter,
-    get_chat_formatter,
-)
+from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
