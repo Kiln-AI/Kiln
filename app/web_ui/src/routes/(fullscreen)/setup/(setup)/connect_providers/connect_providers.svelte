@@ -196,6 +196,18 @@
       optional_fields: ["Base URL"],
     },
     {
+      name: "SiliconFlow (硅基流动)",
+      id: "siliconflow_cn",
+      description: "One of China's most popular model providers.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.siliconflow.cn/account/ak",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Custom API",
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
@@ -289,6 +301,12 @@
       custom_description: null,
     },
     wandb: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    siliconflow_cn: {
       connected: false,
       connecting: false,
       error: null,
@@ -563,6 +581,9 @@
       }
       if (data["together_api_key"]) {
         status.together_ai.connected = true
+      }
+      if (data["siliconflow_cn_api_key"]) {
+        status.siliconflow_cn.connected = true
       }
       if (data["wandb_api_key"]) {
         status.wandb.connected = true
