@@ -12,12 +12,14 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     NAME_REGEX,
     KilnAttachmentModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -133,6 +135,42 @@ class CreateExtractorConfigRequest(BaseModel):
     properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
         default_factory=dict,
     )
+
+    @model_validator(mode="after")
+    def validate_properties(self):
+        if self.extractor_type == ExtractorType.LITELLM:
+            model_name = self.properties.get("model_name")
+            if model_name is None or not isinstance(model_name, str):
+                raise ValueError("model_name is required for LiteLLM extractor type")
+
+            model_provider_name = self.properties.get("model_provider_name")
+            if model_provider_name is None or not isinstance(model_provider_name, str):
+                raise ValueError(
+                    "model_provider_name is required for LiteLLM extractor type"
+                )
+
+            try:
+                typed_model_provider_name = ModelProviderName(model_provider_name)
+            except ValueError:
+                raise ValueError(f"Invalid model provider name: {model_provider_name}")
+
+            # check the model exists and is suitable as an extractor
+            model = built_in_models_from_provider(
+                provider_name=typed_model_provider_name,
+                model_name=model_name,
+            )
+
+            if model is None:
+                raise ValueError(
+                    f"Model {model_name} not found in {model_provider_name}"
+                )
+
+            if not model.supports_doc_extraction:
+                raise ValueError(
+                    f"Model {model_name} does not support document extraction"
+                )
+
+        return self
 
 
 class PatchExtractorConfigRequest(BaseModel):

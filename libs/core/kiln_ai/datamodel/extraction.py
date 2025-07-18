@@ -44,7 +44,7 @@ class OutputFormat(str, Enum):
 
 
 class ExtractorType(str, Enum):
-    GEMINI = "gemini"
+    LITELLM = "litellm"
 
 
 SUPPORTED_MIME_TYPES = {
@@ -74,28 +74,6 @@ SUPPORTED_MIME_TYPES = {
 class ExtractionModel(BaseModel):
     name: str
     label: str
-
-
-EXTRACTION_MODEL_LIST = {
-    ExtractorType.GEMINI: [
-        ExtractionModel(
-            name="gemini-2.5-pro",
-            label="Gemini 2.5 Pro",
-        ),
-        ExtractionModel(
-            name="gemini-2.5-flash",
-            label="Gemini 2.5 Flash",
-        ),
-        ExtractionModel(
-            name="gemini-2.0-flash",
-            label="Gemini 2.0 Flash",
-        ),
-        ExtractionModel(
-            name="gemini-2.0-flash-lite",
-            label="Gemini 2.0 Flash Lite",
-        ),
-    ],
-}
 
 
 def validate_prompt(prompt: Any, name: str):
@@ -188,7 +166,7 @@ class ExtractorConfig(KilnParentedModel):
         extractor_type = info.data.get("extractor_type")
         output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
 
-        if extractor_type != ExtractorType.GEMINI:
+        if extractor_type != ExtractorType.LITELLM:
             raise ValueError(f"Invalid extractor type: {extractor_type}")
 
         def get_property(key: str, default: str) -> str:
@@ -203,10 +181,12 @@ class ExtractorConfig(KilnParentedModel):
         if not model_name:
             raise ValueError("model_name must be a non-empty string")
 
-        if model_name not in [m.name for m in EXTRACTION_MODEL_LIST[extractor_type]]:
-            raise ValueError(f'Gemini: "{model_name}" is not supported')
+        model_provider_name = get_property("model_provider_name", default="")
+        if not model_provider_name:
+            raise ValueError("model_provider_name must be a non-empty string")
 
         return {
+            "model_provider_name": model_provider_name,
             "model_name": model_name,
             "prompt_document": get_property(
                 "prompt_document",
@@ -233,6 +213,16 @@ class ExtractorConfig(KilnParentedModel):
                 ),
             ),
         }
+
+    def model_provider_name(self) -> str | None:
+        model_provider_name = self.properties.get("model_provider_name")
+        if model_provider_name is None:
+            return None
+        if not isinstance(model_provider_name, str):
+            raise ValueError(
+                "Invalid model_provider_name. model_provider_name must be a string."
+            )
+        return model_provider_name
 
     def model_name(self) -> str | None:
         model_name = self.properties.get("model_name")
