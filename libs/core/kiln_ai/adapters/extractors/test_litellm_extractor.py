@@ -18,6 +18,7 @@ from kiln_ai.adapters.extractors.litellm_extractor import (
     LitellmExtractor,
     encode_file,
 )
+from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.datamodel.extraction import ExtractorType
 
 PROMPTS_FOR_KIND: dict[str, str] = {
@@ -199,27 +200,13 @@ async def test_extract_failure_unsupported_mime_type(mock_litellm_extractor):
             )
 
 
-# TODO: dynamic model list - get rid of this
-# need to keep track of mimetypes for each model, because most models
-# such as OpenAI's don't support videos and a lot of other files via
-# the normal completion API (some they do via assistant API, but no
-# multimodal support for video at all - only frames fed as an array of images
-# which would require our own processing and is much worse than Gemini's
-# native video understanding).
-SUPPORTED_MODELS = [
-    "gemini/gemini-2.5-pro",
-    "gemini/gemini-2.5-flash",
-    "gemini/gemini-2.0-flash",
-    "gemini/gemini-2.0-flash-lite",
-]
-
-
-def paid_litellm_extractor(model_name: str):
+def paid_litellm_extractor(model_name: str, provider_name: str):
     return LitellmExtractor(
         extractor_config=ExtractorConfig(
             name="paid-litellm",
             extractor_type=ExtractorType.LITELLM,
             properties={
+                "model_provider_name": provider_name,
                 "model_name": model_name,
                 # in the paid tests, we can check which prompt is used by checking if the Kind shows up
                 # in the output - not ideal but usually works
@@ -282,8 +269,66 @@ def test_encode_file(mock_file_factory, mime_type, expected_encoding):
         raise ValueError(f"Unsupported encoding: {expected_encoding}")
 
 
+# TODO: dynamic model list - get rid of this
+# need to keep track of mimetypes for each model, because most models
+# such as OpenAI's don't support videos and a lot of other files via
+# the normal completion API (some they do via assistant API, but no
+# multimodal support for video at all - only frames fed as an array of images
+# which would require our own processing and is much worse than Gemini's
+# native video understanding).
+SUPPORTED_MODELS = [
+    "gemini/gemini-2.5-pro",
+    "gemini/gemini-2.5-flash",
+    "gemini/gemini-2.0-flash",
+    "gemini/gemini-2.0-flash-lite",
+]
+
+
+def get_all_models_support_doc_extraction(
+    must_support_mime_types: list[str] | None = None,
+):
+    model_provider_pairs = []
+    for model in built_in_models:
+        for provider in model.providers:
+            if not provider.model_id:
+                # it's possible for models to not have an ID (fine-tune only model)
+                continue
+            if provider.supports_doc_extraction:
+                if (
+                    provider.multimodal_mime_types is None
+                    or must_support_mime_types is None
+                ):
+                    continue
+                # check that the model supports all the mime types
+                if all(
+                    mime_type in provider.multimodal_mime_types
+                    for mime_type in must_support_mime_types
+                ):
+                    model_provider_pairs.append((model.name, provider.name))
+    return model_provider_pairs
+
+
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
+@pytest.mark.parametrize(
+    "model_name,provider_name",
+    get_all_models_support_doc_extraction(
+        must_support_mime_types=[
+            MockFileFactoryMimeType.PDF,
+            MockFileFactoryMimeType.TXT,
+            MockFileFactoryMimeType.MD,
+            MockFileFactoryMimeType.HTML,
+            MockFileFactoryMimeType.CSV,
+            MockFileFactoryMimeType.PNG,
+            MockFileFactoryMimeType.JPEG,
+            MockFileFactoryMimeType.JPG,
+            MockFileFactoryMimeType.MP4,
+            MockFileFactoryMimeType.MOV,
+            MockFileFactoryMimeType.MP3,
+            MockFileFactoryMimeType.OGG,
+            MockFileFactoryMimeType.WAV,
+        ]
+    ),
+)
 @pytest.mark.parametrize(
     "mime_type,expected_substring_in_output",
     [
@@ -307,10 +352,16 @@ def test_encode_file(mock_file_factory, mime_type, expected_encoding):
     ],
 )
 async def test_extract_document_success(
-    model_name, mime_type, expected_substring_in_output, mock_file_factory
+    model_name,
+    provider_name,
+    mime_type,
+    expected_substring_in_output,
+    mock_file_factory,
 ):
     test_file = mock_file_factory(mime_type)
-    extractor = paid_litellm_extractor(model_name=model_name)
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
     output = await extractor.extract(
         extraction_input=ExtractionInput(
             path=str(test_file),
@@ -323,13 +374,52 @@ async def test_extract_document_success(
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_name", SUPPORTED_MODELS)
-async def test_provider_bad_request(tmp_path, model_name):
+@pytest.mark.parametrize(
+    "model_name,provider_name",
+    get_all_models_support_doc_extraction(
+        must_support_mime_types=[MockFileFactoryMimeType.PDF]
+    ),
+)
+@pytest.mark.parametrize(
+    "mime_type,expected_substring_in_output",
+    [
+        (MockFileFactoryMimeType.PDF, "document"),
+    ],
+)
+async def test_extract_document_success_pdf(
+    model_name,
+    provider_name,
+    mime_type,
+    expected_substring_in_output,
+    mock_file_factory,
+):
+    test_file = mock_file_factory(mime_type)
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
+    output = await extractor.extract(
+        extraction_input=ExtractionInput(
+            path=str(test_file),
+            mime_type=mime_type,
+        )
+    )
+    assert not output.is_passthrough
+    assert output.content_format == OutputFormat.MARKDOWN
+    assert expected_substring_in_output.lower() in output.content.lower()
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "model_name,provider_name", get_all_models_support_doc_extraction()
+)
+async def test_provider_bad_request(tmp_path, model_name, provider_name):
     # write corrupted PDF file to temp files
     temp_file = tmp_path / "corrupted_file.pdf"
     temp_file.write_bytes(b"invalid file")
 
-    extractor = paid_litellm_extractor(model_name=model_name)
+    extractor = paid_litellm_extractor(
+        model_name=model_name, provider_name=provider_name
+    )
 
     with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
         await extractor.extract(

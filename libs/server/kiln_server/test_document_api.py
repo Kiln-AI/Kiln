@@ -80,7 +80,7 @@ def extractor_config_setup(project_setup):
         passthrough_mimetypes=[OutputFormat.TEXT],
         extractor_type=ExtractorType.LITELLM,
         properties={
-            "model_provider_name": "gemini",
+            "model_provider_name": "gemini_api",
             "model_name": "gemini-2.0-flash",
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
@@ -334,9 +334,16 @@ async def test_create_extractor_config_success(client, project_setup):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch("kiln_ai.datamodel.extraction.ExtractorConfig.save_to_file") as mock_save,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
     ):
         mock_project_from_id.return_value = project
         mock_save.return_value = None
+
+        mock_built_in_models_from_provider.return_value = MagicMock(
+            supports_doc_extraction=True
+        )
 
         request_data = {
             "name": "Test Extractor",
@@ -345,7 +352,7 @@ async def test_create_extractor_config_success(client, project_setup):
             "extractor_type": "litellm",
             "passthrough_mimetypes": ["text/plain"],
             "properties": {
-                "model_provider_name": "gemini",
+                "model_provider_name": "gemini_api",
                 "model_name": "gemini-2.0-flash",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
@@ -365,7 +372,7 @@ async def test_create_extractor_config_success(client, project_setup):
     assert result["output_format"] == "text/plain"
     assert result["extractor_type"] == "litellm"
     assert result["passthrough_mimetypes"] == ["text/plain"]
-    assert result["properties"]["model_provider_name"] == "gemini"
+    assert result["properties"]["model_provider_name"] == "gemini_api"
     assert result["properties"]["model_name"] == "gemini-2.0-flash"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
@@ -591,3 +598,106 @@ async def test_create_document_filetype_not_supported(
 
     assert response.status_code == 422, response.text
     assert "Unsupported mime type: text/csv" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_extractor_config_model_not_found(client, project_setup):
+    project = project_setup
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
+    ):
+        mock_project_from_id.return_value = project
+        mock_built_in_models_from_provider.return_value = None
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_extractor_config",
+            json={
+                "name": "Test Extractor",
+                "description": "Test description",
+                "output_format": "text/plain",
+                "extractor_type": "litellm",
+                "passthrough_mimetypes": ["text/plain"],
+                "properties": {
+                    # use a real provider name to avoid the error when we try to convert the model provider name to a ModelProviderName enum
+                    "model_provider_name": "openai",
+                    "model_name": "fake_model",
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert "Model fake_model not found in openai" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_extractor_config_model_invalid_provider_name(
+    client, project_setup
+):
+    project = project_setup
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_extractor_config",
+            json={
+                "name": "Test Extractor",
+                "description": "Test description",
+                "output_format": "text/plain",
+                "extractor_type": "litellm",
+                "passthrough_mimetypes": ["text/plain"],
+                "properties": {
+                    "model_provider_name": "fake_provider",
+                    "model_name": "fake_model",
+                },
+            },
+        )
+
+    # the error occurs during validation of request payload
+    assert response.status_code == 422, response.text
+    assert "Invalid model provider name: fake_provider" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_extractor_config_model_not_supported_for_extraction(
+    client, project_setup
+):
+    project = project_setup
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
+    ):
+        mock_project_from_id.return_value = project
+        mock_built_in_models_from_provider.return_value = MagicMock()
+        mock_built_in_models_from_provider.return_value.supports_doc_extraction = False
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_extractor_config",
+            json={
+                "name": "Test Extractor",
+                "description": "Test description",
+                "output_format": "text/plain",
+                "extractor_type": "litellm",
+                "passthrough_mimetypes": ["text/plain"],
+                "properties": {
+                    # use a real provider name to avoid the error when we try to convert the model provider name to a ModelProviderName enum
+                    "model_provider_name": "openai",
+                    "model_name": "fake_model",
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert (
+        "Model fake_model does not support document extraction"
+        in response.json()["message"]
+    )
