@@ -556,7 +556,7 @@ async def test_invoke_parsing_flow(adapter):
 
 
 async def test_invoke_parsing_flow_basic_no_reasoning(adapter):
-    """Test for siliconflow_thinking_optional_for_structured_output
+    """Test for reasoning_optional_for_structured_output
     when reasoning is not required.
     This is a special case where we want to return the output as is.
     """
@@ -565,7 +565,7 @@ async def test_invoke_parsing_flow_basic_no_reasoning(adapter):
     mock_provider.parser = "test_parser"
     mock_provider.formatter = None
     mock_provider.reasoning_capable = False
-    mock_provider.siliconflow_thinking_optional_for_structured_output = True
+    mock_provider.reasoning_optional_for_structured_output = True
 
     mock_parser = MagicMock()
     mock_parser.parse_output.return_value = RunOutput(
@@ -601,7 +601,7 @@ async def test_invoke_parsing_flow_basic_no_reasoning(adapter):
 
 
 async def test_invoke_parsing_flow_no_reasoning_with_structured_output(adapter):
-    """Test for siliconflow_thinking_optional_for_structured_output
+    """Test for reasoning_optional_for_structured_output
     when reasoning is required but not provided, with structured output enabled.
     This is a special case where we don't want to error, but we want to return the output as is.
     """
@@ -610,7 +610,7 @@ async def test_invoke_parsing_flow_no_reasoning_with_structured_output(adapter):
     mock_provider.parser = "test_parser"
     mock_provider.formatter = None
     mock_provider.reasoning_capable = True
-    mock_provider.siliconflow_thinking_optional_for_structured_output = True
+    mock_provider.reasoning_optional_for_structured_output = True
 
     mock_parser = MagicMock()
     mock_parser.parse_output.return_value = RunOutput(
@@ -647,7 +647,7 @@ async def test_invoke_parsing_flow_no_reasoning_with_structured_output(adapter):
 
 
 async def test_invoke_parsing_flow_with_reasoning_and_structured_output(adapter):
-    """Test for siliconflow_thinking_optional_for_structured_output
+    """Test for reasoning_optional_for_structured_output
     when reasoning is provided with structured output enabled.
     This is a special case where we want to return the output as is.
     """
@@ -656,7 +656,7 @@ async def test_invoke_parsing_flow_with_reasoning_and_structured_output(adapter)
     mock_provider.parser = "test_parser"
     mock_provider.formatter = None
     mock_provider.reasoning_capable = True
-    mock_provider.siliconflow_thinking_optional_for_structured_output = True
+    mock_provider.reasoning_optional_for_structured_output = True
 
     mock_parser = MagicMock()
     mock_parser.parse_output.return_value = RunOutput(

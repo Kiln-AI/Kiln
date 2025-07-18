@@ -114,9 +114,7 @@ class ModelName(str, Enum):
     qwen_2p5_72b = "qwen_2p5_72b"
     qwq_32b = "qwq_32b"
     deepseek_3 = "deepseek_3"
-    deepseek_3_pro = "deepseek_3_pro"
     deepseek_r1 = "deepseek_r1"
-    deepseek_r1_pro = "deepseek_r1_pro"
     deepseek_r1_0528 = "deepseek_r1_0528"
     deepseek_r1_0528_distill_qwen3_8b = "deepseek_r1_0528_distill_qwen3_8b"
     deepseek_r1_distill_qwen_32b = "deepseek_r1_distill_qwen_32b"
@@ -124,7 +122,6 @@ class ModelName(str, Enum):
     deepseek_r1_distill_qwen_14b = "deepseek_r1_distill_qwen_14b"
     deepseek_r1_distill_qwen_1p5b = "deepseek_r1_distill_qwen_1p5b"
     deepseek_r1_distill_qwen_7b = "deepseek_r1_distill_qwen_7b"
-    deepseek_r1_distill_qwen_7b_pro = "deepseek_r1_distill_qwen_7b_pro"
     deepseek_r1_distill_llama_8b = "deepseek_r1_distill_llama_8b"
     dolphin_2_9_8x22b = "dolphin_2_9_8x22b"
     grok_2 = "grok_2"
@@ -149,10 +146,8 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
-    kimi_k2_pro = "kimi_k2_pro"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_1v_9b_thinking = "glm_4_1v_9b_thinking"
-    glm_4_1v_9b_thinking_pro = "glm_4_1v_9b_thinking_pro"
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
@@ -231,7 +226,7 @@ class KilnModelProvider(BaseModel):
     # enable this flag to make reasoning optional for structured output
     # some reasoning models on siliconflow do not return any reasoning for structured output
     # this is not uniform nor documented, so we need to test each model
-    siliconflow_thinking_optional_for_structured_output: bool | None = None
+    reasoning_optional_for_structured_output: bool | None = None
 
 
 class KilnModel(BaseModel):
@@ -1805,22 +1800,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
-                model_id="deepseek-ai/DeepSeek-R1",
-                parser=ModelParserID.optional_r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                supports_data_gen=True,
-            ),
-        ],
-    ),
-    # DeepSeek R1 (Pro)
-    KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_r1_pro,
-        friendly_name="DeepSeek R1 0528 (Pro)",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/deepseek-ai/DeepSeek-R1",
                 parser=ModelParserID.optional_r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -1846,9 +1825,9 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
         ],
@@ -1876,19 +1855,6 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V3",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="deepseek-ai/DeepSeek-V3",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-        ],
-    ),
-    # DeepSeek 3 (Pro)
-    KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_3_pro,
-        friendly_name="DeepSeek V3 (Pro)",
-        providers=[
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/deepseek-ai/DeepSeek-V3",
@@ -1955,7 +1921,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2026,7 +1992,7 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
         ],
@@ -2070,12 +2036,14 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                # Best mode, but fails to often to enable without warning
+                supports_structured_output=False,
+                supports_data_gen=False,
                 model_id="deepseek/deepseek-r1-distill-qwen-7b",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
-                supports_data_gen=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -2089,28 +2057,13 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
-                model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
-                supports_structured_output=True,
+                # Best mode, but fails to often to enable without warning
+                supports_structured_output=False,
                 supports_data_gen=False,
-                siliconflow_thinking_optional_for_structured_output=True,
-            ),
-        ],
-    ),
-    # DeepSeek R1 Distill Qwen 7B (Pro)
-    KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_r1_distill_qwen_7b_pro,
-        friendly_name="DeepSeek R1 Distill Qwen 7B (Pro)",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
-                supports_data_gen=False,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2393,7 +2346,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
         ],
@@ -2458,7 +2411,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2529,7 +2482,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3-30B-A3B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=True,
             ),
         ],
@@ -2593,7 +2546,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=True,
             ),
         ],
@@ -2730,7 +2683,7 @@ built_in_models: List[KilnModel] = [
                 model_id="Tongyi-Zhiwen/QwenLong-L1-32B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2769,21 +2722,6 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
-                model_id="moonshotai/Kimi-K2-Instruct",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=True,
-                suggested_for_evals=True,
-            ),
-        ],
-    ),
-    # Kimi K2 Instruct (Pro)
-    KilnModel(
-        family=ModelFamily.kimi,
-        name=ModelName.kimi_k2_pro,
-        friendly_name="Kimi K2 (Pro)",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/moonshotai/Kimi-K2-Instruct",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
@@ -2801,7 +2739,7 @@ built_in_models: List[KilnModel] = [
                 model_id="moonshotai/Kimi-Dev-72B",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
@@ -2810,21 +2748,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_4_1v_9b_thinking,
         friendly_name="GLM-4.1V 9B Thinking",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="THUDM/GLM-4.1V-9B-Thinking",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                supports_data_gen=False,
-            ),
-        ],
-    ),
-    # GLM 4.1V 9B (Pro)
-    KilnModel(
-        family=ModelFamily.glm,
-        name=ModelName.glm_4_1v_9b_thinking_pro,
-        friendly_name="GLM-4.1V 9B Thinking (Pro)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -2846,7 +2769,7 @@ built_in_models: List[KilnModel] = [
                 model_id="THUDM/GLM-Z1-32B-0414",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
         ],
@@ -2862,7 +2785,7 @@ built_in_models: List[KilnModel] = [
                 model_id="THUDM/GLM-Z1-9B-0414",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
         ],
@@ -2903,7 +2826,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
-                siliconflow_thinking_optional_for_structured_output=True,
+                reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
         ],
