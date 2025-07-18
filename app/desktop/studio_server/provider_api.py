@@ -196,7 +196,6 @@ def connect_provider_api(app: FastAPI):
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
-                                # TODO: add tests for this (and the other endpoints like this one) in test_provider_api.py
                                 supports_doc_extraction=provider.supports_doc_extraction,
                                 multimodal_capable=provider.multimodal_capable,
                                 multimodal_mime_types=mime_types_as_str,

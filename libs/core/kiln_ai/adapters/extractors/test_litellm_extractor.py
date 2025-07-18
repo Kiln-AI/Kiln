@@ -269,21 +269,6 @@ def test_encode_file(mock_file_factory, mime_type, expected_encoding):
         raise ValueError(f"Unsupported encoding: {expected_encoding}")
 
 
-# TODO: dynamic model list - get rid of this
-# need to keep track of mimetypes for each model, because most models
-# such as OpenAI's don't support videos and a lot of other files via
-# the normal completion API (some they do via assistant API, but no
-# multimodal support for video at all - only frames fed as an array of images
-# which would require our own processing and is much worse than Gemini's
-# native video understanding).
-SUPPORTED_MODELS = [
-    "gemini/gemini-2.5-pro",
-    "gemini/gemini-2.5-flash",
-    "gemini/gemini-2.0-flash",
-    "gemini/gemini-2.0-flash-lite",
-]
-
-
 def get_all_models_support_doc_extraction(
     must_support_mime_types: list[str] | None = None,
 ):
