@@ -373,6 +373,9 @@ class LiteLlmAdapter(BaseAdapter):
             # Better to ignore them than to fail the model call.
             # https://docs.litellm.ai/docs/completion/input
             "drop_params": True,
+            # This overrides the drop_params setting above for specific parameters that we know should not be dropped
+            # but litellm drops because it is not aware that the model supports them.
+            "allowed_openai_params": ["reasoning_effort"],
             **extra_body,
             **self._additional_body_options,
         }
