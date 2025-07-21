@@ -153,7 +153,10 @@ item = kiln_ai.datamodel.TaskRun(
             type=kiln_ai.datamodel.DataSourceType.human,
             properties={"created_by": "Jane Doe"},
         ),
-        rating=kiln_ai.datamodel.TaskOutputRating(score=5,type="five_star"),
+        rating=kiln_ai.datamodel.TaskOutputRating(
+            value=5,
+            type=kiln_ai.datamodel.datamodel_enums.five_star,
+        ),
     ),
 )
 item.save_to_file()
