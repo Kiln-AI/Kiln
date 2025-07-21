@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Dict, List, Literal
+from typing import List, Literal
 
 from pydantic import BaseModel
 
@@ -33,6 +33,7 @@ class ModelFamily(str, Enum):
     deepseek = "deepseek"
     dolphin = "dolphin"
     grok = "grok"
+    kimi = "kimi"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -50,6 +51,8 @@ class ModelName(str, Enum):
     llama_3_2_11b = "llama_3_2_11b"
     llama_3_2_90b = "llama_3_2_90b"
     llama_3_3_70b = "llama_3_3_70b"
+    llama_4_maverick = "llama_4_maverick"
+    llama_4_scout = "llama_4_scout"
     gpt_4o_mini = "gpt_4o_mini"
     gpt_4o = "gpt_4o"
     gpt_4_1 = "gpt_4_1"
@@ -73,6 +76,9 @@ class ModelName(str, Enum):
     phi_4_mini = "phi_4_mini"
     mistral_large = "mistral_large"
     mistral_nemo = "mistral_nemo"
+    mistral_small_3 = "mistral_small_3"
+    magistral_medium = "magistral_medium"
+    magistral_medium_thinking = "magistral_medium_thinking"
     gemma_2_2b = "gemma_2_2b"
     gemma_2_9b = "gemma_2_9b"
     gemma_2_27b = "gemma_2_27b"
@@ -80,6 +86,8 @@ class ModelName(str, Enum):
     gemma_3_4b = "gemma_3_4b"
     gemma_3_12b = "gemma_3_12b"
     gemma_3_27b = "gemma_3_27b"
+    gemma_3n_2b = "gemma_3n_2b"
+    gemma_3n_4b = "gemma_3n_4b"
     claude_3_5_haiku = "claude_3_5_haiku"
     claude_3_5_sonnet = "claude_3_5_sonnet"
     claude_3_7_sonnet = "claude_3_7_sonnet"
@@ -93,6 +101,7 @@ class ModelName(str, Enum):
     gemini_2_0_flash_lite = "gemini_2_0_flash_lite"
     gemini_2_5_pro = "gemini_2_5_pro"
     gemini_2_5_flash = "gemini_2_5_flash"
+    gemini_2_5_flash_lite = "gemini_2_5_flash_lite"
     nemotron_70b = "nemotron_70b"
     mixtral_8x7b = "mixtral_8x7b"
     qwen_2p5_7b = "qwen_2p5_7b"
@@ -101,7 +110,7 @@ class ModelName(str, Enum):
     qwq_32b = "qwq_32b"
     deepseek_3 = "deepseek_3"
     deepseek_r1 = "deepseek_r1"
-    mistral_small_3 = "mistral_small_3"
+    deepseek_r1_0528 = "deepseek_r1_0528"
     deepseek_r1_distill_qwen_32b = "deepseek_r1_distill_qwen_32b"
     deepseek_r1_distill_llama_70b = "deepseek_r1_distill_llama_70b"
     deepseek_r1_distill_qwen_14b = "deepseek_r1_distill_qwen_14b"
@@ -110,6 +119,9 @@ class ModelName(str, Enum):
     deepseek_r1_distill_llama_8b = "deepseek_r1_distill_llama_8b"
     dolphin_2_9_8x22b = "dolphin_2_9_8x22b"
     grok_2 = "grok_2"
+    grok_3 = "grok_3"
+    grok_3_mini = "grok_3_mini"
+    grok_4 = "grok_4"
     qwen_3_0p6b = "qwen_3_0p6b"
     qwen_3_0p6b_no_thinking = "qwen_3_0p6b_no_thinking"
     qwen_3_1p7b = "qwen_3_1p7b"
@@ -126,6 +138,7 @@ class ModelName(str, Enum):
     qwen_3_32b_no_thinking = "qwen_3_32b_no_thinking"
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
+    kimi_k2 = "kimi_k2"
 
 
 class ModelParserID(str, Enum):
@@ -174,6 +187,8 @@ class KilnModelProvider(BaseModel):
     reasoning_capable: bool = False
     supports_logprobs: bool = False
     suggested_for_evals: bool = False
+    uncensored: bool = False
+    suggested_for_uncensored_data_gen: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
 
     # TODO P1: Need a more generalized way to handle custom provider parameters.
@@ -250,22 +265,16 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4.1-mini-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1-mini",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
@@ -305,6 +314,8 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4o-2024-08-06",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -312,10 +323,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 logprobs_openrouter_options=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4o",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
@@ -651,13 +666,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.7-sonnet",
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-3-7-sonnet-20250219",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
             ),
         ],
     ),
@@ -732,24 +745,31 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="google/gemini-2.5-pro-preview-03-25",
+                model_id="google/gemini-2.5-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                reasoning_capable=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
-                model_id="gemini-2.5-pro-preview-03-25",
+                model_id="gemini-2.5-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                # TODO: Gemini API doesn't return reasoning here, so we don't ask for it. Strange.
+                # reasoning_capable=True,
+                # thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
-                model_id="gemini-2.5-pro-preview-03-25",
+                model_id="gemini-2.5-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                # TODO: Vertex doesn't return reasoning here, so we don't ask for it. Strange.
+                # reasoning_capable=True,
+                # thinking_level="medium",
             ),
         ],
     ),
@@ -761,18 +781,23 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="google/gemini-2.5-flash-preview",
+                model_id="google/gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
-                model_id="gemini-2.5-flash-preview-04-17",
+                model_id="gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
-                model_id="gemini-2.5-flash-preview-04-17",
+                model_id="gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                thinking_level="medium",
             ),
         ],
     ),
@@ -904,6 +929,52 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Llama 4 Maverick Basic
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_4_maverick,
+        friendly_name="Llama 4 Maverick",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta-llama/llama-4-maverick",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/llama4-maverick-instruct-basic",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Llama 4 Scout Basic
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.llama_4_scout,
+        friendly_name="Llama 4 Scout",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta-llama/llama-4-scout",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/llama4-scout-instruct-basic",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Llama 3.1-8b
     KilnModel(
         family=ModelFamily.llama,
@@ -1024,6 +1095,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Magistral Medium (Thinking)
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.magistral_medium_thinking,
+        friendly_name="Magistral Medium (Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/magistral-medium-2506:thinking",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # Thinking tokens are hidden by Mistral so not "reasoning" from Kiln API POV
+            ),
+        ],
+    ),
+    # Magistral Medium (No Thinking)
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.magistral_medium,
+        friendly_name="Magistral Medium (No Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/magistral-medium-2506",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Mistral Nemo
     KilnModel(
         family=ModelFamily.mistral,
@@ -1047,16 +1145,22 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.amazon_bedrock,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="mistral.mistral-large-2407-v1:0",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="mistralai/mistral-large",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="mistral-large",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
         ],
     ),
@@ -1085,12 +1189,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 model_id="llama3.2:1b",
             ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="meta-llama/Llama-3.2-1B-Instruct",
-                supports_structured_output=False,
-                supports_data_gen=False,
-            ),
         ],
     ),
     # Llama 3.2 3B
@@ -1115,12 +1213,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.ollama,
                 supports_data_gen=False,
                 model_id="llama3.2",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="meta-llama/Llama-3.2-3B-Instruct",
-                supports_structured_output=False,
-                supports_data_gen=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -1450,6 +1542,52 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemma 3n 2B
+    KilnModel(
+        family=ModelFamily.gemma,
+        name=ModelName.gemma_3n_2b,
+        friendly_name="Gemma 3n 2B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gemma3n:e2b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemma-3n-e2b-it",
+                supports_structured_output=False,
+                supports_data_gen=False,
+            ),
+        ],
+    ),
+    # Gemma 3n 4B
+    KilnModel(
+        family=ModelFamily.gemma,
+        name=ModelName.gemma_3n_4b,
+        friendly_name="Gemma 3n 4B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemma-3n-e4b-it",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gemma3n:e4b",
+                supports_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemma-3n-e4b-it",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=False,
+            ),
+        ],
+    ),
     # Mixtral 8x7B
     KilnModel(
         family=ModelFamily.mixtral,
@@ -1587,10 +1725,46 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="mistralai/mistral-small-24b-instruct-2501",
+                uncensored=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="mistral-small:24b",
+                uncensored=True,
+            ),
+        ],
+    ),
+    # DeepSeek R1 0528
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_r1_0528,
+        friendly_name="DeepSeek R1 0528",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-r1-0528",
+                parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-r1-0528",
+                parser=ModelParserID.r1_thinking,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-R1",  # Note: Together remapped the R1 endpoint to this 0528 model
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+                reasoning_capable=True,
+                supports_data_gen=True,
             ),
         ],
     ),
@@ -1623,7 +1797,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_r1,
-        friendly_name="DeepSeek R1",
+        friendly_name="DeepSeek R1 (Original)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1633,8 +1807,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -1642,8 +1814,6 @@ built_in_models: List[KilnModel] = [
                 parser=ModelParserID.r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 # I want your RAM
@@ -1652,17 +1822,6 @@ built_in_models: List[KilnModel] = [
                 parser=ModelParserID.r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                model_id="deepseek-ai/DeepSeek-R1",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
@@ -1858,12 +2017,67 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 model_id="dolphin-mixtral:8x22b",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="cognitivecomputations/dolphin-mixtral-8x22b",
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
+            ),
+        ],
+    ),
+    # Grok 4
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4,
+        friendly_name="Grok 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                uncensored=True,
+                suggested_for_uncensored_data_gen=True,
+            ),
+        ],
+    ),
+    # Grok 3
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_3,
+        friendly_name="Grok 3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-3",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                uncensored=True,
+            ),
+        ],
+    ),
+    # Grok 3 Mini
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_3_mini,
+        friendly_name="Grok 3 Mini",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-3-mini",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                uncensored=True,
             ),
         ],
     ),
@@ -2292,6 +2506,41 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
+            ),
+        ],
+    ),
+    # Kimi K2 Instruct
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2,
+        friendly_name="Kimi K2",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                # Ignoring json mode for now, so not suggested for evals
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K2-Instruct",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="moonshotai/kimi-k2-instruct",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_evals=True,
             ),
         ],
     ),

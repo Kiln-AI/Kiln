@@ -5,10 +5,13 @@
   import { KilnError } from "../../../../../lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
-  import FormElement from "../../../../../lib/utils/form_element.svelte"
+  import SynthDataGuidance from "./synth_data_guidance.svelte"
+  import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
+  import posthog from "posthog-js"
 
-  // the number of workers to use for parallel generation
-  const PARALLEL_WORKER_COUNT = 5
+  export let guidance_data: SynthDataGuidanceDataModel
+  // Local instance for dynamic reactive updates
+  const selected_template = guidance_data.selected_template
 
   type GenerateSamplesOutcome = {
     topic: TopicNodeWithPath
@@ -23,9 +26,6 @@
   export let id: string
   export let data: SampleDataNode
   export let path: string[]
-  export let project_id: string
-  export let task_id: string
-  export let human_guidance: string | null = null
   export let model: string
   export let num_samples_to_generate: number = 8
   export let custom_topics_string: string | null = null
@@ -34,11 +34,6 @@
    * If true, generate samples for each topic leaf descendant of the current topic.
    */
   export let cascade_mode: boolean = false
-
-  /**
-   * If true, generate samples in parallel.
-   */
-  export let generate_samples_mode: "parallel" | "sequential" = "parallel"
 
   let ui_show_errors = false
   let generate_samples_outcomes: Record<string, GenerateSamplesOutcome> = {}
@@ -90,26 +85,31 @@
       if (!model) {
         throw new KilnError("No model selected.", null)
       }
+      if (!guidance_data.gen_type) {
+        throw new KilnError("No generation type selected.", null)
+      }
       const model_provider = model.split("/")[0]
       const model_name = model.split("/").slice(1).join("/")
       if (!model_name || !model_provider) {
         throw new KilnError("Invalid model selected.", null)
       }
+      const input_guidance = guidance_data.guidance_for_type("inputs")
       const { data: generate_response, error: generate_error } =
         await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/generate_samples",
+          "/api/projects/{project_id}/tasks/{task_id}/generate_inputs",
           {
             body: {
               topic: topic.path,
               num_samples: num_samples_to_generate,
               model_name: model_name,
               provider: model_provider,
-              human_guidance: human_guidance ? human_guidance : null, // clear empty string
+              guidance: input_guidance ? input_guidance : null, // clear empty string
+              gen_type: guidance_data.gen_type,
             },
             params: {
               path: {
-                project_id,
-                task_id,
+                project_id: guidance_data.project_id,
+                task_id: guidance_data.task_id,
               },
             },
           },
@@ -117,6 +117,12 @@
       if (generate_error) {
         throw generate_error
       }
+      posthog.capture("generate_synthetic_inputs", {
+        num_samples: num_samples_to_generate,
+        model_name: model_name,
+        provider: model_provider,
+        gen_type: guidance_data.gen_type,
+      })
       const response = JSON.parse(generate_response.output.output)
       if (
         !response ||
@@ -186,11 +192,9 @@
       ? collect_leaf_topic_nodes()
       : [{ path, node: data }]
 
-    let parallelism =
-      generate_samples_mode === "parallel" ? PARALLEL_WORKER_COUNT : 1
-
-    // Create and start N workers
-    const workers = Array(parallelism)
+    // Create and start 5 workers
+    // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+    const workers = Array(5)
       .fill(null)
       .map(() => worker(queue))
 
@@ -242,11 +246,12 @@
         >✕</button
       >
     </form>
-    <h3 class="text-lg font-bold">Generate Data</h3>
+    <h3 class="text-lg font-bold">Generate Model Inputs</h3>
     <p class="text-sm font-light mb-8">
-      Add synthetic data samples
+      Add synthetic model inputs: the inputs which will be passed to the task.
       {#if path.length > 0}
-        to {cascade_mode ? "each subtopic of " : ""}{path.join(" → ")}
+        {cascade_mode ? "For each subtopic of: " : "For the topic: "}
+        <span class="font-mono text-xs bg-gray-100">{path.join(" → ")}</span>
       {/if}
     </p>
     {#if sample_generating}
@@ -254,30 +259,24 @@
         <div class="loading loading-spinner loading-lg my-12"></div>
       </div>
     {:else}
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-6">
         <div class="flex flex-row items-center gap-4 mt-4 mb-2">
           <div class="flex-grow font-medium text-sm">Sample Count</div>
           <IncrementUi bind:value={num_samples_to_generate} />
         </div>
+        <div>
+          <SynthDataGuidance guidance_type="inputs" {guidance_data} />
+        </div>
         <AvailableModelsDropdown
           requires_data_gen={true}
+          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
+            $selected_template,
+          )}
           bind:model
-          suggested_mode="data_gen"
+          suggested_mode={guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen"}
         />
-        {#if cascade_mode}
-          <!-- parallelization only makes sense in cascade mode -->
-          <FormElement
-            id="generate_samples_mode_element"
-            inputType="select"
-            info_description="Parallel is ideal for APIs (OpenAI, Fireworks, etc.) as they can handle thousands of requests in parallel. Sequential is ideal for Ollama or other servers that can only handle one request at a time."
-            select_options={[
-              ["parallel", "Parallel - Ideal for APIs (OpenAI, Fireworks)"],
-              ["sequential", "Sequential - Ideal for Ollama"],
-            ]}
-            bind:value={generate_samples_mode}
-            label="Run Mode"
-          />
-        {/if}
 
         <!-- display errors after the generation has completed -->
         {#if topics_failed_to_generate_count > 0}
@@ -319,7 +318,7 @@
           class="btn mt-6 {custom_topics_string ? '' : 'btn-primary'}"
           on:click={generate_samples}
         >
-          Generate {num_samples_to_generate} Samples
+          Generate {num_samples_to_generate} Model Inputs
           {#if cascade_mode}
             For Each Topic
           {/if}

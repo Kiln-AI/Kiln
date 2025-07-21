@@ -1,6 +1,5 @@
-import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from google.cloud import storage
@@ -10,11 +9,7 @@ from vertexai.tuning import sft
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneStatusType
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.adapters.fine_tune.vertex_finetune import VertexFinetune
-from kiln_ai.datamodel import (
-    DatasetSplit,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition

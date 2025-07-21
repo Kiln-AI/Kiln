@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import FastAPI
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
@@ -10,7 +12,6 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import DataSource, DataSourceType, PromptId, TaskRun
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -24,7 +25,10 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Path to the node in the category tree", default=[]
     )
     num_subtopics: int = Field(description="Number of subtopics to generate", default=6)
-    human_guidance: str | None = Field(
+    gen_type: Literal["eval", "training"] = Field(
+        description="The type of task to generate topics for"
+    )
+    guidance: str | None = Field(
         description="Optional human guidance for generation",
         default=None,
     )
@@ -42,8 +46,11 @@ class DataGenCategoriesApiInput(BaseModel):
 class DataGenSampleApiInput(BaseModel):
     topic: list[str] = Field(description="Topic path for sample generation", default=[])
     num_samples: int = Field(description="Number of samples to generate", default=8)
-    human_guidance: str | None = Field(
-        description="Optional human guidance for generation",
+    gen_type: Literal["training", "eval"] = Field(
+        description="The type of task to generate topics for"
+    )
+    guidance: str | None = Field(
+        description="Optional custom guidance for generation",
         default=None,
     )
     model_name: str = Field(description="The name of the model to use")
@@ -69,8 +76,8 @@ class DataGenSaveSamplesApiInput(BaseModel):
     prompt_method: PromptId = Field(
         description="The prompt method used to generate the output"
     )
-    human_guidance: str | None = Field(
-        description="Optional human guidance for generation",
+    guidance: str | None = Field(
+        description="Optional custom guidance for generation",
         default=None,
     )
     tags: list[str] | None = Field(
@@ -85,13 +92,15 @@ def connect_data_gen_api(app: FastAPI):
         project_id: str, task_id: str, input: DataGenCategoriesApiInput
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
-        categories_task = DataGenCategoriesTask()
+
+        categories_task = DataGenCategoriesTask(
+            gen_type=input.gen_type, guidance=input.guidance
+        )
 
         task_input = DataGenCategoriesTaskInput.from_task(
             task=task,
             node_path=input.node_path,
             num_subtopics=input.num_subtopics,
-            human_guidance=input.human_guidance,
             existing_topics=input.existing_topics,
         )
 
@@ -111,18 +120,21 @@ def connect_data_gen_api(app: FastAPI):
         categories_run = await adapter.invoke(task_input.model_dump())
         return categories_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_samples")
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_inputs")
     async def generate_samples(
         project_id: str, task_id: str, input: DataGenSampleApiInput
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
-        sample_task = DataGenSampleTask(target_task=task, num_samples=input.num_samples)
+        sample_task = DataGenSampleTask(
+            target_task=task,
+            gen_type=input.gen_type,
+            guidance=input.guidance,
+        )
 
         task_input = DataGenSampleTaskInput.from_task(
             task=task,
             topic=input.topic,
             num_samples=input.num_samples,
-            human_guidance=input.human_guidance,
         )
 
         adapter = adapter_for_task(
@@ -150,11 +162,16 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        # Wrap the task instuctions with human guidance, if provided
-        if sample.human_guidance is not None and sample.human_guidance.strip() != "":
-            task.instruction = wrap_task_with_guidance(
-                task.instruction, sample.human_guidance
-            )
+        guidance = sample.guidance or ""
+        if len(sample.topic_path) > 0:
+            guidance += f"""
+## Topic Path
+The topic path for this sample is:
+[{", ".join(f'"{topic}"' for topic in sample.topic_path)}]
+"""
+
+        if guidance.strip() != "":
+            task.instruction = wrap_task_with_guidance(task.instruction, guidance)
 
         adapter = adapter_for_task(
             task,

@@ -592,7 +592,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/generate_samples": {
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs": {
         parameters: {
             query?: never;
             header?: never;
@@ -602,7 +602,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Generate Samples */
-        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post"];
+        post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1039,6 +1039,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Config Eval Scores */
+        get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_config__run_config_id__eval_scores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1207,6 +1224,10 @@ export interface components {
             eval_set_filter_id: string;
             /** Eval Configs Filter Id */
             eval_configs_filter_id: string;
+            /** Template Properties */
+            template_properties: {
+                [key: string]: string | number | boolean;
+            };
         };
         /**
          * CreateFinetuneRequest
@@ -1262,10 +1283,16 @@ export interface components {
              */
             num_subtopics: number;
             /**
-             * Human Guidance
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
+             */
+            gen_type: "eval" | "training";
+            /**
+             * Guidance
              * @description Optional human guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
@@ -1297,10 +1324,16 @@ export interface components {
              */
             num_samples: number;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Gen Type
+             * @description The type of task to generate topics for
+             * @enum {string}
              */
-            human_guidance?: string | null;
+            gen_type: "training" | "eval";
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
             /**
              * Model Name
              * @description The name of the model to use
@@ -1350,10 +1383,10 @@ export interface components {
              */
             prompt_method: string;
             /**
-             * Human Guidance
-             * @description Optional human guidance for generation
+             * Guidance
+             * @description Optional custom guidance for generation
              */
-            human_guidance?: string | null;
+            guidance?: string | null;
             /**
              * Tags
              * @description Tags to add to the sample
@@ -1532,6 +1565,14 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /**
+             * Template Properties
+             * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
+             * @default {}
+             */
+            template_properties: {
+                [key: string]: string | number | boolean;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -1607,6 +1648,17 @@ export interface components {
             partially_rated_count: number;
             /** Not Rated Count */
             not_rated_count: number;
+        };
+        /** EvalConfigResult */
+        EvalConfigResult: {
+            /** Eval Config Id */
+            eval_config_id: string | null;
+            /** Results */
+            results: {
+                [key: string]: components["schemas"]["ScoreSummary"] | null;
+            };
+            /** Percent Complete */
+            percent_complete: number;
         };
         /**
          * EvalConfigType
@@ -1730,6 +1782,8 @@ export interface components {
             scores: {
                 [key: string]: number;
             };
+            /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
+            task_run_usage?: components["schemas"]["Usage"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -1746,7 +1800,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
@@ -2019,6 +2073,17 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** MeanUsage */
+        MeanUsage: {
+            /** Mean Input Tokens */
+            mean_input_tokens?: number | null;
+            /** Mean Output Tokens */
+            mean_output_tokens?: number | null;
+            /** Mean Total Tokens */
+            mean_total_tokens?: number | null;
+            /** Mean Cost */
+            mean_cost?: number | null;
+        };
         /** ModelDetails */
         ModelDetails: {
             /** Id */
@@ -2035,6 +2100,10 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Uncensored */
+            uncensored: boolean;
+            /** Suggested For Uncensored Data Gen */
+            suggested_for_uncensored_data_gen: boolean;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
@@ -2050,7 +2119,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "mistral_small_3" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_no_thinking";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_no_thinking";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
@@ -2293,6 +2362,24 @@ export interface components {
             value: number;
             /** @description The type of rating */
             type: components["schemas"]["TaskOutputRatingType"];
+        };
+        /** RunConfigEvalResult */
+        RunConfigEvalResult: {
+            /** Eval Id */
+            eval_id: string | null;
+            /** Eval Name */
+            eval_name: string;
+            /** Dataset Size */
+            dataset_size: number;
+            eval_config_result: components["schemas"]["EvalConfigResult"] | null;
+            /** Missing Default Eval Config */
+            missing_default_eval_config: boolean;
+        };
+        /** RunConfigEvalScoresSummary */
+        RunConfigEvalScoresSummary: {
+            /** Eval Results */
+            eval_results: components["schemas"]["RunConfigEvalResult"][];
+            mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
          * RunConfigProperties
@@ -4148,7 +4235,7 @@ export interface operations {
             };
         };
     };
-    generate_samples_api_projects__project_id__tasks__task_id__generate_samples_post: {
+    generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5192,6 +5279,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalConfigCompareSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_config__run_config_id__eval_scores_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                run_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
                 };
             };
             /** @description Validation Error */

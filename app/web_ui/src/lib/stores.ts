@@ -58,6 +58,10 @@ ui_state.subscribe((state) => {
     current_project.set(get_current_project())
   }
   if (state.current_task_id != previous_ui_state.current_task_id) {
+    // invalidate task caches. Rating options will load on demand.
+    current_task.set(null)
+    current_task_rating_options.set(null)
+    current_task_prompts.set(null)
     load_current_task(get(current_project))
   }
   previous_ui_state = { ...state }

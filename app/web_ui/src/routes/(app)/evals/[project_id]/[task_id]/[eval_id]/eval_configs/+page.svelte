@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import type { Eval } from "$lib/types"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
@@ -23,6 +23,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
+  import posthog from "posthog-js"
 
   let score_legend_dialog: Dialog | null = null
 
@@ -53,7 +54,6 @@
 
   $: loading = eval_loading || eval_configs_loading // Score summary not blocking whole UI
   $: error = eval_error || eval_configs_error || score_summary_error
-  $: run_eval_url = `${base_url}/api/projects/${$page.params.project_id}/tasks/${$page.params.task_id}/eval/${$page.params.eval_id}/run_eval_config_eval`
 
   let eval_state:
     | "not_started"
@@ -64,7 +64,15 @@
     eval_configs?.length && !evaluator?.current_config_id
   )
   $: focus_select_eval_config = !!(
-    should_select_eval_config && eval_state?.includes("complete")
+    should_select_eval_config &&
+    (eval_state?.includes("complete") ||
+      (eval_configs &&
+        score_summary &&
+        eval_configs.every(
+          (config) =>
+            (score_summary!.eval_config_percent_complete?.["" + config.id] ||
+              0.0) >= 1.0,
+        )))
   )
 
   // Update sorting when score_type or score_summary changes
@@ -290,7 +298,7 @@
       eval_configs_set_size = " (" + score_summary.dataset_size + " items)"
     }
     properties.push({
-      name: "Eval Method Dataset",
+      name: "Golden Dataset",
       value: evaluator.eval_configs_filter_id + eval_configs_set_size,
     })
     return properties
@@ -306,17 +314,17 @@
     const warnings: string[] = []
     if (score_summary.dataset_size === 0) {
       warnings.push(
-        "There are zero items in your eval method dataset. Generate some runs in your dataset tab, and tag them to add them to your eval method dataset.",
+        "There are zero items in your golden dataset. You can add and tag data from page for this eval.",
       )
     }
     if (score_summary.not_rated_count > 0) {
       warnings.push(
-        `${score_summary.not_rated_count} item(s) in your eval method dataset are not rated at all. Add human ratings to these items in the dataset tab.`,
+        `${score_summary.not_rated_count} item(s) in your golden dataset are not rated at all. Add human ratings to these items in the dataset tab.`,
       )
     }
     if (score_summary.partially_rated_count > 0) {
       warnings.push(
-        `${score_summary.partially_rated_count} item(s) in your eval method dataset are only partially rated. Add human ratings for each score in the dataset tab.`,
+        `${score_summary.partially_rated_count} item(s) in your golden dataset are only partially rated. Add human ratings for each score in the dataset tab.`,
       )
     }
 
@@ -329,7 +337,7 @@
         : 1.0
     if (minComplete < 1.0) {
       warnings.push(
-        "You evals are incomplete. Click 'Run Evals' to generate scores for the missing items.",
+        "You evals are incomplete. Click 'Run All Eval' to generate scores for the missing items.",
       )
     }
 
@@ -362,6 +370,9 @@
       if (error) {
         throw error
       }
+
+      posthog.capture("set_current_eval_config", {})
+
       // Update the evaluator with the latest
       evaluator = data
     } catch (error) {
@@ -402,8 +413,8 @@
 </script>
 
 <AppPage
-  title="Compare Evaluation Methods"
-  subtitle="Find the evaluation method that best matches human-ratings"
+  title="Compare Judges"
+  subtitle="Find the judge that best matches human preferences"
   sub_subtitle="Read the docs"
   sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
   action_buttons={eval_configs?.length
@@ -415,7 +426,7 @@
           },
         },
         {
-          label: "Add Eval Method",
+          label: "Add Judge",
           href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`,
         },
       ]
@@ -452,7 +463,7 @@
           {#if score_summary && score_summary.dataset_size > 0 && score_summary.dataset_size < 25}
             <div class="mt-4">
               <Warning
-                warning_message={`There are only ${score_summary.dataset_size} item(s) in your Eval Method Dataset. This is generally too small to get a sense of how eval methods perform.`}
+                warning_message={`There are only ${score_summary.dataset_size} item(s) in your Golden Dataset. This is generally too small to get a sense of how judges perform.`}
                 warning_color="warning"
                 tight={true}
               />
@@ -463,10 +474,13 @@
       <div class="mt-16">
         <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
           <div class="grow">
-            <div class="text-xl font-bold">Correlation to Human Ratings</div>
+            <div class="text-xl font-bold">
+              Correlation to Human Preferences
+            </div>
             <div class="text-xs text-gray-500">
-              Each score in this table is a measure for how much the eval method
-              correlates to human ratings, using the selected scoring metric.
+              Each score in this table is a measure for how much each judge
+              correlates to human preferences, using the selected scoring
+              metric.
             </div>
             {#if score_summary_error}
               <div class="text-error text-sm">
@@ -496,7 +510,12 @@
               <RunEval
                 btn_size="normal"
                 bind:eval_state
-                bind:run_url={run_eval_url}
+                project_id={$page.params.project_id}
+                task_id={$page.params.task_id}
+                eval_id={$page.params.eval_id}
+                run_all={true}
+                btn_primary={!focus_select_eval_config}
+                eval_type="eval_config"
                 on_run_complete={() => {
                   get_score_summary()
                 }}
@@ -522,7 +541,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as default' below to select a winner."
+              warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon={focus_select_eval_config ? "exclaim" : "info"}
               large_icon={focus_select_eval_config}
@@ -532,13 +551,14 @@
         {/if}
 
         <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
+          <table class="table table-fixed">
             <thead>
               <tr>
-                <th>
-                  <div>Eval Method</div>
+                <th class="max-w-[400px]">
+                  <div>Judge</div>
                   <div class="font-normal">How task output is evaluated</div>
                 </th>
+                <th class="text-center">Status</th>
                 <th> Eval Instructions </th>
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
@@ -559,9 +579,9 @@
                 {@const percent_complete =
                   score_summary?.eval_config_percent_complete?.[
                     "" + eval_config.id
-                  ]}
+                  ] || 0.0}
                 <tr>
-                  <td>
+                  <td class="max-w-[400px]">
                     <div class="font-medium">
                       {model_name(eval_config?.model_name, $model_info)}
                     </div>
@@ -576,35 +596,34 @@
                     <div class="text-sm text-gray-500">
                       Name: {eval_config.name}
                     </div>
-                    {#if percent_complete}
-                      {#if percent_complete < 1.0}
-                        <div class="text-sm text-error">
-                          Progress: {(percent_complete * 100.0).toFixed(1)}%
-                        </div>
-                      {/if}
-                    {:else if score_summary}
-                      <!-- We have results, but not for this run config -->
-                      <div class="text-sm text-error">Progress: 0%</div>
+                  </td>
+                  <td class="text-center text-sm">
+                    {#if percent_complete < 1.0}
+                      <div class="text-error">
+                        {(percent_complete * 100.0).toFixed(0)}% Complete
+                      </div>
+                    {:else}
+                      <div>Complete</div>
                     {/if}
                     {#if eval_config.id == evaluator.current_config_id}
                       <button
-                        class="badge badge-primary mt-2"
+                        class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
                         on:click={() => {
                           set_current_eval_config(null)
                         }}
                       >
-                        Default <span class="pl-2">&#x2715;</span>
+                        Default <span class="pl-[1px]">&#x2715;</span>
                       </button>
                     {:else}
                       <button
-                        class="badge mt-1 {focus_select_eval_config
-                          ? 'badge-primary'
-                          : 'badge-secondary badge-outline'}"
+                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
+                          ? 'btn-primary'
+                          : 'btn-secondary btn-outline'}"
                         on:click={() => {
                           set_current_eval_config(eval_config.id)
                         }}
                       >
-                        Set as default
+                        Set as Default
                       </button>
                     {/if}
                   </td>
@@ -653,7 +672,7 @@
                             {scores.spearman_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
-                              tooltip_text="There wasn't enough data, or variation in the data, to calculate a Spearman correlation. Add more data to your eval method dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
+                              tooltip_text="There wasn't enough data, or variation in the data, to calculate a Spearman correlation. Add more data to your golden dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
                               no_pad={true}
                             />
                           {/if}
@@ -662,7 +681,7 @@
                             {scores.pearson_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
-                              tooltip_text="There wasn't enough data, or variation in the data, to calculate a Pearson correlation. Add more data to your eval method dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
+                              tooltip_text="There wasn't enough data, or variation in the data, to calculate a Pearson correlation. Add more data to your golden dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
                               no_pad={true}
                             />
                           {/if}
@@ -671,7 +690,7 @@
                             {scores.kendalltau_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
-                              tooltip_text="There wasn't enough data, or variation in the data, to calculate a Kendall's Tau correlation. Add more data to your eval method dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
+                              tooltip_text="There wasn't enough data, or variation in the data, to calculate a Kendall's Tau correlation. Add more data to your golden dataset, focusing on values which are missing (for example, if all current items pass, add some which fail)."
                               no_pad={true}
                             />
                           {/if}
@@ -679,7 +698,7 @@
                       {:else}
                         None
                         <InfoTooltip
-                          tooltip_text="No scores were found for this eval method. Click 'Run Eval' to generate scores and ensure your golden dataset has human ratings."
+                          tooltip_text="No scores were found for this judge. Click 'Run All Eval' to generate scores and ensure your golden dataset has human ratings."
                           no_pad={true}
                         />
                       {/if}
@@ -693,16 +712,16 @@
       </div>
     {:else}
       <div class="max-w-[280px] mx-auto flex flex-col gap-2 mt-[20vh]">
-        <div class="font-medium">Create an Eval Method to Get Started</div>
+        <div class="font-medium">Create a Judge to Get Started</div>
         <div class="font-light text-sm">
-          An evaluation method specifies how an eval is run (algorithm, model,
-          instructions, etc).
+          A judge specifies how an eval is run (algorithm, model, instructions,
+          etc).
         </div>
         <a
           class="btn btn-primary mt-2"
           href={`/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`}
         >
-          Add Eval Method
+          Add Judge
         </a>
       </div>
     {/if}
@@ -711,7 +730,7 @@
 
 <Dialog
   bind:this={eval_config_instructions_dialog}
-  title="Instructions for Eval Method '{displayed_eval_config?.name}'"
+  title="Instructions for Judge '{displayed_eval_config?.name}'"
   action_buttons={[
     {
       label: "Close",
@@ -724,7 +743,7 @@
 
 <Dialog
   bind:this={score_legend_dialog}
-  title="How to Compare Evaluation Methods"
+  title="How to Compare Judges"
   action_buttons={[
     {
       label: "Close",
@@ -734,26 +753,26 @@
 >
   <div class="font-medium text-sm text-gray-500">
     Each score is a correlation score between human ratings and the automated
-    eval method's scores. Use these scores to find the eval method which best
-    matches human ratings, and set it as your default eval method.
+    judge's scores. Use these scores to find the judge which best matches human
+    preferences, and set it as your default judge.
   </div>
   <div class="m-8 font-light text-sm flex flex-col gap-2">
     <div class="font-bold text-xl">Quick Start</div>
     <div>
-      Add a variety of eval methods with different options (model, algorithm,
-      instructions). Then click 'Run Eval' to generate scores from each eval
-      method on your eval method dataset.
+      Add a variety of judges with different options (model, algorithm,
+      instructions). Then click 'Run All Eval' to generate scores from each
+      judge on your golden dataset.
     </div>
     <div>
       We suggest you use Kendall's Tau correlation scores to compare results.
       Kendall's Tau scores range from -1.0 to 1. Higher values indicate higher
-      correlation between the human ratings and the automated eval method's
-      scores. The absolute value of Kendall's Tau scores will vary depending on
-      how subjective your task is.
+      correlation between the human ratings and the automated judge's scores.
+      The absolute value of Kendall's Tau scores will vary depending on how
+      subjective your task is.
     </div>
     <div>
-      Finally, set the eval method with the highest Kendall's Tau score as your
-      default eval method.
+      Finally, set the judge with the highest Kendall's Tau score as your
+      default judge.
     </div>
 
     <div class="font-bold text-xl mt-6">Detailed Instructions</div>

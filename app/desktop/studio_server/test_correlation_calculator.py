@@ -244,3 +244,79 @@ class TestCorrelationCalculator:
         assert result.spearman_correlation == spearman
         assert result.pearson_correlation == pearson
         assert result.kendalltau_correlation == kendall
+
+    def test_constant_arrays(self):
+        """Test that constant arrays (no variation) return None for correlation coefficients"""
+        # Create data where one array is constant
+        constant_data = [
+            CorrelationScore(
+                measured_score=1.0,
+                human_score=5.0,
+                normalized_measured_score=0.0,
+                normalized_human_score=1.0,
+            ),
+            CorrelationScore(
+                measured_score=2.0,
+                human_score=5.0,  # Constant human scores
+                normalized_measured_score=0.5,
+                normalized_human_score=1.0,
+            ),
+            CorrelationScore(
+                measured_score=3.0,
+                human_score=5.0,  # Constant human scores
+                normalized_measured_score=1.0,
+                normalized_human_score=1.0,
+            ),
+        ]
+
+        calculator = CorrelationCalculator()
+        for score in constant_data:
+            calculator.add_score(score)
+
+        result = calculator.calculate_correlation()
+
+        # Error metrics should still be calculated
+        assert result.mean_absolute_error > 0
+        assert result.mean_normalized_absolute_error > 0
+        assert result.mean_squared_error > 0
+        assert result.mean_normalized_squared_error > 0
+
+        # Correlation coefficients should be None due to constant array
+        assert result.spearman_correlation is None
+        assert result.pearson_correlation is None
+        assert result.kendalltau_correlation is None
+
+    def test_both_constant_arrays(self):
+        """Test that both constant arrays return None for correlation coefficients"""
+        # Create data where both arrays are constant
+        both_constant_data = [
+            CorrelationScore(
+                measured_score=5.0,  # Constant measured scores
+                human_score=5.0,  # Constant human scores
+                normalized_measured_score=0.5,
+                normalized_human_score=0.5,
+            ),
+            CorrelationScore(
+                measured_score=5.0,  # Constant measured scores
+                human_score=5.0,  # Constant human scores
+                normalized_measured_score=0.5,
+                normalized_human_score=0.5,
+            ),
+        ]
+
+        calculator = CorrelationCalculator()
+        for score in both_constant_data:
+            calculator.add_score(score)
+
+        result = calculator.calculate_correlation()
+
+        # Error metrics should be 0 since all values are the same
+        assert result.mean_absolute_error == 0.0
+        assert result.mean_normalized_absolute_error == 0.0
+        assert result.mean_squared_error == 0.0
+        assert result.mean_normalized_squared_error == 0.0
+
+        # Correlation coefficients should be None due to constant arrays
+        assert result.spearman_correlation is None
+        assert result.pearson_correlation is None
+        assert result.kendalltau_correlation is None

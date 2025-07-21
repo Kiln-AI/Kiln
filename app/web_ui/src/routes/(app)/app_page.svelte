@@ -24,11 +24,12 @@
   }
 
   function handle_key_down(event: KeyboardEvent) {
-    // Skip if any input element is focused
+    // Skip if any input element is focused (unless it's an allow-keyboard-nav element)
     if (
-      document.activeElement instanceof HTMLInputElement ||
-      document.activeElement instanceof HTMLTextAreaElement ||
-      document.activeElement instanceof HTMLSelectElement
+      (document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement ||
+        document.activeElement instanceof HTMLSelectElement) &&
+      !document.activeElement.classList.contains("allow-keyboard-nav")
     ) {
       return
     }

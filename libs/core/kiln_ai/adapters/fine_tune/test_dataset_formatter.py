@@ -857,7 +857,7 @@ def test_serialize_r1_style_message_missing_thinking(thinking, final_output):
 
 def test_vertex_gemini_role_map_coverage():
     """Test that VERTEX_GEMINI_ROLE_MAP covers all possible ChatMessage.role values"""
-    from typing import Literal, get_type_hints
+    from typing import get_type_hints
 
     # Get the Literal type from ChatMessage.role
     role_type = get_type_hints(ChatMessage)["role"]

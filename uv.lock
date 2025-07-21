@@ -967,7 +967,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.17.0"
+version = "0.18.1"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "boto3" },
@@ -1002,7 +1002,7 @@ requires-dist = [
     { name = "coverage", specifier = ">=7.6.4" },
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
-    { name = "litellm", specifier = ">=1.67.0" },
+    { name = "litellm", specifier = ">=1.72.6" },
     { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
     { name = "pydantic", specifier = ">=2.9.2" },
@@ -1029,6 +1029,7 @@ name = "kiln-root"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "kiln-ai" },
     { name = "kiln-server" },
     { name = "kiln-studio-desktop" },
@@ -1047,6 +1048,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2024.8.30" },
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "kiln-studio-desktop", virtual = "app/desktop" },
@@ -1065,7 +1067,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "0.17.0"
+version = "0.18.1"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
@@ -1131,7 +1133,7 @@ requires-dist = [
 
 [[package]]
 name = "litellm"
-version = "1.67.0"
+version = "1.72.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1146,9 +1148,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/dc/d3d27a140b40398b103727f9b7689da545bc605ecf0edd79cfd14edb2126/litellm-1.67.0.tar.gz", hash = "sha256:18439db292d85b1d886bfa35de9d999600ecc6b4fc1137f12e6810d2133c8cec", size = 7238539 }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/15/df75f278fd998f6d6900f692b9de2fba2814b316c123c99072a813668aac/litellm-1.72.6.tar.gz", hash = "sha256:4e5c7e4273b09b765302d2faaec30f77b42255c0055b427b55ea02b8092b8582", size = 8393603 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/ee/745092a4acf931548eae4f442d366b5e0f7282fb4054d6989045c74bd2c2/litellm-1.67.0-py3-none-any.whl", hash = "sha256:d297126f45eea8d8a3df9c0de1d9491ff20e78dab5d1aa3820602082501ba89e", size = 7601690 },
+    { url = "https://files.pythonhosted.org/packages/96/c9/4aae0b77632279eef9716dbcb98edd8b36c08a9da070e2470ca9c410c0f8/litellm-1.72.6-py3-none-any.whl", hash = "sha256:e0ae98d25db4910e78b1a0a604f24c0d6875f6cdea02426b264a45d4fbdb8c46", size = 8302810 },
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -30,6 +30,7 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
 )
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.datamodel.task_run import Usage
 
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
@@ -192,6 +193,7 @@ def valid_evaluator_request():
         ],
         eval_set_filter_id="tag::eval_set",
         eval_configs_filter_id="tag::golden",
+        template_properties={"test_property": "test_value", "numeric_property": 42},
     )
 
 
@@ -213,17 +215,31 @@ async def test_create_evaluator(
 ):
     mock_task_from_id.return_value = mock_task
 
-    with patch.object(Eval, "save_to_file") as mock_save:
-        response = client.post(
-            "/api/projects/project1/tasks/task1/create_evaluator",
-            json=valid_evaluator_request.model_dump(),
-        )
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=valid_evaluator_request.model_dump(),
+    )
 
     assert response.status_code == 200
     result = response.json()
     assert result["name"] == valid_evaluator_request.name
     assert result["description"] == valid_evaluator_request.description
-    mock_save.assert_called_once()
+    assert result["template_properties"] == valid_evaluator_request.template_properties
+
+    # Verify the eval was created with the correct template_properties on disk
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.template == valid_evaluator_request.template
+    assert saved_eval.name == valid_evaluator_request.name
+    assert saved_eval.description == valid_evaluator_request.description
+    assert saved_eval.output_scores == valid_evaluator_request.output_scores
+    assert saved_eval.eval_set_filter_id == valid_evaluator_request.eval_set_filter_id
+    assert (
+        saved_eval.eval_configs_filter_id
+        == valid_evaluator_request.eval_configs_filter_id
+    )
+    assert saved_eval.template_properties == valid_evaluator_request.template_properties
+    assert saved_eval.template_properties["test_property"] == "test_value"
+    assert saved_eval.template_properties["numeric_property"] == 42
 
 
 @pytest.mark.asyncio
@@ -1719,7 +1735,185 @@ async def test_create_task_run_config_valid_boundary_values(
             },
         },
     )
+
     assert response.status_code == 200
     result = response.json()
     assert result["run_config_properties"]["temperature"] == 2.0
     assert result["run_config_properties"]["top_p"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_with_usage(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Test that get_run_config_eval_scores correctly calculates mean usage statistics"""
+    mock_task_from_id.return_value = mock_task
+
+    # Create TaskRuns with usage data
+    task_run_1 = TaskRun(
+        input="test input 1",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(output="test output 1"),
+        usage=Usage(
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+            cost=0.005,
+        ),
+        parent=mock_task,
+    )
+    task_run_1.save_to_file()
+
+    task_run_2 = TaskRun(
+        input="test input 2",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(output="test output 2"),
+        usage=Usage(
+            input_tokens=200,
+            output_tokens=100,
+            total_tokens=300,
+            cost=0.010,
+        ),
+        parent=mock_task,
+    )
+    task_run_2.save_to_file()
+
+    # Create a TaskRun without usage data
+    task_run_3 = TaskRun(
+        input="test input 3",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(output="test output 3"),
+        # No usage data
+        parent=mock_task,
+    )
+    task_run_3.save_to_file()
+
+    # Create EvalRuns for these TaskRuns
+    eval_run_1 = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 4.0, "overall_rating": 4.0},
+        input="test input 1",
+        output="test output 1",
+        dataset_id=task_run_1.id,
+        task_run_usage=task_run_1.usage,  # Copy usage from TaskRun
+        parent=mock_eval_config,
+    )
+    eval_run_1.save_to_file()
+
+    eval_run_2 = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 4.5, "overall_rating": 4.5},
+        input="test input 2",
+        output="test output 2",
+        dataset_id=task_run_2.id,
+        task_run_usage=task_run_2.usage,  # Copy usage from TaskRun
+        parent=mock_eval_config,
+    )
+    eval_run_2.save_to_file()
+
+    eval_run_3 = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 3.5, "overall_rating": 3.5},
+        input="test input 3",
+        output="test output 3",
+        dataset_id=task_run_3.id,
+        task_run_usage=task_run_3.usage,  # Copy usage from TaskRun (this will be None)
+        parent=mock_eval_config,
+    )
+    eval_run_3.save_to_file()
+
+    # Create mock objects instead of patching Pydantic models
+    mock_task_for_api = MagicMock()
+    mock_task_for_api.runs.return_value = [task_run_1, task_run_2, task_run_3]
+    mock_task_for_api.evals.return_value = [mock_eval]
+
+    mock_eval_config_for_api = MagicMock()
+    mock_eval_config_for_api.runs.return_value = [eval_run_1, eval_run_2, eval_run_3]
+    mock_eval_config_for_api.id = mock_eval_config.id
+
+    mock_eval_for_api = MagicMock()
+    mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+    mock_eval_for_api.id = mock_eval.id
+    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.output_scores = mock_eval.output_scores
+
+    mock_eval.current_config_id = mock_eval_config.id
+
+    # Patch the task_from_id to return our mock
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_from_id"
+        ) as mock_task_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.eval_from_id"
+        ) as mock_eval_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_task_run_config_from_id_patch,
+    ):
+        mock_task_from_id_patch.return_value = mock_task_for_api
+        mock_eval_from_id_patch.return_value = mock_eval_for_api
+        mock_task_run_config_from_id_patch.return_value = mock_run_config
+
+        with patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_dataset_ids_in_filter:
+            mock_dataset_ids_in_filter.return_value = {
+                task_run_1.id,
+                task_run_2.id,
+                task_run_3.id,
+            }
+
+            response = client.get(
+                f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify the structure
+    assert "eval_results" in data
+    eval_results = data["eval_results"]
+    assert len(eval_results) == 1
+
+    eval_result = eval_results[0]
+    assert "eval_config_result" in eval_result
+    eval_config_result = eval_result["eval_config_result"]
+    assert eval_config_result is not None
+    assert eval_config_result["results"]["score1"]["mean_score"] == 4.0
+    assert eval_config_result["results"]["overall_rating"]["mean_score"] == 4.0
+
+    # Check that mean_usage is at the top level of the response
+    assert "mean_usage" in data
+    mean_usage = data["mean_usage"]
+    assert mean_usage is not None
+
+    # With 3 eval runs and 2 having usage data (2/3 = 66.7% > 50%),
+    # all usage metrics should be included
+    # Expected means: input_tokens=(100+200)/2=150, output_tokens=(50+100)/2=75,
+    # total_tokens=(150+300)/2=225, cost=(0.005+0.010)/2=0.0075
+    assert mean_usage["mean_input_tokens"] == 150.0
+    assert mean_usage["mean_output_tokens"] == 75.0
+    assert mean_usage["mean_total_tokens"] == 225.0
+    assert mean_usage["mean_cost"] == 0.0075
