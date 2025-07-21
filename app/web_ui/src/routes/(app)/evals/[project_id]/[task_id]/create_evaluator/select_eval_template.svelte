@@ -412,7 +412,7 @@
     <FormElement
       label="Failure Example - Recommended"
       description="An example of model output that should fail the eval."
-      info_description="Including an example helps the judge model understand the issue."
+      info_description="Examples help the judge model understand the issue. The format is flexible (plain text); you can include the entire input/output or just the relevant portion. You can include a description or multiple examples if needed."
       inputType="textarea"
       id="failure_example"
       optional={true}
@@ -421,7 +421,7 @@
     <FormElement
       label="Passing Example"
       description="An example of model output that should pass the eval."
-      info_description="Including an example helps the judge model understand the issue."
+      info_description="Examples help the judge model understand the issue. The format is flexible (plain text); you can include the entire input/output or just the relevant portion. You can include a description or multiple examples if needed."
       inputType="textarea"
       id="pass_example"
       optional={true}
