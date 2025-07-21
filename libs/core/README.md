@@ -247,6 +247,25 @@ for run in task.runs():
 
 ```
 
+## Tagging Task Runs programmatically
+
+You can also tag your Kiln Task runs programmatically:
+
+```py
+# Load your Kiln Task from disk
+task_path = "/Users/youruser/Kiln Projects/test project/tasks/632780983478 - Joke Generator/task.kiln"
+task = kiln_ai.datamodel.Task.load_from_file(task_path)
+
+for run in task.runs():
+    # Parse the task output from JSON
+    output = json.loads(run.output.output)
+
+    # Add a tag if the punchline is unusually short
+    if len(output["punchline"]) < 100:
+        run.tags.append("very_short")
+        run.save_to_file()  # Persist the updated tags
+```
+
 ### Adding Custom Model or AI Provider from Code
 
 You can add additional AI models and providers to Kiln.
