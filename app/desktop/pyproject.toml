@@ -11,6 +11,9 @@ dependencies = [
     "scipy>=1.15.2",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.uv.sources]
 kiln-server = { workspace = true }
