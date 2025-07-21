@@ -32,6 +32,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 
 ## Table of Contents
 
+- [Connecting AI Providers](#connecting-ai-providers-openai-openrouter-ollama-etc)
 - [Using the Kiln Data Model](#using-the-kiln-data-model)
   - [Understanding the Kiln Data Model](#understanding-the-kiln-data-model)
   - [Datamodel Overview](#datamodel-overview)
@@ -48,6 +49,12 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 ```bash
 pip install kiln-ai
 ```
+
+## Connecting AI Providers (OpenAI, OpenRouter, Ollama, etc)
+
+The easiest way to connect AI providers is to use the Kiln app UI. Once connected in the UI, credentials will be stored to `~/.kiln_ai/settings.yml`, which will be available to the library.
+
+For configuring credentials from code or connecting custom servers/model, see [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code).
 
 ## Using the Kiln Data Model
 
