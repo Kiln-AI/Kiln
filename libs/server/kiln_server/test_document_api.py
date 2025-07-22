@@ -349,7 +349,6 @@ async def test_create_extractor_config_success(client, project_setup):
             "name": "Test Extractor",
             "description": "Test description",
             "output_format": "text/plain",
-            "extractor_type": "litellm",
             "passthrough_mimetypes": ["text/plain"],
             "properties": {
                 "model_provider_name": "gemini_api",
@@ -619,7 +618,6 @@ async def test_create_extractor_config_model_not_found(client, project_setup):
                 "name": "Test Extractor",
                 "description": "Test description",
                 "output_format": "text/plain",
-                "extractor_type": "litellm",
                 "passthrough_mimetypes": ["text/plain"],
                 "properties": {
                     # use a real provider name to avoid the error when we try to convert the model provider name to a ModelProviderName enum
@@ -650,7 +648,6 @@ async def test_create_extractor_config_model_invalid_provider_name(
                 "name": "Test Extractor",
                 "description": "Test description",
                 "output_format": "text/plain",
-                "extractor_type": "litellm",
                 "passthrough_mimetypes": ["text/plain"],
                 "properties": {
                     "model_provider_name": "fake_provider",
@@ -686,7 +683,6 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
                 "name": "Test Extractor",
                 "description": "Test description",
                 "output_format": "text/plain",
-                "extractor_type": "litellm",
                 "passthrough_mimetypes": ["text/plain"],
                 "properties": {
                     # use a real provider name to avoid the error when we try to convert the model provider name to a ModelProviderName enum

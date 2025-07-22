@@ -39,7 +39,6 @@
           body: {
             name: name || null,
             description: description || null,
-            extractor_type: "litellm",
             output_format: output_format,
             properties: {
               model_name: model_name,

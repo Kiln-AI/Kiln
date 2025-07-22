@@ -129,46 +129,38 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The mimetypes to pass through to the extractor",
         default_factory=list,
     )
-    extractor_type: ExtractorType = Field(
-        description="The type of the extractor",
-    )
     properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
         default_factory=dict,
     )
 
     @model_validator(mode="after")
     def validate_properties(self):
-        if self.extractor_type == ExtractorType.LITELLM:
-            model_name = self.properties.get("model_name")
-            if model_name is None or not isinstance(model_name, str):
-                raise ValueError("model_name is required for LiteLLM extractor type")
+        model_name = self.properties.get("model_name")
+        if model_name is None or not isinstance(model_name, str):
+            raise ValueError("model_name is required for LiteLLM extractor type")
 
-            model_provider_name = self.properties.get("model_provider_name")
-            if model_provider_name is None or not isinstance(model_provider_name, str):
-                raise ValueError(
-                    "model_provider_name is required for LiteLLM extractor type"
-                )
-
-            try:
-                typed_model_provider_name = ModelProviderName(model_provider_name)
-            except ValueError:
-                raise ValueError(f"Invalid model provider name: {model_provider_name}")
-
-            # check the model exists and is suitable as an extractor
-            model = built_in_models_from_provider(
-                provider_name=typed_model_provider_name,
-                model_name=model_name,
+        model_provider_name = self.properties.get("model_provider_name")
+        if model_provider_name is None or not isinstance(model_provider_name, str):
+            raise ValueError(
+                "model_provider_name is required for LiteLLM extractor type"
             )
 
-            if model is None:
-                raise ValueError(
-                    f"Model {model_name} not found in {model_provider_name}"
-                )
+        try:
+            typed_model_provider_name = ModelProviderName(model_provider_name)
+        except ValueError:
+            raise ValueError(f"Invalid model provider name: {model_provider_name}")
 
-            if not model.supports_doc_extraction:
-                raise ValueError(
-                    f"Model {model_name} does not support document extraction"
-                )
+        # check the model exists and is suitable as an extractor
+        model = built_in_models_from_provider(
+            provider_name=typed_model_provider_name,
+            model_name=model_name,
+        )
+
+        if model is None:
+            raise ValueError(f"Model {model_name} not found in {model_provider_name}")
+
+        if not model.supports_doc_extraction:
+            raise ValueError(f"Model {model_name} does not support document extraction")
 
         return self
 
@@ -363,7 +355,7 @@ def connect_document_api(app: FastAPI):
             description=request.description,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=request.extractor_type,
+            extractor_type=ExtractorType.LITELLM,
             properties=request.properties,
         )
         extractor_config.save_to_file()
