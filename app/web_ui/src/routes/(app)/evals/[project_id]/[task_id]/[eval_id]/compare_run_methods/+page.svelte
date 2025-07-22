@@ -35,7 +35,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import AddRunMethod from "./add_run_method.svelte"
   import posthog from "posthog-js"
-  import { prompt_link } from "../../../../../../../lib/utils/link_builder"
+  import { prompt_link } from "$lib/utils/link_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
