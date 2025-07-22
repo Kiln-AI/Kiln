@@ -36,7 +36,7 @@
     | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
-    $available_models || {},
+    $available_models || [],
     requires_structured_output,
     requires_data_gen,
     requires_uncensored_data_gen,
@@ -258,7 +258,7 @@
   {:else if selected_model_unsupported}
     {#if requires_uncensored_data_gen}
       <Warning
-        warning_message="This model is not recommended for the current data gen template. It will refuse to follow instructions for sensitive topics."
+        warning_message="The current data gen template works best with uncensored models like Grok. This model may refuse to generate data for sensitive topics."
       />
     {:else if requires_data_gen}
       <Warning
@@ -297,7 +297,7 @@
         : selected_model_suggested_uncensored_data_gen
           ? "success"
           : "warning"}
-      warning_message="For this data gen template we suggest a large uncensored model like Grok 3."
+      warning_message="For this data gen template we suggest a large uncensored model like Grok 4."
     />
   {:else if suggested_mode === "evals"}
     <Warning

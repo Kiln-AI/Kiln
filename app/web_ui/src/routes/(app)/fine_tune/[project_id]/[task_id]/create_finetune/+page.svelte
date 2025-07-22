@@ -19,6 +19,7 @@
   } from "$lib/stores/fine_tune_store"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { goto } from "$app/navigation"
+  import posthog from "posthog-js"
 
   import type {
     FinetuneProvider,
@@ -266,6 +267,11 @@
       if (!create_finetune_response || !create_finetune_response.id) {
         throw new Error("Invalid response from server")
       }
+      posthog.capture("create_finetune", {
+        base_model: base_model_id,
+        provider: provider_id,
+        prompt_method: system_prompt_method,
+      })
       created_finetune = create_finetune_response
       progress_ui_state.set({
         title: "Creating Fine-Tune",

@@ -17,6 +17,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import RunOptions from "$lib/ui/run_options.svelte"
   import type { TaskRunConfig } from "$lib/types"
+  import posthog from "posthog-js"
 
   export let project_id: string
   export let task_id: string
@@ -97,6 +98,11 @@
       if (error) {
         throw error
       }
+      posthog.capture("add_run_method", {
+        model_name: task_run_config_model_name,
+        provider_name: task_run_config_provider_name,
+        prompt_method: task_run_config_prompt_method,
+      })
       // Load the updated list of task run configs after success
       if (run_method_added) {
         run_method_added(data)

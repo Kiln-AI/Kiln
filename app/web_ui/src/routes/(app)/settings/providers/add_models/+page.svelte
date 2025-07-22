@@ -148,8 +148,8 @@
 </script>
 
 <AppPage
-  title="Add Models from Existing Providers"
-  sub_subtitle="Each AI provider already includes models tested for Kiln. Add additional models here."
+  title="Manage Custom Models"
+  sub_subtitle="Add/remove additional models from your connected AI providers, on top of those already included with Kiln."
   action_buttons={custom_models && custom_models.length > 0
     ? [
         {

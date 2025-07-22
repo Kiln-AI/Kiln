@@ -7,6 +7,7 @@
   import { createKilnError } from "$lib/utils/error_handlers"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
+  import posthog from "posthog-js"
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
@@ -84,6 +85,9 @@
       if (!model) {
         throw new KilnError("No model selected.", null)
       }
+      if (!guidance_data.gen_type) {
+        throw new KilnError("No generation type selected.", null)
+      }
       const model_provider = model.split("/")[0]
       const model_name = model.split("/").slice(1).join("/")
       if (!model_name || !model_provider) {
@@ -113,6 +117,12 @@
       if (generate_error) {
         throw generate_error
       }
+      posthog.capture("generate_synthetic_inputs", {
+        num_samples: num_samples_to_generate,
+        model_name: model_name,
+        provider: model_provider,
+        gen_type: guidance_data.gen_type,
+      })
       const response = JSON.parse(generate_response.output.output)
       if (
         !response ||

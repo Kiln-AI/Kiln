@@ -50,5 +50,5 @@ export type EmbeddingModelDetails =
   components["schemas"]["EmbeddingModelDetails"]
 export type EmbeddingProvider = components["schemas"]["EmbeddingProvider"]
 export type EmbeddingModelName = components["schemas"]["EmbeddingModelName"]
-export type ModelProviderName = components["schemas"]["ModelProviderName"]
 export type ChunkerConfig = components["schemas"]["ChunkerConfig"]
+export type ModelProviderName = components["schemas"]["ModelProviderName"]
