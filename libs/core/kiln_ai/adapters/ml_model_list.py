@@ -196,7 +196,7 @@ class KilnModelProvider(BaseModel):
     suggested_for_uncensored_data_gen: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
     multimodal_capable: bool = False
-    multimodal_mime_types: List[KilnMimeType] | None = None
+    multimodal_mime_types: List[str] | None = None
 
     # TODO P1: Need a more generalized way to handle custom provider parameters.
     # Making them quite declarative here for now, isolating provider specific logic

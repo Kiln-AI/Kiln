@@ -177,6 +177,44 @@ def test_multimodal_fields_specified(tmp_path):
     ]
 
 
+def test_multimodal_fields_mime_type_forward_compat(tmp_path):
+    # This may happen if the current client is out of date with the remote config
+    # and we add a new mime type that the old client gets over the air
+    model_dict = KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4o,
+        friendly_name="GPT-mock",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4o",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPEG,
+                    KilnMimeType.PNG,
+                    "new/unknown-mime-type",
+                ],
+            ),
+        ],
+    ).model_dump(mode="json")
+
+    data = {"model_list": [model_dict], "embedding_model_list": []}
+    path = tmp_path / "extra.json"
+    path.write_text(json.dumps(data))
+    models = deserialize_config(path)
+    assert models.model_list[0].providers[0].supports_doc_extraction
+    assert models.model_list[0].providers[0].multimodal_capable
+    multimodal_mime_types = models.model_list[0].providers[0].multimodal_mime_types
+    assert multimodal_mime_types is not None
+    assert "new/unknown-mime-type" not in multimodal_mime_types
+    assert multimodal_mime_types == [
+        KilnMimeType.JPEG,
+        KilnMimeType.PNG,
+    ]
+
+
 def test_multimodal_fields_not_specified(tmp_path):
     model_dict = KilnModel(
         family=ModelFamily.gpt,
