@@ -95,9 +95,6 @@ class LitellmExtractor(BaseExtractor):
         if model_name is None:
             raise ValueError("properties.model_name is required for LitellmExtractor")
 
-        # TODO: some models supports only a few kinds - maybe drop Kind altogether
-        # and deal with mimetype directly instead
-        # can do the arbitrary kind-grouping at the UI and API level
         prompt_document = extractor_config.prompt_document()
         if prompt_document is None or prompt_document == "":
             raise ValueError(
@@ -137,11 +134,6 @@ class LitellmExtractor(BaseExtractor):
         prompt = self.prompt_for_kind.get(kind)
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
-
-        # FIXME: check modality support - maybe later
-        # litellm.supports_vision(model=self.model_name)
-        # litellm.supports_pdf_input(model=self.model_name)
-        # litellm.supports_audio_input(model=self.model_name) # https://github.com/BerriAI/litellm/issues/6303
 
         model_slug = self.litellm_model_slug()
         response = await litellm.acompletion(
