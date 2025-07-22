@@ -198,7 +198,7 @@ class KilnModelProvider(BaseModel):
     require_openrouter_reasoning: bool = False
     logprobs_openrouter_options: bool = False
     openrouter_skip_required_parameters: bool = False
-    thinking_level: Literal["low", "medium", "high", "none"] | None = None
+    thinking_level: Literal["low", "medium", "high"] | None = None
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
     gemini_reasoning_enabled: bool = False
@@ -1640,6 +1640,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen-qwq-32b",
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/QwQ-32B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -2399,14 +2406,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="Qwen/Qwen3-32B",
-                supports_data_gen=True,
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
-            ),
         ],
     ),
     # Qwen 3 32B No Thinking
@@ -2429,13 +2428,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="Qwen/Qwen3-32B",
-                supports_data_gen=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="none",
             ),
         ],
     ),
