@@ -43,7 +43,13 @@ MIME_TYPES_SUPPORTED = {
 }
 
 
-def encode_file(path: Path, mime_type: str) -> dict[str, Any]:
+def encode_file_litellm_format(path: Path, mime_type: str) -> dict[str, Any]:
+    # There are different formats that LiteLLM supports, the docs are scattered
+    # and incomplete:
+    # - https://docs.litellm.ai/docs/completion/document_understanding#base64
+    # - https://docs.litellm.ai/docs/completion/vision#explicitly-specify-image-type
+
+    # this is the most generic format that seems to work for all / most mime types
     if mime_type in [
         "application/pdf",
         "text/csv",
@@ -58,6 +64,8 @@ def encode_file(path: Path, mime_type: str) -> dict[str, Any]:
                 "file_data": to_base64_url(mime_type, pdf_bytes),
             },
         }
+
+    # image has its own format (but also appears to work with the file format)
     if mime_type.startswith("image/"):
         image_bytes = path.read_bytes()
         return {
@@ -66,6 +74,7 @@ def encode_file(path: Path, mime_type: str) -> dict[str, Any]:
                 "url": to_base64_url(mime_type, image_bytes),
             },
         }
+
     raise ValueError(f"Unsupported MIME type: {mime_type} for {path}")
 
 
@@ -142,7 +151,7 @@ class LitellmExtractor(BaseExtractor):
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        encode_file(
+                        encode_file_litellm_format(
                             Path(extraction_input.path), extraction_input.mime_type
                         ),
                     ],

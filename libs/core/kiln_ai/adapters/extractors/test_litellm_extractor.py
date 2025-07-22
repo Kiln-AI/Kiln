@@ -16,7 +16,7 @@ from kiln_ai.adapters.extractors.litellm_extractor import (
     ExtractorConfig,
     Kind,
     LitellmExtractor,
-    encode_file,
+    encode_file_litellm_format,
 )
 from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.datamodel.extraction import ExtractorType
@@ -244,9 +244,9 @@ def paid_litellm_extractor(model_name: str, provider_name: str):
         (MockFileFactoryMimeType.WAV, "generic_file_data"),
     ],
 )
-def test_encode_file(mock_file_factory, mime_type, expected_encoding):
+def test_encode_file_litellm_format(mock_file_factory, mime_type, expected_encoding):
     test_file = mock_file_factory(mime_type)
-    encoded = encode_file(Path(test_file), mime_type)
+    encoded = encode_file_litellm_format(Path(test_file), mime_type)
 
     # there are two types of ways of including files, image_url is a special case
     # and it also works with the generic file_data encoding, but LiteLLM docs are
