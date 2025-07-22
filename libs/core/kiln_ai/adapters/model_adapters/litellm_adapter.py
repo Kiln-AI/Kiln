@@ -373,12 +373,17 @@ class LiteLlmAdapter(BaseAdapter):
             # Better to ignore them than to fail the model call.
             # https://docs.litellm.ai/docs/completion/input
             "drop_params": True,
-            # This overrides the drop_params setting above for specific parameters that we know should not be dropped
-            # but litellm drops because it is not aware that the model supports them.
-            "allowed_openai_params": ["reasoning_effort"],
+            # LiteLLM drops params that it believes are not supported by the model, but sometimes it does that incorrectly
+            # adding a property name from extra_body to this list will override the drop_params setting for that param.
+            "allowed_openai_params": [],
             **extra_body,
             **self._additional_body_options,
         }
+
+        # We only whitelist it if we are sending it, otherwise the outgoing request will go out with reasoning_effort=None
+        # so it is better to not send it at all than to send it with a value of None
+        if extra_body.get("reasoning_effort", None) is not None:
+            completion_kwargs["allowed_openai_params"].append("reasoning_effort")
 
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
