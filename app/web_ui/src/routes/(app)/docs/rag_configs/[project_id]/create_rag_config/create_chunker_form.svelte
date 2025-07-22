@@ -13,6 +13,7 @@
   let description: string = ""
   let chunk_size: number = 1000
   let chunk_overlap: number = 200
+  export let keyboard_submit: boolean = false
 
   const dispatch = createEventDispatcher<{
     success: { chunker_config_id: string }
@@ -56,13 +57,13 @@
 <FormContainer
   submit_visible={true}
   submit_label="Create Chunker"
-  on:submit={async (e) => {
+  on:submit={async () => {
     await create_chunker_config()
-    e.preventDefault()
   }}
   {error}
   gap={4}
   bind:submitting={loading}
+  {keyboard_submit}
 >
   <div class="flex flex-col gap-4">
     <FormElement

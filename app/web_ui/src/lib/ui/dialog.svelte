@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+
+  const dispatch = createEventDispatcher()
 
   export let title: string
   export let blur_background: boolean = false
@@ -64,7 +67,7 @@
   }
 </script>
 
-<dialog {id} class="modal">
+<dialog {id} class="modal" on:close={() => dispatch("close")}>
   <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>

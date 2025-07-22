@@ -18,7 +18,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.rag import RAGPipeline
+from kiln_ai.datamodel.rag import RagConfig
 
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
@@ -785,7 +785,7 @@ async def test_get_embedding_configs_success(
 
 
 @pytest.mark.asyncio
-async def test_create_rag_pipeline_success(
+async def test_create_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
@@ -797,10 +797,10 @@ async def test_create_rag_pipeline_success(
     ):
         mock_project_from_id.return_value = mock_project
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_pipelines/create_rag_pipeline",
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
             json={
-                "name": "Test RAG Pipeline",
-                "description": "Test RAG Pipeline description",
+                "name": "Test RAG Config",
+                "description": "Test RAG Config description",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -810,8 +810,8 @@ async def test_create_rag_pipeline_success(
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["id"] is not None
-    assert result["name"] == "Test RAG Pipeline"
-    assert result["description"] == "Test RAG Pipeline description"
+    assert result["name"] == "Test RAG Config"
+    assert result["description"] == "Test RAG Config description"
     assert result["extractor_config_id"] is not None
     assert result["chunker_config_id"] is not None
     assert result["embedding_config_id"] is not None
@@ -822,7 +822,7 @@ async def test_create_rag_pipeline_success(
     ["extractor_config_id", "chunker_config_id", "embedding_config_id"],
 )
 @pytest.mark.asyncio
-async def test_create_rag_pipeline_missing_config(
+async def test_create_rag_config_missing_config(
     client,
     mock_project,
     mock_extractor_config,
@@ -838,8 +838,8 @@ async def test_create_rag_pipeline_missing_config(
         mock_project_from_id.return_value = mock_project
 
         payload = {
-            "name": "Test RAG Pipeline",
-            "description": "Test RAG Pipeline description",
+            "name": "Test RAG Config",
+            "description": "Test RAG Config description",
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
@@ -849,7 +849,7 @@ async def test_create_rag_pipeline_missing_config(
         payload[missing_config_type] = "fake_id"
 
         response = client.post(
-            f"/api/projects/{project.id}/rag_pipelines/create_rag_pipeline",
+            f"/api/projects/{project.id}/rag_configs/create_rag_config",
             json=payload,
         )
 
@@ -858,68 +858,181 @@ async def test_create_rag_pipeline_missing_config(
 
 
 @pytest.mark.asyncio
-async def test_get_rag_pipelines_success(
+async def test_get_rag_configs_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
 ):
-    # create a rag pipeline
-    rag_pipelines = [
-        RAGPipeline(
+    # create a rag config
+    rag_configs = [
+        RagConfig(
             parent=mock_project,
-            name="Test RAG Pipeline 1",
-            description="Test RAG Pipeline 1 description",
+            name="Test RAG Config 1",
+            description="Test RAG Config 1 description",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
         ),
-        RAGPipeline(
+        RagConfig(
             parent=mock_project,
-            name="Test RAG Pipeline 2",
-            description="Test RAG Pipeline 2 description",
+            name="Test RAG Config 2",
+            description="Test RAG Config 2 description",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
         ),
-        RAGPipeline(
+        RagConfig(
             parent=mock_project,
-            name="Test RAG Pipeline 3",
-            description="Test RAG Pipeline 3 description",
+            name="Test RAG Config 3",
+            description="Test RAG Config 3 description",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
         ),
     ]
 
-    for rag_pipeline in rag_pipelines:
-        rag_pipeline.save_to_file()
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
     ):
         mock_project_from_id.return_value = mock_project
-        response = client.get(f"/api/projects/{mock_project.id}/rag_pipelines")
+        response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert len(result) == len(rag_pipelines)
+    assert len(result) == len(rag_configs)
 
-    for response_rag_pipeline, rag_pipeline in zip(
-        sorted(result, key=lambda x: x["id"]), sorted(rag_pipelines, key=lambda x: x.id)
+    for response_rag_config, rag_config in zip(
+        sorted(result, key=lambda x: x["id"]), sorted(rag_configs, key=lambda x: x.id)
     ):
-        assert response_rag_pipeline["id"] == rag_pipeline.id
-        assert response_rag_pipeline["name"] == rag_pipeline.name
-        assert response_rag_pipeline["description"] == rag_pipeline.description
+        assert response_rag_config["id"] == rag_config.id
+        assert response_rag_config["name"] == rag_config.name
+        assert response_rag_config["description"] == rag_config.description
         assert (
-            response_rag_pipeline["extractor_config_id"]
-            == rag_pipeline.extractor_config_id
+            response_rag_config["extractor_config_id"] == rag_config.extractor_config_id
         )
+        assert response_rag_config["chunker_config_id"] == rag_config.chunker_config_id
         assert (
-            response_rag_pipeline["chunker_config_id"] == rag_pipeline.chunker_config_id
+            response_rag_config["embedding_config_id"] == rag_config.embedding_config_id
         )
-        assert (
-            response_rag_pipeline["embedding_config_id"]
-            == rag_pipeline.embedding_config_id
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}"
         )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] == rag_config.id
+    assert result["name"] == rag_config.name
+    assert result["description"] == rag_config.description
+    assert result["extractor_config_id"] == rag_config.extractor_config_id
+    assert result["chunker_config_id"] == rag_config.chunker_config_id
+    assert result["embedding_config_id"] == rag_config.embedding_config_id
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_not_found(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/rag_configs/fake_id")
+
+    assert response.status_code == 404, response.text
+    assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_chunker_config_success(client, mock_project, mock_chunker_config):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/chunker_configs/{mock_chunker_config.id}"
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] == mock_chunker_config.id
+    assert result["name"] == mock_chunker_config.name
+    assert result["description"] == mock_chunker_config.description
+    assert result["chunker_type"] == mock_chunker_config.chunker_type
+    assert result["properties"] == mock_chunker_config.properties
+
+
+@pytest.mark.asyncio
+async def test_get_chunker_config_not_found(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/chunker_configs/fake_id"
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Chunker config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_config_success(
+    client, mock_project, mock_embedding_config
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/{mock_embedding_config.id}"
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] == mock_embedding_config.id
+    assert result["name"] == mock_embedding_config.name
+    assert result["description"] == mock_embedding_config.description
+    assert result["model_provider_name"] == mock_embedding_config.model_provider_name
+    assert result["model_name"] == mock_embedding_config.model_name
+    assert result["properties"] == mock_embedding_config.properties
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_config_not_found(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/fake_id"
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Embedding config not found" in response.json()["message"]

@@ -4,7 +4,7 @@ from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
-from kiln_ai.datamodel.rag import RAGPipeline
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
 
 
@@ -16,7 +16,7 @@ class Project(
         "extractor_configs": ExtractorConfig,
         "chunker_configs": ChunkerConfig,
         "embedding_configs": EmbeddingConfig,
-        "rag_pipelines": RAGPipeline,
+        "rag_configs": RagConfig,
     },
 ):
     """
@@ -48,5 +48,5 @@ class Project(
     def embedding_configs(self, readonly: bool = False) -> list[EmbeddingConfig]:
         return super().embedding_configs(readonly=readonly)  # type: ignore
 
-    def rag_pipelines(self, readonly: bool = False) -> list[RAGPipeline]:
-        return super().rag_pipelines(readonly=readonly)  # type: ignore
+    def rag_configs(self, readonly: bool = False) -> list[RagConfig]:
+        return super().rag_configs(readonly=readonly)  # type: ignore

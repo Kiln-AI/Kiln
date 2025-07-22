@@ -23,6 +23,7 @@
   let customDimensions: number | null = null
   let embeddingModels: OptionGroup[] = []
   let loadingModels = true
+  export let keyboard_submit: boolean = false
 
   type EmbeddingOptionValue = {
     model_name: EmbeddingModelName
@@ -115,7 +116,12 @@
         return
       }
 
-      dispatch("success", { embedding_config_id: data.id || "" })
+      if (!data.id) {
+        error = createKilnError(new Error("Failed to create embedding config"))
+        return
+      }
+
+      dispatch("success", { embedding_config_id: data.id })
     } finally {
       loading = false
     }
@@ -125,13 +131,13 @@
 <FormContainer
   submit_visible={true}
   submit_label="Create Embedding Config"
-  on:submit={async (e) => {
+  on:submit={async () => {
     await create_embedding_config()
-    e.preventDefault()
   }}
   {error}
   gap={4}
   bind:submitting={loading}
+  {keyboard_submit}
 >
   <div class="flex flex-col gap-4">
     {#if loadingModels}

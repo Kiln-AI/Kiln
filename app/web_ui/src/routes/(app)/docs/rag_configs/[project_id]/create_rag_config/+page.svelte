@@ -44,6 +44,19 @@
   let loading_chunkers = false
   let loading_embedding = false
 
+  // track which modal is currently open to disable the other forms
+  let modal_opened: "extractor" | "chunker" | "embedding" | null = null
+
+  function handle_modal_open(
+    modal_type: "extractor" | "chunker" | "embedding",
+  ) {
+    modal_opened = modal_type
+  }
+
+  function handle_modal_close() {
+    modal_opened = null
+  }
+
   // Convert configs to option groups for fancy select
   $: extractor_options = [
     {
@@ -142,6 +155,7 @@
   // show the create extractor dialog when the user clicks the create new extractor button
   $: if (selected_extractor_config_id === "create_new") {
     show_create_extractor_dialog?.show()
+    handle_modal_open("extractor")
   } else {
     show_create_extractor_dialog?.close()
   }
@@ -149,6 +163,7 @@
   // show the create chunker dialog when the user clicks the create new chunker button
   $: if (selected_chunker_config_id === "create_new") {
     show_create_chunker_dialog?.show()
+    handle_modal_open("chunker")
   } else {
     show_create_chunker_dialog?.close()
   }
@@ -156,6 +171,7 @@
   // show the create embedding dialog when the user clicks the create new embedding button
   $: if (selected_embedding_config_id === "create_new") {
     show_create_embedding_dialog?.show()
+    handle_modal_open("embedding")
   } else {
     show_create_embedding_dialog?.close()
   }
@@ -244,38 +260,47 @@
     }
   }
 
-  async function create_rag_pipeline() {
+  async function create_rag_config() {
     try {
       loading = true
       error = null
 
       // Validate that all required configs are selected
-      if (!selected_extractor_config_id) {
+      if (
+        !selected_extractor_config_id ||
+        selected_extractor_config_id === "create_new"
+      ) {
         error = createKilnError({
-          message: "Please select an extractor configuration",
+          message: "Please select an extractor configuration.",
           status: 400,
         })
         return
       }
 
-      if (!selected_chunker_config_id) {
+      if (
+        !selected_chunker_config_id ||
+        selected_chunker_config_id === "create_new"
+      ) {
         error = createKilnError({
-          message: "Please select a chunker configuration",
+          message: "Please select a chunker configuration.",
           status: 400,
         })
         return
       }
 
-      if (!selected_embedding_config_id) {
+      if (
+        !selected_embedding_config_id ||
+        selected_embedding_config_id === "create_new"
+      ) {
         error = createKilnError({
-          message: "Please select an embedding configuration",
+          message: "Please select an embedding configuration.",
           status: 400,
         })
         return
       }
 
       const { error: create_error } = await client.POST(
-        "/api/projects/{project_id}/rag_pipelines/create_rag_pipeline",
+        "/api/projects/{project_id}/rag_configs/create_rag_config",
         {
           params: {
             path: {
@@ -317,10 +342,11 @@
       <FormContainer
         submit_visible={true}
         submit_label="Create RAG Configuration"
-        on:submit={create_rag_pipeline}
+        on:submit={create_rag_config}
         {error}
         gap={4}
         bind:submitting={loading}
+        keyboard_submit={!modal_opened}
       >
         <div class="flex flex-col gap-6">
           <!-- Extractor Selection -->
@@ -414,15 +440,21 @@
 <Dialog
   bind:this={show_create_extractor_dialog}
   title="Create Extractor"
-  width="wide"
+  width="normal"
+  on:close={() => {
+    handle_modal_close()
+    if (selected_extractor_config_id === "create_new") {
+      selected_extractor_config_id = null
+    }
+  }}
 >
   <div class="font-light text-sm">
     Extractors are used to convert your documents into text.
   </div>
 
   <CreateExtractorForm
+    keyboard_submit={modal_opened === "extractor"}
     on:success={async (e) => {
-      console.log("success", e)
       await loadExtractorConfigs()
       selected_extractor_config_id = e.detail.extractor_config_id
     }}
@@ -432,7 +464,13 @@
 <Dialog
   bind:this={show_create_chunker_dialog}
   title="Create Chunker"
-  width="wide"
+  width="normal"
+  on:close={() => {
+    handle_modal_close()
+    if (selected_chunker_config_id === "create_new") {
+      selected_chunker_config_id = null
+    }
+  }}
 >
   <div class="font-light text-sm">
     Chunkers are used to split your documents into smaller pieces for better
@@ -440,8 +478,8 @@
   </div>
 
   <CreateChunkerForm
+    keyboard_submit={modal_opened === "chunker"}
     on:success={async (e) => {
-      console.log("success", e)
       await loadChunkerConfigs()
       selected_chunker_config_id = e.detail.chunker_config_id
     }}
@@ -451,7 +489,13 @@
 <Dialog
   bind:this={show_create_embedding_dialog}
   title="Create Embedding Configuration"
-  width="wide"
+  width="normal"
+  on:close={() => {
+    handle_modal_close()
+    if (selected_embedding_config_id === "create_new") {
+      selected_embedding_config_id = null
+    }
+  }}
 >
   <div class="font-light text-sm">
     Embedding models are used to convert your document chunks into vectors for
@@ -459,8 +503,8 @@
   </div>
 
   <CreateEmbeddingForm
+    keyboard_submit={modal_opened === "embedding"}
     on:success={async (e) => {
-      console.log("success", e)
       await loadEmbeddingConfigs()
       selected_embedding_config_id = e.detail.embedding_config_id
     }}

@@ -37,6 +37,7 @@
   let prompt_image: string | null = null
   let prompt_video: string | null = null
   let prompt_audio: string | null = null
+  export let keyboard_submit: boolean = false
 
   const dispatch = createEventDispatcher<{
     success: { extractor_config_id: string }
@@ -59,8 +60,8 @@
           body: {
             name: name || null,
             description: description || null,
-            extractor_type: extractor_type as unknown as ExtractorType,
-            output_format: output_format as unknown as OutputFormat,
+            extractor_type: extractor_type as ExtractorType,
+            output_format: output_format as OutputFormat,
             properties: {
               model_name,
               prompt_document: prompt_document || null,
@@ -90,11 +91,11 @@
   submit_label="Create Extractor"
   on:submit={async (e) => {
     await create_extractor_config()
-    e.preventDefault()
   }}
   {error}
   gap={4}
   bind:submitting={loading}
+  {keyboard_submit}
 >
   <div class="flex flex-col gap-4">
     <FormElement
