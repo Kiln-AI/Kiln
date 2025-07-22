@@ -26,7 +26,7 @@
         "RAG workflows make knowledge from your documents searchable.",
       button_text: "Manage RAG Configurations",
       href: `/docs/rag_configs/${project_id}`,
-      img: "/images/layers.svg",
+      img: "/images/card-search.svg",
     },
   ]
 </script>
