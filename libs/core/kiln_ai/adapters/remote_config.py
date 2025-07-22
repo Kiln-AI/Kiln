@@ -53,7 +53,7 @@ def deserialize_config(path: str | Path) -> KilnRemoteConfig:
                 provider["multimodal_mime_types"] = [
                     mime_type
                     for mime_type in multimodal_mime_types
-                    if mime_type in KilnMimeType
+                    if mime_type in [mt.value for mt in KilnMimeType]
                 ]
 
     return KilnRemoteConfig(
