@@ -7,6 +7,7 @@
   import { base_url } from "$lib/api_client"
 
   export let name: string
+  export let subtitle: string | undefined = undefined
   export let patch_url: string
   export let delete_url: string | undefined = undefined
   export let after_save: () => void = () => {
@@ -95,6 +96,9 @@
       ]
     : []}
 >
+  {#if subtitle}
+    <div class="text-sm font-light text-gray-500">{subtitle}</div>
+  {/if}
   <div class="mt-6">
     <FormContainer
       submit_label="Save"

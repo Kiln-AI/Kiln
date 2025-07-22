@@ -94,10 +94,6 @@
               </div>
             {/each}
           </div>
-          <p class="mt-4 text-sm text-gray-500">
-            Note: Prompt content can't be edited to ensure consistency with
-            prior runs. Instead, copy this prompt and create a new copy.
-          </p>
         </div>
       </div>
     {:else}
@@ -109,6 +105,7 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
+  subtitle="Prompt content can't be edited to ensure consistency with prior runs. If you want to modify the content, create a new prompt instead of editing."
   patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
   delete_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
   fields={[

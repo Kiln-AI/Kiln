@@ -3,6 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { base_url } from "$lib/api_client"
+  import posthog from "posthog-js"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
   export let btn_primary: boolean = true
@@ -85,6 +86,11 @@
     eval_error_count = 0
 
     const eventSource = new EventSource(run_url)
+
+    posthog.capture("run_eval", {
+      eval_type: eval_type,
+      run_all: run_all,
+    })
 
     eventSource.onmessage = (event) => {
       try {

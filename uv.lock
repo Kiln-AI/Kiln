@@ -1128,7 +1128,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.17.0"
+version = "0.18.1"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "boto3" },
@@ -1192,6 +1192,7 @@ name = "kiln-root"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "kiln-ai" },
     { name = "kiln-server" },
     { name = "kiln-studio-desktop" },
@@ -1211,10 +1212,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2024.8.30" },
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
-    { name = "kiln-studio-desktop", virtual = "app/desktop" },
     { name = "llama-index-core", specifier = ">=0.12.42" },
+    { name = "kiln-studio-desktop", editable = "app/desktop" },
 ]
 
 [package.metadata.requires-dev]
@@ -1230,7 +1232,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "0.17.0"
+version = "0.18.1"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
@@ -1276,7 +1278,7 @@ dev = [
 [[package]]
 name = "kiln-studio-desktop"
 version = "0.1.0"
-source = { virtual = "app/desktop" }
+source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },
     { name = "pillow" },

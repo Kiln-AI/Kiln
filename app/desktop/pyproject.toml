@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "kiln-studio-desktop"
 version = "0.1.0"
@@ -11,6 +15,9 @@ dependencies = [
     "scipy>=1.15.2",
 ]
 
+# We don't really want to build a wheel for desktop, it's a pyinstaller project. This is a minimal build to take care of errors.
+[tool.hatch.build.targets.wheel]
+only-include = ["__init__.py"]
 
 [tool.uv.sources]
 kiln-server = { workspace = true }

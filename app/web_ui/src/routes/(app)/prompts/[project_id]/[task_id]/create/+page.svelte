@@ -7,6 +7,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -50,6 +51,9 @@
       if (!data || !data.id) {
         throw new Error("Invalid response from server")
       }
+      posthog.capture("create_prompt_manual", {
+        is_chain_of_thought: is_chain_of_thought,
+      })
 
       // Success! Reload then navigate to the new prompt
       await load_available_prompts()

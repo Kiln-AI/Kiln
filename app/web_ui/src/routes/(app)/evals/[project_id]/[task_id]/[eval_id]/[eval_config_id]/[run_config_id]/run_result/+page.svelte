@@ -107,10 +107,9 @@
       return {}
     }
     return {
-      "Eval Name": evaluator.name,
-      "Eval Method Name": eval_config.name,
-      Algorithm: eval_config_to_ui_name(eval_config.config_type),
-      Model: model_name(eval_config.model_name, $model_info),
+      "Judge Name": eval_config.name,
+      "Judge Algorithm": eval_config_to_ui_name(eval_config.config_type),
+      "Judge Model": model_name(eval_config.model_name, $model_info),
       "Model Provider": provider_name_from_id(eval_config.model_provider),
     }
   }
@@ -118,7 +117,7 @@
 
 <AppPage
   title="Eval Results"
-  subtitle="Evaluating a task run method with an evaluation method."
+  subtitle="Evaluating a task run method with a judge."
 >
   {#if results_loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -161,9 +160,9 @@
         </div>
       </div>
       <div class="grow basis-1/2">
-        <div class="text-xl font-bold">Evaluation Method</div>
+        <div class="text-xl font-bold">Judge</div>
         <div class="text-sm text-gray-500 mb-4">
-          How the task outputs were evaluated.
+          The judge used to evaluate the task outputs.
         </div>
         <div
           class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base"
@@ -239,7 +238,7 @@
                 {@const score_value =
                   result.scores[string_to_json_key(score.name)]}
                 <td class="text-center">
-                  {score_value ? score_value.toFixed(2) : "N/A"}
+                  {score_value != null ? score_value.toFixed(2) : "N/A"}
                 </td>
               {/each}
             </tr>

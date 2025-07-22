@@ -170,7 +170,7 @@ def test_uncensored():
         assert not provider.uncensored
         assert not provider.suggested_for_uncensored_data_gen
 
-    model = get_model_by_name(ModelName.grok_3)
+    model = get_model_by_name(ModelName.grok_4)
     for provider in model.providers:
         assert provider.uncensored
         assert provider.suggested_for_uncensored_data_gen

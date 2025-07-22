@@ -24,6 +24,7 @@
     rating_options_for_sample,
     current_task_rating_options,
   } from "$lib/stores"
+  import posthog from "posthog-js"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -202,6 +203,7 @@
       }
       updated_run = await patch_run(patch_body)
       save_rating_error = null
+      posthog.capture("save_ratings", {})
     } catch (err) {
       save_rating_error = createKilnError(err)
     }
@@ -582,7 +584,14 @@
             >
           </div>
         {/if}
+        <p class="text-xs text-gray-500 mt-1 font-light">
+          Ratings are defined in the <a
+            href={`/settings/edit_task/${project_id}/${task.id}`}
+            class="link">task settings</a
+          >.
+        </p>
       </div>
+
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">
         {#if rating_requirements}
           {#each rating_requirements as requirement, index}

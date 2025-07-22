@@ -317,8 +317,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     @model_validator(mode="after")
     def validate_template_properties(self) -> Self:
-        print(f"val template_properties: {self.template_properties}")
-
         # Check for properties that are required for the issue template
         if self.template == EvalTemplateId.issue:
             if "issue_prompt" not in self.template_properties or not isinstance(
