@@ -16,7 +16,7 @@ class ExtractionInput(BaseModel):
 
 class ExtractionOutput(BaseModel):
     """
-    The output of an extraction. This is the data that will be saved to the database.
+    The output of an extraction. This is the data that will be saved to the data store.
     """
 
     is_passthrough: bool = Field(
