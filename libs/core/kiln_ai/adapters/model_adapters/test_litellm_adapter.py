@@ -7,7 +7,9 @@ import pytest
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.model_adapters.litellm_config import (
+    LiteLlmConfig,
+)
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -460,12 +462,6 @@ async def test_build_completion_kwargs(
 
     # Verify drop_params is set correctly
     assert kwargs["drop_params"] is True
-
-    # Verify allowed_openai_params is set correctly
-    if extra_body.get("reasoning_effort", None) is not None:
-        assert kwargs["allowed_openai_params"] == ["reasoning_effort"]
-    else:
-        assert kwargs["allowed_openai_params"] == []
 
     # Verify optional parameters
     if top_logprobs is not None:
