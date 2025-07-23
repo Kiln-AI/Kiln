@@ -12,7 +12,13 @@ def extractor_adapter_from_type(
 ) -> BaseExtractor:
     match extractor_type:
         case ExtractorType.LITELLM:
-            provider_enum = ModelProviderName(extractor_config.model_provider_name)
+            try:
+                provider_enum = ModelProviderName(extractor_config.model_provider_name)
+            except ValueError:
+                raise ValueError(
+                    f"Unsupported model provider name: {extractor_config.model_provider_name}. "
+                )
+
             core_provider_name = core_provider(
                 extractor_config.model_name, provider_enum
             )
