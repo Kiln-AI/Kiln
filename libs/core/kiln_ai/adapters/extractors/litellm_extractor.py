@@ -13,7 +13,6 @@ from kiln_ai.adapters.extractors.encoding import to_base64_url
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
-from kiln_ai.utils.config import Config
 from kiln_ai.utils.litellm import get_litellm_provider_info
 
 MIME_TYPES_SUPPORTED = {
@@ -79,7 +78,11 @@ def encode_file_litellm_format(path: Path, mime_type: str) -> dict[str, Any]:
 
 
 class LitellmExtractor(BaseExtractor):
-    def __init__(self, extractor_config: ExtractorConfig):
+    def __init__(
+        self,
+        extractor_config: ExtractorConfig,
+        provider_auth: dict[str, Any] | None = None,
+    ):
         if extractor_config.extractor_type != ExtractorType.LITELLM:
             raise ValueError(
                 f"LitellmExtractor must be initialized with a litellm extractor_type config. Got {extractor_config.extractor_type}"
@@ -108,11 +111,34 @@ class LitellmExtractor(BaseExtractor):
             Kind.IMAGE: prompt_image,
         }
 
+        self.provider_auth = provider_auth or {}
+
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
             if mime_type in mime_types:
                 return kind
         return None
+
+    def _build_completion_kwargs(
+        self, prompt: str, extraction_input: ExtractionInput
+    ) -> dict[str, Any]:
+        completion_kwargs = {
+            "model": self.litellm_model_slug(),
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        encode_file_litellm_format(
+                            Path(extraction_input.path), extraction_input.mime_type
+                        ),
+                    ],
+                }
+            ],
+            **self.provider_auth,
+        }
+
+        return completion_kwargs
 
     async def _extract(self, extraction_input: ExtractionInput) -> ExtractionOutput:
         kind = self._get_kind_from_mime_type(extraction_input.mime_type)
@@ -125,22 +151,9 @@ class LitellmExtractor(BaseExtractor):
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
 
-        model_slug = self.litellm_model_slug()
-        response = await litellm.acompletion(
-            model=model_slug,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        encode_file_litellm_format(
-                            Path(extraction_input.path), extraction_input.mime_type
-                        ),
-                    ],
-                }
-            ],
-            api_key=Config.shared().gemini_api_key,
-        )
+        completion_kwargs = self._build_completion_kwargs(prompt, extraction_input)
+
+        response = await litellm.acompletion(**completion_kwargs)
 
         if (
             not isinstance(response, ModelResponse)

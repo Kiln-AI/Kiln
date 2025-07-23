@@ -17,6 +17,7 @@ from kiln_ai.adapters.provider_tools import (
     finetune_from_id,
     finetune_provider_model,
     get_model_and_provider,
+    get_provider_auth_details,
     kiln_model_provider_from,
     lite_llm_config_for_openai_compatible,
     lite_llm_provider_model,
@@ -25,11 +26,7 @@ from kiln_ai.adapters.provider_tools import (
     provider_name_from_id,
     provider_warnings,
 )
-from kiln_ai.datamodel import (
-    Finetune,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -925,3 +922,121 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     # Verify the model_id is transformed into openai/endpoint_id format
     assert provider.model_id == "openai/456"
     assert provider.structured_output_mode == StructuredOutputMode.json_mode
+
+
+@pytest.fixture
+def mock_config_for_provider_auth():
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        mock.shared.return_value = config_instance
+
+        # Set up all the config values
+        config_instance.open_router_api_key = "test-openrouter-key"
+        config_instance.open_ai_api_key = "test-openai-key"
+        config_instance.groq_api_key = "test-groq-key"
+        config_instance.bedrock_access_key = "test-aws-access-key"
+        config_instance.bedrock_secret_key = "test-aws-secret-key"
+        config_instance.ollama_base_url = "http://test-ollama:11434"
+        config_instance.fireworks_api_key = "test-fireworks-key"
+        config_instance.anthropic_api_key = "test-anthropic-key"
+        config_instance.gemini_api_key = "test-gemini-key"
+        config_instance.vertex_project_id = "test-vertex-project"
+        config_instance.vertex_location = "us-central1"
+        config_instance.together_api_key = "test-together-key"
+        config_instance.azure_openai_api_key = "test-azure-key"
+        config_instance.azure_openai_endpoint = "https://test.openai.azure.com"
+        config_instance.huggingface_api_key = "test-hf-key"
+
+        yield mock
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected_auth",
+    [
+        (
+            ModelProviderName.openrouter,
+            {
+                "api_key": "test-openrouter-key",
+                "base_url": "https://openrouter.ai/api/v1",
+                "default_headers": {
+                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "X-Title": "KilnAI",
+                },
+            },
+        ),
+        (ModelProviderName.openai, {"api_key": "test-openai-key"}),
+        (ModelProviderName.groq, {"api_key": "test-groq-key"}),
+        (
+            ModelProviderName.amazon_bedrock,
+            {
+                "aws_access_key_id": "test-aws-access-key",
+                "aws_secret_access_key": "test-aws-secret-key",
+                "aws_region_name": "us-west-2",
+            },
+        ),
+        (
+            ModelProviderName.ollama,
+            {"api_key": "NA", "base_url": "http://test-ollama:11434/v1"},
+        ),
+        (ModelProviderName.fireworks_ai, {"api_key": "test-fireworks-key"}),
+        (ModelProviderName.anthropic, {"api_key": "test-anthropic-key"}),
+        (ModelProviderName.gemini_api, {"api_key": "test-gemini-key"}),
+        (
+            ModelProviderName.vertex,
+            {
+                "vertex_project": "test-vertex-project",
+                "vertex_location": "us-central1",
+            },
+        ),
+        (ModelProviderName.together_ai, {"api_key": "test-together-key"}),
+        (
+            ModelProviderName.azure_openai,
+            {
+                "api_key": "test-azure-key",
+                "api_version": "2025-02-01-preview",
+                "base_url": "https://test.openai.azure.com",
+            },
+        ),
+        (ModelProviderName.huggingface, {"api_key": "test-hf-key"}),
+        (ModelProviderName.openai_compatible, {}),
+    ],
+)
+def test_get_provider_auth_details(
+    mock_config_for_provider_auth, provider_name, expected_auth
+):
+    provider_auth = get_provider_auth_details(provider_name)
+    assert provider_auth == expected_auth
+
+
+def test_get_provider_auth_details_with_string(mock_config_for_provider_auth):
+    # test with a string instead of an enum
+    provider_auth = get_provider_auth_details("openai")
+    assert provider_auth == {"api_key": "test-openai-key"}
+
+
+def test_get_provider_auth_details_unknown_provider():
+    with pytest.raises(ValueError, match="Unhandled enum value: unknown_provider"):
+        get_provider_auth_details("unknown_provider")
+
+
+def test_get_provider_auth_details_virtual_providers():
+    # virtual providers are not supported and should raise an error
+    with pytest.raises(ValueError, match="not a supported core provider"):
+        get_provider_auth_details(ModelProviderName.kiln_fine_tune)
+
+    with pytest.raises(ValueError, match="not a supported core provider"):
+        get_provider_auth_details(ModelProviderName.kiln_custom_registry)
+
+
+@patch.dict("os.environ", {"OPENROUTER_BASE_URL": "https://custom-openrouter.com"})
+def test_get_provider_auth_details_openrouter_custom_url(mock_config_for_provider_auth):
+    provider_auth = get_provider_auth_details(ModelProviderName.openrouter)
+    assert provider_auth["base_url"] == "https://custom-openrouter.com"
+
+
+def test_get_provider_auth_details_ollama_default_url(mock_config_for_provider_auth):
+    # Override the mock to return None for ollama_base_url
+    mock_config_for_provider_auth.shared.return_value.ollama_base_url = None
+
+    provider_auth = get_provider_auth_details(ModelProviderName.ollama)
+    assert provider_auth["base_url"] == "http://localhost:11434/v1"

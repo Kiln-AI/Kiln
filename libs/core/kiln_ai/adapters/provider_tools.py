@@ -1,6 +1,7 @@
 import logging
+import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
@@ -11,12 +12,8 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
-from kiln_ai.adapters.model_adapters.litellm_config import (
-    LiteLlmConfig,
-)
-from kiln_ai.adapters.ollama_tools import (
-    get_ollama_connection,
-)
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.registry import project_from_id
@@ -443,3 +440,77 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         message="Attempted to use Together without an API key set. \nGet your API key from https://together.ai/settings/keys",
     ),
 }
+
+
+def get_provider_auth_details(provider_name: ModelProviderName) -> Dict[str, Any]:
+    match provider_name:
+        case ModelProviderName.openrouter:
+            return {
+                "api_key": Config.shared().open_router_api_key,
+                "base_url": (
+                    os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+                ),
+                "default_headers": {
+                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "X-Title": "KilnAI",
+                },
+            }
+        case ModelProviderName.openai:
+            return {"api_key": Config.shared().open_ai_api_key}
+        case ModelProviderName.groq:
+            return {"api_key": Config.shared().groq_api_key}
+        case ModelProviderName.amazon_bedrock:
+            return {
+                "aws_access_key_id": Config.shared().bedrock_access_key,
+                "aws_secret_access_key": Config.shared().bedrock_secret_key,
+                # The only region that's widely supported for bedrock
+                "aws_region_name": "us-west-2",
+            }
+        case ModelProviderName.ollama:
+            # Set the Ollama base URL for 2 reasons:
+            # 1. To use the correct base URL
+            # 2. We use Ollama's OpenAI compatible API (/v1), and don't just let litellm use the Ollama API. We use more advanced features like json_schema.
+            ollama_base_url = (
+                Config.shared().ollama_base_url or "http://localhost:11434"
+            )
+            return {
+                # LiteLLM errors without an api_key, even though Ollama doesn't support one
+                "api_key": "NA",
+                "base_url": ollama_base_url + "/v1",
+            }
+        case ModelProviderName.fireworks_ai:
+            return {"api_key": Config.shared().fireworks_api_key}
+        case ModelProviderName.anthropic:
+            return {"api_key": Config.shared().anthropic_api_key}
+        case ModelProviderName.gemini_api:
+            return {"api_key": Config.shared().gemini_api_key}
+        case ModelProviderName.vertex:
+            return {
+                "vertex_project": Config.shared().vertex_project_id,
+                "vertex_location": Config.shared().vertex_location,
+            }
+        case ModelProviderName.together_ai:
+            return {"api_key": Config.shared().together_api_key}
+        case ModelProviderName.azure_openai:
+            return {
+                "api_key": Config.shared().azure_openai_api_key,
+                "api_version": "2025-02-01-preview",
+                "base_url": Config.shared().azure_openai_endpoint,
+            }
+        case ModelProviderName.huggingface:
+            return {"api_key": Config.shared().huggingface_api_key}
+        case ModelProviderName.openai_compatible:
+            # For OpenAI compatible providers, auth details are handled separately
+            # via lite_llm_config_for_openai_compatible function
+            return {}
+        # These are virtual providers that should have mapped to an actual provider in core_provider
+        case ModelProviderName.kiln_fine_tune:
+            raise ValueError(
+                "Fine tune is not a supported core provider. It should map to an actual provider."
+            )
+        case ModelProviderName.kiln_custom_registry:
+            raise ValueError(
+                "Custom openai compatible provider is not a supported core provider. It should map to an actual provider."
+            )
+        case _:
+            raise_exhaustive_enum_error(provider_name)
