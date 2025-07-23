@@ -7,7 +7,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
 )
 from kiln_ai.adapters.provider_tools import (
     core_provider,
-    get_provider_auth_details,
+    get_provider_connection_details,
     lite_llm_config_for_openai_compatible,
 )
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -32,11 +32,11 @@ def adapter_for_task(
             base_adapter_config=base_adapter_config,
         )
 
-    provider_auth = get_provider_auth_details(core_provider_name)
+    provider_connection_details = get_provider_connection_details(core_provider_name)
 
     # we need to extract these to pass them as separate arguments to the LiteLlmConfig
-    default_headers = provider_auth.pop("default_headers", None)
-    base_url = provider_auth.pop("base_url", None)
+    default_headers = provider_connection_details.pop("default_headers", None)
+    base_url = provider_connection_details.pop("base_url", None)
 
     return LiteLlmAdapter(
         kiln_task=kiln_task,
@@ -44,7 +44,7 @@ def adapter_for_task(
             run_config_properties=run_config_properties,
             base_url=base_url,
             default_headers=default_headers,
-            additional_body_options=provider_auth,
+            additional_body_options=provider_connection_details,
         ),
         base_adapter_config=base_adapter_config,
     )

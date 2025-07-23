@@ -442,7 +442,7 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
 }
 
 
-def get_provider_auth_details(provider_name: ModelProviderName) -> Dict[str, Any]:
+def get_provider_connection_details(provider_name: ModelProviderName) -> Dict[str, Any]:
     match provider_name:
         case ModelProviderName.openrouter:
             return {
@@ -503,7 +503,7 @@ def get_provider_auth_details(provider_name: ModelProviderName) -> Dict[str, Any
             # For OpenAI compatible providers, auth details are handled separately
             # via lite_llm_config_for_openai_compatible function
             return {}
-        # These are virtual providers that should have mapped to an actual provider in core_provider
+        # These are virtual providers that should have mapped to an actual provider upstream (using core_provider method)
         case ModelProviderName.kiln_fine_tune:
             raise ValueError(
                 "Fine tune is not a supported core provider. It should map to an actual provider."

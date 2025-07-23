@@ -11,7 +11,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
 )
-from kiln_ai.adapters.provider_tools import Config, kiln_model_provider_from
+from kiln_ai.adapters.provider_tools import Config
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
@@ -34,20 +34,13 @@ def basic_task():
     )
 
 
-@pytest.fixture
-def mock_finetune_from_id():
-    with patch("kiln_ai.adapters.provider_tools.finetune_from_id") as mock:
-        mock.return_value.provider = ModelProviderName.openai
-        mock.return_value.fine_tune_model_id = "test-model"
-        mock.return_value.data_strategy = "final_only"
-        yield mock
-
-
 def test_openai_adapter_creation(mock_config, basic_task):
     with patch(
-        "kiln_ai.adapters.adapter_registry.get_provider_auth_details"
-    ) as mock_auth:
-        mock_auth.return_value = {"api_key": "test-openai-key"}
+        "kiln_ai.adapters.adapter_registry.get_provider_connection_details"
+    ) as mock_get_provider_connection_details:
+        mock_get_provider_connection_details.return_value = {
+            "api_key": "test-openai-key"
+        }
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
@@ -59,8 +52,10 @@ def test_openai_adapter_creation(mock_config, basic_task):
             ),
         )
 
-        # Verify the new auth system is used
-        mock_auth.assert_called_once_with(ModelProviderName.openai)
+        # Verify the connection details were accessed (not openai_compatible bypass)
+        mock_get_provider_connection_details.assert_called_once_with(
+            ModelProviderName.openai
+        )
 
         # Verify adapter configuration
         assert isinstance(adapter, LiteLlmAdapter)
@@ -70,15 +65,15 @@ def test_openai_adapter_creation(mock_config, basic_task):
             adapter.config.run_config_properties.model_provider_name
             == ModelProviderName.openai
         )
-        assert adapter.config.base_url is None  # OpenAI url is default
+        assert adapter.config.base_url is None
         assert adapter.config.default_headers is None
 
 
 def test_openrouter_adapter_creation(mock_config, basic_task):
     with patch(
-        "kiln_ai.adapters.adapter_registry.get_provider_auth_details"
-    ) as mock_auth:
-        mock_auth.return_value = {
+        "kiln_ai.adapters.adapter_registry.get_provider_connection_details"
+    ) as mock_get_provider_connection_details:
+        mock_get_provider_connection_details.return_value = {
             "api_key": "test-openrouter-key",
             "base_url": "https://openrouter.ai/api/v1",
             "default_headers": {
@@ -97,8 +92,10 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
             ),
         )
 
-        # Verify the new auth system is used
-        mock_auth.assert_called_once_with(ModelProviderName.openrouter)
+        # Verify the connection details were accessed (not openai_compatible bypass)
+        mock_get_provider_connection_details.assert_called_once_with(
+            ModelProviderName.openrouter
+        )
 
         # Verify adapter configuration including complex auth (headers + base_url)
         assert isinstance(adapter, LiteLlmAdapter)
@@ -130,6 +127,13 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
         ModelProviderName.amazon_bedrock,
         ModelProviderName.ollama,
         ModelProviderName.fireworks_ai,
+        ModelProviderName.anthropic,
+        ModelProviderName.gemini_api,
+        ModelProviderName.vertex,
+        ModelProviderName.together_ai,
+        ModelProviderName.azure_openai,
+        ModelProviderName.huggingface,
+        ModelProviderName.openrouter,
     ],
 )
 def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
@@ -194,34 +198,39 @@ def test_invalid_provider(mock_config, basic_task):
         )
 
 
-@patch("kiln_ai.adapters.adapter_registry.lite_llm_config_for_openai_compatible")
-def test_openai_compatible_adapter(mock_compatible_config, mock_config, basic_task):
-    mock_compatible_config.return_value.model_name = "test-model"
-    mock_compatible_config.return_value.additional_body_options = {
-        "api_key": "test-key"
-    }
-    mock_compatible_config.return_value.base_url = "https://test.com/v1"
-    mock_compatible_config.return_value.provider_name = "CustomProvider99"
-    mock_compatible_config.return_value.run_config_properties = RunConfigProperties(
-        model_name="provider::test-model",
-        model_provider_name=ModelProviderName.openai_compatible,
-        prompt_id="simple_prompt_builder",
-        structured_output_mode="json_schema",
-    )
+def test_openai_compatible_adapter(basic_task):
+    # patch Config.shared().openai_compatible_providers
+    with patch("kiln_ai.adapters.provider_tools.Config.shared") as mock_config_shared:
+        mock_config_shared.return_value.openai_compatible_providers = [
+            {
+                "name": "some-provider",
+                "base_url": "https://test.com/v1",
+                "api_key": "test-key",
+            }
+        ]
 
-    adapter = adapter_for_task(
-        kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
-            model_name="provider::test-model",
-            model_provider_name=ModelProviderName.openai_compatible,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
-        ),
-    )
+        adapter = adapter_for_task(
+            kiln_task=basic_task,
+            run_config_properties=RunConfigProperties(
+                model_name="some-provider::test-model",
+                model_provider_name="openai_compatible",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
 
-    assert isinstance(adapter, LiteLlmAdapter)
-    mock_compatible_config.assert_called_once()
-    assert adapter.config == mock_compatible_config.return_value
+        assert isinstance(adapter, LiteLlmAdapter)
+        assert adapter.config.additional_body_options == {"api_key": "test-key"}
+        assert adapter.config.base_url == "https://test.com/v1"
+        assert adapter.config.run_config_properties.model_name == "test-model"
+        assert (
+            adapter.config.run_config_properties.model_provider_name
+            == "openai_compatible"
+        )
+        assert adapter.config.run_config_properties.prompt_id == "simple_prompt_builder"
+        assert (
+            adapter.config.run_config_properties.structured_output_mode == "json_schema"
+        )
 
 
 def test_custom_openai_compatible_provider(mock_config, basic_task):
@@ -245,55 +254,21 @@ def test_custom_openai_compatible_provider(mock_config, basic_task):
     )
 
 
-async def test_fine_tune_provider(mock_config, basic_task, mock_finetune_from_id):
-    adapter = adapter_for_task(
-        kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
-            model_name="proj::task::tune",
-            model_provider_name=ModelProviderName.kiln_fine_tune,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
-        ),
-    )
-
-    mock_finetune_from_id.assert_called_once_with("proj::task::tune")
-    assert isinstance(adapter, LiteLlmAdapter)
-    assert (
-        adapter.config.run_config_properties.model_provider_name
-        == ModelProviderName.kiln_fine_tune
-    )
-    # Kiln model name here, but the underlying openai model id below
-    assert adapter.config.run_config_properties.model_name == "proj::task::tune"
-
-    provider = kiln_model_provider_from(
-        "proj::task::tune", provider_name=ModelProviderName.kiln_fine_tune
-    )
-    # The actual model name from the fine tune object
-    assert provider.model_id == "test-model"
-
-
 @pytest.fixture
-def mock_get_provider_auth_details():
-    """Mock get_provider_auth_details to return predictable auth details."""
-    with patch("kiln_ai.adapters.adapter_registry.get_provider_auth_details") as mock:
-        yield mock
-
-
-@pytest.fixture
-def mock_lite_llm_config_for_openai_compatible():
-    """Mock lite_llm_config_for_openai_compatible for testing."""
+def mock_get_provider_connection_details():
+    """Mock get_provider_connection_details to return predictable auth details."""
     with patch(
-        "kiln_ai.adapters.adapter_registry.lite_llm_config_for_openai_compatible"
+        "kiln_ai.adapters.adapter_registry.get_provider_connection_details"
     ) as mock:
         yield mock
 
 
 def test_adapter_for_task_core_provider_mapping(
-    mock_get_provider_auth_details, basic_task
+    mock_get_provider_connection_details, basic_task
 ):
     """Test adapter_for_task correctly maps virtual providers to core providers."""
     # Mock auth details for the underlying provider
-    mock_get_provider_auth_details.return_value = {"api_key": "test-openai-key"}
+    mock_get_provider_connection_details.return_value = {"api_key": "test-openai-key"}
 
     # Use a virtual provider that should map to openai
     with patch("kiln_ai.adapters.adapter_registry.core_provider") as mock_core_provider:
@@ -302,7 +277,7 @@ def test_adapter_for_task_core_provider_mapping(
         adapter = adapter_for_task(
             kiln_task=basic_task,
             run_config_properties=RunConfigProperties(
-                model_name="proj::task::tune",
+                model_name="fake-gpt",
                 model_provider_name=ModelProviderName.kiln_fine_tune,
                 prompt_id="simple_prompt_builder",
                 structured_output_mode="json_schema",
@@ -311,11 +286,13 @@ def test_adapter_for_task_core_provider_mapping(
 
         # Verify core_provider was called to map virtual to actual provider
         mock_core_provider.assert_called_once_with(
-            "proj::task::tune", ModelProviderName.kiln_fine_tune
+            "fake-gpt", ModelProviderName.kiln_fine_tune
         )
 
         # Verify auth was fetched for the mapped core provider
-        mock_get_provider_auth_details.assert_called_once_with(ModelProviderName.openai)
+        mock_get_provider_connection_details.assert_called_once_with(
+            ModelProviderName.openai
+        )
 
         # Verify adapter is created correctly
         assert isinstance(adapter, LiteLlmAdapter)
@@ -323,10 +300,10 @@ def test_adapter_for_task_core_provider_mapping(
 
 
 def test_adapter_for_task_preserves_run_config_properties(
-    mock_get_provider_auth_details, basic_task
+    mock_get_provider_connection_details, basic_task
 ):
     """Test adapter_for_task preserves all run config properties correctly."""
-    mock_get_provider_auth_details.return_value = {"api_key": "test-key"}
+    mock_get_provider_connection_details.return_value = {"api_key": "test-key"}
 
     run_config_props = RunConfigProperties(
         model_name="gpt-4",
@@ -358,10 +335,10 @@ def test_adapter_for_task_preserves_run_config_properties(
 
 
 def test_adapter_for_task_with_base_adapter_config(
-    mock_get_provider_auth_details, basic_task
+    mock_get_provider_connection_details, basic_task
 ):
     """Test adapter_for_task correctly passes through base_adapter_config."""
-    mock_get_provider_auth_details.return_value = {"api_key": "test-key"}
+    mock_get_provider_connection_details.return_value = {"api_key": "test-key"}
 
     base_config = AdapterConfig(
         allow_saving=False,

@@ -81,7 +81,7 @@ class LitellmExtractor(BaseExtractor):
     def __init__(
         self,
         extractor_config: ExtractorConfig,
-        provider_auth: dict[str, Any] | None = None,
+        provider_connection_details: dict[str, Any] | None = None,
     ):
         if extractor_config.extractor_type != ExtractorType.LITELLM:
             raise ValueError(
@@ -111,7 +111,7 @@ class LitellmExtractor(BaseExtractor):
             Kind.IMAGE: prompt_image,
         }
 
-        self.provider_auth = provider_auth or {}
+        self.provider_connection_details = provider_connection_details or {}
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
@@ -135,7 +135,7 @@ class LitellmExtractor(BaseExtractor):
                     ],
                 }
             ],
-            **self.provider_auth,
+            **self.provider_connection_details,
         }
 
         return completion_kwargs

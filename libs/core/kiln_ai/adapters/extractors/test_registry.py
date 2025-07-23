@@ -29,11 +29,11 @@ def test_extractor_adapter_from_type():
     assert extractor.extractor_config.model_provider_name == "gemini_api"
 
 
-@patch("kiln_ai.adapters.extractors.registry.get_provider_auth_details")
-def test_extractor_adapter_from_type_uses_auth_details(mock_get_auth):
+@patch("kiln_ai.adapters.extractors.registry.get_provider_connection_details")
+def test_extractor_adapter_from_type_uses_connection_details(mock_get_auth):
     """Test that extractor receives auth details from provider_tools."""
-    mock_auth_details = {"api_key": "test-key", "base_url": "https://test.com"}
-    mock_get_auth.return_value = mock_auth_details
+    mock_connection_details = {"api_key": "test-key", "base_url": "https://test.com"}
+    mock_get_auth.return_value = mock_connection_details
 
     extractor = extractor_adapter_from_type(
         ExtractorType.LITELLM,
@@ -52,7 +52,7 @@ def test_extractor_adapter_from_type_uses_auth_details(mock_get_auth):
     )
 
     assert isinstance(extractor, LitellmExtractor)
-    assert extractor.provider_auth == mock_auth_details
+    assert extractor.provider_connection_details == mock_connection_details
     mock_get_auth.assert_called_once_with(ModelProviderName.openai)
 
 

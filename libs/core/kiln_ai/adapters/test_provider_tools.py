@@ -17,7 +17,7 @@ from kiln_ai.adapters.provider_tools import (
     finetune_from_id,
     finetune_provider_model,
     get_model_and_provider,
-    get_provider_auth_details,
+    get_provider_connection_details,
     kiln_model_provider_from,
     lite_llm_config_for_openai_compatible,
     lite_llm_provider_model,
@@ -925,7 +925,7 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
 
 
 @pytest.fixture
-def mock_config_for_provider_auth():
+def mock_config_for_provider_connection_details():
     with patch("kiln_ai.adapters.provider_tools.Config") as mock:
         config_instance = Mock()
         mock.shared.return_value = config_instance
@@ -1001,42 +1001,54 @@ def mock_config_for_provider_auth():
         (ModelProviderName.openai_compatible, {}),
     ],
 )
-def test_get_provider_auth_details(
-    mock_config_for_provider_auth, provider_name, expected_auth
+def test_get_provider_connection_details(
+    mock_config_for_provider_connection_details, provider_name, expected_auth
 ):
-    provider_auth = get_provider_auth_details(provider_name)
-    assert provider_auth == expected_auth
+    provider_connection_details = get_provider_connection_details(provider_name)
+    assert provider_connection_details == expected_auth
 
 
-def test_get_provider_auth_details_with_string(mock_config_for_provider_auth):
+def test_get_provider_connection_details_with_string(
+    mock_config_for_provider_connection_details,
+):
     # test with a string instead of an enum
-    provider_auth = get_provider_auth_details("openai")
-    assert provider_auth == {"api_key": "test-openai-key"}
+    provider_connection_details = get_provider_connection_details("openai")
+    assert provider_connection_details == {"api_key": "test-openai-key"}
 
 
-def test_get_provider_auth_details_unknown_provider():
+def test_get_provider_connection_details_unknown_provider():
     with pytest.raises(ValueError, match="Unhandled enum value: unknown_provider"):
-        get_provider_auth_details("unknown_provider")
+        get_provider_connection_details("unknown_provider")
 
 
-def test_get_provider_auth_details_virtual_providers():
+def test_get_provider_connection_details_virtual_providers():
     # virtual providers are not supported and should raise an error
     with pytest.raises(ValueError, match="not a supported core provider"):
-        get_provider_auth_details(ModelProviderName.kiln_fine_tune)
+        get_provider_connection_details(ModelProviderName.kiln_fine_tune)
 
     with pytest.raises(ValueError, match="not a supported core provider"):
-        get_provider_auth_details(ModelProviderName.kiln_custom_registry)
+        get_provider_connection_details(ModelProviderName.kiln_custom_registry)
 
 
 @patch.dict("os.environ", {"OPENROUTER_BASE_URL": "https://custom-openrouter.com"})
-def test_get_provider_auth_details_openrouter_custom_url(mock_config_for_provider_auth):
-    provider_auth = get_provider_auth_details(ModelProviderName.openrouter)
-    assert provider_auth["base_url"] == "https://custom-openrouter.com"
+def test_get_provider_connection_details_openrouter_custom_url(
+    mock_config_for_provider_connection_details,
+):
+    provider_connection_details = get_provider_connection_details(
+        ModelProviderName.openrouter
+    )
+    assert provider_connection_details["base_url"] == "https://custom-openrouter.com"
 
 
-def test_get_provider_auth_details_ollama_default_url(mock_config_for_provider_auth):
+def test_get_provider_connection_details_ollama_default_url(
+    mock_config_for_provider_connection_details,
+):
     # Override the mock to return None for ollama_base_url
-    mock_config_for_provider_auth.shared.return_value.ollama_base_url = None
+    mock_config_for_provider_connection_details.shared.return_value.ollama_base_url = (
+        None
+    )
 
-    provider_auth = get_provider_auth_details(ModelProviderName.ollama)
-    assert provider_auth["base_url"] == "http://localhost:11434/v1"
+    provider_connection_details = get_provider_connection_details(
+        ModelProviderName.ollama
+    )
+    assert provider_connection_details["base_url"] == "http://localhost:11434/v1"
