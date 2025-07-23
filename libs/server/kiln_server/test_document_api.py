@@ -79,9 +79,9 @@ def extractor_config_setup(project_setup):
         output_format=OutputFormat.TEXT,
         passthrough_mimetypes=[OutputFormat.TEXT],
         extractor_type=ExtractorType.LITELLM,
+        model_provider_name="gemini_api",
+        model_name="gemini-2.0-flash",
         properties={
-            "model_provider_name": "gemini_api",
-            "model_name": "gemini-2.0-flash",
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -350,9 +350,9 @@ async def test_create_extractor_config_success(client, project_setup):
             "description": "Test description",
             "output_format": "text/plain",
             "passthrough_mimetypes": ["text/plain"],
+            "model_provider_name": "gemini_api",
+            "model_name": "gemini-2.0-flash",
             "properties": {
-                "model_provider_name": "gemini_api",
-                "model_name": "gemini-2.0-flash",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -371,8 +371,8 @@ async def test_create_extractor_config_success(client, project_setup):
     assert result["output_format"] == "text/plain"
     assert result["extractor_type"] == "litellm"
     assert result["passthrough_mimetypes"] == ["text/plain"]
-    assert result["properties"]["model_provider_name"] == "gemini_api"
-    assert result["properties"]["model_name"] == "gemini-2.0-flash"
+    assert result["model_provider_name"] == "gemini_api"
+    assert result["model_name"] == "gemini-2.0-flash"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"
@@ -619,16 +619,13 @@ async def test_create_extractor_config_model_not_found(client, project_setup):
                 "description": "Test description",
                 "output_format": "text/plain",
                 "passthrough_mimetypes": ["text/plain"],
-                "properties": {
-                    # use a real provider name to avoid the error when we try to convert the model provider name to a ModelProviderName enum
-                    "model_provider_name": "openai",
-                    "model_name": "fake_model",
-                },
+                "model_provider_name": "openai",
+                "model_name": "fake_model",
             },
         )
 
     assert response.status_code == 422, response.text
-    assert "Model fake_model not found in openai" in response.json()["message"]
+    assert "Model fake_model not found" in response.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -649,16 +646,13 @@ async def test_create_extractor_config_model_invalid_provider_name(
                 "description": "Test description",
                 "output_format": "text/plain",
                 "passthrough_mimetypes": ["text/plain"],
-                "properties": {
-                    "model_provider_name": "fake_provider",
-                    "model_name": "fake_model",
-                },
+                "model_provider_name": "fake_provider",
+                "model_name": "fake_model",
             },
         )
 
     # the error occurs during validation of request payload
     assert response.status_code == 422, response.text
-    assert "Invalid model provider name: fake_provider" in response.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -684,11 +678,8 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
                 "description": "Test description",
                 "output_format": "text/plain",
                 "passthrough_mimetypes": ["text/plain"],
-                "properties": {
-                    # use a real provider name to avoid the error when we try to convert the model provider name to a ModelProviderName enum
-                    "model_provider_name": "openai",
-                    "model_name": "fake_model",
-                },
+                "model_provider_name": "openai",
+                "model_name": "fake_model",
             },
         )
 

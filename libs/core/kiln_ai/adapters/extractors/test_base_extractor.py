@@ -27,8 +27,6 @@ def mock_litellm_properties():
         "prompt_image": "mock prompt for image",
         "prompt_video": "mock prompt for video",
         "prompt_audio": "mock prompt for audio",
-        "model_name": "gemini-2.0-flash",
-        "model_provider_name": "gemini",
     }
 
 
@@ -37,6 +35,8 @@ def mock_extractor(mock_litellm_properties):
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
+            model_provider_name="gemini_api",
+            model_name="gemini-2.0-flash",
             extractor_type=ExtractorType.LITELLM,
             output_format=OutputFormat.MARKDOWN,
             properties=mock_litellm_properties,
@@ -52,6 +52,8 @@ def mock_extractor_with_passthroughs(
     return MockBaseExtractor(
         ExtractorConfig(
             name="mock",
+            model_provider_name="gemini_api",
+            model_name="gemini-2.0-flash",
             extractor_type=ExtractorType.LITELLM,
             passthrough_mimetypes=mimetypes,
             output_format=output_format,
@@ -108,7 +110,6 @@ async def test_extract_passthrough(mock_litellm_properties):
             ExtractionInput(
                 path="test.txt",
                 mime_type="text/plain",
-                model_slug="mock/model",
             )
         )
 
@@ -155,7 +156,6 @@ async def test_extract_passthrough_output_format(
             ExtractionInput(
                 path="test.txt",
                 mime_type="text/plain",
-                model_slug="mock/model",
             )
         )
 
@@ -198,7 +198,6 @@ async def test_extract_non_passthrough(
             ExtractionInput(
                 path=path,
                 mime_type=mime_type,
-                model_slug="mock/model",
             )
         )
 
@@ -207,7 +206,6 @@ async def test_extract_non_passthrough(
             ExtractionInput(
                 path=path,
                 mime_type=mime_type,
-                model_slug="mock/model",
             )
         )
 
@@ -219,6 +217,8 @@ async def test_extract_non_passthrough(
 async def test_default_output_format(mock_litellm_properties):
     config = ExtractorConfig(
         name="mock",
+        model_provider_name="gemini_api",
+        model_name="gemini-2.0-flash",
         extractor_type=ExtractorType.LITELLM,
         properties=mock_litellm_properties,
     )
@@ -236,6 +236,5 @@ async def test_extract_failure_from_concrete_extractor(mock_extractor):
                 ExtractionInput(
                     path="test.txt",
                     mime_type="text/plain",
-                    model_slug="mock/model",
                 )
             )

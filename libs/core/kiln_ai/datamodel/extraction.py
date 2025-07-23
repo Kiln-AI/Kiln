@@ -83,13 +83,6 @@ def validate_prompt(prompt: Any, name: str):
         raise ValueError(f"{name} cannot be empty.")
 
 
-def validate_model_name(model_name: Any):
-    if not isinstance(model_name, str):
-        raise ValueError("model_name must be a string.")
-    if model_name == "":
-        raise ValueError("model_name cannot be empty.")
-
-
 class ExtractionSource(str, Enum):
     PROCESSED = "processed"
     PASSTHROUGH = "passthrough"
@@ -142,6 +135,12 @@ class ExtractorConfig(KilnParentedModel):
     description: str | None = Field(
         default=None, description="The description of the extractor config"
     )
+    model_provider_name: str = Field(
+        description="The name of the model provider to use for the extractor config.",
+    )
+    model_name: str = Field(
+        description="The name of the model to use for the extractor config.",
+    )
     output_format: OutputFormat = Field(
         default=OutputFormat.MARKDOWN,
         description="The format to use for the output.",
@@ -163,11 +162,7 @@ class ExtractorConfig(KilnParentedModel):
     def validate_properties(
         cls, properties: dict[str, Any], info: ValidationInfo
     ) -> dict[str, Any]:
-        extractor_type = info.data.get("extractor_type")
         output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
-
-        if extractor_type != ExtractorType.LITELLM:
-            raise ValueError(f"Invalid extractor type: {extractor_type}")
 
         def get_property(key: str, default: str) -> str:
             value = properties.get(key)
@@ -177,17 +172,7 @@ class ExtractorConfig(KilnParentedModel):
                 raise ValueError(f"Prompt for {key} must be a string")
             return value
 
-        model_name = get_property("model_name", default="")
-        if not model_name:
-            raise ValueError("model_name must be a non-empty string")
-
-        model_provider_name = get_property("model_provider_name", default="")
-        if not model_provider_name:
-            raise ValueError("model_provider_name must be a non-empty string")
-
         return {
-            "model_provider_name": model_provider_name,
-            "model_name": model_name,
             "prompt_document": get_property(
                 "prompt_document",
                 default=ExtractionPromptBuilder.prompt_for_kind(
@@ -213,24 +198,6 @@ class ExtractorConfig(KilnParentedModel):
                 ),
             ),
         }
-
-    def model_provider_name(self) -> str | None:
-        model_provider_name = self.properties.get("model_provider_name")
-        if model_provider_name is None:
-            return None
-        if not isinstance(model_provider_name, str):
-            raise ValueError(
-                "Invalid model_provider_name. model_provider_name must be a string."
-            )
-        return model_provider_name
-
-    def model_name(self) -> str | None:
-        model_name = self.properties.get("model_name")
-        if model_name is None:
-            return None
-        if not isinstance(model_name, str):
-            raise ValueError("Invalid model_name. model_name must be a string.")
-        return model_name
 
     def prompt_document(self) -> str | None:
         prompt = self.properties.get("prompt_document")

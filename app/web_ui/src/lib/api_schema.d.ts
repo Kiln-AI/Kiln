@@ -1544,6 +1544,13 @@ export interface components {
              * @description The description of the extractor config
              */
             description?: string | null;
+            /** @description The name of the model provider to use for the extractor config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
             /** @description The output format of the extractor config */
             output_format: components["schemas"]["OutputFormat"];
             /**
@@ -2257,6 +2264,16 @@ export interface components {
              * @description The description of the extractor config
              */
             description?: string | null;
+            /**
+             * Model Provider Name
+             * @description The name of the model provider to use for the extractor config.
+             */
+            model_provider_name: string;
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
             /**
              * @description The format to use for the output.
              * @default text/markdown

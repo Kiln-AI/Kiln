@@ -35,13 +35,13 @@ def mock_litellm_extractor():
         ExtractorConfig(
             name="mock",
             extractor_type=ExtractorType.LITELLM,
+            model_name="model-name",
+            model_provider_name="provider-name",
             properties={
                 "prompt_document": PROMPTS_FOR_KIND["document"],
                 "prompt_image": PROMPTS_FOR_KIND["image"],
                 "prompt_video": PROMPTS_FOR_KIND["video"],
                 "prompt_audio": PROMPTS_FOR_KIND["audio"],
-                "model_name": "model-name",
-                "model_provider_name": "provider-name",
             },
         ),
     )

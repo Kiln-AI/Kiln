@@ -7,6 +7,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { goto } from "$app/navigation"
   import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
+  import type { ModelProviderName } from "$lib/types"
 
   $: project_id = $page.params.project_id
 
@@ -40,9 +41,9 @@
             name: name || null,
             description: description || null,
             output_format: output_format,
+            model_name: model_name,
+            model_provider_name: model_provider_name as ModelProviderName,
             properties: {
-              model_name: model_name,
-              model_provider_name: model_provider_name,
               prompt_document: prompt_document || null,
               prompt_image: prompt_image || null,
               prompt_video: prompt_video || null,

@@ -11,9 +11,9 @@ def test_extractor_adapter_from_type():
         ExtractorConfig(
             name="test-extractor",
             extractor_type=ExtractorType.LITELLM,
+            model_provider_name="gemini_api",
+            model_name="gemini-2.0-flash",
             properties={
-                "model_provider_name": "gemini",
-                "model_name": "gemini-2.0-flash",
                 "prompt_document": "Extract the text from the document",
                 "prompt_image": "Extract the text from the image",
                 "prompt_video": "Extract the text from the video",
@@ -22,8 +22,8 @@ def test_extractor_adapter_from_type():
         ),
     )
     assert isinstance(extractor, LitellmExtractor)
-    assert extractor.extractor_config.properties["model_name"] == "gemini-2.0-flash"
-    assert extractor.extractor_config.properties["model_provider_name"] == "gemini"
+    assert extractor.extractor_config.model_name == "gemini-2.0-flash"
+    assert extractor.extractor_config.model_provider_name == "gemini_api"
 
 
 def test_extractor_adapter_from_type_invalid():

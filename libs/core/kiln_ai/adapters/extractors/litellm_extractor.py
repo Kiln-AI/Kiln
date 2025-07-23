@@ -85,16 +85,6 @@ class LitellmExtractor(BaseExtractor):
                 f"LitellmExtractor must be initialized with a litellm extractor_type config. Got {extractor_config.extractor_type}"
             )
 
-        model_provider_name = extractor_config.model_provider_name()
-        if model_provider_name is None:
-            raise ValueError(
-                "properties.model_provider_name is required for LitellmExtractor"
-            )
-
-        model_name = extractor_config.model_name()
-        if model_name is None:
-            raise ValueError("properties.model_name is required for LitellmExtractor")
-
         prompt_document = extractor_config.prompt_document()
         if prompt_document is None or prompt_document == "":
             raise ValueError(
@@ -172,25 +162,14 @@ class LitellmExtractor(BaseExtractor):
         )
 
     def litellm_model_slug(self) -> str:
-        kiln_model_provider_name = self.extractor_config.model_provider_name()
-        if kiln_model_provider_name is None:
-            raise ValueError(
-                "properties.model_provider_name is required for LitellmExtractor"
-            )
-
-        kiln_model_name = self.extractor_config.model_name()
-        if kiln_model_name is None:
-            raise ValueError(
-                "properties.model_provider_name and properties.model_name are required for LitellmExtractor"
-            )
-
         kiln_model_provider = built_in_models_from_provider(
-            ModelProviderName(kiln_model_provider_name), kiln_model_name
+            ModelProviderName(self.extractor_config.model_provider_name),
+            self.extractor_config.model_name,
         )
 
         if kiln_model_provider is None:
             raise ValueError(
-                f"Model provider {kiln_model_provider_name} not found in the list of built-in models"
+                f"Model provider {self.extractor_config.model_provider_name} not found in the list of built-in models"
             )
 
         # need to translate into LiteLLM model slug
