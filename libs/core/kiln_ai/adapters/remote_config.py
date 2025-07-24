@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 import requests
+from pydantic import ValidationError
 
 from .ml_model_list import KilnModel, built_in_models
 
@@ -21,7 +22,20 @@ def serialize_config(models: List[KilnModel], path: str | Path) -> None:
 def deserialize_config(path: str | Path) -> List[KilnModel]:
     raw = json.loads(Path(path).read_text())
     model_data = raw.get("model_list", raw if isinstance(raw, list) else [])
-    return [KilnModel.model_validate(item) for item in model_data]
+
+    # We must be careful here, because some of the JSON data may be generated from a forward
+    # version of the code that has newer fields / versions of the fields, that may cause
+    # the current client this code is running on to fail to validate the item into a KilnModel.
+    models = []
+    for item in model_data:
+        # We skip any model that fails validation - the models that the client can support
+        # will be pulled from the remote config, but the user will need to update their
+        # client to the latest version to see the newer models that break backwards compatibility.
+        try:
+            models.append(KilnModel.model_validate(item))
+        except ValidationError as e:
+            logger.warning("Failed to validate model %s: %s", item, e)
+    return models
 
 
 def load_from_url(url: str) -> List[KilnModel]:
