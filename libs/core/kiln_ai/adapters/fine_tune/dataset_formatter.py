@@ -7,7 +7,10 @@ from uuid import uuid4
 
 from kiln_ai.adapters.chat.chat_formatter import ChatMessage, get_chat_formatter
 from kiln_ai.datamodel import DatasetSplit, TaskRun
-from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import (
+    DATA_STRATEGIES_ALLOWED_THINKING_INSTRUCTIONS,
+    ChatStrategy,
+)
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -349,7 +352,7 @@ class DatasetFormatter:
 
         generator = FORMAT_GENERATORS[format_type]
 
-        include_cot = data_strategy in THINKING_DATA_STRATEGIES
+        include_cot = data_strategy in DATA_STRATEGIES_ALLOWED_THINKING_INSTRUCTIONS
 
         # Write to a temp file if no path is provided
         output_path = (

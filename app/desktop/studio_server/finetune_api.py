@@ -6,10 +6,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
-from kiln_ai.adapters.fine_tune.dataset_formatter import (
-    DatasetFormat,
-    DatasetFormatter,
-)
+from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.adapters.fine_tune.finetune_registry import finetune_registry
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
@@ -23,13 +20,11 @@ from kiln_ai.adapters.prompt_builders import (
     prompt_builder_from_id,
 )
 from kiln_ai.adapters.provider_tools import provider_enabled, provider_name_from_id
-from kiln_ai.datamodel import (
-    DatasetSplit,
-    Finetune,
-    FineTuneStatusType,
-    Task,
+from kiln_ai.datamodel import DatasetSplit, Finetune, FineTuneStatusType, Task
+from kiln_ai.datamodel.datamodel_enums import (
+    DATA_STRATEGIES_ALLOWED_THINKING_INSTRUCTIONS,
+    ChatStrategy,
 )
-from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     HighRatingDatasetFilter,
@@ -500,7 +495,7 @@ def thinking_instructions_from_request(
     data_strategy: ChatStrategy,
     custom_thinking_instructions: str | None,
 ) -> str | None:
-    if data_strategy not in THINKING_DATA_STRATEGIES:
+    if data_strategy not in DATA_STRATEGIES_ALLOWED_THINKING_INSTRUCTIONS:
         # Not using COT/Thinking style
         return None
 

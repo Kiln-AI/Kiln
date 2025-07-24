@@ -70,7 +70,8 @@ class ChatStrategy(str, Enum):
     single_turn_r1_thinking = "final_and_intermediate_r1_compatible"
 
 
-THINKING_DATA_STRATEGIES: list[ChatStrategy] = [
+# These are the data strategies that support thinking instructions (but not necessarily required)
+DATA_STRATEGIES_ALLOWED_THINKING_INSTRUCTIONS: list[ChatStrategy] = [
     ChatStrategy.two_message_cot_legacy,
     ChatStrategy.single_turn_r1_thinking,
     ChatStrategy.two_message_cot,
