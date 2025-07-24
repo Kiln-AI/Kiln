@@ -59,8 +59,12 @@ class ExtractorRunner:
     async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
         jobs = self.collect_jobs()
 
-        runner = AsyncJobRunner(concurrency=concurrency)
-        async for progress in runner.run(jobs, self.run_job):
+        runner = AsyncJobRunner(
+            concurrency=concurrency,
+            jobs=jobs,
+            run_job_fn=self.run_job,
+        )
+        async for progress in runner.run():
             yield progress
 
     async def run_job(self, job: ExtractorJob) -> bool:
