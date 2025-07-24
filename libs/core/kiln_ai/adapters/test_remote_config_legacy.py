@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 
 import pytest
 
@@ -15,9 +17,6 @@ def test_deserialize_config_v0_18_format(tmp_path):
 
     Run from CLI: KILN_TEST_COMPATIBILITY=1 uv run python3 -m pytest libs/core/kiln_ai/adapters/test_remote_config_legacy.py::test_deserialize_config_v0_18_format -s -v
     """
-    import os
-    import shutil
-
     # Skip unless explicitly requested via environment variable
     if not os.environ.get("KILN_TEST_COMPATIBILITY"):
         pytest.skip(
@@ -61,9 +60,6 @@ def test_backwards_compatibility_with_v0_18(tmp_path):
         pytest.skip(
             "Compatibility test skipped. Set KILN_TEST_COMPATIBILITY=1 to run this test."
         )
-
-    import shutil
-    import subprocess
 
     # Check if uv is available
     if not shutil.which("uv"):
