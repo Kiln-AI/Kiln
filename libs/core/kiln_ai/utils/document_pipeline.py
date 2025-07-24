@@ -1,20 +1,50 @@
 import logging
 from abc import ABC
+from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping
+from typing import Dict, Mapping, Set
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
+from kiln_ai.adapters.chunkers.registry import chunker_adapter_from_type
 from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
+from kiln_ai.adapters.embedding.registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
+from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
 from kiln_ai.datamodel import Project
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel
-from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
-from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding
-from kiln_ai.datamodel.extraction import Document, Extraction, ExtractionSource
+from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
+from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig
+from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
+from kiln_ai.datamodel.extraction import (
+    Document,
+    Extraction,
+    ExtractionSource,
+    ExtractorConfig,
+)
+from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.utils.async_job_runner import AsyncJobRunner
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ExtractorJob:
+    doc: Document
+    extractor_config: ExtractorConfig
+
+
+@dataclass
+class ChunkerJob:
+    extraction: Extraction
+    chunker_config: ChunkerConfig
+
+
+@dataclass
+class EmbeddingJob:
+    chunked_document: ChunkedDocument
+    embedding_config: EmbeddingConfig
 
 
 class DocumentPipelineProgress(BaseModel):
@@ -87,16 +117,20 @@ class DocumentPipelineConfiguration(BaseModel):
         },
     )
 
-    extractor: BaseExtractor = Field(
-        description="The extractor to use for the pipeline",
+    rag_config: RagConfig = Field(
+        description="The rag config to use for the pipeline",
     )
 
-    chunker: BaseChunker = Field(
-        description="The chunker to use for the pipeline",
+    extractor_config: ExtractorConfig = Field(
+        description="The extractor config to use for the pipeline",
     )
 
-    embedding_adapter: BaseEmbeddingAdapter = Field(
-        description="The embedding adapter to use for the pipeline",
+    chunker_config: ChunkerConfig = Field(
+        description="The chunker config to use for the pipeline",
+    )
+
+    embedding_config: EmbeddingConfig = Field(
+        description="The embedding config to use for the pipeline",
     )
 
 
@@ -143,99 +177,111 @@ class DocumentPipeline:
         except Exception as e:
             logger.error(f"Error notifying observers of error: {e}", exc_info=True)
 
-    def is_same_extractor(self, extraction: Extraction) -> bool:
-        return (
-            extraction.extractor_config_id
-            == self.configuration.extractor.extractor_config_id()
-        )
+    def has_extraction(self, document: Document, extractor_id: ID_TYPE) -> bool:
+        for ex in document.extractions(readonly=True):
+            if ex.extractor_config_id == extractor_id:
+                return True
+        return False
 
-    def is_same_chunker(self, chunked_document: ChunkedDocument) -> bool:
-        return (
-            chunked_document.chunker_config_id
-            == self.configuration.chunker.chunker_config_id()
-        )
+    def has_chunks(self, extraction: Extraction, chunker_id: ID_TYPE) -> bool:
+        for cd in extraction.chunked_documents(readonly=True):
+            if cd.chunker_config_id == chunker_id:
+                return True
+        return False
 
-    def is_same_embedding_adapter(self, chunk_embeddings: ChunkEmbeddings) -> bool:
-        return (
-            chunk_embeddings.embedding_config_id
-            == self.configuration.embedding_adapter.embedding_config_id
-        )
+    def has_embeddings(self, chunked: ChunkedDocument, embedding_id: ID_TYPE) -> bool:
+        for emb in chunked.chunk_embeddings(readonly=True):
+            if emb.embedding_config_id == embedding_id:
+                return True
+        return False
 
-    async def _collect_documents_to_extract(self):
+    async def collect_extraction_jobs(self) -> list[ExtractorJob]:
         await self._notify_progress(
             DocumentPipelineProgress(
                 message="Preparing to extract documents...",
             )
         )
 
-        documents_to_extract: list[Document] = []
+        jobs: list[ExtractorJob] = []
+
+        target_extractor_config_id = self.configuration.extractor_config.id
+
         for document in self.project.documents(readonly=True):
-            already_extracted = any(
-                self.is_same_extractor(extraction)
-                for extraction in document.extractions(readonly=True)
-            )
-            if not already_extracted:
-                documents_to_extract.append(document)
+            if not self.has_extraction(document, target_extractor_config_id):
+                jobs.append(
+                    ExtractorJob(
+                        doc=document,
+                        extractor_config=self.configuration.extractor_config,
+                    )
+                )
 
-        return documents_to_extract
+        return jobs
 
-    async def _collect_extractions_to_chunk(self):
+    async def collect_chunking_jobs(self):
         await self._notify_progress(
             DocumentPipelineProgress(
                 message="Preparing to chunk extractions...",
             )
         )
 
-        extractions_to_chunk: list[Extraction] = []
+        target_extractor_config_id = self.configuration.extractor_config.id
+        target_chunker_config_id = self.configuration.chunker_config.id
+
+        jobs: list[ChunkerJob] = []
         for document in self.project.documents(readonly=True):
             extractions = document.extractions(readonly=True)
             for extraction in extractions:
-                if self.is_same_extractor(extraction):
-                    already_chunked = any(
-                        self.is_same_chunker(chunked_document)
-                        for chunked_document in extraction.chunked_documents(
-                            readonly=True
+                if extraction.extractor_config_id == target_extractor_config_id:
+                    if not self.has_chunks(extraction, target_chunker_config_id):
+                        jobs.append(
+                            ChunkerJob(
+                                extraction=extraction,
+                                chunker_config=self.configuration.chunker_config,
+                            )
                         )
-                    )
-                    if not already_chunked:
-                        extractions_to_chunk.append(extraction)
+        return jobs
 
-        return extractions_to_chunk
-
-    async def _collect_chunked_documents_to_embed(self):
+    async def collect_embedding_jobs(self):
         await self._notify_progress(
             DocumentPipelineProgress(
                 message="Preparing to embed chunked documents...",
             )
         )
 
-        chunked_documents_to_embed: list[ChunkedDocument] = []
+        target_extractor_config_id = self.configuration.extractor_config.id
+        target_chunker_config_id = self.configuration.chunker_config.id
+        target_embedding_config_id = self.configuration.embedding_config.id
+
+        jobs: list[EmbeddingJob] = []
         for document in self.project.documents(readonly=True):
             extractions = document.extractions(readonly=True)
             for extraction in extractions:
-                if self.is_same_extractor(extraction):
+                if extraction.extractor_config_id == target_extractor_config_id:
                     for chunked_document in extraction.chunked_documents(readonly=True):
-                        if self.is_same_chunker(chunked_document):
-                            already_embedded = any(
-                                self.is_same_embedding_adapter(chunk_embeddings)
-                                for chunk_embeddings in chunked_document.chunk_embeddings(
-                                    readonly=True
+                        if (
+                            chunked_document.chunker_config_id
+                            == target_chunker_config_id
+                        ):
+                            if not self.has_embeddings(
+                                chunked_document, target_embedding_config_id
+                            ):
+                                jobs.append(
+                                    EmbeddingJob(
+                                        chunked_document=chunked_document,
+                                        embedding_config=self.configuration.embedding_config,
+                                    )
                                 )
-                            )
-                            if not already_embedded:
-                                chunked_documents_to_embed.append(chunked_document)
+        return jobs
 
-        return chunked_documents_to_embed
-
-    async def _run_extracting_stage(self, documents: list[Document]):
-        total_count = len(documents)
+    async def extract(self, jobs: list[ExtractorJob], extractor: BaseExtractor):
+        total_count = len(jobs)
         error_count = 0
         completed_count = 0
 
         async def notify_progress():
             await self._notify_progress(
                 DocumentPipelineProgress(
-                    message="Extracting documents...",
+                    message="Extracting document extractions...",
                     total_count=total_count,
                     completed_count=completed_count,
                     error_count=error_count,
@@ -244,20 +290,19 @@ class DocumentPipeline:
 
         await notify_progress()
 
-        for document in documents:
-            if document.path is None:
+        # the job execution function will be run in parallel by the AsyncJobRunner
+        async def job_execution_fn(job: ExtractorJob) -> bool:
+            if job.doc.path is None:
                 raise ValueError("Document path is not set")
 
-            output = await self.configuration.extractor.extract(
-                path=document.original_file.attachment.resolve_path(
-                    document.path.parent
-                ),
-                mime_type=document.original_file.mime_type,
+            output = await extractor.extract(
+                path=job.doc.original_file.attachment.resolve_path(job.doc.path.parent),
+                mime_type=job.doc.original_file.mime_type,
             )
 
             extraction = Extraction(
-                parent=document,
-                extractor_config_id=self.configuration.extractor.extractor_config_id(),
+                parent=job.doc,
+                extractor_config_id=job.extractor_config.id,
                 output=KilnAttachmentModel.from_data(
                     data=output.content,
                     mime_type=output.content_format,
@@ -266,14 +311,21 @@ class DocumentPipeline:
                 if output.is_passthrough
                 else ExtractionSource.PROCESSED,
             )
-
             extraction.save_to_file()
+            return True
 
-            completed_count += 1
-            await notify_progress()
+        runner = AsyncJobRunner(
+            jobs=jobs,
+            run_job_fn=job_execution_fn,
+            concurrency=10,
+            # TODO: add observers to report progress back
+        )
 
-    async def _run_chunking_stage(self, extractions: list[Extraction]):
-        total_count = len(extractions)
+        async for progress in runner.run():
+            logger.info(f"Extraction progress: {progress}")
+
+    async def chunk(self, jobs: list[ChunkerJob], chunker: BaseChunker):
+        total_count = len(jobs)
         error_count = 0
         completed_count = 0
 
@@ -289,40 +341,49 @@ class DocumentPipeline:
 
         await notify_progress()
 
-        for extraction in extractions:
-            chunker = self.configuration.chunker
-            if chunker is None:
-                raise ValueError("Chunker is not set")
-
-            extraction_output_content = await extraction.output_content()
+        async def job_execution_fn(job: ChunkerJob) -> bool:
+            extraction_output_content = await job.extraction.output_content()
             if extraction_output_content is None:
                 raise ValueError("Extraction output content is not set")
 
-            chunking_result = await chunker.chunk(extraction_output_content)
+            chunking_result = await chunker.chunk(
+                extraction_output_content,
+            )
             if chunking_result is None:
                 raise ValueError("Chunking result is not set")
 
             chunked_document = ChunkedDocument(
-                parent=extraction,
-                chunker_config_id=self.configuration.chunker.chunker_config_id(),
+                parent=job.extraction,
+                chunker_config_id=job.chunker_config.id,
                 chunks=[
                     Chunk(
                         content=KilnAttachmentModel.from_data(
                             data=chunk.text,
-                            mime_type=self.configuration.extractor.output_format(),
+                            mime_type=job.extraction.output_format(),
                         ),
                     )
                     for chunk in chunking_result.chunks
                 ],
             )
-
             chunked_document.save_to_file()
+            return True
 
-            completed_count += 1
-            await notify_progress()
+        runner = AsyncJobRunner(
+            jobs=jobs,
+            run_job_fn=job_execution_fn,
+            concurrency=10,
+            # TODO: add observers to report progress back
+        )
 
-    async def _run_embedding_stage(self, chunked_documents: list[ChunkedDocument]):
-        total_count = len(chunked_documents)
+        async for progress in runner.run():
+            logger.info(f"Chunking progress: {progress}")
+
+    async def generate_embeddings(
+        self,
+        jobs: list[EmbeddingJob],
+        embedding_adapter: BaseEmbeddingAdapter,
+    ):
+        total_count = len(jobs)
         error_count = 0
         completed_count = 0
 
@@ -338,12 +399,8 @@ class DocumentPipeline:
 
         await notify_progress()
 
-        for chunked_document in chunked_documents:
-            embedding_adapter = self.configuration.embedding_adapter
-            if embedding_adapter is None:
-                raise ValueError("Embedding adapter is not set")
-
-            chunks_text = await chunked_document.load_chunks_text()
+        async def job_execution_fn(job: EmbeddingJob) -> bool:
+            chunks_text = await job.chunked_document.load_chunks_text()
             if chunks_text is None or len(chunks_text) == 0:
                 raise ValueError("No chunks text found")
 
@@ -354,8 +411,8 @@ class DocumentPipeline:
                 raise ValueError("Chunk embedding result is not set")
 
             chunk_embeddings = ChunkEmbeddings(
-                parent=chunked_document,
-                embedding_config_id=self.configuration.embedding_adapter.embedding_config_id,
+                parent=job.chunked_document,
+                embedding_config_id=job.embedding_config.id,
                 embeddings=[
                     Embedding(
                         vector=embedding.vector,
@@ -365,9 +422,17 @@ class DocumentPipeline:
             )
 
             chunk_embeddings.save_to_file()
+            return True
 
-            completed_count += 1
-            await notify_progress()
+        runner = AsyncJobRunner(
+            jobs=jobs,
+            run_job_fn=job_execution_fn,
+            concurrency=10,
+            # TODO: add observers to report progress back
+        )
+
+        async for progress in runner.run():
+            logger.info(f"Embedding progress: {progress}")
 
     async def run(self):
         await self._notify_start()
@@ -382,14 +447,26 @@ class DocumentPipeline:
                 continue
 
             if stage == DocumentPipelineStage.EXTRACTING:
-                docs = await self._collect_documents_to_extract()
-                await self._run_extracting_stage(docs)
+                docs = await self.collect_extraction_jobs()
+                extractor = extractor_adapter_from_type(
+                    self.configuration.extractor_config.extractor_type,
+                    self.configuration.extractor_config,
+                )
+                await self.extract(docs, extractor)
             elif stage == DocumentPipelineStage.CHUNKING:
-                extractions = await self._collect_extractions_to_chunk()
-                await self._run_chunking_stage(extractions)
+                extractions = await self.collect_chunking_jobs()
+                chunker = chunker_adapter_from_type(
+                    self.configuration.chunker_config.chunker_type,
+                    self.configuration.chunker_config,
+                )
+                await self.chunk(extractions, chunker)
             elif stage == DocumentPipelineStage.EMBEDDING:
-                chunked_documents = await self._collect_chunked_documents_to_embed()
-                await self._run_embedding_stage(chunked_documents)
+                chunked_documents = await self.collect_embedding_jobs()
+                embedding_adapter = embedding_adapter_from_type(
+                    self.configuration.embedding_config.embedding_type,
+                    self.configuration.embedding_config,
+                )
+                await self.generate_embeddings(chunked_documents, embedding_adapter)
             else:
                 raise ValueError(f"Unknown stage: {stage}")
 

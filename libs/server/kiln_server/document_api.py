@@ -32,6 +32,10 @@ from kiln_ai.datamodel.extraction import (
     get_kind_from_mime_type,
 )
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.utils.document_pipeline import (
+    DocumentPipeline,
+    DocumentPipelineConfiguration,
+)
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -92,24 +96,6 @@ class ExtractionProgress(BaseModel):
     extractor_config: ExtractorConfig | None
 
 
-class ChunkingProgress(BaseModel):
-    document_count_total: int
-    document_count_successful: int
-    chunker_config: ChunkerConfig
-
-
-class EmbeddingProgress(BaseModel):
-    document_count_total: int
-    document_count_successful: int
-    embedding_config: EmbeddingConfig
-
-
-class IndexingProgress(BaseModel):
-    document_count_total: int
-    document_count_successful: int
-    rag_config: RagConfig
-
-
 class ExtractorSummary(BaseModel):
     id: str
     name: str
@@ -129,18 +115,18 @@ class ExtractionSummary(BaseModel):
 
 
 class RagProgress(BaseModel):
-    extraction_progress: ExtractionProgress
-    chunking_progress: ChunkingProgress
-    embedding_progress: EmbeddingProgress
-    indexing_progress: IndexingProgress
+    # total counts
+    total_document_count: int
+    total_document_completed_count: int
+    total_document_extracted_count: int
+    total_document_chunked_count: int
+    total_document_embedded_count: int
 
 
-class RagConfigWithProgress(BaseModel):
-    rag_config: RagConfig
-    progress: RagProgress | None = Field(
-        description="The progress of the document pipeline",
-        default=None,
-    )
+class DocumentWiseProgress(BaseModel):
+    extracted: bool
+    chunked: bool
+    embedded: bool
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -818,44 +804,6 @@ def connect_document_api(app: FastAPI):
 
         return chunker_config
 
-    @app.get("/api/projects/{project_id}/chunker_configs/{chunker_config_id}/progress")
-    async def get_chunking_progress(
-        project_id: str,
-        chunker_config_id: str,
-    ) -> ChunkingProgress:
-        project = project_from_id(project_id)
-        chunker_config = ChunkerConfig.from_id_and_parent_path(
-            chunker_config_id, project.path
-        )
-        if chunker_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Chunker config not found",
-            )
-
-        # 1. get all the documents
-        #   2. get all the extractions
-        #      3. filter out the extractions that have a different chunker config
-        #      4. get the number of documents that have one matching extraction
-        #      5. return the number of documents that have one matching extraction
-
-        documents = project.documents(readonly=True)
-
-        document_count_successful = 0
-        for document in documents:
-            extractions = document.extractions(readonly=True)
-            if any(
-                extraction.chunker_config_id == chunker_config_id
-                for extraction in extractions
-            ):
-                document_count_successful += 1
-
-        return ChunkingProgress(
-            document_count_total=len(documents),
-            document_count_successful=document_count_successful,
-            chunker_config=chunker_config,
-        )
-
     @app.post("/api/projects/{project_id}/create_embedding_config")
     async def create_embedding_config(
         project_id: str,
@@ -897,40 +845,6 @@ def connect_document_api(app: FastAPI):
                 detail="Embedding config not found",
             )
         return embedding_config
-
-    @app.get(
-        "/api/projects/{project_id}/embedding_configs/{embedding_config_id}/progress"
-    )
-    async def get_embedding_progress(
-        project_id: str,
-        embedding_config_id: str,
-    ) -> EmbeddingProgress:
-        project = project_from_id(project_id)
-        embedding_config = EmbeddingConfig.from_id_and_parent_path(
-            embedding_config_id, project.path
-        )
-        if embedding_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Embedding config not found",
-            )
-
-        documents = project.documents(readonly=True)
-
-        document_count_successful = 0
-        for document in documents:
-            extractions = document.extractions(readonly=True)
-            if any(
-                extraction.embedding_config_id == embedding_config_id
-                for extraction in extractions
-            ):
-                document_count_successful += 1
-
-        return EmbeddingProgress(
-            document_count_total=len(documents),
-            document_count_successful=document_count_successful,
-            embedding_config=embedding_config,
-        )
 
     @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
     async def create_rag_config(
@@ -996,5 +910,140 @@ def connect_document_api(app: FastAPI):
                 status_code=404,
                 detail="RAG config not found",
             )
-
         return rag_config
+
+    @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
+    async def run_rag_config(
+        project_id: str,
+        rag_config_id: str,
+    ) -> dict:
+        project = project_from_id(project_id)
+        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+        if rag_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="RAG config not found",
+            )
+
+        # should not happen, but id is optional in the datamodel
+        if (
+            rag_config.extractor_config_id is None
+            or rag_config.chunker_config_id is None
+            or rag_config.embedding_config_id is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="RAG config is missing required configs",
+            )
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            rag_config.extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config not found",
+            )
+
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            rag_config.chunker_config_id, project.path
+        )
+        if chunker_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Chunker config not found",
+            )
+
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            rag_config.embedding_config_id, project.path
+        )
+        if embedding_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Embedding config not found",
+            )
+
+        pipeline = DocumentPipeline(
+            project,
+            DocumentPipelineConfiguration(
+                extractor=rag_config.extractor_config,
+                chunker=rag_config.chunker_config,
+                embedding_adapter=rag_config.embedding_config,
+            ),
+        )
+        await pipeline.run()
+
+        return {"message": f"RAG config {rag_config_id} run started"}
+
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/progress")
+    async def get_rag_config_progress(
+        project_id: str,
+        rag_config_id: str,
+    ) -> RagProgress:
+        project = project_from_id(project_id)
+        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+        if rag_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="RAG config not found",
+            )
+
+        extractor_config_id = rag_config.extractor_config_id
+        chunker_config_id = rag_config.chunker_config_id
+        embedding_config_id = rag_config.embedding_config_id
+
+        docs_progress: dict[str, DocumentWiseProgress] = {}
+        for document in project.documents(readonly=True):
+            # for typechecker - should not actually happen
+            if not document.id:
+                raise ValueError(f"Document {document.path} has no ID")
+
+            docs_progress[document.id] = DocumentWiseProgress(
+                extracted=False,
+                chunked=False,
+                embedded=False,
+            )
+
+            for extraction in document.extractions(readonly=True):
+                # make sure to skip the extractions coming from other extractor configs
+                if extraction.extractor_config_id != extractor_config_id:
+                    continue
+
+                docs_progress[document.id].extracted = True
+
+                for chunked_document in extraction.chunks(readonly=True):
+                    # make sure to skip the chunks coming from other chunker configs
+                    if chunked_document.chunker_config_id != chunker_config_id:
+                        continue
+
+                    docs_progress[document.id].chunked = True
+
+                    for embedding in chunked_document.embeddings(readonly=True):
+                        # make sure to skip the embeddings coming from other embedding configs
+                        if embedding.embedding_config_id != embedding_config_id:
+                            continue
+
+                        docs_progress[document.id].embedded = True
+
+        overall_progress = RagProgress(
+            total_document_count=len(docs_progress),
+            total_document_completed_count=0,
+            total_document_extracted_count=0,
+            total_document_chunked_count=0,
+            total_document_embedded_count=0,
+        )
+
+        for document_progress in docs_progress.values():
+            overall_progress.total_document_extracted_count += (
+                document_progress.extracted
+            )
+            overall_progress.total_document_chunked_count += document_progress.chunked
+            overall_progress.total_document_embedded_count += document_progress.embedded
+            if (
+                document_progress.extracted
+                and document_progress.chunked
+                and document_progress.embedded
+            ):
+                overall_progress.total_document_completed_count += 1
+
+        return overall_progress
