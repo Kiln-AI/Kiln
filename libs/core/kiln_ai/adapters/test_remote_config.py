@@ -1,4 +1,6 @@
 import asyncio
+import json
+import logging
 import os
 from unittest.mock import patch
 
@@ -196,3 +198,58 @@ except Exception as e:
     except FileNotFoundError:
         # If uv command not found
         pytest.skip("uv command not found for compatibility test")
+
+
+def test_deserialize_config_with_invalid_models(tmp_path, caplog):
+    """Test that models failing validation are skipped during deserialization."""
+
+    # Create a mix of valid and invalid models
+    valid_model = built_in_models[0].model_dump(mode="json")
+
+    # Create an invalid model - missing required field 'family'
+    invalid_model_1 = built_in_models[0].model_dump(mode="json")
+    del invalid_model_1["family"]
+
+    # Create another invalid model - invalid data type for required field
+    invalid_model_2 = built_in_models[0].model_dump(mode="json")
+    invalid_model_2["name"] = None  # name should be a string, not None
+
+    # Create another invalid model - completely malformed
+    invalid_model_3 = {"not_a_valid_model": "at_all"}
+
+    # Create another invalid model - unknown provider (may happen when we add a new provider)
+    invalid_model_4 = built_in_models[0].model_dump(mode="json")
+    invalid_model_4["providers"][0]["name"] = "unknown-provider-123"
+
+    data = {
+        "model_list": [
+            valid_model,
+            invalid_model_1,
+            invalid_model_2,
+            invalid_model_3,
+            invalid_model_4,
+        ]
+    }
+    path = tmp_path / "mixed_models.json"
+    path.write_text(json.dumps(data))
+
+    # Enable logging to capture warnings
+    with caplog.at_level(logging.WARNING):
+        models = deserialize_config(path)
+
+    # Should only have the valid model
+    assert len(models) == 1
+    assert models[0].name == built_in_models[0].name
+    assert models[0].family == built_in_models[0].family
+
+    # Should have logged warnings for the invalid models
+    warning_logs = [
+        record for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert (
+        len(warning_logs) == 4
+    )  # 4 invalid models should generate 4 warnings in the logs
+
+    # Check that the warning messages contain expected content
+    for log_record in warning_logs:
+        assert "Failed to validate model" in log_record.message
