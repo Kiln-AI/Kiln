@@ -12,12 +12,16 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
+from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     NAME_REGEX,
     KilnAttachmentModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -27,6 +31,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
     get_kind_from_mime_type,
 )
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -87,6 +92,24 @@ class ExtractionProgress(BaseModel):
     extractor_config: ExtractorConfig | None
 
 
+class ChunkingProgress(BaseModel):
+    document_count_total: int
+    document_count_successful: int
+    chunker_config: ChunkerConfig
+
+
+class EmbeddingProgress(BaseModel):
+    document_count_total: int
+    document_count_successful: int
+    embedding_config: EmbeddingConfig
+
+
+class IndexingProgress(BaseModel):
+    document_count_total: int
+    document_count_successful: int
+    rag_config: RagConfig
+
+
 class ExtractorSummary(BaseModel):
     id: str
     name: str
@@ -103,6 +126,87 @@ class ExtractionSummary(BaseModel):
     source: str
     output_content: str
     extractor: ExtractorSummary
+
+
+class RagProgress(BaseModel):
+    extraction_progress: ExtractionProgress
+    chunking_progress: ChunkingProgress
+    embedding_progress: EmbeddingProgress
+    indexing_progress: IndexingProgress
+
+
+class RagConfigWithProgress(BaseModel):
+    rag_config: RagConfig
+    progress: RagProgress | None = Field(
+        description="The progress of the document pipeline",
+        default=None,
+    )
+
+
+class CreateRagConfigRequest(BaseModel):
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the document pipeline",
+        default=None,
+    )
+    extractor_config_id: ID_TYPE = Field(
+        description="The extractor config to use for the document pipeline",
+    )
+    chunker_config_id: ID_TYPE = Field(
+        description="The chunker config to use for the document pipeline",
+    )
+    embedding_config_id: ID_TYPE = Field(
+        description="The embedding config to use for the document pipeline",
+    )
+
+
+class CreateChunkerConfigRequest(BaseModel):
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the chunker config",
+        default=None,
+    )
+    chunker_type: ChunkerType = Field(
+        description="The type of the chunker",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
+
+
+class CreateEmbeddingConfigRequest(BaseModel):
+    name: str | None = Field(
+        description="A name for this entity.",
+        min_length=1,
+        max_length=120,
+        pattern=NAME_REGEX,
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the embedding config",
+        default=None,
+    )
+    model_provider_name: ModelProviderName = Field(
+        description="The provider of the embedding model",
+    )
+    model_name: EmbeddingModelName = Field(
+        description="The name of the embedding model",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
 
 
 class CreateExtractorConfigRequest(BaseModel):
@@ -671,3 +775,226 @@ def connect_document_api(app: FastAPI):
         extractor_config.save_to_file()
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
+
+    @app.post("/api/projects/{project_id}/create_chunker_config")
+    async def create_chunker_config(
+        project_id: str,
+        request: CreateChunkerConfigRequest,
+    ) -> ChunkerConfig:
+        project = project_from_id(project_id)
+
+        chunker_config = ChunkerConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            chunker_type=request.chunker_type,
+            properties=request.properties,
+        )
+        chunker_config.save_to_file()
+
+        return chunker_config
+
+    @app.get("/api/projects/{project_id}/chunker_configs")
+    async def get_chunker_configs(
+        project_id: str,
+    ) -> list[ChunkerConfig]:
+        project = project_from_id(project_id)
+        return project.chunker_configs(readonly=True)
+
+    @app.get("/api/projects/{project_id}/chunker_configs/{chunker_config_id}")
+    async def get_chunker_config(
+        project_id: str,
+        chunker_config_id: str,
+    ) -> ChunkerConfig:
+        project = project_from_id(project_id)
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            chunker_config_id, project.path
+        )
+        if chunker_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Chunker config not found",
+            )
+
+        return chunker_config
+
+    @app.get("/api/projects/{project_id}/chunker_configs/{chunker_config_id}/progress")
+    async def get_chunking_progress(
+        project_id: str,
+        chunker_config_id: str,
+    ) -> ChunkingProgress:
+        project = project_from_id(project_id)
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            chunker_config_id, project.path
+        )
+        if chunker_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Chunker config not found",
+            )
+
+        # 1. get all the documents
+        #   2. get all the extractions
+        #      3. filter out the extractions that have a different chunker config
+        #      4. get the number of documents that have one matching extraction
+        #      5. return the number of documents that have one matching extraction
+
+        documents = project.documents(readonly=True)
+
+        document_count_successful = 0
+        for document in documents:
+            extractions = document.extractions(readonly=True)
+            if any(
+                extraction.chunker_config_id == chunker_config_id
+                for extraction in extractions
+            ):
+                document_count_successful += 1
+
+        return ChunkingProgress(
+            document_count_total=len(documents),
+            document_count_successful=document_count_successful,
+            chunker_config=chunker_config,
+        )
+
+    @app.post("/api/projects/{project_id}/create_embedding_config")
+    async def create_embedding_config(
+        project_id: str,
+        request: CreateEmbeddingConfigRequest,
+    ) -> EmbeddingConfig:
+        project = project_from_id(project_id)
+
+        embedding_config = EmbeddingConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            model_provider_name=request.model_provider_name,
+            model_name=request.model_name,
+            properties=request.properties,
+        )
+        embedding_config.save_to_file()
+
+        return embedding_config
+
+    @app.get("/api/projects/{project_id}/embedding_configs")
+    async def get_embedding_configs(
+        project_id: str,
+    ) -> list[EmbeddingConfig]:
+        project = project_from_id(project_id)
+        return project.embedding_configs(readonly=True)
+
+    @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
+    async def get_embedding_config(
+        project_id: str,
+        embedding_config_id: str,
+    ) -> EmbeddingConfig:
+        project = project_from_id(project_id)
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            embedding_config_id, project.path
+        )
+        if embedding_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Embedding config not found",
+            )
+        return embedding_config
+
+    @app.get(
+        "/api/projects/{project_id}/embedding_configs/{embedding_config_id}/progress"
+    )
+    async def get_embedding_progress(
+        project_id: str,
+        embedding_config_id: str,
+    ) -> EmbeddingProgress:
+        project = project_from_id(project_id)
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            embedding_config_id, project.path
+        )
+        if embedding_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Embedding config not found",
+            )
+
+        documents = project.documents(readonly=True)
+
+        document_count_successful = 0
+        for document in documents:
+            extractions = document.extractions(readonly=True)
+            if any(
+                extraction.embedding_config_id == embedding_config_id
+                for extraction in extractions
+            ):
+                document_count_successful += 1
+
+        return EmbeddingProgress(
+            document_count_total=len(documents),
+            document_count_successful=document_count_successful,
+            embedding_config=embedding_config,
+        )
+
+    @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
+    async def create_rag_config(
+        project_id: str,
+        request: CreateRagConfigRequest,
+    ) -> RagConfig:
+        project = project_from_id(project_id)
+
+        # check that the extractor, chunker, and embedding configs exist
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            str(request.extractor_config_id), project.path
+        )
+        if not extractor_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extractor config {request.extractor_config_id} not found",
+            )
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            str(request.chunker_config_id), project.path
+        )
+        if not chunker_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chunker config {request.chunker_config_id} not found",
+            )
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            str(request.embedding_config_id), project.path
+        )
+        if not embedding_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding config {request.embedding_config_id} not found",
+            )
+
+        rag_config = RagConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            extractor_config_id=extractor_config.id,
+            chunker_config_id=chunker_config.id,
+            embedding_config_id=embedding_config.id,
+        )
+        rag_config.save_to_file()
+
+        return rag_config
+
+    @app.get("/api/projects/{project_id}/rag_configs")
+    async def get_rag_configs(
+        project_id: str,
+    ) -> list[RagConfig]:
+        project = project_from_id(project_id)
+        return project.rag_configs(readonly=True)
+
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    async def get_rag_config(
+        project_id: str,
+        rag_config_id: str,
+    ) -> RagConfig:
+        project = project_from_id(project_id)
+        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+        if rag_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="RAG config not found",
+            )
+
+        return rag_config

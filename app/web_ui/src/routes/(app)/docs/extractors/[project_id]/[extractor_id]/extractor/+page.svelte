@@ -24,7 +24,7 @@
   async function get_extractor_config() {
     try {
       loading = true
-      const { error: create_extractor_error, data } = await client.GET(
+      const { error: get_extractor_error, data } = await client.GET(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
         {
           params: {
@@ -36,8 +36,8 @@
         },
       )
 
-      if (create_extractor_error) {
-        error = createKilnError(create_extractor_error)
+      if (get_extractor_error) {
+        error = createKilnError(get_extractor_error)
         return
       }
 
