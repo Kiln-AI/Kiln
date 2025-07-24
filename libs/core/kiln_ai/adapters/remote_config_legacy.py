@@ -131,13 +131,7 @@ except Exception as e:
             )
 
             # config is now ready to be written to the permanent file
-            Path(path).write_text(
-                json.dumps(
-                    {"model_list": [m.model_dump(mode="json") for m in models]},
-                    indent=2,
-                    sort_keys=True,
-                )
-            )
+            Path(path).write_text(Path(v0_18_config_temp.name).read_text())
 
         except subprocess.CalledProcessError as e:
             # If we can't run uv, skip the test (might be network issues, etc.)
