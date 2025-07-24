@@ -9,7 +9,7 @@ from typing import List
 import requests
 from pydantic import ValidationError
 
-from .ml_model_list import KilnModel, built_in_models
+from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
 
 logger = logging.getLogger(__name__)
 
@@ -21,20 +21,43 @@ def serialize_config(models: List[KilnModel], path: str | Path) -> None:
 
 def deserialize_config(path: str | Path) -> List[KilnModel]:
     raw = json.loads(Path(path).read_text())
-    model_data = raw.get("model_list", raw if isinstance(raw, list) else [])
+    if isinstance(raw, list):
+        model_data = raw
+    else:
+        model_data = raw.get("model_list", [])
 
     # We must be careful here, because some of the JSON data may be generated from a forward
     # version of the code that has newer fields / versions of the fields, that may cause
     # the current client this code is running on to fail to validate the item into a KilnModel.
     models = []
-    for item in model_data:
+    for model_json in model_data:
         # We skip any model that fails validation - the models that the client can support
         # will be pulled from the remote config, but the user will need to update their
         # client to the latest version to see the newer models that break backwards compatibility.
         try:
-            models.append(KilnModel.model_validate(item))
+            providers_json = model_json.get("providers", [])
+
+            providers = []
+            for provider_json in providers_json:
+                try:
+                    provider = KilnModelProvider.model_validate(provider_json)
+                    providers.append(provider)
+                except ValidationError as e:
+                    logger.warning(
+                        "Failed to validate provider %s: %s", provider_json, e
+                    )
+
+            # this ensures the model deserialization won't fail because of a provider
+            model_json["providers"] = []
+
+            # now we validate the model without its providers
+            model = KilnModel.model_validate(model_json)
+
+            # and we attach back the providers that passed our validation
+            model.providers = providers
+            models.append(model)
         except ValidationError as e:
-            logger.warning("Failed to validate model %s: %s", item, e)
+            logger.warning("Failed to validate model %s: %s", model_json, e)
     return models
 
 
