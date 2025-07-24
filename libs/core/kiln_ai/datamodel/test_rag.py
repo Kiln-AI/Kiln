@@ -230,7 +230,7 @@ def test_rag_config_model_type():
         embedding_config_id="embedding789",
     )
 
-    assert rag_config.model_type == "r_a_g_config"
+    assert rag_config.model_type == "rag_config"
 
 
 def test_rag_config_config_id_types():
