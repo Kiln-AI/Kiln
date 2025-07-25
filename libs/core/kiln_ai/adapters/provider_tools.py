@@ -1,7 +1,9 @@
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List
+
+from pydantic import BaseModel
 
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
@@ -12,12 +14,10 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
-from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.registry import project_from_id
-from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -185,50 +185,6 @@ def kiln_model_provider_from(
         model_id=name,
         # We don't know the structured output mode for custom models, so we default to json_instructions which is the only one that works everywhere.
         structured_output_mode=StructuredOutputMode.json_instructions,
-    )
-
-
-def lite_llm_config_for_openai_compatible(
-    run_config_properties: RunConfigProperties,
-) -> LiteLlmConfig:
-    model_id = run_config_properties.model_name
-    try:
-        openai_provider_name, model_id = model_id.split("::")
-    except Exception:
-        raise ValueError(f"Invalid openai compatible model ID: {model_id}")
-
-    openai_compatible_providers = Config.shared().openai_compatible_providers or []
-    provider = next(
-        filter(
-            lambda p: p.get("name") == openai_provider_name, openai_compatible_providers
-        ),
-        None,
-    )
-    if provider is None:
-        raise ValueError(f"OpenAI compatible provider {openai_provider_name} not found")
-
-    # API key optional - some providers like Ollama don't use it, but LiteLLM errors without one
-    api_key = provider.get("api_key") or "NA"
-    base_url = provider.get("base_url")
-    if base_url is None:
-        raise ValueError(
-            f"OpenAI compatible provider {openai_provider_name} has no base URL"
-        )
-
-    # Update a copy of the run config properties to use the openai compatible provider
-    updated_run_config_properties = run_config_properties.model_copy(deep=True)
-    updated_run_config_properties.model_provider_name = (
-        ModelProviderName.openai_compatible
-    )
-    updated_run_config_properties.model_name = model_id
-
-    return LiteLlmConfig(
-        # OpenAI compatible, with a custom base URL
-        run_config_properties=updated_run_config_properties,
-        base_url=base_url,
-        additional_body_options={
-            "api_key": api_key,
-        },
     )
 
 
@@ -442,30 +398,58 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
 }
 
 
-def get_provider_connection_details(provider_name: ModelProviderName) -> Dict[str, Any]:
+class LiteLlmCoreConfig(BaseModel):
+    base_url: str | None = None
+    default_headers: Dict[str, str] | None = None
+    additional_body_options: Dict[str, str] | None = None
+
+
+def lite_llm_core_config_for_provider(
+    provider_name: ModelProviderName,
+    openai_compatible_provider_name: str | None = None,
+) -> LiteLlmCoreConfig | None:
+    """
+    Returns a LiteLLM core config for a given provider.
+
+    Args:
+        provider_name: The provider to get the config for
+        openai_compatible_provider_name: Required for openai compatible providers, this is the name of the underlying provider
+    """
     match provider_name:
         case ModelProviderName.openrouter:
-            return {
-                "api_key": Config.shared().open_router_api_key,
-                "base_url": (
+            return LiteLlmCoreConfig(
+                base_url=(
                     os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
                 ),
-                "default_headers": {
+                default_headers={
                     "HTTP-Referer": "https://getkiln.ai/openrouter",
                     "X-Title": "KilnAI",
                 },
-            }
+                additional_body_options={
+                    "api_key": Config.shared().open_router_api_key,
+                },
+            )
         case ModelProviderName.openai:
-            return {"api_key": Config.shared().open_ai_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().open_ai_api_key,
+                },
+            )
         case ModelProviderName.groq:
-            return {"api_key": Config.shared().groq_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().groq_api_key,
+                },
+            )
         case ModelProviderName.amazon_bedrock:
-            return {
-                "aws_access_key_id": Config.shared().bedrock_access_key,
-                "aws_secret_access_key": Config.shared().bedrock_secret_key,
-                # The only region that's widely supported for bedrock
-                "aws_region_name": "us-west-2",
-            }
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "aws_access_key_id": Config.shared().bedrock_access_key,
+                    "aws_secret_access_key": Config.shared().bedrock_secret_key,
+                    # The only region that's widely supported for bedrock
+                    "aws_region_name": "us-west-2",
+                },
+            )
         case ModelProviderName.ollama:
             # Set the Ollama base URL for 2 reasons:
             # 1. To use the correct base URL
@@ -473,44 +457,100 @@ def get_provider_connection_details(provider_name: ModelProviderName) -> Dict[st
             ollama_base_url = (
                 Config.shared().ollama_base_url or "http://localhost:11434"
             )
-            return {
-                # LiteLLM errors without an api_key, even though Ollama doesn't support one
-                "api_key": "NA",
-                "base_url": ollama_base_url + "/v1",
-            }
+            return LiteLlmCoreConfig(
+                base_url=ollama_base_url + "/v1",
+                additional_body_options={
+                    # LiteLLM errors without an api_key, even though Ollama doesn't support one
+                    "api_key": "NA",
+                },
+            )
         case ModelProviderName.fireworks_ai:
-            return {"api_key": Config.shared().fireworks_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().fireworks_api_key,
+                },
+            )
         case ModelProviderName.anthropic:
-            return {"api_key": Config.shared().anthropic_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().anthropic_api_key,
+                },
+            )
         case ModelProviderName.gemini_api:
-            return {"api_key": Config.shared().gemini_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().gemini_api_key,
+                },
+            )
         case ModelProviderName.vertex:
-            return {
-                "vertex_project": Config.shared().vertex_project_id,
-                "vertex_location": Config.shared().vertex_location,
-            }
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "vertex_project": Config.shared().vertex_project_id,
+                    "vertex_location": Config.shared().vertex_location,
+                },
+            )
         case ModelProviderName.together_ai:
-            return {"api_key": Config.shared().together_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().together_api_key,
+                },
+            )
         case ModelProviderName.azure_openai:
-            return {
-                "api_key": Config.shared().azure_openai_api_key,
-                "api_version": "2025-02-01-preview",
-                "base_url": Config.shared().azure_openai_endpoint,
-            }
+            return LiteLlmCoreConfig(
+                base_url=Config.shared().azure_openai_endpoint,
+                additional_body_options={
+                    "api_key": Config.shared().azure_openai_api_key,
+                    "api_version": "2025-02-01-preview",
+                },
+            )
         case ModelProviderName.huggingface:
-            return {"api_key": Config.shared().huggingface_api_key}
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().huggingface_api_key,
+                },
+            )
         case ModelProviderName.openai_compatible:
-            # For OpenAI compatible providers, auth details are handled separately
-            # via lite_llm_config_for_openai_compatible function
-            return {}
+            # openai compatible requires a model name in the format "provider::model_name"
+            if openai_compatible_provider_name is None:
+                raise ValueError(
+                    "OpenAI compatible provider requires an openai compatible provider"
+                )
+
+            openai_compatible_providers = (
+                Config.shared().openai_compatible_providers or []
+            )
+
+            provider = next(
+                filter(
+                    lambda p: p.get("name") == openai_compatible_provider_name,
+                    openai_compatible_providers,
+                ),
+                None,
+            )
+
+            if provider is None:
+                raise ValueError(
+                    f"OpenAI compatible provider {openai_compatible_provider_name} not found"
+                )
+
+            # API key optional - some providers like Ollama don't use it, but LiteLLM errors without one
+            api_key = provider.get("api_key") or "NA"
+            base_url = provider.get("base_url")
+            if base_url is None:
+                raise ValueError(
+                    f"OpenAI compatible provider {openai_compatible_provider_name} has no base URL"
+                )
+
+            return LiteLlmCoreConfig(
+                base_url=base_url,
+                additional_body_options={
+                    "api_key": api_key,
+                },
+            )
         # These are virtual providers that should have mapped to an actual provider upstream (using core_provider method)
         case ModelProviderName.kiln_fine_tune:
-            raise ValueError(
-                "Fine tune is not a supported core provider. It should map to an actual provider."
-            )
+            return None
         case ModelProviderName.kiln_custom_registry:
-            raise ValueError(
-                "Custom openai compatible provider is not a supported core provider. It should map to an actual provider."
-            )
+            return None
         case _:
             raise_exhaustive_enum_error(provider_name)

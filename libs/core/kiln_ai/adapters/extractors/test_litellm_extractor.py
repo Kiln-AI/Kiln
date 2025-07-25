@@ -19,6 +19,7 @@ from kiln_ai.adapters.extractors.litellm_extractor import (
     encode_file_litellm_format,
 )
 from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.extraction import ExtractorType
 
 PROMPTS_FOR_KIND: dict[str, str] = {
@@ -43,6 +44,11 @@ def mock_litellm_extractor():
                 "prompt_video": PROMPTS_FOR_KIND["video"],
                 "prompt_audio": PROMPTS_FOR_KIND["audio"],
             },
+        ),
+        litellm_core_config=LiteLlmCoreConfig(
+            base_url="https://test.com",
+            additional_body_options={"api_key": "test-key"},
+            default_headers={},
         ),
     )
 

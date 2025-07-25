@@ -11,6 +11,7 @@ from kiln_ai.adapters.extractors.base_extractor import (
 )
 from kiln_ai.adapters.extractors.encoding import to_base64_url
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.litellm import get_litellm_provider_info
@@ -81,7 +82,7 @@ class LitellmExtractor(BaseExtractor):
     def __init__(
         self,
         extractor_config: ExtractorConfig,
-        provider_connection_details: dict[str, Any] | None = None,
+        litellm_core_config: LiteLlmCoreConfig,
     ):
         if extractor_config.extractor_type != ExtractorType.LITELLM:
             raise ValueError(
@@ -111,7 +112,7 @@ class LitellmExtractor(BaseExtractor):
             Kind.IMAGE: prompt_image,
         }
 
-        self.provider_connection_details = provider_connection_details or {}
+        self.litellm_core_config = litellm_core_config
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
@@ -135,7 +136,7 @@ class LitellmExtractor(BaseExtractor):
                     ],
                 }
             ],
-            **self.provider_connection_details,
+            **self.litellm_core_config.model_dump(),
         }
 
         return completion_kwargs

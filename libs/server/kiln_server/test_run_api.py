@@ -120,7 +120,7 @@ async def test_run_task_success(client, task_run_setup):
 
         # Mock the Config class
         mock_config_instance = MockConfig.return_value
-        mock_config_instance.open_ai_api_key = "test_key"
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
 
         response = client.post(
             f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
@@ -150,8 +150,7 @@ async def test_run_task_structured_output(client, task_run_setup):
 
         # Mock the Config class
         mock_config_instance = MockConfig.return_value
-        mock_config_instance.open_ai_api_key = "test_key"
-        mock_config_instance.user_id = "test_user"
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
 
         response = client.post(
             f"/api/projects/project1-id/tasks/{task.id}/run", json=run_task_request
@@ -222,8 +221,7 @@ async def test_run_task_structured_input(client, task_run_setup):
 
             # Mock the Config class
             mock_config_instance = MockConfig.return_value
-            mock_config_instance.open_ai_api_key = "test_key"
-            mock_config_instance.user_id = "test_user"
+            mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
 
             response = client.post(
                 f"/api/projects/project1-id/tasks/{task.id}/run", json=run_task_request

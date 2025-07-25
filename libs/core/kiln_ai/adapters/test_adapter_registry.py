@@ -11,7 +11,11 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
 )
-from kiln_ai.adapters.provider_tools import Config
+from kiln_ai.adapters.provider_tools import (
+    Config,
+    LiteLlmCoreConfig,
+    lite_llm_core_config_for_provider,
+)
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
@@ -20,6 +24,21 @@ def mock_config():
     with patch("kiln_ai.adapters.provider_tools.Config") as mock:
         mock.shared.return_value.open_ai_api_key = "test-openai-key"
         mock.shared.return_value.open_router_api_key = "test-openrouter-key"
+        mock.shared.return_value.groq_api_key = "test-groq-key"
+        mock.shared.return_value.bedrock_access_key = "test-bedrock-access-key"
+        mock.shared.return_value.bedrock_secret_key = "test-bedrock-secret-key"
+        mock.shared.return_value.huggingface_api_key = "test-huggingface-key"
+        mock.shared.return_value.ollama_base_url = "http://localhost:11434/v1"
+        mock.shared.return_value.fireworks_api_key = "test-fireworks-key"
+        mock.shared.return_value.anthropic_api_key = "test-anthropic-key"
+        mock.shared.return_value.gemini_api_key = "test-gemini-key"
+        mock.shared.return_value.vertex_project_id = "test-vertex-project-id"
+        mock.shared.return_value.vertex_location = "test-vertex-location"
+        mock.shared.return_value.together_api_key = "test-together-key"
+        mock.shared.return_value.azure_openai_api_key = "test-azure-openai-key"
+        mock.shared.return_value.azure_openai_endpoint = (
+            "https://test-azure-openai-endpoint.com/v1"
+        )
         yield mock
 
 
@@ -36,11 +55,12 @@ def basic_task():
 
 def test_openai_adapter_creation(mock_config, basic_task):
     with patch(
-        "kiln_ai.adapters.adapter_registry.get_provider_connection_details"
-    ) as mock_get_provider_connection_details:
-        mock_get_provider_connection_details.return_value = {
-            "api_key": "test-openai-key"
-        }
+        "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
+    ) as mock_lite_llm_core_config_for_provider:
+        mock_lite_llm_core_config = LiteLlmCoreConfig(
+            additional_body_options={"api_key": "test-openai-key"},
+        )
+        mock_lite_llm_core_config_for_provider.return_value = mock_lite_llm_core_config
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
@@ -53,14 +73,21 @@ def test_openai_adapter_creation(mock_config, basic_task):
         )
 
         # Verify the connection details were accessed (not openai_compatible bypass)
-        mock_get_provider_connection_details.assert_called_once_with(
-            ModelProviderName.openai
+        mock_lite_llm_core_config_for_provider.assert_called_once_with(
+            ModelProviderName.openai, None
         )
 
         # Verify adapter configuration
         assert isinstance(adapter, LiteLlmAdapter)
         assert adapter.config.run_config_properties.model_name == "gpt-4"
-        assert adapter.config.additional_body_options == {"api_key": "test-openai-key"}
+        assert adapter.config.base_url == mock_lite_llm_core_config.base_url
+        assert (
+            adapter.config.default_headers == mock_lite_llm_core_config.default_headers
+        )
+        assert (
+            adapter.config.additional_body_options
+            == mock_lite_llm_core_config.additional_body_options
+        )
         assert (
             adapter.config.run_config_properties.model_provider_name
             == ModelProviderName.openai
@@ -71,16 +98,17 @@ def test_openai_adapter_creation(mock_config, basic_task):
 
 def test_openrouter_adapter_creation(mock_config, basic_task):
     with patch(
-        "kiln_ai.adapters.adapter_registry.get_provider_connection_details"
-    ) as mock_get_provider_connection_details:
-        mock_get_provider_connection_details.return_value = {
-            "api_key": "test-openrouter-key",
-            "base_url": "https://openrouter.ai/api/v1",
-            "default_headers": {
+        "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
+    ) as mock_lite_llm_core_config_for_provider:
+        mock_lite_llm_core_config = LiteLlmCoreConfig(
+            additional_body_options={"api_key": "test-openrouter-key"},
+            base_url="https://openrouter.ai/api/v1",
+            default_headers={
                 "HTTP-Referer": "https://getkiln.ai/openrouter",
                 "X-Title": "KilnAI",
             },
-        }
+        )
+        mock_lite_llm_core_config_for_provider.return_value = mock_lite_llm_core_config
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
@@ -93,8 +121,8 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
         )
 
         # Verify the connection details were accessed (not openai_compatible bypass)
-        mock_get_provider_connection_details.assert_called_once_with(
-            ModelProviderName.openrouter
+        mock_lite_llm_core_config_for_provider.assert_called_once_with(
+            ModelProviderName.openrouter, None
         )
 
         # Verify adapter configuration including complex auth (headers + base_url)
@@ -213,7 +241,7 @@ def test_openai_compatible_adapter(basic_task):
             kiln_task=basic_task,
             run_config_properties=RunConfigProperties(
                 model_name="some-provider::test-model",
-                model_provider_name="openai_compatible",
+                model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
                 structured_output_mode="json_schema",
             ),
@@ -255,20 +283,23 @@ def test_custom_openai_compatible_provider(mock_config, basic_task):
 
 
 @pytest.fixture
-def mock_get_provider_connection_details():
-    """Mock get_provider_connection_details to return predictable auth details."""
+def mock_lite_llm_core_config_for_provider():
+    """Mock lite_llm_core_config_for_provider to return predictable auth details."""
     with patch(
-        "kiln_ai.adapters.adapter_registry.get_provider_connection_details"
+        "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
     ) as mock:
         yield mock
 
 
 def test_adapter_for_task_core_provider_mapping(
-    mock_get_provider_connection_details, basic_task
+    mock_lite_llm_core_config_for_provider, basic_task
 ):
     """Test adapter_for_task correctly maps virtual providers to core providers."""
     # Mock auth details for the underlying provider
-    mock_get_provider_connection_details.return_value = {"api_key": "test-openai-key"}
+    mock_lite_llm_core_config = LiteLlmCoreConfig(
+        additional_body_options={"api_key": "test-openai-key"},
+    )
+    mock_lite_llm_core_config_for_provider.return_value = mock_lite_llm_core_config
 
     # Use a virtual provider that should map to openai
     with patch("kiln_ai.adapters.adapter_registry.core_provider") as mock_core_provider:
@@ -290,20 +321,30 @@ def test_adapter_for_task_core_provider_mapping(
         )
 
         # Verify auth was fetched for the mapped core provider
-        mock_get_provider_connection_details.assert_called_once_with(
-            ModelProviderName.openai
+        mock_lite_llm_core_config_for_provider.assert_called_once_with(
+            ModelProviderName.openai, None
         )
 
         # Verify adapter is created correctly
         assert isinstance(adapter, LiteLlmAdapter)
-        assert adapter.config.additional_body_options == {"api_key": "test-openai-key"}
+        assert (
+            adapter.config.additional_body_options
+            == mock_lite_llm_core_config.additional_body_options
+        )
+        assert adapter.config.base_url == mock_lite_llm_core_config.base_url
+        assert (
+            adapter.config.default_headers == mock_lite_llm_core_config.default_headers
+        )
 
 
 def test_adapter_for_task_preserves_run_config_properties(
-    mock_get_provider_connection_details, basic_task
+    mock_lite_llm_core_config_for_provider, basic_task
 ):
     """Test adapter_for_task preserves all run config properties correctly."""
-    mock_get_provider_connection_details.return_value = {"api_key": "test-key"}
+    mock_lite_llm_core_config = LiteLlmCoreConfig(
+        additional_body_options={"api_key": "test-key"},
+    )
+    mock_lite_llm_core_config_for_provider.return_value = mock_lite_llm_core_config
 
     run_config_props = RunConfigProperties(
         model_name="gpt-4",
@@ -335,10 +376,13 @@ def test_adapter_for_task_preserves_run_config_properties(
 
 
 def test_adapter_for_task_with_base_adapter_config(
-    mock_get_provider_connection_details, basic_task
+    mock_lite_llm_core_config_for_provider, basic_task
 ):
     """Test adapter_for_task correctly passes through base_adapter_config."""
-    mock_get_provider_connection_details.return_value = {"api_key": "test-key"}
+    mock_lite_llm_core_config = LiteLlmCoreConfig(
+        additional_body_options={"api_key": "test-key"},
+    )
+    mock_lite_llm_core_config_for_provider.return_value = mock_lite_llm_core_config
 
     base_config = AdapterConfig(
         allow_saving=False,
@@ -627,40 +671,57 @@ def test_adapter_for_task_matches_original_switch_ollama_default_url(
     assert adapter.config.base_url == expected_config.base_url
 
 
-def test_adapter_for_task_openai_compatible_bypasses_regression_test(
-    comprehensive_mock_config, basic_task
+@pytest.fixture
+def mock_shared_config():
+    with patch("kiln_ai.adapters.provider_tools.Config.shared") as mock:
+        config = Mock()
+        config.openai_compatible_providers = [
+            {
+                "name": "test_provider",
+                "base_url": "https://api.test.com",
+                "api_key": "test-key",
+            },
+            {
+                "name": "no_key_provider",
+                "base_url": "https://api.nokey.com",
+            },
+        ]
+        mock.return_value = config
+        yield mock
+
+
+def test_lite_llm_config_no_api_key(mock_shared_config):
+    """Test provider creation without API key (should work as some providers don't require it, but should pass NA to LiteLLM as it requires one)"""
+    config = lite_llm_core_config_for_provider(
+        ModelProviderName.openai_compatible, "no_key_provider"
+    )
+    assert config is not None
+    assert config.additional_body_options == {"api_key": "NA"}
+    assert config.base_url == "https://api.nokey.com"
+
+
+@pytest.mark.parametrize(
+    "provider_name",
+    [
+        ModelProviderName.kiln_fine_tune,
+        ModelProviderName.kiln_custom_registry,
+    ],
+)
+def test_lite_llm_core_config_for_provider_virtual_providers(
+    mock_config, basic_task, provider_name
 ):
-    """
-    Verify that OpenAI compatible providers still bypass the normal auth logic
-    and use lite_llm_config_for_openai_compatible, just like the original.
-    """
-    with patch(
-        "kiln_ai.adapters.adapter_registry.lite_llm_config_for_openai_compatible"
-    ) as mock_openai_compat:
-        mock_config = LiteLlmConfig(
-            run_config_properties=RunConfigProperties(
-                model_name="test-model",
-                model_provider_name=ModelProviderName.openai_compatible,
-                prompt_id="simple_prompt_builder",
-                structured_output_mode="json_schema",
-            ),
-            base_url="https://custom-api.com/v1",
-            additional_body_options={"api_key": "custom-key"},
-        )
-        mock_openai_compat.return_value = mock_config
+    # patch core_provider to return None
+    with patch("kiln_ai.adapters.adapter_registry.core_provider") as mock_core_provider:
+        mock_core_provider.return_value = provider_name
 
-        run_config_props = RunConfigProperties(
-            model_name="custom::test-model",
-            model_provider_name=ModelProviderName.openai_compatible,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
-        )
-
-        adapter = adapter_for_task(
-            kiln_task=basic_task,
-            run_config_properties=run_config_props,
-        )
-
-        # Verify it uses the special config function (same as original)
-        mock_openai_compat.assert_called_once()
-        assert adapter.config == mock_config
+        # virtual providers are not supported and should raise an error
+        with pytest.raises(ValueError, match="not a core provider"):
+            adapter_for_task(
+                basic_task,
+                RunConfigProperties(
+                    model_name="project::task::finetune",
+                    model_provider_name=provider_name,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )

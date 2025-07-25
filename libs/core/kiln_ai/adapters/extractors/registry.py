@@ -3,7 +3,7 @@ from kiln_ai.adapters.extractors.litellm_extractor import LitellmExtractor
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.provider_tools import (
     core_provider,
-    get_provider_connection_details,
+    lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -26,8 +26,15 @@ def extractor_adapter_from_type(
                 extractor_config.model_name, provider_enum
             )
 
+            provider_config = lite_llm_core_config_for_provider(core_provider_name)
+            if provider_config is None:
+                raise ValueError(
+                    f"No configuration found for core provider: {core_provider_name}. "
+                )
+
             return LitellmExtractor(
-                extractor_config, get_provider_connection_details(core_provider_name)
+                extractor_config,
+                provider_config,
             )
         case _:
             # type checking will catch missing cases
