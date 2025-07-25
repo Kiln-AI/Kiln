@@ -45,7 +45,7 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
     try:
         base_url = custom_ollama_url or ollama_base_url()
         tags = requests.get(base_url + "/api/tags", timeout=5).json()
-    except requests.exceptions.ConnectionError:
+    except requests.ConnectionError:
         raise HTTPException(
             status_code=417,
             detail="Failed to connect. Ensure Ollama app is running.",
