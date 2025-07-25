@@ -812,15 +812,15 @@ async def connect_bedrock(key_data: dict):
         )
     except Exception as e:
         # Improve error message if it's a confirmed authentication error
-        if isinstance(e, litellm.exceptions.AuthenticationError):
+        if type(e).__name__ == "AuthenticationError":
             return JSONResponse(
                 status_code=401,
                 content={
                     "message": "Failed to connect to Bedrock. Invalid credentials."
                 },
             )
-        # If it's a bad request, it's a valid key (but the model is fake)
-        if isinstance(e, litellm.exceptions.BadRequestError):
+        # It passed the authentication test, but it's a bad request (expected: the model is fake). This means it worked.
+        if type(e).__name__ == "BadRequestError":
             Config.shared().bedrock_access_key = access_key
             Config.shared().bedrock_secret_key = secret_key
             return JSONResponse(
