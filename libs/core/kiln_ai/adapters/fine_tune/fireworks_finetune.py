@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import List, Tuple
 from uuid import uuid4
 
@@ -23,6 +24,12 @@ serverless_models = [
 ]
 
 
+@dataclass
+class DeployStatus:
+    success: bool
+    error_details: str | None = None
+
+
 class FireworksFinetune(BaseFinetuneAdapter):
     """
     A fine-tuning adapter for Fireworks.
@@ -39,8 +46,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # Deploy every time we check status. This can help resolve issues, Fireworks will undeploy unused models after a time.
         if status.status == FineTuneStatusType.completed:
             deployed = await self._deploy()
-            if not deployed:
+            if not deployed.success:
                 status.message = "Fine-tuning job completed but failed to deploy model."
+                status.error_details = deployed.error_details
 
         return status
 
@@ -292,7 +300,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         }
         return {k: v for k, v in payload.items() if v is not None}
 
-    async def _deploy(self) -> bool:
+    async def _deploy(self) -> DeployStatus:
         if self.datamodel.base_model_id in serverless_models:
             return await self._deploy_serverless()
         else:
@@ -321,7 +329,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
             return None
         return model_id
 
-    async def _deploy_serverless(self) -> bool:
+    async def _deploy_serverless(self) -> DeployStatus:
         # Now we "deploy" the model using PEFT serverless.
         # A bit complicated: most fireworks deploys are server based.
         # However, a Lora can be serverless (PEFT).
@@ -334,10 +342,11 @@ class FireworksFinetune(BaseFinetuneAdapter):
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/deployedModels"
         model_id = await self.model_id_checking_status()
         if not model_id:
-            logger.error(
+            error_details = (
                 "Model ID not found - can't deploy model to Fireworks serverless"
             )
-            return False
+            logger.error(error_details)
+            return DeployStatus(success=False, error_details=error_details)
 
         payload = {
             "displayName": self.deployment_display_name(),
@@ -357,14 +366,13 @@ class FireworksFinetune(BaseFinetuneAdapter):
                 self.datamodel.fine_tune_model_id = model_id
                 if self.datamodel.path:
                     self.datamodel.save_to_file()
-            return True
+            return DeployStatus(success=True)
 
-        logger.error(
-            f"Failed to deploy model to Fireworks serverless: [{response.status_code}] {response.text}"
-        )
-        return False
+        error_msg = f"Failed to deploy model to Fireworks serverless: [{response.status_code}] {response.text}"
+        logger.error(error_msg)
+        return DeployStatus(success=False, error_details=error_msg)
 
-    async def _check_or_deploy_server(self) -> bool:
+    async def _check_or_deploy_server(self) -> DeployStatus:
         """
         Check if the model is already deployed. If not, deploy it to a dedicated server.
         """
@@ -380,19 +388,22 @@ class FireworksFinetune(BaseFinetuneAdapter):
                     "READY",
                     "CREATING",
                 ]:
-                    return True
+                    return DeployStatus(success=True)
 
         # If the model is not deployed, deploy it
         return await self._deploy_server()
 
-    async def _deploy_server(self) -> bool:
+    async def _deploy_server(self) -> DeployStatus:
         # For models that are not serverless, we just need to deploy the model to a server.
         # We use a scale-to-zero on-demand deployment. If you stop using it, it
         # will scale to zero and charges will stop.
         model_id = await self.model_id_checking_status()
         if not model_id:
-            logger.error("Model ID not found - can't deploy model to Fireworks server")
-            return False
+            error_details = (
+                "Model ID not found - can't deploy model to Fireworks server"
+            )
+            logger.error(error_details)
+            return DeployStatus(success=False, error_details=error_details)
 
         api_key, account_id = self.api_key_and_account_id()
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/deployments"
@@ -408,6 +419,8 @@ class FireworksFinetune(BaseFinetuneAdapter):
                 # Scale to zero after 5 minutes of inactivity - this is the minimum allowed
                 "scaleToZeroWindow": "300s",
             },
+            # H100s are much more reliable than default A100
+            "acceleratorType": "NVIDIA_H100_80GB",
             "baseModel": model_id,
         }
         headers = {
@@ -424,12 +437,11 @@ class FireworksFinetune(BaseFinetuneAdapter):
                 self.datamodel.fine_tune_model_id = basemodel
                 if self.datamodel.path:
                     self.datamodel.save_to_file()
-                return True
+                return DeployStatus(success=True)
 
-        logger.error(
-            f"Failed to deploy model to Fireworks server: [{response.status_code}] {response.text}"
-        )
-        return False
+        error_msg = f"Failed to deploy model to Fireworks server: [{response.status_code}] {response.text}"
+        logger.error(error_msg)
+        return DeployStatus(success=False, error_details=error_msg)
 
     async def _fetch_all_deployments(self) -> List[dict]:
         """
