@@ -33,7 +33,7 @@ jobs:
         run: uv python install
 
       - name: Install the project
-        run: uv tool install ruff && uv tool install ty@latest
+        run: uv sync
 
       - name: Lint with ruff
         run: |
@@ -44,4 +44,4 @@ jobs:
           uvx ruff format --check .
 
       - name: Type Check with Ty
-        run: uvx ty --version && uvx ty check
+        run: uvx ty check
