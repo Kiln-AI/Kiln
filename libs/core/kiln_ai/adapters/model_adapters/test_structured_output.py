@@ -245,7 +245,7 @@ async def run_structured_input_task_no_validation(
     try:
         run = await a.invoke({"a": 2, "b": 2, "c": 2})
         response = run.output.output
-        return response, a
+        return response, a, run
     except ValueError as e:
         if str(e) == "Failed to connect to Ollama. Ensure Ollama is running.":
             pytest.skip(
@@ -260,7 +260,7 @@ async def run_structured_input_task(
     provider: str,
     prompt_id: PromptId,
 ):
-    response, a = await run_structured_input_task_no_validation(
+    response, a, run = await run_structured_input_task_no_validation(
         task, model_name, provider, prompt_id
     )
     assert response is not None
@@ -350,7 +350,7 @@ When asked for a final result, this is the format (for an equilateral example):
 """
     task.output_json_schema = json.dumps(triangle_schema)
     task.save_to_file()
-    response, adapter = await run_structured_input_task_no_validation(
+    response, adapter, _ = await run_structured_input_task_no_validation(
         task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
     )
 

@@ -1,4 +1,4 @@
-from typing import Literal, Tuple
+from typing import Tuple
 
 from together import Together
 from together.types.files import FilePurpose

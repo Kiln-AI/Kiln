@@ -134,7 +134,7 @@
 
 <AppPage
   title="Evals"
-  subtitle="Evaluate task performance. Compare models, prompts, and fine-tunes."
+  subtitle="Evaluate the quality of your prompts, models and tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
   sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
   action_buttons={is_empty
@@ -165,6 +165,70 @@
       </div>
     </div>
   {:else if evals}
+    <a href={`/evals/${project_id}/${task_id}/compare`}>
+      <div class="card border p-3 mb-4 rounded-md hover:bg-gray-50">
+        <div class="flex flex-row gap-4">
+          <div class="rounded-lg bg-blue-50 py-2 px-4">
+            <svg
+              class="h-12 aspect-760/621"
+              viewBox="0 0 760 621"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <g clip-path="url(#clip0_1603_4)">
+                <rect
+                  x="10"
+                  y="10"
+                  width="740"
+                  height="601"
+                  rx="25"
+                  fill="white"
+                  stroke="#628BD9"
+                  stroke-width="20"
+                />
+                <line
+                  x1="137"
+                  y1="90.9778"
+                  x2="137.999"
+                  y2="541.978"
+                  stroke="#628BD9"
+                  stroke-width="20"
+                />
+                <line
+                  x1="656"
+                  y1="490"
+                  x2="82"
+                  y2="490"
+                  stroke="#628BD9"
+                  stroke-width="20"
+                />
+                <circle cx="352" cy="241" r="28" fill="#628BD9" />
+                <circle cx="473" cy="317" r="28" fill="#628BD9" />
+                <circle cx="564" cy="153" r="28" fill="#628BD9" />
+                <circle cx="232" cy="384" r="28" fill="#628BD9" />
+              </g>
+              <defs>
+                <clipPath id="clip0_1603_4">
+                  <rect width="760" height="621" fill="white" />
+                </clipPath>
+              </defs>
+            </svg>
+          </div>
+
+          <div class="flex-grow flex flex-col text-sm justify-center">
+            <span class="font-medium text-base"
+              >Compare Models, Prompts and Fine-Tunes</span
+            >
+            <span class="text-sm font-light mt-1"
+              >Find the best way to run this task by comparing models, prompts
+              and fine-tunes using evals, cost and performance.</span
+            >
+          </div>
+        </div>
+      </div>
+    </a>
+
+    <div class="text-xl font-bold mt-8 mb-2">All Evals</div>
     <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>

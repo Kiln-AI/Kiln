@@ -128,6 +128,13 @@
         value: evaluator.description,
       })
     }
+    if (evaluator.template) {
+      properties.push({
+        name: "Template",
+        value: evaluator.template,
+        tooltip: "The template used to create this eval.",
+      })
+    }
     properties.push({
       name: "ID",
       value: evaluator.id || "unknown",
@@ -150,25 +157,25 @@
       name: "Golden Dataset",
       value: evaluator.eval_configs_filter_id + golden_dataset_size,
       tooltip:
-        "This is the dataset that we use to evaluate the quality of the evaluation method. Also called the 'Eval Method Dataset'. It needs to have human ratings.",
+        "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
       link: link_from_filter_id(evaluator.eval_configs_filter_id),
     })
 
     if (eval_progress?.current_eval_method) {
       properties.push({
-        name: "Eval Algorithm",
+        name: "Judge Algorithm",
         value: eval_config_to_ui_name(
           eval_progress.current_eval_method.config_type,
         ),
-        tooltip: "The evaluation algorithm used by your selected eval method.",
+        tooltip: "The evaluation algorithm used by your selected judge.",
       })
       properties.push({
-        name: "Eval Model",
+        name: "Judge Model",
         value: model_name(
           eval_progress.current_eval_method.model_name,
           modelInfo,
         ),
-        tooltip: "The model used by your selected eval method.",
+        tooltip: "The model used by your selected judge.",
       })
     }
 
@@ -216,14 +223,14 @@
     "Define Goals",
     "Create Eval Data",
     "Human Ratings",
-    "Find the Best Evaluator",
+    "Find the Best Judge",
     "Find the Best Way to Run this Task",
   ]
   const step_tooltips: Record<number, string> = {
     1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
     2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
-    3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the evaluator is working by checking how well it aligns to human preferences. ",
-    4: "Benchmark different evaluation methods (models, prompts, algorithms). We'll compare to your golden dataset to find the evaluator which best matches human preferences.",
+    3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
+    4: "Benchmark various judge methods (model+prompt+algorithm). We'll compare judges to your golden dataset to find the judge which best matches your human preferences.",
     5: "This tool will help your compare a variety of options for running this task and find the best one. You can compare different models, prompts, or fine-tunes.",
   }
   function update_eval_progress(
@@ -325,11 +332,16 @@
       )
       return
     }
-    const url = `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${encodeURIComponent(
-      eval_tag,
-    )}:0.8,${encodeURIComponent(golden_tag)}:0.2&eval_link=${encodeURIComponent(
-      window.location.pathname,
-    )}`
+
+    const params = new URLSearchParams()
+    params.set("reason", "eval")
+    if (evaluator.template) {
+      params.set("template_id", evaluator.template)
+    }
+    params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
+    params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
+    params.set("eval_link", window.location.pathname)
+    const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)
   }
@@ -361,7 +373,7 @@
 
   function compare_eval_methods() {
     let url = `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`
-    show_progress_ui("When you're done comparing eval methods, ", 4)
+    show_progress_ui("When you're done comparing judges, ", 4)
     goto(url)
   }
 
@@ -496,7 +508,7 @@
                     {:else if step == 4}
                       <div class="mb-1">
                         {#if eval_progress?.current_eval_method}
-                          You've selected the eval method '{eval_config_to_ui_name(
+                          You selected the judge '{eval_config_to_ui_name(
                             eval_progress.current_eval_method.config_type,
                           )}' using the model '{model_name(
                             eval_progress.current_eval_method.model_name,
@@ -514,7 +526,7 @@
                             : ''}"
                           on:click={compare_eval_methods}
                         >
-                          Compare Eval Methods
+                          Compare Judges
                         </button>
                       </div>
                     {:else if step == 5}

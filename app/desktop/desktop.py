@@ -1,3 +1,7 @@
+from app.desktop.studio_server.setup_certs import setup_certs
+
+setup_certs()
+
 import contextlib
 import os
 import sys

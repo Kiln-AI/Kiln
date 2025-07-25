@@ -1,15 +1,11 @@
 import json
 import tempfile
-from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
 
-from kiln_ai.adapters.chat.chat_formatter import (
-    ChatMessage,
-    get_chat_formatter,
-)
+from kiln_ai.adapters.chat.chat_formatter import ChatMessage, get_chat_formatter
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error

@@ -8,6 +8,7 @@
     | "textarea"
     | "select"
     | "fancy_select"
+    | "header_only"
     | "checkbox" = "input"
   export let id: string
   export let label: string
@@ -26,7 +27,7 @@
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let tall: boolean = false
+  export let tall: boolean | "medium" | "xl" = false
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -113,9 +114,14 @@
           </div>
         {/if}
       </div>
-      {#if description}
+      {#if description || error_message}
         <div class="text-xs text-gray-500">
-          {description}
+          {description || ""}
+          {#if error_message}
+            <span class="text-error">
+              <InfoTooltip tooltip_text={error_message} position="bottom" />
+            </span>
+          {/if}
         </div>
       {/if}
     </label>
@@ -127,9 +133,13 @@
       <textarea
         placeholder={error_message || placeholder || label}
         {id}
-        class="textarea text-base textarea-bordered w-full {tall
+        class="textarea text-base textarea-bordered w-full {tall === true
           ? 'h-60'
-          : 'h-18'} wrap-pre text-left align-top
+          : tall === 'xl'
+            ? 'h-96'
+            : tall === 'medium'
+              ? 'h-36'
+              : 'h-18'} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
         on:input={run_validator}

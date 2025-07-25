@@ -5,13 +5,18 @@
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import SchemaSection from "./schema_section.svelte"
-  import { current_project } from "$lib/stores"
+  import {
+    current_project,
+    load_current_task,
+    load_rating_options,
+  } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { ui_state, projects } from "$lib/stores"
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
   import { tick } from "svelte"
+  import posthog from "posthog-js"
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
@@ -36,7 +41,6 @@
   let error: KilnError | null = null
   let submitting = false
   export let saved: boolean = false
-
   // Warn before unload if there's any user input
   $: warn_before_unload =
     !saved &&
@@ -101,6 +105,9 @@
         )
         data = post_data
         network_error = post_error
+        if (!network_error) {
+          posthog.capture("create_task", {})
+        }
       } else {
         const { data: patch_data, error: patch_error } = await client.PATCH(
           "/api/projects/{project_id}/task/{task_id}",
@@ -117,6 +124,9 @@
         )
         data = patch_data
         network_error = patch_error
+        if (!network_error) {
+          posthog.capture("update_task", {})
+        }
       }
       if (network_error || !data) {
         throw network_error
@@ -128,8 +138,15 @@
         ...get(ui_state),
         current_task_id: data.id,
         current_project_id: target_project_id,
+        current_task_rating_options: null,
       })
       saved = true
+
+      // reload the current task to make sure changes propagate throughout the UI
+      // e.g. the rating options
+      await load_current_task(get(current_project))
+      await load_rating_options()
+
       // Wait for the saved change to propagate to the warn_before_unload
       await tick()
       if (redirect_on_created) {

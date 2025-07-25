@@ -1,5 +1,3 @@
-from typing import Type
-
 from kiln_ai.adapters.ml_model_list import ModelParserID
 from kiln_ai.adapters.parsers.base_parser import BaseParser
 from kiln_ai.adapters.parsers.r1_parser import R1ThinkingParser

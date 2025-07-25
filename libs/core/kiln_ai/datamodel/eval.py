@@ -14,6 +14,7 @@ from kiln_ai.datamodel.basemodel import (
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ class EvalTemplateId(str, Enum):
     """
 
     kiln_requirements = "kiln_requirements"
+    issue = "kiln_issue"
     toxicity = "toxicity"
     bias = "bias"
     maliciousness = "maliciousness"
@@ -109,6 +111,10 @@ class EvalRun(KilnParentedModel):
     )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
+    )
+    task_run_usage: Usage | None = Field(
+        default=None,
+        description="The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
     )
 
     def parent_eval_config(self) -> Union["EvalConfig", None]:
@@ -280,6 +286,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
+    template_properties: dict[str, str | int | bool | float] = Field(
+        default={},
+        description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
+    )
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -303,4 +313,26 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_template_properties(self) -> Self:
+        # Check for properties that are required for the issue template
+        if self.template == EvalTemplateId.issue:
+            if "issue_prompt" not in self.template_properties or not isinstance(
+                self.template_properties["issue_prompt"], str
+            ):
+                raise ValueError("issue_prompt is required for issue template")
+            if "failure_example" in self.template_properties and not isinstance(
+                self.template_properties["failure_example"], str
+            ):
+                raise ValueError(
+                    "failure_example is optional for issue template, but if provided must be a string"
+                )
+            if "pass_example" in self.template_properties and not isinstance(
+                self.template_properties["pass_example"], str
+            ):
+                raise ValueError(
+                    "pass_example is optional for issue template, but if provided must be a string"
+                )
         return self

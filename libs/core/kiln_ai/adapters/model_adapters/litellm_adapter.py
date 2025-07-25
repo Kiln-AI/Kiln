@@ -251,6 +251,15 @@ class LiteLlmAdapter(BaseAdapter):
                 "exclude": False,
             }
 
+        if provider.gemini_reasoning_enabled:
+            extra_body["reasoning"] = {
+                "enabled": True,
+            }
+
+        if provider.name == ModelProviderName.openrouter:
+            # Ask OpenRouter to include usage in the response (cost)
+            extra_body["usage"] = {"include": True}
+
         if provider.anthropic_extended_thinking:
             extra_body["thinking"] = {"type": "enabled", "budget_tokens": 4000}
 
@@ -386,7 +395,12 @@ class LiteLlmAdapter(BaseAdapter):
 
     def usage_from_response(self, response: ModelResponse) -> Usage | None:
         litellm_usage = response.get("usage", None)
+
+        # LiteLLM isn't consistent in how it returns the cost.
         cost = response._hidden_params.get("response_cost", None)
+        if cost is None and litellm_usage:
+            cost = litellm_usage.get("cost", None)
+
         if not litellm_usage and not cost:
             return None
 

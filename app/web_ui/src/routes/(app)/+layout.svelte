@@ -14,12 +14,7 @@
 
   enum Section {
     Dataset,
-    SettingsMain,
-    SettingsProviders,
-    SettingsManageProjects,
-    SettingsEditProject,
-    SettingsEditTask,
-    SettingsAppUpdate,
+    Settings,
     Prompts,
     Evals,
     Generate,
@@ -27,15 +22,6 @@
     FineTune,
     None,
   }
-
-  const settingsSections = [
-    Section.SettingsMain,
-    Section.SettingsProviders,
-    Section.SettingsManageProjects,
-    Section.SettingsEditProject,
-    Section.SettingsEditTask,
-    Section.SettingsAppUpdate,
-  ]
 
   function path_start(root: string, pathname: string): boolean {
     if (pathname == root) {
@@ -50,18 +36,8 @@
   $: {
     if (path_start("/dataset", $page.url.pathname)) {
       section = Section.Dataset
-    } else if (path_start("/settings/providers", $page.url.pathname)) {
-      section = Section.SettingsProviders
-    } else if (path_start("/settings/manage_projects", $page.url.pathname)) {
-      section = Section.SettingsManageProjects
-    } else if (path_start("/settings/edit_project", $page.url.pathname)) {
-      section = Section.SettingsEditProject
-    } else if (path_start("/settings/edit_task", $page.url.pathname)) {
-      section = Section.SettingsEditTask
-    } else if (path_start("/settings/check_for_update", $page.url.pathname)) {
-      section = Section.SettingsAppUpdate
     } else if (path_start("/settings", $page.url.pathname)) {
-      section = Section.SettingsMain
+      section = Section.Settings
     } else if (path_start("/run", $page.url.pathname)) {
       section = Section.Run
     } else if (path_start("/generate", $page.url.pathname)) {
@@ -219,6 +195,55 @@
 
       <li class="menu-lg">
         <a
+          href={`/evals/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+          class={section == Section.Evals ? "active" : ""}
+        >
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+          <svg
+            class="w-6 h-6 mr-2"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z"
+              stroke="#1C274C"
+              stroke-width="1.5"
+            />
+            <path
+              d="M6 15.8L7.14286 17L10 14"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M6 8.8L7.14286 10L10 7"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M13 9L18 9"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M13 16L18 16"
+              stroke="#1C274C"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+
+          Evals</a
+        >
+      </li>
+
+      <li class="menu-lg">
+        <a
           href={`/generate/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Generate ? "active" : ""}
         >
@@ -325,55 +350,6 @@
 
       <li class="menu-lg">
         <a
-          href={`/evals/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-          class={section == Section.Evals ? "active" : ""}
-        >
-          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-          <svg
-            class="w-6 h-6 mr-2"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z"
-              stroke="#1C274C"
-              stroke-width="1.5"
-            />
-            <path
-              d="M6 15.8L7.14286 17L10 14"
-              stroke="#1C274C"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M6 8.8L7.14286 10L10 7"
-              stroke="#1C274C"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M13 9L18 9"
-              stroke="#1C274C"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M13 16L18 16"
-              stroke="#1C274C"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
-
-          Evals</a
-        >
-      </li>
-
-      <li class="menu-lg">
-        <a
           href={`/prompts/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Prompts ? "active" : ""}
         >
@@ -398,10 +374,7 @@
         >
       </li>
       <li class="menu-lg">
-        <a
-          href="/settings"
-          class={section == Section.SettingsMain ? "active" : ""}
-        >
+        <a href="/settings" class={section == Section.Settings ? "active" : ""}>
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524954/settings -->
           <svg
             class="w-6 h-6 mr-2"
@@ -425,52 +398,6 @@
 
           Settings</a
         >
-        {#if settingsSections.includes(section)}
-          <ul class="py-2 ml-6">
-            <li class="menu-nested-sm {$current_task?.id ? '' : 'hidden'}">
-              <a
-                class={section == Section.SettingsEditTask ? "active" : ""}
-                href={`/settings/edit_task/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-              >
-                Edit Task
-              </a>
-            </li>
-            <li class="menu-nested-sm">
-              <a
-                class={section == Section.SettingsProviders ? "active" : ""}
-                href="/settings/providers"
-              >
-                AI Providers &amp; Models
-              </a>
-            </li>
-            <li class="menu-nested-sm">
-              <a
-                class={section == Section.SettingsManageProjects
-                  ? "active"
-                  : ""}
-                href="/settings/manage_projects"
-              >
-                Manage Projects
-              </a>
-            </li>
-            <li class="menu-nested-sm {$current_project?.id ? '' : 'hidden'}">
-              <a
-                class={section == Section.SettingsEditProject ? "active" : ""}
-                href="/settings/edit_project/{$current_project?.id}"
-              >
-                Edit Project
-              </a>
-            </li>
-            <li class="menu-nested-sm">
-              <a
-                class={section == Section.SettingsAppUpdate ? "active" : ""}
-                href="/settings/check_for_update"
-              >
-                App Update
-              </a>
-            </li>
-          </ul>
-        {/if}
       </li>
       {#if $update_info.update_result && $update_info.update_result.has_update}
         <li class="menu-md mt-4">

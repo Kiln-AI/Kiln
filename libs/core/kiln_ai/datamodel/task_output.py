@@ -2,8 +2,6 @@ import json
 from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Type, Union
 
-import jsonschema
-import jsonschema.exceptions
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
 

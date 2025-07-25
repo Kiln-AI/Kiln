@@ -32,6 +32,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 
 ## Table of Contents
 
+- [Connecting AI Providers](#connecting-ai-providers-openai-openrouter-ollama-etc)
 - [Using the Kiln Data Model](#using-the-kiln-data-model)
   - [Understanding the Kiln Data Model](#understanding-the-kiln-data-model)
   - [Datamodel Overview](#datamodel-overview)
@@ -40,6 +41,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
   - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
+  - [Tagging Task Runs Programmatically](#tagging-task-runs-programmatically)
   - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code)
 - [Full API Reference](#full-api-reference)
 
@@ -48,6 +50,12 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 ```bash
 pip install kiln-ai
 ```
+
+## Connecting AI Providers (OpenAI, OpenRouter, Ollama, etc)
+
+The easiest way to connect AI providers is to use the Kiln app UI. Once connected in the UI, credentials will be stored to `~/.kiln_ai/settings.yml`, which will be available to the library.
+
+For configuring credentials from code or connecting custom servers/model, see [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code).
 
 ## Using the Kiln Data Model
 
@@ -146,7 +154,10 @@ item = kiln_ai.datamodel.TaskRun(
             type=kiln_ai.datamodel.DataSourceType.human,
             properties={"created_by": "Jane Doe"},
         ),
-        rating=kiln_ai.datamodel.TaskOutputRating(score=5,type="five_star"),
+        rating=kiln_ai.datamodel.TaskOutputRating(
+            value=5,
+            type=kiln_ai.datamodel.datamodel_enums.five_star,
+        ),
     ),
 )
 item.save_to_file()
@@ -235,6 +246,25 @@ for run in task.runs():
     print(f"Input: {run.input}")
     print(f"Output: {run.output}")
 
+```
+
+## Tagging Task Runs Programmatically
+
+You can also tag your Kiln Task runs programmatically:
+
+```py
+# Load your Kiln Task from disk
+task_path = "/Users/youruser/Kiln Projects/test project/tasks/632780983478 - Joke Generator/task.kiln"
+task = kiln_ai.datamodel.Task.load_from_file(task_path)
+
+for run in task.runs():
+    # Parse the task output from JSON
+    output = json.loads(run.output.output)
+
+    # Add a tag if the punchline is unusually short
+    if len(output["punchline"]) < 100:
+        run.tags.append("very_short")
+        run.save_to_file()  # Persist the updated tags
 ```
 
 ### Adding Custom Model or AI Provider from Code

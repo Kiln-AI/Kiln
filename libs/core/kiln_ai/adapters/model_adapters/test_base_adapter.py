@@ -4,7 +4,6 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
-from kiln_ai.adapters.parsers.request_formatters import request_formatter_from_id
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
