@@ -72,5 +72,5 @@ def test_request_formatter_factory():
 
 def test_request_formatter_factory_invalid_id():
     # Test with an invalid enum value by using a string that doesn't exist in the enum
-    with pytest.raises(ValueError, match="Unhandled enum value"):
+    with pytest.raises(AssertionError, match="Expected code to be unreachable"):
         request_formatter_from_id("invalid_formatter_id")  # type: ignore
