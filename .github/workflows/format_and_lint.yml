@@ -38,6 +38,10 @@ jobs:
       - name: Lint with ruff
         run: |
           uvx ruff check --select I .
+
       - name: Format with ruff
         run: |
           uvx ruff format --check .
+
+      - name: Type Check with Ty
+        run: uvx ty check .
