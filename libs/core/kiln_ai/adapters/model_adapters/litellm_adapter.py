@@ -152,14 +152,14 @@ class LiteLlmAdapter(BaseAdapter):
         return "kiln_openai_compatible_adapter"
 
     async def response_format_options(self) -> dict[str, Any]:
+        # shouldn't be needed - https://github.com/astral-sh/ty/issues/893
+        typed_self = cast(LiteLlmAdapter, self)
+
         # Unstructured if task isn't structured
-        if not self.has_structured_output():
+        if not typed_self.has_structured_output():
             return {}
 
-        # cast shouldn't be needed, but type inference is not working
-        structured_output_mode = cast(
-            StructuredOutputMode, self.run_config.structured_output_mode
-        )
+        structured_output_mode = typed_self.run_config.structured_output_mode
         match structured_output_mode:
             case StructuredOutputMode.json_mode:
                 return {"response_format": {"type": "json_object"}}

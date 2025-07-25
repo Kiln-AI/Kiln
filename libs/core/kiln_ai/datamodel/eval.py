@@ -135,12 +135,16 @@ class EvalRun(KilnParentedModel):
 
     @model_validator(mode="after")
     def validate_scores(self) -> Self:
+        # shouldn't be needed - https://github.com/astral-sh/ty/issues/893
+        typed_self = cast(EvalRun, self)
         # We're checking the scores have the expected keys from the grand-parent eval
-        if self.scores is None or len(self.scores) == 0:
+        if typed_self.scores is None or len(typed_self.scores) == 0:
             raise ValueError("scores are required, and must have at least one score.")
 
-        parent_eval_config = self.parent_eval_config()
-        eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        parent_eval_config = typed_self.parent_eval_config()
+        if not parent_eval_config:
+            return self
+        eval = parent_eval_config.parent_eval()
         if not eval:
             # Can't validate without the grand-parent eval, allow it to be validated later
             return self
@@ -153,9 +157,7 @@ class EvalRun(KilnParentedModel):
 
         # Check that each score is expected in this eval and the correct type
         for output_score in eval.output_scores:
-            # Shouldn't need casting, but ty isn't properly inferring type
-            output_score_type = cast(TaskOutputRatingType, output_score.type)
-            match output_score_type:
+            match output_score.type:
                 case TaskOutputRatingType.five_star:
                     five_star_score = self.scores[output_score.json_key()]
                     if (
@@ -192,7 +194,7 @@ class EvalRun(KilnParentedModel):
                     )
                 case _:
                     # This should never happen since all enum cases are handled above
-                    assert_never(output_score_type)
+                    assert_never(output_score.type)
         return self
 
 
