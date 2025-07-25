@@ -416,7 +416,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
     def _create_child_method(
         cls, relationship_name: str, child_class: Type[KilnParentedModel]
     ):
-        def child_method(self, readonly: bool = False) -> list[child_class]:
+        def child_method(self, readonly: bool = False) -> list[child_class]:  # type: ignore
             return child_class.all_children_of_parent_path(self.path, readonly=readonly)
 
         child_method.__name__ = relationship_name

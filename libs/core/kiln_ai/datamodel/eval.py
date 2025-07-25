@@ -1,9 +1,9 @@
 import json
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union, cast
 
 from pydantic import BaseModel, Field, model_validator
-from typing_extensions import Self
+from typing_extensions import Self, assert_never
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -15,7 +15,6 @@ from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -136,12 +135,16 @@ class EvalRun(KilnParentedModel):
 
     @model_validator(mode="after")
     def validate_scores(self) -> Self:
+        # shouldn't be needed - https://github.com/astral-sh/ty/issues/893
+        typed_self = cast(EvalRun, self)
         # We're checking the scores have the expected keys from the grand-parent eval
-        if self.scores is None or len(self.scores) == 0:
+        if typed_self.scores is None or len(typed_self.scores) == 0:
             raise ValueError("scores are required, and must have at least one score.")
 
-        parent_eval_config = self.parent_eval_config()
-        eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        parent_eval_config = typed_self.parent_eval_config()
+        if not parent_eval_config:
+            return self
+        eval = parent_eval_config.parent_eval()
         if not eval:
             # Can't validate without the grand-parent eval, allow it to be validated later
             return self
@@ -190,8 +193,8 @@ class EvalRun(KilnParentedModel):
                         f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
                     )
                 case _:
-                    # Catch missing cases
-                    raise_exhaustive_enum_error(output_score.type)
+                    # This should never happen since all enum cases are handled above
+                    assert_never(output_score.type)
         return self
 
 

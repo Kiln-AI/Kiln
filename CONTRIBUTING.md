@@ -66,7 +66,7 @@ We suggest the following extensions for VSCode/Cursor. With them, you'll get com
 - Prettier
 - Python
 - Python Debugger
-- Type checking by pyright via one of: Cursor Python if using Cursor, Pylance if VSCode
+- Ty (astral type checker)
 - Ruff
 - Svelte for VS Code
 - Vitest
