@@ -5,7 +5,11 @@ from typing import Dict
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
+from kiln_ai.adapters.fine_tune.base_finetune import (
+    BaseFinetuneAdapter,
+    FineTuneParameter,
+    FineTuneStatus,
+)
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
     DatasetFormat,
     DatasetFormatter,
@@ -48,6 +52,19 @@ from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
+
+
+def base_provider_from_str_id(provider_str: str) -> type[BaseFinetuneAdapter]:
+    """
+    Validates that a provider string is a valid ModelProviderName and returns the enum value.
+    """
+    if provider_str not in finetune_registry:  # type: ignore
+        valid_providers = list(finetune_registry.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid provider '{provider_str}'. Valid providers are: {valid_providers}",
+        )
+    return finetune_registry[provider_str]  # type: ignore
 
 
 class FinetuneProviderModel(BaseModel):
@@ -208,7 +225,7 @@ def connect_fine_tune_api(app: FastAPI):
                 status_code=400,
                 detail=f"Fine tune provider '{finetune.provider}' not found",
             )
-        finetune_adapter = finetune_registry[finetune.provider]
+        finetune_adapter = base_provider_from_str_id(finetune.provider)
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
 
@@ -276,11 +293,7 @@ def connect_fine_tune_api(app: FastAPI):
     async def finetune_hyperparameters(
         provider_id: str,
     ) -> list[FineTuneParameter]:
-        if provider_id not in finetune_registry:
-            raise HTTPException(
-                status_code=400, detail=f"Fine tune provider '{provider_id}' not found"
-            )
-        finetune_adapter_class = finetune_registry[provider_id]
+        finetune_adapter_class = base_provider_from_str_id(provider_id)
         return finetune_adapter_class.available_parameters()
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info")
@@ -358,7 +371,7 @@ def connect_fine_tune_api(app: FastAPI):
                 status_code=400,
                 detail=f"Fine tune provider '{request.provider}' not found",
             )
-        finetune_adapter_class = finetune_registry[request.provider]
+        finetune_adapter_class = base_provider_from_str_id(request.provider)
 
         dataset = DatasetSplit.from_id_and_parent_path(request.dataset_id, task.path)
         if dataset is None:

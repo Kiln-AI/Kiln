@@ -366,9 +366,8 @@ def test_get_finetune_hyperparameters_invalid_provider(client, mock_finetune_reg
     response = client.get("/api/finetune/hyperparameters/invalid_provider")
 
     assert response.status_code == 400
-    assert (
-        response.json()["detail"] == "Fine tune provider 'invalid_provider' not found"
-    )
+    expected = "Invalid provider 'invalid_provider'. Valid providers are: "
+    assert expected in response.json()["detail"]
 
 
 def test_dataset_split_type_enum():
