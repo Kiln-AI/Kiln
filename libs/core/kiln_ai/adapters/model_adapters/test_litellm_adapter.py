@@ -343,13 +343,8 @@ def test_litellm_model_id_unknown_provider(config, mock_task):
     mock_provider.model_id = "test-model"
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
-        with patch(
-            "kiln_ai.adapters.model_adapters.litellm_adapter.raise_exhaustive_enum_error"
-        ) as mock_raise_error:
-            mock_raise_error.side_effect = Exception("Test error")
-
-            with pytest.raises(Exception, match="Test error"):
-                adapter.litellm_model_id()
+        with pytest.raises(AssertionError, match="Expected code to be unreachable"):
+            adapter.litellm_model_id()
 
 
 @pytest.mark.parametrize(

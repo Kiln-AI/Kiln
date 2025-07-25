@@ -1,5 +1,7 @@
 from os import getenv
 
+from typing_extensions import assert_never
+
 from kiln_ai import datamodel
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
@@ -13,7 +15,6 @@ from kiln_ai.adapters.provider_tools import (
 )
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 def adapter_for_task(
@@ -196,4 +197,4 @@ def adapter_for_task(
                 "Custom openai compatible provider is not a supported core provider. It should map to an actual provider."
             )
         case _:
-            raise_exhaustive_enum_error(core_provider_name)
+            assert_never(core_provider_name)

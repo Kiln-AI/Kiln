@@ -1,7 +1,8 @@
+from typing_extensions import assert_never
+
 from kiln_ai.adapters.ml_model_list import ModelParserID
 from kiln_ai.adapters.parsers.base_parser import BaseParser
 from kiln_ai.adapters.parsers.r1_parser import R1ThinkingParser
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 def model_parser_from_id(parser_id: ModelParserID | None) -> BaseParser:
@@ -16,4 +17,4 @@ def model_parser_from_id(parser_id: ModelParserID | None) -> BaseParser:
         case ModelParserID.optional_r1_thinking:
             return R1ThinkingParser(allow_missing_thinking=True)
         case _:
-            raise_exhaustive_enum_error(parser_id)
+            assert_never(parser_id)

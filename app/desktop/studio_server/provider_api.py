@@ -24,8 +24,8 @@ from kiln_ai.adapters.ollama_tools import (
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from pydantic import BaseModel, Field
+from typing_extensions import assert_never
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +308,7 @@ def connect_provider_api(app: FastAPI):
                     content={"message": "Provider not supported for API keys"},
                 )
             case _:
-                raise_exhaustive_enum_error(typed_provider)
+                assert_never(typed_provider)
 
     @app.post("/api/provider/disconnect_api_key")
     async def disconnect_api_key(provider_id: str) -> JSONResponse:
@@ -363,8 +363,8 @@ def connect_provider_api(app: FastAPI):
                         content={"message": "Provider not supported"},
                     )
                 case _:
-                    # Raises a pyright error if I miss a case
-                    raise_exhaustive_enum_error(typed_provider_id)
+                    # Raises a type error if I miss a case
+                    assert_never(typed_provider_id)
 
         return JSONResponse(
             status_code=200,

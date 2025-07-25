@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
 
+from typing_extensions import assert_never
+
 from kiln_ai.adapters.chat.chat_formatter import ChatMessage, get_chat_formatter
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class DatasetFormat(str, Enum):
@@ -93,7 +94,7 @@ def build_training_chat(
             response_msg = serialize_r1_style_message(thinking, final_output)
             chat_formatter.next_turn(response_msg)
         case _:
-            raise_exhaustive_enum_error(data_strategy)
+            assert_never(data_strategy)
 
     return chat_formatter.messages
 

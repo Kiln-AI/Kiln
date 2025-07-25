@@ -1,9 +1,9 @@
 import json
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union, cast
 
 from pydantic import BaseModel, Field, model_validator
-from typing_extensions import Self
+from typing_extensions import Self, assert_never
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -15,7 +15,6 @@ from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -154,7 +153,9 @@ class EvalRun(KilnParentedModel):
 
         # Check that each score is expected in this eval and the correct type
         for output_score in eval.output_scores:
-            match output_score.type:
+            # Shouldn't need casting, but ty isn't properly inferring type
+            output_score_type = cast(TaskOutputRatingType, output_score.type)
+            match output_score_type:
                 case TaskOutputRatingType.five_star:
                     five_star_score = self.scores[output_score.json_key()]
                     if (
@@ -190,8 +191,8 @@ class EvalRun(KilnParentedModel):
                         f"Custom scores are not supported in evaluators. '{output_score.name}' was set to a custom score."
                     )
                 case _:
-                    # Catch missing cases
-                    raise_exhaustive_enum_error(output_score.type)
+                    # This should never happen since all enum cases are handled above
+                    assert_never(output_score_type)
         return self
 
 

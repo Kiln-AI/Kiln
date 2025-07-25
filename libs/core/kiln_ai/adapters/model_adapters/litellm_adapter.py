@@ -1,9 +1,10 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import litellm
 from litellm.types.utils import ChoiceLogprobs, Choices, ModelResponse
 from litellm.types.utils import Usage as LiteLlmUsage
+from typing_extensions import assert_never
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.ml_model_list import (
@@ -19,7 +20,6 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.task import run_config_from_run_config_properties
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +156,10 @@ class LiteLlmAdapter(BaseAdapter):
         if not self.has_structured_output():
             return {}
 
-        structured_output_mode = self.run_config.structured_output_mode
-
+        # cast shouldn't be needed, but type inference is not working
+        structured_output_mode = cast(
+            StructuredOutputMode, self.run_config.structured_output_mode
+        )
         match structured_output_mode:
             case StructuredOutputMode.json_mode:
                 return {"response_format": {"type": "json_object"}}
@@ -190,7 +192,7 @@ class LiteLlmAdapter(BaseAdapter):
                 # See above, but this case should never happen.
                 raise ValueError("Structured output mode is unknown.")
             case _:
-                raise_exhaustive_enum_error(structured_output_mode)
+                assert_never(structured_output_mode)
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task().output_schema()
@@ -303,7 +305,9 @@ class LiteLlmAdapter(BaseAdapter):
 
         litellm_provider_name: str | None = None
         is_custom = False
-        match provider.name:
+        # cast shouldn't be needed, but type inference is not working
+        provider_name = cast(ModelProviderName, provider.name)
+        match provider_name:
             case ModelProviderName.openrouter:
                 litellm_provider_name = "openrouter"
             case ModelProviderName.openai:
@@ -337,7 +341,7 @@ class LiteLlmAdapter(BaseAdapter):
             case ModelProviderName.kiln_fine_tune:
                 is_custom = True
             case _:
-                raise_exhaustive_enum_error(provider.name)
+                assert_never(provider.name)
 
         if is_custom:
             if self._api_base is None:

@@ -1,8 +1,9 @@
 import json
 from typing import Dict, Protocol
 
+from typing_extensions import assert_never
+
 from kiln_ai.adapters.ml_model_list import ModelFormatterID
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class RequestFormatter(Protocol):
@@ -37,4 +38,4 @@ def request_formatter_from_id(
         case ModelFormatterID.qwen3_style_no_think:
             return Qwen3StyleNoThinkFormatter()
         case _:
-            raise_exhaustive_enum_error(formatter_id)
+            assert_never(formatter_id)

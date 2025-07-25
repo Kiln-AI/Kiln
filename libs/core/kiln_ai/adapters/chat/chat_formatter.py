@@ -5,8 +5,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional
 
+from typing_extensions import assert_never
+
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
 
@@ -215,7 +216,7 @@ def get_chat_formatter(
         case ChatStrategy.single_turn_r1_thinking:
             return SingleTurnR1ThinkingFormatter(system_message, user_input)
         case _:
-            raise_exhaustive_enum_error(strategy)
+            assert_never(strategy)
 
 
 def format_user_message(input: Dict | str) -> str:
