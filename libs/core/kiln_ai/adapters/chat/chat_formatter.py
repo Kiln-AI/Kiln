@@ -228,7 +228,7 @@ def format_user_message(input: Dict | str) -> str:
     Returns:
         str: The formatted user message.
     """
-    if isinstance(input, dict):
-        return json.dumps(input, ensure_ascii=False)
+    if isinstance(input, str):
+        return input
 
-    return input
+    return json.dumps(input, ensure_ascii=False)
