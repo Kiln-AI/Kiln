@@ -162,9 +162,12 @@
                 value: extractor_config?.extractor_type || "N/A",
               },
               {
+                name: "Model Provider",
+                value: extractor_config?.model_provider_name || "N/A",
+              },
+              {
                 name: "Model",
-                value:
-                  "" + (extractor_config?.properties?.model_name || "Unknown"),
+                value: "" + (extractor_config?.model_name || "N/A"),
               },
               {
                 name: "Output Format",

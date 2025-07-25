@@ -12,12 +12,14 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     NAME_REGEX,
     KilnAttachmentModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -120,6 +122,12 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The description of the extractor config",
         default=None,
     )
+    model_provider_name: ModelProviderName = Field(
+        description="The name of the model provider to use for the extractor config.",
+    )
+    model_name: str = Field(
+        description="The name of the model to use for the extractor config.",
+    )
     output_format: OutputFormat = Field(
         description="The output format of the extractor config",
     )
@@ -127,12 +135,34 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The mimetypes to pass through to the extractor",
         default_factory=list,
     )
-    extractor_type: ExtractorType = Field(
-        description="The type of the extractor",
-    )
     properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
         default_factory=dict,
     )
+
+    @model_validator(mode="after")
+    def validate_properties(self):
+        try:
+            typed_model_provider_name = ModelProviderName(self.model_provider_name)
+        except ValueError:
+            raise ValueError(f"Invalid model provider name: {self.model_provider_name}")
+
+        # check the model exists and is suitable as an extractor
+        model = built_in_models_from_provider(
+            provider_name=typed_model_provider_name,
+            model_name=self.model_name,
+        )
+
+        if model is None:
+            raise ValueError(
+                f"Model {self.model_name} not found in {self.model_provider_name}"
+            )
+
+        if not model.supports_doc_extraction:
+            raise ValueError(
+                f"Model {self.model_name} does not support document extraction"
+            )
+
+        return self
 
 
 class PatchExtractorConfigRequest(BaseModel):
@@ -323,9 +353,11 @@ def connect_document_api(app: FastAPI):
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
+            model_provider_name=request.model_provider_name,
+            model_name=request.model_name,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=request.extractor_type,
+            extractor_type=ExtractorType.LITELLM,
             properties=request.properties,
         )
         extractor_config.save_to_file()

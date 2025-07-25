@@ -1,10 +1,17 @@
 import asyncio
+import json
 from unittest.mock import patch
 
 import pytest
 
 from kiln_ai.adapters.ml_embedding_model_list import built_in_embedding_models
-from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    KilnModel,
+    KilnModelProvider,
+    ModelFamily,
+    ModelName,
+    built_in_models,
+)
 from kiln_ai.adapters.remote_config import (
     KilnRemoteConfig,
     deserialize_config,
@@ -12,6 +19,11 @@ from kiln_ai.adapters.remote_config import (
     load_from_url,
     load_remote_models,
     serialize_config,
+)
+from kiln_ai.datamodel.datamodel_enums import (
+    KilnMimeType,
+    ModelProviderName,
+    StructuredOutputMode,
 )
 
 
@@ -131,3 +143,96 @@ def test_deserialize_config_with_extra_keys(tmp_path):
     assert not hasattr(models.embedding_model_list[0], "extra_key")
     assert hasattr(models.embedding_model_list[0], "providers")
     assert not hasattr(models.embedding_model_list[0].providers[0], "extra_key")
+
+
+def test_multimodal_fields_specified(tmp_path):
+    model_dict = KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4o,
+        friendly_name="GPT-mock",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4o",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPEG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ).model_dump(mode="json")
+
+    data = {"model_list": [model_dict], "embedding_model_list": []}
+    path = tmp_path / "extra.json"
+    path.write_text(json.dumps(data))
+    models = deserialize_config(path)
+    assert models.model_list[0].providers[0].supports_doc_extraction
+    assert models.model_list[0].providers[0].multimodal_capable
+    assert models.model_list[0].providers[0].multimodal_mime_types == [
+        KilnMimeType.JPEG,
+        KilnMimeType.PNG,
+    ]
+
+
+def test_multimodal_fields_mime_type_forward_compat(tmp_path):
+    # This may happen if the current client is out of date with the remote config
+    # and we add a new mime type that the old client gets over the air
+    model_dict = KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4o,
+        friendly_name="GPT-mock",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4o",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPEG,
+                    KilnMimeType.PNG,
+                    "new/unknown-mime-type",
+                ],
+            ),
+        ],
+    ).model_dump(mode="json")
+
+    data = {"model_list": [model_dict], "embedding_model_list": []}
+    path = tmp_path / "extra.json"
+    path.write_text(json.dumps(data))
+    models = deserialize_config(path)
+    assert models.model_list[0].providers[0].supports_doc_extraction
+    assert models.model_list[0].providers[0].multimodal_capable
+    multimodal_mime_types = models.model_list[0].providers[0].multimodal_mime_types
+    assert multimodal_mime_types is not None
+    assert "new/unknown-mime-type" not in multimodal_mime_types
+    assert multimodal_mime_types == [
+        KilnMimeType.JPEG,
+        KilnMimeType.PNG,
+    ]
+
+
+def test_multimodal_fields_not_specified(tmp_path):
+    model_dict = KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4o,
+        friendly_name="GPT-mock",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4o",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ).model_dump(mode="json")
+
+    data = {"model_list": [model_dict], "embedding_model_list": []}
+    path = tmp_path / "extra.json"
+    path.write_text(json.dumps(data))
+    models = deserialize_config(path)
+    assert not models.model_list[0].providers[0].supports_doc_extraction
+    assert not models.model_list[0].providers[0].multimodal_capable
+    assert models.model_list[0].providers[0].multimodal_mime_types is None

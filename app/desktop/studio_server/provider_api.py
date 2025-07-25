@@ -91,6 +91,9 @@ class ModelDetails(BaseModel):
     suggested_for_evals: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
+    supports_doc_extraction: bool
+    multimodal_capable: bool = Field(default=False)
+    multimodal_mime_types: List[str] | None = Field(default=None)
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
@@ -172,6 +175,15 @@ def connect_provider_api(app: FastAPI):
                         (m for m in models if m.provider_id == provider.name), None
                     )
                     if available_models:
+                        # no need to couple the frontend to our backend mimetypes enum
+                        mime_types_as_str = (
+                            [
+                                str(mime_type)
+                                for mime_type in provider.multimodal_mime_types
+                            ]
+                            if provider.multimodal_mime_types
+                            else None
+                        )
                         available_models.models.append(
                             ModelDetails(
                                 id=model.name,
@@ -184,6 +196,9 @@ def connect_provider_api(app: FastAPI):
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
+                                supports_doc_extraction=provider.supports_doc_extraction,
+                                multimodal_capable=provider.multimodal_capable,
+                                multimodal_mime_types=mime_types_as_str,
                             )
                         )
 
@@ -936,6 +951,14 @@ async def available_ollama_models() -> AvailableModels | None:
                             suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_doc_extraction=ollama_provider.supports_doc_extraction,
+                            multimodal_capable=ollama_provider.multimodal_capable,
+                            multimodal_mime_types=[
+                                str(mime_type)
+                                for mime_type in ollama_provider.multimodal_mime_types
+                            ]
+                            if ollama_provider.multimodal_mime_types
+                            else None,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -953,6 +976,9 @@ async def available_ollama_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_doc_extraction=False,
+                    multimodal_capable=False,
+                    multimodal_mime_types=None,
                 )
             )
 
@@ -1012,6 +1038,9 @@ def custom_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
                     structured_output_mode=StructuredOutputMode.json_instructions,
+                    supports_doc_extraction=False,
+                    multimodal_capable=False,
+                    multimodal_mime_types=None,
                 )
             )
         except Exception:
@@ -1058,6 +1087,9 @@ def all_fine_tuned_models() -> AvailableModels | None:
                                 and isinstance(fine_tune_mode, StructuredOutputMode)
                                 else StructuredOutputMode.json_instructions
                             ),
+                            supports_doc_extraction=False,
+                            multimodal_capable=False,
+                            multimodal_mime_types=None,
                         )
                     )
 
@@ -1166,6 +1198,9 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
                         structured_output_mode=StructuredOutputMode.json_instructions,
+                        supports_doc_extraction=False,
+                        multimodal_capable=False,
+                        multimodal_mime_types=None,
                     )
                 )
 

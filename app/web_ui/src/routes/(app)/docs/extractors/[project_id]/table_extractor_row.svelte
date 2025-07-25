@@ -19,13 +19,7 @@
   let row_hovered = false
 
   function rows(): string[] {
-    let model: string = extractor_config.extractor_type
-    if (
-      extractor_config.properties &&
-      extractor_config.properties["model_name"]
-    ) {
-      model = extractor_config.properties["model_name"] as string
-    }
+    let model: string = `${extractor_config.model_name} (${extractor_config.model_provider_name})`
     return [
       extractor_config.name,
       model,

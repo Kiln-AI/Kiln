@@ -13,6 +13,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModel,
     built_in_embedding_models,
 )
+from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 
 from .ml_model_list import KilnModel, built_in_models
 
@@ -42,6 +43,18 @@ def deserialize_config(path: str | Path) -> KilnRemoteConfig:
 
     model_data = raw.get("model_list", [])
     embedding_model_data = raw.get("embedding_model_list", [])
+
+    for model in model_data:
+        for provider in model.get("providers", []):
+            # Skip the mimetypes that are not supported - this ensure old clients do not
+            # break when new mime types are added over the air.
+            multimodal_mime_types = provider.get("multimodal_mime_types")
+            if multimodal_mime_types is not None:
+                provider["multimodal_mime_types"] = [
+                    mime_type
+                    for mime_type in multimodal_mime_types
+                    if mime_type in [mt.value for mt in KilnMimeType]
+                ]
 
     return KilnRemoteConfig(
         model_list=[KilnModel.model_validate(item) for item in model_data],
