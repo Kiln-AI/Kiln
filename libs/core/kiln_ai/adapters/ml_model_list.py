@@ -290,6 +290,7 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-4.1-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
+                provider_finetune_id="gpt-4.1-nano-2025-04-14",
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
