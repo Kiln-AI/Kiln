@@ -9,6 +9,11 @@ jobs:
   coverage:
     name: Generate Coverage Report
     runs-on: ubuntu-latest
+    permissions:
+      contents: read          # To checkout the code
+      pull-requests: write    # To comment on PRs
+      issues: write          # To comment on issues (PRs are issues)
+      actions: read          # To read workflow artifacts
 
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +81,7 @@ jobs:
       - name: Comment PR with coverage info
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        continue-on-error: true  # Don't fail the workflow if we can't comment (e.g., from forks)
         with:
           script: |
             const fs = require('fs');
@@ -183,22 +189,29 @@ jobs:
                 comment.body.includes('📊 Coverage Report')
             );
 
-            if (existingComment) {
-                // Update existing comment
-                await github.rest.issues.updateComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    comment_id: existingComment.id,
-                    body: body
-                });
-            } else {
-                // Create new comment
-                await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: context.issue.number,
-                    body: body
-                });
+            try {
+              if (existingComment) {
+                  // Update existing comment
+                  await github.rest.issues.updateComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      comment_id: existingComment.id,
+                      body: body
+                  });
+                  console.log('Updated existing coverage comment');
+              } else {
+                  // Create new comment
+                  await github.rest.issues.createComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: context.issue.number,
+                      body: body
+                  });
+                  console.log('Created new coverage comment');
+              }
+            } catch (error) {
+                console.log('Failed to comment on PR (likely due to permissions from fork):', error.message);
+                console.log('Coverage reports are still available as artifacts');
             }
 
       - name: Coverage Summary
