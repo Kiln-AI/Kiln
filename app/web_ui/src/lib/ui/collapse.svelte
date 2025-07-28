@@ -7,7 +7,6 @@
   class="collapse collapse-arrow bg-base-200 {small
     ? 'collapse-sm'
     : 'collapse-md'}"
-  style="overflow: visible;"
 >
   <input type="checkbox" class="peer min-h-[24px]" />
   <div

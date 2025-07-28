@@ -1051,7 +1051,7 @@ requires-dist = [
     { name = "certifi", specifier = ">=2024.8.30" },
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
-    { name = "kiln-studio-desktop", virtual = "app/desktop" },
+    { name = "kiln-studio-desktop", editable = "app/desktop" },
 ]
 
 [package.metadata.requires-dev]
@@ -1113,7 +1113,7 @@ dev = [
 [[package]]
 name = "kiln-studio-desktop"
 version = "0.1.0"
-source = { virtual = "app/desktop" }
+source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },
     { name = "pillow" },
