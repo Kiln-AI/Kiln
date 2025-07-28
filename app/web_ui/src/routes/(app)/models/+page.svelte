@@ -292,17 +292,25 @@
 
     if (providers.some((p) => p.supports_data_gen)) {
       badges.push({
-        text: "Data Gen",
+        text: "Data Gen ★",
         color: "bg-blue-100 text-blue-800",
         tooltip:
-          "Supports synthetic data gen: tested with Kiln's data gen tool.",
+          "Recommended for Synthetic Data Generation - one of the best models.",
       })
     }
     if (providers.some((p) => p.suggested_for_evals)) {
       badges.push({
-        text: "Evals",
+        text: "Evals ★",
         color: "bg-green-100 text-green-800",
-        tooltip: "Recommended for Evaluations",
+        tooltip: "Recommended for Evaluations - one of the best models.",
+      })
+    }
+    if (providers.some((p) => p.suggested_for_uncensored_data_gen)) {
+      badges.push({
+        text: "Uncensored ★",
+        color: "bg-red-100 text-red-800",
+        tooltip:
+          "Recommended for Uncensored Data Generation - one of the best models for evals where safeguards get in the way.",
       })
     }
     if (providers.some((p) => p.supports_structured_output)) {
