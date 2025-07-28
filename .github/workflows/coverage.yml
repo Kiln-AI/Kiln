@@ -61,11 +61,11 @@ jobs:
       - name: Generate diff coverage report (PR only)
         if: github.event_name == 'pull_request'
         run: |
-          # Generate diff coverage report
-          uv run diff-cover coverage.xml --compare-branch=${{ github.event.pull_request.base.ref }} --html-report diff-coverage.html --markdown-report diff-coverage.md
+          # Generate diff coverage report  
+          uv run diff-cover coverage.xml --compare-branch=origin/${{ github.event.pull_request.base.ref }} --format html:diff-coverage.html --format markdown:diff-coverage.md
           
           # Also generate a fail-under report for potential future use
-          uv run diff-cover coverage.xml --compare-branch=${{ github.event.pull_request.base.ref }} --fail-under=80 || echo "Diff coverage below 80%"
+          uv run diff-cover coverage.xml --compare-branch=origin/${{ github.event.pull_request.base.ref }} --fail-under=80 || echo "Diff coverage below 80%"
 
       - name: Upload diff coverage report
         if: github.event_name == 'pull_request'
