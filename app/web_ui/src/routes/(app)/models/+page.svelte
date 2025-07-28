@@ -603,7 +603,7 @@
           </p>
         </div>
       {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {#each filteredModels as model}
             <div class="bg-white rounded-lg border">
               <!-- Model Header -->
@@ -660,7 +660,7 @@
                             <p class="text-sm font-medium text-gray-900">
                               {provider.name}
                             </p>
-                            <p class="text-xs text-gray-500">
+                            <p class="text-xs text-gray-500 break-all">
                               {provider.model_id}
                             </p>
                           </div>
