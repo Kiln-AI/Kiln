@@ -717,8 +717,8 @@
                             providerSettings,
                           )
                         : true}
-                      <!-- svelte-ignore a11y-click-events-have-key-events -->
-                      <!-- svelte-ignore a11y-no-static-element-interactions -->
+
+                      <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
                       <div
                         class="flex items-center justify-between p-3 bg-gray-50 rounded-md {!isConnected
                           ? 'opacity-50 cursor-pointer hover:opacity-60 transition-all'
@@ -726,6 +726,16 @@
                         on:click={!isConnected
                           ? () => handle_provider_click(provider.name)
                           : undefined}
+                        on:keydown={!isConnected
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault()
+                                handle_provider_click(provider.name)
+                              }
+                            }
+                          : undefined}
+                        role={!isConnected ? "button" : undefined}
+                        tabindex={!isConnected ? 0 : -1}
                       >
                         <div class="flex items-center space-x-3">
                           <img
