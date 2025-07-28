@@ -37,7 +37,7 @@ def mock_litellm_extractor():
             name="mock",
             extractor_type=ExtractorType.LITELLM,
             model_name="model-name",
-            model_provider_name="provider-name",
+            model_provider_name="openai",
             properties={
                 "prompt_document": PROMPTS_FOR_KIND["document"],
                 "prompt_image": PROMPTS_FOR_KIND["image"],
@@ -50,6 +50,15 @@ def mock_litellm_extractor():
             additional_body_options={"api_key": "test-key"},
             default_headers={},
         ),
+    )
+
+
+@pytest.fixture
+def mock_litellm_core_config():
+    return LiteLlmCoreConfig(
+        base_url="https://test.com",
+        additional_body_options={"api_key": "test-key"},
+        default_headers={},
     )
 
 
@@ -206,14 +215,101 @@ async def test_extract_failure_unsupported_mime_type(mock_litellm_extractor):
             )
 
 
+def test_litellm_model_slug_success(mock_litellm_extractor):
+    """Test that litellm_model_slug returns the correct model slug."""
+    # Mock the built_in_models_from_provider function to return a valid model provider
+    mock_model_provider = AsyncMock()
+    mock_model_provider.name = "test-provider"
+
+    # Mock the get_litellm_provider_info function to return provider info with model ID
+    mock_provider_info = AsyncMock()
+    mock_provider_info.litellm_model_id = "test-provider/test-model"
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.built_in_models_from_provider",
+            return_value=mock_model_provider,
+        ) as mock_built_in_models,
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.get_litellm_provider_info",
+            return_value=mock_provider_info,
+        ) as mock_get_provider_info,
+    ):
+        result = mock_litellm_extractor.litellm_model_slug()
+
+        assert result == "test-provider/test-model"
+
+        # Verify the functions were called with correct arguments
+        mock_built_in_models.assert_called_once()
+        mock_get_provider_info.assert_called_once_with(mock_model_provider)
+
+
+def test_litellm_model_slug_model_provider_not_found(mock_litellm_extractor):
+    """Test that litellm_model_slug raises ValueError when model provider is not found."""
+    with patch(
+        "kiln_ai.adapters.extractors.litellm_extractor.built_in_models_from_provider",
+        return_value=None,
+    ):
+        with pytest.raises(
+            ValueError,
+            match="Model provider openai not found in the list of built-in models",
+        ):
+            mock_litellm_extractor.litellm_model_slug()
+
+
+def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_config):
+    """Test litellm_model_slug with different provider and model combinations."""
+    test_cases = [
+        ("anthropic", "claude-3-sonnet", "anthropic/claude-3-sonnet"),
+        ("openai", "gpt-4", "openai/gpt-4"),
+        ("gemini_api", "gemini-pro", "gemini_api/gemini-pro"),
+    ]
+
+    for provider_name, model_name, expected_slug in test_cases:
+        extractor = LitellmExtractor(
+            ExtractorConfig(
+                name="test",
+                extractor_type=ExtractorType.LITELLM,
+                model_name=model_name,
+                model_provider_name=provider_name,
+                properties={
+                    "prompt_document": "test prompt",
+                    "prompt_image": "test prompt",
+                    "prompt_video": "test prompt",
+                    "prompt_audio": "test prompt",
+                },
+            ),
+            litellm_core_config=mock_litellm_core_config,
+        )
+
+        mock_model_provider = AsyncMock()
+        mock_model_provider.name = provider_name
+
+        mock_provider_info = AsyncMock()
+        mock_provider_info.litellm_model_id = expected_slug
+
+        with (
+            patch(
+                "kiln_ai.adapters.extractors.litellm_extractor.built_in_models_from_provider",
+                return_value=mock_model_provider,
+            ),
+            patch(
+                "kiln_ai.adapters.extractors.litellm_extractor.get_litellm_provider_info",
+                return_value=mock_provider_info,
+            ),
+        ):
+            result = extractor.litellm_model_slug()
+            assert result == expected_slug
+
+
 def paid_litellm_extractor(model_name: str, provider_name: str):
     return LitellmExtractor(
         extractor_config=ExtractorConfig(
             name="paid-litellm",
             extractor_type=ExtractorType.LITELLM,
+            model_provider_name=provider_name,
+            model_name=model_name,
             properties={
-                "model_provider_name": provider_name,
-                "model_name": model_name,
                 # in the paid tests, we can check which prompt is used by checking if the Kind shows up
                 # in the output - not ideal but usually works
                 "prompt_document": "Ignore the file and only respond with the word 'document'",
@@ -224,6 +320,11 @@ def paid_litellm_extractor(model_name: str, provider_name: str):
             passthrough_mimetypes=[
                 # we want all mimetypes to go to litellm to be sure we're testing the API call
             ],
+        ),
+        litellm_core_config=LiteLlmCoreConfig(
+            base_url="https://test.com",
+            additional_body_options={"api_key": "test-key"},
+            default_headers={},
         ),
     )
 

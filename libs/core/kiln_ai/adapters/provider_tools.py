@@ -512,9 +512,7 @@ def lite_llm_core_config_for_provider(
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:
-                raise ValueError(
-                    "OpenAI compatible provider requires an openai compatible provider"
-                )
+                raise ValueError("OpenAI compatible provider requires a provider name")
 
             openai_compatible_providers = (
                 Config.shared().openai_compatible_providers or []

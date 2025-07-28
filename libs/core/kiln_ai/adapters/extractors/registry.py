@@ -29,7 +29,7 @@ def extractor_adapter_from_type(
             provider_config = lite_llm_core_config_for_provider(core_provider_name)
             if provider_config is None:
                 raise ValueError(
-                    f"No configuration found for core provider: {core_provider_name}. "
+                    f"No configuration found for core provider: {core_provider_name.value}. "
                 )
 
             return LitellmExtractor(

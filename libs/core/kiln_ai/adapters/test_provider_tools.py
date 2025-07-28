@@ -1057,6 +1057,28 @@ def test_lite_llm_core_config_for_provider_openai_compatible(
     assert config.additional_body_options == {"api_key": "NA"}
 
 
+def test_lite_llm_core_config_for_provider_openai_compatible_with_openai_compatible_provider_name(
+    mock_shared_config,
+):
+    with pytest.raises(
+        ValueError, match="OpenAI compatible provider requires a provider name"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.openai_compatible)
+
+
+def test_lite_llm_core_config_incorrect_openai_compatible_provider_name(
+    mock_shared_config,
+):
+    with pytest.raises(
+        ValueError,
+        match="OpenAI compatible provider provider_that_does_not_exist_in_compatible_openai_providers not found",
+    ):
+        lite_llm_core_config_for_provider(
+            ModelProviderName.openai_compatible,
+            "provider_that_does_not_exist_in_compatible_openai_providers",
+        )
+
+
 def test_lite_llm_core_config_for_provider_with_string(
     mock_config_for_lite_llm_core_config,
 ):

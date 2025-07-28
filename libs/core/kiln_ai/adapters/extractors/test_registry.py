@@ -152,3 +152,28 @@ def test_extractor_adapter_from_type_different_providers(
 
     assert isinstance(extractor, LitellmExtractor)
     assert extractor.extractor_config.model_provider_name == provider_name
+
+
+def test_extractor_adapter_from_type_no_config_found(mock_provider_configs):
+    with patch(
+        "kiln_ai.adapters.extractors.registry.lite_llm_core_config_for_provider"
+    ) as mock_lite_llm_core_config_for_provider:
+        mock_lite_llm_core_config_for_provider.return_value = None
+        with pytest.raises(
+            ValueError, match="No configuration found for core provider: openai"
+        ):
+            extractor_adapter_from_type(
+                ExtractorType.LITELLM,
+                ExtractorConfig(
+                    name="test-extractor",
+                    extractor_type=ExtractorType.LITELLM,
+                    model_provider_name="openai",
+                    model_name="gpt-4",
+                    properties={
+                        "prompt_document": "Extract the text from the document",
+                        "prompt_image": "Extract the text from the image",
+                        "prompt_video": "Extract the text from the video",
+                        "prompt_audio": "Extract the text from the audio",
+                    },
+                ),
+            )
