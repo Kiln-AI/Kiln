@@ -4,6 +4,10 @@
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { ModelProviderName } from "$lib/types"
   import AppPage from "../app_page.svelte"
+  import {
+    load_available_models,
+    provider_name_from_id,
+  } from "../../../lib/stores"
 
   interface Provider {
     name: ModelProviderName
@@ -136,8 +140,7 @@
     }
   }
 
-  // Fetch models from remote config
-  async function fetchModels() {
+  async function fetchModelsFromRemoteConfig() {
     try {
       loading = true
       error = null
@@ -352,8 +355,12 @@
   // Watch for sort changes
   $: sortBy, sortDirection, applySorting()
 
-  onMount(() => {
-    fetchModels()
+  onMount(async () => {
+    // we need to seed the available models in the Svelte store, because we get
+    // the provider friendly name formatter from there, but we load the actual
+    // model list from the remote config, because that is the most up to date
+    await load_available_models()
+    await fetchModelsFromRemoteConfig()
   })
 </script>
 
@@ -404,7 +411,7 @@
             </div>
             <div class="mt-4">
               <button
-                on:click={fetchModels}
+                on:click={fetchModelsFromRemoteConfig}
                 class="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm font-medium hover:bg-red-200"
               >
                 Try again
@@ -665,7 +672,7 @@
                           />
                           <div>
                             <p class="text-sm font-medium text-gray-900">
-                              {provider.name}
+                              {provider_name_from_id(provider.name)}
                             </p>
                             <p class="text-xs text-gray-500 break-all">
                               {provider.model_id}
