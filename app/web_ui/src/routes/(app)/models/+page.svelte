@@ -294,7 +294,8 @@
       badges.push({
         text: "Data Gen",
         color: "bg-blue-100 text-blue-800",
-        tooltip: "Supports Data Generation",
+        tooltip:
+          "Supports synthetic data gen: tested with Kiln's data gen tool.",
       })
     }
     if (providers.some((p) => p.suggested_for_evals)) {
@@ -308,21 +309,24 @@
       badges.push({
         text: "Structured",
         color: "bg-purple-100 text-purple-800",
-        tooltip: "Supports Structured Output",
+        tooltip:
+          "Supported structured output (JSON) preferring the tool-calling method.",
       })
     }
     if (providers.some((p) => p.supports_logprobs)) {
       badges.push({
         text: "Logprobs",
         color: "bg-orange-100 text-orange-800",
-        tooltip: "Supports Logprobs",
+        tooltip:
+          "Supports logprobs, a feature needed for the advanced eval method G-Eval",
       })
     }
     if (providers.some((p) => p.uncensored)) {
       badges.push({
         text: "Uncensored",
         color: "bg-red-100 text-red-800",
-        tooltip: "Uncensored Model",
+        tooltip:
+          "Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals.",
       })
     }
 
