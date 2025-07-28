@@ -8,6 +8,12 @@
     load_available_models,
     provider_name_from_id,
   } from "../../../lib/stores"
+  import {
+    checkProviderConnection,
+    type ProviderSettings,
+  } from "../../../lib/utils/provider_utils"
+  import { goto } from "$app/navigation"
+  import { client } from "../../../lib/api_client"
 
   interface Provider {
     name: ModelProviderName
@@ -39,6 +45,7 @@
   let filteredModels: Model[] = []
   let loading = true
   let error: string | null = null
+  let providerSettings: ProviderSettings | null = null
 
   // Search and filter state
   let searchQuery = ""
@@ -85,7 +92,7 @@
       options: [
         { label: "All Providers", value: "" },
         ...providers.map((provider) => ({
-          label: provider,
+          label: provider_name_from_id(provider),
           value: provider,
         })),
       ],
@@ -110,7 +117,13 @@
       ? [{ type: "family", value: selectedFamily, label: selectedFamily }]
       : []),
     ...(selectedProvider
-      ? [{ type: "provider", value: selectedProvider, label: selectedProvider }]
+      ? [
+          {
+            type: "provider",
+            value: selectedProvider,
+            label: provider_name_from_id(selectedProvider),
+          },
+        ]
       : []),
     ...(selectedCapability
       ? [
@@ -166,6 +179,19 @@
       error = err instanceof Error ? err.message : "Failed to fetch models"
     } finally {
       loading = false
+    }
+  }
+
+  async function load_provider_settings() {
+    try {
+      const { data: settings, error: load_settings_error } =
+        await client.GET("/api/settings")
+      if (load_settings_error) {
+        throw load_settings_error
+      }
+      providerSettings = settings
+    } catch (e) {
+      console.error("Error loading provider settings", e)
     }
   }
 
@@ -361,7 +387,19 @@
     // model list from the remote config, because that is the most up to date
     await load_available_models()
     await fetchModelsFromRemoteConfig()
+    // Load provider connection status for displaying connection indicators
+    await load_provider_settings()
   })
+
+  // Handle clicking on disconnected providers
+  function handle_provider_click(provider_name: string) {
+    const isConnected = providerSettings
+      ? checkProviderConnection(provider_name, providerSettings)
+      : true
+    if (!isConnected) {
+      goto("/settings/providers")
+    }
+  }
 </script>
 
 <svelte:head>
@@ -656,14 +694,29 @@
                   </h4>
                   <div class="space-y-2">
                     {#each model.providers as provider}
+                      {@const isConnected = providerSettings
+                        ? checkProviderConnection(
+                            provider.name,
+                            providerSettings,
+                          )
+                        : true}
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <!-- svelte-ignore a11y-no-static-element-interactions -->
                       <div
-                        class="flex items-center justify-between p-3 bg-gray-50 rounded-md"
+                        class="flex items-center justify-between p-3 bg-gray-50 rounded-md {!isConnected
+                          ? 'opacity-50 cursor-pointer hover:opacity-60 transition-all'
+                          : ''}"
+                        on:click={!isConnected
+                          ? () => handle_provider_click(provider.name)
+                          : undefined}
                       >
                         <div class="flex items-center space-x-3">
                           <img
                             src={get_provider_image(provider.name)}
                             alt={provider.name}
-                            class="w-6 h-6 rounded"
+                            class="w-6 h-6 rounded {!isConnected
+                              ? 'grayscale'
+                              : ''}"
                             on:error={(e) => {
                               if (e.target instanceof HTMLImageElement) {
                                 e.target.style.display = "none"
@@ -671,10 +724,18 @@
                             }}
                           />
                           <div>
-                            <p class="text-sm font-medium text-gray-900">
+                            <p
+                              class="text-sm font-medium {isConnected
+                                ? 'text-gray-900'
+                                : 'text-gray-600'}"
+                            >
                               {provider_name_from_id(provider.name)}
                             </p>
-                            <p class="text-xs text-gray-500 break-all">
+                            <p
+                              class="text-xs {isConnected
+                                ? 'text-gray-500'
+                                : 'text-gray-400'} break-all"
+                            >
                               {provider.model_id}
                             </p>
                           </div>

@@ -6,6 +6,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { provider_name_from_id } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { checkProviderConnection } from "$lib/utils/provider_utils"
 
   let connected_providers: [string, string][] = []
   let loading_providers = true
@@ -26,43 +27,13 @@
       if (!settings) {
         throw new KilnError("Settings not found", null)
       }
-      custom_models = settings["custom_models"] || []
-      if (settings["open_ai_api_key"]) {
-        connected_providers.push(["openai", "OpenAI"])
-      }
-      if (settings["groq_api_key"]) {
-        connected_providers.push(["groq", "Groq"])
-      }
-      if (settings["bedrock_access_key"] && settings["bedrock_secret_key"]) {
-        connected_providers.push(["amazon_bedrock", "AWS Bedrock"])
-      }
-      if (settings["open_router_api_key"]) {
-        connected_providers.push(["openrouter", "OpenRouter"])
-      }
-      if (settings["fireworks_api_key"] && settings["fireworks_account_id"]) {
-        connected_providers.push(["fireworks_ai", "Fireworks AI"])
-      }
-      if (settings["vertex_project_id"] && settings["vertex_location"]) {
-        connected_providers.push(["vertex", "Vertex AI"])
-      }
-      if (settings["anthropic_api_key"]) {
-        connected_providers.push(["anthropic", "Anthropic"])
-      }
-      if (settings["gemini_api_key"]) {
-        connected_providers.push(["gemini_api", "Gemini"])
-      }
-      if (
-        settings["azure_openai_api_key"] &&
-        settings["azure_openai_endpoint"]
-      ) {
-        connected_providers.push(["azure_openai", "Azure OpenAI"])
-      }
-      if (settings["huggingface_api_key"]) {
-        connected_providers.push(["huggingface", "Hugging Face"])
-      }
-      if (settings["together_api_key"]) {
-        connected_providers.push(["together_ai", "Together AI"])
-      }
+
+      custom_models = (settings["custom_models"] as string[]) || []
+
+      connected_providers = Object.keys(settings)
+        .filter((provider_id) => checkProviderConnection(provider_id, settings))
+        .map((provider_id) => [provider_id, provider_name_from_id(provider_id)])
+
       // Skipping Ollama -- we pull all models from it automatically
       if (connected_providers.length > 0) {
         new_model_provider = connected_providers[0][0] || null
