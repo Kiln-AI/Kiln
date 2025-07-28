@@ -363,8 +363,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Models"
-    subtitle="Browse and search through available AI models"
+    title="Model Library"
+    subtitle="Browse available models"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
   >
