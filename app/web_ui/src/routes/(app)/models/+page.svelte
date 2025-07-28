@@ -669,7 +669,7 @@
               stroke-width="1.5"
             />
           </svg>
-          <h3 class="mt-2 text-sm font-medium text-neutral-content">
+          <h3 class="mt-2 text-sm font-medium text-gray-900">
             No models found
           </h3>
           <p class="mt-1 text-sm text-gray-500">
