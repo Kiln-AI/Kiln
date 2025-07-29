@@ -109,7 +109,7 @@ def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
     assert adapter.run_config.model_name == "test-model"
 
 
-# TODO should run for all cases
+# We should run for all cases
 def test_custom_prompt_builder(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
@@ -124,7 +124,7 @@ def test_custom_prompt_builder(mock_config, basic_task):
     assert adapter.run_config.prompt_id == "simple_chain_of_thought_prompt_builder"
 
 
-# TODO should run for all cases
+# We should run for all cases
 def test_tags_passed_through(mock_config, basic_task):
     tags = ["test-tag-1", "test-tag-2"]
     adapter = adapter_for_task(

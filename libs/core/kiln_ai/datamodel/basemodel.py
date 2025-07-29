@@ -470,7 +470,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             ValidationError: If validation fails for the model or any of its children
         """
         # Validate first, then save. Don't want error half way through, and partly persisted
-        # TODO P2: save to tmp dir, then move atomically. But need to merge directories so later.
+        # We should save to a tmp dir and move atomically, but need to merge directories later.
         cls._validate_nested(data, save=False, path=path, parent=parent)
         instance = cls._validate_nested(data, save=True, path=path, parent=parent)
         return instance

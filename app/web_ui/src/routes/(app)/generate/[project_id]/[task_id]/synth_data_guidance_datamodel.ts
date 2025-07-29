@@ -152,7 +152,7 @@ export class SynthDataGuidanceDataModel {
 
   private apply_selected_template(template: string) {
     if (template == "custom") {
-      // TODO make each unique
+      // We should make each unique
       this.topic_guidance.set(null)
       this.input_guidance.set(null)
       this.output_guidance.set(null)

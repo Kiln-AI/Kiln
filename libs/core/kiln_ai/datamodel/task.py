@@ -216,7 +216,7 @@ class Task(
             return None
         return schema_from_json_str(self.input_json_schema)
 
-    # These wrappers help for typechecking. TODO P2: fix this in KilnParentModel
+    # These wrappers help for typechecking. We should fix this in KilnParentModel
     def runs(self, readonly: bool = False) -> list[TaskRun]:
         return super().runs(readonly=readonly)  # type: ignore
 

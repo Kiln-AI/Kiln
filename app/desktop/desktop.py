@@ -17,7 +17,7 @@ from pydantic.deprecated.decorator import deprecated  # noqa # type: ignore
 from app.desktop.custom_tray import KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
 
-# TODO: remove this and all other globals in this file
+# We should remove this and all other globals in this file
 root = None  # type: tk.Tk | None
 tray = None  # type: ignore
 

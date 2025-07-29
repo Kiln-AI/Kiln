@@ -24,9 +24,9 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import posthog from "posthog-js"
 
-  // TODO: implement checking input content
+  // We should implement checking input content
   // let warn_before_unload
-  // TODO UI for errors
+  // We should add a UI for errors
   let error: KilnError | null = null
   let submitting = false
   let run_complete = false

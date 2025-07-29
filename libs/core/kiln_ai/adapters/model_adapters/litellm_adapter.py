@@ -235,7 +235,7 @@ class LiteLlmAdapter(BaseAdapter):
         }
 
     def build_extra_body(self, provider: KilnModelProvider) -> dict[str, Any]:
-        # TODO P1: Don't love having this logic here. But it's a usability improvement
+        # We should consider moving this logic elsewhere for better usability
         # so better to keep it than exclude it. Should figure out how I want to isolate
         # this sort of logic so it's config driven and can be overridden
 

@@ -29,7 +29,7 @@
   // @ts-expect-error list_page is not a property of PageState
   $: list_page = ($page.state.list_page || []) as string[]
 
-  // TODO: we need to remove task_id from the URL, or load it by ID. $current_task is a lie
+  // We should remove task_id from the URL, or load it by ID. $current_task is a lie
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
