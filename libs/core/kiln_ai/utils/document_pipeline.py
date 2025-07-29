@@ -1,9 +1,8 @@
 import logging
 from abc import ABC
-from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Mapping, Set
+from typing import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,7 +10,7 @@ from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
 from kiln_ai.adapters.chunkers.registry import chunker_adapter_from_type
 from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
 from kiln_ai.adapters.embedding.registry import embedding_adapter_from_type
-from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
 from kiln_ai.datamodel import Project
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
@@ -296,8 +295,12 @@ class DocumentPipeline:
                 raise ValueError("Document path is not set")
 
             output = await extractor.extract(
-                path=job.doc.original_file.attachment.resolve_path(job.doc.path.parent),
-                mime_type=job.doc.original_file.mime_type,
+                extraction_input=ExtractionInput(
+                    path=job.doc.original_file.attachment.resolve_path(
+                        job.doc.path.parent
+                    ),
+                    mime_type=job.doc.original_file.mime_type,
+                )
             )
 
             extraction = Extraction(

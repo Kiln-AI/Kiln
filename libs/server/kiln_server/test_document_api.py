@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
@@ -43,7 +44,7 @@ def mock_project(tmp_path):
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
-    project = Project(name="Test Project", path=str(project_path))
+    project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
     return project
@@ -57,9 +58,10 @@ def mock_extractor_config(mock_project):
         description="Test extractor description",
         output_format=OutputFormat.TEXT,
         passthrough_mimetypes=[OutputFormat.TEXT],
-        extractor_type=ExtractorType.GEMINI,
+        extractor_type=ExtractorType.LITELLM,
+        model_provider_name="gemini_api",
+        model_name="gemini-2.0-flash",
         properties={
-            "model_name": "gemini-2.0-flash",
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -92,7 +94,7 @@ def mock_embedding_config(mock_project):
         parent=mock_project,
         name="Test Embedding",
         description="Test embedding description",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         model_name=EmbeddingModelName.openai_text_embedding_3_small,
         properties={},
     )
@@ -133,9 +135,10 @@ def extractor_config_setup(mock_project):
         description="Test extractor description",
         output_format=OutputFormat.TEXT,
         passthrough_mimetypes=[OutputFormat.TEXT],
-        extractor_type=ExtractorType.GEMINI,
+        extractor_type=ExtractorType.LITELLM,
+        model_provider_name="gemini_api",
+        model_name="gemini-2.0-flash",
         properties={
-            "model_name": "gemini-2.0-flash",
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -148,6 +151,8 @@ def extractor_config_setup(mock_project):
 
 
 def check_attachment_saved(document: Document, test_content: bytes):
+    if document.path is None:
+        raise ValueError("Document path is not set")
     attachment_path = document.original_file.attachment.resolve_path(
         document.path.parent
     )
@@ -386,18 +391,25 @@ async def test_create_extractor_config_success(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch("kiln_ai.datamodel.extraction.ExtractorConfig.save_to_file") as mock_save,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
     ):
         mock_project_from_id.return_value = project
         mock_save.return_value = None
+
+        mock_built_in_models_from_provider.return_value = MagicMock(
+            supports_doc_extraction=True
+        )
 
         request_data = {
             "name": "Test Extractor",
             "description": "Test description",
             "output_format": "text/plain",
-            "extractor_type": "gemini",
             "passthrough_mimetypes": ["text/plain"],
+            "model_provider_name": "gemini_api",
+            "model_name": "gemini-2.0-flash",
             "properties": {
-                "model_name": "gemini-2.0-flash",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -414,9 +426,10 @@ async def test_create_extractor_config_success(client, mock_project):
     assert result["name"] == "Test Extractor"
     assert result["description"] == "Test description"
     assert result["output_format"] == "text/plain"
-    assert result["extractor_type"] == "gemini"
+    assert result["extractor_type"] == "litellm"
     assert result["passthrough_mimetypes"] == ["text/plain"]
-    assert result["properties"]["model_name"] == "gemini-2.0-flash"
+    assert result["model_provider_name"] == "gemini_api"
+    assert result["model_name"] == "gemini-2.0-flash"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"
@@ -697,6 +710,62 @@ async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_create_extractor_config_model_not_found(client, mock_project):
+    project = mock_project
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
+    ):
+        mock_project_from_id.return_value = project
+        mock_built_in_models_from_provider.return_value = None
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_extractor_config",
+            json={
+                "name": "Test Extractor",
+                "description": "Test description",
+                "output_format": "text/plain",
+                "passthrough_mimetypes": ["text/plain"],
+                "model_provider_name": "openai",
+                "model_name": "fake_model",
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert "Model fake_model not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_extractor_config_model_invalid_provider_name(
+    client, mock_project
+):
+    project = mock_project
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_extractor_config",
+            json={
+                "name": "Test Extractor",
+                "description": "Test description",
+                "output_format": "text/plain",
+                "passthrough_mimetypes": ["text/plain"],
+                "model_provider_name": "fake_provider",
+                "model_name": "fake_model",
+            },
+        )
+
+    # the error occurs during validation of request payload
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.asyncio
 async def test_get_chunker_configs_success(client, mock_project, mock_chunker_config):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -765,6 +834,7 @@ async def test_create_embedding_config_invalid_model_provider_name(
                 "properties": {},
             },
         )
+
     assert response.status_code == 422, response.text
 
 
@@ -1036,3 +1106,38 @@ async def test_get_embedding_config_not_found(client, mock_project):
 
     assert response.status_code == 404, response.text
     assert "Embedding config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_extractor_config_model_not_supported_for_extraction(
+    client, mock_project
+):
+    project = mock_project
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_models_from_provider"
+        ) as mock_built_in_models_from_provider,
+    ):
+        mock_project_from_id.return_value = project
+        mock_built_in_models_from_provider.return_value = MagicMock()
+        mock_built_in_models_from_provider.return_value.supports_doc_extraction = False
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_extractor_config",
+            json={
+                "name": "Test Extractor",
+                "description": "Test description",
+                "output_format": "text/plain",
+                "passthrough_mimetypes": ["text/plain"],
+                "model_provider_name": "openai",
+                "model_name": "fake_model",
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert (
+        "Model fake_model does not support document extraction"
+        in response.json()["message"]
+    )

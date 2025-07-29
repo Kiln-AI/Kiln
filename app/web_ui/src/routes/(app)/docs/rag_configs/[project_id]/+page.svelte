@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type { ExtractorConfig, RagConfig } from "$lib/types"
+  import type { RagConfig } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { load_model_info } from "$lib/stores"
@@ -67,7 +67,7 @@
     }
   }
 
-  function sortExtractorConfigs(rag_configs: ExtractorConfig[] | null) {
+  function sortExtractorConfigs(rag_configs: RagConfig[] | null) {
     if (!rag_configs) return null
     return rag_configs.sort((a, b) => {
       const aValue = a.created_at || ""

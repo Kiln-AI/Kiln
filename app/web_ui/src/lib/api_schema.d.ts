@@ -662,23 +662,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/chunker_configs/{chunker_config_id}/progress": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Chunking Progress */
-        get: operations["get_chunking_progress_api_projects__project_id__chunker_configs__chunker_config_id__progress_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/create_embedding_config": {
         parameters: {
             query?: never;
@@ -730,23 +713,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}/progress": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Embedding Progress */
-        get: operations["get_embedding_progress_api_projects__project_id__embedding_configs__embedding_config_id__progress_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/rag_configs/create_rag_config": {
         parameters: {
             query?: never;
@@ -790,6 +756,40 @@ export interface paths {
         };
         /** Get Rag Config */
         get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Rag Config */
+        post: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Config Progress */
+        get: operations["get_rag_config_progress_api_projects__project_id__rag_configs__rag_config_id__progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1705,14 +1705,6 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window";
-        /** ChunkingProgress */
-        ChunkingProgress: {
-            /** Document Count Total */
-            document_count_total: number;
-            /** Document Count Successful */
-            document_count_successful: number;
-            chunker_config: components["schemas"]["ChunkerConfig"];
-        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -1824,6 +1816,13 @@ export interface components {
              * @description The description of the extractor config
              */
             description?: string | null;
+            /** @description The name of the model provider to use for the extractor config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
             /** @description The output format of the extractor config */
             output_format: components["schemas"]["OutputFormat"];
             /**
@@ -1831,8 +1830,6 @@ export interface components {
              * @description The mimetypes to pass through to the extractor
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
-            /** @description The type of the extractor */
-            extractor_type: components["schemas"]["ExtractorType"];
             /** Properties */
             properties?: {
                 [key: string]: string | number | boolean | {
@@ -2247,14 +2244,6 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004";
-        /** EmbeddingProgress */
-        EmbeddingProgress: {
-            /** Document Count Total */
-            document_count_total: number;
-            /** Document Count Successful */
-            document_count_successful: number;
-            embedding_config: components["schemas"]["EmbeddingConfig"];
-        };
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -2621,6 +2610,16 @@ export interface components {
              */
             description?: string | null;
             /**
+             * Model Provider Name
+             * @description The name of the model provider to use for the extractor config.
+             */
+            model_provider_name: string;
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
+            /**
              * @description The format to use for the output.
              * @default text/markdown
              */
@@ -2661,7 +2660,7 @@ export interface components {
          * ExtractorType
          * @enum {string}
          */
-        ExtractorType: "gemini";
+        ExtractorType: "litellm";
         /** FileInfo */
         FileInfo: {
             /**
@@ -2993,6 +2992,15 @@ export interface components {
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
             suggested_for_uncensored_data_gen: boolean;
+            /** Supports Doc Extraction */
+            supports_doc_extraction: boolean;
+            /**
+             * Multimodal Capable
+             * @default false
+             */
+            multimodal_capable: boolean;
+            /** Multimodal Mime Types */
+            multimodal_mime_types?: string[] | null;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
@@ -3292,6 +3300,19 @@ export interface components {
             embedding_config_id: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** RagProgress */
+        RagProgress: {
+            /** Total Document Count */
+            total_document_count: number;
+            /** Total Document Completed Count */
+            total_document_completed_count: number;
+            /** Total Document Extracted Count */
+            total_document_extracted_count: number;
+            /** Total Document Chunked Count */
+            total_document_chunked_count: number;
+            /** Total Document Embedded Count */
+            total_document_embedded_count: number;
         };
         /** RatingOption */
         RatingOption: {
@@ -5453,38 +5474,6 @@ export interface operations {
             };
         };
     };
-    get_chunking_progress_api_projects__project_id__chunker_configs__chunker_config_id__progress_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                chunker_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChunkingProgress"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     create_embedding_config_api_projects__project_id__create_embedding_config_post: {
         parameters: {
             query?: never;
@@ -5583,38 +5572,6 @@ export interface operations {
             };
         };
     };
-    get_embedding_progress_api_projects__project_id__embedding_configs__embedding_config_id__progress_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                embedding_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmbeddingProgress"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post: {
         parameters: {
             query?: never;
@@ -5700,6 +5657,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_config_progress_api_projects__project_id__rag_configs__rag_config_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagProgress"];
                 };
             };
             /** @description Validation Error */
