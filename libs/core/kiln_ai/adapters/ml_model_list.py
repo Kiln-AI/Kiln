@@ -191,7 +191,7 @@ class KilnModelProvider(BaseModel):
     suggested_for_uncensored_data_gen: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
 
-    # TODO P1: Need a more generalized way to handle custom provider parameters.
+    # We need a more generalized way to handle custom provider parameters.
     # Making them quite declarative here for now, isolating provider specific logic
     # to this file. Later I should be able to override anything in this file via config.
     r1_openrouter_options: bool = False
@@ -1332,7 +1332,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="meta/llama-3.3-70b-instruct-maas",
-                # Doesn't work, TODO to debug
+                # Doesn't work yet; needs debugging
                 supports_structured_output=False,
                 supports_data_gen=False,
             ),
@@ -1484,13 +1484,6 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                # TODO: swap to non-free model when available (more reliable)
-                model_id="google/gemma-3-1b-it:free",
-                supports_structured_output=False,
-                supports_data_gen=False,
-            ),
         ],
     ),
     # Gemma 3 4B
@@ -1507,8 +1500,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                # TODO: swap to non-free model when available (more reliable)
-                model_id="google/gemma-3-4b-it:free",
+                model_id="google/gemma-3-4b-it",
             ),
         ],
     ),
@@ -1525,8 +1517,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                # TODO: swap to non-free model when available (more reliable)
-                model_id="google/gemma-3-12b-it:free",
+                model_id="google/gemma-3-12b-it",
             ),
         ],
     ),

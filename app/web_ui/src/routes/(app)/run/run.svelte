@@ -56,7 +56,6 @@
   let show_raw_data = false
   let save_rating_error: KilnError | null = null
   let show_create_tag = false
-  // TODO warn_before_unload
 
   type RatingValue = number | null
   let overall_rating: RatingValue = null
