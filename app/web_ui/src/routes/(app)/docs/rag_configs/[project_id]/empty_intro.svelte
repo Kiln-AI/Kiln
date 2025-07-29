@@ -11,19 +11,39 @@
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        ><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g
-          id="SVGRepo_tracerCarrier"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        ></g><g id="SVGRepo_iconCarrier">
-          <path
-            d="M20 19L20.5303 19.5303C20.8232 19.2374 20.8232 18.7626 20.5303 18.4697L20 19ZM8 4.25C7.58579 4.25 7.25 4.58579 7.25 5C7.25 5.41421 7.58579 5.75 8 5.75V4.25ZM18.5303 16.4697C18.2374 16.1768 17.7626 16.1768 17.4697 16.4697C17.1768 16.7626 17.1768 17.2374 17.4697 17.5303L18.5303 16.4697ZM17.4697 20.4697C17.1768 20.7626 17.1768 21.2374 17.4697 21.5303C17.7626 21.8232 18.2374 21.8232 18.5303 21.5303L17.4697 20.4697ZM20 18.25H7.5V19.75H20V18.25ZM7.5 12.75H16.5V11.25H7.5V12.75ZM16.5 4.25H8V5.75H16.5V4.25ZM20.5303 18.4697L18.5303 16.4697L17.4697 17.5303L19.4697 19.5303L20.5303 18.4697ZM19.4697 18.4697L17.4697 20.4697L18.5303 21.5303L20.5303 19.5303L19.4697 18.4697ZM20.75 8.5C20.75 6.15279 18.8472 4.25 16.5 4.25V5.75C18.0188 5.75 19.25 6.98122 19.25 8.5H20.75ZM16.5 12.75C18.8472 12.75 20.75 10.8472 20.75 8.5H19.25C19.25 10.0188 18.0188 11.25 16.5 11.25V12.75ZM4.75 15.5C4.75 13.9812 5.98122 12.75 7.5 12.75V11.25C5.15279 11.25 3.25 13.1528 3.25 15.5H4.75ZM7.5 18.25C5.98122 18.25 4.75 17.0188 4.75 15.5H3.25C3.25 17.8472 5.15279 19.75 7.5 19.75V18.25Z"
-            fill="currentColor"
-          ></path>
-          <circle cx="6" cy="5" r="2" stroke="currentColor" stroke-width="1.5"
-          ></circle>
-        </g></svg
       >
+        <path
+          d="M22 13V12C22 8.22876 22 6.34315 20.8284 5.17157C19.6569 4 17.7712 4 14 4H10C6.22876 4 4.34315 4 3.17157 5.17157C2 6.34315 2 8.22876 2 12C2 15.7712 2 17.6569 3.17157 18.8284C4.34315 20 6.22876 20 10 20H13"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+        <path
+          d="M10 16H6"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+        <path
+          d="M2 10L22 10"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+        <circle
+          cx="18"
+          cy="17"
+          r="3"
+          stroke="currentColor"
+          stroke-width="1.5"
+        />
+        <path
+          d="M20.5 19.5L21.5 20.5"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+      </svg>
     </div>
     <div class="font-medium text-lg">
       Add RAG Configurations to Your Project
