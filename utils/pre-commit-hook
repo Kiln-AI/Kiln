@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# Copy this file to .git/hooks/pre-commit to run Kiln checks before each commit
+#
+
+cd "$(dirname "$0")"
+uv run ../../checks.sh
+
