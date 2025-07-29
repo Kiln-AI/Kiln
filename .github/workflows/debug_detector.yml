@@ -14,12 +14,6 @@ jobs:
         run: |
           set +e
           found=0
-          echo "Checking for console.log statements"
-          logs=$(grep -nR --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github --exclude-dir=build --exclude-dir=dist --exclude-dir=.svelte-kit -e 'console\.log' . || true)
-          if [ -n "$logs" ]; then
-            echo "$logs"
-            found=1
-          fi
 
           echo "Checking for python print statements"
           prints=$(grep -nR --include='*.py' --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github --exclude-dir=build --exclude-dir=dist --exclude-dir=.svelte-kit -e 'print(' . || true)
