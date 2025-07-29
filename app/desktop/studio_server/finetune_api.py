@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 def base_provider_from_str_id(provider_str: str) -> type[BaseFinetuneAdapter]:
     """
-    Validates that a provider string is a valid ModelProviderName and returns the enum value.
+    Validates that a provider string is a valid model provider, throwing an Http error if not.
     """
     if provider_str not in finetune_registry:  # type: ignore
         valid_providers = list(finetune_registry.keys())
