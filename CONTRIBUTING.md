@@ -61,13 +61,12 @@ uv run ./checks.sh
 
 ### IDE Extensions
 
-We suggest the following extensions for VSCode/Cursor. With them, you'll get compliant formatting and linting in your IDE.
+We suggest the following extensions for VSCode/Cursor. With them, you'll get compliant formatting and linting in your IDE. They are also listed in `.vscode/extensions.json` so they will be suggested in the extension store.
 
 - Prettier
-- Python
 - Python Debugger
-- Ty (astral type checker)
-- Ruff
+- Ty - language server and type checker for Python
+- Ruff - formatter/linter for Python
 - Svelte for VS Code
 - Vitest
 - ESLint

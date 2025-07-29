@@ -1,0 +1,22 @@
+{
+	// See https://go.microsoft.com/fwlink/?LinkId=827846 to learn about workspace recommendations.
+	// Extension identifier format: ${publisher}.${name}. Example: vscode.csharp
+
+	// List of extensions which should be recommended for users of this workspace.
+	"recommendations": [
+    "astral-sh.ty",
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "ms-python.debugpy",
+    "svelte.svelte-vscode",
+    "vitest.explorer",
+    "dbaeumer.vscode-eslint",
+    "ms-python.python",
+	],
+	// List of extensions recommended by VS Code that should not be recommended for users of this workspace.
+	"unwantedRecommendations": [
+    // We've moved to ty and ruff! They are much faster than pylance/basedpyright
+    "anysphere.cursorpyright",
+    "ms-python.vscode-pylance",
+	]
+}
