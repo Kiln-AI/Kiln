@@ -59,7 +59,7 @@ uv run ./checks.sh
 
 4. Setup pre-commit hook.
 
-Copy contents of util/pre-commit-hook to your existing hook to run Kiln checks before each commit
+Copy contents of util/pre-commit-hook to your existing hook to run Kiln checks before each commit.
 
 ## Optional Setup
 
