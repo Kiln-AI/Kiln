@@ -1,11 +1,12 @@
 <script lang="ts">
-  import type { RagConfig } from "$lib/types"
+  import type { RagConfig, RagProgress } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import RunRagControl from "./run_rag_control.svelte"
 
   export let rag_config: RagConfig
   export let project_id: string
+  export let rag_progress: RagProgress | null = null
 
   function row_clicked() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
@@ -18,6 +19,7 @@
     let extractor_config_id: string = rag_config.extractor_config_id || ""
     let chunker_config_id: string = rag_config.chunker_config_id || ""
     let embedding_config_id: string = rag_config.embedding_config_id || ""
+
     return [
       name,
       extractor_config_id,
@@ -58,6 +60,10 @@
       {column}
     </td>
   {/each}
+
+  <td>
+    {JSON.stringify(rag_progress || {}, null, 2)}
+  </td>
   <td class="no-hover cursor-default">
     <div class="flex flex-row gap-8 place-items-center min-w-[350px]">
       <RunRagControl {rag_config} {project_id} />

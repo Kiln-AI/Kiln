@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type { RagConfig } from "$lib/types"
+  import type { RagConfig, RagProgress } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { load_model_info } from "$lib/stores"
@@ -26,8 +26,11 @@
 
   $: project_id = $page.params.project_id
 
+  let rag_progress_map: Record<string, RagProgress> = {}
+
   onMount(async () => {
-    get_rag_configs()
+    await get_rag_configs()
+    await get_rag_config_progress()
   })
 
   async function get_rag_configs() {
@@ -65,6 +68,31 @@
     } finally {
       loading = false
     }
+  }
+
+  async function get_rag_config_progress() {
+    const config_ids = rag_configs
+      ?.map((rag_config) => rag_config.id || "")
+      .filter(Boolean)
+
+    if (!config_ids) {
+      return
+    }
+
+    const { data: progress_data, error: get_error } = await client.POST(
+      "/api/projects/{project_id}/rag_configs/progress",
+      {
+        params: { path: { project_id } },
+        body: {
+          rag_config_ids: config_ids,
+        },
+      },
+    )
+    if (get_error) {
+      throw get_error
+    }
+
+    rag_progress_map = progress_data
   }
 
   function sortExtractorConfigs(rag_configs: RagConfig[] | null) {
@@ -113,6 +141,8 @@
     // }
     loading = false
   }
+
+  $: console.log(rag_progress_map)
 </script>
 
 <AppPage
@@ -153,7 +183,11 @@
           </thead>
           <tbody>
             {#each (rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
-              <TableRagConfigRow {rag_config} {project_id} />
+              <TableRagConfigRow
+                {rag_config}
+                {project_id}
+                rag_progress={rag_progress_map[rag_config.id]}
+              />
             {/each}
           </tbody>
         </table>

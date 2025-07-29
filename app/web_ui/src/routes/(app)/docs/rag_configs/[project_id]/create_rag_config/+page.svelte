@@ -17,6 +17,10 @@
     ChunkerConfig,
     EmbeddingConfig,
   } from "../../../../../../lib/types"
+  import {
+    get_model_friendly_name,
+    provider_name_from_id,
+  } from "../../../../../../lib/stores"
 
   $: project_id = $page.params.project_id
 
@@ -79,7 +83,7 @@
             options: extractor_configs
               .filter((config) => !config.is_archived)
               .map((config) => ({
-                label: `${config.properties?.model_name} - ${config.output_format}`,
+                label: `${get_model_friendly_name(config.model_name)} (${provider_name_from_id(config.model_provider_name)}) - ${config.output_format}`,
                 value: config.id,
                 description:
                   config.name +
@@ -440,7 +444,7 @@
 <Dialog
   bind:this={show_create_extractor_dialog}
   title="Create Extractor"
-  width="normal"
+  width="wide"
   on:close={() => {
     handle_modal_close()
     if (selected_extractor_config_id === "create_new") {
@@ -448,7 +452,7 @@
     }
   }}
 >
-  <div class="font-light text-sm">
+  <div class="font-light text-sm mb-4">
     Extractors are used to convert your documents into text.
   </div>
 
@@ -464,7 +468,7 @@
 <Dialog
   bind:this={show_create_chunker_dialog}
   title="Create Chunker"
-  width="normal"
+  width="wide"
   on:close={() => {
     handle_modal_close()
     if (selected_chunker_config_id === "create_new") {
@@ -497,7 +501,7 @@
     }
   }}
 >
-  <div class="font-light text-sm">
+  <div class="font-light text-sm mb-4">
     Embedding models are used to convert your document chunks into vectors for
     similarity search.
   </div>

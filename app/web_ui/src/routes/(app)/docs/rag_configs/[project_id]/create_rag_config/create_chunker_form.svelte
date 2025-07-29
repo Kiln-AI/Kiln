@@ -68,14 +68,14 @@
   <div class="flex flex-col gap-4">
     <FormElement
       label="Chunk Size"
-      description="The number of characters in each chunk."
+      description="The number of tokens in each chunk."
       inputType="input_number"
       id="chunk_size"
       bind:value={chunk_size}
     />
     <FormElement
       label="Chunk Overlap"
-      description="The number of characters to overlap between chunks."
+      description="The number of tokens to overlap between chunks."
       inputType="input_number"
       id="chunk_overlap"
       bind:value={chunk_overlap}

@@ -362,7 +362,7 @@ class DocumentPipeline:
                     Chunk(
                         content=KilnAttachmentModel.from_data(
                             data=chunk.text,
-                            mime_type=job.extraction.output_format(),
+                            mime_type="text/plain",
                         ),
                     )
                     for chunk in chunking_result.chunks
@@ -466,7 +466,6 @@ class DocumentPipeline:
             elif stage == DocumentPipelineStage.EMBEDDING:
                 chunked_documents = await self.collect_embedding_jobs()
                 embedding_adapter = embedding_adapter_from_type(
-                    self.configuration.embedding_config.embedding_type,
                     self.configuration.embedding_config,
                 )
                 await self.generate_embeddings(chunked_documents, embedding_adapter)

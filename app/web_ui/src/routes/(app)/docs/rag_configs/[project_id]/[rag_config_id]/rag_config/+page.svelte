@@ -241,11 +241,28 @@
 
     embedding_config = embedding_config_data
   }
+
+  async function run_rag_config() {
+    console.info("Running RAG config")
+    await client.POST(
+      "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
+      {
+        params: { path: { project_id, rag_config_id } },
+      },
+    )
+    console.info("RAG config run")
+  }
 </script>
 
 <AppPage
   title="RAG Pipeline"
   subtitle={loading ? "" : rag_config?.name || "Unknown"}
+  action_buttons={[
+    {
+      label: "Run Pipeline",
+      handler: run_rag_config,
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">

@@ -454,3 +454,11 @@ export function rating_options_for_sample(
     })
     .map((option) => option.requirement)
 }
+
+export function get_model_friendly_name(model_id: string): string {
+  const model = get_model_info(model_id, get(model_info))
+  if (model?.name) {
+    return model.name
+  }
+  return model_id
+}

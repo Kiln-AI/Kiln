@@ -781,17 +781,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/rag_configs/{rag_config_id}/progress": {
+    "/api/projects/{project_id}/rag_configs/progress": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Rag Config Progress */
-        get: operations["get_rag_config_progress_api_projects__project_id__rag_configs__rag_config_id__progress_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Get Rag Config Progress */
+        post: operations["get_rag_config_progress_api_projects__project_id__rag_configs_progress_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2887,6 +2887,11 @@ export interface components {
         FinetuneWithStatus: {
             finetune: components["schemas"]["Finetune"];
             status: components["schemas"]["FineTuneStatus"];
+        };
+        /** GetRagConfigProgressRequest */
+        GetRagConfigProgressRequest: {
+            /** Rag Config Ids */
+            rag_config_ids: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5702,17 +5707,20 @@ export interface operations {
             };
         };
     };
-    get_rag_config_progress_api_projects__project_id__rag_configs__rag_config_id__progress_get: {
+    get_rag_config_progress_api_projects__project_id__rag_configs_progress_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 project_id: string;
-                rag_config_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetRagConfigProgressRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5720,7 +5728,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RagProgress"];
+                    "application/json": {
+                        [key: string]: components["schemas"]["RagProgress"];
+                    };
                 };
             };
             /** @description Validation Error */

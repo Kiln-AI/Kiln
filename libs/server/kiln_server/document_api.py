@@ -305,6 +305,10 @@ def build_extraction_summary(
     )
 
 
+class GetRagConfigProgressRequest(BaseModel):
+    rag_config_ids: list[str]
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
@@ -1007,75 +1011,94 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"RAG config {rag_config_id} run started"}
 
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/progress")
+    @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(
         project_id: str,
-        rag_config_id: str,
-    ) -> RagProgress:
+        request: GetRagConfigProgressRequest,
+    ) -> dict[str, RagProgress]:
         project = project_from_id(project_id)
-        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
-        if rag_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="RAG config not found",
+        rag_configs: list[RagConfig] = []
+
+        # not a big deal if some of the configs are not found, we'll just ignore them - better
+        # than throwing because of a potential delete happening concurrently since progress does
+        # not require integrity
+        for rag_config_id in request.rag_config_ids:
+            rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+            if rag_config is None:
+                continue
+            rag_configs.append(rag_config)
+
+        # no configs found, nothing to return
+        if not rag_configs:
+            return {}
+
+        # a rag config is a unique path through the filesystem tree
+        # we serialize each path as node_name::node_name::...::node_name
+        # and store the path -> [rag config ids] for each level in the tree
+        # so we can easily look up what rag configs we are at without
+        # always needing to check all the loops combined state
+        path_prefixes: dict[str, set[str]] = defaultdict(set)
+        for rag_config in rag_configs:
+            complete_path: list[str] = [
+                str(rag_config.extractor_config_id),
+                str(rag_config.chunker_config_id),
+                str(rag_config.embedding_config_id),
+            ]
+            for i in range(len(complete_path)):
+                prefix = "::".join(complete_path[: i + 1])
+                path_prefixes[prefix].add(str(rag_config.id))
+
+        rag_config_progress_map: dict[str, RagProgress] = defaultdict(
+            lambda: RagProgress(
+                total_document_count=0,
+                total_document_completed_count=0,
+                total_document_extracted_count=0,
+                total_document_chunked_count=0,
+                total_document_embedded_count=0,
             )
-
-        extractor_config_id = rag_config.extractor_config_id
-        chunker_config_id = rag_config.chunker_config_id
-        embedding_config_id = rag_config.embedding_config_id
-
-        docs_progress: dict[str, DocumentWiseProgress] = {}
+        )
         for document in project.documents(readonly=True):
             # for typechecker - should not actually happen
             if not document.id:
                 raise ValueError(f"Document {document.path} has no ID")
 
-            docs_progress[document.id] = DocumentWiseProgress(
-                extracted=False,
-                chunked=False,
-                embedded=False,
-            )
+            for rag_config in rag_configs:
+                rag_config_progress_map[str(rag_config.id)].total_document_count += 1
 
             for extraction in document.extractions(readonly=True):
-                # make sure to skip the extractions coming from other extractor configs
-                if extraction.extractor_config_id != extractor_config_id:
-                    continue
+                # update progress for all the configs that descend from this path
+                extraction_path_prefix = str(extraction.extractor_config_id)
+                for matching_rag_config_id in path_prefixes[extraction_path_prefix]:
+                    rag_config_progress_map[
+                        matching_rag_config_id
+                    ].total_document_extracted_count += 1
 
-                docs_progress[document.id].extracted = True
+                for chunked_document in extraction.chunked_documents(readonly=True):
+                    chunking_path_prefix = f"{extraction_path_prefix}::{chunked_document.chunker_config_id}"
+                    for matching_rag_config_id in path_prefixes[chunking_path_prefix]:
+                        rag_config_progress_map[
+                            matching_rag_config_id
+                        ].total_document_chunked_count += 1
 
-                for chunked_document in extraction.chunks(readonly=True):
-                    # make sure to skip the chunks coming from other chunker configs
-                    if chunked_document.chunker_config_id != chunker_config_id:
-                        continue
+                    for embedding in chunked_document.chunk_embeddings(readonly=True):
+                        embedding_path_prefix = (
+                            f"{chunking_path_prefix}::{embedding.embedding_config_id}"
+                        )
+                        for matching_rag_config_id in path_prefixes[
+                            embedding_path_prefix
+                        ]:
+                            rag_config_progress_map[
+                                matching_rag_config_id
+                            ].total_document_embedded_count += 1
 
-                    docs_progress[document.id].chunked = True
-
-                    for embedding in chunked_document.embeddings(readonly=True):
-                        # make sure to skip the embeddings coming from other embedding configs
-                        if embedding.embedding_config_id != embedding_config_id:
-                            continue
-
-                        docs_progress[document.id].embedded = True
-
-        overall_progress = RagProgress(
-            total_document_count=len(docs_progress),
-            total_document_completed_count=0,
-            total_document_extracted_count=0,
-            total_document_chunked_count=0,
-            total_document_embedded_count=0,
-        )
-
-        for document_progress in docs_progress.values():
-            overall_progress.total_document_extracted_count += (
-                document_progress.extracted
+        # if any step fails, then the document is not considered completed, so it follows
+        # that the number of completed documents can only be as large as the minimum of the
+        # completion counts for each step
+        for rag_config_id, rag_config_progress in rag_config_progress_map.items():
+            rag_config_progress.total_document_completed_count = min(
+                rag_config_progress.total_document_extracted_count,
+                rag_config_progress.total_document_chunked_count,
+                rag_config_progress.total_document_embedded_count,
             )
-            overall_progress.total_document_chunked_count += document_progress.chunked
-            overall_progress.total_document_embedded_count += document_progress.embedded
-            if (
-                document_progress.extracted
-                and document_progress.chunked
-                and document_progress.embedded
-            ):
-                overall_progress.total_document_completed_count += 1
 
-        return overall_progress
+        return dict(rag_config_progress_map)
