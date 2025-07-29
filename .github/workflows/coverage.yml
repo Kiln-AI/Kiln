@@ -26,8 +26,8 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Set up Python 3.11
-        run: uv python install 3.11
+      - name: Set up Python
+        run: uv python install
 
       - name: Install the project
         run: uv sync --all-extras --dev
