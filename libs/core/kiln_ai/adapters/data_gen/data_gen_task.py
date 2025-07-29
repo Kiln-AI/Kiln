@@ -77,7 +77,7 @@ class DataGenCategoriesTask(Task, parent_of={}):
     """
 
     def __init__(self, gen_type: Literal["training", "eval"], guidance: str | None):
-        # Keep the typechecker happy. We should be able to avoid this and parent_of above.
+        # Keep the typechecker happy. We should make this optional.
         tmp_project = Project(name="DataGen")
 
         instruction = generate_topic_tree_prompt(gen_type=gen_type, guidance=guidance)
@@ -181,7 +181,7 @@ class DataGenSampleTask(Task, parent_of={}):
         gen_type: Literal["training", "eval"],
         guidance: str | None,
     ):
-        # Keep the typechecker happy. We should be able to avoid this and parent_of above.
+        # Keep the typechecker happy. We should make this optional.
         tmp_project = Project(name="DataGenSample")
 
         instruction = generate_sample_generation_prompt(

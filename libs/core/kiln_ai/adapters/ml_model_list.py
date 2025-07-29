@@ -1484,13 +1484,6 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                # Swap to non-free model when available (more reliable)
-                model_id="google/gemma-3-1b-it:free",
-                supports_structured_output=False,
-                supports_data_gen=False,
-            ),
         ],
     ),
     # Gemma 3 4B
@@ -1507,8 +1500,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                # Swap to non-free model when available (more reliable)
-                model_id="google/gemma-3-4b-it:free",
+                model_id="google/gemma-3-4b-it",
             ),
         ],
     ),
@@ -1525,8 +1517,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                # Swap to non-free model when available (more reliable)
-                model_id="google/gemma-3-12b-it:free",
+                model_id="google/gemma-3-12b-it",
             ),
         ],
     ),

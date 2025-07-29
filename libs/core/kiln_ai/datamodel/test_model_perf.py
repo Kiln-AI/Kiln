@@ -122,7 +122,6 @@ def test_benchmark_load_from_file(benchmark, task_run):
 
     # I get 8k ops per second on my MBP. Lower value here for CI and parallel testing.
     # Prior to optimization was 290 ops per second.
-    logger = logging.getLogger(__name__)
-    logger.info("Ops per second: %.6f", ops_per_second)
+    # sys.stdout.write(f"Ops per second: {ops_per_second:.6f}")
     if ops_per_second < 500:
         pytest.fail(f"Ops per second: {ops_per_second:.6f}, expected more than 1k ops")

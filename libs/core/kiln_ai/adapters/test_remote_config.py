@@ -161,10 +161,14 @@ try:
             assert hasattr(provider, 'name')
 
     # Indicate success
+    import sys
+    sys.stdout.write("SUCCESS: v0.18 successfully parsed JSON from current version")
+    sys.stdout.write(f" -- Parsed {{len(models)}} models")
     pass
 
 except Exception as e:
-    raise SystemExit(f"ERROR: {e}")
+    sys.stdout.write(f"ERROR: {{e}}")
+    sys.exit(1)
 '''
 
     try:
