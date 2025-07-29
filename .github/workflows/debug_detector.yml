@@ -1,4 +1,4 @@
-name: Developer Content Check
+name: Debug Detector
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Search for leftover developer content
+      - name: Search for leftover debug content
         run: |
           set +e
           found=0

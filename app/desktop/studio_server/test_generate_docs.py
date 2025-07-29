@@ -1,4 +1,4 @@
-import logging
+import sys
 from typing import List
 
 import pytest
@@ -78,13 +78,11 @@ async def test_generate_model_table():
         row = f"| {model.friendly_name} | {provider_names} | {structured_output} | {reasoning} | {data_gen} | {finetune} |"
         table.append(row)
 
-    # Log the table (useful for documentation)
-    logger = logging.getLogger(__name__)
-    logger.info("\nModel Capability Matrix:\n%s", "\n".join(table))
-    logger.info(
-        "\n\nFireworks models remaining:\n- %s\n\n",
-        "\n- ".join(f"{m.name}" for m in fireworks_models),
-    )
+    # Write the table to stdout (useful for documentation)
+    sys.stdout.write("\nModel Capability Matrix:\n")
+    sys.stdout.write("\n".join(table))
+    sys.stdout.write("\n\nFireworks models remaining:\n")
+    sys.stdout.write("- " + "\n- ".join(f"{m.name}" for m in fireworks_models) + "\n\n")
 
     # Basic assertions to ensure the table is well-formed
     assert len(table) > 2, "Table should have header and at least one row"
