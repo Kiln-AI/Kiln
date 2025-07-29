@@ -1370,15 +1370,6 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
-        /** AvailableEmbeddingModels */
-        AvailableEmbeddingModels: {
-            /** Provider Name */
-            provider_name: string;
-            /** Provider Id */
-            provider_id: string;
-            /** Models */
-            models: components["schemas"]["EmbeddingModelDetails"][];
-        };
         /** AvailableModels */
         AvailableModels: {
             /** Provider Name */
@@ -1553,6 +1544,13 @@ export interface components {
              * @description The description of the extractor config
              */
             description?: string | null;
+            /** @description The name of the model provider to use for the extractor config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
             /** @description The output format of the extractor config */
             output_format: components["schemas"]["OutputFormat"];
             /**
@@ -1560,8 +1558,6 @@ export interface components {
              * @description The mimetypes to pass through to the extractor
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
-            /** @description The type of the extractor */
-            extractor_type: components["schemas"]["ExtractorType"];
             /** Properties */
             properties?: {
                 [key: string]: string | number | boolean | {
@@ -1893,7 +1889,7 @@ export interface components {
             /** N Dimensions */
             n_dimensions: number;
             /** Max Input Tokens */
-            max_input_tokens: number;
+            max_input_tokens: number | null;
             /** Supports Custom Dimensions */
             supports_custom_dimensions: boolean;
         };
@@ -1903,6 +1899,15 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004";
+        /** EmbeddingProvider */
+        EmbeddingProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["EmbeddingModelDetails"][];
+        };
         /** Eval */
         Eval: {
             /**
@@ -2260,6 +2265,16 @@ export interface components {
              */
             description?: string | null;
             /**
+             * Model Provider Name
+             * @description The name of the model provider to use for the extractor config.
+             */
+            model_provider_name: string;
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
+            /**
              * @description The format to use for the output.
              * @default text/markdown
              */
@@ -2300,7 +2315,7 @@ export interface components {
          * ExtractorType
          * @enum {string}
          */
-        ExtractorType: "gemini";
+        ExtractorType: "litellm";
         /** FileInfo */
         FileInfo: {
             /**
@@ -2632,6 +2647,15 @@ export interface components {
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
             suggested_for_uncensored_data_gen: boolean;
+            /** Supports Doc Extraction */
+            supports_doc_extraction: boolean;
+            /**
+             * Multimodal Capable
+             * @default false
+             */
+            multimodal_capable: boolean;
+            /** Multimodal Mime Types */
+            multimodal_mime_types?: string[] | null;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
@@ -2647,7 +2671,7 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_no_thinking";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_no_thinking" | "kimi_k2";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
@@ -5023,7 +5047,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AvailableEmbeddingModels"][];
+                    "application/json": components["schemas"]["EmbeddingProvider"][];
                 };
             };
         };

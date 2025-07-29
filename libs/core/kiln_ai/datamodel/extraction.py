@@ -44,7 +44,7 @@ class OutputFormat(str, Enum):
 
 
 class ExtractorType(str, Enum):
-    GEMINI = "gemini"
+    LITELLM = "litellm"
 
 
 SUPPORTED_MIME_TYPES = {
@@ -76,40 +76,11 @@ class ExtractionModel(BaseModel):
     label: str
 
 
-EXTRACTION_MODEL_LIST = {
-    ExtractorType.GEMINI: [
-        ExtractionModel(
-            name="gemini-2.5-pro",
-            label="Gemini 2.5 Pro",
-        ),
-        ExtractionModel(
-            name="gemini-2.5-flash",
-            label="Gemini 2.5 Flash",
-        ),
-        ExtractionModel(
-            name="gemini-2.0-flash",
-            label="Gemini 2.0 Flash",
-        ),
-        ExtractionModel(
-            name="gemini-2.0-flash-lite",
-            label="Gemini 2.0 Flash Lite",
-        ),
-    ],
-}
-
-
 def validate_prompt(prompt: Any, name: str):
     if not isinstance(prompt, str):
         raise ValueError(f"{name} must be a string.")
     if prompt == "":
         raise ValueError(f"{name} cannot be empty.")
-
-
-def validate_model_name(model_name: Any):
-    if not isinstance(model_name, str):
-        raise ValueError("model_name must be a string.")
-    if model_name == "":
-        raise ValueError("model_name cannot be empty.")
 
 
 class ExtractionSource(str, Enum):
@@ -164,6 +135,12 @@ class ExtractorConfig(KilnParentedModel):
     description: str | None = Field(
         default=None, description="The description of the extractor config"
     )
+    model_provider_name: str = Field(
+        description="The name of the model provider to use for the extractor config.",
+    )
+    model_name: str = Field(
+        description="The name of the model to use for the extractor config.",
+    )
     output_format: OutputFormat = Field(
         default=OutputFormat.MARKDOWN,
         description="The format to use for the output.",
@@ -185,11 +162,7 @@ class ExtractorConfig(KilnParentedModel):
     def validate_properties(
         cls, properties: dict[str, Any], info: ValidationInfo
     ) -> dict[str, Any]:
-        extractor_type = info.data.get("extractor_type")
         output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
-
-        if extractor_type != ExtractorType.GEMINI:
-            raise ValueError(f"Invalid extractor type: {extractor_type}")
 
         def get_property(key: str, default: str) -> str:
             value = properties.get(key)
@@ -199,15 +172,7 @@ class ExtractorConfig(KilnParentedModel):
                 raise ValueError(f"Prompt for {key} must be a string")
             return value
 
-        model_name = get_property("model_name", default="")
-        if not model_name:
-            raise ValueError("model_name must be a non-empty string")
-
-        if model_name not in [m.name for m in EXTRACTION_MODEL_LIST[extractor_type]]:
-            raise ValueError(f'Gemini: "{model_name}" is not supported')
-
         return {
-            "model_name": model_name,
             "prompt_document": get_property(
                 "prompt_document",
                 default=ExtractionPromptBuilder.prompt_for_kind(
@@ -233,14 +198,6 @@ class ExtractorConfig(KilnParentedModel):
                 ),
             ),
         }
-
-    def model_name(self) -> str | None:
-        model_name = self.properties.get("model_name")
-        if model_name is None:
-            return None
-        if not isinstance(model_name, str):
-            raise ValueError("Invalid model_name. model_name must be a string.")
-        return model_name
 
     def prompt_document(self) -> str | None:
         prompt = self.properties.get("prompt_document")

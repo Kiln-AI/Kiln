@@ -1,51 +1,34 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { ExtractorType, OutputFormat } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import FormElement from "$lib/utils/form_element.svelte"
   import AppPage from "../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { goto } from "$app/navigation"
+  import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
+  import type { ModelProviderName } from "$lib/types"
 
   $: project_id = $page.params.project_id
-
-  let extractor_options = [
-    {
-      label: "Gemini: Gemini 2.5 Pro",
-      value: "gemini:::gemini-2.5-pro",
-    },
-    {
-      label: "Gemini: Gemini 2.5 Flash",
-      value: "gemini:::gemini-2.5-flash",
-    },
-    {
-      label: "Gemini: Gemini 2.0 Flash",
-      value: "gemini:::gemini-2.0-flash",
-    },
-    {
-      label: "Gemini: Gemini 2.0 Flash Lite",
-      value: "gemini:::gemini-2.0-flash-lite",
-    },
-  ]
 
   let loading: boolean = false
   let error: KilnError | null = null
   let name: string | null = null
   let description: string = ""
-  let selected_extractor_option: string = extractor_options[0].value
+  let selected_extractor_option: string
   let output_format: "text/markdown" | "text/plain" = "text/markdown"
   let prompt_document: string | null = null
   let prompt_image: string | null = null
   let prompt_video: string | null = null
   let prompt_audio: string | null = null
 
-  $: extractor_type = selected_extractor_option.split(":::")[0]
-  $: model_name = selected_extractor_option.split(":::")[1]
-
   async function create_extractor_config() {
     try {
       loading = true
+
+      const [model_provider_name, model_name] =
+        selected_extractor_option.split("/")
+
       const { error: create_extractor_error } = await client.POST(
         "/api/projects/{project_id}/create_extractor_config",
         {
@@ -57,10 +40,10 @@
           body: {
             name: name || null,
             description: description || null,
-            extractor_type: extractor_type as unknown as ExtractorType,
-            output_format: output_format as unknown as OutputFormat,
+            output_format: output_format,
+            model_name: model_name,
+            model_provider_name: model_provider_name as ModelProviderName,
             properties: {
-              model_name,
               prompt_document: prompt_document || null,
               prompt_image: prompt_image || null,
               prompt_video: prompt_video || null,
@@ -102,16 +85,11 @@
         bind:submitting={loading}
       >
         <div class="flex flex-col gap-4">
-          <FormElement
+          <AvailableModelsDropdown
             label="Extraction Model"
             description="Select a model to use for extracting data from your documents."
-            inputType="select"
-            id="extractor_type"
-            bind:value={selected_extractor_option}
-            select_options={extractor_options.map((option) => [
-              option.value,
-              option.label,
-            ])}
+            bind:model={selected_extractor_option}
+            filter_models_predicate={(m) => m.supports_doc_extraction}
           />
           <FormElement
             label="Output Format"

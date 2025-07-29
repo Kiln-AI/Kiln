@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from kiln_ai.adapters.adapter_registry import litellm_core_provider_config
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     ModelName,
@@ -10,6 +11,7 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.adapters.ollama_tools import OllamaConnection
 from kiln_ai.adapters.provider_tools import (
+    LiteLlmCoreConfig,
     builtin_model_from,
     check_provider_warnings,
     core_provider,
@@ -18,18 +20,14 @@ from kiln_ai.adapters.provider_tools import (
     finetune_provider_model,
     get_model_and_provider,
     kiln_model_provider_from,
-    lite_llm_config_for_openai_compatible,
+    lite_llm_core_config_for_provider,
     lite_llm_provider_model,
     parse_custom_model_id,
     provider_enabled,
     provider_name_from_id,
     provider_warnings,
 )
-from kiln_ai.datamodel import (
-    Finetune,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -597,7 +595,7 @@ def test_openai_compatible_provider_config(mock_shared_config):
     """Test successful creation of an OpenAI compatible provider"""
     model_id = "test_provider::gpt-4"
 
-    config = lite_llm_config_for_openai_compatible(
+    config = litellm_core_provider_config(
         RunConfigProperties(
             model_name=model_id,
             model_provider_name=ModelProviderName.openai_compatible,
@@ -632,10 +630,10 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
     """Test provider creation without API key (should work as some providers don't require it, but should pass NA to LiteLLM as it requires one)"""
     model_id = "no_key_provider::gpt-4"
 
-    config = lite_llm_config_for_openai_compatible(
+    config = litellm_core_provider_config(
         RunConfigProperties(
             model_name=model_id,
-            model_provider_name=ModelProviderName.openai,
+            model_provider_name=ModelProviderName.openai_compatible,
             prompt_id="simple_prompt_builder",
             structured_output_mode="json_schema",
         )
@@ -653,7 +651,7 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
 def test_lite_llm_config_invalid_id():
     """Test handling of invalid model ID format"""
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config_for_openai_compatible(
+        litellm_core_provider_config(
             RunConfigProperties(
                 model_name="invalid-id-format",
                 model_provider_name=ModelProviderName.openai_compatible,
@@ -671,7 +669,7 @@ def test_lite_llm_config_no_providers(mock_shared_config):
     mock_shared_config.return_value.openai_compatible_providers = None
 
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config_for_openai_compatible(
+        litellm_core_provider_config(
             RunConfigProperties(
                 model_name="test_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
@@ -685,7 +683,7 @@ def test_lite_llm_config_no_providers(mock_shared_config):
 def test_lite_llm_config_provider_not_found(mock_shared_config):
     """Test handling of non-existent provider"""
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config_for_openai_compatible(
+        litellm_core_provider_config(
             RunConfigProperties(
                 model_name="unknown_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
@@ -708,7 +706,7 @@ def test_lite_llm_config_no_base_url(mock_shared_config):
     ]
 
     with pytest.raises(ValueError) as exc_info:
-        lite_llm_config_for_openai_compatible(
+        litellm_core_provider_config(
             RunConfigProperties(
                 model_name="test_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
@@ -925,3 +923,192 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     # Verify the model_id is transformed into openai/endpoint_id format
     assert provider.model_id == "openai/456"
     assert provider.structured_output_mode == StructuredOutputMode.json_mode
+
+
+@pytest.fixture
+def mock_config_for_lite_llm_core_config():
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        mock.shared.return_value = config_instance
+
+        # Set up all the config values
+        config_instance.open_router_api_key = "test-openrouter-key"
+        config_instance.open_ai_api_key = "test-openai-key"
+        config_instance.groq_api_key = "test-groq-key"
+        config_instance.bedrock_access_key = "test-aws-access-key"
+        config_instance.bedrock_secret_key = "test-aws-secret-key"
+        config_instance.ollama_base_url = "http://test-ollama:11434"
+        config_instance.fireworks_api_key = "test-fireworks-key"
+        config_instance.anthropic_api_key = "test-anthropic-key"
+        config_instance.gemini_api_key = "test-gemini-key"
+        config_instance.vertex_project_id = "test-vertex-project"
+        config_instance.vertex_location = "us-central1"
+        config_instance.together_api_key = "test-together-key"
+        config_instance.azure_openai_api_key = "test-azure-key"
+        config_instance.azure_openai_endpoint = "https://test.openai.azure.com"
+        config_instance.huggingface_api_key = "test-hf-key"
+
+        yield mock
+
+
+@pytest.mark.parametrize(
+    "provider_name,expected_config",
+    [
+        (
+            ModelProviderName.openrouter,
+            LiteLlmCoreConfig(
+                base_url="https://openrouter.ai/api/v1",
+                additional_body_options={
+                    "api_key": "test-openrouter-key",
+                },
+                default_headers={
+                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "X-Title": "KilnAI",
+                },
+            ),
+        ),
+        (
+            ModelProviderName.openai,
+            LiteLlmCoreConfig(additional_body_options={"api_key": "test-openai-key"}),
+        ),
+        (
+            ModelProviderName.groq,
+            LiteLlmCoreConfig(additional_body_options={"api_key": "test-groq-key"}),
+        ),
+        (
+            ModelProviderName.amazon_bedrock,
+            LiteLlmCoreConfig(
+                additional_body_options={
+                    "aws_access_key_id": "test-aws-access-key",
+                    "aws_secret_access_key": "test-aws-secret-key",
+                    "aws_region_name": "us-west-2",
+                },
+            ),
+        ),
+        (
+            ModelProviderName.ollama,
+            LiteLlmCoreConfig(
+                base_url="http://test-ollama:11434/v1",
+                additional_body_options={"api_key": "NA"},
+            ),
+        ),
+        (
+            ModelProviderName.fireworks_ai,
+            LiteLlmCoreConfig(
+                additional_body_options={"api_key": "test-fireworks-key"}
+            ),
+        ),
+        (
+            ModelProviderName.anthropic,
+            LiteLlmCoreConfig(
+                additional_body_options={"api_key": "test-anthropic-key"}
+            ),
+        ),
+        (
+            ModelProviderName.gemini_api,
+            LiteLlmCoreConfig(additional_body_options={"api_key": "test-gemini-key"}),
+        ),
+        (
+            ModelProviderName.vertex,
+            LiteLlmCoreConfig(
+                additional_body_options={
+                    "vertex_project": "test-vertex-project",
+                    "vertex_location": "us-central1",
+                },
+            ),
+        ),
+        (
+            ModelProviderName.together_ai,
+            LiteLlmCoreConfig(additional_body_options={"api_key": "test-together-key"}),
+        ),
+        (
+            ModelProviderName.azure_openai,
+            LiteLlmCoreConfig(
+                base_url="https://test.openai.azure.com",
+                additional_body_options={
+                    "api_key": "test-azure-key",
+                    "api_version": "2025-02-01-preview",
+                },
+            ),
+        ),
+        (
+            ModelProviderName.huggingface,
+            LiteLlmCoreConfig(additional_body_options={"api_key": "test-hf-key"}),
+        ),
+        (ModelProviderName.kiln_fine_tune, None),
+        (ModelProviderName.kiln_custom_registry, None),
+    ],
+)
+def test_lite_llm_core_config_for_provider(
+    mock_config_for_lite_llm_core_config, provider_name, expected_config
+):
+    config = lite_llm_core_config_for_provider(provider_name)
+    assert config == expected_config
+
+
+def test_lite_llm_core_config_for_provider_openai_compatible(
+    mock_shared_config,
+):
+    config = lite_llm_core_config_for_provider(
+        ModelProviderName.openai_compatible, "no_key_provider"
+    )
+    assert config is not None
+    assert config.base_url == "https://api.nokey.com"
+    assert config.additional_body_options == {"api_key": "NA"}
+
+
+def test_lite_llm_core_config_for_provider_openai_compatible_with_openai_compatible_provider_name(
+    mock_shared_config,
+):
+    with pytest.raises(
+        ValueError, match="OpenAI compatible provider requires a provider name"
+    ):
+        lite_llm_core_config_for_provider(ModelProviderName.openai_compatible)
+
+
+def test_lite_llm_core_config_incorrect_openai_compatible_provider_name(
+    mock_shared_config,
+):
+    with pytest.raises(
+        ValueError,
+        match="OpenAI compatible provider provider_that_does_not_exist_in_compatible_openai_providers not found",
+    ):
+        lite_llm_core_config_for_provider(
+            ModelProviderName.openai_compatible,
+            "provider_that_does_not_exist_in_compatible_openai_providers",
+        )
+
+
+def test_lite_llm_core_config_for_provider_with_string(
+    mock_config_for_lite_llm_core_config,
+):
+    # test with a string instead of an enum
+    config = lite_llm_core_config_for_provider("openai")
+    assert config == LiteLlmCoreConfig(
+        additional_body_options={"api_key": "test-openai-key"}
+    )
+
+
+def test_lite_llm_core_config_for_provider_unknown_provider():
+    with pytest.raises(ValueError, match="Unhandled enum value: unknown_provider"):
+        lite_llm_core_config_for_provider("unknown_provider")
+
+
+@patch.dict("os.environ", {"OPENROUTER_BASE_URL": "https://custom-openrouter.com"})
+def test_lite_llm_core_config_for_provider_openrouter_custom_url(
+    mock_config_for_lite_llm_core_config,
+):
+    config = lite_llm_core_config_for_provider(ModelProviderName.openrouter)
+    assert config is not None
+    assert config.base_url == "https://custom-openrouter.com"
+
+
+def test_lite_llm_core_config_for_provider_ollama_default_url(
+    mock_config_for_lite_llm_core_config,
+):
+    # Override the mock to return None for ollama_base_url
+    mock_config_for_lite_llm_core_config.shared.return_value.ollama_base_url = None
+
+    config = lite_llm_core_config_for_provider(ModelProviderName.ollama)
+    assert config is not None
+    assert config.base_url == "http://localhost:11434/v1"

@@ -14,7 +14,11 @@
     type RecentModel,
     recent_model_store,
   } from "$lib/stores/recent_model_store"
-  import type { AvailableModels, ProviderModels } from "$lib/types"
+  import type {
+    AvailableModels,
+    ModelDetails,
+    ProviderModels,
+  } from "$lib/types"
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -24,6 +28,11 @@
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
 
   export let model: string = $ui_state.selected_model
+  export let label: string = "Model"
+  export let description: string | undefined = undefined
+  // filter out all the models that do not match the predicate
+  export let filter_models_predicate: (model: ModelDetails) => boolean = (_) =>
+    true
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
@@ -105,18 +114,26 @@
     untested_models = []
 
     // Recent models section
-    if (recent_models.length > 0) {
-      let recent_model_list: Option[] = []
-      for (const recent_model of recent_models) {
-        recent_model_list.push({
-          value: recent_model.model_provider + "/" + recent_model.model_id,
-          label:
-            model_name_from_id(recent_model.model_id, model_data) +
-            " (" +
-            provider_name_from_id(recent_model.model_provider) +
-            ")",
-        })
+    let recent_model_list: Option[] = []
+    for (const recent_model of recent_models) {
+      const model_details = available_model_details(
+        recent_model.model_id,
+        recent_model.model_provider,
+        providers,
+      )
+      if (!model_details || !filter_models_predicate(model_details)) {
+        continue
       }
+      recent_model_list.push({
+        value: recent_model.model_provider + "/" + recent_model.model_id,
+        label:
+          model_name_from_id(recent_model.model_id, model_data) +
+          " (" +
+          provider_name_from_id(recent_model.model_provider) +
+          ")",
+      })
+    }
+    if (recent_model_list.length > 0) {
       options.push({
         label: "Recent Models",
         options: recent_model_list,
@@ -126,6 +143,9 @@
     for (const provider of providers) {
       let model_list: Option[] = []
       for (const model of provider.models) {
+        if (!filter_models_predicate(model)) {
+          continue
+        }
         // Exclude models that are not available for the current task
         if (
           model &&
@@ -241,7 +261,8 @@
 
 <div>
   <FormElement
-    label="Model"
+    {label}
+    {description}
     bind:value={model}
     id="model"
     inputType="fancy_select"

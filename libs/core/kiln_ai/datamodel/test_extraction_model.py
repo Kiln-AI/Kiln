@@ -16,7 +16,6 @@ from kiln_ai.datamodel.extraction import (
     Kind,
     OutputFormat,
     get_kind_from_mime_type,
-    validate_model_name,
     validate_prompt,
 )
 from kiln_ai.datamodel.project import Project
@@ -27,13 +26,14 @@ def valid_extractor_config_data():
     return {
         "name": "Test Extractor Config",
         "description": "Test description",
-        "extractor_type": ExtractorType.GEMINI,
+        "extractor_type": ExtractorType.LITELLM,
+        "model_provider_name": "gemini_api",
+        "model_name": "gemini-2.0-flash",
         "properties": {
             "prompt_document": "Transcribe the document.",
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
             "prompt_image": "Describe the image.",
-            "model_name": "gemini-2.0-flash",
         },
     }
 
@@ -60,7 +60,10 @@ def test_extractor_config_description_empty(valid_extractor_config_data):
 def test_extractor_config_valid(valid_extractor_config):
     assert valid_extractor_config.name == "Test Extractor Config"
     assert valid_extractor_config.description == "Test description"
-    assert valid_extractor_config.extractor_type == ExtractorType.GEMINI
+    assert valid_extractor_config.extractor_type == ExtractorType.LITELLM
+    assert valid_extractor_config.output_format == OutputFormat.MARKDOWN
+    assert valid_extractor_config.model_provider_name == "gemini_api"
+    assert valid_extractor_config.model_name == "gemini-2.0-flash"
     assert (
         valid_extractor_config.properties["prompt_document"]
         == "Transcribe the document."
@@ -68,68 +71,19 @@ def test_extractor_config_valid(valid_extractor_config):
     assert valid_extractor_config.properties["prompt_audio"] == "Transcribe the audio."
     assert valid_extractor_config.properties["prompt_video"] == "Transcribe the video."
     assert valid_extractor_config.properties["prompt_image"] == "Describe the image."
-    assert valid_extractor_config.properties["model_name"] == "gemini-2.0-flash"
 
 
-def test_extractor_config_empty_properties(valid_extractor_config):
-    with pytest.raises(ValueError, match="model_name must be a non-empty string"):
-        valid_extractor_config.properties = {}
+def test_extractor_config_missing_model_name(valid_extractor_config):
+    with pytest.raises(ValueError):
+        valid_extractor_config.model_name = None
 
-
-def test_extractor_config_missing_model_name(
-    valid_extractor_config, valid_extractor_config_data
-):
-    with pytest.raises(ValueError, match="model_name must be a non-empty string"):
-        valid_extractor_config.properties = {
-            "prompt_document": valid_extractor_config_data["properties"][
-                "prompt_document"
-            ],
-            "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
-            "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
-            "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
-        }
-
-
-def test_extractor_config_empty_model_name(
-    valid_extractor_config, valid_extractor_config_data
-):
-    with pytest.raises(ValueError, match="model_name must be a non-empty string"):
-        valid_extractor_config.properties = {
-            "prompt_document": valid_extractor_config_data["properties"][
-                "prompt_document"
-            ],
-            "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
-            "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
-            "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
-            "model_name": "",
-        }
-
-
-def test_extractor_config_invalid_model_name(
-    valid_extractor_config, valid_extractor_config_data
-):
-    with pytest.raises(
-        ValueError, match='Gemini: "invalid-model-name" is not supported'
-    ):
-        valid_extractor_config.properties = {
-            "model_name": "invalid-model-name",
-        }
-
-
-@pytest.mark.parametrize(
-    "model_name",
-    ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
-)
-def test_extractor_config_valid_model_name(valid_extractor_config, model_name):
-    valid_extractor_config.properties = {
-        "model_name": model_name,
-    }
-    assert valid_extractor_config.properties["model_name"] == model_name
+    with pytest.raises(ValueError):
+        valid_extractor_config.model_provider_name = None
 
 
 def test_extractor_config_missing_prompts(valid_extractor_config):
     # should not raise an error - prompts will be set to defaults
-    valid_extractor_config.properties = {"model_name": "gemini-2.0-flash"}
+    valid_extractor_config.properties = {}
 
     #  check each prompt type is set to a default (string, non-empty)
     assert valid_extractor_config.properties["prompt_document"]
@@ -152,7 +106,6 @@ def test_extractor_config_invalid_json(
             "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
             "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
             "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
-            "model_name": "gemini-2.0-flash",
             "invalid_key": InvalidClass(),
         }
 
@@ -164,7 +117,6 @@ def test_extractor_config_invalid_prompt(valid_extractor_config):
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
             "prompt_image": "Describe the image.",
-            "model_name": "gemini-2.0-flash",
         }
 
 
@@ -174,7 +126,6 @@ def test_extractor_config_missing_single_prompt(valid_extractor_config):
         "prompt_audio": "Transcribe the audio.",
         "prompt_video": "Transcribe the video.",
         # missing image
-        "model_name": "gemini-2.0-flash",
     }
 
     # check prompt_image is set to a default (string, non-empty)
@@ -238,23 +189,6 @@ def test_validate_prompt_errors(value, expected_error):
         validate_prompt(value, "prompt_document")
 
 
-def test_validate_model_name_valid():
-    # check should not raise an error
-    validate_model_name("gemini-2.0-flash")
-
-
-@pytest.mark.parametrize(
-    "model_name, expected_error_message",
-    [
-        ("", "model_name cannot be empty"),
-        (123, "model_name must be a string"),
-    ],
-)
-def test_validate_model_name_invalid(model_name, expected_error_message):
-    with pytest.raises(ValueError, match=expected_error_message):
-        validate_model_name(model_name)
-
-
 @pytest.fixture
 def mock_project(tmp_path):
     project_root = tmp_path / str(uuid.uuid4())
@@ -275,13 +209,14 @@ def mock_extractor_config_factory(mock_project):
         extractor_config = ExtractorConfig(
             name=name,
             description="Test description",
-            extractor_type=ExtractorType.GEMINI,
+            model_provider_name="gemini_api",
+            model_name="gemini-2.0-flash",
+            extractor_type=ExtractorType.LITELLM,
             properties={
                 "prompt_document": "Transcribe the document.",
                 "prompt_audio": "Transcribe the audio.",
                 "prompt_video": "Transcribe the video.",
                 "prompt_image": "Describe the image.",
-                "model_name": "gemini-2.0-flash",
             },
             parent=mock_project,
         )
