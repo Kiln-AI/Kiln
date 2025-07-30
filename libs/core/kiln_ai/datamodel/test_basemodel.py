@@ -13,6 +13,7 @@ from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
     KilnBaseModel,
     KilnParentedModel,
+    name_validator,
     string_to_valid_name,
 )
 from kiln_ai.datamodel.model_cache import ModelCache
@@ -375,6 +376,35 @@ def test_string_to_valid_name(tmp_path, name, expected):
     # check we can create a folder with the valid name
     dir_path = tmp_path / str(uuid.uuid4()) / expected
     dir_path.mkdir(parents=True)
+
+
+@pytest.mark.parametrize(
+    "name,min_length,max_length,should_pass",
+    [
+        # Valid cases
+        ("ValidName", 5, 20, True),
+        ("Short", 1, 10, True),
+        ("LongerValidName", 5, 20, True),
+        # None case (line 53)
+        (None, 5, 20, False),
+        # Too short cases (lines 57-59)
+        ("Hi", 5, 20, False),
+        ("", 1, 20, False),
+        ("a", 2, 20, False),
+        # Too long cases (lines 61-63)
+        ("ThisNameIsTooLong", 5, 10, False),
+        ("VeryVeryVeryLongName", 1, 15, False),
+    ],
+)
+def test_name_validator_error_conditions(name, min_length, max_length, should_pass):
+    validator = name_validator(min_length=min_length, max_length=max_length)
+
+    if should_pass:
+        result = validator(name)
+        assert result == name
+    else:
+        with pytest.raises(ValueError):
+            validator(name)
 
 
 def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
