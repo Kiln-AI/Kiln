@@ -107,7 +107,35 @@
     }
   }
 
+  // File selector may not be available on some platforms or in dev mode. On error we fallback to manual entry.
+  let select_file_unavailable = false
+  $: show_select_file = !select_file_unavailable && !import_project_path
+  $: import_submit_visible = !show_select_file
   let import_project_path = ""
+
+  async function select_project_file() {
+    try {
+      const { data, error: get_error } = await client.GET(
+        "/api/select_kiln_file",
+        {
+          params: {
+            query: {
+              title: "Select project.kiln File",
+            },
+          },
+        },
+      )
+      if (get_error) {
+        throw get_error
+      }
+      import_project_path = data.file_path ?? ""
+    } catch (e) {
+      // We don't like alerts, but this should only appear in developer mode
+      alert("Can't open file selector. Please enter the path manually.")
+      // This allows them to still type it.
+      select_file_unavailable = true
+    }
+  }
 
   const import_project = async () => {
     try {
@@ -188,14 +216,22 @@
         bind:submitting
         bind:error
         bind:saved
+        bind:submit_visible={import_submit_visible}
       >
-        <FormElement
-          label="Existing Project Path"
-          description="The path to the project on your local machine. For example, /Users/username/Kiln Projects/my_project/project.kiln"
-          id="import_project_path"
-          inputType="input"
-          bind:value={import_project_path}
-        />
+        {#if show_select_file}
+          <button class="btn btn-primary" on:click={select_project_file}>
+            Select Project File
+          </button>
+        {:else}
+          <FormElement
+            label="Existing Project Path"
+            description="The path to a project.kiln file. For example, /Users/username/my_project/project.kiln"
+            info_description="You must enter the full path to the file, not just a filename. The path should be to a project.kiln file."
+            id="import_project_path"
+            inputType="input"
+            bind:value={import_project_path}
+          />
+        {/if}
       </FormContainer>
       <p class="mt-4 text-center">
         Or

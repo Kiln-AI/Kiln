@@ -1056,6 +1056,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/select_kiln_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Select Kiln File */
+        get: operations["select_kiln_file_api_select_kiln_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2074,6 +2091,11 @@ export interface components {
             created_by?: string;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** KilnFileResponse */
+        KilnFileResponse: {
+            /** File Path */
+            file_path: string | null;
         };
         /** MeanUsage */
         MeanUsage: {
@@ -5314,6 +5336,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_kiln_file_api_select_kiln_file_get: {
+        parameters: {
+            query?: {
+                title?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnFileResponse"];
                 };
             };
             /** @description Validation Error */
