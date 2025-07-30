@@ -100,8 +100,9 @@ class DesktopApp:
 
         tray_image = Image.open(self.resource_path("taskbar.png"))
 
-        # Use default on Windows to get "left click to open" behaviour. But it looks ugle on MacOS, so don't use it there
-        make_open_studio_default = sys.platform == "Windows"
+        # Use default on Windows to get "left click to open" behaviour.
+        # It looks ugly on MacOS (just a bold effect Apple never uses), so don't use it there
+        make_open_studio_default = sys.platform in ("win32", "Windows")
 
         menu = (
             pystray.MenuItem(
