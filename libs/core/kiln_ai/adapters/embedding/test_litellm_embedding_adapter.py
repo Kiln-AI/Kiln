@@ -12,6 +12,7 @@ from kiln_ai.adapters.embedding.litellm_embedding_adapter import (
     LitellmEmbeddingAdapter,
     validate_map_to_embeddings,
 )
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.utils.config import Config
@@ -28,8 +29,15 @@ def mock_embedding_config():
 
 
 @pytest.fixture
-def mock_litellm_adapter(mock_embedding_config):
-    return LitellmEmbeddingAdapter(mock_embedding_config)
+def mock_litellm_core_config():
+    return LiteLlmCoreConfig()
+
+
+@pytest.fixture
+def mock_litellm_adapter(mock_embedding_config, mock_litellm_core_config):
+    return LitellmEmbeddingAdapter(
+        mock_embedding_config, litellm_core_config=mock_litellm_core_config
+    )
 
 
 class TestEmbeddingOptions:
@@ -60,9 +68,11 @@ class TestEmbeddingOptions:
 class TestLitellmEmbeddingAdapter:
     """Test the LitellmEmbeddingAdapter class."""
 
-    def test_init_success(self, mock_embedding_config):
+    def test_init_success(self, mock_embedding_config, mock_litellm_core_config):
         """Test successful initialization of the adapter."""
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, mock_litellm_core_config
+        )
         assert adapter.embedding_config == mock_embedding_config
 
     def test_build_options_no_dimensions(self, mock_litellm_adapter):
@@ -70,10 +80,14 @@ class TestLitellmEmbeddingAdapter:
         options = mock_litellm_adapter.build_options()
         assert options.dimensions is None
 
-    def test_build_options_with_dimensions(self, mock_embedding_config):
+    def test_build_options_with_dimensions(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
         """Test build_options when dimensions are specified."""
         mock_embedding_config.properties = {"dimensions": 1536}
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
         options = adapter.build_options()
         assert options.dimensions == 1536
 
@@ -101,10 +115,14 @@ class TestLitellmEmbeddingAdapter:
         assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
         assert result.usage == mock_response.usage
 
-    async def test_generate_embeddings_with_dimensions(self, mock_embedding_config):
+    async def test_generate_embeddings_with_dimensions(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
         """Test embedding with dimensions specified."""
         mock_embedding_config.properties = {"dimensions": 1536}
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
 
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -216,9 +234,13 @@ class TestLitellmEmbeddingAdapter:
         assert len(result.embeddings) == MAX_BATCH_SIZE
         assert result.usage == mock_response.usage
 
-    def test_embedding_config_inheritance(self, mock_embedding_config):
+    def test_embedding_config_inheritance(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
         """Test that the adapter properly inherits from BaseEmbeddingAdapter."""
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
         assert adapter.embedding_config == mock_embedding_config
 
     async def test_generate_embeddings_method_integration(self, mock_litellm_adapter):
@@ -240,9 +262,13 @@ class TestLitellmEmbeddingAdapter:
 class TestLitellmEmbeddingAdapterEdgeCases:
     """Test edge cases and error conditions."""
 
-    async def test_generate_embeddings_with_none_usage(self, mock_embedding_config):
+    async def test_generate_embeddings_with_none_usage(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
         """Test embedding when litellm returns None usage."""
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
             {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
@@ -256,10 +282,12 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert result.usage is None
 
     async def test_generate_embeddings_with_empty_embedding_vector(
-        self, mock_embedding_config
+        self, mock_embedding_config, mock_litellm_core_config
     ):
         """Test embedding with empty vector."""
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [{"object": "embedding", "index": 0, "embedding": []}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
@@ -271,10 +299,12 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert result.embeddings[0].vector == []
 
     async def test_generate_embeddings_with_duplicate_indices(
-        self, mock_embedding_config
+        self, mock_embedding_config, mock_litellm_core_config
     ):
         """Test embedding with duplicate indices (should still work due to sorting)."""
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
             {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]},
@@ -295,7 +325,7 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
 
     async def test_generate_embeddings_with_complex_properties(
-        self, mock_embedding_config
+        self, mock_embedding_config, mock_litellm_core_config
     ):
         """Test embedding with complex properties (only dimensions should be used)."""
         mock_embedding_config.properties = {
@@ -304,7 +334,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
             "numeric_property": 42,
             "boolean_property": True,
         }
-        adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
 
         mock_response = AsyncMock(spec=EmbeddingResponse)
         mock_response.data = [
@@ -334,7 +366,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
     ],
 )
 @pytest.mark.asyncio
-async def test_paid_generate_embeddings_basic(provider, model_name, expected_dim):
+async def test_paid_generate_embeddings_basic(
+    provider, model_name, expected_dim, mock_litellm_core_config
+):
     openai_key = Config.shared().open_ai_api_key
     if not openai_key:
         pytest.skip("OPENAI_API_KEY not set")
@@ -353,7 +387,9 @@ async def test_paid_generate_embeddings_basic(provider, model_name, expected_dim
         model_name=model_name,
         properties={},
     )
-    adapter = LitellmEmbeddingAdapter(config)
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=mock_litellm_core_config
+    )
     text = ["Kiln is an open-source evaluation platform for LLMs."]
     result = await adapter.generate_embeddings(text)
     assert len(result.embeddings) == 1
@@ -363,26 +399,30 @@ async def test_paid_generate_embeddings_basic(provider, model_name, expected_dim
 
 
 # test model_provider
-def test_model_provider():
+def test_model_provider(mock_litellm_core_config):
     mock_embedding_config = EmbeddingConfig(
         name="test",
         model_provider_name=ModelProviderName.openai,
         model_name="openai_text_embedding_3_small",
         properties={},
     )
-    adapter = LitellmEmbeddingAdapter(mock_embedding_config)
+    adapter = LitellmEmbeddingAdapter(
+        mock_embedding_config, litellm_core_config=mock_litellm_core_config
+    )
     assert adapter.model_provider.name == ModelProviderName.openai
     assert adapter.model_provider.model_id == "text-embedding-3-small"
 
 
-def test_model_provider_gemini():
+def test_model_provider_gemini(mock_litellm_core_config):
     config = EmbeddingConfig(
         name="test",
         model_provider_name=ModelProviderName.gemini_api,
         model_name="gemini_text_embedding_004",
         properties={},
     )
-    adapter = LitellmEmbeddingAdapter(config)
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=mock_litellm_core_config
+    )
     assert adapter.model_provider.name == ModelProviderName.gemini_api
     assert adapter.model_provider.model_id == "text-embedding-004"
 
@@ -402,25 +442,31 @@ def test_model_provider_gemini():
         ),
     ],
 )
-def test_litellm_model_id(provider, model_name, expected_model_id):
+def test_litellm_model_id(
+    provider, model_name, expected_model_id, mock_litellm_core_config
+):
     config = EmbeddingConfig(
         name="test",
         model_provider_name=provider,
         model_name=model_name,
         properties={},
     )
-    adapter = LitellmEmbeddingAdapter(config)
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=mock_litellm_core_config
+    )
     assert adapter.litellm_model_id == expected_model_id
 
 
-def test_litellm_model_id_custom_provider():
+def test_litellm_model_id_custom_provider(mock_litellm_core_config):
     config = EmbeddingConfig(
         name="test",
         model_provider_name=ModelProviderName.openai_compatible,
         model_name="some-model",
         properties={},
     )
-    adapter = LitellmEmbeddingAdapter(config)
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=mock_litellm_core_config
+    )
 
     with pytest.raises(
         ValueError,
@@ -443,7 +489,7 @@ def test_litellm_model_id_custom_provider():
 )
 @pytest.mark.asyncio
 async def test_paid_generate_embeddings_with_custom_dimensions_supported(
-    provider, model_name, expected_dim
+    provider, model_name, expected_dim, mock_litellm_core_config
 ):
     """
     Some models support custom dimensions - where the provider shortens the dimensions to match
@@ -459,7 +505,9 @@ async def test_paid_generate_embeddings_with_custom_dimensions_supported(
         model_name=model_name,
         properties={"dimensions": expected_dim},
     )
-    adapter = LitellmEmbeddingAdapter(config)
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=mock_litellm_core_config
+    )
     text = ["Kiln is an open-source evaluation platform for LLMs."]
     result = await adapter.generate_embeddings(text)
     assert len(result.embeddings) == 1

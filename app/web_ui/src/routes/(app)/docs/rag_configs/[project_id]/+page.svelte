@@ -55,7 +55,6 @@
       }
       rag_configs = rag_configs_response
       rag_configs = sortExtractorConfigs(rag_configs || [])
-      await get_all_progress()
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
@@ -72,8 +71,8 @@
 
   async function get_rag_config_progress() {
     const config_ids = rag_configs
-      ?.map((rag_config) => rag_config.id || "")
-      .filter(Boolean)
+      ?.map((rag_config) => rag_config.id)
+      .filter((id): id is string => Boolean(id))
 
     if (!config_ids) {
       return
@@ -129,20 +128,6 @@
     // Use replaceState to avoid adding new entries to history
     replaceState(url, {})
   }
-
-  async function get_all_progress() {
-    loading = true
-    // extractorProgressStore.reset()
-    // if (rag_configs) {
-    //   await extractorProgressStore.getAllProgress(
-    //     project_id,
-    //     rag_configs.map((cfg) => cfg.id || "").filter(Boolean),
-    //   )
-    // }
-    loading = false
-  }
-
-  $: console.log(rag_progress_map)
 </script>
 
 <AppPage
@@ -173,12 +158,8 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Extraction Config ID</th>
-              <th>Chunker Config ID</th>
-              <th>Embedding Config ID</th>
-              <th>Created At</th>
-              <th>Status</th>
+              <th class="">Pipeline Configuration</th>
+              <th class="w-2/3">Progress</th>
             </tr>
           </thead>
           <tbody>
@@ -186,7 +167,7 @@
               <TableRagConfigRow
                 {rag_config}
                 {project_id}
-                rag_progress={rag_progress_map[rag_config.id]}
+                rag_progress={rag_progress_map[rag_config.id || ""]}
               />
             {/each}
           </tbody>

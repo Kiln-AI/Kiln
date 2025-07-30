@@ -50,6 +50,11 @@ logger = logging.getLogger(__name__)
 run_extractor_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
+# keep track of locks by rag config ID to prevent concurrent runs of the same rag config
+# maps from rag config ID -> lock
+run_rag_config_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
 def open_folder(path: str | Path) -> None:
     if sys.platform.startswith("darwin"):
         subprocess.run(["open", path], check=True)
@@ -952,64 +957,66 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         rag_config_id: str,
     ) -> dict:
-        project = project_from_id(project_id)
-        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
-        if rag_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="RAG config not found",
+        # prevent concurrent runs of the same rag config that would result in duplicates
+        async with run_rag_config_locks[rag_config_id]:
+            project = project_from_id(project_id)
+            rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+            if rag_config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="RAG config not found",
+                )
+
+            # should not happen, but id is optional in the datamodel
+            if (
+                rag_config.extractor_config_id is None
+                or rag_config.chunker_config_id is None
+                or rag_config.embedding_config_id is None
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="RAG config is missing required configs",
+                )
+
+            extractor_config = ExtractorConfig.from_id_and_parent_path(
+                rag_config.extractor_config_id, project.path
             )
+            if extractor_config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Extractor config not found",
+                )
 
-        # should not happen, but id is optional in the datamodel
-        if (
-            rag_config.extractor_config_id is None
-            or rag_config.chunker_config_id is None
-            or rag_config.embedding_config_id is None
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="RAG config is missing required configs",
+            chunker_config = ChunkerConfig.from_id_and_parent_path(
+                rag_config.chunker_config_id, project.path
             )
+            if chunker_config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Chunker config not found",
+                )
 
-        extractor_config = ExtractorConfig.from_id_and_parent_path(
-            rag_config.extractor_config_id, project.path
-        )
-        if extractor_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Extractor config not found",
+            embedding_config = EmbeddingConfig.from_id_and_parent_path(
+                rag_config.embedding_config_id, project.path
             )
+            if embedding_config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Embedding config not found",
+                )
 
-        chunker_config = ChunkerConfig.from_id_and_parent_path(
-            rag_config.chunker_config_id, project.path
-        )
-        if chunker_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Chunker config not found",
+            pipeline = DocumentPipeline(
+                project,
+                DocumentPipelineConfiguration(
+                    rag_config=rag_config,
+                    extractor_config=extractor_config,
+                    chunker_config=chunker_config,
+                    embedding_config=embedding_config,
+                ),
             )
+            await pipeline.run()
 
-        embedding_config = EmbeddingConfig.from_id_and_parent_path(
-            rag_config.embedding_config_id, project.path
-        )
-        if embedding_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Embedding config not found",
-            )
-
-        pipeline = DocumentPipeline(
-            project,
-            DocumentPipelineConfiguration(
-                rag_config=rag_config,
-                extractor_config=extractor_config,
-                chunker_config=chunker_config,
-                embedding_config=embedding_config,
-            ),
-        )
-        await pipeline.run()
-
-        return {"message": f"RAG config {rag_config_id} run started"}
+            return {"message": f"RAG config {rag_config_id} run started"}
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(
