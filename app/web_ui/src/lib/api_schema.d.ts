@@ -1064,7 +1064,7 @@ export interface components {
         ApiPrompt: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the prompt.
              */
             name: string;
             /**
@@ -1112,7 +1112,7 @@ export interface components {
         BasePrompt: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the prompt.
              */
             name: string;
             /**
@@ -1447,7 +1447,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the dataset split.
              */
             name: string;
             /**
@@ -1484,7 +1484,7 @@ export interface components {
         DatasetSplitDefinition: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the dataset split definition.
              */
             name: string;
             /**
@@ -1524,7 +1524,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the eval.
              */
             name: string;
             /**
@@ -1601,7 +1601,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the eval config.
              */
             name: string;
             /**
@@ -1863,7 +1863,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the fine-tune.
              */
             name: string;
             /**
@@ -2171,7 +2171,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the project.
              */
             name: string;
             /**
@@ -2206,7 +2206,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the project.
              */
             name: string;
             /**
@@ -2224,7 +2224,7 @@ export interface components {
         Prompt: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the prompt.
              */
             name: string;
             /**
@@ -2499,7 +2499,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the task.
              */
             name: string;
             /**
@@ -2709,7 +2709,7 @@ export interface components {
             id?: string | null;
             /**
              * Name
-             * @description A name for this entity
+             * @description The name of the task requirement.
              */
             name: string;
             /** Description */
@@ -2863,7 +2863,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the task run config.
              */
             name: string;
             /**

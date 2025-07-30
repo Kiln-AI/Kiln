@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, model_validator
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilter,
     DatasetFilterId,
@@ -26,7 +26,9 @@ class DatasetSplitDefinition(BaseModel):
     Example: name="train", description="The training set", percentage=0.8 (80% of the dataset)
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="The name of the dataset split definition."
+    )
     description: str | None = Field(
         default=None,
         description="A description of the dataset for you and your team. Not used in training.",
@@ -70,7 +72,7 @@ class DatasetSplit(KilnParentedModel):
     Maintains a list of IDs for each split, to avoid data duplication.
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the dataset split.")
     description: str | None = Field(
         default=None,
         description="A description of the dataset for you and your team. Not used in training.",

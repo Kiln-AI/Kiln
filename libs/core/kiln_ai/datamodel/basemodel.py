@@ -2,22 +2,17 @@ import json
 import os
 import re
 import shutil
+import unicodedata
 import uuid
 from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Type,
-    TypeVar,
-)
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     ValidationError,
@@ -26,7 +21,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_core import ErrorDetails
-from typing_extensions import Self
+from typing_extensions import Annotated, Self
 
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.config import Config
@@ -44,31 +39,62 @@ PT = TypeVar("PT", bound="KilnParentedModel")
 
 # Naming conventions:
 # 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
-# 2) Descrptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
+# 2) Descriptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
 
-# Filename compatible names
-NAME_REGEX = r"^[A-Za-z0-9 _-]+$"
-NAME_FIELD = Field(
-    min_length=1,
-    max_length=120,
-    pattern=NAME_REGEX,
-    description="A name for this entity.",
-)
-SHORT_NAME_FIELD = Field(
-    min_length=1,
-    max_length=32,
-    pattern=NAME_REGEX,
-    description="A name for this entity",
-)
+# Forbidden chars are not allowed in filenames on one or more platforms.
+# ref: https://en.wikipedia.org/wiki/Filename#Problematic_characters
+FORBIDDEN_CHARS_REGEX = r"[/\\?%*:|\"<>.,;=\n]"
+FORBIDDEN_CHARS = "/ \\ ? % * : | < > . , ; = \\n"
+
+
+def name_validator(*, min_length: int, max_length: int) -> Callable[[Any], str]:
+    def fn(name: Any) -> str:
+        if name is None:
+            raise ValueError("Name is required")
+        if not isinstance(name, str):
+            raise ValueError(f"Input should be a valid string, got {type(name)}")
+        if len(name) < min_length:
+            raise ValueError(
+                f"Name is too short. Min length is {min_length} characters, got {len(name)}"
+            )
+        if len(name) > max_length:
+            raise ValueError(
+                f"Name is too long. Max length is {max_length} characters, got {len(name)}"
+            )
+        if string_to_valid_name(name) != name:
+            raise ValueError(
+                f"Name is invalid. The name cannot contain any of the following characters: {FORBIDDEN_CHARS}, consecutive whitespace/underscores, or leading/trailing whitespace/underscores"
+            )
+        return name
+
+    return fn
 
 
 def string_to_valid_name(name: str) -> str:
-    # Replace any character not allowed by NAME_REGEX with an underscore
-    valid_name = re.sub(r"[^A-Za-z0-9 _-]", "_", name)
+    # https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
+    valid_name = unicodedata.normalize("NFKD", name)
+    # Replace any forbidden chars with an underscore
+    valid_name = re.sub(FORBIDDEN_CHARS_REGEX, "_", valid_name)
+    # Replace control characters with an underscore
+    valid_name = re.sub(r"[\x00-\x1F]", "_", valid_name)
+    # Replace consecutive whitespace with a single space
+    valid_name = re.sub(r"\s+", " ", valid_name)
     # Replace consecutive underscores with a single underscore
     valid_name = re.sub(r"_+", "_", valid_name)
     # Remove leading and trailing underscores or whitespace
     return valid_name.strip("_").strip()
+
+
+# Usage:
+# class MyModel(KilnBaseModel):
+#     name: FilenameString = Field(description="The name of the model.")
+#     name_short: FilenameStringShort = Field(description="The short name of the model.")
+FilenameString = Annotated[
+    str, BeforeValidator(name_validator(min_length=1, max_length=120))
+]
+FilenameStringShort = Annotated[
+    str, BeforeValidator(name_validator(min_length=1, max_length=32))
+]
 
 
 class KilnBaseModel(BaseModel):

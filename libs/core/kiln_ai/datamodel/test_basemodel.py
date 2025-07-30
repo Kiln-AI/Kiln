@@ -1,5 +1,6 @@
 import datetime
 import json
+import uuid
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,7 @@ from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
     KilnBaseModel,
     KilnParentedModel,
+    name_validator,
     string_to_valid_name,
 )
 from kiln_ai.datamodel.model_cache import ModelCache
@@ -328,28 +330,81 @@ def test_delete_no_path():
         model.delete()
 
 
-def test_string_to_valid_name():
-    # Test basic valid strings remain unchanged
-    assert string_to_valid_name("Hello World") == "Hello World"
-    assert string_to_valid_name("Test-123") == "Test-123"
-    assert string_to_valid_name("my_file_name") == "my_file_name"
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        # Basic valid strings remain unchanged
+        ("Hello World", "Hello World"),
+        ("Test-123", "Test-123"),
+        ("my_file_name", "my_file_name"),
+        ("multiple!!!symbols", "multiple!!!symbols"),
+        # Emoji
+        ("Hello 👍", "Hello 👍"),
+        # Invalid characters are replaced
+        ("Hello@World!", "Hello@World!"),
+        ("File.name.txt", "File_name_txt"),
+        ("Special%%%Chars", "Special_Chars"),
+        ("Special#$%Chars", "Special#$_Chars"),
+        # Consecutive invalid characters are replaced
+        ("Special%%%Chars", "Special_Chars"),
+        ("path/to/file", "path_to_file"),
+        # Leading/trailing special characters are removed
+        ("__test__", "test"),
+        ("...test...", "test"),
+        # Whitespace is replaced
+        ("", ""),
+        ("   ", ""),
+        ("Hello   World", "Hello World"),
+        # Unicode characters are replaced
+        ("你好", "你好"),
+        ("你好_世界", "你好_世界"),
+        ("你好_世界_你好", "你好_世界_你好"),
+        # Newlines, tabs, and other control characters are replaced
+        ("Hello\nworld", "Hello_world"),
+        ("Hello\tworld", "Hello_world"),
+        ("Hello\rworld", "Hello_world"),
+        ("Hello\fworld", "Hello_world"),
+        ("Hello\bworld", "Hello_world"),
+        ("Hello\vworld", "Hello_world"),
+        ("Hello\0world", "Hello_world"),
+        ("Hello\x00world", "Hello_world"),
+    ],
+)
+def test_string_to_valid_name(tmp_path, name, expected):
+    assert string_to_valid_name(name) == expected
 
-    # Test invalid characters are replaced
-    assert string_to_valid_name("Hello@World!") == "Hello_World"
-    assert string_to_valid_name("File.name.txt") == "File_name_txt"
-    assert string_to_valid_name("Special#$%Chars") == "Special_Chars"
+    # check we can create a folder with the valid name
+    dir_path = tmp_path / str(uuid.uuid4()) / expected
+    dir_path.mkdir(parents=True)
 
-    # Test consecutive invalid characters
-    assert string_to_valid_name("multiple!!!symbols") == "multiple_symbols"
-    assert string_to_valid_name("path/to/file") == "path_to_file"
 
-    # Test leading/trailing special characters
-    assert string_to_valid_name("__test__") == "test"
-    assert string_to_valid_name("...test...") == "test"
+@pytest.mark.parametrize(
+    "name,min_length,max_length,should_pass",
+    [
+        # Valid cases
+        ("ValidName", 5, 20, True),
+        ("Short", 1, 10, True),
+        ("LongerValidName", 5, 20, True),
+        # None case (line 53)
+        (None, 5, 20, False),
+        # Too short cases (lines 57-59)
+        ("Hi", 5, 20, False),
+        ("", 1, 20, False),
+        ("a", 2, 20, False),
+        # Too long cases (lines 61-63)
+        ("ThisNameIsTooLong", 5, 10, False),
+        ("VeryVeryVeryLongName", 1, 15, False),
+    ],
+)
+def test_name_validator_error_conditions(name, min_length, max_length, should_pass):
+    validator = name_validator(min_length=min_length, max_length=max_length)
 
-    # Test empty string and whitespace
-    assert string_to_valid_name("") == ""
-    assert string_to_valid_name("   ") == ""
+    if should_pass:
+        result = validator(name)
+        assert result == name
+    else:
+        with pytest.raises(ValueError):
+            validator(name)
 
 
 def test_load_from_file_with_cache(test_base_file, tmp_model_cache):

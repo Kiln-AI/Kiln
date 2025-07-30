@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Dict, Union
 from pydantic import Field, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
     FineTuneStatusType,
@@ -26,7 +26,7 @@ class Finetune(KilnParentedModel):
     Initially holds a reference to a training job, with needed identifiers to update the status. When complete, contains the new model ID.
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the fine-tune.")
     description: str | None = Field(
         default=None,
         description="A description of the fine-tune for you and your team. Not used in training.",
