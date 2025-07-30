@@ -46,7 +46,7 @@ def test_response_with_whitespace(parser):
     assert parsed.output.strip() == "This is the result"
 
 
-def test_empty_thinking_content(parser):
+def test_empty_thinking_content_multiline(parser):
     response = RunOutput(
         output="""
         <think>

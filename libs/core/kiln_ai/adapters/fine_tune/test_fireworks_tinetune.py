@@ -817,11 +817,6 @@ async def test_deploy_server_success(fireworks_finetune, mock_api_key):
     success_response.status_code = 200
     success_response.json.return_value = {"baseModel": "model-123"}
 
-    status_response = (
-        FineTuneStatus(status=FineTuneStatusType.completed, message=""),
-        "model-123",
-    )
-
     with (
         patch("httpx.AsyncClient") as mock_client_class,
         patch.object(

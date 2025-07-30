@@ -461,7 +461,7 @@ def test_finetune_provider_model_success(mock_project, mock_task, mock_finetune)
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_finetune_provider_model_success_final_and_intermediate(
@@ -476,7 +476,7 @@ def test_finetune_provider_model_success_final_and_intermediate(
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_finetune_provider_model_success_r1_compatible(
@@ -590,7 +590,7 @@ def test_finetune_provider_model_structured_mode(
     assert provider.model_id == "fireworks-model-123"
     assert provider.structured_output_mode == expected_mode
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_openai_compatible_provider_config(mock_shared_config):
