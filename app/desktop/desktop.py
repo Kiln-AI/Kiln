@@ -84,9 +84,10 @@ class DesktopApp:
         Get the path to the resource files (webapp, taskbar icon, etc)
         """
 
-        try:
-            base_path = sys._MEIPASS  # type: ignore
-        except Exception:
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass and isinstance(meipass, str):
+            base_path = meipass
+        else:
             base_path = os.path.dirname(__file__)
 
         return os.path.join(base_path, relative_path)
