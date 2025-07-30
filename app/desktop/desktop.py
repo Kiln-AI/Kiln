@@ -22,7 +22,8 @@ from app.desktop.desktop_server import ThreadedServer, server_config
 
 
 class DesktopApp:
-    def __init__(self):
+    def __init__(self, port: int = 8757):
+        self.port = port
         # TK without a window, to get dock events on MacOS
         self.root = tk.Tk()
         self.root.title("Kiln")
@@ -76,7 +77,7 @@ class DesktopApp:
         Open the web app in the default browser.
         """
 
-        webbrowser.open("http://localhost:8757")
+        webbrowser.open(f"http://localhost:{self.port}")
 
     def resource_path(self, relative_path):
         """
@@ -148,7 +149,7 @@ if __name__ == "__main__":
 
     # Create and run the server
     # run the server in a thread, and shut down server when main thread (tk mainloop) exits
-    config = server_config(tk_root=app.root)
+    config = server_config(tk_root=app.root, port=app.port)
     uni_server = DesktopServer(app=app, config=config)
     with uni_server.run_in_thread():
         if not uni_server.running():
