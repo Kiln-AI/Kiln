@@ -59,7 +59,11 @@ uv run ./checks.sh
 
 4. Setup pre-commit hook.
 
-Copy contents of util/pre-commit-hook to your existing hook to run Kiln checks before each commit.
+In your base Kiln directory, run the following command to setup a pre-commit hook which will run the Kiln checks locally before each commit.
+
+```bash
+cp utils/pre-commit-hook .git/hooks/pre-commit
+```
 
 ## Optional Setup
 
