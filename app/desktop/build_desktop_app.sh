@@ -56,7 +56,8 @@ elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
   # hidden imports needed for pystray backends appindicator and gtk
-  PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png  --hidden-import=PyGObject --hidden-import=pycairo"
+  uv add PyGObject
+  PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png  --hidden-import=PyGObject"
 else
   echo "Unsupported operating system: $(uname)"
   exit 1
