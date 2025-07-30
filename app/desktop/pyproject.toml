@@ -13,6 +13,7 @@ dependencies = [
     "pystray>=0.19.5",
     "pyinstaller==6.11.1",
     "scipy>=1.15.2",
+    "pygobject>=3.52.3",
 ]
 
 # We don't really want to build a wheel for desktop, it's a pyinstaller project. This is a minimal build to take care of errors.

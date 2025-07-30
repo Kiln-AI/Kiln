@@ -55,8 +55,7 @@ elif [[ "$(uname)" =~ ^MINGW64_NT-10.0 ]] || [[ "$(uname)" =~ ^MSYS_NT-10.0 ]]; 
 elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
   cp desktop/mac_taskbar.png desktop/build/taskbar.png
-  # hidden imports needed for pystray backends appindicator and gtk
-  uv add PyGObject
+  # hidden import PyGObject needed for pystray backends appindicator and gtk. They are optional so collection doesn't find them
   PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png  --hidden-import=PyGObject"
 else
   echo "Unsupported operating system: $(uname)"
