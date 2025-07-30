@@ -7,8 +7,15 @@ import pytest
 import requests
 from uvicorn import Config as UvicornConfig
 
-import app.desktop.desktop_server as desktop_server
-from app.desktop.desktop import DesktopApp, DesktopServer
+# Mock GUI modules before importing desktop modules to prevent display errors in CI
+with (
+    patch("tkinter.Tk"),
+    patch("PIL.Image"),
+    patch("pystray.MenuItem"),
+    patch("app.desktop.desktop.KilnTray"),
+):
+    import app.desktop.desktop_server as desktop_server
+    from app.desktop.desktop import DesktopApp, DesktopServer
 
 
 @pytest.fixture
