@@ -20,8 +20,8 @@ from app.desktop.custom_tray import KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
 
 # We should remove this and all other globals in this file
-root = None  # type: tk.Tk | None
-tray = None  # type: ignore
+root: tk.Tk | None = None
+tray: KilnTray | None = None
 
 
 class DesktopServer(ThreadedServer):
@@ -65,7 +65,7 @@ def on_quit():
         quit_app()
 
 
-def run_taskbar():
+def run_taskbar() -> KilnTray:
     image = Image.open(resource_path("taskbar.png"))
     # Use default on Windows to get "left click to open" behaviour. But it looks ugle on MacOS, so don't use it there
     make_open_studio_default = sys.platform == "Windows"
@@ -92,19 +92,22 @@ def close_splash():
 
 
 if __name__ == "__main__":
+    # TK without a window, to get dock events on MacOS
+    root = tk.Tk()
+    root.title("Kiln")
+    root.withdraw()  # remove the window
+
+    # Create the server
     # run the server in a thread, and shut down server when main thread exits
     # use_colors=False to disable colored logs, as windows doesn't support them
-    config = server_config()
+    config = server_config(tk_root=root)
     uni_server = DesktopServer(config=config)
     with uni_server.run_in_thread():
         if not uni_server.running():
             # Can't start. Likely a port is already in use. Show the web app instead and exit
             show_studio()
             on_quit()
-        # TK without a window, to get dock events on MacOS
-        root = tk.Tk()
-        root.title("Kiln")
-        root.withdraw()  # remove the window
+
         # Register callback for the dock icon to reopen the web app
         root.createcommand("tk::mac::ReopenApplication", show_studio)
         tray = run_taskbar()

@@ -3,6 +3,7 @@ import contextlib
 import os
 import threading
 import time
+import tkinter as tk
 from contextlib import asynccontextmanager
 
 import kiln_ai.datamodel.strict_mode as datamodel_strict_mode
@@ -16,6 +17,7 @@ from app.desktop.log_config import log_config
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
+from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
@@ -44,7 +46,7 @@ async def lifespan(app: FastAPI):
     datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
-def make_app():
+def make_app(tk_root: tk.Tk | None = None):
     setup_litellm_logging()
 
     load_remote_models(REMOTE_MODEL_LIST_URL)
@@ -57,15 +59,16 @@ def make_app():
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
     connect_evals_api(app)
+    connect_import_api(app, tk_root=tk_root)
 
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
 
 
-def server_config(port=8757):
+def server_config(port=8757, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
-        make_app(),
+        make_app(tk_root=tk_root),
         host="127.0.0.1",
         port=port,
         use_colors=False,
