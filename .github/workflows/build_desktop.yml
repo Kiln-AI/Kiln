@@ -31,7 +31,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -yy
-          sudo apt install -yy --no-install-recommends libgirepository-2.0 libcairo2 gir1.2-gtk-4.0
+          sudo apt install -yy --no-install-recommends libgirepository1.0-dev libcairo2-dev gir1.2-gtk-4.0
 
       - uses: actions/setup-python@v5
         with:
