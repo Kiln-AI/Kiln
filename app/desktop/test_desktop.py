@@ -14,10 +14,7 @@ from app.desktop.desktop import DesktopApp, DesktopServer
 @pytest.fixture(autouse=True)
 def mock_gui_modules():
     """Mock GUI modules globally to prevent display errors in headless CI."""
-    with (
-        patch("app.desktop.desktop.tk.Tk"),
-        patch("app.desktop.desktop.pystray"),
-    ):
+    with patch("app.desktop.desktop.tk.Tk"):
         yield
 
 
@@ -56,10 +53,10 @@ def mock_webbrowser():
 
 
 @pytest.fixture
-def mock_pystray():
+def mock_kiln_menu_item():
     """Mock pystray module."""
-    with patch("app.desktop.desktop.pystray") as mock_ps:
-        yield mock_ps
+    with patch("app.desktop.desktop.KilnMenuItem") as mock_menu_item:
+        yield mock_menu_item
 
 
 class TestDesktopApp:
@@ -174,7 +171,7 @@ class TestDesktopApp:
         assert result.endswith("icon.png")
 
     def test_run_tray_first_time(
-        self, mock_tk_root, mock_image, mock_kiln_tray, mock_pystray
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
         """Test run_tray when tray doesn't exist yet."""
         app = DesktopApp()
@@ -183,8 +180,8 @@ class TestDesktopApp:
             app.run_tray()
 
             # Verify menu items are created
-            assert mock_pystray.MenuItem.call_count == 2
-            menu_calls = mock_pystray.MenuItem.call_args_list
+            assert mock_kiln_menu_item.call_count == 2
+            menu_calls = mock_kiln_menu_item.call_args_list
 
             # First menu item (Open Kiln Studio)
             assert menu_calls[0][0][0] == "Open Kiln Studio"
@@ -211,7 +208,7 @@ class TestDesktopApp:
 
     @patch("app.desktop.desktop.sys.platform", "win32")
     def test_run_tray_windows_default(
-        self, mock_tk_root, mock_image, mock_kiln_tray, mock_pystray
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
         """Test run_tray sets default=True on Windows."""
         app = DesktopApp()
@@ -220,12 +217,12 @@ class TestDesktopApp:
             app.run_tray()
 
             # Check first menu item has default=True
-            menu_calls = mock_pystray.MenuItem.call_args_list
+            menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is True
 
     @patch("app.desktop.desktop.sys.platform", "darwin")
     def test_run_tray_macos_no_default(
-        self, mock_tk_root, mock_image, mock_kiln_tray, mock_pystray
+        self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
         """Test run_tray sets default=False on macOS."""
         app = DesktopApp()
@@ -234,7 +231,7 @@ class TestDesktopApp:
             app.run_tray()
 
             # Check first menu item has default=False
-            menu_calls = mock_pystray.MenuItem.call_args_list
+            menu_calls = mock_kiln_menu_item.call_args_list
             assert menu_calls[0][1]["default"] is False
 
     def test_close_splash_with_pyi_splash(self, mock_tk_root):

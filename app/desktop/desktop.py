@@ -10,14 +10,13 @@ import sys
 import tkinter as tk
 import webbrowser
 
-import pystray
 from PIL import Image
 
 # Unused, but needed for pyinstaller to not miss this import
 from pydantic.deprecated.decorator import deprecated  # noqa # type: ignore
 from uvicorn import Config as UvicornConfig
 
-from app.desktop.custom_tray import KilnTray
+from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
 
 
@@ -107,10 +106,10 @@ class DesktopApp:
         make_open_studio_default = sys.platform in ("win32", "Windows")
 
         menu = (
-            pystray.MenuItem(
+            KilnMenuItem(
                 "Open Kiln Studio", self.show_studio, default=make_open_studio_default
             ),
-            pystray.MenuItem("Quit", self.on_quit),
+            KilnMenuItem("Quit", self.on_quit),
         )
 
         self.tray = KilnTray("kiln", tray_image, "Kiln", menu)
