@@ -58,13 +58,16 @@ def test_select_kiln_file_success(mock_filedialog, client_with_tk, mock_tk_root)
 
     # Verify dialog was called with correct parameters
     mock_filedialog.assert_called_once_with(
+        parent=mock_tk_root,
         title="Select Kiln File",
         filetypes=[("Kiln files", "*.kiln"), ("All files", "*.*")],
     )
 
 
 @patch("app.desktop.studio_server.import_api.filedialog.askopenfilename")
-def test_select_kiln_file_with_custom_title_success(mock_filedialog, client_with_tk):
+def test_select_kiln_file_with_custom_title_success(
+    mock_filedialog, client_with_tk, mock_tk_root
+):
     """Test successful file selection with custom title"""
     mock_filedialog.return_value = "/path/to/custom.kiln"
 
@@ -75,6 +78,7 @@ def test_select_kiln_file_with_custom_title_success(mock_filedialog, client_with
 
     # Verify dialog was called with custom title
     mock_filedialog.assert_called_once_with(
+        parent=mock_tk_root,
         title="Choose Your File",
         filetypes=[("Kiln files", "*.kiln"), ("All files", "*.*")],
     )
@@ -103,21 +107,16 @@ def test_show_file_dialog_window_manipulation(mock_filedialog):
     mock_root.deiconify.assert_called_once()
     mock_root.lift.assert_called_once()
     mock_root.attributes.assert_any_call("-topmost", True)
+    mock_root.attributes.assert_any_call("-topmost", False)
     mock_root.update_idletasks.assert_called_once()
     mock_root.focus_force.assert_called_once()
     mock_root.withdraw.assert_called_once()
-    mock_root.after.assert_called_once()
-
-    # Check the after callback disables topmost
-    after_args = mock_root.after.call_args
-    assert after_args[0][0] == 10  # 10ms delay
-    callback = after_args[0][1]
-    callback()  # Execute the lambda
-    mock_root.attributes.assert_any_call("-topmost", False)
 
     # Verify filedialog was called correctly
     mock_filedialog.assert_called_once_with(
-        title="Test Title", filetypes=[("Kiln files", "*.kiln"), ("All files", "*.*")]
+        parent=mock_root,
+        title="Test Title",
+        filetypes=[("Kiln files", "*.kiln"), ("All files", "*.*")],
     )
 
     assert result == "/test/path.kiln"
