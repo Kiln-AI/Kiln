@@ -13,7 +13,8 @@ dependencies = [
     "pystray>=0.19.5",
     "pyinstaller==6.11.1",
     "scipy>=1.15.2",
-    "pygobject>=3.52.3",
+    # Keep it under 3.52.0 until our build CI server updates to `girepository-2.0` instead of `girepository-1.0-dev`
+    "pygobject<3.52.0; sys_platform == 'linux'",
 ]
 
 # We don't really want to build a wheel for desktop, it's a pyinstaller project. This is a minimal build to take care of errors.
