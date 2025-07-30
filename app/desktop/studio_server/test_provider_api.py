@@ -1242,10 +1242,6 @@ def test_openai_compatible_providers():
             "api_key": "test_key",
         }
     ]
-    mock_models = [
-        {"id": "model1", "name": "Model 1"},
-        {"id": "model2", "name": "Model 2"},
-    ]
 
     with (
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,

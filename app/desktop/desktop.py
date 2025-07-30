@@ -1,5 +1,7 @@
-from app.desktop.studio_server.setup_certs import setup_certs
+# ruff: noqa: E402
+from app.desktop.studio_server.setup_certs import setup_certs  # isort:skip
 
+# setup_certs must run before imports to register root certs
 setup_certs()
 
 import contextlib
