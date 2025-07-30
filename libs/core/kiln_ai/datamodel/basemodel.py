@@ -63,7 +63,7 @@ def name_validator(*, min_length: int, max_length: int) -> Callable[[Any], str]:
             )
         if string_to_valid_name(name) != name:
             raise ValueError(
-                f"Name is invalid. The name cannot contain any of the following characters: {FORBIDDEN_CHARS}"
+                f"Name is invalid. The name cannot contain any of the following characters: {FORBIDDEN_CHARS}, consecutive whitespace/underscores, or leading/trailing whitespace/underscores"
             )
         return name
 
