@@ -1,3 +1,5 @@
+const FINE_TUNE_PROMPT_PREFIX = "fine_tune_prompt::"
+
 export function prompt_link(
   project_id: string,
   task_id: string,
@@ -7,8 +9,9 @@ export function prompt_link(
     return undefined
   }
   // Special case for fine-tuned prompts
-  if (prompt_id.startsWith("fine_tune_prompt::")) {
-    const trimmed_prompt_id = prompt_id.replace("fine_tune_prompt::", "")
+  if (prompt_id.startsWith(FINE_TUNE_PROMPT_PREFIX)) {
+    // Get the last component of the prompt ID. fine_tune_prompt::fine_tune_id
+    const trimmed_prompt_id = prompt_id.replace(FINE_TUNE_PROMPT_PREFIX, "")
     const fine_tune_id =
       trimmed_prompt_id.split("::").pop() || trimmed_prompt_id
     return `/fine_tune/${project_id}/${task_id}/fine_tune/${encodeURIComponent(fine_tune_id)}`
