@@ -1632,13 +1632,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="qwen-qwq-32b",
-                reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/QwQ-32B",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -2381,6 +2374,14 @@ built_in_models: List[KilnModel] = [
         name=ModelName.qwen_3_32b,
         friendly_name="Qwen 3 32B",
         providers=[
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="Qwen/Qwen3-32B",
+                supports_data_gen=True,
+                reasoning_capable=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+            ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="qwen/qwen3-32b",
