@@ -31,6 +31,9 @@ jobs:
       - name: Make static dir
         run: mkdir -p static
 
+      - name: Check compatibility
+        run: KILN_TEST_COMPATIBILITY=1 uv run python3 -m pytest libs/core/kiln_ai/adapters/test_remote_config.py::test_backwards_compatibility_with_v0_18 -s -v
+
       - name: Generate Config
         run: uv run python -m kiln_ai.adapters.remote_config static/kiln_config.json
 
