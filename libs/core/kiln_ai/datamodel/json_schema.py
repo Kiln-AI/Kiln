@@ -84,23 +84,38 @@ def schema_from_json_str(v: str) -> Dict:
     """
     try:
         parsed = json.loads(v)
-        jsonschema.Draft202012Validator.check_schema(parsed)
-        if not isinstance(parsed, dict):
-            raise ValueError(f"JSON schema must be a dict, not {type(parsed)}")
-        # Top level arrays are valid JSON schemas, but we don't want to allow them here as they often cause issues
-        if (
-            "type" not in parsed
-            or parsed["type"] != "object"
-            or "properties" not in parsed
-        ):
-            raise ValueError(f"JSON schema must be an object with properties: {v}")
+        if isinstance(v, dict):
+            raise ValueError(f"JSON schema must be a dict, not {type(v)}")
+
+        validate_schema_dict(parsed)
         return parsed
-    except jsonschema.exceptions.SchemaError as e:
-        raise ValueError(f"Invalid JSON schema: {v} \n{e}")
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON: {v}\n {e}")
     except Exception as e:
         raise ValueError(f"Unexpected error parsing JSON schema: {v}\n {e}")
+
+
+def validate_schema_dict(v: Dict):
+    """Parse and validate a JSON schema dictionary.
+
+    Args:
+        v: Dictionary containing a JSON schema definition
+
+    Returns:
+        Dict containing the parsed JSON schema
+
+    Raises:
+        ValueError: If the input is not a valid JSON schema object with required properties
+    """
+    try:
+        jsonschema.Draft202012Validator.check_schema(v)
+        # Top level arrays are valid JSON schemas, but we don't want to allow them here as they often cause issues
+        if "type" not in v or v["type"] != "object" or "properties" not in v:
+            raise ValueError(f"JSON schema must be an object with properties: {v}")
+    except jsonschema.exceptions.SchemaError as e:
+        raise ValueError(f"Invalid JSON schema: {v} \n{e}")
+    except Exception as e:
+        raise ValueError(f"Unexpected error validating dict JSON schema: {v}\n {e}")
 
 
 def string_to_json_key(s: str) -> str:
