@@ -5,6 +5,13 @@
   import { onMount } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
 
+  type LogMessage = { level: "info" | "error" | "warning"; message: string }
+
+  type RagProgressEventPayload = RagProgress & {
+    log?: LogMessage
+    total_error_count: number
+  }
+
   export let project_id: string
   export let rag_config_id: string
   export let dialog: Dialog | null = null
@@ -13,10 +20,14 @@
   let error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
-  let config_progress: RagProgress | null = null
+  let config_progress: RagProgressEventPayload | null = null
 
   // Logs state
   let logs_error: string | null = null
+  let logContainer: HTMLPreElement
+  let log_messages: LogMessage[] = []
+  let end_of_logs: HTMLDivElement | null = null
+  let show_logs: boolean = false
 
   function copy_logs_to_clipboard(logs: string) {
     navigator.clipboard.writeText(logs)
@@ -72,6 +83,14 @@
         )
       : 0
 
+  // Auto-scroll logs to bottom when content changes
+  $: if (log_messages && logContainer && end_of_logs) {
+    end_of_logs?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    })
+  }
+
   function is_step_completed(
     step: string,
     config_progress: RagProgress | null,
@@ -115,9 +134,10 @@
   let _: KilnError | null = null
   let rag_run_logs: string = ""
 
-  async function run_rag_config() {
-    console.info("Running RAG config")
+  let is_running: boolean = false
 
+  async function run_rag_config() {
+    is_running = true
     // subscribe to SSE
     const eventSource = new EventSource(
       `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`,
@@ -128,18 +148,26 @@
         if (event.data === "complete") {
           // Special end message
           eventSource.close()
-          // TODO: update
-          rag_run_logs += event.data + "\n"
+          is_running = false
         } else {
-          JSON.parse(event.data)
-          // TODO: update progress
-          rag_run_logs += event.data + "\n"
+          const payload = JSON.parse(event.data) as RagProgressEventPayload
+          if (payload.log) {
+            log_messages = [...log_messages, payload.log]
+          }
+          config_progress = payload
         }
       } catch (error) {
         eventSource.close()
         _ = createKilnError(error)
         // mark as failed
-        rag_run_logs += event.data + "\n"
+        log_messages = [
+          ...log_messages,
+          {
+            level: "error",
+            message: event.data,
+          },
+        ]
+        is_running = false
       }
     }
 
@@ -148,7 +176,15 @@
       eventSource.close()
       _ = createKilnError(error)
       // mark as failed
-      rag_run_logs += error.toString() + "\n"
+      log_messages = [
+        ...log_messages,
+        {
+          level: "error",
+          message: error.toString(),
+        },
+      ]
+      is_running = false
+      console.error("Error running RAG config", error)
     }
   }
 
@@ -166,7 +202,12 @@
       throw get_error
     }
 
-    config_progress = progress_data[rag_config_id]
+    config_progress = {
+      ...progress_data[rag_config_id],
+
+      // error count is transient / not persisted on the backend so we initialize it here
+      total_error_count: 0,
+    }
     console.log("RAG Config Progress:", config_progress)
   }
 
@@ -226,6 +267,19 @@
         return 0
     }
   }
+
+  function get_log_color(level: "info" | "error" | "warning"): string {
+    switch (level) {
+      case "info":
+        return "text-base-content"
+      case "error":
+        return "text-error"
+      case "warning":
+        return "text-warning"
+      default:
+        return "text-base-content"
+    }
+  }
 </script>
 
 <Dialog
@@ -242,6 +296,7 @@
         // keep open so the user can see the progress
         return false
       },
+      disabled: is_running,
     },
   ]}
 >
@@ -296,7 +351,7 @@
               ></path>
             </svg>
           {:else if extraction_progress_value > 0}
-            <div class="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+            <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
           {/if}
@@ -454,45 +509,103 @@
     </div>
   </div>
 
-  <!-- Logs -->
-  {#if rag_run_logs}
-    <div class="mt-6 py-2 rounded-md border">
-      <div class="flex items-center justify-end mb-3 py-1 px-4">
-        <div class="flex items-center gap-2">
-          <button
-            on:click={() => copy_logs_to_clipboard(rag_run_logs)}
-            class="btn btn-sm btn-square btn-outline"
-            title="Copy logs to clipboard"
-          >
+  <!-- Logs Section -->
+  {#if log_messages && log_messages.length > 0}
+    <div class="mt-6">
+      <!-- Toggle Button -->
+      <div class="flex justify-end mb-4">
+        <button
+          on:click={() => (show_logs = !show_logs)}
+          class="btn btn-sm btn-outline btn-primary"
+        >
+          {#if show_logs}
             <svg
-              class="w-4 h-4"
-              viewBox="0 0 64 64"
-              xmlns="http://www.w3.org/2000/svg"
-              stroke-width="3"
-              stroke="currentColor"
+              class="w-4 h-4 mr-2"
               fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <rect x="11.13" y="17.72" width="33.92" height="36.85" rx="2.5" />
               <path
-                d="M19.35,14.23V13.09a3.51,3.51,0,0,1,3.33-3.66H49.54a3.51,3.51,0,0,1,3.33,3.66V42.62a3.51,3.51,0,0,1-3.33,3.66H48.39"
-              />
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 15l7-7 7 7"
+              ></path>
             </svg>
-          </button>
-          <button
-            on:click={() => download_logs(rag_run_logs, "rag_run_logs")}
-            class="btn btn-sm btn-outline btn-primary"
-          >
-            Download
-          </button>
+            Hide Logs
+          {:else}
+            <svg
+              class="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M19 9l-7 7-7-7"
+              ></path>
+            </svg>
+            Show Logs ({log_messages.length})
+          {/if}
+        </button>
+      </div>
+
+      <!-- Logs Content -->
+      {#if show_logs}
+        <div class="rounded-md border">
+          <div class="flex items-center justify-end p-4 gap-4">
+            <button
+              on:click={() => copy_logs_to_clipboard(rag_run_logs)}
+              class="btn btn-sm btn-square btn-outline btn-primary"
+              title="Copy logs to clipboard"
+            >
+              <svg
+                class="w-4 h-4"
+                viewBox="0 0 64 64"
+                xmlns="http://www.w3.org/2000/svg"
+                stroke-width="3"
+                stroke="currentColor"
+                fill="none"
+              >
+                <rect
+                  x="11.13"
+                  y="17.72"
+                  width="33.92"
+                  height="36.85"
+                  rx="2.5"
+                />
+                <path
+                  d="M19.35,14.23V13.09a3.51,3.51,0,0,1,3.33-3.66H49.54a3.51,3.51,0,0,1,3.33,3.66V42.62a3.51,3.51,0,0,1-3.33,3.66H48.39"
+                />
+              </svg>
+            </button>
+            <button
+              on:click={() => download_logs(rag_run_logs, "rag_run_logs")}
+              class="btn btn-sm btn-outline btn-primary"
+            >
+              Download
+            </button>
+          </div>
+          {#if logs_error}
+            <div class="text-error text-sm mb-3">{logs_error}</div>
+          {/if}
+          <div class="bg-base-200 rounded">
+            <pre
+              bind:this={logContainer}
+              class="px-2 text-xs font-mono text-base-content/80 min-h-48 max-h-48 overflow-y-auto text-left">
+              {#each log_messages as log}
+                <div
+                  class="text-xs font-mono {get_log_color(
+                    log.level,
+                  )} block m-0 p-0">{log.level.toUpperCase()}: {log.message}</div>
+              {/each}
+              <div bind:this={end_of_logs}></div>
+            </pre>
+          </div>
         </div>
-      </div>
-      {#if logs_error}
-        <div class="text-error text-sm mb-3">{logs_error}</div>
       {/if}
-      <div class="bg-base-200 rounded overflow-hidden">
-        <pre
-          class="text-xs font-mono text-base-content/80 p-3 min-h-72 max-h-72 overflow-y-auto whitespace-pre-wrap">{rag_run_logs}</pre>
-      </div>
     </div>
   {/if}
 </Dialog>

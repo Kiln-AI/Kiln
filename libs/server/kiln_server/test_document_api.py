@@ -977,17 +977,22 @@ async def test_get_rag_configs_success(
     assert len(result) == len(rag_configs)
 
     for response_rag_config, rag_config in zip(
-        sorted(result, key=lambda x: x["id"]), sorted(rag_configs, key=lambda x: x.id)
+        sorted(result, key=lambda x: x["id"]),
+        sorted(rag_configs, key=lambda x: str(x.id)),
     ):
         assert response_rag_config["id"] == rag_config.id
         assert response_rag_config["name"] == rag_config.name
         assert response_rag_config["description"] == rag_config.description
         assert (
-            response_rag_config["extractor_config_id"] == rag_config.extractor_config_id
+            response_rag_config["extractor_config"]["id"]
+            == rag_config.extractor_config_id
         )
-        assert response_rag_config["chunker_config_id"] == rag_config.chunker_config_id
         assert (
-            response_rag_config["embedding_config_id"] == rag_config.embedding_config_id
+            response_rag_config["chunker_config"]["id"] == rag_config.chunker_config_id
+        )
+        assert (
+            response_rag_config["embedding_config"]["id"]
+            == rag_config.embedding_config_id
         )
 
 
@@ -1022,9 +1027,9 @@ async def test_get_rag_config_success(
     assert result["id"] == rag_config.id
     assert result["name"] == rag_config.name
     assert result["description"] == rag_config.description
-    assert result["extractor_config_id"] == rag_config.extractor_config_id
-    assert result["chunker_config_id"] == rag_config.chunker_config_id
-    assert result["embedding_config_id"] == rag_config.embedding_config_id
+    assert result["extractor_config"]["id"] == rag_config.extractor_config_id
+    assert result["chunker_config"]["id"] == rag_config.chunker_config_id
+    assert result["embedding_config"]["id"] == rag_config.embedding_config_id
 
 
 @pytest.mark.asyncio

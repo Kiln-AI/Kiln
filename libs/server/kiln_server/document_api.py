@@ -1108,17 +1108,27 @@ def connect_document_api(app: FastAPI):
                 async def on_end(self):
                     await self.queue.put({"type": "end"})
 
-            async def event_generator(queue: asyncio.Queue):
+            async def event_generator(
+                queue: asyncio.Queue[dict[str, DocumentPipelineProgress]],
+            ):
                 while True:
                     event = await queue.get()
 
                     if event["type"] == "progress":
                         progress = event["data"]
                         payload = {
-                            "progress": progress.completed_count,
-                            "total": progress.total_count,
-                            "errors": progress.error_count,
-                            "message": progress.message,
+                            "total_document_completed_count": progress.total_document_completed_count,
+                            "total_document_count": progress.total_document_count,
+                            "total_document_extracted_count": progress.total_document_extracted_count,
+                            "total_document_chunked_count": progress.total_document_chunked_count,
+                            "total_document_embedded_count": progress.total_document_embedded_count,
+                            "total_error_count": progress.total_error_count,
+                            "log": {
+                                "level": progress.log.level,
+                                "message": progress.log.message,
+                            }
+                            if progress.log
+                            else None,
                         }
                         yield f"data: {json.dumps(payload)}\n\n"
 
@@ -1126,7 +1136,17 @@ def connect_document_api(app: FastAPI):
                         yield f"data: {json.dumps({'status': 'started'})}\n\n"
 
                     elif event["type"] == "error":
-                        yield f"data: {json.dumps({'status': 'error', 'message': event['error']})}\n\n"
+                        yield f"data: {
+                            json.dumps(
+                                {
+                                    'status': 'error',
+                                    'log': {
+                                        'level': 'error',
+                                        'message': event['error'],
+                                    },
+                                }
+                            )
+                        }\n\n"
 
                     elif event["type"] == "end":
                         yield "data: complete\n\n"

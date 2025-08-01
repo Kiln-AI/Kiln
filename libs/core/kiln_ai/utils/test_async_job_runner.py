@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Observer, Progress
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    Progress,
+)
 
 
 @pytest.fixture
@@ -237,7 +241,7 @@ async def test_async_job_runner_cancelled(concurrency, mock_async_run_job_fn_suc
 @pytest.mark.parametrize("concurrency", [1, 25])
 @pytest.mark.asyncio
 async def test_async_job_runner_observers(concurrency):
-    class MockObserver(Observer[dict[str, int]]):
+    class MockAsyncJobRunnerObserver(AsyncJobRunnerObserver[dict[str, int]]):
         def __init__(self):
             self.on_error_calls = []
             self.on_success_calls = []
@@ -248,8 +252,8 @@ async def test_async_job_runner_observers(concurrency):
         async def on_success(self, job: dict[str, int]):
             self.on_success_calls.append(job)
 
-    mock_observer_a = MockObserver()
-    mock_observer_b = MockObserver()
+    mock_observer_a = MockAsyncJobRunnerObserver()
+    mock_observer_b = MockAsyncJobRunnerObserver()
 
     jobs = [{"id": i} for i in range(10)]
 

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from dataclasses import dataclass
 from typing import AsyncGenerator, Awaitable, Callable, Generic, List, TypeVar
 
@@ -28,6 +29,12 @@ class AsyncJobRunnerObserver(Generic[T]):
         """
         pass
 
+    async def on_job_start(self, job: T):
+        """
+        Called when a job starts.
+        """
+        pass
+
 
 class AsyncJobRunner(Generic[T]):
     def __init__(
@@ -51,6 +58,10 @@ class AsyncJobRunner(Generic[T]):
     async def notify_success(self, job: T):
         for observer in self.observers:
             await observer.on_success(job)
+
+    async def notify_job_start(self, job: T):
+        for observer in self.observers:
+            await observer.on_job_start(job)
 
     async def run(self) -> AsyncGenerator[Progress, None]:
         """
@@ -123,7 +134,13 @@ class AsyncJobRunner(Generic[T]):
                 break
 
             try:
+                await self.notify_job_start(job)
                 result = await run_job_fn(job)
+                # TODO: random failure
+                if random.random() < 0.25:
+                    raise Exception(
+                        "Some (fake) error occurred during a job execution (coming from AsyncJobRunner)."
+                    )
                 await self.notify_success(job)
             except Exception as e:
                 logger.error("Job failed to complete", exc_info=True)
