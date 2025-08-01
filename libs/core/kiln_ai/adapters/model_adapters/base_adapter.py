@@ -26,6 +26,7 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.tools import KilnTool
 from kiln_ai.utils.config import Config
 
 
@@ -318,3 +319,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
             new_run_config.structured_output_mode = structured_output_mode
             self.run_config = new_run_config
+
+    def available_tools(self) -> list[KilnTool]:
+        # TODO: implement this
+        return []
