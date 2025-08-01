@@ -10,7 +10,7 @@ export function prompt_link(
   }
   // Special case for fine-tuned prompts
   if (prompt_id.startsWith(FINE_TUNE_PROMPT_PREFIX)) {
-    // Get the last component of the prompt ID. fine_tune_prompt::fine_tune_id
+    // Get the last component of the prompt ID. fine_tune_prompt::[project_id]::[task_id]::fine_tune_id
     const trimmed_prompt_id = prompt_id.replace(FINE_TUNE_PROMPT_PREFIX, "")
     const fine_tune_id =
       trimmed_prompt_id.split("::").pop() || trimmed_prompt_id
