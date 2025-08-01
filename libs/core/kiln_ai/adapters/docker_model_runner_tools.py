@@ -2,7 +2,6 @@ from typing import Any, List
 
 import httpx
 import openai
-import requests
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
@@ -50,7 +49,9 @@ class DockerModelRunnerConnection(BaseModel):
 
 
 # Parse the Docker Model Runner /v1/models response
-def parse_docker_model_runner_models(models_response: Any) -> DockerModelRunnerConnection | None:
+def parse_docker_model_runner_models(
+    models_response: Any,
+) -> DockerModelRunnerConnection | None:
     # Build a list of models we support for Docker Model Runner from the built-in model list
     supported_docker_models = [
         provider.model_id
@@ -66,7 +67,7 @@ def parse_docker_model_runner_models(models_response: Any) -> DockerModelRunnerC
             model_names = [model["id"] for model in models if "id" in model]
             available_supported_models = []
             untested_models = []
-            
+
             for model in model_names:
                 if model in supported_docker_models:
                     available_supported_models.append(model)
@@ -109,6 +110,8 @@ async def get_docker_model_runner_connection() -> DockerModelRunnerConnection | 
     return parse_docker_model_runner_models(models_dict)
 
 
-def docker_model_runner_model_installed(conn: DockerModelRunnerConnection, model_name: str) -> bool:
+def docker_model_runner_model_installed(
+    conn: DockerModelRunnerConnection, model_name: str
+) -> bool:
     all_models = conn.all_models()
     return model_name in all_models

@@ -108,7 +108,8 @@ def adapter_for_task(
             )
         case ModelProviderName.docker_model_runner:
             docker_base_url = (
-                Config.shared().docker_model_runner_base_url or "http://localhost:12434/engines/llama.cpp"
+                Config.shared().docker_model_runner_base_url
+                or "http://localhost:12434/engines/llama.cpp"
             )
             return LiteLlmAdapter(
                 kiln_task=kiln_task,

@@ -2,6 +2,9 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List
 
+from kiln_ai.adapters.docker_model_runner_tools import (
+    get_docker_model_runner_connection,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -16,9 +19,6 @@ from kiln_ai.adapters.model_adapters.litellm_config import (
 )
 from kiln_ai.adapters.ollama_tools import (
     get_ollama_connection,
-)
-from kiln_ai.adapters.docker_model_runner_tools import (
-    get_docker_model_runner_connection,
 )
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy

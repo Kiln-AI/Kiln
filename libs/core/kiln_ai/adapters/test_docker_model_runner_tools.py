@@ -1,9 +1,11 @@
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
+
 from kiln_ai.adapters.docker_model_runner_tools import (
+    DockerModelRunnerConnection,
     docker_model_runner_base_url,
     parse_docker_model_runner_models,
-    DockerModelRunnerConnection,
 )
 
 
@@ -18,7 +20,9 @@ def test_docker_model_runner_base_url_default():
 def test_docker_model_runner_base_url_from_config():
     """Test that the configured base URL is returned when set."""
     with patch("kiln_ai.adapters.docker_model_runner_tools.Config") as mock_config:
-        mock_config.shared().docker_model_runner_base_url = "http://custom:8080/engines/llama.cpp"
+        mock_config.shared().docker_model_runner_base_url = (
+            "http://custom:8080/engines/llama.cpp"
+        )
         result = docker_model_runner_base_url()
         assert result == "http://custom:8080/engines/llama.cpp"
 
@@ -33,8 +37,10 @@ def test_parse_docker_model_runner_models_with_supported_models():
             {"id": "unsupported-model"},
         ]
     }
-    
-    with patch("kiln_ai.adapters.docker_model_runner_tools.built_in_models") as mock_models:
+
+    with patch(
+        "kiln_ai.adapters.docker_model_runner_tools.built_in_models"
+    ) as mock_models:
         # Mock built-in models with Docker Model Runner providers
         mock_model = Mock()
         mock_provider = Mock()
@@ -42,9 +48,9 @@ def test_parse_docker_model_runner_models_with_supported_models():
         mock_provider.model_id = "ai/llama3.2"
         mock_model.providers = [mock_provider]
         mock_models.__iter__ = Mock(return_value=iter([mock_model]))
-        
+
         result = parse_docker_model_runner_models(mock_response)
-        
+
         assert result is not None
         assert result.message == "Docker Model Runner connected"
         assert "ai/llama3.2" in result.supported_models
@@ -54,9 +60,9 @@ def test_parse_docker_model_runner_models_with_supported_models():
 def test_parse_docker_model_runner_models_no_models():
     """Test parsing Docker Model Runner models response with no models."""
     mock_response = {"data": []}
-    
+
     result = parse_docker_model_runner_models(mock_response)
-    
+
     assert result is not None
     assert "no supported models are available" in result.message
     assert len(result.supported_models) == 0
@@ -66,9 +72,9 @@ def test_parse_docker_model_runner_models_no_models():
 def test_parse_docker_model_runner_models_invalid_response():
     """Test parsing invalid Docker Model Runner models response."""
     mock_response = {"invalid": "response"}
-    
+
     result = parse_docker_model_runner_models(mock_response)
-    
+
     assert result is not None
     assert "no supported models are available" in result.message
     assert len(result.supported_models) == 0
@@ -79,9 +85,9 @@ def test_docker_model_runner_connection_all_models():
     connection = DockerModelRunnerConnection(
         message="Test",
         supported_models=["model1", "model2"],
-        untested_models=["model3", "model4"]
+        untested_models=["model3", "model4"],
     )
-    
+
     all_models = connection.all_models()
     assert all_models == ["model1", "model2", "model3", "model4"]
 
@@ -91,10 +97,13 @@ async def test_docker_model_runner_online_success():
     """Test that docker_model_runner_online returns True when service is available."""
     with patch("kiln_ai.adapters.docker_model_runner_tools.httpx") as mock_httpx:
         mock_httpx.get.return_value = Mock()
-        
-        from kiln_ai.adapters.docker_model_runner_tools import docker_model_runner_online
+
+        from kiln_ai.adapters.docker_model_runner_tools import (
+            docker_model_runner_online,
+        )
+
         result = await docker_model_runner_online()
-        
+
         assert result is True
         mock_httpx.get.assert_called_once()
 
@@ -105,8 +114,11 @@ async def test_docker_model_runner_online_failure():
     with patch("kiln_ai.adapters.docker_model_runner_tools.httpx") as mock_httpx:
         mock_httpx.get.side_effect = Exception("Connection error")
         mock_httpx.RequestError = Exception
-        
-        from kiln_ai.adapters.docker_model_runner_tools import docker_model_runner_online
+
+        from kiln_ai.adapters.docker_model_runner_tools import (
+            docker_model_runner_online,
+        )
+
         result = await docker_model_runner_online()
-        
+
         assert result is False

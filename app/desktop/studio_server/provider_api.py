@@ -8,6 +8,10 @@ import openai
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from kiln_ai.adapters.docker_model_runner_tools import (
+    DockerModelRunnerConnection,
+    get_docker_model_runner_connection,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -20,10 +24,6 @@ from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
     ollama_base_url,
     parse_ollama_tags,
-)
-from kiln_ai.adapters.docker_model_runner_tools import (
-    DockerModelRunnerConnection,
-    get_docker_model_runner_connection,
 )
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
 from kiln_ai.datamodel.registry import all_projects
@@ -81,7 +81,9 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
     return ollama_connection
 
 
-async def connect_docker_model_runner(custom_docker_url: str | None = None) -> DockerModelRunnerConnection:
+async def connect_docker_model_runner(
+    custom_docker_url: str | None = None,
+) -> DockerModelRunnerConnection:
     # Similar to Ollama, but uses OpenAI-compatible endpoints
     if (
         custom_docker_url
@@ -94,10 +96,12 @@ async def connect_docker_model_runner(custom_docker_url: str | None = None) -> D
         )
 
     try:
-        from kiln_ai.adapters.docker_model_runner_tools import docker_model_runner_base_url
-        
+        from kiln_ai.adapters.docker_model_runner_tools import (
+            docker_model_runner_base_url,
+        )
+
         base_url = custom_docker_url or docker_model_runner_base_url()
-        
+
         # Use OpenAI client to test connection
         client = openai.OpenAI(
             api_key="dummy",  # Docker Model Runner doesn't require API key
@@ -107,10 +111,13 @@ async def connect_docker_model_runner(custom_docker_url: str | None = None) -> D
         models_response = client.models.list()
         # Convert to dict format for parsing
         models_dict = {"data": [{"id": model.id} for model in models_response]}
-        
-        from kiln_ai.adapters.docker_model_runner_tools import parse_docker_model_runner_models
+
+        from kiln_ai.adapters.docker_model_runner_tools import (
+            parse_docker_model_runner_models,
+        )
+
         docker_connection = parse_docker_model_runner_models(models_dict)
-        
+
         if docker_connection is None:
             raise HTTPException(
                 status_code=500,
@@ -129,7 +136,10 @@ async def connect_docker_model_runner(custom_docker_url: str | None = None) -> D
         )
 
     # Save the custom Docker URL if used to connect
-    if custom_docker_url and custom_docker_url != Config.shared().docker_model_runner_base_url:
+    if (
+        custom_docker_url
+        and custom_docker_url != Config.shared().docker_model_runner_base_url
+    ):
         Config.shared().save_setting("docker_model_runner_base_url", custom_docker_url)
 
     return docker_connection
@@ -971,7 +981,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
         docker_connection = await get_docker_model_runner_connection()
         if docker_connection is None:
             return None
-            
+
         docker_models = AvailableModels(
             provider_name=provider_name_from_id(ModelProviderName.docker_model_runner),
             provider_id=ModelProviderName.docker_model_runner,
@@ -1031,7 +1041,12 @@ def models_from_docker_model_runner_id(
     models: list[tuple[KilnModel | None, KilnModelProvider | None]] = []
     for model in built_in_models:
         docker_provider = next(
-            (p for p in model.providers if p.name == ModelProviderName.docker_model_runner), None
+            (
+                p
+                for p in model.providers
+                if p.name == ModelProviderName.docker_model_runner
+            ),
+            None,
         )
         if not docker_provider:
             continue
@@ -1040,6 +1055,7 @@ def models_from_docker_model_runner_id(
             models.append((model, docker_provider))
 
     return models
+
 
 def models_from_ollama_tag(
     tag: str,
