@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+import httpx
 import litellm
 import openai
 import requests
@@ -1030,7 +1031,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
             return docker_models
 
         return None
-    except Exception:
+    except (HTTPException, openai.APIError, httpx.RequestError):
         # skip docker model runner if it's not available
         return None
 
