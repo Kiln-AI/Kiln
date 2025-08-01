@@ -32,7 +32,9 @@ async def docker_model_runner_online() -> bool:
     try:
         base_url = docker_model_runner_base_url()
         # Docker Model Runner uses OpenAI-compatible endpoints
-        httpx.get(f"{base_url}/v1/models")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{base_url}/v1/models", timeout=5.0)
+            response.raise_for_status()
     except httpx.RequestError:
         return False
     return True
@@ -104,7 +106,7 @@ async def get_docker_model_runner_connection() -> DockerModelRunnerConnection | 
         # Convert to dict format for parsing
         models_dict = {"data": [{"id": model.id} for model in models_response]}
 
-    except Exception:
+    except (openai.APIConnectionError, openai.APIError, httpx.RequestError):
         return None
 
     return parse_docker_model_runner_models(models_dict)

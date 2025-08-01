@@ -1,5 +1,6 @@
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -7,6 +8,7 @@ from kiln_ai.adapters.docker_model_runner_tools import (
     docker_model_runner_base_url,
     parse_docker_model_runner_models,
 )
+from libs.core.kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
 
 def test_docker_model_runner_base_url_default():
@@ -44,7 +46,7 @@ def test_parse_docker_model_runner_models_with_supported_models():
         # Mock built-in models with Docker Model Runner providers
         mock_model = Mock()
         mock_provider = Mock()
-        mock_provider.name = "docker_model_runner"
+        mock_provider.name = ModelProviderName.docker_model_runner
         mock_provider.model_id = "ai/llama3.2"
         mock_model.providers = [mock_provider]
         mock_models.__iter__ = Mock(return_value=iter([mock_model]))
@@ -95,8 +97,14 @@ def test_docker_model_runner_connection_all_models():
 @pytest.mark.asyncio
 async def test_docker_model_runner_online_success():
     """Test that docker_model_runner_online returns True when service is available."""
-    with patch("kiln_ai.adapters.docker_model_runner_tools.httpx") as mock_httpx:
-        mock_httpx.get.return_value = Mock()
+    with patch(
+        "kiln_ai.adapters.docker_model_runner_tools.httpx.AsyncClient"
+    ) as mock_client_class:
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         from kiln_ai.adapters.docker_model_runner_tools import (
             docker_model_runner_online,
@@ -105,15 +113,18 @@ async def test_docker_model_runner_online_success():
         result = await docker_model_runner_online()
 
         assert result is True
-        mock_httpx.get.assert_called_once()
+        mock_client.get.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_docker_model_runner_online_failure():
     """Test that docker_model_runner_online returns False when service is unavailable."""
-    with patch("kiln_ai.adapters.docker_model_runner_tools.httpx") as mock_httpx:
-        mock_httpx.get.side_effect = Exception("Connection error")
-        mock_httpx.RequestError = Exception
+    with patch(
+        "kiln_ai.adapters.docker_model_runner_tools.httpx.AsyncClient"
+    ) as mock_client_class:
+        mock_client = Mock()
+        mock_client.get = AsyncMock(side_effect=httpx.RequestError("Connection error"))
+        mock_client_class.return_value.__aenter__.return_value = mock_client
 
         from kiln_ai.adapters.docker_model_runner_tools import (
             docker_model_runner_online,
