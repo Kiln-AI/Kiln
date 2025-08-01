@@ -12,6 +12,12 @@ from kiln_ai.adapters.model_adapters.litellm_config import (
 )
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.tools.built_in_tools.math_tools import (
+    AddTool,
+    DivideTool,
+    MultiplyTool,
+    SubtractTool,
+)
 
 
 @pytest.fixture
@@ -552,3 +558,127 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+@pytest.fixture
+def mock_math_tools():
+    """Create a list of 4 math tools for testing"""
+    return [AddTool(), SubtractTool(), MultiplyTool(), DivideTool()]
+
+
+def test_litellm_tools_returns_openai_format_with_tools(
+    config, mock_task, mock_math_tools
+):
+    """Test litellm_tools returns OpenAI formatted tool list when available_tools has tools"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with patch.object(adapter, "available_tools", return_value=mock_math_tools):
+        tools = adapter.litellm_tools()
+
+    # Should return 4 tools
+    assert len(tools) == 4
+
+    # Each tool should have the OpenAI format
+    for tool in tools:
+        assert "type" in tool
+        assert tool["type"] == "function"
+        assert "function" in tool
+        assert "name" in tool["function"]
+        assert "description" in tool["function"]
+        assert "parameters" in tool["function"]
+
+    # Verify specific tools are present
+    tool_names = [tool["function"]["name"] for tool in tools]
+    assert "add" in tool_names
+    assert "subtract" in tool_names
+    assert "multiply" in tool_names
+    assert "divide" in tool_names
+
+
+def test_litellm_tools_returns_empty_list_without_tools(config, mock_task):
+    """Test litellm_tools returns empty list when available_tools has no tools"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with patch.object(adapter, "available_tools", return_value=[]):
+        tools = adapter.litellm_tools()
+
+    assert tools == []
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_includes_tools(
+    config, mock_task, mock_math_tools
+):
+    """Test build_completion_kwargs includes tools when available_tools has tools"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    # Should include tools
+    assert "tools" in kwargs
+    assert len(kwargs["tools"]) == 4
+    assert "tool_choice" in kwargs
+    assert kwargs["tool_choice"] == "auto"
+
+    # Verify tools are properly formatted
+    for tool in kwargs["tools"]:
+        assert "type" in tool
+        assert tool["type"] == "function"
+        assert "function" in tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "structured_output_mode, expected_error_message",
+    [
+        (
+            StructuredOutputMode.function_calling,
+            "Function calling/tools can't be used as the JSON response format if you're also using tools",
+        ),
+        (
+            StructuredOutputMode.function_calling_weak,
+            "Function calling/tools can't be used as the JSON response format if you're also using tools",
+        ),
+        (
+            StructuredOutputMode.json_instructions,
+            None,
+        ),
+        (
+            StructuredOutputMode.json_schema,
+            None,
+        ),
+    ],
+)
+async def test_build_completion_kwargs_raises_error_with_tools_conflict(
+    config, mock_task, mock_math_tools, structured_output_mode, expected_error_message
+):
+    """Test build_completion_kwargs raises error when structured output mode conflicts with available tools"""
+    config.run_config_properties.structured_output_mode = structured_output_mode
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        if expected_error_message is not None:
+            with pytest.raises(
+                ValueError,
+                match=expected_error_message,
+            ):
+                await adapter.build_completion_kwargs(mock_provider, messages, None)
+        else:
+            # should not raise an error
+            await adapter.build_completion_kwargs(mock_provider, messages, None)
