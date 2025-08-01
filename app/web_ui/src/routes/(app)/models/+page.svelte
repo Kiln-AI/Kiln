@@ -416,13 +416,8 @@
   >
     <!-- Loading State -->
     {#if loading}
-      <div class="flex items-center justify-center py-12">
-        <div class="text-center">
-          <div
-            class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"
-          ></div>
-          <p class="mt-4 text-gray-600">Loading models...</p>
-        </div>
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if error}
       <!-- Error State -->
