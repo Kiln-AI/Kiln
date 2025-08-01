@@ -13,7 +13,8 @@
 
   interface Provider {
     name: ModelProviderName
-    model_id: string
+    model_id: string | null
+    provider_finetune_id: string | null
     supports_data_gen: boolean
     supports_logprobs: boolean
     supports_structured_output: boolean
@@ -61,6 +62,7 @@
     { value: "structured_output", label: "Structured Output" },
     { value: "logprobs", label: "Logprobs" },
     { value: "uncensored", label: "Uncensored" },
+    { value: "finetune", label: "Finetune" },
   ]
 
   // Sort options
@@ -209,6 +211,8 @@
               return p.supports_logprobs
             case "uncensored":
               return p.uncensored
+            case "finetune":
+              return !!p.provider_finetune_id
             default:
               return true
           }
@@ -295,6 +299,14 @@
   function getCapabilityBadges(providers: Provider[]) {
     const badges = []
 
+    if (providers.some((p) => !!p.provider_finetune_id)) {
+      badges.push({
+        text: "Finetune ★",
+        color: "bg-purple-100 text-purple-800",
+        tooltip:
+          "Supports finetuning, to train the model on your own use cases.",
+      })
+    }
     if (providers.some((p) => p.supports_data_gen)) {
       badges.push({
         text: "Data Gen ★",
@@ -318,30 +330,6 @@
           "Recommended for Uncensored Data Generation - one of the best models for evals where safeguards get in the way.",
       })
     }
-    if (providers.some((p) => p.supports_structured_output)) {
-      badges.push({
-        text: "Structured",
-        color: "bg-purple-100 text-purple-800",
-        tooltip:
-          "Supported structured output (JSON) preferring the tool-calling method.",
-      })
-    }
-    if (providers.some((p) => p.supports_logprobs)) {
-      badges.push({
-        text: "Logprobs",
-        color: "bg-orange-100 text-orange-800",
-        tooltip:
-          "Supports logprobs, a feature needed for the advanced eval method G-Eval",
-      })
-    }
-    if (providers.some((p) => p.uncensored)) {
-      badges.push({
-        text: "Uncensored",
-        color: "bg-red-100 text-red-800",
-        tooltip:
-          "Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals.",
-      })
-    }
 
     return badges
   }
@@ -362,11 +350,21 @@
     await fetchModelsFromRemoteConfig()
   })
 
-  function model_provider_is_connected(provider_id: string, model_id: string) {
+  function model_provider_is_connected(
+    remote_provider_name: string,
+    remote_model_name: string | null,
+    remote_provider_model_id: string | null,
+    remote_provider_finetune_id: string | null,
+  ) {
     for (const provider of $available_models) {
-      if (provider.provider_id === provider_id) {
+      if (provider.provider_id === remote_provider_name) {
+        // some models are only available for finetuning, they have a finetune_id but no model_id
+        if (!remote_provider_model_id && remote_provider_finetune_id) {
+          return true
+        }
+
         for (const model of provider.models) {
-          if (model.id === model_id) {
+          if (model.id === remote_model_name) {
             return true
           }
         }
@@ -374,6 +372,32 @@
     }
 
     return false
+  }
+
+  // the user has at least one ollama model available, which means they have ollama connected (but not necessarily all models)
+  $: ollama_is_connected = $available_models.some(
+    (provider) => provider.provider_id === "ollama",
+  )
+
+  function get_ollama_model_href(model_id: string) {
+    return "https://ollama.com/library/" + model_id
+  }
+
+  function model_not_connected_href(
+    provider_id: string,
+    model_id: string | null,
+  ) {
+    if (provider_id === "ollama" && ollama_is_connected && model_id) {
+      return get_ollama_model_href(model_id)
+    }
+    return "/settings/providers"
+  }
+
+  function model_not_connected_tooltip(provider_id: string) {
+    if (provider_id === "ollama" && ollama_is_connected) {
+      return "Install the model in Ollama to use it"
+    }
+    return "Connect the provider to use this model"
   }
 </script>
 
@@ -387,6 +411,12 @@
     subtitle="Browse available models"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
+    action_buttons={[
+      {
+        label: "Manage Providers",
+        href: "/settings/providers",
+      },
+    ]}
   >
     <!-- Loading State -->
     {#if loading}
@@ -683,7 +713,7 @@
                       <div
                         class="flex items-center justify-between p-3 bg-gray-50 rounded-md"
                       >
-                        {#if model_provider_is_connected(provider.name, model.name)}
+                        {#if model_provider_is_connected(provider.name, model.name, provider.model_id, provider.provider_finetune_id)}
                           <div class="flex items-center space-x-3">
                             <img
                               src={get_provider_image(provider.name)}
@@ -700,14 +730,21 @@
                                 {provider_name_from_id(provider.name)}
                               </p>
                               <p class="text-xs text-gray-500 break-all">
-                                {provider.model_id}
+                                {provider.model_id ||
+                                  `${provider.provider_finetune_id} (Finetune Only)`}
                               </p>
                             </div>
                           </div>
                         {:else}
                           <a
-                            href="/settings/providers"
-                            class="flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1"
+                            href={model_not_connected_href(
+                              provider.name,
+                              provider.model_id,
+                            )}
+                            class="text-left flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
+                            data-tip={model_not_connected_tooltip(
+                              provider.name,
+                            )}
                           >
                             <img
                               src={get_provider_image(provider.name)}
@@ -730,22 +767,28 @@
                           </a>
                         {/if}
                         <div class="flex items-center space-x-1">
+                          {#if provider.provider_finetune_id}
+                            <span
+                              class="w-2 h-2 bg-purple-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip="Supports finetuning, to train the model on your own use cases."
+                            ></span>
+                          {/if}
                           {#if provider.supports_structured_output}
                             <span
-                              class="w-2 h-2 bg-green-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Supports Structured Output"
+                              class="w-2 h-2 bg-sky-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip="Supports structured output (JSON) preferring the tool-calling method."
                             ></span>
                           {/if}
                           {#if provider.supports_logprobs}
                             <span
-                              class="w-2 h-2 bg-blue-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Supports Logprobs"
+                              class="w-2 h-2 bg-orange-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip="Supports logprobs, a feature needed for the advanced eval method G-Eval"
                             ></span>
                           {/if}
                           {#if provider.uncensored}
                             <span
                               class="w-2 h-2 bg-red-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Uncensored Model"
+                              data-tip="Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals."
                             ></span>
                           {/if}
                         </div>
