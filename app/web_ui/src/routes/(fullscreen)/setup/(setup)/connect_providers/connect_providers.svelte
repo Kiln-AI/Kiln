@@ -1,7 +1,10 @@
 <script lang="ts">
   import { fade } from "svelte/transition"
   import { onMount } from "svelte"
-  import type { OllamaConnection } from "$lib/types"
+  import type {
+    OllamaConnection,
+    DockerModelRunnerConnection,
+  } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -384,9 +387,9 @@
 
   let custom_ollama_url: string | null = null
 
-  const connect_ollama = async (user_initated: boolean = true) => {
+  const connect_ollama = async (user_initiated: boolean = true) => {
     status.ollama.connected = false
-    status.ollama.connecting = user_initated
+    status.ollama.connecting = user_initiated
 
     let data: OllamaConnection | null = null
     try {
@@ -469,11 +472,13 @@
 
   let custom_docker_url: string | null = null
 
-  const connect_docker_model_runner = async (user_initiated: boolean = true) => {
+  const connect_docker_model_runner = async (
+    user_initiated: boolean = true,
+  ) => {
     status.docker_model_runner.connected = false
     status.docker_model_runner.connecting = user_initiated
 
-    let data: any | null = null
+    let data: DockerModelRunnerConnection | null = null
     try {
       const { data: req_data, error: req_error } = await client.GET(
         "/api/provider/docker_model_runner/connect",
@@ -498,7 +503,8 @@
       ) {
         status.docker_model_runner.error = e.message
       } else {
-        status.docker_model_runner.error = "Failed to connect. Ensure Docker Model Runner is running."
+        status.docker_model_runner.error =
+          "Failed to connect. Ensure Docker Model Runner is running."
       }
       status.docker_model_runner.connected = false
       return
@@ -529,7 +535,8 @@
           ". "
         : ""
     const custom_url_str =
-      custom_docker_url && custom_docker_url !== "http://localhost:12434/engines/llama.cpp"
+      custom_docker_url &&
+      custom_docker_url !== "http://localhost:12434/engines/llama.cpp"
         ? "Custom Docker Model Runner URL: " + custom_docker_url
         : ""
     status.docker_model_runner.custom_description =
