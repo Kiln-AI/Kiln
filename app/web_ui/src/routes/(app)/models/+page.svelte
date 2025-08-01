@@ -316,22 +316,20 @@
     remote_provider_model_id: string | null,
     remote_provider_finetune_id: string | null,
   ) {
-    for (const provider of $available_models) {
-      if (provider.provider_id === remote_provider_name) {
-        // some models are only available for finetuning, they have a finetune_id but no model_id
-        if (!remote_provider_model_id && remote_provider_finetune_id) {
-          return true
-        }
-
-        for (const model of provider.models) {
-          if (model.id === remote_model_name) {
-            return true
-          }
-        }
-      }
+    const provider = $available_models.find(
+      (p) => p.provider_id === remote_provider_name,
+    )
+    if (!provider) {
+      return false
     }
 
-    return false
+    // some models are only available for finetuning, they have a finetune_id but no model_id
+    // so we consider the model connected if we have the provider connected
+    if (!remote_provider_model_id && remote_provider_finetune_id) {
+      return true
+    }
+
+    return provider.models.some((model) => model.id === remote_model_name)
   }
 
   // the user has at least one ollama model available, which means they have ollama connected (but not necessarily all models)
