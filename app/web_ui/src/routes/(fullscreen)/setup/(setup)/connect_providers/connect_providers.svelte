@@ -10,7 +10,6 @@
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
-  import { checkProviderConnection } from "$lib/utils/provider_utils"
 
   export let highlight_finetune = false
 
@@ -527,47 +526,53 @@
   let custom_openai_compatible_providers: CustomOpenAICompatibleProvider[] = []
   const check_existing_providers = async () => {
     try {
-      const { data: settings, error: load_settings_error } =
-        await client.GET("/api/settings")
-      if (load_settings_error || !settings) {
-        throw load_settings_error || new Error("Failed to fetch settings")
+      let res = await fetch(base_url + "/api/settings")
+      let data = await res.json()
+      if (data["open_ai_api_key"]) {
+        status.openai.connected = true
       }
-
-      // Check each provider using the centralized utility
-      const providerIds = [
-        "openai",
-        "groq",
-        "amazon_bedrock",
-        "openrouter",
-        "fireworks_ai",
-        "vertex",
-        "anthropic",
-        "gemini_api",
-        "azure_openai",
-        "huggingface",
-        "together_ai",
-        "wandb",
-        "openai_compatible",
-        "ollama",
-      ]
-
-      for (const providerId of providerIds) {
-        status[providerId].connected = checkProviderConnection(
-          providerId,
-          settings,
-        )
+      if (data["groq_api_key"]) {
+        status.groq.connected = true
       }
-
-      // Handle special cases
-      if (settings["ollama_base_url"]) {
-        custom_ollama_url = settings["ollama_base_url"] as string
+      if (data["bedrock_access_key"] && data["bedrock_secret_key"]) {
+        status.amazon_bedrock.connected = true
+      }
+      if (data["open_router_api_key"]) {
+        status.openrouter.connected = true
+      }
+      if (data["fireworks_api_key"] && data["fireworks_account_id"]) {
+        status.fireworks_ai.connected = true
+      }
+      if (data["vertex_project_id"] && data["vertex_location"]) {
+        status.vertex.connected = true
+      }
+      if (data["ollama_base_url"]) {
+        custom_ollama_url = data["ollama_base_url"]
+      }
+      if (data["anthropic_api_key"]) {
+        status.anthropic.connected = true
+      }
+      if (data["gemini_api_key"]) {
+        status.gemini_api.connected = true
+      }
+      if (data["azure_openai_api_key"] && data["azure_openai_endpoint"]) {
+        status.azure_openai.connected = true
+      }
+      if (data["huggingface_api_key"]) {
+        status.huggingface.connected = true
+      }
+      if (data["together_api_key"]) {
+        status.together_ai.connected = true
+      }
+      if (data["wandb_api_key"]) {
+        status.wandb.connected = true
       }
       if (
-        settings["openai_compatible_providers"] &&
-        Array.isArray(settings["openai_compatible_providers"])
+        data["openai_compatible_providers"] &&
+        data["openai_compatible_providers"].length > 0
       ) {
-        custom_openai_compatible_providers =
-          settings["openai_compatible_providers"]
+        status.openai_compatible.connected = true
+        custom_openai_compatible_providers = data["openai_compatible_providers"]
       }
     } catch (e) {
       console.error("check_existing_providers error", e)
@@ -579,7 +584,7 @@
 
   onMount(async () => {
     await check_existing_providers()
-    // Check Ollama every load, as it can be closed. More ephemeral (and local/cheap/fast)
+    // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
