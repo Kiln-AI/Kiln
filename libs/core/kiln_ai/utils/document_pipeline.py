@@ -2,7 +2,7 @@ import logging
 from abc import ABC
 from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping
+from typing import Awaitable, Callable, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,7 +23,8 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
 )
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.utils.async_job_runner import AsyncJobRunner
+from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
+from kiln_ai.utils.lock import loop_local_mutex
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +48,32 @@ class EmbeddingJob:
 
 
 class DocumentPipelineProgress(BaseModel):
-    total_count: int = Field(
+    total_document_count: int = Field(
         description="The total number of items to process",
         default=0,
     )
 
-    completed_count: int = Field(
+    total_document_completed_count: int = Field(
         description="The number of items that have been processed",
         default=0,
     )
 
-    error_count: int = Field(
+    total_document_extracted_count: int = Field(
+        description="The number of items that have been extracted",
+        default=0,
+    )
+
+    total_document_chunked_count: int = Field(
+        description="The number of items that have been chunked",
+        default=0,
+    )
+
+    total_document_embedded_count: int = Field(
+        description="The number of items that have been embedded",
+        default=0,
+    )
+
+    total_error_count: int = Field(
         description="The number of items that have errored",
         default=0,
     )
@@ -133,8 +149,30 @@ class DocumentPipelineConfiguration(BaseModel):
     )
 
 
+class ExtractionObserver(AsyncJobRunnerObserver[ExtractorJob]):
+    def __init__(
+        self,
+        on_success: Callable[[ExtractorJob], Awaitable[None]],
+        on_error: Callable[[ExtractorJob, Exception], Awaitable[None]],
+    ):
+        self.on_success_fn = on_success
+        self.on_error_fn = on_error
+
+    async def on_success(self, job: ExtractorJob):
+        await self.on_success_fn(job)
+
+    async def on_error(self, job: ExtractorJob, error: Exception):
+        await self.on_error_fn(job, error)
+
+
 class DocumentPipeline:
     progress_message: str = "Initializing..."
+    progress_total_document_count: int = 0
+    progress_total_document_completed_count: int = 0
+    progress_total_document_extracted_count: int = 0
+    progress_total_document_chunked_count: int = 0
+    progress_total_document_embedded_count: int = 0
+    progress_total_error_count: int = 0
 
     def __init__(self, project: Project, configuration: DocumentPipelineConfiguration):
         if not any(configuration.stages.values()):
@@ -274,20 +312,19 @@ class DocumentPipeline:
 
     async def extract(self, jobs: list[ExtractorJob], extractor: BaseExtractor):
         total_count = len(jobs)
-        error_count = 0
-        completed_count = 0
 
-        async def notify_progress():
+        async def notify_progress(completed_count: int, error_count: int):
             await self._notify_progress(
                 DocumentPipelineProgress(
                     message="Extracting document extractions...",
-                    total_count=total_count,
-                    completed_count=completed_count,
-                    error_count=error_count,
+                    total_document_count=total_count,
+                    total_document_completed_count=completed_count,
+                    total_document_extracted_count=completed_count,
+                    total_error_count=error_count,
                 )
             )
 
-        await notify_progress()
+        await notify_progress(0, 0)
 
         # the job execution function will be run in parallel by the AsyncJobRunner
         async def job_execution_fn(job: ExtractorJob) -> bool:
@@ -315,13 +352,32 @@ class DocumentPipeline:
                 else ExtractionSource.PROCESSED,
             )
             extraction.save_to_file()
+
             return True
+
+        completed_count = 0
+        error_count = 0
+
+        async def on_extraction_success(job: ExtractorJob):
+            nonlocal completed_count
+            completed_count += 1
+            await notify_progress(completed_count, error_count)
+
+        async def on_extraction_error(job: ExtractorJob, error: Exception):
+            nonlocal error_count
+            error_count += 1
+            await notify_progress(completed_count, error_count)
 
         runner = AsyncJobRunner(
             jobs=jobs,
             run_job_fn=job_execution_fn,
             concurrency=10,
-            # TODO: add observers to report progress back
+            observers=[
+                ExtractionObserver(
+                    on_success=on_extraction_success,
+                    on_error=on_extraction_error,
+                ),
+            ],
         )
 
         async for progress in runner.run():
@@ -336,9 +392,10 @@ class DocumentPipeline:
             await self._notify_progress(
                 DocumentPipelineProgress(
                     message="Chunking extractions...",
-                    total_count=total_count,
-                    completed_count=completed_count,
-                    error_count=error_count,
+                    total_document_count=total_count,
+                    total_document_completed_count=completed_count,
+                    total_document_chunked_count=completed_count,
+                    total_error_count=error_count,
                 )
             )
 
@@ -394,9 +451,9 @@ class DocumentPipeline:
             await self._notify_progress(
                 DocumentPipelineProgress(
                     message="Embedding chunked documents...",
-                    total_count=total_count,
-                    completed_count=completed_count,
-                    error_count=error_count,
+                    total_document_count=total_count,
+                    total_document_completed_count=completed_count,
+                    total_error_count=error_count,
                 )
             )
 
@@ -450,25 +507,31 @@ class DocumentPipeline:
                 continue
 
             if stage == DocumentPipelineStage.EXTRACTING:
-                docs = await self.collect_extraction_jobs()
-                extractor = extractor_adapter_from_type(
-                    self.configuration.extractor_config.extractor_type,
-                    self.configuration.extractor_config,
-                )
-                await self.extract(docs, extractor)
+                extractor_config = self.configuration.extractor_config
+                async with loop_local_mutex(f"docs:extract:{extractor_config.id}"):
+                    docs = await self.collect_extraction_jobs()
+                    extractor = extractor_adapter_from_type(
+                        extractor_config.extractor_type,
+                        extractor_config,
+                    )
+                    await self.extract(docs, extractor)
             elif stage == DocumentPipelineStage.CHUNKING:
-                extractions = await self.collect_chunking_jobs()
-                chunker = chunker_adapter_from_type(
-                    self.configuration.chunker_config.chunker_type,
-                    self.configuration.chunker_config,
-                )
-                await self.chunk(extractions, chunker)
+                chunker_config = self.configuration.chunker_config
+                async with loop_local_mutex(f"docs:chunk:{chunker_config.id}"):
+                    extractions = await self.collect_chunking_jobs()
+                    chunker = chunker_adapter_from_type(
+                        chunker_config.chunker_type,
+                        chunker_config,
+                    )
+                    await self.chunk(extractions, chunker)
             elif stage == DocumentPipelineStage.EMBEDDING:
-                chunked_documents = await self.collect_embedding_jobs()
-                embedding_adapter = embedding_adapter_from_type(
-                    self.configuration.embedding_config,
-                )
-                await self.generate_embeddings(chunked_documents, embedding_adapter)
+                embedding_config = self.configuration.embedding_config
+                async with loop_local_mutex(f"docs:embedding:{embedding_config.id}"):
+                    chunked_documents = await self.collect_embedding_jobs()
+                    embedding_adapter = embedding_adapter_from_type(
+                        embedding_config,
+                    )
+                    await self.generate_embeddings(chunked_documents, embedding_adapter)
             else:
                 raise ValueError(f"Unknown stage: {stage}")
 

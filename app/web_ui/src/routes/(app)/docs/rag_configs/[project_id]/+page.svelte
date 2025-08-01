@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type { RagConfig, RagProgress } from "$lib/types"
+  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { load_model_info } from "$lib/stores"
@@ -10,7 +10,7 @@
   import EmptyIntro from "./empty_intro.svelte"
   import TableRagConfigRow from "./table_rag_config_row.svelte"
 
-  let rag_configs: RagConfig[] | null = null
+  let rag_configs: RagConfigWithSubConfigs[] | null = null
   let error: KilnError | null = null
   let loading = true
   let page_number: number = parseInt(
@@ -94,7 +94,7 @@
     rag_progress_map = progress_data
   }
 
-  function sortExtractorConfigs(rag_configs: RagConfig[] | null) {
+  function sortExtractorConfigs(rag_configs: RagConfigWithSubConfigs[] | null) {
     if (!rag_configs) return null
     return rag_configs.sort((a, b) => {
       const aValue = a.created_at || ""
@@ -158,8 +158,9 @@
         <table class="table">
           <thead>
             <tr>
-              <th class="">Pipeline Configuration</th>
-              <th class="w-2/3">Progress</th>
+              <th class="w-1/4">Pipeline Configuration</th>
+              <th class="w-2/4">Progress</th>
+              <th class="w-1/4"></th>
             </tr>
           </thead>
           <tbody>

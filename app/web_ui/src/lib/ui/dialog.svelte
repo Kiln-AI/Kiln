@@ -6,7 +6,7 @@
 
   export let title: string
   export let blur_background: boolean = false
-  export let width: "normal" | "wide" = "normal"
+  export let width: "normal" | "wide" | "extra-wide" = "normal"
   const id: string = "dialog-" + Math.random().toString(36)
   type ActionButton = {
     label: string
@@ -68,7 +68,12 @@
 </script>
 
 <dialog {id} class="modal" on:close={() => dispatch("close")}>
-  <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
+  <div
+    class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''} {width ===
+    'extra-wide'
+      ? 'w-11/12 max-w-6xl'
+      : ''}"
+  >
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
     <div class="flex flex-row gap-2 items-center mb-1">

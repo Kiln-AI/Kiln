@@ -1,16 +1,17 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
   import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
-  import Warning from "$lib/ui/warning.svelte"
-  import type { RagConfig } from "../../../../../lib/types"
+  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
+  import RunRagDialog from "./run_rag_dialog.svelte"
 
   export let btn_size: "normal" | "mid" = "mid"
   export let project_id: string
-  export let rag_config: RagConfig
+  export let rag_config: RagConfigWithSubConfigs
+  export let rag_progress: RagProgress
 
   $: rag_config_id = rag_config.id || ""
 
-  let run_confirm_dialog: Dialog | null = null
+  let run_rag_dialog: Dialog | null = null
 
   let progress_dialog: Dialog | null = null
   export function show() {
@@ -22,35 +23,20 @@
     return true
   }
 
-  function run_dialog_buttons(state: string) {
-    let buttons = []
-
-    if (state === "complete") {
-      buttons.push({
-        label: "Close",
-        isCancel: true,
-        isPrimary: false,
-      })
+  $: get_status = () => {
+    if (rag_progress.total_document_completed_count === 0) {
+      return "not_started"
     }
 
-    if (state === "incomplete" || state === "completed_with_errors") {
-      buttons.push({
-        label: "Re-run",
-        isPrimary: true,
-        action: () => {
-          extractorProgressStore.run_extractor(project_id, rag_config_id)
-          return false
-        },
-      })
+    if (
+      rag_progress.total_document_completed_count ===
+      rag_progress.total_document_count
+    ) {
+      return "complete"
     }
 
-    return buttons
+    return "incomplete"
   }
-
-  $: error_count = $extractorProgressStore.progress[rag_config_id]?.error || 0
-  $: total_count = $extractorProgressStore.progress[rag_config_id]?.total || 0
-  $: success_count =
-    $extractorProgressStore.progress[rag_config_id]?.success || 0
 
   function get_state_to_label(status: string) {
     const state_to_label: Record<
@@ -67,7 +53,7 @@
         icon: "play",
         isPrimary: true,
         action: () => {
-          run_confirm_dialog?.show()
+          run_rag_dialog?.show()
         },
       },
       running: {
@@ -86,7 +72,14 @@
           progress_dialog?.show()
         },
       },
-      complete: null,
+      complete: {
+        label: "View details",
+        icon: null,
+        isPrimary: false,
+        action: () => {
+          console.log("view details")
+        },
+      },
       incomplete: {
         label: "Retry",
         icon: "play",
@@ -101,9 +94,12 @@
     return state_to_label[status]
   }
 
-  $: status = $extractorProgressStore.status[rag_config_id]
-  $: disabled = $extractorProgressStore.status[rag_config_id] === "complete"
+  $: status = get_status()
+  $: disabled = status === "complete"
   $: button_state = get_state_to_label(status)
+
+  $: console.log(status)
+  $: console.log(button_state)
 </script>
 
 {#if button_state}
@@ -142,64 +138,4 @@
   </button>
 {/if}
 
-<Dialog
-  bind:this={run_confirm_dialog}
-  title="Extract All Documents?"
-  action_buttons={[
-    { label: "Cancel", isCancel: true },
-    {
-      label: "Extract All",
-      action: () => {
-        extractorProgressStore.run_extractor(project_id, rag_config_id)
-        run_confirm_dialog?.close()
-        return false
-      },
-      isPrimary: true,
-    },
-  ]}
->
-  <div class="flex flex-col gap-2 font-light mt-4">
-    <div>This may take a while, depending on the number of documents.</div>
-    <div>Leave the page open while extraction is running.</div>
-    <Warning
-      warning_color="warning"
-      warning_message="This may use considerable compute/credits."
-      tight={true}
-    />
-  </div>
-</Dialog>
-
-<Dialog
-  bind:this={progress_dialog}
-  title=""
-  action_buttons={run_dialog_buttons(status)}
->
-  <div
-    class="mt-12 mb-6 flex flex-col items-center justify-center min-h-[100px] text-center"
-  >
-    {#if status === "complete"}
-      <div class="font-medium">Extraction Complete 🎉</div>
-    {:else if status === "incomplete"}
-      <div class="font-medium">Extraction Incomplete</div>
-    {:else if status === "running"}
-      <div class="loading loading-spinner loading-lg text-success"></div>
-      <div class="font-medium mt-4">Running...</div>
-    {:else if status === "completed_with_errors"}
-      <div class="font-medium">Extraction Completed with Errors</div>
-    {:else if status === "not_started"}
-      <div class="font-medium">Extraction Not Started</div>
-    {/if}
-    <div class="text-sm font-light min-w-[120px]">
-      {#if total_count > 0}
-        <div>
-          Completed {success_count} of {total_count}
-        </div>
-      {/if}
-      {#if error_count > 0}
-        <div class="text-error font-light text-xs">
-          {error_count} error{error_count === 1 ? "" : "s"}
-        </div>
-      {/if}
-    </div>
-  </div>
-</Dialog>
+<RunRagDialog bind:dialog={run_rag_dialog} {rag_config_id} {project_id} />

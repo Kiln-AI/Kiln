@@ -15,7 +15,7 @@ class Progress:
     errors: int
 
 
-class Observer(Generic[T]):
+class AsyncJobRunnerObserver(Generic[T]):
     async def on_error(self, job: T, error: Exception):
         """
         Called when a job raises an unhandled exception.
@@ -35,7 +35,7 @@ class AsyncJobRunner(Generic[T]):
         jobs: List[T],
         run_job_fn: Callable[[T], Awaitable[bool]],
         concurrency: int = 1,
-        observers: List[Observer[T]] | None = None,
+        observers: List[AsyncJobRunnerObserver[T]] | None = None,
     ):
         if concurrency < 1:
             raise ValueError("concurrency must be ≥ 1")

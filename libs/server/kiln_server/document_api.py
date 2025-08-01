@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Annotated, Dict
+from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -33,9 +33,12 @@ from kiln_ai.datamodel.extraction import (
     get_kind_from_mime_type,
 )
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.utils import loop_local_mutex
 from kiln_ai.utils.document_pipeline import (
+    AbstractPipelineObserver,
     DocumentPipeline,
     DocumentPipelineConfiguration,
+    DocumentPipelineProgress,
 )
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -44,15 +47,6 @@ from pydantic import BaseModel, Field, model_validator
 from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
-
-# keep track of locks by extractor config ID to prevent concurrent runs of the same extractor config
-# maps from extractor config ID -> lock
-run_extractor_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-
-
-# keep track of locks by rag config ID to prevent concurrent runs of the same rag config
-# maps from rag config ID -> lock
-run_rag_config_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 def open_folder(path: str | Path) -> None:
@@ -92,10 +86,6 @@ class OpenFileResponse(BaseModel):
     path: str
 
 
-class DiscoverServeFileResponse(BaseModel):
-    url: str
-
-
 class ExtractionProgress(BaseModel):
     document_count_total: int
     document_count_successful: int
@@ -129,10 +119,15 @@ class RagProgress(BaseModel):
     total_document_embedded_count: int
 
 
-class DocumentWiseProgress(BaseModel):
-    extracted: bool
-    chunked: bool
-    embedded: bool
+class RagConfigWithSubConfigs(BaseModel):
+    id: ID_TYPE
+    name: str
+    description: str | None
+    created_at: datetime.datetime
+    created_by: str
+    extractor_config: ExtractorConfig
+    chunker_config: ChunkerConfig
+    embedding_config: EmbeddingConfig
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -493,7 +488,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         extractor_config_id: str,
     ) -> StreamingResponse:
-        async with run_extractor_locks[extractor_config_id]:
+        async with loop_local_mutex(f"docs:extract:{extractor_config_id}"):
             project = project_from_id(project_id)
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 extractor_config_id, project.path
@@ -934,15 +929,58 @@ def connect_document_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/rag_configs")
     async def get_rag_configs(
         project_id: str,
-    ) -> list[RagConfig]:
+    ) -> list[RagConfigWithSubConfigs]:
         project = project_from_id(project_id)
-        return project.rag_configs(readonly=True)
+
+        rag_configs: list[RagConfigWithSubConfigs] = []
+        for rag_config in project.rag_configs(readonly=True):
+            extractor_config = ExtractorConfig.from_id_and_parent_path(
+                str(rag_config.extractor_config_id), project.path
+            )
+            if not extractor_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Extractor config {rag_config.extractor_config_id} not found",
+                )
+
+            chunker_config = ChunkerConfig.from_id_and_parent_path(
+                str(rag_config.chunker_config_id), project.path
+            )
+            if not chunker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Chunker config {rag_config.chunker_config_id} not found",
+                )
+
+            embedding_config = EmbeddingConfig.from_id_and_parent_path(
+                str(rag_config.embedding_config_id), project.path
+            )
+            if not embedding_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Embedding config {rag_config.embedding_config_id} not found",
+                )
+
+            rag_configs.append(
+                RagConfigWithSubConfigs(
+                    id=rag_config.id,
+                    name=rag_config.name,
+                    description=rag_config.description,
+                    created_at=rag_config.created_at,
+                    created_by=rag_config.created_by,
+                    extractor_config=extractor_config,
+                    chunker_config=chunker_config,
+                    embedding_config=embedding_config,
+                )
+            )
+
+        return rag_configs
 
     @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
     async def get_rag_config(
         project_id: str,
         rag_config_id: str,
-    ) -> RagConfig:
+    ) -> RagConfigWithSubConfigs:
         project = project_from_id(project_id)
         rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
         if rag_config is None:
@@ -950,15 +988,54 @@ def connect_document_api(app: FastAPI):
                 status_code=404,
                 detail="RAG config not found",
             )
-        return rag_config
 
-    @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            str(rag_config.extractor_config_id), project.path
+        )
+        if not extractor_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extractor config {rag_config.extractor_config_id} not found",
+            )
+
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            str(rag_config.chunker_config_id), project.path
+        )
+        if not chunker_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chunker config {rag_config.chunker_config_id} not found",
+            )
+
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            str(rag_config.embedding_config_id), project.path
+        )
+        if not embedding_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding config {rag_config.embedding_config_id} not found",
+            )
+
+        return RagConfigWithSubConfigs(
+            id=rag_config.id,
+            name=rag_config.name,
+            description=rag_config.description,
+            created_at=rag_config.created_at,
+            created_by=rag_config.created_by,
+            extractor_config=extractor_config,
+            chunker_config=chunker_config,
+            embedding_config=embedding_config,
+        )
+
+    # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
     async def run_rag_config(
         project_id: str,
         rag_config_id: str,
-    ) -> dict:
+    ) -> StreamingResponse:
+        print("run_rag_config")
         # prevent concurrent runs of the same rag config that would result in duplicates
-        async with run_rag_config_locks[rag_config_id]:
+        async with loop_local_mutex(rag_config_id):
             project = project_from_id(project_id)
             rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
             if rag_config is None:
@@ -1014,9 +1091,65 @@ def connect_document_api(app: FastAPI):
                     embedding_config=embedding_config,
                 ),
             )
-            await pipeline.run()
 
-            return {"message": f"RAG config {rag_config_id} run started"}
+            class RagObserver(AbstractPipelineObserver):
+                def __init__(self, queue: asyncio.Queue):
+                    self.queue = queue
+
+                async def on_start(self):
+                    await self.queue.put({"type": "start"})
+
+                async def on_progress(self, progress: DocumentPipelineProgress):
+                    await self.queue.put({"type": "progress", "data": progress})
+
+                async def on_error(self, error: Exception):
+                    await self.queue.put({"type": "error", "error": str(error)})
+
+                async def on_end(self):
+                    await self.queue.put({"type": "end"})
+
+            async def event_generator(queue: asyncio.Queue):
+                while True:
+                    event = await queue.get()
+
+                    if event["type"] == "progress":
+                        progress = event["data"]
+                        payload = {
+                            "progress": progress.completed_count,
+                            "total": progress.total_count,
+                            "errors": progress.error_count,
+                            "message": progress.message,
+                        }
+                        yield f"data: {json.dumps(payload)}\n\n"
+
+                    elif event["type"] == "start":
+                        yield f"data: {json.dumps({'status': 'started'})}\n\n"
+
+                    elif event["type"] == "error":
+                        yield f"data: {json.dumps({'status': 'error', 'message': event['error']})}\n\n"
+
+                    elif event["type"] == "end":
+                        yield "data: complete\n\n"
+                        break  # exit the loop and end the stream
+
+            queue = asyncio.Queue()
+            pipeline.register_observers([RagObserver(queue)])
+
+            async def pipeline_runner():
+                try:
+                    await pipeline.run()
+                except Exception as e:
+                    await queue.put({"type": "error", "error": str(e)})
+                finally:
+                    await queue.put({"type": "end"})
+
+            # Start the pipeline in background
+            asyncio.create_task(pipeline_runner())
+
+            return StreamingResponse(
+                content=event_generator(queue),
+                media_type="text/event-stream",
+            )
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(

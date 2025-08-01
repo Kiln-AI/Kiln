@@ -771,10 +771,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /** Run Rag Config */
-        post: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_post"];
+        get: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3306,6 +3306,25 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** RagConfigWithSubConfigs */
+        RagConfigWithSubConfigs: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            extractor_config: components["schemas"]["ExtractorConfig"];
+            chunker_config: components["schemas"]["ChunkerConfig"];
+            embedding_config: components["schemas"]["EmbeddingConfig"];
+        };
         /** RagProgress */
         RagProgress: {
             /** Total Document Count */
@@ -5629,7 +5648,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RagConfig"][];
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"][];
                 };
             };
             /** @description Validation Error */
@@ -5661,7 +5680,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RagConfig"];
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
                 };
             };
             /** @description Validation Error */
@@ -5675,7 +5694,7 @@ export interface operations {
             };
         };
     };
-    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_post: {
+    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5693,7 +5712,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -1,48 +1,27 @@
 <script lang="ts">
-  import type { RagConfig, RagProgress } from "$lib/types"
+  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
-  import { goto } from "$app/navigation"
   import RunRagControl from "./run_rag_control.svelte"
+  import {
+    embedding_model_name,
+    model_name,
+    provider_name_from_id,
+  } from "$lib/stores"
 
-  export let rag_config: RagConfig
+  export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
-  export let rag_progress: RagProgress | null = null
+  export let rag_progress: RagProgress
 
   let row_hovered = false
-  let details_expanded = false
+  let config_expanded = false
 
-  function row_clicked() {
-    goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
-  }
-
-  function toggle_details(event: Event) {
+  function toggle_config_expanded(event: Event) {
     event.stopPropagation()
-    details_expanded = !details_expanded
+    config_expanded = !config_expanded
   }
 
-  // Calculate percentages for progress bars
+  // Calculate percentages for progress bar
   $: total_docs = rag_progress?.total_document_count || 0
-  $: extracted_pct =
-    total_docs > 0
-      ? Math.round(
-          ((rag_progress?.total_document_extracted_count || 0) / total_docs) *
-            100,
-        )
-      : 0
-  $: chunked_pct =
-    total_docs > 0
-      ? Math.round(
-          ((rag_progress?.total_document_chunked_count || 0) / total_docs) *
-            100,
-        )
-      : 0
-  $: embedded_pct =
-    total_docs > 0
-      ? Math.round(
-          ((rag_progress?.total_document_embedded_count || 0) / total_docs) *
-            100,
-        )
-      : 0
   $: completed_pct =
     total_docs > 0
       ? Math.round(
@@ -76,173 +55,161 @@
   })()
 </script>
 
-<tr class={row_hovered ? "hover" : ""}>
-  <!-- Pipeline Info Card -->
-  <td class="align-top p-4 cursor-pointer h-full" on:click={row_clicked}>
-    <div class="flex flex-col gap-3">
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h3 class="font-semibold text-lg text-base-content">
-          {rag_config.name}
-        </h3>
-      </div>
+{#if rag_progress && rag_config}
+  <tr class={row_hovered ? "hover" : ""}>
+    <!-- Pipeline Info Card -->
+    <td class="align-top p-4 h-full">
+      <div class="flex flex-col gap-3">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+          <a
+            class="font-semibold text-lg text-base-content cursor-pointer link"
+            href={`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`}
+          >
+            {rag_config.name}
+          </a>
+          <button
+            on:click={toggle_config_expanded}
+            class="text-base-content/40 hover:text-base-content/70 transition-colors"
+            title={config_expanded
+              ? "Hide configuration details"
+              : "Show configuration details"}
+          >
+            <div class="flex items-center justify-center">
+              <svg
+                fill="currentColor"
+                class="h-4 w-4 transition-transform duration-200 {config_expanded
+                  ? 'rotate-180'
+                  : ''}"
+                version="1.1"
+                id="Layer_1"
+                xmlns="http://www.w3.org/2000/svg"
+                xmlns:xlink="http://www.w3.org/1999/xlink"
+                viewBox="0 0 407.437
+              407.437"
+                xml:space="preserve"
+              >
+                <polygon
+                  points="386.258,91.567 203.718,273.512 21.179,91.567 0,112.815 203.718,315.87 407.437,112.815 "
+                />
+              </svg>
+            </div>
+          </button>
+        </div>
 
-      <!-- Description -->
-      {#if rag_config.description}
-        <p class="text-sm text-base-content/70 leading-relaxed">
-          {rag_config.description}
+        <!-- Description -->
+        <p class="text-sm text-gray-500 leading-relaxed">
+          Description: {rag_config.description || "N/A"}
         </p>
-      {/if}
 
-      <!-- Pipeline Components -->
-      <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2 text-xs">
-          <div class="w-2 h-2 rounded-full bg-primary"></div>
-          <span class="font-medium">Extractor:</span>
-          <span class="text-base-content/60"
-            >ID: {rag_config.extractor_config_id
-              ? rag_config.extractor_config_id.slice(0, 8) + "..."
-              : "Not set"}</span
-          >
-        </div>
-        <div class="flex items-center gap-2 text-xs">
-          <div class="w-2 h-2 rounded-full bg-secondary"></div>
-          <span class="font-medium">Chunker:</span>
-          <span class="text-base-content/60"
-            >ID: {rag_config.chunker_config_id
-              ? rag_config.chunker_config_id.slice(0, 8) + "..."
-              : "Not set"}</span
-          >
-        </div>
-        <div class="flex items-center gap-2 text-xs">
-          <div class="w-2 h-2 rounded-full bg-accent"></div>
-          <span class="font-medium">Embedding:</span>
-          <span class="text-base-content/60"
-            >ID: {rag_config.embedding_config_id
-              ? rag_config.embedding_config_id.slice(0, 8) + "..."
-              : "Not set"}</span
-          >
-        </div>
-      </div>
-
-      <!-- Created Date -->
-      <div class="text-xs text-base-content/50">
-        Created {formatDate(rag_config.created_at)}
-      </div>
-    </div>
-  </td>
-
-  <!-- Progress Section -->
-  <td class="p-4 cursor-default align-top">
-    <div class="flex flex-col gap-3">
-      <!-- Overall Progress -->
-      <div class="flex items-center justify-between">
-        <div class="badge {status.color} badge-outline text-xs font-medium">
-          {status.text}
-        </div>
-        <span class="text-sm text-base-content/60">{completed_pct}%</span>
-      </div>
-      <progress
-        class="progress progress-primary bg-primary/20 w-full h-2"
-        value={rag_progress?.total_document_completed_count || 0}
-        max={total_docs || 100}
-      ></progress>
-      {#if total_docs > 0}
-        <div class="text-xs text-base-content/50 text-start">
-          {rag_progress?.total_document_completed_count || 0} of {total_docs} documents
-          processed
-        </div>
-      {/if}
-
-      <!-- Expandable Details -->
-      <div class="flex items-center justify-end">
-        <button
-          on:click={toggle_details}
-          class="inline-flex items-center px-2 py-1 text-xs leading-4 font-medium rounded-md text-base-content/60 bg-base-200 hover:bg-base-300 focus:outline-none focus:ring-offset-0 focus:ring-0 transition-colors duration-150"
-          title={details_expanded
-            ? "Hide detailed progress"
-            : "Show detailed progress"}
-        >
-          <svg
-            class="h-3 w-3 mr-1 transition-transform duration-200 {details_expanded
-              ? 'rotate-180'
-              : ''}"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-          {details_expanded ? "Hide" : "Show"} Details
-        </button>
-      </div>
-
-      <!-- Collapsible Pipeline Steps -->
-      {#if details_expanded}
-        <div
-          class="space-y-3 pt-2 border-t border-base-300 bg-gray-50 p-4 rounded-b-md"
-        >
-          <!-- Extraction Step -->
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-primary"></div>
-              <span class="text-xs font-medium">Extraction</span>
-              <span class="text-xs text-base-content/50">
-                ({extracted_pct}%)
-              </span>
+        <!-- Detailed Configuration -->
+        {#if config_expanded}
+          <div class="space-y-3 pt-2">
+            <!-- Extractor Details -->
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-primary"></div>
+                <span class="text-xs font-medium">Extractor</span>
+              </div>
+              <div class="ml-4 space-y-1 text-xs text-base-content/70">
+                <div>
+                  Provider: {provider_name_from_id(
+                    rag_config.extractor_config.model_provider_name,
+                  ) || "N/A"}
+                </div>
+                <div>
+                  Model: {model_name(
+                    rag_config.extractor_config?.model_name,
+                    null,
+                  ) || "N/A"}
+                </div>
+                <div>
+                  Format: {rag_config.extractor_config.output_format || "N/A"}
+                </div>
+              </div>
             </div>
-            <progress
-              class="progress progress-primary bg-primary/20 w-11/12 h-1.5 ml-2"
-              value={(rag_progress?.total_document_extracted_count || 0) - 1}
-              max={total_docs || 100}
-            ></progress>
-          </div>
 
-          <!-- Chunking Step -->
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-secondary"></div>
-              <span class="text-xs font-medium">Chunking</span>
-              <span class="text-xs text-base-content/50">
-                ({chunked_pct}%)
-              </span>
+            <!-- Chunker Details -->
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-secondary"></div>
+                <span class="text-xs font-medium">Chunker</span>
+              </div>
+              <div class="ml-4 space-y-1 text-xs text-base-content/70">
+                <div>
+                  Strategy: {rag_config.chunker_config.chunker_type || "N/A"}
+                </div>
+                {#if rag_config.chunker_config.properties?.chunk_size}
+                  <div>
+                    Size: {rag_config.chunker_config.properties.chunk_size} tokens
+                  </div>
+                {/if}
+                {#if rag_config.chunker_config.properties?.chunk_overlap}
+                  <div>
+                    Overlap: {rag_config.chunker_config.properties
+                      .chunk_overlap} tokens
+                  </div>
+                {/if}
+              </div>
             </div>
-            <progress
-              class="progress progress-primary bg-primary/20 w-11/12 h-1.5 ml-2"
-              value={rag_progress?.total_document_chunked_count || 0}
-              max={total_docs || 100}
-            ></progress>
-          </div>
 
-          <!-- Embedding Step -->
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-accent"></div>
-              <span class="text-xs font-medium">Embedding</span>
-              <span class="text-xs text-base-content/50">
-                ({embedded_pct}%)
-              </span>
+            <!-- Embedding Details -->
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-accent"></div>
+                <span class="text-xs font-medium">Embedding</span>
+              </div>
+              <div class="ml-4 space-y-1 text-xs text-base-content/70">
+                <div>
+                  Provider: {provider_name_from_id(
+                    rag_config.embedding_config.model_provider_name,
+                  ) || "N/A"}
+                </div>
+                <div>
+                  Model: {embedding_model_name(
+                    rag_config.embedding_config.model_name,
+                    rag_config.embedding_config.model_provider_name,
+                  ) || "N/A"}
+                </div>
+              </div>
             </div>
-            <progress
-              class="progress progress-primary bg-primary/20 w-11/12 h-1.5 ml-2"
-              value={rag_progress?.total_document_embedded_count || 0}
-              max={total_docs || 100}
-            ></progress>
           </div>
+        {/if}
+
+        <!-- Created Date -->
+        <div class="text-xs text-base-content/50">
+          Created {formatDate(rag_config.created_at)}
         </div>
-      {/if}
-    </div>
-  </td>
+      </div>
+    </td>
 
-  <!-- Actions -->
-  <td class="p-4 cursor-default">
-    <div class="flex flex-col gap-3 items-start">
-      <RunRagControl {rag_config} {project_id} />
-    </div>
-  </td>
-</tr>
+    <!-- Progress Section -->
+    <td class="p-4 cursor-default align-top">
+      <div class="flex flex-col gap-3">
+        <!-- Overall Progress -->
+        <div class="flex items-center justify-between">
+          <div class="badge {status.color} badge-outline text-xs font-medium">
+            {status.text}
+          </div>
+          <span class="text-sm text-base-content/60">{completed_pct}%</span>
+        </div>
+        <progress
+          class="progress progress-primary bg-primary/20 w-full h-2"
+          value={rag_progress.total_document_completed_count || 0}
+          max={total_docs || 100}
+        ></progress>
+        {#if total_docs > 0}
+          <div class="text-xs text-base-content/50 text-start">
+            {rag_progress.total_document_completed_count || 0} of {total_docs} documents
+            processed
+          </div>
+        {/if}
+      </div>
+    </td>
+
+    <!-- Actions -->
+    <td class="p-4 cursor-default align-top">
+      <RunRagControl {rag_config} {project_id} {rag_progress} />
+    </td>
+  </tr>
+{/if}

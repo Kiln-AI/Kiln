@@ -18,7 +18,9 @@
     EmbeddingConfig,
   } from "../../../../../../lib/types"
   import {
+    embedding_model_name,
     get_model_friendly_name,
+    load_available_embedding_models,
     provider_name_from_id,
   } from "../../../../../../lib/stores"
 
@@ -60,6 +62,10 @@
   function handle_modal_close() {
     modal_opened = null
   }
+
+  onMount(async () => {
+    await load_available_embedding_models()
+  })
 
   // Convert configs to option groups for fancy select
   $: extractor_options = [
@@ -112,7 +118,7 @@
           {
             label: "Chunkers",
             options: chunker_configs.map((config) => ({
-              label: `Chunk size: ${config.properties?.chunk_size} - Chunk overlap: ${config.properties?.chunk_overlap}`,
+              label: `Size: ${config.properties?.chunk_size} tokens - Overlap: ${config.properties?.chunk_overlap} tokens`,
               value: config.id,
               description:
                 config.name +
@@ -142,9 +148,9 @@
             label: "Embedding Models",
             options: embedding_configs.map((config) => ({
               label:
-                `${config.model_name}` +
+                `${embedding_model_name(config.model_name, config.model_provider_name)} (${provider_name_from_id(config.model_provider_name)})` +
                 (config.properties?.dimensions
-                  ? `- shortened to ${config.properties?.dimensions} dimensions`
+                  ? `- ${config.properties?.dimensions} dimensions`
                   : ""),
               value: config.id,
               description:
@@ -363,7 +369,7 @@
             {:else}
               <FormElement
                 id="extractor_select"
-                label="Select Extractor"
+                label="Extractor"
                 description="Choose an extractor to convert your documents into text."
                 fancy_select_options={extractor_options}
                 bind:value={selected_extractor_config_id}
@@ -382,7 +388,7 @@
             {:else}
               <FormElement
                 id="chunker_select"
-                label="Select Chunker"
+                label="Chunker"
                 description="Choose a chunker to split your documents into smaller pieces for better retrieval."
                 fancy_select_options={chunker_options}
                 bind:value={selected_chunker_config_id}
@@ -401,7 +407,7 @@
             {:else}
               <FormElement
                 id="embedding_select"
-                label="Select Embedding Model"
+                label="Embedding Model"
                 description="Choose an embedding model to convert your document chunks into vectors for similarity search."
                 fancy_select_options={embedding_options}
                 bind:value={selected_embedding_config_id}
