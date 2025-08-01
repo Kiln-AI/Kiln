@@ -301,7 +301,7 @@
     (provider) => provider.connected,
   )
   export let intermediate_step = false
-  export let is_initial_setup_page = false
+  export let centered = false
   let api_key_provider: Provider | null = null
   $: {
     intermediate_step = api_key_provider != null
@@ -691,7 +691,7 @@
   }
 </script>
 
-<div class="w-full {is_initial_setup_page && 'flex flex-col items-center'}">
+<div class="w-full {centered && 'flex flex-col items-center'}">
   {#if api_key_provider}
     <div class="grow h-full max-w-[400px] flex flex-col place-content-center">
       <div class="grow"></div>

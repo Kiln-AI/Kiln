@@ -4,7 +4,7 @@
   let has_connected_providers = false
   let intermediate_step = false
   let next_visible = false
-  let is_initial_setup_page = true
+  let centered = true
   $: next_visible = !intermediate_step && has_connected_providers
 </script>
 
@@ -25,7 +25,7 @@
   <ConnectProviders
     bind:has_connected_providers
     bind:intermediate_step
-    bind:is_initial_setup_page
+    bind:centered
   />
 </div>
 
