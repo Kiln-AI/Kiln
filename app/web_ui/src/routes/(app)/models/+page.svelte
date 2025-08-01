@@ -45,7 +45,6 @@
 
   // Search and filter state
   let searchQuery = ""
-  let selectedFamily = ""
   let selectedProvider = ""
   let selectedCapability = ""
 
@@ -54,7 +53,6 @@
   let sortDirection = "asc"
 
   // Available filter options
-  let families: string[] = []
   let providers: string[] = []
   let capabilities = [
     { value: "data_gen", label: "Data Generation" },
@@ -66,30 +64,14 @@
   ]
 
   // Sort options
-  let sortOptions = [
-    { value: "name", label: "Name" },
-    { value: "family", label: "Family" },
-  ]
-
-  // Convert arrays to OptionGroup format for fancy_select
-  $: familyOptions = [
-    {
-      options: [
-        { label: "All Families", value: "" },
-        ...families.map((family) => ({
-          label: family,
-          value: family,
-        })),
-      ],
-    },
-  ]
+  let sortOptions = [{ value: "name", label: "Name" }]
 
   $: providerOptions = [
     {
       options: [
         { label: "All Providers", value: "" },
         ...providers.map((provider) => ({
-          label: provider,
+          label: provider_name_from_id(provider),
           value: provider,
         })),
       ],
@@ -110,11 +92,14 @@
 
   // Active filters for badges
   $: activeFilters = [
-    ...(selectedFamily
-      ? [{ type: "family", value: selectedFamily, label: selectedFamily }]
-      : []),
     ...(selectedProvider
-      ? [{ type: "provider", value: selectedProvider, label: selectedProvider }]
+      ? [
+          {
+            type: "provider",
+            value: selectedProvider,
+            label: provider_name_from_id(selectedProvider),
+          },
+        ]
       : []),
     ...(selectedCapability
       ? [
@@ -132,9 +117,6 @@
   // Remove filter function
   function removeFilter(type: string) {
     switch (type) {
-      case "family":
-        selectedFamily = ""
-        break
       case "provider":
         selectedProvider = ""
         break
@@ -159,8 +141,7 @@
       const data: ConfigData = await response.json()
       models = data.model_list
 
-      // Extract unique families and providers for filters
-      families = [...new Set(models.map((m) => m.family))].sort()
+      // Extract unique providers for filters
       providers = [
         ...new Set(models.flatMap((m) => m.providers.map((p) => p.name))),
       ].sort()
@@ -180,16 +161,11 @@
       const searchLower = searchQuery?.toLowerCase() || ""
       const matchesSearch =
         searchQuery === "" ||
-        model.family?.toLowerCase().includes(searchLower) ||
         model.friendly_name?.toLowerCase().includes(searchLower) ||
         model.name?.toLowerCase().includes(searchLower) ||
         model.providers.some((p) =>
           p.model_id?.toLowerCase().includes(searchLower),
         )
-
-      // Family filter
-      const matchesFamily =
-        selectedFamily === "" || model.family === selectedFamily
 
       // Provider filter
       const matchesProvider =
@@ -219,9 +195,7 @@
         })
       }
 
-      return (
-        matchesSearch && matchesFamily && matchesProvider && matchesCapability
-      )
+      return matchesSearch && matchesProvider && matchesCapability
     })
 
     // Apply sorting
@@ -243,10 +217,6 @@
           aValue = a.friendly_name.toLowerCase()
           bValue = b.friendly_name.toLowerCase()
           break
-        case "family":
-          aValue = a.family.toLowerCase()
-          bValue = b.family.toLowerCase()
-          break
         default:
           return 0
       }
@@ -262,7 +232,6 @@
   // Clear all filters
   function clearFilters() {
     searchQuery = ""
-    selectedFamily = ""
     selectedProvider = ""
     selectedCapability = ""
     sortBy = ""
@@ -289,11 +258,7 @@
 
   // Check if any filters are active
   $: hasActiveFilters =
-    searchQuery ||
-    selectedFamily ||
-    selectedProvider ||
-    selectedCapability ||
-    sortBy
+    searchQuery || selectedProvider || selectedCapability || sortBy
 
   // Get capability badges for a model
   function getCapabilityBadges(providers: Provider[]) {
@@ -335,12 +300,7 @@
   }
 
   // Watch for filter changes
-  $: searchQuery,
-    selectedFamily,
-    selectedProvider,
-    selectedCapability,
-    models,
-    applyFilters()
+  $: searchQuery, selectedProvider, selectedCapability, models, applyFilters()
 
   // Watch for sort changes
   $: sortBy, sortDirection, applySorting()
@@ -486,27 +446,14 @@
             id="search"
             type="text"
             bind:value={searchQuery}
-            placeholder="Search by family, name, or model ID..."
+            placeholder="Search by name, model ID..."
             class="block w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
           />
         </div>
       </div>
 
       <!-- Filters Row -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <!-- Family Filter -->
-        <div>
-          <label
-            for="family"
-            class="block text-sm font-medium text-gray-700 mb-2">Family</label
-          >
-          <FancySelect
-            bind:selected={selectedFamily}
-            options={familyOptions}
-            empty_label="All Families"
-          />
-        </div>
-
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <!-- Provider Filter -->
         <div>
           <label
