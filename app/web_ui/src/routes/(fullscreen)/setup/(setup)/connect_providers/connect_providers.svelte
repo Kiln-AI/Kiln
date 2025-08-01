@@ -59,6 +59,12 @@
       featured: false,
     },
     {
+      name: "Docker Model Runner",
+      id: "docker_model_runner",
+      description: "Run models locally with Docker. No API key required.",
+      featured: false,
+    },
+    {
       name: "Groq",
       id: "groq",
       description:
@@ -216,6 +222,12 @@
       error: null,
       custom_description: null,
     },
+    docker_model_runner: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
     openai: {
       connected: false,
       connecting: false,
@@ -358,6 +370,9 @@
     if (provider.id === "ollama") {
       connect_ollama()
     }
+    if (provider.id === "docker_model_runner") {
+      connect_docker_model_runner()
+    }
     if (provider.id === "openai_compatible") {
       show_custom_api_dialog()
     }
@@ -447,6 +462,78 @@
         : "Custom Ollama URL: " + custom_ollama_url
     status.ollama.custom_description =
       "Ollama connected. " +
+      supported_models_str +
+      untested_models_str +
+      custom_url_str
+  }
+
+  let custom_docker_url: string | null = null
+
+  const connect_docker_model_runner = async (user_initiated: boolean = true) => {
+    status.docker_model_runner.connected = false
+    status.docker_model_runner.connecting = user_initiated
+
+    let data: any | null = null
+    try {
+      const { data: req_data, error: req_error } = await client.GET(
+        "/api/provider/docker_model_runner/connect",
+        {
+          params: {
+            query: {
+              custom_docker_url: custom_docker_url || undefined,
+            },
+          },
+        },
+      )
+      if (req_error) {
+        throw req_error
+      }
+      data = req_data
+    } catch (e) {
+      if (
+        e &&
+        typeof e === "object" &&
+        "message" in e &&
+        typeof e.message === "string"
+      ) {
+        status.docker_model_runner.error = e.message
+      } else {
+        status.docker_model_runner.error = "Failed to connect. Ensure Docker Model Runner is running."
+      }
+      status.docker_model_runner.connected = false
+      return
+    } finally {
+      status.docker_model_runner.connecting = false
+    }
+
+    if (
+      data.supported_models.length === 0 &&
+      (!data.untested_models || data.untested_models.length === 0)
+    ) {
+      status.docker_model_runner.error =
+        "Docker Model Runner running, but no models available. Pull some models first: https://hub.docker.com/u/ai"
+      return
+    }
+    status.docker_model_runner.error = null
+    status.docker_model_runner.connected = true
+    const supported_models_str =
+      data.supported_models.length > 0
+        ? "The following supported models are available: " +
+          data.supported_models.join(", ") +
+          ". "
+        : "No supported models are loaded. "
+    const untested_models_str =
+      data.untested_models && data.untested_models.length > 0
+        ? "The following untested models are loaded: " +
+          data.untested_models.join(", ") +
+          ". "
+        : ""
+    const custom_url_str =
+      custom_docker_url && custom_docker_url !== "http://localhost:12434/engines/llama.cpp"
+        ? "Custom Docker Model Runner URL: " + custom_docker_url
+        : ""
+    status.docker_model_runner.custom_description =
+      "Docker Model Runner connected. " +
       supported_models_str +
       untested_models_str +
       custom_url_str
@@ -589,6 +676,11 @@
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
+    })
+    // Check Docker Model Runner every load, as it can be closed. More ephemeral (and local/cheap/fast)
+    connect_docker_model_runner(false).then(() => {
+      // Clear the error as the user didn't initiate this run
+      status["docker_model_runner"].error = null
     })
   })
 
