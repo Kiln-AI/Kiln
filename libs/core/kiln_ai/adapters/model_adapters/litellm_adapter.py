@@ -24,9 +24,12 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import run_config_from_run_config_properties
 from kiln_ai.tools.base_tool import KilnTool
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+MAX_CALLS_PER_TURN = 10
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +72,7 @@ class LiteLlmAdapter(BaseAdapter):
         turns = 0
         while True:
             turns += 1
-            if turns > 10:
+            if turns > MAX_CALLS_PER_TURN:
                 raise RuntimeError(
                     f"Too many turns ({turns}). Stopping iteration to avoid using too many tokens."
                 )
@@ -505,14 +508,25 @@ class LiteLlmAdapter(BaseAdapter):
                     f"A tool named '{tool_name}' was invoked by a model, but was not available."
                 )
 
+            # Parse the arguments and validate them against the tool's schema
             try:
                 parsed_args = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
                 raise RuntimeError(
                     f"Failed to parse arguments for tool '{tool_name}' (should be JSON): {tool_call.function.arguments}"
                 )
+            try:
+                json_schema = json.dumps(
+                    tool.toolcall_definition()["function"]["parameters"]
+                )
+                validate_schema_with_value_error(parsed_args, json_schema)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
+                ) from e
 
             result = tool.run(**parsed_args)
+
             tool_call_messages.append(
                 {
                     "role": "tool",
