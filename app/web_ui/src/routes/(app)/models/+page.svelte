@@ -4,7 +4,11 @@
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { ModelProviderName } from "$lib/types"
   import AppPage from "../app_page.svelte"
-  import { load_available_models, provider_name_from_id } from "$lib/stores"
+  import {
+    available_models,
+    load_available_models,
+    provider_name_from_id,
+  } from "$lib/stores"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
   interface Provider {
@@ -354,12 +358,23 @@
   $: sortBy, sortDirection, applySorting()
 
   onMount(async () => {
-    // we need to seed the available models in the Svelte store, because we get
-    // the provider friendly name formatter from there, but we load the actual
-    // model list from the remote config, because that is the most up to date
     await load_available_models()
     await fetchModelsFromRemoteConfig()
   })
+
+  function model_provider_is_connected(provider_id: string, model_id: string) {
+    for (const provider of $available_models) {
+      if (provider.provider_id === provider_id) {
+        for (const model of provider.models) {
+          if (model.id === model_id) {
+            return true
+          }
+        }
+      }
+    }
+
+    return false
+  }
 </script>
 
 <svelte:head>
@@ -668,26 +683,52 @@
                       <div
                         class="flex items-center justify-between p-3 bg-gray-50 rounded-md"
                       >
-                        <div class="flex items-center space-x-3">
-                          <img
-                            src={get_provider_image(provider.name)}
-                            alt={provider.name}
-                            class="w-6 h-6 rounded"
-                            on:error={(e) => {
-                              if (e.target instanceof HTMLImageElement) {
-                                e.target.style.display = "none"
-                              }
-                            }}
-                          />
-                          <div>
-                            <p class="text-sm font-medium text-gray-900">
-                              {provider_name_from_id(provider.name)}
-                            </p>
-                            <p class="text-xs text-gray-500 break-all">
-                              {provider.model_id}
-                            </p>
+                        {#if model_provider_is_connected(provider.name, model.name)}
+                          <div class="flex items-center space-x-3">
+                            <img
+                              src={get_provider_image(provider.name)}
+                              alt={provider.name}
+                              class="w-6 h-6 rounded"
+                              on:error={(e) => {
+                                if (e.target instanceof HTMLImageElement) {
+                                  e.target.style.display = "none"
+                                }
+                              }}
+                            />
+                            <div>
+                              <p class="text-sm font-medium text-gray-900">
+                                {provider_name_from_id(provider.name)}
+                              </p>
+                              <p class="text-xs text-gray-500 break-all">
+                                {provider.model_id}
+                              </p>
+                            </div>
                           </div>
-                        </div>
+                        {:else}
+                          <a
+                            href="/settings/providers"
+                            class="flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1"
+                          >
+                            <img
+                              src={get_provider_image(provider.name)}
+                              alt={provider.name}
+                              class="w-6 h-6 rounded"
+                              on:error={(e) => {
+                                if (e.target instanceof HTMLImageElement) {
+                                  e.target.style.display = "none"
+                                }
+                              }}
+                            />
+                            <div>
+                              <p class="text-sm font-medium text-gray-900">
+                                {provider_name_from_id(provider.name)}
+                              </p>
+                              <p class="text-xs text-gray-500 break-all">
+                                {provider.model_id}
+                              </p>
+                            </div>
+                          </a>
+                        {/if}
                         <div class="flex items-center space-x-1">
                           {#if provider.supports_structured_output}
                             <span

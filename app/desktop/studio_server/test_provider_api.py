@@ -363,6 +363,7 @@ async def test_get_available_models(app, client):
                     name=ModelProviderName.together_ai,
                     provider_finetune_id="together_model2",
                     structured_output_mode="json_instructions",
+                    # no model_id
                 ),
             ],
         ),
@@ -455,7 +456,7 @@ async def test_get_available_models(app, client):
                 }
             ],
         },
-    ]
+    ], response.json()
 
 
 @pytest.mark.asyncio
@@ -588,12 +589,14 @@ def test_model_from_ollama_tag():
         assert result is not None
         assert result.name == "model1"
         assert provider.name == ModelProviderName.ollama
+        assert provider.model_id == "llama2"
 
         # Test with :latest suffix
         result, provider = models_from_ollama_tag("mistral:latest")[0]
         assert result is not None
         assert result.name == "model2"
         assert provider.name == ModelProviderName.ollama
+        assert provider.model_id == "mistral"
 
         # Test model alias match
         result, provider = models_from_ollama_tag("llama-2")[0]
@@ -633,11 +636,17 @@ def test_model_from_ollama_tag():
         results = models_from_ollama_tag("llama-2")
         assert len(results) == 2
         model, provider = results[0]
+        assert model is not None
         assert model.name == "model1"
+        assert provider is not None
         assert provider.name == ModelProviderName.ollama
+        assert provider.model_id == "llama2"
         model, provider = results[1]
+        assert model is not None
         assert model.name == "model1v2"
+        assert provider is not None
         assert provider.name == ModelProviderName.ollama
+        assert provider.model_id == "llama2"
 
 
 @pytest.mark.asyncio
