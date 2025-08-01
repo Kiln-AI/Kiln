@@ -168,10 +168,10 @@
         const should_skip_task_creation = await project_has_tasks(data.id)
 
         if (should_skip_task_creation) {
-          // Project has tasks, go directly to main app
-          goto("/run")
+          // Project has tasks, go to select task page
+          goto("/setup/select_task")
         } else {
-          // Project has no tasks, go to task creation
+          // Project has no tasks, go to task creation page
           redirect_to_project(data.id)
         }
         return
