@@ -165,11 +165,11 @@
 
       if (redirect_on_created && data?.id) {
         // Check if the imported project has tasks to decide where to redirect
-        const should_skip_task_creation = await check_project_has_tasks(data.id)
+        const should_skip_task_creation = await project_has_tasks(data.id)
 
         if (should_skip_task_creation) {
           // Project has tasks, go directly to main app
-          goto("/")
+          goto("/run")
         } else {
           // Project has no tasks, go to task creation
           redirect_to_project(data.id)
@@ -184,7 +184,7 @@
   }
 
   // Check if an imported project has existing tasks
-  async function check_project_has_tasks(project_id: string): Promise<boolean> {
+  async function project_has_tasks(project_id: string): Promise<boolean> {
     try {
       const { data: tasks_data, error: tasks_error } = await client.GET(
         "/api/projects/{project_id}/tasks",
