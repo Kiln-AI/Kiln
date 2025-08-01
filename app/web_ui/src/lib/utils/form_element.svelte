@@ -5,6 +5,7 @@
 
   export let inputType:
     | "input"
+    | "input_number"
     | "textarea"
     | "select"
     | "fancy_select"
@@ -149,6 +150,21 @@
     {:else if inputType === "input"}
       <input
         type="text"
+        placeholder={error_message || placeholder || label}
+        {id}
+        class="input text-base input-bordered w-full font-base {error_message ||
+        inline_error
+          ? 'input-error'
+          : ''}"
+        bind:value
+        on:input={run_validator}
+        autocomplete="off"
+        data-op-ignore="true"
+        {disabled}
+      />
+    {:else if inputType === "input_number"}
+      <input
+        type="number"
         placeholder={error_message || placeholder || label}
         {id}
         class="input text-base input-bordered w-full font-base {error_message ||

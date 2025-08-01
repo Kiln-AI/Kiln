@@ -1,5 +1,6 @@
+import json
 from functools import cached_property
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import litellm
 from litellm.types.utils import EmbeddingResponse
@@ -14,6 +15,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
 )
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
 
@@ -82,18 +84,39 @@ def validate_map_to_embeddings(
 
 
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
-    def __init__(self, embedding_config: EmbeddingConfig):
+    def __init__(
+        self, embedding_config: EmbeddingConfig, litellm_core_config: LiteLlmCoreConfig
+    ):
         super().__init__(embedding_config)
+
+        self.litellm_core_config = litellm_core_config
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         # documented on litellm: https://docs.litellm.ai/docs/embedding/supported_embedding
         if len(input_texts) > MAX_BATCH_SIZE:
             raise ValueError("Text is too long")
 
+        completion_kwargs: Dict[str, Any] = {}
+        if self.litellm_core_config.additional_body_options:
+            completion_kwargs.update(self.litellm_core_config.additional_body_options)
+
+        if self.litellm_core_config.base_url:
+            completion_kwargs["base_url"] = self.litellm_core_config.base_url
+
+        if self.litellm_core_config.default_headers:
+            completion_kwargs["default_headers"] = (
+                self.litellm_core_config.default_headers
+            )
+
+        print(f"Completion kwargs: {json.dumps(completion_kwargs, indent=2)}")
+        print(f"Model id: {self.litellm_model_id}")
+        print(f"Options: {self.build_options().model_dump_json(exclude_none=True)}")
+
         response = await litellm.aembedding(
             model=self.litellm_model_id,
             input=input_texts,
             **self.build_options().model_dump(exclude_none=True),
+            **completion_kwargs,
         )
 
         validated_embeddings = validate_map_to_embeddings(
