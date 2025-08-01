@@ -17,6 +17,9 @@ from kiln_ai.adapters.model_adapters.litellm_config import (
 from kiln_ai.adapters.ollama_tools import (
     get_ollama_connection,
 )
+from kiln_ai.adapters.docker_model_runner_tools import (
+    get_docker_model_runner_connection,
+)
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.registry import project_from_id
@@ -31,6 +34,15 @@ async def provider_enabled(provider_name: ModelProviderName) -> bool:
     if provider_name == ModelProviderName.ollama:
         try:
             conn = await get_ollama_connection()
+            return conn is not None and (
+                len(conn.supported_models) > 0 or len(conn.untested_models) > 0
+            )
+        except Exception:
+            return False
+
+    if provider_name == ModelProviderName.docker_model_runner:
+        try:
+            conn = await get_docker_model_runner_connection()
             return conn is not None and (
                 len(conn.supported_models) > 0 or len(conn.untested_models) > 0
             )
@@ -384,6 +396,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Google Vertex AI"
             case ModelProviderName.together_ai:
                 return "Together AI"
+            case ModelProviderName.docker_model_runner:
+                return "Docker Model Runner"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
