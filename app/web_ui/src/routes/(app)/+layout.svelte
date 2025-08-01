@@ -406,7 +406,7 @@
               stroke="currentColor"
               stroke-width="1.5"
             />
-          </svg>Model Library
+          </svg>Models
         </a>
       </li>
       <li class="menu-lg">
