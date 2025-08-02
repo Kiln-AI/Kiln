@@ -21,8 +21,7 @@
     supports_finetuning:
       "Supports finetuning, to train the model on your own use cases.",
     supports_data_gen: "Supports Synthetic Data Generation.",
-    supports_structured_output:
-      "Supports structured output (JSON) preferring the tool-calling method.",
+    supports_structured_output: "Supports structured output (JSON).",
     supports_logprobs:
       "Supports logprobs, a feature needed for the advanced eval method G-Eval.",
     uncensored:
