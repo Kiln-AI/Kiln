@@ -11,6 +11,24 @@
   } from "$lib/stores"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
+  const CAPABILITY_TOOLTIP_MESSAGES = {
+    suggested_for_data_gen:
+      "Recommended for Synthetic Data Generation - one of the best models.",
+    suggested_for_evals:
+      "Recommended for Evaluations - one of the best models.",
+    suggested_for_uncensored_data_gen:
+      "Recommended for Uncensored Data Generation - one of the best models for adversarial evals that require any outputs.",
+    supports_finetuning:
+      "Supports finetuning, to train the model on your own use cases.",
+    supports_data_gen: "Supports Synthetic Data Generation.",
+    supports_structured_output:
+      "Supports structured output (JSON) preferring the tool-calling method.",
+    supports_logprobs:
+      "Supports logprobs, a feature needed for the advanced eval method G-Eval.",
+    uncensored:
+      "Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals.",
+  }
+
   interface Provider {
     name: ModelProviderName
     model_id: string | null
@@ -56,11 +74,11 @@
   let providers: string[] = []
   let capabilities = [
     { value: "data_gen", label: "Data Generation" },
-    { value: "evals", label: "Evaluations" },
     { value: "structured_output", label: "Structured Output" },
     { value: "logprobs", label: "Logprobs" },
     { value: "uncensored", label: "Uncensored" },
     { value: "finetune", label: "Finetune" },
+    { value: "suggested_for_evals", label: "Suggested for Evals" },
   ]
 
   // Sort options
@@ -179,7 +197,7 @@
           switch (selectedCapability) {
             case "data_gen":
               return p.supports_data_gen
-            case "evals":
+            case "suggested_for_evals":
               return p.suggested_for_evals
             case "structured_output":
               return p.supports_structured_output
@@ -260,43 +278,70 @@
   $: hasActiveFilters =
     searchQuery || selectedProvider || selectedCapability || sortBy
 
-  // Get capability badges for a model
   function getCapabilityBadges(providers: Provider[]) {
-    const badges = []
+    // some badges are more important than others, so we display them first
+    const leading_badges = []
+    const trailing_badges = []
 
     if (providers.some((p) => !!p.provider_finetune_id)) {
-      badges.push({
+      leading_badges.push({
         text: "Finetune ★",
         color: "bg-purple-100 text-purple-800",
-        tooltip:
-          "Supports finetuning, to train the model on your own use cases.",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_finetuning,
       })
     }
-    if (providers.some((p) => p.supports_data_gen)) {
-      badges.push({
+    if (providers.some((p) => p.suggested_for_data_gen)) {
+      leading_badges.push({
         text: "Data Gen ★",
         color: "bg-blue-100 text-blue-800",
-        tooltip:
-          "Recommended for Synthetic Data Generation - one of the best models.",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.suggested_for_data_gen,
       })
-    }
-    if (providers.some((p) => p.suggested_for_evals)) {
-      badges.push({
-        text: "Evals ★",
-        color: "bg-green-100 text-green-800",
-        tooltip: "Recommended for Evaluations - one of the best models.",
-      })
-    }
-    if (providers.some((p) => p.suggested_for_uncensored_data_gen)) {
-      badges.push({
-        text: "Uncensored ★",
-        color: "bg-red-100 text-red-800",
-        tooltip:
-          "Recommended for Uncensored Data Generation - one of the best models for evals where safeguards get in the way.",
+    } else if (providers.some((p) => p.supports_data_gen)) {
+      trailing_badges.push({
+        text: "Data Gen",
+        color: "bg-blue-100 text-blue-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_data_gen,
       })
     }
 
-    return badges
+    if (providers.some((p) => p.suggested_for_evals)) {
+      leading_badges.push({
+        text: "Evals ★",
+        color: "bg-green-100 text-green-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.suggested_for_evals,
+      })
+    }
+
+    if (providers.some((p) => p.suggested_for_uncensored_data_gen)) {
+      leading_badges.push({
+        text: "Uncensored ★",
+        color: "bg-red-100 text-red-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.suggested_for_uncensored_data_gen,
+      })
+    } else if (providers.some((p) => p.uncensored)) {
+      trailing_badges.push({
+        text: "Uncensored",
+        color: "bg-red-100 text-red-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.uncensored,
+      })
+    }
+
+    if (providers.some((p) => p.supports_structured_output)) {
+      trailing_badges.push({
+        text: "Structured Output",
+        color: "bg-teal-100 text-teal-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_structured_output,
+      })
+    }
+    if (providers.some((p) => p.supports_logprobs)) {
+      trailing_badges.push({
+        text: "Logprobs",
+        color: "bg-orange-100 text-orange-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_logprobs,
+      })
+    }
+
+    return [...leading_badges, ...trailing_badges]
   }
 
   // Watch for filter changes
@@ -715,25 +760,25 @@
                           {#if provider.provider_finetune_id}
                             <span
                               class="w-2 h-2 bg-purple-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Supports finetuning, to train the model on your own use cases."
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_finetuning}
                             ></span>
                           {/if}
                           {#if provider.supports_structured_output}
                             <span
-                              class="w-2 h-2 bg-sky-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Supports structured output (JSON) preferring the tool-calling method."
+                              class="w-2 h-2 bg-teal-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_structured_output}
                             ></span>
                           {/if}
                           {#if provider.supports_logprobs}
                             <span
                               class="w-2 h-2 bg-orange-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Supports logprobs, a feature needed for the advanced eval method G-Eval"
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_logprobs}
                             ></span>
                           {/if}
                           {#if provider.uncensored}
                             <span
                               class="w-2 h-2 bg-red-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip="Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals."
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.uncensored}
                             ></span>
                           {/if}
                         </div>
