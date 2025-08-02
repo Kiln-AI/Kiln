@@ -201,6 +201,18 @@
       description: "Connect any OpenAI compatible API.",
       featured: false,
     },
+    {
+      name: "Cerebras",
+      id: "cerebras",
+      description: "AI acceleration from Cerebras Systems.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cerebras.ai/settings/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
   ]
 
   type ProviderStatus = {
@@ -289,6 +301,12 @@
       custom_description: null,
     },
     wandb: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    cerebras: {
       connected: false,
       connecting: false,
       error: null,
@@ -567,6 +585,9 @@
       }
       if (data["wandb_api_key"]) {
         status.wandb.connected = true
+      }
+      if (data["cerebras_api_key"]) {
+        status.cerebras.connected = true
       }
       if (
         data["openai_compatible_providers"] &&

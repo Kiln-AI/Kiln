@@ -139,6 +139,10 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
     kimi_k2 = "kimi_k2"
+    cerebras_llama3_1_8b = "cerebras_llama3_1_8b"
+    cerebras_llama3_1_70b = "cerebras_llama3_1_70b"
+    cerebras_llama3_3_70b = "cerebras_llama3_3_70b"
+    cerebras_qwen3_32b = "cerebras_qwen3_32b"
 
 
 class ModelParserID(str, Enum):
@@ -2538,6 +2542,58 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # Cerebras Llama 3.1 8B
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.cerebras_llama3_1_8b,
+        friendly_name="Cerebras Llama 3.1 8B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="cerebras/llama3.1-8b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Cerebras Llama 3.1 70B
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.cerebras_llama3_1_70b,
+        friendly_name="Cerebras Llama 3.1 70B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="cerebras/llama3.1-70b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Cerebras Llama 3.3 70B
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.cerebras_llama3_3_70b,
+        friendly_name="Cerebras Llama 3.3 70B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="cerebras/llama-3.3-70b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Cerebras Qwen 3 32B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.cerebras_qwen3_32b,
+        friendly_name="Cerebras Qwen 3 32B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="cerebras/qwen-3-32b",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
