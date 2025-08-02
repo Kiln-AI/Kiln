@@ -1225,6 +1225,12 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=False,
                 supports_data_gen=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.docker_model_runner,
+                model_id="ai/llama3.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=False,
+            ),
         ],
     ),
     # Llama 3.2 11B

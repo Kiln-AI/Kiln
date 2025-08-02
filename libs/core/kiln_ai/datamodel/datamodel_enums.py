@@ -97,3 +97,4 @@ class ModelProviderName(str, Enum):
     huggingface = "huggingface"
     vertex = "vertex"
     together_ai = "together_ai"
+    docker_model_runner = "docker_model_runner"

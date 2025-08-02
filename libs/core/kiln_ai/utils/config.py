@@ -54,6 +54,10 @@ class Config:
                 str,
                 env_var="OLLAMA_BASE_URL",
             ),
+            "docker_model_runner_base_url": ConfigProperty(
+                str,
+                env_var="DOCKER_MODEL_RUNNER_BASE_URL",
+            ),
             "bedrock_access_key": ConfigProperty(
                 str,
                 env_var="AWS_ACCESS_KEY_ID",
