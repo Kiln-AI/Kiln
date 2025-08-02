@@ -27,6 +27,8 @@
       "Supports logprobs, a feature needed for the advanced eval method G-Eval.",
     uncensored:
       "Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals.",
+    reasoning_capable:
+      "Best suited for tasks that require multi-step reasoning or complex decision-making.",
   }
 
   interface Provider {
@@ -78,6 +80,7 @@
     { value: "logprobs", label: "Logprobs" },
     { value: "uncensored", label: "Uncensored" },
     { value: "finetune", label: "Finetune" },
+    { value: "reasoning_capable", label: "Reasoning" },
     { value: "suggested_for_evals", label: "Suggested for Evals" },
   ]
 
@@ -207,6 +210,8 @@
               return p.uncensored
             case "finetune":
               return !!p.provider_finetune_id
+            case "reasoning_capable":
+              return p.reasoning_capable
             default:
               return true
           }
@@ -326,6 +331,13 @@
       })
     }
 
+    if (providers.some((p) => p.reasoning_capable)) {
+      trailing_badges.push({
+        text: "Reasoning",
+        color: "bg-lime-100 text-lime-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.reasoning_capable,
+      })
+    }
     if (providers.some((p) => p.supports_structured_output)) {
       trailing_badges.push({
         text: "Structured Output",
@@ -757,6 +769,12 @@
                           </a>
                         {/if}
                         <div class="flex items-center space-x-1">
+                          {#if provider.reasoning_capable}
+                            <span
+                              class="w-2 h-2 bg-lime-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.reasoning_capable}
+                            ></span>
+                          {/if}
                           {#if provider.provider_finetune_id}
                             <span
                               class="w-2 h-2 bg-purple-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
