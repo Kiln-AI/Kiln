@@ -36,11 +36,15 @@ jobs:
         run: uv python install
 
       - name: Install the project
-        run: uv tool install ruff
+        run: uv sync
 
       - name: Lint with ruff
         run: |
           uvx ruff check --select I .
+
       - name: Format with ruff
         run: |
           uvx ruff format --check .
+
+      - name: Type Check with Ty
+        run: uvx ty check

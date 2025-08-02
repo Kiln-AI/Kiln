@@ -1,7 +1,8 @@
 from abc import ABCMeta, abstractmethod
 
+from typing_extensions import assert_never
+
 from kiln_ai.datamodel import PromptGenerators, PromptId, Task, TaskRun
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class BasePromptBuilder(metaclass=ABCMeta):
@@ -425,4 +426,4 @@ def prompt_builder_from_id(prompt_id: PromptId, task: Task) -> BasePromptBuilder
             return MultiShotChainOfThoughtPromptBuilder(task)
         case _:
             # Type checking will find missing cases
-            raise_exhaustive_enum_error(typed_prompt_generator)
+            assert_never(typed_prompt_generator)

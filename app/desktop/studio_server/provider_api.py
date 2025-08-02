@@ -24,8 +24,8 @@ from kiln_ai.adapters.ollama_tools import (
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from pydantic import BaseModel, Field
+from typing_extensions import assert_never
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
     try:
         base_url = custom_ollama_url or ollama_base_url()
         tags = requests.get(base_url + "/api/tags", timeout=5).json()
-    except requests.exceptions.ConnectionError:
+    except requests.ConnectionError:
         raise HTTPException(
             status_code=417,
             detail="Failed to connect. Ensure Ollama app is running.",
@@ -308,7 +308,7 @@ def connect_provider_api(app: FastAPI):
                     content={"message": "Provider not supported for API keys"},
                 )
             case _:
-                raise_exhaustive_enum_error(typed_provider)
+                assert_never(typed_provider)
 
     @app.post("/api/provider/disconnect_api_key")
     async def disconnect_api_key(provider_id: str) -> JSONResponse:
@@ -363,8 +363,8 @@ def connect_provider_api(app: FastAPI):
                         content={"message": "Provider not supported"},
                     )
                 case _:
-                    # Raises a pyright error if I miss a case
-                    raise_exhaustive_enum_error(typed_provider_id)
+                    # Raises a type error if I miss a case
+                    assert_never(typed_provider_id)
 
         return JSONResponse(
             status_code=200,
@@ -812,15 +812,15 @@ async def connect_bedrock(key_data: dict):
         )
     except Exception as e:
         # Improve error message if it's a confirmed authentication error
-        if isinstance(e, litellm.exceptions.AuthenticationError):
+        if isinstance(e, litellm.AuthenticationError):
             return JSONResponse(
                 status_code=401,
                 content={
                     "message": "Failed to connect to Bedrock. Invalid credentials."
                 },
             )
-        # If it's a bad request, it's a valid key (but the model is fake)
-        if isinstance(e, litellm.exceptions.BadRequestError):
+        # It passed the authentication test, but as expected it's a bad request (expected since the model is fake). This means it worked.
+        if isinstance(e, litellm.BadRequestError):
             Config.shared().bedrock_access_key = access_key
             Config.shared().bedrock_secret_key = secret_key
             return JSONResponse(

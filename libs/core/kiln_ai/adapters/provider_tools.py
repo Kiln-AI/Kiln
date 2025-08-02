@@ -22,7 +22,6 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.registry import project_from_id
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
 
@@ -385,8 +384,8 @@ def provider_name_from_id(id: str) -> str:
             case ModelProviderName.together_ai:
                 return "Together AI"
             case _:
-                # triggers pyright warning if I miss a case
-                raise_exhaustive_enum_error(enum_id)
+                # triggers type error if I miss a case
+                assert_never(enum_id)
 
     return "Unknown provider: " + id
 
