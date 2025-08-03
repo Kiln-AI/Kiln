@@ -1037,6 +1037,7 @@ built_in_models: List[KilnModel] = [
                 model_id="llama3.1-8b",
                 structured_output_mode=StructuredOutputMode.function_calling,
                 supports_data_gen=False,
+                suggested_for_evals=False,
             ),
         ],
     ),
