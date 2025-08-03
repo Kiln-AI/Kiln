@@ -84,7 +84,7 @@ def parse_docker_model_runner_models(
                 )
 
     return DockerModelRunnerConnection(
-        message="Docker Model Runner is running, but no supported models are available. Ensure models like 'ai/llama3.2:latest', 'ai/qwen3:latest', or 'ai/gemma3n:latest' are loaded.",
+        message="Docker Model Runner is running, but no supported models are available. Ensure models like 'ai/llama3.2:3B-Q4_K_M', 'ai/qwen3:8B-Q4_K_M', or 'ai/gemma3n:4B-Q4_K_M' are loaded.",
         supported_models=[],
         untested_models=[],
     )

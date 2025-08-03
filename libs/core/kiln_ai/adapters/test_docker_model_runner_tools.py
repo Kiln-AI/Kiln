@@ -33,9 +33,9 @@ def test_parse_docker_model_runner_models_with_supported_models():
     """Test parsing Docker Model Runner models response with supported models."""
     mock_response = {
         "data": [
-            {"id": "ai/llama3.2"},
-            {"id": "ai/qwen3"},
-            {"id": "ai/gemma3n"},
+            {"id": "ai/llama3.2:3B-Q4_K_M"},
+            {"id": "ai/qwen3:8B-Q4_K_M"},
+            {"id": "ai/gemma3n:4B-Q4_K_M"},
             {"id": "unsupported-model"},
         ]
     }
@@ -47,7 +47,7 @@ def test_parse_docker_model_runner_models_with_supported_models():
         mock_model = Mock()
         mock_provider = Mock()
         mock_provider.name = ModelProviderName.docker_model_runner
-        mock_provider.model_id = "ai/llama3.2"
+        mock_provider.model_id = "ai/llama3.2:3B-Q4_K_M"
         mock_model.providers = [mock_provider]
         mock_models.__iter__ = Mock(return_value=iter([mock_model]))
 
@@ -55,7 +55,7 @@ def test_parse_docker_model_runner_models_with_supported_models():
 
         assert result is not None
         assert result.message == "Docker Model Runner connected"
-        assert "ai/llama3.2" in result.supported_models
+        assert "ai/llama3.2:3B-Q4_K_M" in result.supported_models
         assert "unsupported-model" in result.untested_models
 
 
