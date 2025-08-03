@@ -47,6 +47,7 @@ class LiteLlmAdapter(BaseAdapter):
         self._headers = config.default_headers
         self._litellm_model_id: str | None = None
         self._cached_available_tools: list[KilnTool] | None = None
+        self._chat_history: list[Dict[str, Any]] = []
 
         # Create a RunConfig, adding the task to the RunConfigProperties
         run_config = run_config_from_run_config_properties(
@@ -59,17 +60,96 @@ class LiteLlmAdapter(BaseAdapter):
             config=base_adapter_config,
         )
 
+    @property
+    def chat_history(self) -> List[Dict[str, Any]]:
+        """Get the complete chat history including tool calls and responses."""
+        return list(self._chat_history)
+
+    async def _handle_tool_calls_loop(
+        self,
+        provider: KilnModelProvider,
+        initial_messages: list[dict[str, Any]],
+        top_logprobs: int | None,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Handle multiple consecutive tool calls until all are resolved or task_response is called."""
+        messages = list(initial_messages)
+        tool_calls_count = 0
+
+        while tool_calls_count < MAX_CALLS_PER_TURN:
+            # Build completion kwargs for tool calls
+            completion_kwargs = await self.build_completion_kwargs(
+                provider,
+                messages,
+                top_logprobs,
+                skip_response_format=True,  # Don't use structured output for tool calls
+            )
+
+            # Set tool choice to auto to allow model to choose between tool calls and final response
+            completion_kwargs["tool_choice"] = "auto"
+
+            # Make the completion call
+            response, response_choice = await self.acompletion_checking_response(
+                **completion_kwargs
+            )
+
+            # Extract content and tool_calls safely
+            content = None
+            tool_calls = None
+            message = getattr(response_choice, "message", None)
+            if message is not None:
+                content = getattr(message, "content", None)
+                tool_calls = getattr(message, "tool_calls", None)
+
+            # Add the assistant's response to messages
+            assistant_message = {
+                "role": "assistant",
+                "content": content,
+                "tool_calls": tool_calls,
+            }
+            messages.append(assistant_message)
+
+            # Process tool calls if any
+            if tool_calls:
+                prior_output_from_toolcall, tool_call_messages = (
+                    self.process_tool_calls(tool_calls)
+                )
+
+                # Add tool call results to messages
+                messages.extend(tool_call_messages)
+
+                # If task_response tool was called, we're done
+                if prior_output_from_toolcall is not None:
+                    return prior_output_from_toolcall, messages
+
+                # If there were tool calls, increment counter and continue
+                if tool_call_messages:
+                    tool_calls_count += 1
+                    continue
+
+            # If no tool calls, return the content as final output
+            if content:
+                return content, messages
+
+            # If we get here with no content and no tool calls, break
+            break
+
+        raise RuntimeError(
+            f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
+        )
+
     async def _run(self, input: Dict | str) -> tuple[RunOutput, Usage | None]:
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
         chat_formatter = self.build_chat_formatter(input)
+        self._chat_history = []  # Reset chat history for each run
 
         prior_output = None
         prior_message = None
         response = None
         turns = 0
+
         while True:
             turns += 1
             if turns > MAX_CALLS_PER_TURN:
@@ -81,73 +161,99 @@ class LiteLlmAdapter(BaseAdapter):
             if turn is None:
                 break
 
+            # Add messages from the turn to chat history
+            for message in turn.messages:
+                self._chat_history.append(
+                    {"role": message.role, "content": message.content}
+                )
+
             skip_response_format = not turn.final_call
-            all_messages = chat_formatter.message_dicts()
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
-                all_messages,
+                self._chat_history,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
             )
 
-            response, response_choice = await self.acompletion_checking_response(
-                **completion_kwargs
-            )
-            prior_message = response_choice.message
-            prior_output = prior_message.content
-
-            # Process tool calls
-            if hasattr(prior_message, "tool_calls"):
-                prior_output_from_toolcall, tool_call_messages = (
-                    self.process_tool_calls(prior_message.tool_calls)
+            # If this is the final call and we have tools available, handle tool calls in a loop
+            if turn.final_call and self.litellm_tools():
+                prior_output, updated_chat_history = await self._handle_tool_calls_loop(
+                    provider,
+                    self._chat_history,
+                    self.base_adapter_config.top_logprobs,
                 )
-                # Tools have some results, so we need to call the model again to get the final output
-                if tool_call_messages:
-                    # TODO: this works for single turn, but they aren't getting saved in the chat formatter, so they will be dropped on future turns.
-                    completion_kwargs["messages"] = (
-                        all_messages + [response_choice.message] + tool_call_messages
-                    )
-                    # TODO: this could need several turns of tool calls. We're forcing it to stop after one.
-                    # TODO: auto should work? Think through multiple chained tool calls, which I think is valid. We're definitely breaking returning formatted output with a function call.
-                    completion_kwargs["tool_choice"] = "none"
-                    (
-                        response,
-                        response_choice,
-                    ) = await self.acompletion_checking_response(**completion_kwargs)
-                    prior_message = response_choice.message
-                    prior_output = prior_message.content
+                self._chat_history = updated_chat_history
+                break  # We're done after handling tool calls
+            else:
+                # Regular completion call
+                response, response_choice = await self.acompletion_checking_response(
+                    **completion_kwargs
+                )
+                message = getattr(response_choice, "message", None)
+                prior_output = getattr(message, "content", None) if message else None
 
-                # output may be parsed from task_response tool call
-                if prior_output_from_toolcall:
-                    prior_output = prior_output_from_toolcall
+                # Add the assistant's response to chat history
+                self._chat_history.append(
+                    {
+                        "role": "assistant",
+                        "content": prior_output,
+                        "tool_calls": getattr(message, "tool_calls", None)
+                        if message
+                        else None,
+                    }
+                )
 
             if not prior_output:
                 raise RuntimeError("No output returned from model")
 
-        if response is None or prior_message is None:
-            raise RuntimeError("No response returned from model")
-
+        # Get the final response from the chat formatter
         intermediate_outputs = chat_formatter.intermediate_outputs()
 
-        logprobs = (
-            response.choices[0].logprobs
-            if hasattr(response.choices[0], "logprobs")
-            and isinstance(response.choices[0].logprobs, ChoiceLogprobs)
-            else None
-        )
+        # Get the last response to extract logprobs and reasoning if needed
+        final_response = None
+        final_choice = None
+        if response is not None:
+            final_response = response
+            if response.choices and len(response.choices) > 0:
+                final_choice = response.choices[0]
+        else:
+            # If we only used tool calls, we need to get logprobs and reasoning from the last message
+            # This is a limitation of the current approach - we can't get logprobs from tool call responses
+            # We would need to make an additional call to get logprobs if needed
+            pass
+
+        logprobs = None
+        if final_choice is not None:
+            if hasattr(final_choice, "logprobs") and isinstance(
+                final_choice.logprobs, ChoiceLogprobs
+            ):
+                logprobs = final_choice.logprobs
 
         # Check logprobs worked, if requested
         if self.base_adapter_config.top_logprobs is not None and logprobs is None:
             raise RuntimeError("Logprobs were required, but no logprobs were returned.")
 
         # Save reasoning if it exists and was parsed by LiteLLM (or openrouter, or anyone upstream)
-        if (
-            prior_message is not None
-            and hasattr(prior_message, "reasoning_content")
-            and prior_message.reasoning_content
-            and len(prior_message.reasoning_content.strip()) > 0
-        ):
-            intermediate_outputs["reasoning"] = prior_message.reasoning_content.strip()
+        reasoning_content = None
+        if final_choice is not None:
+            final_choice_message = getattr(final_choice, "message", None)
+            if final_choice_message and hasattr(
+                final_choice_message, "reasoning_content"
+            ):
+                reasoning_content = getattr(
+                    final_choice_message, "reasoning_content", None
+                )
+        elif prior_message is not None:
+            prior_message_message = getattr(prior_message, "message", None)
+            if prior_message_message and hasattr(
+                prior_message_message, "reasoning_content"
+            ):
+                reasoning_content = getattr(
+                    prior_message_message, "reasoning_content", None
+                )
+
+        if reasoning_content is not None and len(reasoning_content.strip()) > 0:
+            intermediate_outputs["reasoning"] = reasoning_content.strip()
 
         # the string content of the response
         response_content = prior_output
@@ -159,7 +265,9 @@ class LiteLlmAdapter(BaseAdapter):
             output=response_content,
             intermediate_outputs=intermediate_outputs,
             output_logprobs=logprobs,
-        ), self.usage_from_response(response)
+        ), self.usage_from_response(
+            final_response
+        ) if final_response is not None else None
 
     async def acompletion_checking_response(
         self, **kwargs
