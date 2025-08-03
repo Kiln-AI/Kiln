@@ -139,10 +139,6 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
     kimi_k2 = "kimi_k2"
-    cerebras_llama3_1_8b = "cerebras_llama3_1_8b"
-    cerebras_llama3_1_70b = "cerebras_llama3_1_70b"
-    cerebras_llama3_3_70b = "cerebras_llama3_3_70b"
-    cerebras_qwen3_32b = "cerebras_qwen3_32b"
 
 
 class ModelParserID(str, Enum):
@@ -959,6 +955,11 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="llama-4-maverick-17b-128e-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
         ],
     ),
     # Llama 4 Scout Basic
@@ -980,6 +981,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="llama-4-scout-17b-16e-instruct",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -1025,6 +1031,12 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
                 provider_finetune_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="llama3.1-8b",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                supports_data_gen=False,
             ),
         ],
     ),
@@ -2403,6 +2415,14 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="qwen-3-32b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
+            ),
         ],
     ),
     # Qwen 3 32B No Thinking
@@ -2425,6 +2445,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="qwen-3-32b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                formatter=ModelFormatterID.qwen3_style_no_think,
+                supports_data_gen=True,
+                parser=ModelParserID.optional_r1_thinking,
             ),
         ],
     ),
@@ -2542,58 +2570,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 suggested_for_evals=True,
-            ),
-        ],
-    ),
-    # Cerebras Llama 3.1 8B
-    KilnModel(
-        family=ModelFamily.llama,
-        name=ModelName.cerebras_llama3_1_8b,
-        friendly_name="Cerebras Llama 3.1 8B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.cerebras,
-                model_id="cerebras/llama3.1-8b",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-        ],
-    ),
-    # Cerebras Llama 3.1 70B
-    KilnModel(
-        family=ModelFamily.llama,
-        name=ModelName.cerebras_llama3_1_70b,
-        friendly_name="Cerebras Llama 3.1 70B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.cerebras,
-                model_id="cerebras/llama3.1-70b",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-        ],
-    ),
-    # Cerebras Llama 3.3 70B
-    KilnModel(
-        family=ModelFamily.llama,
-        name=ModelName.cerebras_llama3_3_70b,
-        friendly_name="Cerebras Llama 3.3 70B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.cerebras,
-                model_id="cerebras/llama-3.3-70b",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-        ],
-    ),
-    # Cerebras Qwen 3 32B
-    KilnModel(
-        family=ModelFamily.qwen,
-        name=ModelName.cerebras_qwen3_32b,
-        friendly_name="Cerebras Qwen 3 32B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.cerebras,
-                model_id="cerebras/qwen-3-32b",
-                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
