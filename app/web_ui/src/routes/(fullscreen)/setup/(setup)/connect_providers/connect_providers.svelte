@@ -61,11 +61,10 @@
     {
       name: "Groq",
       id: "groq",
-      description:
-        "The fastest model host. Providing Llama, Gemma and Mistral models.",
+      description: "Exceptionally fast inference on custom hardware.",
       featured: false,
       api_key_steps: [
-        "Go to https://console.groq.com/keys",
+        "Go to https://cloud.cerebras.ai/platform",
         "Create an API Key",
         "Copy the new key, paste it below and click 'Connect'",
       ],
@@ -182,6 +181,18 @@
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
+      name: "Cerebras",
+      id: "cerebras",
+      description: "Exceptionally fast inference on custom hardware.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cerebras.ai/settings/keys",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       description: "Track and visualize your experiments.",
@@ -200,18 +211,6 @@
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
       featured: false,
-    },
-    {
-      name: "Cerebras",
-      id: "cerebras",
-      description: "AI acceleration from Cerebras Systems.",
-      featured: false,
-      api_key_steps: [
-        "Go to https://cerebras.ai/settings/keys",
-        "Create a new API Key",
-        "Copy the new API Key, paste it below and click 'Connect'",
-      ],
-      api_key_fields: ["API Key"],
     },
   ]
 
