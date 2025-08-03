@@ -85,7 +85,6 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
 async def connect_docker_model_runner(
     custom_docker_url: str | None = None,
 ) -> DockerModelRunnerConnection:
-    # Similar to Ollama, but uses OpenAI-compatible endpoints
     if (
         custom_docker_url
         and not custom_docker_url.startswith("http://")
@@ -128,7 +127,7 @@ async def connect_docker_model_runner(
     except openai.APIConnectionError:
         raise HTTPException(
             status_code=417,
-            detail="Failed to connect. Ensure Docker Model Runner is running.",
+            detail="Failed to connect. Ensure Docker Model Runner is running and you enabled TCP connections. See the Docker Model Runner docs for instructions.",
         )
     except Exception as e:
         raise HTTPException(
