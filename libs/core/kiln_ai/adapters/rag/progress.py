@@ -1,4 +1,3 @@
-import json
 from collections import defaultdict
 from typing import Dict, Literal
 
@@ -57,8 +56,8 @@ class RagProgress(BaseModel):
         default=0,
     )
 
-    log: LogMessage | None = Field(
-        description="A log message to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...'",
+    logs: list[LogMessage] | None = Field(
+        description="A list of log messages to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...'",
         default=None,
     )
 
@@ -101,7 +100,6 @@ def compute_current_progress_for_rag_configs(
             # increment the extraction count for every rag config that has this extractor
             extraction_path_prefix = str(extraction.extractor_config_id)
             for matching_rag_config_id in path_prefixes[extraction_path_prefix]:
-                print(f"incrementing extraction count for {matching_rag_config_id}")
                 rag_config_progress_map[
                     matching_rag_config_id
                 ].total_document_extracted_count += 1
@@ -112,7 +110,6 @@ def compute_current_progress_for_rag_configs(
                     f"{extraction_path_prefix}::{chunked_document.chunker_config_id}"
                 )
                 for matching_rag_config_id in path_prefixes[chunking_path_prefix]:
-                    print(f"incrementing chunked count for {matching_rag_config_id}")
                     rag_config_progress_map[
                         matching_rag_config_id
                     ].total_document_chunked_count += 1
@@ -123,9 +120,6 @@ def compute_current_progress_for_rag_configs(
                         f"{chunking_path_prefix}::{embedding.embedding_config_id}"
                     )
                     for matching_rag_config_id in path_prefixes[embedding_path_prefix]:
-                        print(
-                            f"incrementing embedding count for {matching_rag_config_id}"
-                        )
                         rag_config_progress_map[
                             matching_rag_config_id
                         ].total_document_embedded_count += 1

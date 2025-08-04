@@ -8,8 +8,7 @@
   type LogMessage = { level: "info" | "error" | "warning"; message: string }
 
   type RagProgressEventPayload = RagProgress & {
-    log?: LogMessage
-    total_error_count: number
+    logs?: LogMessage[] | null
   }
 
   export let project_id: string
@@ -151,8 +150,8 @@
           is_running = false
         } else {
           const payload = JSON.parse(event.data) as RagProgressEventPayload
-          if (payload.log) {
-            log_messages = [...log_messages, payload.log]
+          if (payload.logs) {
+            log_messages = [...log_messages, ...payload.logs]
           }
           config_progress = payload
         }
@@ -189,6 +188,7 @@
   }
 
   async function get_rag_config_progress() {
+    console.info("getting rag config progress in dialog...")
     const { data: progress_data, error: get_error } = await client.POST(
       "/api/projects/{project_id}/rag_configs/progress",
       {
@@ -204,9 +204,6 @@
 
     config_progress = {
       ...progress_data[rag_config_id],
-
-      // error count is transient / not persisted on the backend so we initialize it here
-      total_error_count: 0,
     }
   }
 

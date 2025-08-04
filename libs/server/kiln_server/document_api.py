@@ -99,12 +99,7 @@ async def run_rag_workflow_runner_with_status(
                 "total_document_extracted_error_count": progress.total_document_extracted_error_count,
                 "total_document_chunked_error_count": progress.total_document_chunked_error_count,
                 "total_document_embedded_error_count": progress.total_document_embedded_error_count,
-                "log": {
-                    "level": progress.log.level,
-                    "message": progress.log.message,
-                }
-                if progress.log
-                else None,
+                "logs": progress.logs,
             }
             yield f"data: {json.dumps(data)}\n\n"
 
@@ -1118,17 +1113,20 @@ def connect_document_api(app: FastAPI):
                         RagExtractionStepRunner(
                             project,
                             extractor_config,
+                            concurrency=20,
                         ),
                         RagChunkingStepRunner(
                             project,
                             extractor_config,
                             chunker_config,
+                            concurrency=10,
                         ),
                         RagEmbeddingStepRunner(
                             project,
                             extractor_config,
                             chunker_config,
                             embedding_config,
+                            concurrency=50,
                         ),
                     ],
                 ),

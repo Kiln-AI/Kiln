@@ -85,8 +85,7 @@
         icon: "play",
         isPrimary: true,
         action: () => {
-          extractorProgressStore.run_extractor(project_id, rag_config_id)
-          return false
+          run_rag_dialog?.show()
         },
       },
     }

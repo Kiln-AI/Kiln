@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncGenerator, Callable, Generic, Tuple, TypeVar
+from typing import AsyncGenerator, Generic, Tuple, TypeVar
 
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
 from kiln_ai.adapters.chunkers.registry import chunker_adapter_from_type
@@ -51,6 +51,12 @@ class EmbeddingJob:
     embedding_config: EmbeddingConfig
 
 
+class RagStepRunnerProgress(BaseModel):
+    success_count: int | None = None
+    error_count: int | None = None
+    logs: list[LogMessage] = []
+
+
 T = TypeVar("T")
 
 
@@ -79,7 +85,7 @@ class GenericErrorCollector(AsyncJobRunnerObserver[T], Generic[T]):
         return len(self.errors)
 
 
-class DocumentPipelineStage(str, Enum):
+class RagWorkflowStepNames(str, Enum):
     EXTRACTING = "extracting"
     CHUNKING = "chunking"
     EMBEDDING = "embedding"
@@ -170,13 +176,13 @@ async def execute_embedding_job(
 
 class AbstractRagStepRunner(ABC):
     @abstractmethod
-    def stage(self) -> DocumentPipelineStage:
+    def stage(self) -> RagWorkflowStepNames:
         pass
 
     # async keyword in the abstract prototype causes a type error in pyright
     # so we need to remove it, but the concrete implementation should declare async
     @abstractmethod
-    def run(self) -> AsyncGenerator[RagProgress, None]:
+    def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         pass
 
 
@@ -185,13 +191,15 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         self,
         project: Project,
         extractor_config: ExtractorConfig,
+        concurrency: int = 10,
     ):
         self.project = project
         self.extractor_config = extractor_config
         self.lock_key = f"docs:extract:{self.extractor_config.id}"
+        self.concurrency = concurrency
 
-    def stage(self) -> DocumentPipelineStage:
-        return DocumentPipelineStage.EXTRACTING
+    def stage(self) -> RagWorkflowStepNames:
+        return RagWorkflowStepNames.EXTRACTING
 
     def has_extraction(self, document: Document, extractor_id: ID_TYPE) -> bool:
         for ex in document.extractions(readonly=True):
@@ -212,7 +220,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
                 )
         return jobs
 
-    async def run(self) -> AsyncGenerator[RagProgress, None]:
+    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         async with asyncio_mutex(self.lock_key):
             jobs = await self.collect_jobs()
             extractor = extractor_adapter_from_type(
@@ -226,27 +234,30 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
             runner = AsyncJobRunner(
                 jobs=jobs,
                 run_job_fn=lambda job: execute_extractor_job(job, extractor),
-                concurrency=10,
+                concurrency=self.concurrency,
                 observers=[observer],
             )
 
             error_idx = 0
-            async for _ in runner.run():
-                yield RagProgress(
-                    total_document_extracted_count=len(jobs),
-                    total_document_extracted_error_count=observer.get_error_count(),
+            async for progress in runner.run():
+                yield RagStepRunnerProgress(
+                    success_count=progress.complete,
+                    error_count=observer.get_error_count(),
                 )
 
                 # the errors are not coming as part of the async generator yield, they are
                 # accumulated in the observer, so we need to flush them manually
                 if observer.get_error_count() > 0:
-                    async for progress in flush_observer_errors(
-                        observer,
-                        lambda job,
-                        error: f"Error extracting document: {job.doc.path}: {error}",
-                        error_idx,
-                    ):
-                        yield progress
+                    errors, error_idx = observer.get_errors(error_idx)
+                    for job, error in errors:
+                        yield RagStepRunnerProgress(
+                            logs=[
+                                LogMessage(
+                                    level="error",
+                                    message=f"Error extracting document: {job.doc.path}: {error}",
+                                )
+                            ],
+                        )
                         error_idx += 1
 
 
@@ -256,14 +267,16 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         project: Project,
         extractor_config: ExtractorConfig,
         chunker_config: ChunkerConfig,
+        concurrency: int = 10,
     ):
         self.project = project
         self.extractor_config = extractor_config
         self.chunker_config = chunker_config
         self.lock_key = f"docs:chunk:{self.chunker_config.id}"
+        self.concurrency = concurrency
 
-    def stage(self) -> DocumentPipelineStage:
-        return DocumentPipelineStage.CHUNKING
+    def stage(self) -> RagWorkflowStepNames:
+        return RagWorkflowStepNames.CHUNKING
 
     def has_chunks(self, extraction: Extraction, chunker_id: ID_TYPE) -> bool:
         for cd in extraction.chunked_documents(readonly=True):
@@ -277,8 +290,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
 
         jobs: list[ChunkerJob] = []
         for document in self.project.documents(readonly=True):
-            extractions = document.extractions(readonly=True)
-            for extraction in extractions:
+            for extraction in document.extractions(readonly=True):
                 if extraction.extractor_config_id == target_extractor_config_id:
                     if not self.has_chunks(extraction, target_chunker_config_id):
                         jobs.append(
@@ -289,7 +301,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                         )
         return jobs
 
-    async def run(self) -> AsyncGenerator[RagProgress, None]:
+    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         chunker_config = self.chunker_config
         async with asyncio_mutex(self.lock_key):
             jobs = await self.collect_jobs()
@@ -301,27 +313,30 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
             runner = AsyncJobRunner(
                 jobs=jobs,
                 run_job_fn=lambda job: execute_chunker_job(job, chunker),
-                concurrency=10,
+                concurrency=self.concurrency,
                 observers=[observer],
             )
 
             error_idx = 0
-            async for _ in runner.run():
-                yield RagProgress(
-                    total_document_chunked_count=len(jobs),
-                    total_document_chunked_error_count=observer.get_error_count(),
+            async for progress in runner.run():
+                yield RagStepRunnerProgress(
+                    success_count=progress.complete,
+                    error_count=observer.get_error_count(),
                 )
 
                 # the errors are not coming as part of the async generator yield, they are
                 # accumulated in the observer, so we need to flush them manually
                 if observer.get_error_count() > 0:
-                    async for progress in flush_observer_errors(
-                        observer,
-                        lambda job,
-                        error: f"Error chunking document: {job.extraction.path}: {error}",
-                        error_idx,
-                    ):
-                        yield progress
+                    errors, error_idx = observer.get_errors(error_idx)
+                    for job, error in errors:
+                        yield RagStepRunnerProgress(
+                            logs=[
+                                LogMessage(
+                                    level="error",
+                                    message=f"Error chunking document: {job.extraction.doc.path}: {error}",
+                                )
+                            ],
+                        )
                         error_idx += 1
 
 
@@ -332,6 +347,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         extractor_config: ExtractorConfig,
         chunker_config: ChunkerConfig,
         embedding_config: EmbeddingConfig,
+        concurrency: int = 10,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -339,8 +355,8 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         self.embedding_config = embedding_config
         self.lock_key = f"docs:embedding:{self.embedding_config.id}"
 
-    def stage(self) -> DocumentPipelineStage:
-        return DocumentPipelineStage.EMBEDDING
+    def stage(self) -> RagWorkflowStepNames:
+        return RagWorkflowStepNames.EMBEDDING
 
     def has_embeddings(self, chunked: ChunkedDocument, embedding_id: ID_TYPE) -> bool:
         for emb in chunked.chunk_embeddings(readonly=True):
@@ -374,7 +390,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                                 )
         return jobs
 
-    async def run(self) -> AsyncGenerator[RagProgress, None]:
+    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         async with asyncio_mutex(self.lock_key):
             jobs = await self.collect_jobs()
             embedding_adapter = embedding_adapter_from_type(
@@ -390,39 +406,26 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
             )
 
             error_idx = 0
-            async for _ in runner.run():
-                yield RagProgress(
-                    total_document_embedded_count=len(jobs),
-                    total_document_embedded_error_count=observer.get_error_count(),
+            async for progress in runner.run():
+                yield RagStepRunnerProgress(
+                    success_count=progress.complete,
+                    error_count=observer.get_error_count(),
                 )
 
                 # the errors are not coming as part of the async generator yield, they are
                 # accumulated in the observer, so we need to flush them manually
                 if observer.get_error_count() > 0:
-                    async for progress in flush_observer_errors(
-                        observer,
-                        lambda job,
-                        error: f"Error embedding document: {job.chunked_document.path}: {error}",
-                        error_idx,
-                    ):
-                        yield progress
+                    errors, error_idx = observer.get_errors(error_idx)
+                    for job, error in errors:
+                        yield RagStepRunnerProgress(
+                            logs=[
+                                LogMessage(
+                                    level="error",
+                                    message=f"Error embedding document: {job.chunked_document.parent.doc.path}: {error}",
+                                )
+                            ],
+                        )
                         error_idx += 1
-
-
-async def flush_observer_errors(
-    observer: GenericErrorCollector[T],
-    error_fmt: Callable[[T, Exception], str],
-    error_idx: int,
-) -> AsyncGenerator[RagProgress, None]:
-    errors, error_idx = observer.get_errors(error_idx)
-
-    for job, error in errors:
-        yield RagProgress(
-            log=LogMessage(
-                level="error",
-                message=error_fmt(job, error),
-            )
-        )
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):
@@ -466,41 +469,71 @@ class RagWorkflowRunner:
                 self.configuration.rag_config,
             )
         )
+        self.current_progress = self.initial_progress.model_copy()
 
     @property
     def lock_key(self) -> str:
         return f"rag:run:{self.configuration.rag_config.id}"
 
-    def merge_progress(
-        self, initial_progress: RagProgress, step_progress: RagProgress
+    def update_workflow_progress(
+        self, step_name: RagWorkflowStepNames, step_progress: RagStepRunnerProgress
     ) -> RagProgress:
-        # initial progress is the progress of the whole pipeline when the pipeline started
-        new_progress = initial_progress.model_copy()
+        # we get simpler progress reports from the step runners, so we need to merge them
+        # with the progress of the broader pipeline
+        match step_name:
+            case RagWorkflowStepNames.EXTRACTING:
+                if step_progress.success_count is not None:
+                    self.current_progress.total_document_extracted_count = max(
+                        self.current_progress.total_document_extracted_count,
+                        step_progress.success_count
+                        + self.initial_progress.total_document_extracted_count,
+                    )
+                if step_progress.error_count is not None:
+                    self.current_progress.total_document_extracted_error_count = max(
+                        self.current_progress.total_document_extracted_error_count,
+                        step_progress.error_count
+                        + self.initial_progress.total_document_extracted_error_count,
+                    )
+            case RagWorkflowStepNames.CHUNKING:
+                if step_progress.success_count is not None:
+                    self.current_progress.total_document_chunked_count = max(
+                        self.current_progress.total_document_chunked_count,
+                        step_progress.success_count
+                        + self.initial_progress.total_document_chunked_count,
+                    )
+                if step_progress.error_count is not None:
+                    self.current_progress.total_document_chunked_error_count = max(
+                        self.current_progress.total_document_chunked_error_count,
+                        step_progress.error_count
+                        + self.initial_progress.total_document_chunked_error_count,
+                    )
+            case RagWorkflowStepNames.EMBEDDING:
+                if step_progress.success_count is not None:
+                    self.current_progress.total_document_embedded_count = max(
+                        self.current_progress.total_document_embedded_count,
+                        step_progress.success_count
+                        + self.initial_progress.total_document_embedded_count,
+                    )
+                if step_progress.error_count is not None:
+                    self.current_progress.total_document_embedded_error_count = max(
+                        self.current_progress.total_document_embedded_error_count,
+                        step_progress.error_count
+                        + self.initial_progress.total_document_embedded_error_count,
+                    )
+            case _:
+                raise ValueError(f"Unknown step name: {step_name}")
 
-        # incoming progress is partial cumulative progress for the step
-        incoming_extracted_count = step_progress.total_document_extracted_count
-        incoming_chunked_count = step_progress.total_document_chunked_count
-        incoming_embedded_count = step_progress.total_document_embedded_count
-
-        # current total progress is initial progress + incoming progress
-        if incoming_extracted_count > 0:
-            new_progress.total_document_extracted_count += incoming_extracted_count
-        if incoming_chunked_count > 0:
-            new_progress.total_document_chunked_count += incoming_chunked_count
-        if incoming_embedded_count > 0:
-            new_progress.total_document_embedded_count += incoming_embedded_count
-
-        # number of fully completed documents is the same as whichever step is the least complete
-        new_progress.total_document_completed_count = min(
-            new_progress.total_document_extracted_count,
-            new_progress.total_document_chunked_count,
-            new_progress.total_document_embedded_count,
+        self.current_progress.total_document_extracted_count = min(
+            self.current_progress.total_document_extracted_count,
+            self.current_progress.total_document_chunked_count,
+            self.current_progress.total_document_embedded_count,
         )
 
-        return new_progress
+        self.current_progress.logs = step_progress.logs
+        return self.current_progress
 
     async def run(
-        self, stages_to_run: list[DocumentPipelineStage] | None = None
+        self, stages_to_run: list[RagWorkflowStepNames] | None = None
     ) -> AsyncGenerator[RagProgress, None]:
         async with asyncio_mutex(self.lock_key):
             yield self.initial_progress
@@ -512,5 +545,5 @@ class RagWorkflowRunner:
                 async for progress in step.run():
                     # progress coming in is the total progress but only for the step
                     # so we need to merge it with the progress of the broader pipeline
-                    rag_progress = self.merge_progress(self.initial_progress, progress)
+                    rag_progress = self.update_workflow_progress(step.stage(), progress)
                     yield rag_progress

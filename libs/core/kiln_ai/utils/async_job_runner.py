@@ -136,11 +136,6 @@ class AsyncJobRunner(Generic[T]):
             try:
                 await self.notify_job_start(job)
                 result = await run_job_fn(job)
-                # TODO: random failure - remove this
-                if random.random() < 0.25:
-                    raise Exception(
-                        "Some (fake) error occurred during a job execution (coming from AsyncJobRunner)."
-                    )
                 await self.notify_success(job)
             except Exception as e:
                 logger.error("Job failed to complete", exc_info=True)
