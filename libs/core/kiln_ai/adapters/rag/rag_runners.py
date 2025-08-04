@@ -517,7 +517,7 @@ class RagWorkflowRunner:
             case _:
                 raise ValueError(f"Unknown step name: {step_name}")
 
-        self.current_progress.total_document_extracted_count = min(
+        self.current_progress.total_document_completed_count = min(
             self.current_progress.total_document_extracted_count,
             self.current_progress.total_document_chunked_count,
             self.current_progress.total_document_embedded_count,
