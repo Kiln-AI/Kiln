@@ -1,12 +1,12 @@
 import asyncio
 
-from .lock import loop_local_mutex
+from .lock import asyncio_mutex
 
 
 async def test_same_key_returns_same_lock():
     """Test that the same key returns the same lock object."""
-    lock1 = loop_local_mutex("test_key")
-    lock2 = loop_local_mutex("test_key")
+    lock1 = asyncio_mutex("test_key")
+    lock2 = asyncio_mutex("test_key")
 
     # Should be the exact same object
     assert lock1 is lock2
@@ -15,8 +15,8 @@ async def test_same_key_returns_same_lock():
 
 async def test_different_keys_return_different_locks():
     """Test that different keys return different lock objects."""
-    lock1 = loop_local_mutex("key1")
-    lock2 = loop_local_mutex("key2")
+    lock1 = asyncio_mutex("key1")
+    lock2 = asyncio_mutex("key2")
 
     # Should be different objects
     assert lock1 is not lock2
@@ -28,7 +28,7 @@ async def test_lock_functionality():
     results = []
 
     async def worker(worker_id: int):
-        async with loop_local_mutex("shared_resource"):
+        async with asyncio_mutex("shared_resource"):
             # Record start
             results.append(f"worker_{worker_id}_start")
             await asyncio.sleep(0.2)  # Simulate work
@@ -58,14 +58,14 @@ async def test_lock_functionality():
 async def test_lock_registry_persistence():
     """Test that the lock registry persists locks across multiple function calls."""
     # Get a lock for a key
-    lock1 = loop_local_mutex("persistent_key")
+    lock1 = asyncio_mutex("persistent_key")
 
     # Do some other operations
-    _ = loop_local_mutex("other_key1")
-    _ = loop_local_mutex("other_key2")
+    _ = asyncio_mutex("other_key1")
+    _ = asyncio_mutex("other_key2")
 
     # Get the same key again
-    lock2 = loop_local_mutex("persistent_key")
+    lock2 = asyncio_mutex("persistent_key")
 
     # Should be the same object
     assert lock1 is lock2
