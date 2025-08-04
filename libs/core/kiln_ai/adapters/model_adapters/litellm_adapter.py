@@ -65,11 +65,12 @@ class LiteLlmAdapter(BaseAdapter):
         provider: KilnModelProvider,
         prior_messages: list[dict[str, Any]],
         top_logprobs: int | None,
-    ) -> tuple[str, list[dict[str, Any]]]:
+        skip_response_format: bool,
+    ) -> tuple[str, list[dict[str, Any]], ModelResponse | None]:
         """
-        Call the model for a single top level turn (user message to agent message with content).
+        Call the model for a single top level turn: from user message to agent message.
 
-        It may make handle iterations of tool calls if needed.
+        It may make handle iterations of tool calls between the user/agent message if needed.
         """
 
         messages = list(prior_messages)
@@ -81,14 +82,11 @@ class LiteLlmAdapter(BaseAdapter):
                 provider,
                 messages,
                 top_logprobs,
-                skip_response_format=True,  # Don't use structured output for tool calls
+                skip_response_format,
             )
 
-            # Set tool choice to auto to allow model to choose between tool calls and final response
-            completion_kwargs["tool_choice"] = "auto"
-
             # Make the completion call
-            response, response_choice = await self.acompletion_checking_response(
+            model_response, response_choice = await self.acompletion_checking_response(
                 **completion_kwargs
             )
 
@@ -112,7 +110,7 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Process tool calls if any
             if tool_calls:
-                prior_output_from_toolcall, tool_call_messages = (
+                assistant_message_from_toolcall, tool_call_messages = (
                     self.process_tool_calls(tool_calls)
                 )
 
@@ -120,8 +118,8 @@ class LiteLlmAdapter(BaseAdapter):
                 messages.extend(tool_call_messages)
 
                 # If task_response tool was called, we're done
-                if prior_output_from_toolcall is not None:
-                    return prior_output_from_toolcall, messages
+                if assistant_message_from_toolcall is not None:
+                    return assistant_message_from_toolcall, messages, model_response
 
                 # If there were tool calls, increment counter and continue
                 if tool_call_messages:
@@ -130,7 +128,7 @@ class LiteLlmAdapter(BaseAdapter):
 
             # If no tool calls, return the content as final output
             if content:
-                return content, messages
+                return content, messages, model_response
 
             # If we get here with no content and no tool calls, break
             break
@@ -147,9 +145,8 @@ class LiteLlmAdapter(BaseAdapter):
         chat_formatter = self.build_chat_formatter(input)
         messages = []
 
-        prior_output = None
-        prior_message = None
-        response = None
+        prior_output: str | None = None
+        last_response: ModelResponse | None = None
         turns = 0
 
         while True:
@@ -169,66 +166,46 @@ class LiteLlmAdapter(BaseAdapter):
                 messages.append({"role": message.role, "content": message.content})
 
             skip_response_format = not turn.final_call
-            completion_kwargs = await self.build_completion_kwargs(
+            prior_output, messages, last_response = await self._run_model_turn(
                 provider,
                 messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
             )
 
-            # If this is the final call and we have tools available, handle tool calls in a loop
-            if turn.final_call and self.litellm_tools():
-                prior_output, updated_messages = await self._run_model_turn(
-                    provider,
-                    messages,
-                    self.base_adapter_config.top_logprobs,
-                )
-                messages = updated_messages
-                break  # We're done after handling tool calls
-            else:
-                # Regular completion call
-                response, response_choice = await self.acompletion_checking_response(
-                    **completion_kwargs
-                )
-                message = getattr(response_choice, "message", None)
-                prior_output = getattr(message, "content", None) if message else None
-
-                # Add the assistant's response to chat history
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": prior_output,
-                        "tool_calls": getattr(message, "tool_calls", None)
-                        if message
-                        else None,
-                    }
-                )
-
             if not prior_output:
-                raise RuntimeError("No output returned from model")
+                raise RuntimeError("No assistant message/output returned from model")
+
+            # Add the assistant message to chat history
+            # TODO check format
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": prior_output,
+                }
+            )
 
         # Get the final response from the chat formatter
+        # TODO
         intermediate_outputs = chat_formatter.intermediate_outputs()
 
         # Get the last response to extract logprobs and reasoning if needed
-        final_response = None
-        final_choice = None
-        if response is not None:
-            final_response = response
-            if response.choices and len(response.choices) > 0:
-                final_choice = response.choices[0]
-        else:
-            # If we only used tool calls, we need to get logprobs and reasoning from the last message
-            # This is a limitation of the current approach - we can't get logprobs from tool call responses
-            # We would need to make an additional call to get logprobs if needed
-            pass
+        final_choice: Choices | None = None
+        if (
+            last_response is not None
+            and last_response.choices
+            and len(last_response.choices) > 0
+            and isinstance(last_response.choices[0], Choices)
+        ):
+            final_choice = last_response.choices[0]
 
         logprobs = None
-        if final_choice is not None:
-            if hasattr(final_choice, "logprobs") and isinstance(
-                final_choice.logprobs, ChoiceLogprobs
-            ):
-                logprobs = final_choice.logprobs
+        if (
+            final_choice is not None
+            and hasattr(final_choice, "logprobs")
+            and isinstance(final_choice.logprobs, ChoiceLogprobs)
+        ):
+            logprobs = final_choice.logprobs
 
         # Check logprobs worked, if requested
         if self.base_adapter_config.top_logprobs is not None and logprobs is None:
@@ -236,40 +213,34 @@ class LiteLlmAdapter(BaseAdapter):
 
         # Save reasoning if it exists and was parsed by LiteLLM (or openrouter, or anyone upstream)
         reasoning_content = None
-        if final_choice is not None:
-            final_choice_message = getattr(final_choice, "message", None)
-            if final_choice_message and hasattr(
-                final_choice_message, "reasoning_content"
-            ):
-                reasoning_content = getattr(
-                    final_choice_message, "reasoning_content", None
-                )
-        elif prior_message is not None:
-            prior_message_message = getattr(prior_message, "message", None)
-            if prior_message_message and hasattr(
-                prior_message_message, "reasoning_content"
-            ):
-                reasoning_content = getattr(
-                    prior_message_message, "reasoning_content", None
-                )
+        if (
+            final_choice is not None
+            and hasattr(final_choice, "message")
+            and hasattr(final_choice.message, "reasoning_content")
+        ):
+            reasoning_content = final_choice.message.reasoning_content
 
         if reasoning_content is not None and len(reasoning_content.strip()) > 0:
             intermediate_outputs["reasoning"] = reasoning_content.strip()
 
-        # the string content of the response
-        response_content = prior_output
+        if not isinstance(prior_output, str):
+            raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
-        if not isinstance(response_content, str):
-            raise RuntimeError(f"response is not a string: {response_content}")
-
-        return RunOutput(
-            output=response_content,
+        output = RunOutput(
+            output=prior_output,
             intermediate_outputs=intermediate_outputs,
             output_logprobs=logprobs,
             trace=messages,
-        ), self.usage_from_response(
-            final_response
-        ) if final_response is not None else None
+        )
+
+        # TODO: usage is likely incorrect. We're only getting the usage from the final response, not each call
+        usage = (
+            self.usage_from_response(last_response)
+            if last_response is not None
+            else None
+        )
+
+        return output, usage
 
     async def acompletion_checking_response(
         self, **kwargs
@@ -591,16 +562,16 @@ class LiteLlmAdapter(BaseAdapter):
     def process_tool_calls(
         self, tool_calls: List[ChatCompletionMessageToolCall] | None
     ) -> tuple[str | None, list[Dict]]:
-        prior_output_from_toolcall: str | None = None
+        assistant_output_from_toolcall: str | None = None
         tool_call_messages: list[Dict] = []
 
         if tool_calls is None:
-            return prior_output_from_toolcall, tool_call_messages
+            return assistant_output_from_toolcall, tool_call_messages
 
         for tool_call in tool_calls:
             # Kiln "task_response" tool is used for returning structured output via tool calls. Load the output from the tool call.
             if tool_call.function.name == "task_response":
-                prior_output_from_toolcall = tool_call.function.arguments
+                assistant_output_from_toolcall = tool_call.function.arguments
                 continue
 
             # Process normal tool calls (not the "task_response" tool)
@@ -647,9 +618,9 @@ class LiteLlmAdapter(BaseAdapter):
                 }
             )
 
-        if prior_output_from_toolcall is not None and len(tool_call_messages) > 0:
+        if assistant_output_from_toolcall is not None and len(tool_call_messages) > 0:
             raise RuntimeError(
-                "task_response tool call and normal tool call results were both provided in the same turn. This is not supported as we should both return tool call results to the model, and end the turn. Switching to structured output mode other than tools will make this error impossible."
+                "task_response tool call and other tool calls were both provided in the same turn. This is not supported as it means we should both return task_response results, and end the turn. Switching to structured output mode other than tools will make this error impossible."
             )
 
-        return prior_output_from_toolcall, tool_call_messages
+        return assistant_output_from_toolcall, tool_call_messages
