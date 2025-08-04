@@ -48,7 +48,6 @@ class LiteLlmAdapter(BaseAdapter):
         self._headers = config.default_headers
         self._litellm_model_id: str | None = None
         self._cached_available_tools: list[KilnTool] | None = None
-        self._chat_history: list[Dict[str, Any]] = []
 
         # Create a RunConfig, adding the task to the RunConfigProperties
         run_config = run_config_from_run_config_properties(
@@ -61,19 +60,19 @@ class LiteLlmAdapter(BaseAdapter):
             config=base_adapter_config,
         )
 
-    @property
-    def chat_history(self) -> List[Dict[str, Any]]:
-        """Get the complete chat history including tool calls and responses."""
-        return list(self._chat_history)
-
-    async def _handle_tool_calls_loop(
+    async def _run_model_turn(
         self,
         provider: KilnModelProvider,
-        initial_messages: list[dict[str, Any]],
+        prior_messages: list[dict[str, Any]],
         top_logprobs: int | None,
     ) -> tuple[str, list[dict[str, Any]]]:
-        """Handle multiple consecutive tool calls until all are resolved or task_response is called."""
-        messages = list(initial_messages)
+        """
+        Call the model for a single top level turn (user message to agent message with content).
+
+        It may make handle iterations of tool calls if needed.
+        """
+
+        messages = list(prior_messages)
         tool_calls_count = 0
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
@@ -146,7 +145,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError("Model ID is required for OpenAI compatible models")
 
         chat_formatter = self.build_chat_formatter(input)
-        self._chat_history = []  # Reset chat history for each run
+        messages = []
 
         prior_output = None
         prior_message = None
@@ -162,30 +161,29 @@ class LiteLlmAdapter(BaseAdapter):
 
             turn = chat_formatter.next_turn(prior_output)
             if turn is None:
+                # No next turn, we're done
                 break
 
             # Add messages from the turn to chat history
             for message in turn.messages:
-                self._chat_history.append(
-                    {"role": message.role, "content": message.content}
-                )
+                messages.append({"role": message.role, "content": message.content})
 
             skip_response_format = not turn.final_call
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
-                self._chat_history,
+                messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
             )
 
             # If this is the final call and we have tools available, handle tool calls in a loop
             if turn.final_call and self.litellm_tools():
-                prior_output, updated_chat_history = await self._handle_tool_calls_loop(
+                prior_output, updated_messages = await self._run_model_turn(
                     provider,
-                    self._chat_history,
+                    messages,
                     self.base_adapter_config.top_logprobs,
                 )
-                self._chat_history = updated_chat_history
+                messages = updated_messages
                 break  # We're done after handling tool calls
             else:
                 # Regular completion call
@@ -196,7 +194,7 @@ class LiteLlmAdapter(BaseAdapter):
                 prior_output = getattr(message, "content", None) if message else None
 
                 # Add the assistant's response to chat history
-                self._chat_history.append(
+                messages.append(
                     {
                         "role": "assistant",
                         "content": prior_output,
@@ -268,6 +266,7 @@ class LiteLlmAdapter(BaseAdapter):
             output=response_content,
             intermediate_outputs=intermediate_outputs,
             output_logprobs=logprobs,
+            trace=messages,
         ), self.usage_from_response(
             final_response
         ) if final_response is not None else None
