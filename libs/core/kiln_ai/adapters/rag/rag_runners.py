@@ -228,8 +228,6 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
                 self.extractor_config,
             )
 
-            # the observer will receive and store events from the runner
-            # that we can then yield from here (to keep the async generator pattern)
             observer = GenericErrorCollector()
             runner = AsyncJobRunner(
                 jobs=jobs,
@@ -245,8 +243,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
                     error_count=observer.get_error_count(),
                 )
 
-                # the errors are not coming as part of the async generator yield, they are
-                # accumulated in the observer, so we need to flush them manually
+                # the errors are being accumulated in the observer so we need to flush them to the caller
                 if observer.get_error_count() > 0:
                     errors, error_idx = observer.get_errors(error_idx)
                     for job, error in errors:
@@ -324,8 +321,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                     error_count=observer.get_error_count(),
                 )
 
-                # the errors are not coming as part of the async generator yield, they are
-                # accumulated in the observer, so we need to flush them manually
+                # the errors are being accumulated in the observer so we need to flush them to the caller
                 if observer.get_error_count() > 0:
                     errors, error_idx = observer.get_errors(error_idx)
                     for job, error in errors:
@@ -412,8 +408,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                     error_count=observer.get_error_count(),
                 )
 
-                # the errors are not coming as part of the async generator yield, they are
-                # accumulated in the observer, so we need to flush them manually
+                # the errors are being accumulated in the observer so we need to flush them to the caller
                 if observer.get_error_count() > 0:
                     errors, error_idx = observer.get_errors(error_idx)
                     for job, error in errors:
@@ -478,8 +473,7 @@ class RagWorkflowRunner:
     def update_workflow_progress(
         self, step_name: RagWorkflowStepNames, step_progress: RagStepRunnerProgress
     ) -> RagProgress:
-        # we get simpler progress reports from the step runners, so we need to merge them
-        # with the progress of the broader pipeline
+        # merge the simpler step-specific progress with the broader RAG progress
         match step_name:
             case RagWorkflowStepNames.EXTRACTING:
                 if step_progress.success_count is not None:
@@ -543,7 +537,4 @@ class RagWorkflowRunner:
                     continue
 
                 async for progress in step.run():
-                    # progress coming in is the total progress but only for the step
-                    # so we need to merge it with the progress of the broader pipeline
-                    rag_progress = self.update_workflow_progress(step.stage(), progress)
-                    yield rag_progress
+                    yield self.update_workflow_progress(step.stage(), progress)
