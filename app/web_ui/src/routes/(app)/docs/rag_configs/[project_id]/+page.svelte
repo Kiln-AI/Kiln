@@ -4,7 +4,11 @@
   import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { load_model_info } from "$lib/stores"
+  import {
+    load_available_embedding_models,
+    load_available_models,
+    load_model_info,
+  } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
   import EmptyIntro from "./empty_intro.svelte"
@@ -29,6 +33,11 @@
   let rag_progress_map: Record<string, RagProgress> = {}
 
   onMount(async () => {
+    // need to ensure the store is populated for friendly name resolution
+    await Promise.all([
+      load_available_models(),
+      load_available_embedding_models(),
+    ])
     await get_rag_configs()
     await get_rag_config_progress()
   })

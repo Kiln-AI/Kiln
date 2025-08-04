@@ -59,7 +59,7 @@
 </script>
 
 <AppPage
-  title="RAG Pipeline"
+  title="RAG Configuration"
   subtitle={loading ? "" : rag_config?.name || "Unknown"}
   action_buttons={[]}
 >

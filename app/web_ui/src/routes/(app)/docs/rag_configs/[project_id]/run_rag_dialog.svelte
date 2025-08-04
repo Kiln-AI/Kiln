@@ -208,7 +208,6 @@
       // error count is transient / not persisted on the backend so we initialize it here
       total_error_count: 0,
     }
-    console.log("RAG Config Progress:", config_progress)
   }
 
   function get_status_for_step(

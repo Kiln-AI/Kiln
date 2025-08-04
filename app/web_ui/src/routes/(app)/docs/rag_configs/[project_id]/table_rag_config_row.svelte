@@ -68,117 +68,35 @@
           >
             {rag_config.name}
           </a>
-          <button
-            on:click={toggle_config_expanded}
-            class="text-base-content/40 hover:text-base-content/70 transition-colors"
-            title={config_expanded
-              ? "Hide configuration details"
-              : "Show configuration details"}
-          >
-            <div class="flex items-center justify-center">
-              <svg
-                fill="currentColor"
-                class="h-4 w-4 transition-transform duration-200 {config_expanded
-                  ? 'rotate-180'
-                  : ''}"
-                version="1.1"
-                id="Layer_1"
-                xmlns="http://www.w3.org/2000/svg"
-                xmlns:xlink="http://www.w3.org/1999/xlink"
-                viewBox="0 0 407.437
-              407.437"
-                xml:space="preserve"
-              >
-                <polygon
-                  points="386.258,91.567 203.718,273.512 21.179,91.567 0,112.815 203.718,315.87 407.437,112.815 "
-                />
-              </svg>
-            </div>
-          </button>
         </div>
 
         <!-- Description -->
-        <p class="text-sm text-gray-500 leading-relaxed">
-          Description: {rag_config.description || "N/A"}
-        </p>
-
-        <!-- Detailed Configuration -->
-        {#if config_expanded}
-          <div class="space-y-3 pt-2">
-            <!-- Extractor Details -->
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full bg-primary"></div>
-                <span class="text-xs font-medium">Extractor</span>
-              </div>
-              <div class="ml-4 space-y-1 text-xs text-base-content/70">
-                <div>
-                  Provider: {provider_name_from_id(
-                    rag_config.extractor_config.model_provider_name,
-                  ) || "N/A"}
-                </div>
-                <div>
-                  Model: {model_name(
-                    rag_config.extractor_config?.model_name,
-                    null,
-                  ) || "N/A"}
-                </div>
-                <div>
-                  Format: {rag_config.extractor_config.output_format || "N/A"}
-                </div>
-              </div>
-            </div>
-
-            <!-- Chunker Details -->
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full bg-secondary"></div>
-                <span class="text-xs font-medium">Chunker</span>
-              </div>
-              <div class="ml-4 space-y-1 text-xs text-base-content/70">
-                <div>
-                  Strategy: {rag_config.chunker_config.chunker_type || "N/A"}
-                </div>
-                {#if rag_config.chunker_config.properties?.chunk_size}
-                  <div>
-                    Size: {rag_config.chunker_config.properties.chunk_size} tokens
-                  </div>
-                {/if}
-                {#if rag_config.chunker_config.properties?.chunk_overlap}
-                  <div>
-                    Overlap: {rag_config.chunker_config.properties
-                      .chunk_overlap} tokens
-                  </div>
-                {/if}
-              </div>
-            </div>
-
-            <!-- Embedding Details -->
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full bg-accent"></div>
-                <span class="text-xs font-medium">Embedding</span>
-              </div>
-              <div class="ml-4 space-y-1 text-xs text-base-content/70">
-                <div>
-                  Provider: {provider_name_from_id(
-                    rag_config.embedding_config.model_provider_name,
-                  ) || "N/A"}
-                </div>
-                <div>
-                  Model: {embedding_model_name(
-                    rag_config.embedding_config.model_name,
-                    rag_config.embedding_config.model_provider_name,
-                  ) || "N/A"}
-                </div>
-              </div>
-            </div>
+        <div class="space-y-1 text-xs text-base-content/70">
+          <div>
+            Extractor: {model_name(
+              rag_config.extractor_config?.model_name,
+              null,
+            ) || "N/A"} ({provider_name_from_id(
+              rag_config.extractor_config.model_provider_name,
+            ) || ""})
           </div>
-        {/if}
-
-        <!-- Created Date -->
-        <div class="text-xs text-base-content/50">
-          Created {formatDate(rag_config.created_at)}
+          <div>
+            Chunk size: {rag_config.chunker_config.properties?.chunk_size ||
+              "N/A"}
+          </div>
+          <div>
+            Chunk overlap: {rag_config.chunker_config.properties
+              ?.chunk_overlap || "N/A"}
+          </div>
+          <div>
+            Embedding: {embedding_model_name(
+              rag_config.embedding_config.model_name,
+              rag_config.embedding_config.model_provider_name,
+            ) || "N/A"}
+          </div>
+          <div class="text-xs text-base-content/50">
+            Created {formatDate(rag_config.created_at)}
+          </div>
         </div>
       </div>
     </td>
