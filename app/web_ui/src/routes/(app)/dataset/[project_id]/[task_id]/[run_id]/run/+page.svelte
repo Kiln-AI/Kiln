@@ -20,6 +20,7 @@
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
 
@@ -65,13 +66,6 @@
       })
     }
 
-    if (run?.output?.source?.properties?.model_provider) {
-      properties.push({
-        name: "Model Provider",
-        value: run.output.source.properties.model_provider,
-      })
-    }
-
     // Prompt ID previously was stored in the prompt_builder_name field
     let prompt_id = (
       run?.output?.source?.properties?.prompt_id ||
@@ -88,27 +82,6 @@
           link: link,
         })
       }
-    }
-
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
-      })
-    }
-
-    if (run?.input_source?.properties?.created_by) {
-      properties.push({
-        name: "Created By",
-        value: run.input_source.properties.created_by,
-      })
     }
 
     if (run?.created_at) {
@@ -132,6 +105,67 @@
       properties.push({
         name: "Topic",
         value: topic_path,
+      })
+    }
+
+    return properties
+  }
+
+  function get_advanced_properties(run: TaskRun | null) {
+    let properties = []
+
+    if (run?.output?.source?.properties?.model_provider) {
+      properties.push({
+        name: "Model Provider",
+        value: run.output.source.properties.model_provider,
+      })
+    }
+
+    if (run?.usage?.cost) {
+      properties.push({
+        name: "Cost",
+        value: `$${run.usage.cost.toFixed(6)}`,
+      })
+    }
+
+    if (run?.usage?.total_tokens) {
+      properties.push({
+        name: "Tokens",
+        value: run.usage.total_tokens,
+      })
+    }
+
+    if (run?.output?.source?.properties?.structured_output_mode) {
+      const mode = run.output.source.properties.structured_output_mode
+      let displayValue = mode
+      // Convert technical names to more user-friendly display names
+      if (mode === "json_schema") {
+        displayValue = "JSON Schema"
+      } else if (mode === "json_instructions") {
+        displayValue = "JSON Instructions"
+      } else if (mode === "native_json") {
+        displayValue = "Native JSON"
+      } else if (mode === "unknown") {
+        displayValue = "Not Set"
+      }
+
+      properties.push({
+        name: "JSON Mode",
+        value: displayValue,
+      })
+    }
+
+    if (run?.input_source?.properties?.created_by) {
+      properties.push({
+        name: "Created By",
+        value: run.input_source.properties.created_by,
+      })
+    }
+
+    if (run?.output?.source?.properties?.top_p !== undefined) {
+      properties.push({
+        name: "Top P",
+        value: run.output.source.properties.top_p,
       })
     }
 
@@ -261,11 +295,14 @@
           <div class="text-xl font-bold mb-4">Input</div>
           <Output raw_output={run.input} />
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col">
+        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
           <PropertyList
             properties={get_properties(run, $current_task_prompts, $model_info)}
             title="Properties"
           />
+          <Collapse title="See All">
+            <PropertyList properties={get_advanced_properties(run)} title="" />
+          </Collapse>
         </div>
       </div>
       <Run initial_run={run} task={$current_task} {project_id} />
