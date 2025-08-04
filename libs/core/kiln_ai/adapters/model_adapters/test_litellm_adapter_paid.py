@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from litellm.types.utils import ModelResponse
 
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -76,10 +77,27 @@ async def run_simple_task_with_tools(
             "You should answer the following question: four plus six times 10"
         )
 
-        # Verify that MultiplyTool.run was called
+        # Verify that MultiplyTool.run was called with correct parameters
         multiply_spy.run.assert_called()
-        # Verify that AddTool.run was called
+        multiply_call_args = multiply_spy.run.call_args
+        multiply_kwargs = multiply_call_args.kwargs
+        # Check that multiply was called with a=6, b=10 (or vice versa)
+        assert (multiply_kwargs.get("a") == 6 and multiply_kwargs.get("b") == 10) or (
+            multiply_kwargs.get("a") == 10 and multiply_kwargs.get("b") == 6
+        ), (
+            f"Expected multiply to be called with a=6, b=10 or a=10, b=6, but got {multiply_kwargs}"
+        )
+
+        # Verify that AddTool.run was called with correct parameters
         add_spy.run.assert_called()
+        add_call_args = add_spy.run.call_args
+        add_kwargs = add_call_args.kwargs
+        # Check that add was called with a=60, b=4 (or vice versa)
+        assert (add_kwargs.get("a") == 60 and add_kwargs.get("b") == 4) or (
+            add_kwargs.get("a") == 4 and add_kwargs.get("b") == 60
+        ), (
+            f"Expected add to be called with a=60, b=4 or a=4, b=60, but got {add_kwargs}"
+        )
 
         assert "64" in run.output.output
         assert run.id is not None
@@ -106,3 +124,69 @@ async def run_simple_task_with_tools(
 async def test_tools_gpt_4_1_mini(tmp_path):
     task = build_test_task(tmp_path)
     await run_simple_task_with_tools(task, "gpt_4_1_mini", "openai")
+
+
+async def test_tools_mocked(tmp_path):
+    task = build_test_task(tmp_path)
+
+    # Mock 3 responses using tool calls for BEDMAS operations matching the test math problem: (6*10)+4
+    # First response: requests multiply tool call for 6*10
+    # Second response: requests add tool call for 60+4
+    # Third response: final answer: 64
+    # this should trigger proper asserts in the run_simple_task_with_tools function
+
+    # First response: requests multiply tool call
+    mock_response_1 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "tool_call_multiply",
+                            "type": "function",
+                            "function": {
+                                "name": "multiply",
+                                "arguments": '{"a": 6, "b": 10}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+    )
+
+    # Second response: requests add tool call
+    mock_response_2 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "tool_call_add",
+                            "type": "function",
+                            "function": {
+                                "name": "add",
+                                "arguments": '{"a": 60, "b": 4}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+    )
+
+    # Third response: final answer
+    mock_response_3 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{"message": {"content": "The answer is [64]", "tool_calls": None}}],
+    )
+
+    with patch(
+        "litellm.acompletion",
+        side_effect=[mock_response_1, mock_response_2, mock_response_3],
+    ):
+        await run_simple_task_with_tools(task, "gpt_4_1_mini", "openai")
