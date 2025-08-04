@@ -135,6 +135,20 @@
       })
     }
 
+    if (run?.output?.source?.properties?.temperature !== undefined) {
+      properties.push({
+        name: "Temperature",
+        value: run.output.source.properties.temperature,
+      })
+    }
+
+    if (run?.output?.source?.properties?.top_p !== undefined) {
+      properties.push({
+        name: "Top P",
+        value: run.output.source.properties.top_p,
+      })
+    }
+
     if (run?.output?.source?.properties?.structured_output_mode) {
       const mode = run.output.source.properties.structured_output_mode
       let displayValue = mode
@@ -159,13 +173,6 @@
       properties.push({
         name: "Created By",
         value: run.input_source.properties.created_by,
-      })
-    }
-
-    if (run?.output?.source?.properties?.top_p !== undefined) {
-      properties.push({
-        name: "Top P",
-        value: run.output.source.properties.top_p,
       })
     }
 
