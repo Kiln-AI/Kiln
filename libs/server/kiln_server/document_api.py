@@ -1,19 +1,28 @@
-import asyncio
 import datetime
 import json
 import logging
 import os
 import subprocess
 import sys
-from collections import defaultdict
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
+from kiln_ai.adapters.rag.progress import (
+    RagProgress,
+    compute_current_progress_for_rag_configs,
+)
+from kiln_ai.adapters.rag.rag_runners import (
+    RagChunkingStepRunner,
+    RagEmbeddingStepRunner,
+    RagExtractionStepRunner,
+    RagWorkflowRunner,
+    RagWorkflowRunnerConfiguration,
+)
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     NAME_REGEX,
@@ -33,13 +42,7 @@ from kiln_ai.datamodel.extraction import (
     get_kind_from_mime_type,
 )
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.utils import loop_local_mutex
-from kiln_ai.utils.document_pipeline import (
-    AbstractPipelineObserver,
-    DocumentPipeline,
-    DocumentPipelineConfiguration,
-    DocumentPipelineProgress,
-)
+from kiln_ai.utils import asyncio_mutex
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -82,6 +85,38 @@ async def run_extractor_runner_with_status(
     )
 
 
+async def run_rag_workflow_runner_with_status(
+    runner: RagWorkflowRunner,
+) -> StreamingResponse:
+    async def event_generator():
+        async for progress in runner.run():
+            data = {
+                "total_document_completed_count": progress.total_document_completed_count,
+                "total_document_count": progress.total_document_count,
+                "total_document_extracted_count": progress.total_document_extracted_count,
+                "total_document_chunked_count": progress.total_document_chunked_count,
+                "total_document_embedded_count": progress.total_document_embedded_count,
+                "total_document_extracted_error_count": progress.total_document_extracted_error_count,
+                "total_document_chunked_error_count": progress.total_document_chunked_error_count,
+                "total_document_embedded_error_count": progress.total_document_embedded_error_count,
+                "log": {
+                    "level": progress.log.level,
+                    "message": progress.log.message,
+                }
+                if progress.log
+                else None,
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+
+        # Send the final complete message the app expects, and uses to stop listening
+        yield "data: complete\n\n"
+
+    return StreamingResponse(
+        content=event_generator(),
+        media_type="text/event-stream",
+    )
+
+
 class OpenFileResponse(BaseModel):
     path: str
 
@@ -108,15 +143,6 @@ class ExtractionSummary(BaseModel):
     source: str
     output_content: str
     extractor: ExtractorSummary
-
-
-class RagProgress(BaseModel):
-    # total counts
-    total_document_count: int
-    total_document_completed_count: int
-    total_document_extracted_count: int
-    total_document_chunked_count: int
-    total_document_embedded_count: int
 
 
 class RagConfigWithSubConfigs(BaseModel):
@@ -488,7 +514,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         extractor_config_id: str,
     ) -> StreamingResponse:
-        async with loop_local_mutex(f"docs:extract:{extractor_config_id}"):
+        async with asyncio_mutex(f"docs:extract:{extractor_config_id}"):
             project = project_from_id(project_id)
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 extractor_config_id, project.path
@@ -1033,9 +1059,8 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         rag_config_id: str,
     ) -> StreamingResponse:
-        print("run_rag_config")
         # prevent concurrent runs of the same rag config that would result in duplicates
-        async with loop_local_mutex(rag_config_id):
+        async with asyncio_mutex(rag_config_id):
             project = project_from_id(project_id)
             rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
             if rag_config is None:
@@ -1082,100 +1107,40 @@ def connect_document_api(app: FastAPI):
                     detail="Embedding config not found",
                 )
 
-            pipeline = DocumentPipeline(
+            runner = RagWorkflowRunner(
                 project,
-                DocumentPipelineConfiguration(
+                RagWorkflowRunnerConfiguration(
                     rag_config=rag_config,
                     extractor_config=extractor_config,
                     chunker_config=chunker_config,
                     embedding_config=embedding_config,
+                    step_runners=[
+                        RagExtractionStepRunner(
+                            project,
+                            extractor_config,
+                        ),
+                        RagChunkingStepRunner(
+                            project,
+                            extractor_config,
+                            chunker_config,
+                        ),
+                        RagEmbeddingStepRunner(
+                            project,
+                            extractor_config,
+                            chunker_config,
+                            embedding_config,
+                        ),
+                    ],
                 ),
             )
 
-            class RagObserver(AbstractPipelineObserver):
-                def __init__(self, queue: asyncio.Queue):
-                    self.queue = queue
-
-                async def on_start(self):
-                    await self.queue.put({"type": "start"})
-
-                async def on_progress(self, progress: DocumentPipelineProgress):
-                    await self.queue.put({"type": "progress", "data": progress})
-
-                async def on_error(self, error: Exception):
-                    await self.queue.put({"type": "error", "error": str(error)})
-
-                async def on_end(self):
-                    await self.queue.put({"type": "end"})
-
-            async def event_generator(
-                queue: asyncio.Queue[dict[str, DocumentPipelineProgress]],
-            ):
-                while True:
-                    event = await queue.get()
-
-                    if event["type"] == "progress":
-                        progress = event["data"]
-                        payload = {
-                            "total_document_completed_count": progress.total_document_completed_count,
-                            "total_document_count": progress.total_document_count,
-                            "total_document_extracted_count": progress.total_document_extracted_count,
-                            "total_document_chunked_count": progress.total_document_chunked_count,
-                            "total_document_embedded_count": progress.total_document_embedded_count,
-                            "total_error_count": progress.total_error_count,
-                            "log": {
-                                "level": progress.log.level,
-                                "message": progress.log.message,
-                            }
-                            if progress.log
-                            else None,
-                        }
-                        yield f"data: {json.dumps(payload)}\n\n"
-
-                    elif event["type"] == "start":
-                        yield f"data: {json.dumps({'status': 'started'})}\n\n"
-
-                    elif event["type"] == "error":
-                        yield f"data: {
-                            json.dumps(
-                                {
-                                    'status': 'error',
-                                    'log': {
-                                        'level': 'error',
-                                        'message': event['error'],
-                                    },
-                                }
-                            )
-                        }\n\n"
-
-                    elif event["type"] == "end":
-                        yield "data: complete\n\n"
-                        break  # exit the loop and end the stream
-
-            queue = asyncio.Queue()
-            pipeline.register_observers([RagObserver(queue)])
-
-            async def pipeline_runner():
-                try:
-                    await pipeline.run()
-                except Exception as e:
-                    await queue.put({"type": "error", "error": str(e)})
-                finally:
-                    await queue.put({"type": "end"})
-
-            # Start the pipeline in background
-            asyncio.create_task(pipeline_runner())
-
-            return StreamingResponse(
-                content=event_generator(queue),
-                media_type="text/event-stream",
-            )
+            return await run_rag_workflow_runner_with_status(runner)
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(
         project_id: str,
         request: GetRagConfigProgressRequest,
-    ) -> dict[str, RagProgress]:
+    ) -> Dict[str, RagProgress]:
         project = project_from_id(project_id)
         rag_configs: list[RagConfig] = []
 
@@ -1192,73 +1157,7 @@ def connect_document_api(app: FastAPI):
         if not rag_configs:
             return {}
 
-        # a rag config is a unique path through the filesystem tree
-        # we serialize each path as node_name::node_name::...::node_name
-        # and store the path -> [rag config ids] for each level in the tree
-        # so we can easily look up what rag configs we are at without
-        # always needing to check all the loops combined state
-        path_prefixes: dict[str, set[str]] = defaultdict(set)
-        for rag_config in rag_configs:
-            complete_path: list[str] = [
-                str(rag_config.extractor_config_id),
-                str(rag_config.chunker_config_id),
-                str(rag_config.embedding_config_id),
-            ]
-            for i in range(len(complete_path)):
-                prefix = "::".join(complete_path[: i + 1])
-                path_prefixes[prefix].add(str(rag_config.id))
-
-        rag_config_progress_map: dict[str, RagProgress] = defaultdict(
-            lambda: RagProgress(
-                total_document_count=0,
-                total_document_completed_count=0,
-                total_document_extracted_count=0,
-                total_document_chunked_count=0,
-                total_document_embedded_count=0,
-            )
+        progress_map: Dict[str, RagProgress] = compute_current_progress_for_rag_configs(
+            project, rag_configs
         )
-        for document in project.documents(readonly=True):
-            # for typechecker - should not actually happen
-            if not document.id:
-                raise ValueError(f"Document {document.path} has no ID")
-
-            for rag_config in rag_configs:
-                rag_config_progress_map[str(rag_config.id)].total_document_count += 1
-
-            for extraction in document.extractions(readonly=True):
-                # update progress for all the configs that descend from this path
-                extraction_path_prefix = str(extraction.extractor_config_id)
-                for matching_rag_config_id in path_prefixes[extraction_path_prefix]:
-                    rag_config_progress_map[
-                        matching_rag_config_id
-                    ].total_document_extracted_count += 1
-
-                for chunked_document in extraction.chunked_documents(readonly=True):
-                    chunking_path_prefix = f"{extraction_path_prefix}::{chunked_document.chunker_config_id}"
-                    for matching_rag_config_id in path_prefixes[chunking_path_prefix]:
-                        rag_config_progress_map[
-                            matching_rag_config_id
-                        ].total_document_chunked_count += 1
-
-                    for embedding in chunked_document.chunk_embeddings(readonly=True):
-                        embedding_path_prefix = (
-                            f"{chunking_path_prefix}::{embedding.embedding_config_id}"
-                        )
-                        for matching_rag_config_id in path_prefixes[
-                            embedding_path_prefix
-                        ]:
-                            rag_config_progress_map[
-                                matching_rag_config_id
-                            ].total_document_embedded_count += 1
-
-        # if any step fails, then the document is not considered completed, so it follows
-        # that the number of completed documents can only be as large as the minimum of the
-        # completion counts for each step
-        for rag_config_id, rag_config_progress in rag_config_progress_map.items():
-            rag_config_progress.total_document_completed_count = min(
-                rag_config_progress.total_document_extracted_count,
-                rag_config_progress.total_document_chunked_count,
-                rag_config_progress.total_document_embedded_count,
-            )
-
-        return dict(rag_config_progress_map)
+        return progress_map

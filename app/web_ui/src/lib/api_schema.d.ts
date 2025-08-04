@@ -2966,6 +2966,20 @@ export interface components {
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LogMessage */
+        LogMessage: {
+            /**
+             * Level
+             * @description The level of the log message
+             * @enum {string}
+             */
+            level: "info" | "error" | "warning";
+            /**
+             * Message
+             * @description The message to display to the user
+             */
+            message: string;
+        };
         /** MeanUsage */
         MeanUsage: {
             /** Mean Input Tokens */
@@ -3327,16 +3341,56 @@ export interface components {
         };
         /** RagProgress */
         RagProgress: {
-            /** Total Document Count */
+            /**
+             * Total Document Count
+             * @description The total number of items to process
+             * @default 0
+             */
             total_document_count: number;
-            /** Total Document Completed Count */
+            /**
+             * Total Document Completed Count
+             * @description The number of items that have been processed
+             * @default 0
+             */
             total_document_completed_count: number;
-            /** Total Document Extracted Count */
+            /**
+             * Total Document Extracted Count
+             * @description The number of items that have been extracted
+             * @default 0
+             */
             total_document_extracted_count: number;
-            /** Total Document Chunked Count */
+            /**
+             * Total Document Extracted Error Count
+             * @description The number of items that have errored during extraction
+             * @default 0
+             */
+            total_document_extracted_error_count: number;
+            /**
+             * Total Document Chunked Count
+             * @description The number of items that have been chunked
+             * @default 0
+             */
             total_document_chunked_count: number;
-            /** Total Document Embedded Count */
+            /**
+             * Total Document Chunked Error Count
+             * @description The number of items that have errored during chunking
+             * @default 0
+             */
+            total_document_chunked_error_count: number;
+            /**
+             * Total Document Embedded Count
+             * @description The number of items that have been embedded
+             * @default 0
+             */
             total_document_embedded_count: number;
+            /**
+             * Total Document Embedded Error Count
+             * @description The number of items that have errored during embedding
+             * @default 0
+             */
+            total_document_embedded_error_count: number;
+            /** @description A log message to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...' */
+            log?: components["schemas"]["LogMessage"] | null;
         };
         /** RatingOption */
         RatingOption: {

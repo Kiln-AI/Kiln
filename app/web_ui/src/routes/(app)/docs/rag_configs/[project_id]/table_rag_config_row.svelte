@@ -13,12 +13,6 @@
   export let rag_progress: RagProgress
 
   let row_hovered = false
-  let config_expanded = false
-
-  function toggle_config_expanded(event: Event) {
-    event.stopPropagation()
-    config_expanded = !config_expanded
-  }
 
   // Calculate percentages for progress bar
   $: total_docs = rag_progress?.total_document_count || 0
@@ -39,13 +33,21 @@
         bg: "bg-primary/10",
         border: "border-primary/20",
       }
-    if (completed_pct > 0)
+
+    const hasPartialProgress = [
+      rag_progress?.total_document_extracted_count,
+      rag_progress?.total_document_chunked_count,
+      rag_progress?.total_document_embedded_count,
+    ].some((count) => count < total_docs)
+
+    if (hasPartialProgress)
       return {
-        text: "In Progress",
+        text: "Incomplete",
         color: "badge-warning",
         bg: "bg-warning/10",
         border: "border-warning/20",
       }
+
     return {
       text: "Not Started",
       color: "badge-neutral",

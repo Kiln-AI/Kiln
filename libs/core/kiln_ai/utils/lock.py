@@ -7,7 +7,7 @@ from typing import Dict
 _lock_registry: Dict[str, asyncio.Lock] = {}
 
 
-def loop_local_mutex(key: str) -> asyncio.Lock:
+def asyncio_mutex(key: str) -> asyncio.Lock:
     if key not in _lock_registry:
         _lock_registry[key] = asyncio.Lock()
     return _lock_registry[key]
