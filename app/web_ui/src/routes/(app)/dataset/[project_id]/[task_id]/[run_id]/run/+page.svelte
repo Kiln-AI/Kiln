@@ -10,6 +10,8 @@
     load_model_info,
     prompt_name_from_id,
     current_task_prompts,
+    provider_name_from_id,
+    load_available_models,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
@@ -117,7 +119,9 @@
     if (run?.output?.source?.properties?.model_provider) {
       properties.push({
         name: "Model Provider",
-        value: run.output.source.properties.model_provider,
+        value: provider_name_from_id(
+          String(run.output.source.properties.model_provider),
+        ),
       })
     }
 
@@ -182,6 +186,7 @@
   onMount(async () => {
     await load_run()
     load_model_info()
+    load_available_models()
   })
 
   async function load_run() {
