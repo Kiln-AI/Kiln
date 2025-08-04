@@ -30,6 +30,7 @@ from kiln_ai.tools.base_tool import KilnTool
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 MAX_CALLS_PER_TURN = 10
+MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ class LiteLlmAdapter(BaseAdapter):
         messages = list(initial_messages)
         tool_calls_count = 0
 
-        while tool_calls_count < MAX_CALLS_PER_TURN:
+        while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
             # Build completion kwargs for tool calls
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
@@ -95,15 +96,17 @@ class LiteLlmAdapter(BaseAdapter):
             # Extract content and tool_calls safely
             content = None
             tool_calls = None
-            message = getattr(response_choice, "message", None)
-            if message is not None:
-                content = getattr(message, "content", None)
-                tool_calls = getattr(message, "tool_calls", None)
+            if hasattr(response_choice, "message"):
+                if hasattr(response_choice.message, "content"):
+                    content = response_choice.message.content
+                if hasattr(response_choice.message, "tool_calls"):
+                    tool_calls = response_choice.message.tool_calls
 
             # Add the assistant's response to messages
             assistant_message = {
                 "role": "assistant",
                 "content": content,
+                # TODO: ensure structure
                 "tool_calls": tool_calls,
             }
             messages.append(assistant_message)
