@@ -67,7 +67,9 @@ async def run_simple_task_with_tools(
     # Create tools with MultiplyTool wrapped in a spy
     multiply_tool = MultiplyTool()
     multiply_spy = Mock(wraps=multiply_tool)
-    mock_math_tools = [AddTool(), SubtractTool(), multiply_spy, DivideTool()]
+    add_tool = AddTool()
+    add_spy = Mock(wraps=add_tool)
+    mock_math_tools = [add_spy, SubtractTool(), multiply_spy, DivideTool()]
 
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
         run = await adapter.invoke(
@@ -76,6 +78,8 @@ async def run_simple_task_with_tools(
 
         # Verify that MultiplyTool.run was called
         multiply_spy.run.assert_called()
+        # Verify that AddTool.run was called
+        add_spy.run.assert_called()
 
         assert "64" in run.output.output
         assert run.id is not None
