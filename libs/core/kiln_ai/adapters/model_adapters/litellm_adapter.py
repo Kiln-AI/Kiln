@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 import logging
 from typing import Any, Dict, List, Tuple
@@ -35,6 +36,14 @@ MAX_TOOL_CALLS_PER_TURN = 30
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ModelTurnResult:
+    assistant_message: str
+    all_messages: list[dict[str, Any]]
+    model_response: ModelResponse | None
+    model_choice: Choices | None
+
+
 class LiteLlmAdapter(BaseAdapter):
     def __init__(
         self,
@@ -66,7 +75,7 @@ class LiteLlmAdapter(BaseAdapter):
         prior_messages: list[dict[str, Any]],
         top_logprobs: int | None,
         skip_response_format: bool,
-    ) -> tuple[str, list[dict[str, Any]], ModelResponse | None]:
+    ) -> ModelTurnResult:
         """
         Call the model for a single top level turn: from user message to agent message.
 
@@ -119,7 +128,12 @@ class LiteLlmAdapter(BaseAdapter):
 
                 # If task_response tool was called, we're done
                 if assistant_message_from_toolcall is not None:
-                    return assistant_message_from_toolcall, messages, model_response
+                    return ModelTurnResult(
+                        assistant_message=assistant_message_from_toolcall,
+                        all_messages=messages,
+                        model_response=model_response,
+                        model_choice=response_choice,
+                    )
 
                 # If there were tool calls, increment counter and continue
                 if tool_call_messages:
@@ -128,7 +142,12 @@ class LiteLlmAdapter(BaseAdapter):
 
             # If no tool calls, return the content as final output
             if content:
-                return content, messages, model_response
+                return ModelTurnResult(
+                    assistant_message=content,
+                    all_messages=messages,
+                    model_response=model_response,
+                    model_choice=response_choice,
+                )
 
             # If we get here with no content and no tool calls, break
             break
@@ -147,6 +166,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         prior_output: str | None = None
         last_response: ModelResponse | None = None
+        final_choice: Choices | None = None
         turns = 0
 
         while True:
@@ -166,12 +186,17 @@ class LiteLlmAdapter(BaseAdapter):
                 messages.append({"role": message.role, "content": message.content})
 
             skip_response_format = not turn.final_call
-            prior_output, messages, last_response = await self._run_model_turn(
+            turn_result = await self._run_model_turn(
                 provider,
                 messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
             )
+
+            prior_output = turn_result.assistant_message
+            messages = turn_result.all_messages
+            last_response = turn_result.model_response
+            final_choice = turn_result.model_choice
 
             if not prior_output:
                 raise RuntimeError("No assistant message/output returned from model")
@@ -188,16 +213,6 @@ class LiteLlmAdapter(BaseAdapter):
         # Get the final response from the chat formatter
         # TODO
         intermediate_outputs = chat_formatter.intermediate_outputs()
-
-        # Get the last response to extract logprobs and reasoning if needed
-        final_choice: Choices | None = None
-        if (
-            last_response is not None
-            and last_response.choices
-            and len(last_response.choices) > 0
-            and isinstance(last_response.choices[0], Choices)
-        ):
-            final_choice = last_response.choices[0]
 
         logprobs = None
         if (
@@ -220,8 +235,10 @@ class LiteLlmAdapter(BaseAdapter):
         ):
             reasoning_content = final_choice.message.reasoning_content
 
-        if reasoning_content is not None and len(reasoning_content.strip()) > 0:
-            intermediate_outputs["reasoning"] = reasoning_content.strip()
+        if reasoning_content is not None:
+            stripped_reasoning_content = reasoning_content.strip()
+            if len(stripped_reasoning_content) > 0:
+                intermediate_outputs["reasoning"] = stripped_reasoning_content
 
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
