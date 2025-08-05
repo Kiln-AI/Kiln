@@ -154,23 +154,13 @@
     }
 
     if (run?.output?.source?.properties?.structured_output_mode) {
-      const mode = run.output.source.properties.structured_output_mode
-      let displayValue = mode
-      // Convert technical names to more user-friendly display names
-      if (mode === "json_schema") {
-        displayValue = "JSON Schema"
-      } else if (mode === "json_instructions") {
-        displayValue = "JSON Instructions"
-      } else if (mode === "native_json") {
-        displayValue = "Native JSON"
-      } else if (mode === "unknown") {
-        displayValue = "Not Set"
+      let mode = run.output.source.properties.structured_output_mode
+      if (typeof mode === "string" && mode.startsWith("json_")) {
+        properties.push({
+          name: "JSON Mode",
+          value: mode,
+        })
       }
-
-      properties.push({
-        name: "JSON Mode",
-        value: displayValue,
-      })
     }
 
     if (run?.input_source?.properties?.created_by) {
