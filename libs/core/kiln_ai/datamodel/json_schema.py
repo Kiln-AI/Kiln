@@ -84,8 +84,8 @@ def schema_from_json_str(v: str) -> Dict:
     """
     try:
         parsed = json.loads(v)
-        if isinstance(v, dict):
-            raise ValueError(f"JSON schema must be a dict, not {type(v)}")
+        if not isinstance(parsed, dict):
+            raise ValueError(f"JSON schema must be a dict, not {type(parsed)}")
 
         validate_schema_dict(parsed)
         return parsed
