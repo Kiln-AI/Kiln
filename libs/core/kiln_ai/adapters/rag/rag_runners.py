@@ -77,6 +77,10 @@ class GenericErrorCollector(AsyncJobRunnerObserver[T], Generic[T]):
         start_idx: int = 0,
     ) -> tuple[list[Tuple[T, Exception]], int]:
         """Returns a tuple of: ((job, error), index of the last error)"""
+        if start_idx < 0:
+            raise ValueError("start_idx must be non-negative")
+        if start_idx >= len(self.errors):
+            return [], start_idx
         if start_idx > 0:
             return self.errors[start_idx : len(self.errors)], len(self.errors)
         return self.errors, len(self.errors)
@@ -151,13 +155,17 @@ async def execute_embedding_job(
 ) -> bool:
     chunks_text = await job.chunked_document.load_chunks_text()
     if chunks_text is None or len(chunks_text) == 0:
-        raise ValueError("No chunks text found")
+        raise ValueError(
+            f"Failed to load chunks for chunked document: {job.chunked_document.id}"
+        )
 
     chunk_embedding_result = await embedding_adapter.generate_embeddings(
         input_texts=chunks_text
     )
     if chunk_embedding_result is None:
-        raise ValueError("Chunk embedding result is not set")
+        raise ValueError(
+            f"Failed to generate embeddings for chunked document: {job.chunked_document.id}"
+        )
 
     chunk_embeddings = ChunkEmbeddings(
         parent=job.chunked_document,
