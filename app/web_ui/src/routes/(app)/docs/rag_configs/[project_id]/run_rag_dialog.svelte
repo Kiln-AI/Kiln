@@ -222,26 +222,26 @@
                 : 'bg-base-200 text-base-content/60'}"
           >
             {#if completed_pct === 100}
-              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fill-rule="evenodd"
-                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                  clip-rule="evenodd"
-                ></path>
-              </svg>
+              <svg
+                class="w-4 h-4"
+                fill="currentColor"
+                viewBox="0 0 56 56"
+                xmlns="http://www.w3.org/2000/svg"
+                ><path
+                  d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+                /></svg
+              >
               <span class="text-xs font-medium">Complete</span>
             {:else if is_running}
-              <div
-                class="w-1.5 h-1.5 bg-current rounded-full animate-ping"
-              ></div>
+              <div class="bg-current rounded-full loading loading-sm"></div>
               <span class="text-xs font-medium">Processing...</span>
             {:else if has_error_logs}
-              <div class="w-1.5 h-1.5 bg-error rounded-full"></div>
+              <div class="bg-error rounded-full"></div>
               <span class="text-xs font-medium text-error"
                 >Completed with errors</span
               >
             {:else}
-              <div class="w-1.5 h-1.5 bg-current rounded-full"></div>
+              <div class="bg-current rounded-full"></div>
               <span class="text-xs font-medium">Ready to start</span>
             {/if}
           </div>
@@ -270,15 +270,17 @@
               : 'bg-base-200 text-base-content/50'}"
         >
           {#if is_step_completed("extraction", config_progress)}
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                clip-rule="evenodd"
-              ></path>
-            </svg>
+            <svg
+              class="w-4 h-4"
+              fill="currentColor"
+              viewBox="0 0 56 56"
+              xmlns="http://www.w3.org/2000/svg"
+              ><path
+                d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+              /></svg
+            >
           {:else if is_running}
-            <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
+            <div class="bg-current rounded-full loading loading-sm"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
           {/if}
@@ -321,15 +323,17 @@
               : 'bg-base-200 text-base-content/50'}"
         >
           {#if is_step_completed("chunking", config_progress)}
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                clip-rule="evenodd"
-              ></path>
-            </svg>
+            <svg
+              class="w-4 h-4"
+              fill="currentColor"
+              viewBox="0 0 56 56"
+              xmlns="http://www.w3.org/2000/svg"
+              ><path
+                d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+              /></svg
+            >
           {:else if is_running}
-            <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
+            <div class="bg-current rounded-full loading loading-sm"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
           {/if}
@@ -369,15 +373,17 @@
               : 'bg-base-200 text-base-content/50'}"
         >
           {#if is_step_completed("embedding", config_progress)}
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fill-rule="evenodd"
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                clip-rule="evenodd"
-              ></path>
-            </svg>
+            <svg
+              class="w-4 h-4"
+              fill="currentColor"
+              viewBox="0 0 56 56"
+              xmlns="http://www.w3.org/2000/svg"
+              ><path
+                d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+              /></svg
+            >
           {:else if is_running}
-            <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
+            <div class="bg-current rounded-full loading loading-sm"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
           {/if}
@@ -427,35 +433,9 @@
           }`}
         >
           {#if show_logs}
-            <svg
-              class="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 15l7-7 7 7"
-              ></path>
-            </svg>
-            Hide Logs
+            <div>Hide Logs</div>
           {:else}
-            <svg
-              class="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 9l-7 7-7-7"
-              ></path>
-            </svg>
-            Show Logs ({log_messages.length})
+            <div>Show Logs ({log_messages.length})</div>
           {/if}
         </button>
       </div>
