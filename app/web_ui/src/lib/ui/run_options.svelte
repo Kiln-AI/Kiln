@@ -2,6 +2,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type { StructuredOutputMode } from "$lib/types"
+  import { structuredOutputModeToString } from "$lib/stores"
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0
@@ -65,42 +66,42 @@
       options: [
         {
           value: "json_schema",
-          label: "JSON Schema",
+          label: structuredOutputModeToString("json_schema"),
           description:
             "Require the provider to provide the exact JSON schema expected.",
         },
         {
           value: "function_calling",
-          label: "Function Calling",
+          label: structuredOutputModeToString("function_calling"),
           description:
             "Request structured output using function calling with strict validation.",
         },
         {
           value: "function_calling_weak",
-          label: "Weak Function Calling",
+          label: structuredOutputModeToString("function_calling_weak"),
           description:
             "Request structured output using function calling, without strict validation.",
         },
         {
           value: "json_mode",
-          label: "JSON Mode",
+          label: structuredOutputModeToString("json_mode"),
           description:
             "Require the model return JSON, but without specifying the schema.",
         },
         {
           value: "json_instructions",
-          label: "JSON Instructions",
+          label: structuredOutputModeToString("json_instructions"),
           description:
             "Kiln will add instructions to the prompt requesting JSON matching your output schema.",
         },
         {
           value: "json_instruction_and_object",
-          label: "JSON Instructions + Mode",
+          label: structuredOutputModeToString("json_instruction_and_object"),
           description: "Combine JSON instructions and JSON mode.",
         },
         {
           value: "json_custom_instructions",
-          label: "None",
+          label: structuredOutputModeToString("json_custom_instructions"),
           description:
             "Kiln will not add any instructions on how to structure the output. Your prompt should include custom instructions.",
         },
