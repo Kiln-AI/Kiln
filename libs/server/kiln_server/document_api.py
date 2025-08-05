@@ -1125,20 +1125,20 @@ def connect_document_api(app: FastAPI):
                         RagExtractionStepRunner(
                             project,
                             extractor_config,
-                            concurrency=1,
+                            concurrency=50,
                         ),
                         RagChunkingStepRunner(
                             project,
                             extractor_config,
                             chunker_config,
-                            concurrency=1,
+                            concurrency=50,
                         ),
                         RagEmbeddingStepRunner(
                             project,
                             extractor_config,
                             chunker_config,
                             embedding_config,
-                            concurrency=1,
+                            concurrency=50,
                         ),
                     ],
                 ),
