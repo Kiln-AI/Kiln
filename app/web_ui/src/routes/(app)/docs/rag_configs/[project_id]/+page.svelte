@@ -95,7 +95,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th class="w-1/4">Pipeline Configuration</th>
+              <th class="w-1/4">RAG Configuration</th>
               <th class="w-2/4">Progress</th>
               <th class="w-1/4"></th>
             </tr>

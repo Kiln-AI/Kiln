@@ -427,28 +427,28 @@ class RagWorkflowRunnerConfiguration(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     step_runners: list[AbstractRagStepRunner] = Field(
-        description="The step runners to run for the pipeline",
+        description="The step runners to run",
     )
 
     initial_progress: RagProgress | None = Field(
-        description="The state of the pipeline before starting, if left empty the initial progress will be computed on initialization",
+        description="The state of the workflow before starting, if left empty the initial progress will be computed on initialization",
         default=None,
     )
 
     rag_config: RagConfig = Field(
-        description="The rag config to use for the pipeline",
+        description="The rag config to use for the workflow",
     )
 
     extractor_config: ExtractorConfig = Field(
-        description="The extractor config to use for the pipeline",
+        description="The extractor config to use for the workflow",
     )
 
     chunker_config: ChunkerConfig = Field(
-        description="The chunker config to use for the pipeline",
+        description="The chunker config to use for the workflow",
     )
 
     embedding_config: EmbeddingConfig = Field(
-        description="The embedding config to use for the pipeline",
+        description="The embedding config to use for the workflow",
     )
 
 

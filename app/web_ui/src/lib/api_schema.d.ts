@@ -1872,27 +1872,27 @@ export interface components {
         CreateRagConfigRequest: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description Choose a name for your RAG workflow.
              */
             name?: string | null;
             /**
              * Description
-             * @description The description of the document pipeline
+             * @description A description for your own reference.
              */
             description?: string | null;
             /**
              * Extractor Config Id
-             * @description The extractor config to use for the document pipeline
+             * @description The extractor config to use for the RAG workflow
              */
             extractor_config_id: string | null;
             /**
              * Chunker Config Id
-             * @description The chunker config to use for the document pipeline
+             * @description The chunker config to use for the RAG workflow.
              */
             chunker_config_id: string | null;
             /**
              * Embedding Config Id
-             * @description The embedding config to use for the document pipeline
+             * @description The embedding config to use for the RAG workflow.
              */
             embedding_config_id: string | null;
         };

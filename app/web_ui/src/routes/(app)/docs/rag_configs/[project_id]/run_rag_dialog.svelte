@@ -199,7 +199,7 @@
   ]}
 >
   <div class="flex flex-col gap-6">
-    <!-- Overall Pipeline Progress Header -->
+    <!-- Overall RAG Progress Header -->
     <div class="text-center">
       <div class="flex flex-col items-center gap-4">
         <div
@@ -253,7 +253,7 @@
       </div>
     </div>
 
-    <!-- Pipeline Steps -->
+    <!-- RAG Steps -->
     <div class="flex flex-col gap-4 max-w-md mx-auto">
       <!-- Extraction Step -->
       <div

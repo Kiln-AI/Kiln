@@ -162,24 +162,24 @@ class RagConfigWithSubConfigs(BaseModel):
 
 class CreateRagConfigRequest(BaseModel):
     name: str | None = Field(
-        description="A name for this entity.",
+        description="Choose a name for your RAG workflow.",
         min_length=1,
         max_length=120,
         pattern=NAME_REGEX,
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
-        description="The description of the document pipeline",
+        description="A description for your own reference.",
         default=None,
     )
     extractor_config_id: ID_TYPE = Field(
-        description="The extractor config to use for the document pipeline",
+        description="The extractor config to use for the RAG workflow",
     )
     chunker_config_id: ID_TYPE = Field(
-        description="The chunker config to use for the document pipeline",
+        description="The chunker config to use for the RAG workflow.",
     )
     embedding_config_id: ID_TYPE = Field(
-        description="The embedding config to use for the document pipeline",
+        description="The embedding config to use for the RAG workflow.",
     )
 
 

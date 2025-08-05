@@ -99,7 +99,7 @@
       <!-- Separator -->
       <div class="border-t border-gray-200"></div>
 
-      <!-- Pipeline Steps -->
+      <!-- RAG Steps -->
       <div class="flex flex-col gap-6">
         <!-- Extraction Step -->
         <div>

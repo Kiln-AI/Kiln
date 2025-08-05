@@ -78,7 +78,7 @@
 
 {#if rag_progress && rag_config}
   <tr class={row_hovered ? "hover" : ""}>
-    <!-- Pipeline Info Card -->
+    <!-- Step Info Card -->
     <td class="align-top p-4 h-full">
       <div class="flex flex-col gap-3">
         <!-- Header -->
