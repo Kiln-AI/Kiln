@@ -12,12 +12,13 @@
     current_task_prompts,
     provider_name_from_id,
     load_available_models,
+    structuredOutputModeToString,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRun } from "$lib/types"
+  import type { TaskRun, StructuredOutputMode } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
@@ -158,7 +159,7 @@
       if (typeof mode === "string" && mode.startsWith("json_")) {
         properties.push({
           name: "JSON Mode",
-          value: mode,
+          value: structuredOutputModeToString(mode as StructuredOutputMode),
         })
       }
     }
@@ -309,7 +310,7 @@
             class="text-xs text-gray-500 underline cursor-pointer bg-transparent border-none p-0"
             on:click={() => (see_all_properties = !see_all_properties)}
           >
-            See All
+            {see_all_properties ? "See Less" : "See All"}
           </button>
         </div>
       </div>

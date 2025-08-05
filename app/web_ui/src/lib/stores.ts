@@ -9,6 +9,7 @@ import type {
   RatingOptionResponse,
   TaskRequirement,
   ModelDetails,
+  StructuredOutputMode,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
@@ -453,4 +454,40 @@ export function rating_options_for_sample(
       return option.show_for_tags.some((tag: string) => tags.includes(tag))
     })
     .map((option) => option.requirement)
+}
+
+/**
+ * Converts StructuredOutputMode to a human-readable string.
+ * This function uses exhaustive case checking - if you add a new case to StructuredOutputMode,
+ * TypeScript will force you to handle it here.
+ */
+export function structuredOutputModeToString(
+  mode: StructuredOutputMode,
+): string {
+  switch (mode) {
+    case "default":
+      return "Default (Legacy)"
+    case "json_schema":
+      return "JSON Schema"
+    case "function_calling_weak":
+      return "Weak Function Calling"
+    case "function_calling":
+      return "Function Calling"
+    case "json_mode":
+      return "JSON Mode"
+    case "json_instructions":
+      return "JSON Instructions"
+    case "json_instruction_and_object":
+      return "JSON Instructions + Mode"
+    case "json_custom_instructions":
+      return "None"
+    case "unknown":
+      return "Unknown"
+    default: {
+      // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+      // and don't handle it above, TypeScript will error here
+      const exhaustiveCheck: never = mode
+      throw new Error(`Unhandled StructuredOutputMode: ${exhaustiveCheck}`)
+    }
+  }
 }
