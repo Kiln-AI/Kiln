@@ -61,6 +61,8 @@ class ModelName(str, Enum):
     gpt_o3_low = "gpt_o3_low"
     gpt_o3_medium = "gpt_o3_medium"
     gpt_o3_high = "gpt_o3_high"
+    gpt_oss_20b = "gpt_oss_20b"
+    gpt_oss_120b = "gpt_oss_120b"
     gpt_o1_low = "gpt_o1_low"
     gpt_o1_medium = "gpt_o1_medium"
     gpt_o1_high = "gpt_o1_high"
@@ -549,6 +551,52 @@ built_in_models: List[KilnModel] = [
                 model_id="o3",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 thinking_level="high",
+            ),
+        ],
+    ),
+    # GPT OSS 120B
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_oss_120b,
+        friendly_name="GPT OSS 120B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="openai/gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # GPT OSS 20B
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_oss_20b,
+        friendly_name="GPT OSS 20B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-oss-20b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="openai/gpt-oss-20b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/gpt-oss-20b",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
