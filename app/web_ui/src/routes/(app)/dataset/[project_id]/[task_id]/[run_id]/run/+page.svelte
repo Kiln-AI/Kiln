@@ -158,11 +158,16 @@
 
     if (run?.output?.source?.properties?.structured_output_mode) {
       let mode = run.output.source.properties.structured_output_mode
-      if (typeof mode === "string" && mode.startsWith("json_")) {
-        properties.push({
-          name: "JSON Mode",
-          value: structuredOutputModeToString(mode as StructuredOutputMode),
-        })
+      if (typeof mode === "string") {
+        const json_mode = structuredOutputModeToString(
+          mode as StructuredOutputMode,
+        )
+        if (json_mode) {
+          properties.push({
+            name: "JSON Mode",
+            value: json_mode,
+          })
+        }
       }
     }
 

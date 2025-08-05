@@ -89,7 +89,7 @@ export function rating_name(rating_type: string): string {
  */
 export function structuredOutputModeToString(
   mode: StructuredOutputMode,
-): string {
+): string | undefined {
   switch (mode) {
     case "default":
       return "Default (Legacy)"
@@ -113,7 +113,8 @@ export function structuredOutputModeToString(
       // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
       // and don't handle it above, TypeScript will error here
       const exhaustiveCheck: never = mode
-      throw new Error(`Unhandled StructuredOutputMode: ${exhaustiveCheck}`)
+      console.warn(`Unhandled StructuredOutputMode: ${exhaustiveCheck}`)
+      return undefined
     }
   }
 }

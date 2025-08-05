@@ -66,42 +66,46 @@
       options: [
         {
           value: "json_schema",
-          label: structuredOutputModeToString("json_schema"),
+          label: structuredOutputModeToString("json_schema") ?? "N/A",
           description:
             "Require the provider to provide the exact JSON schema expected.",
         },
         {
           value: "function_calling",
-          label: structuredOutputModeToString("function_calling"),
+          label: structuredOutputModeToString("function_calling") ?? "N/A",
           description:
             "Request structured output using function calling with strict validation.",
         },
         {
           value: "function_calling_weak",
-          label: structuredOutputModeToString("function_calling_weak"),
+          label: structuredOutputModeToString("function_calling_weak") ?? "N/A",
           description:
             "Request structured output using function calling, without strict validation.",
         },
         {
           value: "json_mode",
-          label: structuredOutputModeToString("json_mode"),
+          label: structuredOutputModeToString("json_mode") ?? "N/A",
           description:
             "Require the model return JSON, but without specifying the schema.",
         },
         {
           value: "json_instructions",
-          label: structuredOutputModeToString("json_instructions"),
+          label: structuredOutputModeToString("json_instructions") ?? "N/A",
           description:
             "Kiln will add instructions to the prompt requesting JSON matching your output schema.",
         },
         {
           value: "json_instruction_and_object",
-          label: structuredOutputModeToString("json_instruction_and_object"),
+          label:
+            structuredOutputModeToString("json_instruction_and_object") ??
+            "N/A",
           description: "Combine JSON instructions and JSON mode.",
         },
         {
           value: "json_custom_instructions",
-          label: structuredOutputModeToString("json_custom_instructions"),
+          label:
+            structuredOutputModeToString("json_custom_instructions") ??
+            "Unknown",
           description:
             "Kiln will not add any instructions on how to structure the output. Your prompt should include custom instructions.",
         },
