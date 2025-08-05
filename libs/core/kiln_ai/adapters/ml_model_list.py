@@ -567,17 +567,17 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-oss-120b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="openai/gpt-oss-120b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-120b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -595,22 +595,22 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-oss-20b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="openai/gpt-oss-20b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-20b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="gpt-oss:20b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
