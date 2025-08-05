@@ -575,6 +575,11 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/gpt-oss-120b",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gpt-oss:120b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
         ],
     ),
     # GPT OSS 20B
@@ -596,6 +601,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/gpt-oss-20b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gpt-oss:20b",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
