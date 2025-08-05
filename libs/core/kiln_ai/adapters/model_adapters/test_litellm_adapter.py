@@ -685,27 +685,6 @@ async def test_build_completion_kwargs_raises_error_with_tools_conflict(
 
 
 @pytest.mark.asyncio
-async def test_chat_history_property(config, mock_task):
-    """Test chat_history property returns a copy of the internal chat history"""
-    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
-
-    # Initially should be empty
-    assert adapter.chat_history == []
-
-    # Add some messages to the internal chat history
-    test_messages = [
-        {"role": "user", "content": "Hello"},
-        {"role": "assistant", "content": "Hi there!"},
-    ]
-    adapter._chat_history = test_messages
-
-    # Should return a copy of the messages
-    history = adapter.chat_history
-    assert history == test_messages
-    assert history is not adapter._chat_history  # Should be a copy, not the same object
-
-
-@pytest.mark.asyncio
 async def test_handle_tool_calls_loop_no_tool_calls(config, mock_task):
     """Test _handle_tool_calls_loop with no tool calls in response"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
@@ -764,8 +743,8 @@ async def test_handle_tool_calls_loop_with_task_response_tool(config, mock_task)
         "acompletion_checking_response",
         return_value=(mock_response, mock_choice),
     ):
-        content, messages = await adapter._handle_tool_calls_loop(
-            Mock(), initial_messages, None
+        content, messages = await adapter._run_model_turn(
+            Mock(), initial_messages, None, False
         )
 
     assert content == '{"result": "final output"}'
