@@ -22,7 +22,6 @@
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
 
@@ -36,6 +35,7 @@
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
+  let see_all_properties = false
 
   function get_properties(
     run: TaskRun | null,
@@ -299,12 +299,18 @@
         </div>
         <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
           <PropertyList
-            properties={get_properties(run, $current_task_prompts, $model_info)}
+            properties={[
+              ...get_properties(run, $current_task_prompts, $model_info),
+              ...(see_all_properties ? get_advanced_properties(run) : []),
+            ]}
             title="Properties"
           />
-          <Collapse title="See All">
-            <PropertyList properties={get_advanced_properties(run)} title="" />
-          </Collapse>
+          <button
+            class="text-xs text-gray-500 underline cursor-pointer bg-transparent border-none p-0"
+            on:click={() => (see_all_properties = !see_all_properties)}
+          >
+            See All
+          </button>
         </div>
       </div>
       <Run initial_run={run} task={$current_task} {project_id} />
