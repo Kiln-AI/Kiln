@@ -1,4 +1,3 @@
-# from .add_tool import AddTool  # TODO: AddTool not implemented yet
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
