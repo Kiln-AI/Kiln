@@ -1,6 +1,6 @@
-from dataclasses import dataclass
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import litellm
@@ -210,10 +210,6 @@ class LiteLlmAdapter(BaseAdapter):
                 }
             )
 
-        # Get the final response from the chat formatter
-        # TODO
-        intermediate_outputs = chat_formatter.intermediate_outputs()
-
         logprobs = None
         if (
             final_choice is not None
@@ -226,19 +222,18 @@ class LiteLlmAdapter(BaseAdapter):
         if self.base_adapter_config.top_logprobs is not None and logprobs is None:
             raise RuntimeError("Logprobs were required, but no logprobs were returned.")
 
-        # Save reasoning if it exists and was parsed by LiteLLM (or openrouter, or anyone upstream)
-        reasoning_content = None
+        # Save COT/reasoning if it exists. May be a message, or may be parsed by LiteLLM (or openrouter, or anyone upstream)
+        intermediate_outputs = chat_formatter.intermediate_outputs()
         if (
             final_choice is not None
             and hasattr(final_choice, "message")
             and hasattr(final_choice.message, "reasoning_content")
         ):
             reasoning_content = final_choice.message.reasoning_content
-
-        if reasoning_content is not None:
-            stripped_reasoning_content = reasoning_content.strip()
-            if len(stripped_reasoning_content) > 0:
-                intermediate_outputs["reasoning"] = stripped_reasoning_content
+            if reasoning_content is not None:
+                stripped_reasoning_content = reasoning_content.strip()
+                if len(stripped_reasoning_content) > 0:
+                    intermediate_outputs["reasoning"] = stripped_reasoning_content
 
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
