@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
+  import type { RagConfigWithSubConfigs } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import RunRagControl from "./run_rag_control.svelte"
   import {
@@ -7,10 +7,14 @@
     model_name,
     provider_name_from_id,
   } from "$lib/stores"
+  import {
+    ragProgressStore,
+    type RagConfigurationStatus,
+  } from "$lib/stores/rag_progress_store"
 
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
-  export let rag_progress: RagProgress
+  $: rag_progress = $ragProgressStore.progress[rag_config.id || ""]
 
   let row_hovered = false
 
@@ -24,37 +28,52 @@
         )
       : 0
 
-  // Get status and color
-  $: status = (() => {
-    if (completed_pct === 100)
-      return {
-        text: "Complete",
-        color: "badge-primary",
-        bg: "bg-primary/10",
-        border: "border-primary/20",
+  function status_to_badge_props(status: RagConfigurationStatus) {
+    switch (status) {
+      case "complete": {
+        return {
+          text: "Complete",
+          color: "badge-primary",
+          bg: "bg-primary/10",
+          border: "border-primary/20",
+        }
       }
-
-    const hasPartialProgress = [
-      rag_progress?.total_document_extracted_count,
-      rag_progress?.total_document_chunked_count,
-      rag_progress?.total_document_embedded_count,
-    ].some((count) => count < total_docs)
-
-    if (hasPartialProgress)
-      return {
-        text: "Incomplete",
-        color: "badge-warning",
-        bg: "bg-warning/10",
-        border: "border-warning/20",
+      case "incomplete": {
+        return {
+          text: "Incomplete",
+          color: "badge-warning",
+          bg: "bg-warning/10",
+          border: "border-warning/20",
+        }
       }
-
-    return {
-      text: "Not Started",
-      color: "badge-neutral",
-      bg: "bg-neutral/10",
-      border: "border-neutral/20",
+      case "running": {
+        return {
+          text: "Running",
+          color: "badge-warning",
+          bg: "bg-warning/10",
+          border: "border-warning/20",
+        }
+      }
+      case "completed_with_errors": {
+        return {
+          text: "Completed with errors",
+          color: "badge-error",
+          bg: "bg-error/10",
+          border: "border-error/20",
+        }
+      }
+      default: {
+        return {
+          text: "Not Started",
+          color: "badge-neutral",
+          bg: "bg-neutral/10",
+          border: "border-neutral/20",
+        }
+      }
     }
-  })()
+  }
+
+  $: status = ragProgressStore.get_status(rag_config.id || "")
 </script>
 
 {#if rag_progress && rag_config}
@@ -108,8 +127,18 @@
       <div class="flex flex-col gap-3">
         <!-- Overall Progress -->
         <div class="flex items-center justify-between">
-          <div class="badge {status.color} badge-outline text-xs font-medium">
-            {status.text}
+          <div
+            class="badge {status_to_badge_props(status)
+              .color} badge-outline text-xs font-medium"
+          >
+            {#if status === "running"}
+              <div
+                class="w-1.5 h-1.5 bg-current rounded-full animate-ping mr-2"
+              ></div>
+            {/if}
+            <span class="text-xs font-medium"
+              >{status_to_badge_props(status).text}</span
+            >
           </div>
           <span class="text-sm text-base-content/60">{completed_pct}%</span>
         </div>
@@ -129,7 +158,7 @@
 
     <!-- Actions -->
     <td class="p-4 cursor-default align-top">
-      <RunRagControl {rag_config} {project_id} {rag_progress} />
+      <RunRagControl {rag_config} {project_id} />
     </td>
   </tr>
 {/if}

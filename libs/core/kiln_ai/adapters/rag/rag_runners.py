@@ -329,7 +329,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                             logs=[
                                 LogMessage(
                                     level="error",
-                                    message=f"Error chunking document: {job.extraction.doc.path}: {error}",
+                                    message=f"Error chunking document: {job.extraction.path}: {error}",
                                 )
                             ],
                         )
@@ -416,7 +416,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                             logs=[
                                 LogMessage(
                                     level="error",
-                                    message=f"Error embedding document: {job.chunked_document.parent.doc.path}: {error}",
+                                    message=f"Error embedding document: {job.chunked_document.path}: {error}",
                                 )
                             ],
                         )

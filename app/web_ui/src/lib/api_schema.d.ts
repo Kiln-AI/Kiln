@@ -2890,8 +2890,11 @@ export interface components {
         };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
-            /** Rag Config Ids */
-            rag_config_ids: string[];
+            /**
+             * Rag Config Ids
+             * @description The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned
+             */
+            rag_config_ids?: string[] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3389,8 +3392,11 @@ export interface components {
              * @default 0
              */
             total_document_embedded_error_count: number;
-            /** @description A log message to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...' */
-            log?: components["schemas"]["LogMessage"] | null;
+            /**
+             * Logs
+             * @description A list of log messages to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...'
+             */
+            logs?: components["schemas"]["LogMessage"][] | null;
         };
         /** RatingOption */
         RatingOption: {

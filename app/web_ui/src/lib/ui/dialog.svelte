@@ -18,6 +18,8 @@
     isError?: boolean
     isWarning?: boolean
     disabled?: boolean
+    loading?: boolean
+    hide?: boolean
   }
   export let action_buttons: ActionButton[] = []
   let action_running = false
@@ -141,7 +143,9 @@
           </form>
         {:else}
           {#each action_buttons as button}
-            {#if button.isCancel}
+            {#if button.hide}
+              <!-- do nothing -->
+            {:else if button.isCancel}
               <form method="dialog">
                 <button class="btn btn-sm h-10 btn-outline min-w-24"
                   >{button.label || "Cancel"}</button
@@ -154,9 +158,12 @@
                   : ''}
                   {button.isError ? 'btn-error' : ''}
                   {button.isWarning ? 'btn-warning' : ''}"
-                disabled={button.disabled}
+                disabled={button.disabled || button.loading}
                 on:click={() => perform_button_action(button)}
               >
+                {#if button.loading}
+                  <div class="loading loading-spinner loading-sm"></div>
+                {/if}
                 {button.label || "Confirm"}
               </button>
             {/if}

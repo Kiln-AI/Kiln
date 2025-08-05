@@ -55,3 +55,4 @@ export type ModelProviderName = components["schemas"]["ModelProviderName"]
 export type RagProgress = components["schemas"]["RagProgress"]
 export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
+export type LogMessage = components["schemas"]["LogMessage"]

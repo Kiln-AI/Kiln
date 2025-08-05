@@ -1,0 +1,321 @@
+import { get, writable, derived } from "svelte/store"
+import { base_url, client } from "$lib/api_client"
+import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
+import { createKilnError, type KilnError } from "../utils/error_handlers"
+
+export type RagConfigurationStatus =
+  | "not_started"
+  | "incomplete"
+  | "running"
+  | "complete"
+  | "completed_with_errors"
+
+interface RagConfigurationProgressState {
+  rag_configs: Record<string, RagConfigWithSubConfigs>
+  progress: Record<string, RagProgress>
+  logs: Record<string, LogMessage[]>
+  status: Record<string, RagConfigurationStatus>
+  running_rag_configs: Record<string, boolean>
+  error: KilnError | null
+}
+
+export const ragProgressStore = createRagProgressStore()
+
+export const allRagConfigs = derived(ragProgressStore, ($store) => {
+  return sortRagConfigs(Object.values($store.rag_configs), "created_at")
+})
+
+function createRagProgressStore() {
+  const { subscribe, set, update } = writable<RagConfigurationProgressState>({
+    // rag configuration id -> rag config
+    rag_configs: {},
+
+    // rag configuration id -> progress; only applies to rag configurations that are running
+    progress: {},
+
+    // rag configuration id -> logs
+    logs: {},
+
+    // rag configuration id -> status
+    status: {},
+
+    // rag configuration id -> is_running
+    running_rag_configs: {},
+
+    // error
+    error: null,
+  })
+
+  function has_errors(rag_config_id: string): boolean {
+    const state = get(ragProgressStore)
+    const progress = state.progress[rag_config_id]
+    return (
+      progress.total_document_extracted_error_count > 0 ||
+      progress.total_document_chunked_error_count > 0 ||
+      progress.total_document_embedded_error_count > 0
+    )
+  }
+
+  function run_rag_config(project_id: string, rag_config_id: string): boolean {
+    update((state) => ({
+      ...state,
+      status: { ...state.status, [rag_config_id]: "running" },
+      running_rag_configs: {
+        ...state.running_rag_configs,
+        [rag_config_id]: true,
+      },
+      logs: {
+        ...state.logs,
+        [rag_config_id]: [],
+      },
+    }))
+
+    const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
+    const eventSource = new EventSource(run_url)
+
+    eventSource.onmessage = (event) => {
+      try {
+        if (event.data === "complete") {
+          eventSource.close()
+          update((state) => {
+            return {
+              ...state,
+              running_rag_configs: {
+                ...state.running_rag_configs,
+                [rag_config_id]: false,
+              },
+              status: {
+                ...state.status,
+                [rag_config_id]: has_errors(rag_config_id)
+                  ? "completed_with_errors"
+                  : "complete",
+              },
+            }
+          })
+        } else {
+          const payload = JSON.parse(event.data) as RagProgress
+          update((state) => {
+            const currentLogs = state.logs[rag_config_id] || []
+            const newLogs = payload.logs || []
+
+            return {
+              ...state,
+              progress: {
+                ...state.progress,
+                [rag_config_id]: payload,
+              },
+              logs: {
+                ...state.logs,
+                [rag_config_id]: [...currentLogs, ...newLogs],
+              },
+            }
+          })
+        }
+      } catch (error) {
+        eventSource.close()
+        update((state) => ({
+          ...state,
+          status: { ...state.status, [rag_config_id]: "completed_with_errors" },
+          logs: {
+            ...state.logs,
+            [rag_config_id]: [
+              ...(state.logs[rag_config_id] || []),
+              {
+                level: "error",
+                message: `Error running RAG config: ${error}`,
+              },
+            ],
+          },
+        }))
+      }
+    }
+
+    // Don't restart on an error (default SSE behavior)
+    eventSource.onerror = (error) => {
+      eventSource.close()
+      update((state) => ({
+        ...state,
+        status: { ...state.status, [rag_config_id]: "completed_with_errors" },
+        logs: {
+          ...state.logs,
+          [rag_config_id]: [
+            ...(state.logs[rag_config_id] || []),
+            {
+              level: "error",
+              message: `SSE connection error: ${error}`,
+            },
+          ],
+        },
+      }))
+    }
+
+    return true
+  }
+
+  return {
+    subscribe,
+    set,
+    update,
+    run_rag_config,
+    reset: () =>
+      set({
+        progress: {},
+        status: {},
+        logs: {},
+        running_rag_configs: {},
+        rag_configs: {},
+        error: null,
+      }),
+    get_status: (ragConfigId: string): RagConfigurationStatus => {
+      const state = get(ragProgressStore)
+      return state.status[ragConfigId] || "not_started"
+    },
+  }
+}
+
+function sortRagConfigs(
+  rag_configs: RagConfigWithSubConfigs[],
+  sortKey: keyof RagConfigWithSubConfigs = "created_at",
+): RagConfigWithSubConfigs[] {
+  return [...rag_configs].sort((a, b) => {
+    const aValue = a[sortKey] || ""
+    const bValue = b[sortKey] || ""
+    if (!bValue) return 1
+    if (!aValue) return -1
+    if (bValue < aValue) return -1
+    if (bValue > aValue) return 1
+    return 0
+  })
+}
+
+function calculateStatus(progress: RagProgress): RagConfigurationStatus {
+  if (
+    progress.total_document_completed_count === progress.total_document_count
+  ) {
+    return "complete"
+  }
+
+  const min_step_completion = Math.min(
+    progress.total_document_extracted_count,
+    progress.total_document_chunked_count,
+    progress.total_document_embedded_count,
+  )
+  if (min_step_completion === 0) {
+    return "not_started"
+  }
+
+  if (min_step_completion < progress.total_document_count) {
+    return "incomplete"
+  }
+
+  const has_errors = [
+    progress.total_document_extracted_error_count,
+    progress.total_document_chunked_error_count,
+    progress.total_document_embedded_error_count,
+  ].some((count) => count > 0)
+  if (has_errors) {
+    return "completed_with_errors"
+  }
+
+  return "complete"
+}
+
+export const formatProgressPercentage = (progress: RagProgress): string => {
+  if (progress.total_document_count === 0) {
+    return "0.0%"
+  }
+
+  return `${((progress.total_document_completed_count / progress.total_document_count) * 100).toFixed(1)}%`
+}
+
+export async function load_all_rag_config_progress(projectId: string) {
+  try {
+    const { data, error } = await client.POST(
+      "/api/projects/{project_id}/rag_configs/progress",
+      {
+        params: {
+          path: {
+            project_id: projectId,
+          },
+        },
+        body: {},
+      },
+    )
+
+    if (!error && data) {
+      for (const [rag_config_id, progress] of Object.entries(data)) {
+        ragProgressStore.update((state) => {
+          const newProgress = {
+            ...state.progress,
+            [rag_config_id]: {
+              ...state.progress[rag_config_id],
+              ...progress,
+            },
+          }
+
+          // we need to make sure not to overwrite the client-side status, otherwise we will
+          // lose the progress state when navigating out and back into the pages that
+          const newStatus = {
+            ...state.status,
+            [rag_config_id]:
+              state.status[rag_config_id] ||
+              calculateStatus(newProgress[rag_config_id]),
+          }
+
+          return {
+            ...state,
+            progress: newProgress,
+            status: newStatus,
+          }
+        })
+      }
+    }
+  } catch (e) {
+    ragProgressStore.update((state) => ({
+      ...state,
+      error: createKilnError(e),
+    }))
+  }
+}
+
+export async function load_rag_configs(project_id: string) {
+  try {
+    if (!project_id) {
+      throw new Error("Project ID not set.")
+    }
+    const { data: rag_configs_response, error: get_error } = await client.GET(
+      "/api/projects/{project_id}/rag_configs",
+      {
+        params: {
+          path: {
+            project_id,
+          },
+        },
+      },
+    )
+    if (get_error) {
+      throw get_error
+    }
+    ragProgressStore.update((state) => {
+      const newState = {
+        ...state,
+        rag_configs: {
+          ...state.rag_configs,
+          ...rag_configs_response.reduce(
+            (acc, rag_config) => {
+              acc[String(rag_config.id)] = rag_config
+              return acc
+            },
+            {} as Record<string, RagConfigWithSubConfigs>,
+          ),
+        },
+      }
+      return newState
+    })
+  } catch (e) {
+    ragProgressStore.update((state) => ({
+      ...state,
+      error: createKilnError(e),
+    }))
+  }
+}

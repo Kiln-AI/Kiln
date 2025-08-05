@@ -1,44 +1,19 @@
 <script lang="ts">
   import Dialog from "$lib/ui/dialog.svelte"
-  import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
-  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
+  import type { RagConfigWithSubConfigs } from "$lib/types"
   import RunRagDialog from "./run_rag_dialog.svelte"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import type { RagConfigurationStatus } from "$lib/stores/rag_progress_store"
 
   export let btn_size: "normal" | "mid" = "mid"
   export let project_id: string
   export let rag_config: RagConfigWithSubConfigs
-  export let rag_progress: RagProgress
 
   $: rag_config_id = rag_config.id || ""
 
   let run_rag_dialog: Dialog | null = null
 
-  let progress_dialog: Dialog | null = null
-  export function show() {
-    progress_dialog?.show()
-  }
-
-  export function close() {
-    progress_dialog?.close()
-    return true
-  }
-
-  $: get_status = () => {
-    if (rag_progress.total_document_completed_count === 0) {
-      return "not_started"
-    }
-
-    if (
-      rag_progress.total_document_completed_count ===
-      rag_progress.total_document_count
-    ) {
-      return "complete"
-    }
-
-    return "incomplete"
-  }
-
-  function get_state_to_label(status: string) {
+  function get_state_to_label(status: RagConfigurationStatus) {
     const state_to_label: Record<
       string,
       {
@@ -61,7 +36,7 @@
         icon: "loading",
         isPrimary: false,
         action: () => {
-          progress_dialog?.show()
+          run_rag_dialog?.show()
         },
       },
       completed_with_errors: {
@@ -69,7 +44,7 @@
         icon: null,
         isPrimary: false,
         action: () => {
-          progress_dialog?.show()
+          run_rag_dialog?.show()
         },
       },
       complete: {
@@ -77,7 +52,7 @@
         icon: null,
         isPrimary: false,
         action: () => {
-          console.log("view details")
+          run_rag_dialog?.show()
         },
       },
       incomplete: {
@@ -93,12 +68,9 @@
     return state_to_label[status]
   }
 
-  $: status = get_status()
-  $: disabled = status === "complete"
-  $: button_state = get_state_to_label(status)
+  $: status = ragProgressStore.get_status(rag_config.id || "")
 
-  $: console.log(status)
-  $: console.log(button_state)
+  $: button_state = get_state_to_label(status)
 </script>
 
 {#if button_state}
@@ -110,7 +82,6 @@
       event.stopPropagation()
       button_state?.action()
     }}
-    {disabled}
   >
     {#if button_state?.icon === "loading"}
       <div class="loading loading-spinner loading-xs"></div>

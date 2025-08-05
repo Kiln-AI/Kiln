@@ -1,39 +1,40 @@
 <script lang="ts">
-  import { base_url, client } from "$lib/api_client"
-  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
-  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
+  import type { LogMessage, RagProgress } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { progress_ui_state } from "../../../../../lib/stores/progress_ui_store"
+  import { ragProgressStore } from "../../../../../lib/stores/rag_progress_store"
 
-  type LogMessage = { level: "info" | "error" | "warning"; message: string }
-
-  type RagProgressEventPayload = RagProgress & {
-    logs?: LogMessage[] | null
-  }
-
+  export let dialog: Dialog | null = null
   export let project_id: string
   export let rag_config_id: string
-  export let dialog: Dialog | null = null
 
-  let loading: boolean = false
-  let error: KilnError | null = null
-  let rag_config: RagConfigWithSubConfigs | null = null
+  $: config_progress = $ragProgressStore.progress[rag_config_id] || null
+  $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
+  $: rag_config = $ragProgressStore.rag_configs[rag_config_id] || null
 
-  let config_progress: RagProgressEventPayload | null = null
-
-  // Logs state
-  let logs_error: string | null = null
   let logContainer: HTMLPreElement
-  let log_messages: LogMessage[] = []
+  $: log_messages = $ragProgressStore.logs[rag_config_id] || []
   let end_of_logs: HTMLDivElement | null = null
-  let show_logs: boolean = false
 
-  function copy_logs_to_clipboard(logs: string) {
-    navigator.clipboard.writeText(logs)
+  // user can override the default behavior of showing logs when there are error logs
+  let show_logs_explicit_open: boolean = false
+  let show_logs_explicit_close: boolean = false
+  $: has_error_logs = log_messages.some((log) => log.level === "error")
+  $: show_logs =
+    !show_logs_explicit_close && (has_error_logs || show_logs_explicit_open)
+
+  function copy_logs_to_clipboard(logs: LogMessage[]) {
+    const logs_string = logs
+      .map((log) => `${log.level.toUpperCase()}: ${log.message}`)
+      .join("\n")
+    navigator.clipboard.writeText(logs_string)
   }
 
-  function download_logs(logs: string, step_name: string) {
-    const blob = new Blob([logs], { type: "text/plain" })
+  function download_logs(logs: LogMessage[], step_name: string) {
+    const logs_string = logs
+      .map((log) => `${log.level.toUpperCase()}: ${log.message}`)
+      .join("\n")
+    const blob = new Blob([logs_string], { type: "text/plain" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -44,7 +45,6 @@
     URL.revokeObjectURL(url)
   }
 
-  // Reactive progress values that update when config_progress changes
   $: extraction_progress_value = get_step_progress_value(
     "extraction",
     config_progress,
@@ -68,10 +68,7 @@
     (embedding_progress_value / progress_max) * 100,
   )
 
-  // Reactive max values for progress bars
   $: progress_max = config_progress?.total_document_count || 100
-
-  // Overall pipeline status calculation (same logic as table component)
   $: total_docs = config_progress?.total_document_count || 0
   $: completed_pct =
     total_docs > 0
@@ -82,7 +79,7 @@
         )
       : 0
 
-  // Auto-scroll logs to bottom when content changes
+  // autoscroll to the bottom of the logs when the logs change
   $: if (log_messages && logContainer && end_of_logs) {
     end_of_logs?.scrollIntoView({
       behavior: "smooth",
@@ -95,116 +92,6 @@
     config_progress: RagProgress | null,
   ): boolean {
     return get_status_for_step(step, config_progress) === "completed"
-  }
-
-  onMount(async () => {
-    await get_rag_config()
-    await get_rag_config_progress()
-    // dialog?.show()
-  })
-
-  async function get_rag_config() {
-    try {
-      loading = true
-      const { error: get_rag_config_error, data: rag_config_data } =
-        await client.GET(
-          "/api/projects/{project_id}/rag_configs/{rag_config_id}",
-          {
-            params: {
-              path: {
-                project_id,
-                rag_config_id,
-              },
-            },
-          },
-        )
-
-      if (get_rag_config_error) {
-        error = createKilnError(get_rag_config_error)
-        return
-      }
-
-      rag_config = rag_config_data
-    } finally {
-      loading = false
-    }
-  }
-
-  let _: KilnError | null = null
-  let rag_run_logs: string = ""
-
-  let is_running: boolean = false
-
-  async function run_rag_config() {
-    is_running = true
-    // subscribe to SSE
-    const eventSource = new EventSource(
-      `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`,
-    )
-
-    eventSource.onmessage = (event) => {
-      try {
-        if (event.data === "complete") {
-          // Special end message
-          eventSource.close()
-          is_running = false
-        } else {
-          const payload = JSON.parse(event.data) as RagProgressEventPayload
-          if (payload.logs) {
-            log_messages = [...log_messages, ...payload.logs]
-          }
-          config_progress = payload
-        }
-      } catch (error) {
-        eventSource.close()
-        _ = createKilnError(error)
-        // mark as failed
-        log_messages = [
-          ...log_messages,
-          {
-            level: "error",
-            message: event.data,
-          },
-        ]
-        is_running = false
-      }
-    }
-
-    // Don't restart on an error (default SSE behavior)
-    eventSource.onerror = (error) => {
-      eventSource.close()
-      _ = createKilnError(error)
-      // mark as failed
-      log_messages = [
-        ...log_messages,
-        {
-          level: "error",
-          message: error.toString(),
-        },
-      ]
-      is_running = false
-      console.error("Error running RAG config", error)
-    }
-  }
-
-  async function get_rag_config_progress() {
-    console.info("getting rag config progress in dialog...")
-    const { data: progress_data, error: get_error } = await client.POST(
-      "/api/projects/{project_id}/rag_configs/progress",
-      {
-        params: { path: { project_id } },
-        body: {
-          rag_config_ids: [rag_config_id],
-        },
-      },
-    )
-    if (get_error) {
-      throw get_error
-    }
-
-    config_progress = {
-      ...progress_data[rag_config_id],
-    }
   }
 
   function get_status_for_step(
@@ -279,20 +166,35 @@
 </script>
 
 <Dialog
-  title="Processing RAG Pipeline"
+  title={`Run RAG Configuration: ${rag_config?.name || "Unknown"}`}
   width="wide"
   bind:this={dialog}
   action_buttons={[
     {
       isPrimary: true,
-      label: "Run Pipeline",
+      label: is_running ? "Running..." : has_error_logs ? "Retry" : "Run RAG",
       asyncAction: async () => {
-        await run_rag_config()
+        ragProgressStore.run_rag_config(project_id, rag_config_id)
+
+        const running_rag_configs_count = Object.keys(
+          $ragProgressStore.running_rag_configs,
+        ).length
+
+        progress_ui_state.set({
+          title: "RAG processing...",
+          body: "",
+          link: `/docs/rag_configs/${project_id}`,
+          cta: "Back to RAG configs",
+          progress: null,
+          step_count: running_rag_configs_count,
+          current_step: 0,
+        })
 
         // keep open so the user can see the progress
         return false
       },
-      disabled: is_running,
+      loading: is_running,
+      hide: completed_pct === 100,
     },
   ]}
 >
@@ -311,12 +213,41 @@
           </div>
         </div>
         <div class="text-center">
-          <div class="text-sm font-medium text-base-content">
-            Processing RAG Pipeline
+          <div
+            class="inline-flex items-center gap-2 px-3 py-1 rounded-full {completed_pct ===
+            100
+              ? 'bg-success/10 text-success'
+              : completed_pct > 0
+                ? 'bg-warning/10 text-warning'
+                : 'bg-base-200 text-base-content/60'}"
+          >
+            {#if completed_pct === 100}
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fill-rule="evenodd"
+                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                  clip-rule="evenodd"
+                ></path>
+              </svg>
+              <span class="text-xs font-medium">Complete</span>
+            {:else if is_running}
+              <div
+                class="w-1.5 h-1.5 bg-current rounded-full animate-ping"
+              ></div>
+              <span class="text-xs font-medium">Processing...</span>
+            {:else if has_error_logs}
+              <div class="w-1.5 h-1.5 bg-error rounded-full"></div>
+              <span class="text-xs font-medium text-error"
+                >Completed with errors</span
+              >
+            {:else}
+              <div class="w-1.5 h-1.5 bg-current rounded-full"></div>
+              <span class="text-xs font-medium">Ready to start</span>
+            {/if}
           </div>
-          <div class="text-xs text-base-content/60">
-            {config_progress?.total_document_completed_count || 0} of {config_progress?.total_document_count ||
-              0} documents processed
+          <div class="mt-2 text-xs text-base-content/60">
+            {config_progress?.total_document_completed_count || 0} of
+            {config_progress?.total_document_count || 0} documents
           </div>
         </div>
       </div>
@@ -334,7 +265,7 @@
             config_progress,
           )
             ? 'bg-primary/10 text-primary'
-            : extraction_progress_value > 0
+            : is_running
               ? 'bg-warning/10 text-warning'
               : 'bg-base-200 text-base-content/50'}"
         >
@@ -346,7 +277,7 @@
                 clip-rule="evenodd"
               ></path>
             </svg>
-          {:else if extraction_progress_value > 0}
+          {:else if is_running}
             <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
@@ -364,7 +295,7 @@
             config_progress,
           )
             ? 'text-primary'
-            : extraction_progress_value > 0
+            : is_running
               ? 'text-warning'
               : 'text-base-300'}"
           style="--value:{extraction_progress_pct}; --size:2.5rem; --thickness:3px;"
@@ -385,7 +316,7 @@
             config_progress,
           )
             ? 'bg-primary/10 text-primary'
-            : chunking_progress_value > 0
+            : is_running
               ? 'bg-warning/10 text-warning'
               : 'bg-base-200 text-base-content/50'}"
         >
@@ -397,8 +328,8 @@
                 clip-rule="evenodd"
               ></path>
             </svg>
-          {:else if chunking_progress_value > 0}
-            <div class="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+          {:else if is_running}
+            <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
           {/if}
@@ -412,7 +343,7 @@
         <div
           class="radial-progress {is_step_completed('chunking', config_progress)
             ? 'text-primary'
-            : chunking_progress_value > 0
+            : is_running
               ? 'text-warning'
               : 'text-base-300'}"
           style="--value:{chunking_progress_pct}; --size:2.5rem; --thickness:3px;"
@@ -433,7 +364,7 @@
             config_progress,
           )
             ? 'bg-primary/10 text-primary'
-            : embedding_progress_value > 0
+            : is_running
               ? 'bg-warning/10 text-warning'
               : 'bg-base-200 text-base-content/50'}"
         >
@@ -445,8 +376,8 @@
                 clip-rule="evenodd"
               ></path>
             </svg>
-          {:else if embedding_progress_value > 0}
-            <div class="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+          {:else if is_running}
+            <div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
           {:else}
             <div class="w-2 h-2 bg-current rounded-full"></div>
           {/if}
@@ -463,7 +394,7 @@
             config_progress,
           )
             ? 'text-primary'
-            : embedding_progress_value > 0
+            : is_running
               ? 'text-warning'
               : 'text-base-300'}"
           style="--value:{embedding_progress_pct}; --size:2.5rem; --thickness:3px;"
@@ -474,45 +405,26 @@
         </div>
       </div>
     </div>
-
-    <!-- Overall Status Footer -->
-    <div class="text-center pt-2 border-t border-base-200">
-      <div
-        class="inline-flex items-center gap-2 px-3 py-1 rounded-full {completed_pct ===
-        100
-          ? 'bg-success/10 text-success'
-          : completed_pct > 0
-            ? 'bg-warning/10 text-warning'
-            : 'bg-base-200 text-base-content/60'}"
-      >
-        {#if completed_pct === 100}
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path
-              fill-rule="evenodd"
-              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-              clip-rule="evenodd"
-            ></path>
-          </svg>
-          <span class="text-xs font-medium">Complete</span>
-        {:else if completed_pct > 0}
-          <div class="w-1.5 h-1.5 bg-current rounded-full animate-pulse"></div>
-          <span class="text-xs font-medium">Processing...</span>
-        {:else}
-          <div class="w-1.5 h-1.5 bg-current rounded-full"></div>
-          <span class="text-xs font-medium">Ready to start</span>
-        {/if}
-      </div>
-    </div>
   </div>
 
   <!-- Logs Section -->
   {#if log_messages && log_messages.length > 0}
     <div class="mt-6">
       <!-- Toggle Button -->
-      <div class="flex justify-end mb-4">
+      <div class="flex justify-center mb-4">
         <button
-          on:click={() => (show_logs = !show_logs)}
-          class="btn btn-sm btn-outline btn-primary"
+          on:click={() => {
+            if (show_logs) {
+              show_logs_explicit_close = true
+              show_logs_explicit_open = false
+            } else {
+              show_logs_explicit_open = true
+              show_logs_explicit_close = false
+            }
+          }}
+          class={`btn btn-sm btn-outline ${
+            has_error_logs ? "btn-error" : "btn"
+          }`}
         >
           {#if show_logs}
             <svg
@@ -553,8 +465,8 @@
         <div class="rounded-md border">
           <div class="flex items-center justify-end p-4 gap-4">
             <button
-              on:click={() => copy_logs_to_clipboard(rag_run_logs)}
-              class="btn btn-sm btn-square btn-outline btn-primary"
+              on:click={() => copy_logs_to_clipboard(log_messages)}
+              class="btn btn-sm btn-square"
               title="Copy logs to clipboard"
             >
               <svg
@@ -578,15 +490,12 @@
               </svg>
             </button>
             <button
-              on:click={() => download_logs(rag_run_logs, "rag_run_logs")}
-              class="btn btn-sm btn-outline btn-primary"
+              on:click={() => download_logs(log_messages, "rag_run_logs")}
+              class="btn btn-sm"
             >
               Download
             </button>
           </div>
-          {#if logs_error}
-            <div class="text-error text-sm mb-3">{logs_error}</div>
-          {/if}
           <div class="bg-base-200 rounded">
             <pre
               bind:this={logContainer}
@@ -595,7 +504,7 @@
                 <div
                   class="text-xs font-mono {get_log_color(
                     log.level,
-                  )} block m-0 p-0">{log.level.toUpperCase()}: {log.message}</div>
+                  )} block m-0 p-0 break-words whitespace-pre-wrap mb-2">{log.level.toUpperCase()}: {log.message}</div>
               {/each}
               <div bind:this={end_of_logs}></div>
             </pre>

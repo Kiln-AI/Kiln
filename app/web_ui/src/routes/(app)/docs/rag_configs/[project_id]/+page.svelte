@@ -1,21 +1,23 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import { client } from "$lib/api_client"
-  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import {
     load_available_embedding_models,
     load_available_models,
-    load_model_info,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
   import EmptyIntro from "./empty_intro.svelte"
   import TableRagConfigRow from "./table_rag_config_row.svelte"
+  import {
+    load_all_rag_config_progress,
+    ragProgressStore,
+    load_rag_configs,
+    allRagConfigs,
+  } from "../../../../../lib/stores/rag_progress_store"
 
-  let rag_configs: RagConfigWithSubConfigs[] | null = null
-  let error: KilnError | null = null
+  let error: KilnError | null = $ragProgressStore.error
   let loading = true
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
@@ -23,98 +25,24 @@
   )
   const page_size = 1000
   $: {
-    // Update based on live URL
     const url = new URL(window.location.href)
     page_number = parseInt(url.searchParams.get("page") || "1", 10)
   }
 
   $: project_id = $page.params.project_id
 
-  let rag_progress_map: Record<string, RagProgress> = {}
-
   onMount(async () => {
     // need to ensure the store is populated for friendly name resolution
     await Promise.all([
       load_available_models(),
       load_available_embedding_models(),
+      load_all_rag_config_progress(project_id),
+      load_rag_configs(project_id),
     ])
-    await get_rag_configs()
-    await get_rag_config_progress()
+    loading = false
   })
 
-  async function get_rag_configs() {
-    try {
-      load_model_info()
-      loading = true
-      if (!project_id) {
-        throw new Error("Project ID not set.")
-      }
-      const { data: rag_configs_response, error: get_error } = await client.GET(
-        "/api/projects/{project_id}/rag_configs",
-        {
-          params: {
-            path: {
-              project_id,
-            },
-          },
-        },
-      )
-      if (get_error) {
-        throw get_error
-      }
-      rag_configs = rag_configs_response
-      rag_configs = sortExtractorConfigs(rag_configs || [])
-    } catch (e) {
-      if (e instanceof Error && e.message.includes("Load failed")) {
-        error = new KilnError(
-          "Could not load dataset. It may belong to a project you don't have access to.",
-          null,
-        )
-      } else {
-        error = createKilnError(e)
-      }
-    } finally {
-      loading = false
-    }
-  }
-
-  async function get_rag_config_progress() {
-    const config_ids = rag_configs
-      ?.map((rag_config) => rag_config.id)
-      .filter((id): id is string => Boolean(id))
-
-    if (!config_ids) {
-      return
-    }
-
-    const { data: progress_data, error: get_error } = await client.POST(
-      "/api/projects/{project_id}/rag_configs/progress",
-      {
-        params: { path: { project_id } },
-        body: {
-          rag_config_ids: config_ids,
-        },
-      },
-    )
-    if (get_error) {
-      throw get_error
-    }
-
-    rag_progress_map = progress_data
-  }
-
-  function sortExtractorConfigs(rag_configs: RagConfigWithSubConfigs[] | null) {
-    if (!rag_configs) return null
-    return rag_configs.sort((a, b) => {
-      const aValue = a.created_at || ""
-      const bValue = b.created_at || ""
-      if (!bValue) return 1
-      if (!aValue) return -1
-      if (bValue < aValue) return -1
-      if (bValue > aValue) return 1
-      return 0
-    })
-  }
+  $: rag_configs = $allRagConfigs
 
   function updateURL(params: Record<string, string | string[] | number>) {
     // update the URL so you can share links
@@ -174,11 +102,7 @@
           </thead>
           <tbody>
             {#each (rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
-              <TableRagConfigRow
-                {rag_config}
-                {project_id}
-                rag_progress={rag_progress_map[rag_config.id || ""]}
-              />
+              <TableRagConfigRow {rag_config} {project_id} />
             {/each}
           </tbody>
         </table>

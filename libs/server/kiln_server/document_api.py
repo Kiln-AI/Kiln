@@ -90,6 +90,15 @@ async def run_rag_workflow_runner_with_status(
 ) -> StreamingResponse:
     async def event_generator():
         async for progress in runner.run():
+            logs = []
+            for log in progress.logs or []:
+                logs.append(
+                    {
+                        "message": log.message,
+                        "level": log.level,
+                    }
+                )
+
             data = {
                 "total_document_completed_count": progress.total_document_completed_count,
                 "total_document_count": progress.total_document_count,
@@ -99,7 +108,7 @@ async def run_rag_workflow_runner_with_status(
                 "total_document_extracted_error_count": progress.total_document_extracted_error_count,
                 "total_document_chunked_error_count": progress.total_document_chunked_error_count,
                 "total_document_embedded_error_count": progress.total_document_embedded_error_count,
-                "logs": progress.logs,
+                "logs": logs,
             }
             yield f"data: {json.dumps(data)}\n\n"
 
@@ -327,7 +336,10 @@ def build_extraction_summary(
 
 
 class GetRagConfigProgressRequest(BaseModel):
-    rag_config_ids: list[str]
+    rag_config_ids: list[str] | None = Field(
+        description="The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned",
+        default=None,
+    )
 
 
 def connect_document_api(app: FastAPI):
@@ -1113,20 +1125,20 @@ def connect_document_api(app: FastAPI):
                         RagExtractionStepRunner(
                             project,
                             extractor_config,
-                            concurrency=20,
+                            concurrency=1,
                         ),
                         RagChunkingStepRunner(
                             project,
                             extractor_config,
                             chunker_config,
-                            concurrency=10,
+                            concurrency=1,
                         ),
                         RagEmbeddingStepRunner(
                             project,
                             extractor_config,
                             chunker_config,
                             embedding_config,
-                            concurrency=50,
+                            concurrency=1,
                         ),
                     ],
                 ),
@@ -1142,18 +1154,19 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         rag_configs: list[RagConfig] = []
 
-        # not a big deal if some of the configs are not found, we'll just ignore them - better
-        # than throwing because of a potential delete happening concurrently since progress does
-        # not require integrity
-        for rag_config_id in request.rag_config_ids:
-            rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
-            if rag_config is None:
-                continue
-            rag_configs.append(rag_config)
+        if request.rag_config_ids:
+            for rag_config_id in request.rag_config_ids:
+                rag_config = RagConfig.from_id_and_parent_path(
+                    rag_config_id, project.path
+                )
+                if rag_config is None:
+                    continue
+                rag_configs.append(rag_config)
 
-        # no configs found, nothing to return
-        if not rag_configs:
-            return {}
+            if not rag_configs:
+                return {}
+        else:
+            rag_configs = project.rag_configs(readonly=True)
 
         progress_map: Dict[str, RagProgress] = compute_current_progress_for_rag_configs(
             project, rag_configs
