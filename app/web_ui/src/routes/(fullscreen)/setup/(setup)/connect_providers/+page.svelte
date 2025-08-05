@@ -4,6 +4,7 @@
   let has_connected_providers = false
   let intermediate_step = false
   let next_visible = false
+  let centered = true
   $: next_visible = !intermediate_step && has_connected_providers
 </script>
 
@@ -21,7 +22,11 @@
 <div
   class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 w-full mx-auto"
 >
-  <ConnectProviders bind:has_connected_providers bind:intermediate_step />
+  <ConnectProviders
+    bind:has_connected_providers
+    bind:intermediate_step
+    bind:centered
+  />
 </div>
 
 <div
