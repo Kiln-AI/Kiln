@@ -2,7 +2,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type { StructuredOutputMode } from "$lib/types"
-  import { structuredOutputModeToString } from "$lib/stores"
+  import { structuredOutputModeToString } from "$lib/utils/formatters"
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0

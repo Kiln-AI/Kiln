@@ -12,14 +12,16 @@
     current_task_prompts,
     provider_name_from_id,
     load_available_models,
-    structuredOutputModeToString,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, StructuredOutputMode } from "$lib/types"
-  import { formatDate } from "$lib/utils/formatters"
+  import {
+    formatDate,
+    structuredOutputModeToString,
+  } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -298,7 +300,7 @@
           <div class="text-xl font-bold mb-4">Input</div>
           <Output raw_output={run.input} />
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
+        <div class="w-72 2xl:w-96 flex-none flex flex-col">
           <PropertyList
             properties={[
               ...get_properties(run, $current_task_prompts, $model_info),
@@ -307,7 +309,7 @@
             title="Properties"
           />
           <button
-            class="text-xs text-gray-500 underline cursor-pointer bg-transparent border-none p-0"
+            class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
             on:click={() => (see_all_properties = !see_all_properties)}
           >
             {see_all_properties ? "See Less" : "See All"}

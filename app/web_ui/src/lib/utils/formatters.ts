@@ -1,4 +1,4 @@
-import { type EvalConfigType } from "$lib/types"
+import { type EvalConfigType, type StructuredOutputMode } from "$lib/types"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
@@ -79,5 +79,41 @@ export function rating_name(rating_type: string): string {
       return "Pass/Fail/Critical"
     default:
       return rating_type
+  }
+}
+
+/**
+ * Converts StructuredOutputMode to a human-readable string.
+ * This function uses exhaustive case checking - if you add a new case to StructuredOutputMode,
+ * TypeScript will force you to handle it here.
+ */
+export function structuredOutputModeToString(
+  mode: StructuredOutputMode,
+): string {
+  switch (mode) {
+    case "default":
+      return "Default (Legacy)"
+    case "json_schema":
+      return "JSON Schema"
+    case "function_calling_weak":
+      return "Weak Function Calling"
+    case "function_calling":
+      return "Function Calling"
+    case "json_mode":
+      return "JSON Mode"
+    case "json_instructions":
+      return "JSON Instructions"
+    case "json_instruction_and_object":
+      return "JSON Instructions + Mode"
+    case "json_custom_instructions":
+      return "None"
+    case "unknown":
+      return "Unknown"
+    default: {
+      // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+      // and don't handle it above, TypeScript will error here
+      const exhaustiveCheck: never = mode
+      throw new Error(`Unhandled StructuredOutputMode: ${exhaustiveCheck}`)
+    }
   }
 }
