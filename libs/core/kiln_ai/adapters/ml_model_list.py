@@ -132,11 +132,15 @@ class ModelName(str, Enum):
     qwen_3_8b_no_thinking = "qwen_3_8b_no_thinking"
     qwen_3_14b = "qwen_3_14b"
     qwen_3_14b_no_thinking = "qwen_3_14b_no_thinking"
+    qwen_3_30b_a3b_2507 = "qwen_3_30b_a3b_2507"
     qwen_3_30b_a3b = "qwen_3_30b_a3b"
+    qwen_3_30b_a3b_2507_no_thinking = "qwen_3_30b_a3b_2507_no_thinking"
     qwen_3_30b_a3b_no_thinking = "qwen_3_30b_a3b_no_thinking"
     qwen_3_32b = "qwen_3_32b"
     qwen_3_32b_no_thinking = "qwen_3_32b_no_thinking"
+    qwen_3_235b_a22b_2507 = "qwen_3_235b_a22b_2507"
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
+    qwen_3_235b_a22b_2507_no_thinking = "qwen_3_235b_a22b_2507_no_thinking"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
     kimi_k2 = "kimi_k2"
 
@@ -2304,6 +2308,20 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3 30B (3B Active) 2507 Version
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_30b_a3b_2507,
+        friendly_name="Qwen 3 30B (3B Active) 2507",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3:30b-a3b-thinking-2507-q4_K_M",
+                reasoning_capable=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Qwen 3 30B (3B Active)
     KilnModel(
         family=ModelFamily.qwen,
@@ -2334,6 +2352,25 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
+            ),
+        ],
+    ),
+    # Qwen 3 30B (3B Active) 2507 Version Non-Thinking
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_30b_a3b_2507_no_thinking,
+        friendly_name="Qwen 3 30B (3B Active) 2507 Non-Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-30b-a3b-instruct-2507",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3:30b-a3b-instruct-2507-q8_0",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
             ),
         ],
     ),
@@ -2424,6 +2461,48 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3 235B (22B Active) 2507 Version
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_235b_a22b_2507,
+        friendly_name="Qwen 3 235B (22B Active) 2507",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-235b-a22b-thinking-2507",
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+                supports_data_gen=True,
+                suggested_for_data_gen=True,
+                r1_openrouter_options=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3:235b-a22b-thinking-2507-q4_K_M",
+                supports_data_gen=True,
+                reasoning_capable=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3-235b-a22b-thinking-2507",
+                supports_data_gen=True,
+                reasoning_capable=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen3-235B-A22B-Thinking-2507",
+                supports_data_gen=True,
+                reasoning_capable=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+            ),
+        ],
+    ),
     # Qwen 3 235B (22B Active)
     KilnModel(
         family=ModelFamily.qwen,
@@ -2436,7 +2515,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
                 supports_data_gen=True,
-                suggested_for_data_gen=True,
                 r1_openrouter_options=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
@@ -2463,6 +2541,40 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
+            ),
+        ],
+    ),
+    # Qwen 3 235B (22B Active) 2507 Version Non-Thinking
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_235b_a22b_2507_no_thinking,
+        friendly_name="Qwen 3 235B (22B Active) 2507 Non-Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-235b-a22b-2507",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3:235b-a22b-instruct-2507-q4_K_M",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                reasoning_capable=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3-235b-a22b-instruct-2507",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
