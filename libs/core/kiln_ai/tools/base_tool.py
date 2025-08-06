@@ -77,6 +77,6 @@ class KilnTool(KilnToolInterface):
         }
 
     @abstractmethod
-    def run(self, **kwargs) -> Any:
+    def run(self, **kwargs) -> str:
         """Subclasses must implement the actual tool logic."""
         pass
