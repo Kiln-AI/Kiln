@@ -219,17 +219,7 @@ class LiteLlmAdapter(BaseAdapter):
                 }
             )
 
-        logprobs = None
-        if (
-            final_choice is not None
-            and hasattr(final_choice, "logprobs")
-            and isinstance(final_choice.logprobs, ChoiceLogprobs)
-        ):
-            logprobs = final_choice.logprobs
-
-        # Check logprobs worked, if requested
-        if self.base_adapter_config.top_logprobs is not None and logprobs is None:
-            raise RuntimeError("Logprobs were required, but no logprobs were returned.")
+        logprobs = self._extract_and_validate_logprobs(final_choice)
 
         # Save COT/reasoning if it exists. May be a message, or may be parsed by LiteLLM (or openrouter, or anyone upstream)
         intermediate_outputs = chat_formatter.intermediate_outputs()
@@ -255,6 +245,26 @@ class LiteLlmAdapter(BaseAdapter):
         )
 
         return output, usage
+
+    def _extract_and_validate_logprobs(
+        self, final_choice: Choices | None
+    ) -> ChoiceLogprobs | None:
+        """
+        Extract logprobs from the final choice and validate they exist if required.
+        """
+        logprobs = None
+        if (
+            final_choice is not None
+            and hasattr(final_choice, "logprobs")
+            and isinstance(final_choice.logprobs, ChoiceLogprobs)
+        ):
+            logprobs = final_choice.logprobs
+
+        # Check logprobs worked, if required
+        if self.base_adapter_config.top_logprobs is not None and logprobs is None:
+            raise RuntimeError("Logprobs were required, but no logprobs were returned.")
+
+        return logprobs
 
     async def acompletion_checking_response(
         self, **kwargs
