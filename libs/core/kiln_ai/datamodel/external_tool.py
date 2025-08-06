@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any, Dict
 
 from pydantic import Field, model_validator
 
@@ -33,13 +34,9 @@ class ExternalTool(KilnParentedModel):
         default=None,
         description="A description of the external tool for you and your team. Will not be used in prompts/training/validation.",
     )
-    server_url: str = Field(
-        description="The URL of the remote MCP server.",
-        min_length=1,
-    )
-    headers: dict[str, str] | None = Field(
-        default=None,
-        description="HTTP headers to use when calling the server_url.",
+    properties: Dict[str, Any] = Field(
+        default={},
+        description="Configuration properties specific to the tool type.",
     )
 
     @model_validator(mode="after")
@@ -47,10 +44,23 @@ class ExternalTool(KilnParentedModel):
         """Validate that each tool type has the required configuration."""
         match self.type:
             case ToolType.remote_mcp:
-                if not self.server_url:
-                    raise ValueError("server_url must be set when type is 'remote_mcp'")
-                if not self.headers:
+                server_url = self.properties.get("server_url", None)
+                if not isinstance(server_url, str):
+                    raise ValueError(
+                        "server_url must be a string for external tools of type remote_mcp"
+                    )
+                if not server_url:
+                    raise ValueError(
+                        "server_url is required for external tools of type remote_mcp"
+                    )
+
+                headers = self.properties.get("headers", None)
+                if not headers:
                     raise ValueError("headers must be set when type is 'remote_mcp'")
+                if not isinstance(headers, dict):
+                    raise ValueError(
+                        "headers must be a dictionary for external tools of type remote_mcp"
+                    )
             case _:
                 # Type checking will catch missing cases
                 raise_exhaustive_enum_error(self.type)
