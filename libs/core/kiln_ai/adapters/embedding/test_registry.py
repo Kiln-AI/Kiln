@@ -75,7 +75,7 @@ def test_embedding_adapter_from_type_invalid_provider():
 
         with pytest.raises(
             ValueError,
-            match="Unsupported model provider name: ModelProviderName.openai",
+            match="Unsupported model provider name: openai",
         ):
             embedding_adapter_from_type(embedding_config)
 

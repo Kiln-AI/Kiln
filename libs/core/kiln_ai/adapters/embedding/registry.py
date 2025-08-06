@@ -15,7 +15,7 @@ def embedding_adapter_from_type(
         provider_enum = ModelProviderName(embedding_config.model_provider_name)
     except ValueError:
         raise ValueError(
-            f"Unsupported model provider name: {embedding_config.model_provider_name}. "
+            f"Unsupported model provider name: {embedding_config.model_provider_name.value}. "
         )
 
     core_provider_name = core_provider(embedding_config.model_name, provider_enum)

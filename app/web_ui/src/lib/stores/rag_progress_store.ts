@@ -2,6 +2,7 @@ import { get, writable, derived } from "svelte/store"
 import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
+import { progress_ui_state } from "./progress_ui_store"
 
 export type RagConfigurationStatus =
   | "not_started"
@@ -17,6 +18,7 @@ interface RagConfigurationProgressState {
   status: Record<string, RagConfigurationStatus>
   running_rag_configs: Record<string, boolean>
   error: KilnError | null
+  last_started_rag_config_id: string | null
 }
 
 export const ragProgressStore = createRagProgressStore()
@@ -44,6 +46,9 @@ function createRagProgressStore() {
 
     // error
     error: null,
+
+    // last started rag config id
+    last_started_rag_config_id: null,
   })
 
   function has_errors(rag_config_id: string): boolean {
@@ -68,7 +73,19 @@ function createRagProgressStore() {
         ...state.logs,
         [rag_config_id]: [],
       },
+      last_started_rag_config_id: rag_config_id,
     }))
+
+    // lets us track the last started rag config progress
+    progress_ui_state.set({
+      title: "Processing Documents",
+      body: "",
+      link: `/docs/rag_configs/${project_id}`,
+      cta: "View Progress",
+      progress: 0,
+      step_count: null,
+      current_step: 0,
+    })
 
     const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
     const eventSource = new EventSource(run_url)
@@ -92,6 +109,20 @@ function createRagProgressStore() {
               },
             }
           })
+
+          if (
+            get(ragProgressStore).last_started_rag_config_id === rag_config_id
+          ) {
+            progress_ui_state.set({
+              title: "Processing Documents",
+              body: "",
+              link: `/docs/rag_configs/${project_id}`,
+              cta: has_errors(rag_config_id) ? "View Errors" : "View Results",
+              progress: 100,
+              step_count: null,
+              current_step: 0,
+            })
+          }
         } else {
           const payload = JSON.parse(event.data) as RagProgress
           update((state) => {
@@ -110,6 +141,23 @@ function createRagProgressStore() {
               },
             }
           })
+
+          if (
+            get(ragProgressStore).last_started_rag_config_id === rag_config_id
+          ) {
+            progress_ui_state.set({
+              title: "Processing Documents",
+              body: "",
+              link: `/docs/rag_configs/${project_id}`,
+              cta: "View Progress",
+              progress:
+                (payload.total_document_completed_count /
+                  Math.max(payload.total_document_count, 1)) *
+                100,
+              step_count: null,
+              current_step: null,
+            })
+          }
         }
       } catch (error) {
         eventSource.close()
@@ -127,6 +175,20 @@ function createRagProgressStore() {
             ],
           },
         }))
+
+        if (
+          get(ragProgressStore).last_started_rag_config_id === rag_config_id
+        ) {
+          progress_ui_state.set({
+            title: "Processing Documents",
+            body: "",
+            link: `/docs/rag_configs/${project_id}`,
+            cta: "View Progress",
+            progress: 100,
+            step_count: null,
+            current_step: null,
+          })
+        }
       }
     }
 
@@ -165,6 +227,7 @@ function createRagProgressStore() {
         running_rag_configs: {},
         rag_configs: {},
         error: null,
+        last_started_rag_config_id: null,
       }),
     get_status: (ragConfigId: string): RagConfigurationStatus => {
       const state = get(ragProgressStore)

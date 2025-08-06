@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { LogMessage, RagProgress } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { progress_ui_state } from "../../../../../lib/stores/progress_ui_store"
   import { ragProgressStore } from "../../../../../lib/stores/rag_progress_store"
 
   export let dialog: Dialog | null = null
@@ -175,20 +174,6 @@
       label: is_running ? "Running..." : has_error_logs ? "Retry" : "Run RAG",
       asyncAction: async () => {
         ragProgressStore.run_rag_config(project_id, rag_config_id)
-
-        const running_rag_configs_count = Object.keys(
-          $ragProgressStore.running_rag_configs,
-        ).length
-
-        progress_ui_state.set({
-          title: "RAG processing...",
-          body: "",
-          link: `/docs/rag_configs/${project_id}`,
-          cta: "Back to RAG configs",
-          progress: null,
-          step_count: running_rag_configs_count,
-          current_step: 0,
-        })
 
         // keep open so the user can see the progress
         return false
