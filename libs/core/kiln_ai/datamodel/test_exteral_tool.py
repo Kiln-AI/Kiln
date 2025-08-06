@@ -1,0 +1,218 @@
+import pytest
+from pydantic import ValidationError
+
+from kiln_ai.datamodel.external_tool import ExternalTool
+
+
+def test_external_tool_creation():
+    """Test successful creation of ExternalTool with valid data."""
+    tool = ExternalTool(
+        name="test_tool",
+        description="A test external tool",
+        server_url="https://api.example.com",
+        api_key="test_api_key_123",
+    )
+
+    assert tool.name == "test_tool"
+    assert tool.description == "A test external tool"
+    assert tool.server_url == "https://api.example.com"
+    assert tool.api_key == "test_api_key_123"
+    assert tool.id is not None  # Should have auto-generated ID
+
+
+def test_external_tool_creation_minimal():
+    """Test creation of ExternalTool with minimal required fields."""
+    tool = ExternalTool(
+        name="minimal_tool", server_url="https://api.example.com", api_key="test_key"
+    )
+
+    assert tool.name == "minimal_tool"
+    assert tool.description is None
+    assert tool.server_url == "https://api.example.com"
+    assert tool.api_key == "test_key"
+
+
+def test_external_tool_name_validation():
+    """Test that name field validates as FilenameString."""
+    # Test valid names
+    valid_names = ["test_tool", "Tool123", "my-tool", "Tool_Name_v2"]
+    for name in valid_names:
+        tool = ExternalTool(
+            name=name, server_url="https://api.example.com", api_key="test_key"
+        )
+        assert tool.name == name
+
+    # Test invalid names (forbidden characters in filenames)
+    invalid_names = [
+        "tool/with/slash",
+        "tool\\with\\backslash",
+        "tool?with?question",
+        "tool*with*asterisk",
+        "tool:with:colon",
+        "tool|with|pipe",
+        'tool"with"quote',
+        "tool<with>brackets",
+        "tool,with,comma",
+        "tool;with;semicolon",
+        "tool=with=equals",
+        "tool\nwith\nnewline",
+    ]
+
+    for invalid_name in invalid_names:
+        with pytest.raises(ValidationError):
+            ExternalTool(
+                name=invalid_name,
+                server_url="https://api.example.com",
+                api_key="test_key",
+            )
+
+
+def test_external_tool_name_length_constraints():
+    """Test name length constraints (FilenameString: 1-120 chars)."""
+    # Test empty name
+    with pytest.raises(ValidationError):
+        ExternalTool(name="", server_url="https://api.example.com", api_key="test_key")
+
+    # Test name that's too long (> 120 chars)
+    long_name = "a" * 121
+    with pytest.raises(ValidationError):
+        ExternalTool(
+            name=long_name, server_url="https://api.example.com", api_key="test_key"
+        )
+
+    # Test maximum valid length (120 chars)
+    max_name = "a" * 120
+    tool = ExternalTool(
+        name=max_name, server_url="https://api.example.com", api_key="test_key"
+    )
+    assert tool.name == max_name
+
+
+def test_external_tool_required_fields():
+    """Test that missing required fields raise ValidationError."""
+    # Missing name
+    with pytest.raises(ValidationError):
+        ExternalTool(server_url="https://api.example.com", api_key="test_key")
+
+    # Missing server_url
+    with pytest.raises(ValidationError):
+        ExternalTool(name="test_tool", api_key="test_key")
+
+    # Missing api_key
+    with pytest.raises(ValidationError):
+        ExternalTool(name="test_tool", server_url="https://api.example.com")
+
+
+def test_external_tool_empty_string_validation():
+    """Test that empty strings for required fields raise ValidationError."""
+    # Empty server_url
+    with pytest.raises(ValidationError):
+        ExternalTool(name="test_tool", server_url="", api_key="test_key")
+
+    # Empty api_key
+    with pytest.raises(ValidationError):
+        ExternalTool(name="test_tool", server_url="https://api.example.com", api_key="")
+
+
+def test_external_tool_server_url_validation():
+    """Test server_url field validation."""
+    # Valid URLs
+    valid_urls = [
+        "https://api.example.com",
+        "http://localhost:8080",
+        "https://api.service.com/v1/mcp",
+        "wss://websocket.example.com",
+        "http://192.168.1.1:3000/api",
+    ]
+
+    for url in valid_urls:
+        tool = ExternalTool(name="test_tool", server_url=url, api_key="test_key")
+        assert tool.server_url == url
+
+
+def test_external_tool_api_key_validation():
+    """Test api_key field validation."""
+    # Valid API keys
+    valid_keys = [
+        "simple_key",
+        "key-with-dashes",
+        "key_with_underscores",
+        "KeyWithMixedCase123",
+        "very-long-api-key-with-many-characters-1234567890",
+        "sk-1234567890abcdef",  # OpenAI-style key
+        "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  # JWT-style
+    ]
+
+    for key in valid_keys:
+        tool = ExternalTool(
+            name="test_tool", server_url="https://api.example.com", api_key=key
+        )
+        assert tool.api_key == key
+
+
+def test_external_tool_description_optional():
+    """Test that description field is optional and can be None."""
+    # With description
+    tool_with_desc = ExternalTool(
+        name="test_tool",
+        description="A test tool",
+        server_url="https://api.example.com",
+        api_key="test_key",
+    )
+    assert tool_with_desc.description == "A test tool"
+
+    # Without description (should be None)
+    tool_without_desc = ExternalTool(
+        name="test_tool", server_url="https://api.example.com", api_key="test_key"
+    )
+    assert tool_without_desc.description is None
+
+    # Explicitly set to None
+    tool_none_desc = ExternalTool(
+        name="test_tool",
+        description=None,
+        server_url="https://api.example.com",
+        api_key="test_key",
+    )
+    assert tool_none_desc.description is None
+
+
+def test_external_tool_inheritance():
+    """Test that ExternalTool properly inherits from KilnParentedModel."""
+    tool = ExternalTool(
+        name="test_tool", server_url="https://api.example.com", api_key="test_key"
+    )
+
+    # Should have inherited fields from KilnBaseModel
+    assert hasattr(tool, "id")
+    assert hasattr(tool, "created_at")
+    assert hasattr(tool, "created_by")
+    assert hasattr(tool, "v")
+    assert hasattr(tool, "model_type")
+
+    # Should have inherited fields from KilnParentedModel
+    assert hasattr(tool, "parent")
+
+    # Test model_type
+    assert tool.model_type == "external_tool"
+
+
+def test_external_tool_model_validation_assignment():
+    """Test that model validation works on assignment."""
+    tool = ExternalTool(
+        name="test_tool", server_url="https://api.example.com", api_key="test_key"
+    )
+
+    # Valid assignment should work
+    tool.name = "new_name"
+    assert tool.name == "new_name"
+
+    # Invalid assignment should raise ValidationError
+    with pytest.raises(ValidationError):
+        tool.name = "invalid/name/with/slashes"
+
+    with pytest.raises(ValidationError):
+        tool.server_url = ""
+
+    with pytest.raises(ValidationError):
+        tool.api_key = ""
