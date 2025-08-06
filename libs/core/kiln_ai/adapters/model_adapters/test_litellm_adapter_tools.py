@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -564,7 +564,7 @@ class MockTool:
         self,
         name: str,
         raise_on_run: Exception | None = None,
-        return_value: Any = "test_result",
+        return_value: str = "test_result",
     ):
         self._name = name
         self._raise_on_run = raise_on_run
@@ -584,7 +584,7 @@ class MockTool:
             }
         }
 
-    def run(self, **kwargs):
+    def run(self, **kwargs) -> str:
         if self._raise_on_run:
             raise self._raise_on_run
         return self._return_value

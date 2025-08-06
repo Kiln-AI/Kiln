@@ -157,7 +157,9 @@ class LiteLlmAdapter(BaseAdapter):
                 )
 
             # If we get here with no content and no tool calls, break
-            break
+            raise RuntimeError(
+                "Model returned neither content nor tool calls. It must return at least one of these."
+            )
 
         raise RuntimeError(
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
