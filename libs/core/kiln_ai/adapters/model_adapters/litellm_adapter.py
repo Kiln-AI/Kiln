@@ -192,6 +192,7 @@ class LiteLlmAdapter(BaseAdapter):
                 break
 
             # Add messages from the turn to chat history
+            # TODO: check format
             for message in turn.messages:
                 messages.append({"role": message.role, "content": message.content})
 
