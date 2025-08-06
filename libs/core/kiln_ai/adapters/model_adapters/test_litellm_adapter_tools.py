@@ -205,9 +205,17 @@ async def test_tools_mocked(tmp_path):
         usage=usage,
     )
 
-    with patch(
-        "litellm.acompletion",
-        side_effect=[mock_response_1, mock_response_2, mock_response_3],
+    # Mock the Config.shared() method to return a mock config with required attributes
+    mock_config = Mock()
+    mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.user_id = "test_user"
+
+    with (
+        patch(
+            "litellm.acompletion",
+            side_effect=[mock_response_1, mock_response_2, mock_response_3],
+        ),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):
         task_run = await run_simple_task_with_tools(
             task, "gpt_4_1_mini", ModelProviderName.openai
