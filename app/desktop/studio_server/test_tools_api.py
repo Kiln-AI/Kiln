@@ -33,12 +33,9 @@ def test_project(tmp_path):
 def test_create_tool_success(client, test_project):
     tool_data = {
         "name": "test_mcp_tool",
-        "type": "remote_mcp",
+        "server_url": "https://example.com/mcp",
+        "headers": {"Authorization": "Bearer test-token"},
         "description": "A test MCP tool",
-        "properties": {
-            "server_url": "https://example.com/mcp",
-            "headers": {"Authorization": "Bearer test-token"},
-        },
     }
 
     with patch(
@@ -47,7 +44,7 @@ def test_create_tool_success(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/create_tool",
+            f"/api/projects/{test_project.id}/connect_external_tool",
             json=tool_data,
         )
 
@@ -62,15 +59,12 @@ def test_create_tool_success(client, test_project):
         assert "created_at" in result
 
 
-def test_create_tool_missing_headers(client, test_project):
+def test_create_tool_no_headers(client, test_project):
     tool_data = {
         "name": "test_tool",
-        "type": "remote_mcp",
+        "server_url": "https://example.com/api",
         "description": "A test tool",
-        "properties": {
-            "server_url": "https://example.com/api"
-            # Missing required "headers" property
-        },
+        # headers defaults to empty dict, but validation requires non-empty headers
     }
 
     with patch(
@@ -79,22 +73,19 @@ def test_create_tool_missing_headers(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/create_tool",
+            f"/api/projects/{test_project.id}/connect_external_tool",
             json=tool_data,
         )
 
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 422  # Validation error - headers required
 
 
 def test_create_tool_empty_headers(client, test_project):
     tool_data = {
         "name": "test_tool",
-        "type": "remote_mcp",
+        "server_url": "https://example.com/api",
+        "headers": {},  # Empty headers fail validation
         "description": "A test tool",
-        "properties": {
-            "server_url": "https://example.com/api",
-            "headers": {},  # Empty headers should fail validation
-        },
     }
 
     with patch(
@@ -103,22 +94,21 @@ def test_create_tool_empty_headers(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/create_tool",
+            f"/api/projects/{test_project.id}/connect_external_tool",
             json=tool_data,
         )
 
-        assert response.status_code == 422  # Validation error
+        assert (
+            response.status_code == 422
+        )  # Validation error - headers must be non-empty
 
 
 def test_create_tool_missing_server_url(client, test_project):
     tool_data = {
         "name": "test_tool",
-        "type": "remote_mcp",
+        "headers": {"Authorization": "Bearer token"},
         "description": "A test tool",
-        "properties": {
-            # Missing required "server_url" property
-            "headers": {"Authorization": "Bearer token"},
-        },
+        # Missing required server_url
     }
 
     with patch(
@@ -127,22 +117,40 @@ def test_create_tool_missing_server_url(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/create_tool",
+            f"/api/projects/{test_project.id}/connect_external_tool",
             json=tool_data,
         )
 
         assert response.status_code == 422  # Validation error
 
 
-def test_create_tool_empty_server_url(client, test_project):
+def test_create_tool_missing_name(client, test_project):
+    tool_data = {
+        "server_url": "https://example.com/api",
+        "headers": {"Authorization": "Bearer token"},
+        "description": "A test tool",
+        # Missing required name
+    }
+
+    with patch(
+        "app.desktop.studio_server.tools_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_external_tool",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+
+
+def test_create_tool_no_description(client, test_project):
     tool_data = {
         "name": "test_tool",
-        "type": "remote_mcp",
-        "description": "A test tool",
-        "properties": {
-            "server_url": "",  # Empty server_url should fail validation
-            "headers": {"Authorization": "Bearer token"},
-        },
+        "server_url": "https://example.com/api",
+        "headers": {"Authorization": "Bearer token"},
+        # description is optional
     }
 
     with patch(
@@ -151,11 +159,13 @@ def test_create_tool_empty_server_url(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/create_tool",
+            f"/api/projects/{test_project.id}/connect_external_tool",
             json=tool_data,
         )
 
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 200
+        result = response.json()
+        assert result["description"] is None
 
 
 def test_get_available_tools_empty(client, test_project):
@@ -175,12 +185,9 @@ def test_get_available_tools_with_tool(client, test_project):
     # First create a tool
     tool_data = {
         "name": "my_tool",
-        "type": "remote_mcp",
+        "server_url": "https://api.example.com",
+        "headers": {"X-API-Key": "secret"},
         "description": "My awesome tool",
-        "properties": {
-            "server_url": "https://api.example.com",
-            "headers": {"X-API-Key": "secret"},
-        },
     }
 
     with patch(
@@ -189,7 +196,7 @@ def test_get_available_tools_with_tool(client, test_project):
         mock_project_from_id.return_value = test_project
 
         create_response = client.post(
-            f"/api/projects/{test_project.id}/create_tool",
+            f"/api/projects/{test_project.id}/connect_external_tool",
             json=tool_data,
         )
         assert create_response.status_code == 200

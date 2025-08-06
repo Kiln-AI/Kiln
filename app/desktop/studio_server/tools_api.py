@@ -13,11 +13,11 @@ class KilnToolDescription(BaseModel):
     description: str | None
 
 
-class CreateToolRequest(BaseModel):
+class ExternalToolCreationRequest(BaseModel):
     name: str
-    type: ToolType
+    server_url: str
+    headers: Dict[str, Any] = {}
     description: str | None = None
-    properties: Dict[str, Any] = {}
 
 
 def connect_tools_api(app: FastAPI):
@@ -36,19 +36,24 @@ def connect_tools_api(app: FastAPI):
             for tool in project.external_tools()
         ]
 
-    @app.post("/api/projects/{project_id}/create_tool")
-    async def create_tool(
-        project_id: str, tool_data: CreateToolRequest
+    @app.post("/api/projects/{project_id}/connect_external_tool")
+    async def connect_external_tool(
+        project_id: str, tool_data: ExternalToolCreationRequest
     ) -> ExternalTool:
         project = project_from_id(project_id)
 
         try:
-            # Create the ExternalTool directly
+            # Create the ExternalTool with required fields
+            properties = {
+                "server_url": tool_data.server_url,
+                "headers": tool_data.headers,
+            }
+
             tool = ExternalTool(
                 name=tool_data.name,
-                type=tool_data.type,
+                type=ToolType.remote_mcp,  # Default to remote MCP type
                 description=tool_data.description,
-                properties=tool_data.properties,
+                properties=properties,
                 parent=project,
             )
 
