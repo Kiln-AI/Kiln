@@ -1,22 +1,14 @@
-import os
-import subprocess
-import sys
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.filesystem import open_folder
 
 from app.desktop.log_config import get_log_file_path
 
 
 def open_logs_folder() -> None:
-    log_dir = os.path.dirname(get_log_file_path("dummy.log"))
-    if sys.platform.startswith("darwin"):
-        subprocess.run(["open", log_dir], check=True)
-    elif sys.platform.startswith("win"):
-        os.startfile(log_dir)  # type: ignore[attr-defined]
-    else:
-        subprocess.run(["xdg-open", log_dir], check=True)
+    open_folder(get_log_file_path("dummy.log"))
 
 
 def connect_settings(app: FastAPI):

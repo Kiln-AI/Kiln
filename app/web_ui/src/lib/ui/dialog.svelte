@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+
+  const dispatch = createEventDispatcher()
 
   export let title: string
   export let blur_background: boolean = false
-  export let width: "normal" | "wide" = "normal"
+  export let width: "normal" | "wide" | "extra-wide" = "normal"
   const id: string = "dialog-" + Math.random().toString(36)
   type ActionButton = {
     label: string
@@ -15,6 +18,8 @@
     isError?: boolean
     isWarning?: boolean
     disabled?: boolean
+    loading?: boolean
+    hide?: boolean
   }
   export let action_buttons: ActionButton[] = []
   let action_running = false
@@ -64,8 +69,13 @@
   }
 </script>
 
-<dialog {id} class="modal">
-  <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
+<dialog {id} class="modal" on:close={() => dispatch("close")}>
+  <div
+    class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''} {width ===
+    'extra-wide'
+      ? 'w-11/12 max-w-6xl'
+      : ''}"
+  >
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
     <div class="flex flex-row gap-2 items-center mb-1">
@@ -133,7 +143,9 @@
           </form>
         {:else}
           {#each action_buttons as button}
-            {#if button.isCancel}
+            {#if button.hide}
+              <!-- do nothing -->
+            {:else if button.isCancel}
               <form method="dialog">
                 <button class="btn btn-sm h-10 btn-outline min-w-24"
                   >{button.label || "Cancel"}</button
@@ -146,9 +158,12 @@
                   : ''}
                   {button.isError ? 'btn-error' : ''}
                   {button.isWarning ? 'btn-warning' : ''}"
-                disabled={button.disabled}
+                disabled={button.disabled || button.loading}
                 on:click={() => perform_button_action(button)}
               >
+                {#if button.loading}
+                  <div class="loading loading-spinner loading-sm"></div>
+                {/if}
                 {button.label || "Confirm"}
               </button>
             {/if}

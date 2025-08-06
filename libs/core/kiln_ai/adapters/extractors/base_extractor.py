@@ -67,3 +67,6 @@ class BaseExtractor(ABC):
         return mime_type.lower() in {
             mt.lower() for mt in self.extractor_config.passthrough_mimetypes
         }
+
+    def output_format(self) -> OutputFormat:
+        return self.extractor_config.output_format

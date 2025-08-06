@@ -611,6 +611,193 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_chunker_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Chunker Config */
+        post: operations["create_chunker_config_api_projects__project_id__create_chunker_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/chunker_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chunker Configs */
+        get: operations["get_chunker_configs_api_projects__project_id__chunker_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/chunker_configs/{chunker_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chunker Config */
+        get: operations["get_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_embedding_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Embedding Config */
+        post: operations["create_embedding_config_api_projects__project_id__create_embedding_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/embedding_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Embedding Configs */
+        get: operations["get_embedding_configs_api_projects__project_id__embedding_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Embedding Config */
+        get: operations["get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/create_rag_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Rag Config */
+        post: operations["create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Configs */
+        get: operations["get_rag_configs_api_projects__project_id__rag_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Config */
+        get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Rag Config */
+        get: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Rag Config Progress */
+        post: operations["get_rag_config_progress_api_projects__project_id__rag_configs_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -1473,6 +1660,51 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
+        /** ChunkerConfig */
+        ChunkerConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The description of the chunker config
+             */
+            description?: string | null;
+            /** @description This is used to determine the type of chunker to use. */
+            chunker_type: components["schemas"]["ChunkerType"];
+            /**
+             * Properties
+             * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
+             */
+            properties: {
+                [key: string]: string | number | boolean;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * ChunkerType
+         * @enum {string}
+         */
+        ChunkerType: "fixed_window";
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -1490,6 +1722,25 @@ export interface components {
             /** Kendalltau Correlation */
             kendalltau_correlation: number | null;
         };
+        /** CreateChunkerConfigRequest */
+        CreateChunkerConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the chunker config
+             */
+            description?: string | null;
+            /** @description The type of the chunker */
+            chunker_type: components["schemas"]["ChunkerType"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
+        };
         /**
          * CreateDatasetSplitRequest
          * @description Request to create a dataset split
@@ -1502,6 +1753,27 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /** CreateEmbeddingConfigRequest */
+        CreateEmbeddingConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the embedding config
+             */
+            description?: string | null;
+            /** @description The provider of the embedding model */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /** @description The name of the embedding model */
+            model_name: components["schemas"]["EmbeddingModelName"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
         };
         /** CreateEvalConfigRequest */
         CreateEvalConfigRequest: {
@@ -1595,6 +1867,34 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+        };
+        /** CreateRagConfigRequest */
+        CreateRagConfigRequest: {
+            /**
+             * Name
+             * @description Choose a name for your RAG workflow.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /**
+             * Extractor Config Id
+             * @description The extractor config to use for the RAG workflow
+             */
+            extractor_config_id: string | null;
+            /**
+             * Chunker Config Id
+             * @description The chunker config to use for the RAG workflow.
+             */
+            chunker_config_id: string | null;
+            /**
+             * Embedding Config Id
+             * @description The embedding config to use for the RAG workflow.
+             */
+            embedding_config_id: string | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -1877,6 +2177,51 @@ export interface components {
              * @description Tags for the document. Tags are used to categorize documents for filtering and reporting.
              */
             tags?: string[];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** EmbeddingConfig */
+        EmbeddingConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your reference, not shared with embedding models.
+             */
+            description?: string | null;
+            /** @description The provider to use to generate embeddings. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The model to use to generate embeddings.
+             */
+            model_name: string;
+            /**
+             * Properties
+             * @description Properties to be used to execute the embedding config.
+             */
+            properties: {
+                [key: string]: string | number | boolean;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2543,6 +2888,14 @@ export interface components {
             finetune: components["schemas"]["Finetune"];
             status: components["schemas"]["FineTuneStatus"];
         };
+        /** GetRagConfigProgressRequest */
+        GetRagConfigProgressRequest: {
+            /**
+             * Rag Config Ids
+             * @description The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned
+             */
+            rag_config_ids?: string[] | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2616,6 +2969,20 @@ export interface components {
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LogMessage */
+        LogMessage: {
+            /**
+             * Level
+             * @description The level of the log message
+             * @enum {string}
+             */
+            level: "info" | "error" | "warning";
+            /**
+             * Message
+             * @description The message to display to the user
+             */
+            message: string;
+        };
         /** MeanUsage */
         MeanUsage: {
             /** Mean Input Tokens */
@@ -2909,6 +3276,127 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /** RagConfig */
+        RagConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the RAG configuration for you and your team. Will not be used in prompts/training/validation.
+             */
+            description?: string | null;
+            /**
+             * Extractor Config Id
+             * @description The ID of the extractor config that was used to extract the documents.
+             */
+            extractor_config_id: string | null;
+            /**
+             * Chunker Config Id
+             * @description The ID of the chunker config that was used to chunk the documents.
+             */
+            chunker_config_id: string | null;
+            /**
+             * Embedding Config Id
+             * @description The ID of the embedding config that was used to embed the documents.
+             */
+            embedding_config_id: string | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** RagConfigWithSubConfigs */
+        RagConfigWithSubConfigs: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            extractor_config: components["schemas"]["ExtractorConfig"];
+            chunker_config: components["schemas"]["ChunkerConfig"];
+            embedding_config: components["schemas"]["EmbeddingConfig"];
+        };
+        /** RagProgress */
+        RagProgress: {
+            /**
+             * Total Document Count
+             * @description The total number of items to process
+             * @default 0
+             */
+            total_document_count: number;
+            /**
+             * Total Document Completed Count
+             * @description The number of items that have been processed
+             * @default 0
+             */
+            total_document_completed_count: number;
+            /**
+             * Total Document Extracted Count
+             * @description The number of items that have been extracted
+             * @default 0
+             */
+            total_document_extracted_count: number;
+            /**
+             * Total Document Extracted Error Count
+             * @description The number of items that have errored during extraction
+             * @default 0
+             */
+            total_document_extracted_error_count: number;
+            /**
+             * Total Document Chunked Count
+             * @description The number of items that have been chunked
+             * @default 0
+             */
+            total_document_chunked_count: number;
+            /**
+             * Total Document Chunked Error Count
+             * @description The number of items that have errored during chunking
+             * @default 0
+             */
+            total_document_chunked_error_count: number;
+            /**
+             * Total Document Embedded Count
+             * @description The number of items that have been embedded
+             * @default 0
+             */
+            total_document_embedded_count: number;
+            /**
+             * Total Document Embedded Error Count
+             * @description The number of items that have errored during embedding
+             * @default 0
+             */
+            total_document_embedded_error_count: number;
+            /**
+             * Logs
+             * @description A list of log messages to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...'
+             */
+            logs?: components["schemas"]["LogMessage"][] | null;
         };
         /** RatingOption */
         RatingOption: {
@@ -4959,6 +5447,369 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_chunker_config_api_projects__project_id__create_chunker_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChunkerConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkerConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chunker_configs_api_projects__project_id__chunker_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkerConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                chunker_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkerConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_embedding_config_api_projects__project_id__create_embedding_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmbeddingConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_embedding_configs_api_projects__project_id__embedding_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                embedding_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRagConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_configs_api_projects__project_id__rag_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_config_progress_api_projects__project_id__rag_configs_progress_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetRagConfigProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["RagProgress"];
+                    };
                 };
             };
             /** @description Validation Error */

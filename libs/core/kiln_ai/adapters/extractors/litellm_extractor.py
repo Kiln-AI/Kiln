@@ -136,8 +136,18 @@ class LitellmExtractor(BaseExtractor):
                     ],
                 }
             ],
-            **self.litellm_core_config.model_dump(),
         }
+
+        if self.litellm_core_config.base_url:
+            completion_kwargs["base_url"] = self.litellm_core_config.base_url
+
+        if self.litellm_core_config.default_headers:
+            completion_kwargs["default_headers"] = (
+                self.litellm_core_config.default_headers
+            )
+
+        if self.litellm_core_config.additional_body_options:
+            completion_kwargs.update(self.litellm_core_config.additional_body_options)
 
         return completion_kwargs
 

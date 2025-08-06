@@ -238,3 +238,7 @@ async def test_extract_failure_from_concrete_extractor(mock_extractor):
                     mime_type="text/plain",
                 )
             )
+
+
+async def test_output_format(mock_extractor):
+    assert mock_extractor.output_format() == OutputFormat.MARKDOWN

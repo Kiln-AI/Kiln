@@ -9,10 +9,12 @@
   }
 
   export let properties: UiProperty[]
-  export let title: string
+  export let title: string | null = null
 </script>
 
-<div class="text-xl font-bold mb-4">{title}</div>
+{#if title}
+  <div class="text-xl font-bold mb-4">{title}</div>
+{/if}
 <div class="grid grid-cols-[auto,1fr] gap-y-2 gap-x-4 text-sm 2xl:text-base">
   {#each properties || [] as property}
     <div class="flex items-center">
