@@ -91,6 +91,96 @@ class TestLitellmEmbeddingAdapter:
         options = adapter.build_options()
         assert options.dimensions == 1536
 
+    async def test_generate_embeddings_with_completion_kwargs(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
+        """Test that completion_kwargs are properly passed to litellm.aembedding."""
+        # Set up litellm_core_config with additional options
+        mock_litellm_core_config.additional_body_options = {"custom_param": "value"}
+        mock_litellm_core_config.base_url = "https://custom-api.example.com"
+        mock_litellm_core_config.default_headers = {
+            "Authorization": "Bearer custom-token"
+        }
+
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
+
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+            await adapter._generate_embeddings(["test text"])
+
+        # Verify litellm.aembedding was called with completion_kwargs
+        call_args = mock_aembedding.call_args
+        assert call_args[1]["custom_param"] == "value"
+        assert call_args[1]["base_url"] == "https://custom-api.example.com"
+        assert call_args[1]["default_headers"] == {
+            "Authorization": "Bearer custom-token"
+        }
+
+    async def test_generate_embeddings_with_partial_completion_kwargs(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
+        """Test that completion_kwargs work when only some options are set."""
+        # Set only additional_body_options
+        mock_litellm_core_config.additional_body_options = {"timeout": 30}
+        mock_litellm_core_config.base_url = None
+        mock_litellm_core_config.default_headers = None
+
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
+
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+            await adapter._generate_embeddings(["test text"])
+
+        # Verify only the set options are passed
+        call_args = mock_aembedding.call_args
+        assert call_args[1]["timeout"] == 30
+        assert "base_url" not in call_args[1]
+        assert "default_headers" not in call_args[1]
+
+    async def test_generate_embeddings_with_empty_completion_kwargs(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
+        """Test that completion_kwargs work when all options are None/empty."""
+        # Ensure all options are None/empty
+        mock_litellm_core_config.additional_body_options = None
+        mock_litellm_core_config.base_url = None
+        mock_litellm_core_config.default_headers = None
+
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
+
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+            await adapter._generate_embeddings(["test text"])
+
+        # Verify no completion_kwargs are passed
+        call_args = mock_aembedding.call_args
+        assert "base_url" not in call_args[1]
+        assert "default_headers" not in call_args[1]
+        # Should only have the basic parameters
+        assert "model" in call_args[1]
+        assert "input" in call_args[1]
+
     async def test_generate_embeddings_empty_list(self, mock_litellm_adapter):
         """Test embed method with empty text list."""
         result = await mock_litellm_adapter.generate_embeddings([])
