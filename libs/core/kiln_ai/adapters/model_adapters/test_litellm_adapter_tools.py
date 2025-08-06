@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -516,3 +516,417 @@ async def test_run_model_turn_no_tool_calls(tmp_path):
     assert isinstance(result, ModelTurnResult)
     assert result.assistant_message == "This is a simple response"
     assert len(result.all_messages) == 2  # user + assistant
+
+
+# Unit tests for process_tool_calls method
+class MockToolCall:
+    """Mock class for ChatCompletionMessageToolCall"""
+
+    def __init__(self, id: str, function_name: str, arguments: str):
+        self.id = id
+        self.function = Mock()
+        self.function.name = function_name
+        self.function.arguments = arguments
+
+
+class MockTool:
+    """Mock tool class for testing"""
+
+    def __init__(
+        self,
+        name: str,
+        raise_on_run: Exception | None = None,
+        return_value: Any = "test_result",
+    ):
+        self._name = name
+        self._raise_on_run = raise_on_run
+        self._return_value = return_value
+
+    def name(self) -> str:
+        return self._name
+
+    def toolcall_definition(self) -> dict:
+        return {
+            "function": {
+                "parameters": {
+                    "type": "object",
+                    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                    "required": ["a", "b"],
+                }
+            }
+        }
+
+    def run(self, **kwargs):
+        if self._raise_on_run:
+            raise self._raise_on_run
+        return self._return_value
+
+
+async def test_process_tool_calls_none_input(tmp_path):
+    """Test process_tool_calls with None input"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    assistant_output, tool_messages = litellm_adapter.process_tool_calls(None)
+
+    assert assistant_output is None
+    assert tool_messages == []
+
+
+async def test_process_tool_calls_empty_list(tmp_path):
+    """Test process_tool_calls with empty tool calls list"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    assistant_output, tool_messages = litellm_adapter.process_tool_calls([])
+
+    assert assistant_output is None
+    assert tool_messages == []
+
+
+async def test_process_tool_calls_task_response_only(tmp_path):
+    """Test process_tool_calls with only task_response tool call"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    tool_calls = [MockToolCall("call_1", "task_response", '{"answer": "42"}')]
+
+    assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    assert assistant_output == '{"answer": "42"}'
+    assert tool_messages == []
+
+
+async def test_process_tool_calls_multiple_task_response(tmp_path):
+    """Test process_tool_calls with multiple task_response calls - should keep the last one"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    tool_calls = [
+        MockToolCall("call_1", "task_response", '{"answer": "first"}'),
+        MockToolCall("call_2", "task_response", '{"answer": "second"}'),
+    ]
+
+    assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    # Should keep the last task_response
+    assert assistant_output == '{"answer": "second"}'
+    assert tool_messages == []
+
+
+async def test_process_tool_calls_normal_tool_success(tmp_path):
+    """Test process_tool_calls with successful normal tool call"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool = MockTool("add", return_value=5)
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0] == {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "name": "add",
+        "content": "5",
+    }
+
+
+async def test_process_tool_calls_multiple_normal_tools(tmp_path):
+    """Test process_tool_calls with multiple normal tool calls"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool_add = MockTool("add", return_value=5)
+    mock_tool_multiply = MockTool("multiply", return_value=6)
+    tool_calls = [
+        MockToolCall("call_1", "add", '{"a": 2, "b": 3}'),
+        MockToolCall("call_2", "multiply", '{"a": 2, "b": 3}'),
+    ]
+
+    with patch.object(
+        litellm_adapter,
+        "cached_available_tools",
+        return_value=[mock_tool_add, mock_tool_multiply],
+    ):
+        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    assert assistant_output is None
+    assert len(tool_messages) == 2
+    assert tool_messages[0]["name"] == "add"
+    assert tool_messages[0]["content"] == "5"
+    assert tool_messages[1]["name"] == "multiply"
+    assert tool_messages[1]["content"] == "6"
+
+
+async def test_process_tool_calls_tool_not_found(tmp_path):
+    """Test process_tool_calls when tool is not found"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    tool_calls = [MockToolCall("call_1", "nonexistent_tool", '{"a": 2, "b": 3}')]
+
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
+        with pytest.raises(
+            RuntimeError,
+            match="A tool named 'nonexistent_tool' was invoked by a model, but was not available",
+        ):
+            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_invalid_json_arguments(tmp_path):
+    """Test process_tool_calls with invalid JSON arguments"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool = MockTool("add")
+    tool_calls = [MockToolCall("call_1", "add", "invalid json")]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        with pytest.raises(
+            RuntimeError, match="Failed to parse arguments for tool 'add'"
+        ):
+            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_empty_arguments(tmp_path):
+    """Test process_tool_calls with empty arguments string"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool = MockTool("add")
+    tool_calls = [MockToolCall("call_1", "add", "")]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        with pytest.raises(
+            RuntimeError, match="Failed to parse arguments for tool 'add'"
+        ):
+            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_schema_validation_error(tmp_path):
+    """Test process_tool_calls with schema validation error"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool = MockTool("add")
+    # Missing required field 'b'
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        with pytest.raises(
+            RuntimeError, match="Failed to validate arguments for tool 'add'"
+        ):
+            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_tool_execution_error(tmp_path):
+    """Test process_tool_calls when tool execution raises exception"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    # Mock tool that raises exception when run
+    mock_tool = MockTool("add", raise_on_run=ValueError("Tool execution failed"))
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        # This should raise the ValueError from the tool
+        with pytest.raises(ValueError, match="Tool execution failed"):
+            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_none_result(tmp_path):
+    """Test process_tool_calls when tool returns None"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool = MockTool("add", return_value=None)
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["content"] == "None"
+
+
+async def test_process_tool_calls_complex_result(tmp_path):
+    """Test process_tool_calls when tool returns complex object"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    complex_result = {"status": "success", "result": 42, "metadata": [1, 2, 3]}
+    mock_tool = MockTool("add", return_value=complex_result)
+    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["content"] == str(complex_result)
+
+
+async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):
+    """Test process_tool_calls raises error when mixing task_response with normal tools"""
+    task = build_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+    litellm_adapter = cast(LiteLlmAdapter, adapter)
+
+    mock_tool = MockTool("add", return_value=5)
+    tool_calls = [
+        MockToolCall("call_1", "task_response", '{"answer": "42"}'),
+        MockToolCall("call_2", "add", '{"a": 2, "b": 3}'),
+    ]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match="task_response tool call and other tool calls were both provided",
+        ):
+            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
