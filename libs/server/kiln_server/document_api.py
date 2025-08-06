@@ -51,7 +51,6 @@ from kiln_server.project_api import project_from_id
 logger = logging.getLogger(__name__)
 
 
-# TODO: extract out into common utils
 async def run_extractor_runner_with_status(
     extractor_runner: ExtractorRunner,
 ) -> StreamingResponse:

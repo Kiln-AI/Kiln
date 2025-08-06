@@ -306,12 +306,11 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        chunker_config = self.chunker_config
         async with asyncio_mutex(self.lock_key):
             jobs = await self.collect_jobs()
             chunker = chunker_adapter_from_type(
-                chunker_config.chunker_type,
-                chunker_config,
+                self.chunker_config.chunker_type,
+                self.chunker_config,
             )
             observer = GenericErrorCollector()
             runner = AsyncJobRunner(

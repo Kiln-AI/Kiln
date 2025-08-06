@@ -57,7 +57,7 @@ class RagProgress(BaseModel):
     )
 
     logs: list[LogMessage] | None = Field(
-        description="A list of log messages to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...'",
+        description="A list of log messages to display to the user",
         default=None,
     )
 
@@ -66,14 +66,11 @@ def compute_current_progress_for_rag_configs(
     project: Project,
     rag_configs: list[RagConfig],
 ) -> Dict[str, RagProgress]:
-    # a rag config is a unique path through the filesystem tree
-    # each config is serialized as path extractor::chunker::embedding to form path prefixes
-    #
-    # for example, two configs:
-    # - extractor-1::chunker-2::embedding-3
-    # - extractor-1::chunker-2::embedding-4
-    # will share common prefixes: extractor-1 and extractor-1::chunker-2
-    # we store prefix -> [rag config ids] mappings
+    # each RAG config represents a unique path: extractor::chunker::embedding
+    # different configs can share common prefixes
+    # (e.g., extractor-1::chunker-2 for both extractor-1::chunker-2::embedding-3 and extractor-1::chunker-2::embedding-4)
+    # we store prefix -> [rag config ids] mappings so at every step
+    # we know all the configs that share the same upstream steps
     path_prefixes: dict[str, set[str]] = defaultdict(set)
     for rag_config in rag_configs:
         complete_path: list[str] = [
@@ -124,8 +121,8 @@ def compute_current_progress_for_rag_configs(
                             matching_rag_config_id
                         ].total_document_embedded_count += 1
 
-    # a document is completed only if all steps are completed, so the progress is the same as
-    # the count of whichever step is the least complete regardless of its relative order to other steps
+    # a document is completed only when all steps are completed, so overall progress is the same
+    # as the least complete step
     for rag_config_id, rag_config_progress in rag_config_progress_map.items():
         rag_config_progress.total_document_completed_count = min(
             rag_config_progress.total_document_extracted_count,
