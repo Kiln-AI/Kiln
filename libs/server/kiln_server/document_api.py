@@ -97,7 +97,10 @@ async def run_all_extractors_and_rag_workflows(
         extractor_tasks.append(asyncio.create_task(run_extractor()))
 
     if extractor_tasks:
-        await asyncio.gather(*extractor_tasks)
+        results = await asyncio.gather(*extractor_tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error running extractor: {result}")
 
     rag_tasks: list[asyncio.Task] = []
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
@@ -110,7 +113,10 @@ async def run_all_extractors_and_rag_workflows(
         rag_tasks.append(asyncio.create_task(run_rag()))
 
     if rag_tasks:
-        await asyncio.gather(*rag_tasks)
+        results = await asyncio.gather(*rag_tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error running RAG workflow: {result}")
 
     return None
 
@@ -1152,7 +1158,7 @@ def connect_document_api(app: FastAPI):
         rag_config_id: str,
     ) -> StreamingResponse:
         # prevent concurrent runs of the same rag config that would result in duplicates
-        async with asyncio_mutex(rag_config_id):
+        async with asyncio_mutex(f"rag:run:{rag_config_id}"):
             project = project_from_id(project_id)
             runner = build_rag_workflow_runner(project, rag_config_id)
             return await run_rag_workflow_runner_with_status(runner)
