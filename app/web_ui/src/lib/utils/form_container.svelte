@@ -140,7 +140,6 @@
     if (!keyboard_submit || !submit_visible) {
       return
     }
-
     // Command+Enter (Mac) or Ctrl+Enter (Windows/Linux)
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault()
