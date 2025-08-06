@@ -232,137 +232,53 @@
 
     <!-- RAG Steps -->
     <div class="flex flex-col gap-4 max-w-md mx-auto">
-      <!-- Extraction Step -->
-      <div
-        class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
-      >
+      {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }] as step}
         <div
-          class="flex items-center justify-center w-8 h-8 rounded-full {is_step_completed(
-            'extraction',
-            config_progress,
-          )
-            ? 'bg-primary/10 text-primary'
-            : is_running
-              ? 'bg-warning/10 text-warning'
-              : 'bg-base-200 text-base-content/50'}"
+          class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
         >
-          {#if is_step_completed("extraction", config_progress)}
-            <Checkmark classOverride="w-4 h-4" />
-          {:else if is_running}
-            <div class="bg-current rounded-full loading loading-sm"></div>
-          {:else}
-            <div class="w-2 h-2 bg-current rounded-full"></div>
-          {/if}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-base-content">Extraction</div>
-          <div class="text-xs text-base-content/60">
-            {extraction_progress_value} / {progress_max} documents
+          <div
+            class="flex items-center justify-center w-8 h-8 rounded-full {is_step_completed(
+              step.name,
+              config_progress,
+            )
+              ? 'bg-primary/10 text-primary'
+              : is_running
+                ? 'bg-warning/10 text-warning'
+                : 'bg-base-200 text-base-content/50'}"
+          >
+            {#if is_step_completed(step.name, config_progress)}
+              <Checkmark classOverride="w-4 h-4" />
+            {:else if is_running}
+              <div class="bg-current rounded-full loading loading-sm"></div>
+            {:else}
+              <div class="w-2 h-2 bg-current rounded-full"></div>
+            {/if}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-sm text-base-content">
+              {step.label}
+            </div>
+            <div class="text-xs text-base-content/60">
+              {step.progress} / {progress_max} documents
+            </div>
+          </div>
+          <div
+            class="radial-progress {is_step_completed(
+              step.name,
+              config_progress,
+            )
+              ? 'text-primary'
+              : is_running
+                ? 'text-warning'
+                : 'text-base-300'}"
+            style="--value:{step.pct}; --size:2.5rem; --thickness:3px;"
+            aria-valuenow={step.pct}
+            role="progressbar"
+          >
+            <span class="text-xs font-medium">{step.pct}%</span>
           </div>
         </div>
-        <div
-          class="radial-progress {is_step_completed(
-            'extraction',
-            config_progress,
-          )
-            ? 'text-primary'
-            : is_running
-              ? 'text-warning'
-              : 'text-base-300'}"
-          style="--value:{extraction_progress_pct}; --size:2.5rem; --thickness:3px;"
-          aria-valuenow={extraction_progress_pct}
-          role="progressbar"
-        >
-          <span class="text-xs font-medium">{extraction_progress_pct}%</span>
-        </div>
-      </div>
-
-      <!-- Chunking Step -->
-      <div
-        class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
-      >
-        <div
-          class="flex items-center justify-center w-8 h-8 rounded-full {is_step_completed(
-            'chunking',
-            config_progress,
-          )
-            ? 'bg-primary/10 text-primary'
-            : is_running
-              ? 'bg-warning/10 text-warning'
-              : 'bg-base-200 text-base-content/50'}"
-        >
-          {#if is_step_completed("chunking", config_progress)}
-            <Checkmark classOverride="w-4 h-4" />
-          {:else if is_running}
-            <div class="bg-current rounded-full loading loading-sm"></div>
-          {:else}
-            <div class="w-2 h-2 bg-current rounded-full"></div>
-          {/if}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-base-content">Chunking</div>
-          <div class="text-xs text-base-content/60">
-            {chunking_progress_value} / {progress_max} documents
-          </div>
-        </div>
-        <div
-          class="radial-progress {is_step_completed('chunking', config_progress)
-            ? 'text-primary'
-            : is_running
-              ? 'text-warning'
-              : 'text-base-300'}"
-          style="--value:{chunking_progress_pct}; --size:2.5rem; --thickness:3px;"
-          aria-valuenow={chunking_progress_pct}
-          role="progressbar"
-        >
-          <span class="text-xs font-medium">{chunking_progress_pct}%</span>
-        </div>
-      </div>
-
-      <!-- Embedding Step -->
-      <div
-        class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
-      >
-        <div
-          class="flex items-center justify-center w-8 h-8 rounded-full {is_step_completed(
-            'embedding',
-            config_progress,
-          )
-            ? 'bg-primary/10 text-primary'
-            : is_running
-              ? 'bg-warning/10 text-warning'
-              : 'bg-base-200 text-base-content/50'}"
-        >
-          {#if is_step_completed("embedding", config_progress)}
-            <Checkmark classOverride="w-4 h-4" />
-          {:else if is_running}
-            <div class="bg-current rounded-full loading loading-sm"></div>
-          {:else}
-            <div class="w-2 h-2 bg-current rounded-full"></div>
-          {/if}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-base-content">Embedding</div>
-          <div class="text-xs text-base-content/60">
-            {embedding_progress_value} / {progress_max} documents
-          </div>
-        </div>
-        <div
-          class="radial-progress {is_step_completed(
-            'embedding',
-            config_progress,
-          )
-            ? 'text-primary'
-            : is_running
-              ? 'text-warning'
-              : 'text-base-300'}"
-          style="--value:{embedding_progress_pct}; --size:2.5rem; --thickness:3px;"
-          aria-valuenow={embedding_progress_pct}
-          role="progressbar"
-        >
-          <span class="text-xs font-medium">{embedding_progress_pct}%</span>
-        </div>
-      </div>
+      {/each}
     </div>
   </div>
 
