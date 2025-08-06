@@ -335,7 +335,6 @@ export function get_embedding_model_info(
     return null
   }
 
-  // Find the model in the available models list which has fine-tunes and custom models
   for (const provider of get(available_embedding_models)) {
     if (provider.provider_id === provider_id) {
       const models = provider.models || []
