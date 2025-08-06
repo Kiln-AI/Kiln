@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from litellm.types.utils import ModelResponse
+from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -137,6 +138,14 @@ async def test_tools_gpt_4_1_mini(tmp_path):
 async def test_tools_mocked(tmp_path):
     task = build_test_task(tmp_path)
 
+    # Usage should add up, not just return the last one.
+    usage = LiteLlmUsage(
+        prompt_tokens=10,
+        completion_tokens=20,
+        total_tokens=30,
+        cost=0.5,
+    )
+
     # Mock 3 responses using tool calls for BEDMAS operations matching the test math problem: (6*10)+4
     # First response: requests multiply tool call for 6*10
     # Second response: requests add tool call for 60+4
@@ -163,6 +172,7 @@ async def test_tools_mocked(tmp_path):
                 }
             }
         ],
+        usage=usage,
     )
 
     # Second response: requests add tool call
@@ -185,19 +195,28 @@ async def test_tools_mocked(tmp_path):
                 }
             }
         ],
+        usage=usage,
     )
 
     # Third response: final answer
     mock_response_3 = ModelResponse(
         model="gpt-4o-mini",
         choices=[{"message": {"content": "The answer is [64]", "tool_calls": None}}],
+        usage=usage,
     )
 
     with patch(
         "litellm.acompletion",
         side_effect=[mock_response_1, mock_response_2, mock_response_3],
     ):
-        await run_simple_task_with_tools(task, "gpt_4_1_mini", ModelProviderName.openai)
+        task_run = await run_simple_task_with_tools(
+            task, "gpt_4_1_mini", ModelProviderName.openai
+        )
+        assert task_run.usage is not None
+        assert task_run.usage.input_tokens == 30
+        assert task_run.usage.output_tokens == 60
+        assert task_run.usage.total_tokens == 90
+        assert task_run.usage.cost == 1.5
 
 
 async def test_run_model_turn_parallel_tools(tmp_path):
