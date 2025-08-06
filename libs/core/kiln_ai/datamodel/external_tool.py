@@ -1,4 +1,4 @@
-from typing import Literal
+from enum import Enum
 
 from pydantic import Field, model_validator
 
@@ -6,6 +6,15 @@ from kiln_ai.datamodel.basemodel import (
     FilenameString,
     KilnParentedModel,
 )
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+
+class ToolType(str, Enum):
+    """
+    Enumeration of supported external tool types.
+    """
+
+    remote_mcp = "remote_mcp"
 
 
 class ExternalTool(KilnParentedModel):
@@ -17,7 +26,7 @@ class ExternalTool(KilnParentedModel):
     """
 
     name: FilenameString = Field(description="The name of the external tool.")
-    type: Literal["remote_mcp"] = Field(
+    type: ToolType = Field(
         description="The type of external tool. Remote tools are hosted on a remote server",
     )
     description: str | None = Field(
@@ -34,11 +43,15 @@ class ExternalTool(KilnParentedModel):
     )
 
     @model_validator(mode="after")
-    def validate_remote_mcp_config(self) -> "ExternalTool":
-        """Validate that remote_mcp type has server_url and headers configured."""
-        if self.type == "remote_mcp":
-            if not self.server_url:
-                raise ValueError("server_url must be set when type is 'remote_mcp'")
-            if not self.headers:
-                raise ValueError("headers must be set when type is 'remote_mcp'")
+    def validate_required_fields(self) -> "ExternalTool":
+        """Validate that each tool type has the required configuration."""
+        match self.type:
+            case ToolType.remote_mcp:
+                if not self.server_url:
+                    raise ValueError("server_url must be set when type is 'remote_mcp'")
+                if not self.headers:
+                    raise ValueError("headers must be set when type is 'remote_mcp'")
+            case _:
+                # Type checking will catch missing cases
+                raise_exhaustive_enum_error(self.type)
         return self
