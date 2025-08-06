@@ -223,16 +223,9 @@ class LiteLlmAdapter(BaseAdapter):
 
         # Save COT/reasoning if it exists. May be a message, or may be parsed by LiteLLM (or openrouter, or anyone upstream)
         intermediate_outputs = chat_formatter.intermediate_outputs()
-        if (
-            final_choice is not None
-            and hasattr(final_choice, "message")
-            and hasattr(final_choice.message, "reasoning_content")
-        ):
-            reasoning_content = final_choice.message.reasoning_content
-            if reasoning_content is not None:
-                stripped_reasoning_content = reasoning_content.strip()
-                if len(stripped_reasoning_content) > 0:
-                    intermediate_outputs["reasoning"] = stripped_reasoning_content
+        self._extract_reasoning_to_intermediate_outputs(
+            final_choice, intermediate_outputs
+        )
 
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
@@ -265,6 +258,21 @@ class LiteLlmAdapter(BaseAdapter):
             raise RuntimeError("Logprobs were required, but no logprobs were returned.")
 
         return logprobs
+
+    def _extract_reasoning_to_intermediate_outputs(
+        self, final_choice: Choices | None, intermediate_outputs: Dict[str, Any]
+    ) -> None:
+        """Extract reasoning content from model choice and add to intermediate outputs if present."""
+        if (
+            final_choice is not None
+            and hasattr(final_choice, "message")
+            and hasattr(final_choice.message, "reasoning_content")
+        ):
+            reasoning_content = final_choice.message.reasoning_content
+            if reasoning_content is not None:
+                stripped_reasoning_content = reasoning_content.strip()
+                if len(stripped_reasoning_content) > 0:
+                    intermediate_outputs["reasoning"] = stripped_reasoning_content
 
     async def acompletion_checking_response(
         self, **kwargs

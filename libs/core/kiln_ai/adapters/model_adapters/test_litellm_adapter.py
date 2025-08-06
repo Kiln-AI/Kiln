@@ -842,3 +842,118 @@ class TestExtractAndValidateLogprobs:
             RuntimeError, match="Logprobs were required, but no logprobs were returned"
         ):
             adapter._extract_and_validate_logprobs(mock_choice)
+
+
+class TestExtractReasoningToIntermediateOutputs:
+    def test_extract_reasoning_with_valid_content(self, config, mock_task):
+        """Test extracting reasoning content when present and valid"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        # Create mock choice with reasoning content
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = "This is my reasoning"
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert intermediate_outputs["reasoning"] == "This is my reasoning"
+
+    def test_extract_reasoning_with_whitespace_content(self, config, mock_task):
+        """Test extracting reasoning content with whitespace that gets stripped"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = (
+            "  \n  This is my reasoning with whitespace  \n  "
+        )
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert (
+            intermediate_outputs["reasoning"] == "This is my reasoning with whitespace"
+        )
+
+    def test_extract_reasoning_with_empty_content(self, config, mock_task):
+        """Test that empty reasoning content is not added to intermediate outputs"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = "   "  # Only whitespace
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_none_content(self, config, mock_task):
+        """Test that None reasoning content is not added to intermediate outputs"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = None
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_no_reasoning_attribute(self, config, mock_task):
+        """Test that missing reasoning_content attribute is handled gracefully"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock(spec=[])  # Empty spec, no attributes
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_no_message_attribute(self, config, mock_task):
+        """Test that missing message attribute is handled gracefully"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock(spec=[])  # Empty spec, no attributes
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_none_choice(self, config, mock_task):
+        """Test that None choice is handled gracefully"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(None, intermediate_outputs)
+
+        assert "reasoning" not in intermediate_outputs
