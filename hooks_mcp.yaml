@@ -1,4 +1,5 @@
-# HooksMCP Configuration File for use with the hooks-mcp repo!
+# HooksMCP Configuration File for use with Kiln
+# https://github.com/scosman/hooks_mcp
 
 actions:
   - name: "all_python_tests"
