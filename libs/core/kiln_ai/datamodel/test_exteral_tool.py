@@ -8,28 +8,26 @@ def test_external_tool_creation():
     """Test successful creation of ExternalTool with valid data."""
     tool = ExternalTool(
         name="test_tool",
+        type="remote_mcp",
         description="A test external tool",
         server_url="https://api.example.com",
-        api_key="test_api_key_123",
     )
 
     assert tool.name == "test_tool"
     assert tool.description == "A test external tool"
     assert tool.server_url == "https://api.example.com"
-    assert tool.api_key == "test_api_key_123"
     assert tool.id is not None  # Should have auto-generated ID
 
 
 def test_external_tool_creation_minimal():
     """Test creation of ExternalTool with minimal required fields."""
     tool = ExternalTool(
-        name="minimal_tool", server_url="https://api.example.com", api_key="test_key"
+        name="minimal_tool", type="remote_mcp", server_url="https://api.example.com"
     )
 
     assert tool.name == "minimal_tool"
     assert tool.description is None
     assert tool.server_url == "https://api.example.com"
-    assert tool.api_key == "test_key"
 
 
 def test_external_tool_name_validation():
@@ -38,7 +36,7 @@ def test_external_tool_name_validation():
     valid_names = ["test_tool", "Tool123", "my-tool", "Tool_Name_v2"]
     for name in valid_names:
         tool = ExternalTool(
-            name=name, server_url="https://api.example.com", api_key="test_key"
+            name=name, type="remote_mcp", server_url="https://api.example.com"
         )
         assert tool.name == name
 
@@ -62,8 +60,8 @@ def test_external_tool_name_validation():
         with pytest.raises(ValidationError):
             ExternalTool(
                 name=invalid_name,
+                type="remote_mcp",
                 server_url="https://api.example.com",
-                api_key="test_key",
             )
 
 
@@ -71,19 +69,19 @@ def test_external_tool_name_length_constraints():
     """Test name length constraints (FilenameString: 1-120 chars)."""
     # Test empty name
     with pytest.raises(ValidationError):
-        ExternalTool(name="", server_url="https://api.example.com", api_key="test_key")
+        ExternalTool(name="", type="remote_mcp", server_url="https://api.example.com")
 
     # Test name that's too long (> 120 chars)
     long_name = "a" * 121
     with pytest.raises(ValidationError):
         ExternalTool(
-            name=long_name, server_url="https://api.example.com", api_key="test_key"
+            name=long_name, type="remote_mcp", server_url="https://api.example.com"
         )
 
     # Test maximum valid length (120 chars)
     max_name = "a" * 120
     tool = ExternalTool(
-        name=max_name, server_url="https://api.example.com", api_key="test_key"
+        name=max_name, type="remote_mcp", server_url="https://api.example.com"
     )
     assert tool.name == max_name
 
@@ -92,26 +90,22 @@ def test_external_tool_required_fields():
     """Test that missing required fields raise ValidationError."""
     # Missing name
     with pytest.raises(ValidationError):
-        ExternalTool(server_url="https://api.example.com", api_key="test_key")
+        ExternalTool(type="remote_mcp", server_url="https://api.example.com")  # type: ignore
 
     # Missing server_url
     with pytest.raises(ValidationError):
-        ExternalTool(name="test_tool", api_key="test_key")
+        ExternalTool(name="test_tool", type="remote_mcp")  # type: ignore
 
-    # Missing api_key
+    # Missing type
     with pytest.raises(ValidationError):
-        ExternalTool(name="test_tool", server_url="https://api.example.com")
+        ExternalTool(name="test_tool", server_url="https://api.example.com")  # type: ignore
 
 
 def test_external_tool_empty_string_validation():
     """Test that empty strings for required fields raise ValidationError."""
     # Empty server_url
     with pytest.raises(ValidationError):
-        ExternalTool(name="test_tool", server_url="", api_key="test_key")
-
-    # Empty api_key
-    with pytest.raises(ValidationError):
-        ExternalTool(name="test_tool", server_url="https://api.example.com", api_key="")
+        ExternalTool(name="test_tool", type="remote_mcp", server_url="")
 
 
 def test_external_tool_server_url_validation():
@@ -126,28 +120,8 @@ def test_external_tool_server_url_validation():
     ]
 
     for url in valid_urls:
-        tool = ExternalTool(name="test_tool", server_url=url, api_key="test_key")
+        tool = ExternalTool(name="test_tool", type="remote_mcp", server_url=url)
         assert tool.server_url == url
-
-
-def test_external_tool_api_key_validation():
-    """Test api_key field validation."""
-    # Valid API keys
-    valid_keys = [
-        "simple_key",
-        "key-with-dashes",
-        "key_with_underscores",
-        "KeyWithMixedCase123",
-        "very-long-api-key-with-many-characters-1234567890",
-        "sk-1234567890abcdef",  # OpenAI-style key
-        "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  # JWT-style
-    ]
-
-    for key in valid_keys:
-        tool = ExternalTool(
-            name="test_tool", server_url="https://api.example.com", api_key=key
-        )
-        assert tool.api_key == key
 
 
 def test_external_tool_description_optional():
@@ -155,24 +129,24 @@ def test_external_tool_description_optional():
     # With description
     tool_with_desc = ExternalTool(
         name="test_tool",
+        type="remote_mcp",
         description="A test tool",
         server_url="https://api.example.com",
-        api_key="test_key",
     )
     assert tool_with_desc.description == "A test tool"
 
     # Without description (should be None)
     tool_without_desc = ExternalTool(
-        name="test_tool", server_url="https://api.example.com", api_key="test_key"
+        name="test_tool", type="remote_mcp", server_url="https://api.example.com"
     )
     assert tool_without_desc.description is None
 
     # Explicitly set to None
     tool_none_desc = ExternalTool(
         name="test_tool",
+        type="remote_mcp",
         description=None,
         server_url="https://api.example.com",
-        api_key="test_key",
     )
     assert tool_none_desc.description is None
 
@@ -180,7 +154,7 @@ def test_external_tool_description_optional():
 def test_external_tool_inheritance():
     """Test that ExternalTool properly inherits from KilnParentedModel."""
     tool = ExternalTool(
-        name="test_tool", server_url="https://api.example.com", api_key="test_key"
+        name="test_tool", type="remote_mcp", server_url="https://api.example.com"
     )
 
     # Should have inherited fields from KilnBaseModel
@@ -200,7 +174,7 @@ def test_external_tool_inheritance():
 def test_external_tool_model_validation_assignment():
     """Test that model validation works on assignment."""
     tool = ExternalTool(
-        name="test_tool", server_url="https://api.example.com", api_key="test_key"
+        name="test_tool", type="remote_mcp", server_url="https://api.example.com"
     )
 
     # Valid assignment should work
@@ -213,6 +187,3 @@ def test_external_tool_model_validation_assignment():
 
     with pytest.raises(ValidationError):
         tool.server_url = ""
-
-    with pytest.raises(ValidationError):
-        tool.api_key = ""
