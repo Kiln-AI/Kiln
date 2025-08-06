@@ -28,10 +28,17 @@ class ExternalTool(KilnParentedModel):
         description="The URL of the remote MCP server.",
         min_length=1,
     )
+    headers: dict[str, str] | None = Field(
+        default=None,
+        description="HTTP headers to use when calling the server_url.",
+    )
 
     @model_validator(mode="after")
     def validate_remote_mcp_config(self) -> "ExternalTool":
-        """Validate that remote_mcp type has server_url configured."""
-        if self.type == "remote_mcp" and not self.server_url:
-            raise ValueError("server_url must be set when type is 'remote_mcp'")
+        """Validate that remote_mcp type has server_url and headers configured."""
+        if self.type == "remote_mcp":
+            if not self.server_url:
+                raise ValueError("server_url must be set when type is 'remote_mcp'")
+            if not self.headers:
+                raise ValueError("headers must be set when type is 'remote_mcp'")
         return self
