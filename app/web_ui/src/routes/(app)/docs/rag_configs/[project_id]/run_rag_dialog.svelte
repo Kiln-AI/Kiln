@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LogMessage, RagProgress } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { ragProgressStore } from "../../../../../lib/stores/rag_progress_store"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
 
   export let dialog: Dialog | null = null
   export let project_id: string
@@ -11,7 +11,7 @@
   $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
   $: rag_config = $ragProgressStore.rag_configs[rag_config_id] || null
 
-  let logContainer: HTMLPreElement
+  let log_container: HTMLPreElement
   $: log_messages = $ragProgressStore.logs[rag_config_id] || []
   let end_of_logs: HTMLDivElement | null = null
 
@@ -57,6 +57,7 @@
     config_progress,
   )
 
+  $: progress_max = config_progress?.total_document_count || 100
   $: extraction_progress_pct = Math.round(
     (extraction_progress_value / progress_max) * 100,
   )
@@ -66,8 +67,6 @@
   $: embedding_progress_pct = Math.round(
     (embedding_progress_value / progress_max) * 100,
   )
-
-  $: progress_max = config_progress?.total_document_count || 100
   $: total_docs = config_progress?.total_document_count || 0
   $: completed_pct =
     total_docs > 0
@@ -79,7 +78,7 @@
       : 0
 
   // autoscroll to the bottom of the logs when the logs change
-  $: if (log_messages && logContainer && end_of_logs) {
+  $: if (log_messages && log_container && end_of_logs) {
     end_of_logs?.scrollIntoView({
       behavior: "smooth",
       block: "end",
@@ -463,7 +462,7 @@
           </div>
           <div class="bg-base-200 rounded">
             <pre
-              bind:this={logContainer}
+              bind:this={log_container}
               class="px-2 text-xs font-mono text-base-content/80 min-h-48 max-h-48 overflow-y-auto text-left">
               {#each log_messages as log}
                 <div

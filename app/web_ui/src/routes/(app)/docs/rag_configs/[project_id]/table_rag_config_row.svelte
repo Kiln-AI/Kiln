@@ -49,9 +49,9 @@
       case "running": {
         return {
           text: "Running",
-          color: "badge-warning",
-          bg: "bg-warning/10",
-          border: "border-warning/20",
+          color: "badge-success",
+          bg: "bg-success/10",
+          border: "border-success/20",
         }
       }
       case "completed_with_errors": {
@@ -132,13 +132,9 @@
               .color} badge-outline text-xs font-medium"
           >
             {#if status === "running"}
-              <div
-                class="w-1.5 h-1.5 bg-current rounded-full animate-ping mr-2"
-              ></div>
+              <div class="loading loading-spinner loading-xs mr-2"></div>
             {/if}
-            <span class="text-xs font-medium"
-              >{status_to_badge_props(status).text}</span
-            >
+            <span>{status_to_badge_props(status).text}</span>
           </div>
           <span class="text-sm text-base-content/60">{completed_pct}%</span>
         </div>

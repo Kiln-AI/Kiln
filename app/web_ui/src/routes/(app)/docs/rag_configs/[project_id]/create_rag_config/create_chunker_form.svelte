@@ -9,7 +9,7 @@
 
   let loading: boolean = false
   let error: KilnError | null = null
-  let name: string | null = null
+  let name: string = ""
   let description: string = ""
   let chunk_size: number = 1000
   let chunk_overlap: number = 200
@@ -91,7 +91,7 @@
           description="Leave blank and we'll generate one for you."
           optional={true}
           inputType="input"
-          id="chunker_name"
+          id="name"
           bind:value={name}
         />
         <FormElement
@@ -99,7 +99,7 @@
           description="A description of the chunker for you and your team. This will have no effect on the chunker's behavior."
           optional={true}
           inputType="textarea"
-          id="chunker_description"
+          id="description"
           bind:value={description}
         />
       </div>

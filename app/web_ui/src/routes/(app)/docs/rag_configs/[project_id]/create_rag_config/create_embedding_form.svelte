@@ -11,13 +11,13 @@
     EmbeddingModelName,
     EmbeddingProvider,
     ModelProviderName,
-  } from "../../../../../../lib/types"
-  import Warning from "../../../../../../lib/ui/warning.svelte"
+  } from "$lib/types"
+  import Warning from "$lib/ui/warning.svelte"
   $: project_id = $page.params.project_id
 
   let loading: boolean = false
   let error: KilnError | null = null
-  let name: string | null = null
+  let name: string = ""
   let description: string = ""
   let selectedModel: EmbeddingOptionValue | null = null
   let customDimensions: number | null = null
@@ -85,10 +85,9 @@
 
     try {
       loading = true
-      const selectedModelData = selectedModel
 
       const properties: Record<string, string | number | boolean> = {}
-      if (customDimensions && selectedModelData.supports_custom_dimensions) {
+      if (customDimensions && selectedModel.supports_custom_dimensions) {
         properties.dimensions = customDimensions
       }
 
@@ -104,8 +103,8 @@
             name: name || null,
             description: description || null,
             model_provider_name:
-              selectedModelData.model_provider_name as ModelProviderName,
-            model_name: selectedModelData.model_name as EmbeddingModelName,
+              selectedModel.model_provider_name as ModelProviderName,
+            model_name: selectedModel.model_name as EmbeddingModelName,
             properties,
           },
         },
@@ -181,7 +180,7 @@
           description="Leave blank and we'll generate one for you."
           optional={true}
           inputType="input"
-          id="embedding_config_name"
+          id="name"
           bind:value={name}
         />
         <FormElement
@@ -189,7 +188,7 @@
           description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
           optional={true}
           inputType="textarea"
-          id="embedding_config_description"
+          id="description"
           bind:value={description}
         />
       </div>

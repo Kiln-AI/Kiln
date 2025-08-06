@@ -15,7 +15,7 @@
     ragProgressStore,
     load_rag_configs,
     allRagConfigs,
-  } from "../../../../../lib/stores/rag_progress_store"
+  } from "$lib/stores/rag_progress_store"
 
   let error: KilnError | null = $ragProgressStore.error
   let loading = true
@@ -127,7 +127,7 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Extractors</div>
+      <div class="font-medium">Error Loading RAG Configurations</div>
       <div class="text-error text-sm">
         {error.getMessage() || "An unknown error occurred"}
       </div>

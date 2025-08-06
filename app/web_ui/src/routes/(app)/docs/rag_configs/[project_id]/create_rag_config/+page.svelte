@@ -8,7 +8,7 @@
   import { goto } from "$app/navigation"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { onMount } from "svelte"
-  import Dialog from "../../../../../../lib/ui/dialog.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import CreateExtractorForm from "../../../extractors/[project_id]/create_extractor/create_extractor_form.svelte"
   import CreateChunkerForm from "./create_chunker_form.svelte"
   import CreateEmbeddingForm from "./create_embedding_form.svelte"
@@ -16,13 +16,13 @@
     ExtractorConfig,
     ChunkerConfig,
     EmbeddingConfig,
-  } from "../../../../../../lib/types"
+  } from "$lib/types"
   import {
     embedding_model_name,
     get_model_friendly_name,
     load_available_embedding_models,
     provider_name_from_id,
-  } from "../../../../../../lib/stores"
+  } from "$lib/stores"
 
   $: project_id = $page.params.project_id
 
@@ -46,9 +46,9 @@
   let embedding_configs: EmbeddingConfig[] = []
 
   // Loading states for data fetching
-  let loading_extractors = false
-  let loading_chunkers = false
-  let loading_embedding = false
+  let loading_extractor_configs = false
+  let loading_chunker_configs = false
+  let loading_embedding_configs = false
 
   // track which modal is currently open to disable the other forms
   let modal_opened: "extractor" | "chunker" | "embedding" | null = null
@@ -62,10 +62,6 @@
   function handle_modal_close() {
     modal_opened = null
   }
-
-  onMount(async () => {
-    await load_available_embedding_models()
-  })
 
   // Convert configs to option groups for fancy select
   $: extractor_options = [
@@ -189,6 +185,7 @@
   // Load data on mount
   onMount(async () => {
     await Promise.all([
+      load_available_embedding_models(),
       loadExtractorConfigs(),
       loadChunkerConfigs(),
       loadEmbeddingConfigs(),
@@ -197,7 +194,7 @@
 
   async function loadExtractorConfigs() {
     try {
-      loading_extractors = true
+      loading_extractor_configs = true
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/extractor_configs",
         {
@@ -216,13 +213,13 @@
 
       extractor_configs = data || []
     } finally {
-      loading_extractors = false
+      loading_extractor_configs = false
     }
   }
 
   async function loadChunkerConfigs() {
     try {
-      loading_chunkers = true
+      loading_chunker_configs = true
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/chunker_configs",
         {
@@ -241,13 +238,13 @@
 
       chunker_configs = data || []
     } finally {
-      loading_chunkers = false
+      loading_chunker_configs = false
     }
   }
 
   async function loadEmbeddingConfigs() {
     try {
-      loading_embedding = true
+      loading_embedding_configs = true
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/embedding_configs",
         {
@@ -266,7 +263,7 @@
 
       embedding_configs = data || []
     } finally {
-      loading_embedding = false
+      loading_embedding_configs = false
     }
   }
 
@@ -361,7 +358,7 @@
         <div class="flex flex-col gap-6">
           <!-- Extractor Selection -->
           <div class="flex flex-col gap-2">
-            {#if loading_extractors}
+            {#if loading_extractor_configs}
               <div class="flex items-center gap-2">
                 <div class="loading loading-spinner loading-sm"></div>
                 <span class="text-sm">Loading extractors...</span>
@@ -380,7 +377,7 @@
 
           <!-- Chunker Selection -->
           <div class="flex flex-col gap-2">
-            {#if loading_chunkers}
+            {#if loading_chunker_configs}
               <div class="flex items-center gap-2">
                 <div class="loading loading-spinner loading-sm"></div>
                 <span class="text-sm">Loading chunkers...</span>
@@ -399,7 +396,7 @@
 
           <!-- Embedding Selection -->
           <div class="flex flex-col gap-2">
-            {#if loading_embedding}
+            {#if loading_embedding_configs}
               <div class="flex items-center gap-2">
                 <div class="loading loading-spinner loading-sm"></div>
                 <span class="text-sm">Loading embedding models...</span>
