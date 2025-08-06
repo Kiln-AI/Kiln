@@ -10,13 +10,18 @@
     load_model_info,
     prompt_name_from_id,
     current_task_prompts,
+    provider_name_from_id,
+    load_available_models,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRun } from "$lib/types"
-  import { formatDate } from "$lib/utils/formatters"
+  import type { TaskRun, StructuredOutputMode } from "$lib/types"
+  import {
+    formatDate,
+    structuredOutputModeToString,
+  } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -33,6 +38,7 @@
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
+  let see_all_properties = false
 
   function get_properties(
     run: TaskRun | null,
@@ -65,13 +71,6 @@
       })
     }
 
-    if (run?.output?.source?.properties?.model_provider) {
-      properties.push({
-        name: "Model Provider",
-        value: run.output.source.properties.model_provider,
-      })
-    }
-
     // Prompt ID previously was stored in the prompt_builder_name field
     let prompt_id = (
       run?.output?.source?.properties?.prompt_id ||
@@ -88,27 +87,6 @@
           link: link,
         })
       }
-    }
-
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
-      })
-    }
-
-    if (run?.input_source?.properties?.created_by) {
-      properties.push({
-        name: "Created By",
-        value: run.input_source.properties.created_by,
-      })
     }
 
     if (run?.created_at) {
@@ -138,9 +116,75 @@
     return properties
   }
 
+  function get_advanced_properties(run: TaskRun | null) {
+    let properties = []
+
+    if (run?.output?.source?.properties?.model_provider) {
+      properties.push({
+        name: "Model Provider",
+        value: provider_name_from_id(
+          String(run.output.source.properties.model_provider),
+        ),
+      })
+    }
+
+    if (run?.usage?.cost) {
+      properties.push({
+        name: "Cost",
+        value: `$${run.usage.cost.toFixed(6)}`,
+      })
+    }
+
+    if (run?.usage?.total_tokens) {
+      properties.push({
+        name: "Tokens",
+        value: run.usage.total_tokens,
+      })
+    }
+
+    if (run?.output?.source?.properties?.temperature !== undefined) {
+      properties.push({
+        name: "Temperature",
+        value: run.output.source.properties.temperature,
+      })
+    }
+
+    if (run?.output?.source?.properties?.top_p !== undefined) {
+      properties.push({
+        name: "Top P",
+        value: run.output.source.properties.top_p,
+      })
+    }
+
+    if (run?.output?.source?.properties?.structured_output_mode) {
+      let mode = run.output.source.properties.structured_output_mode
+      if (typeof mode === "string") {
+        const json_mode = structuredOutputModeToString(
+          mode as StructuredOutputMode,
+        )
+        if (json_mode) {
+          properties.push({
+            name: "JSON Mode",
+            value: json_mode,
+          })
+        }
+      }
+    }
+
+    if (run?.input_source?.properties?.created_by) {
+      properties.push({
+        name: "Created By",
+        value: run.input_source.properties.created_by,
+      })
+    }
+
+    return properties
+  }
+
   onMount(async () => {
     await load_run()
     load_model_info()
+    load_available_models()
   })
 
   async function load_run() {
@@ -263,9 +307,18 @@
         </div>
         <div class="w-72 2xl:w-96 flex-none flex flex-col">
           <PropertyList
-            properties={get_properties(run, $current_task_prompts, $model_info)}
+            properties={[
+              ...get_properties(run, $current_task_prompts, $model_info),
+              ...(see_all_properties ? get_advanced_properties(run) : []),
+            ]}
             title="Properties"
           />
+          <button
+            class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+            on:click={() => (see_all_properties = !see_all_properties)}
+          >
+            {see_all_properties ? "See Less" : "See All"}
+          </button>
         </div>
       </div>
       <Run initial_run={run} task={$current_task} {project_id} />
