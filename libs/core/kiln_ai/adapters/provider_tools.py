@@ -5,7 +5,6 @@ from typing import Dict, List
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
@@ -75,30 +74,24 @@ def builtin_model_from(
     name: str, provider_name: str | None = None
 ) -> KilnModelProvider | None:
     """
-    Gets a model and provider from the built-in list of models.
+    Gets a model provider from the built-in list of models.
 
     Args:
         name: The name of the model to get
         provider_name: Optional specific provider to use (defaults to first available)
 
     Returns:
-        A tuple of (provider, model)
-
-    Raises:
-        ValueError: If the model or provider is not found, or if the provider is misconfigured
+        A KilnModelProvider, or None if not found
     """
-    if name not in ModelName.__members__:
+    # Select the model from built_in_models using the name
+    model = next(filter(lambda m: m.name == name, built_in_models), None)
+    if model is None:
         return None
 
-    # Select the model from built_in_models using the name
-    model = next(filter(lambda m: m.name == name, built_in_models))
-    if model is None:
-        raise ValueError(f"Model {name} not found")
-
-    # If a provider is provided, select the provider from the model's provider_config
+    # If a provider is provided, select the appropriate provider. Otherwise, use the first available.
     provider: KilnModelProvider | None = None
     if model.providers is None or len(model.providers) == 0:
-        raise ValueError(f"Model {name} has no providers")
+        return None
     elif provider_name is None:
         provider = model.providers[0]
     else:
