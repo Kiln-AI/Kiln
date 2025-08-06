@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 import litellm
 import pytest
+from litellm.types.utils import ChoiceLogprobs
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -682,3 +683,162 @@ async def test_build_completion_kwargs_raises_error_with_tools_conflict(
         else:
             # should not raise an error
             await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+
+class TestExtractAndValidateLogprobs:
+    """Test cases for the _extract_and_validate_logprobs helper method"""
+
+    @pytest.fixture
+    def adapter_with_logprobs_required(self, config, mock_task):
+        """Create an adapter with logprobs required"""
+        base_config = AdapterConfig(top_logprobs=5)
+        return LiteLlmAdapter(
+            config=config, kiln_task=mock_task, base_adapter_config=base_config
+        )
+
+    @pytest.fixture
+    def adapter_without_logprobs_required(self, config, mock_task):
+        """Create an adapter without logprobs required"""
+        base_config = AdapterConfig(top_logprobs=None)
+        return LiteLlmAdapter(
+            config=config, kiln_task=mock_task, base_adapter_config=base_config
+        )
+
+    def test_extract_logprobs_with_valid_logprobs(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when final_choice has valid logprobs"""
+        # Create a mock final_choice with valid logprobs
+        mock_choice = Mock()
+        mock_logprobs = Mock(spec=ChoiceLogprobs)
+        mock_choice.logprobs = mock_logprobs
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result == mock_logprobs
+
+    def test_extract_logprobs_with_none_choice(self, adapter_without_logprobs_required):
+        """Test extracting logprobs when final_choice is None"""
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(None)
+
+        assert result is None
+
+    def test_extract_logprobs_without_logprobs_attribute(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when final_choice has no logprobs attribute"""
+        mock_choice = Mock()
+        # Don't add logprobs attribute
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    def test_extract_logprobs_with_non_choicelogprobs_type(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when logprobs is not a ChoiceLogprobs instance"""
+        mock_choice = Mock()
+        mock_choice.logprobs = {"not": "a ChoiceLogprobs object"}
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    def test_extract_logprobs_with_none_logprobs(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when logprobs attribute is None"""
+        mock_choice = Mock()
+        mock_choice.logprobs = None
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    def test_validate_logprobs_required_but_missing_raises_error(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that missing logprobs raises error when required"""
+        mock_choice = Mock()
+        # Don't add logprobs or make it None
+        mock_choice.logprobs = None
+
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter_with_logprobs_required._extract_and_validate_logprobs(mock_choice)
+
+    def test_validate_logprobs_required_but_none_choice_raises_error(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that None choice raises error when logprobs are required"""
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter_with_logprobs_required._extract_and_validate_logprobs(None)
+
+    def test_validate_logprobs_required_but_wrong_type_raises_error(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that wrong logprobs type raises error when required"""
+        mock_choice = Mock()
+        mock_choice.logprobs = {"not": "a ChoiceLogprobs object"}
+
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter_with_logprobs_required._extract_and_validate_logprobs(mock_choice)
+
+    def test_validate_logprobs_required_and_present_succeeds(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that valid logprobs are returned when required and present"""
+        mock_choice = Mock()
+        mock_logprobs = Mock(spec=ChoiceLogprobs)
+        mock_choice.logprobs = mock_logprobs
+
+        result = adapter_with_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result == mock_logprobs
+
+    def test_validate_logprobs_not_required_missing_ok(
+        self, adapter_without_logprobs_required
+    ):
+        """Test that missing logprobs is OK when not required"""
+        mock_choice = Mock()
+        mock_choice.logprobs = None
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    @pytest.mark.parametrize("top_logprobs_value", [0, 1, 5, 10])
+    def test_validate_logprobs_various_top_logprobs_values(
+        self, config, mock_task, top_logprobs_value
+    ):
+        """Test validation with various top_logprobs values"""
+        base_config = AdapterConfig(top_logprobs=top_logprobs_value)
+        adapter = LiteLlmAdapter(
+            config=config, kiln_task=mock_task, base_adapter_config=base_config
+        )
+
+        mock_choice = Mock()
+        mock_choice.logprobs = None
+
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter._extract_and_validate_logprobs(mock_choice)
