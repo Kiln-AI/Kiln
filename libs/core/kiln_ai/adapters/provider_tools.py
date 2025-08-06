@@ -74,21 +74,21 @@ def builtin_model_from(
     name: str, provider_name: str | None = None
 ) -> KilnModelProvider | None:
     """
-    Gets a model and provider from the built-in list of models.
+    Gets a model provider from the built-in list of models.
 
     Args:
         name: The name of the model to get
         provider_name: Optional specific provider to use (defaults to first available)
 
     Returns:
-        A tuple of (provider, model), if the model is found and has a provider
+        A KilnModelProvider, or None if not found
     """
     # Select the model from built_in_models using the name
     model = next(filter(lambda m: m.name == name, built_in_models), None)
     if model is None:
         return None
 
-    # If a provider is provided, select the provider from the model's provider_config
+    # If a provider is provided, select the appropriate provider. Otherwise, use the first available.
     provider: KilnModelProvider | None = None
     if model.providers is None or len(model.providers) == 0:
         return None
