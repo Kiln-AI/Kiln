@@ -1,5 +1,6 @@
 import io
-from unittest.mock import AsyncMock, MagicMock, patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import anyio
 import pytest
@@ -167,16 +168,13 @@ async def test_create_document_success(client, mock_project):
     test_content = b"test file content"
 
     with (
-        patch("kiln_server.document_api.ExtractorRunner") as mock_extractor_runner,
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
     ):
-        # Create async mock for ExtractorRunner
         mock_project_from_id.return_value = project
-
-        # Create async mock for ExtractorRunner
-        mock_runner_instance = AsyncMock()
-        mock_runner_instance.run.return_value = iter([])  # Empty async generator
-        mock_extractor_runner.return_value = mock_runner_instance
+        mock_run_workflows.return_value = None
 
         files = {"file": ("test.txt", io.BytesIO(test_content), "text/plain")}
         data = {"name": "Test Document", "description": "Test description"}
@@ -200,23 +198,25 @@ async def test_create_document_success(client, mock_project):
     assert document is not None
     check_attachment_saved(document, test_content)
 
+    # check that we triggered the workflows
+    mock_run_workflows.assert_called_once()
+
 
 @pytest.mark.asyncio
-async def test_create_document_image_kind(client, mock_project):
+async def test_create_document_image_kind(client, mock_project, mock_file_factory):
     project = mock_project
-    test_content = b"fake image content"
-
+    test_image_file = mock_file_factory(MockFileFactoryMimeType.JPEG)
+    test_image_file_bytes = Path(test_image_file).read_bytes()
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch("kiln_server.document_api.ExtractorRunner") as mock_extractor_runner,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
+        mock_run_workflows.return_value = None
 
-        mock_runner_instance = AsyncMock()
-        mock_runner_instance.run.return_value = iter([])
-        mock_extractor_runner.return_value = mock_runner_instance
-
-        files = {"file": ("image.jpg", io.BytesIO(test_content), "image/jpeg")}
+        files = {"file": ("image.jpg", io.BytesIO(test_image_file_bytes), "image/jpeg")}
         data = {"name": "Test Image", "description": "Test image"}
 
         response = client.post(
@@ -230,7 +230,10 @@ async def test_create_document_image_kind(client, mock_project):
     # check the attachment was saved with the document
     document = Document.from_id_and_parent_path(result["id"], project.path)
     assert document is not None
-    check_attachment_saved(document, test_content)
+    check_attachment_saved(document, test_image_file_bytes)
+
+    # check that we triggered the workflows
+    mock_run_workflows.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -603,14 +606,13 @@ async def test_create_document_content_type_detection(
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-        patch("kiln_server.document_api.ExtractorRunner") as mock_extractor_runner,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
         mock_save.return_value = None
-
-        mock_runner_instance = AsyncMock()
-        mock_runner_instance.run.return_value = iter([])
-        mock_extractor_runner.return_value = mock_runner_instance
+        mock_run_workflows.return_value = None
 
         files = {"file": (filename, io.BytesIO(test_content), expected_content_type)}
         data = {"name": "Test File", "description": "Test description"}

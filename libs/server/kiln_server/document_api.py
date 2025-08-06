@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import logging
@@ -41,6 +42,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
     get_kind_from_mime_type,
 )
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.utils import asyncio_mutex
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -83,6 +85,57 @@ async def run_extractor_runner_with_status(
         content=event_generator(),
         media_type="text/event-stream",
     )
+
+
+async def run_all_extractors_and_rag_workflows(
+    project: Project,
+    document: Document,
+):
+    # extractors are a step in the RAG workflow, so we run them first otherwise we would have the
+    # RAG workflows try to run the same extractors at the same time
+    extractor_tasks: list[asyncio.Task] = []
+    for extractor_config in [
+        ec for ec in project.extractor_configs(readonly=True) if not ec.is_archived
+    ]:
+
+        async def run_extractor(extractor_config=extractor_config):
+            async with asyncio_mutex(f"docs:extract:{extractor_config.id}"):
+                extractor_runner = ExtractorRunner(
+                    extractor_configs=[extractor_config],
+                    documents=[document],
+                )
+                async for progress in extractor_runner.run():
+                    pass
+
+        extractor_tasks.append(asyncio.create_task(run_extractor()))
+
+    if extractor_tasks:
+        await asyncio.gather(*extractor_tasks)
+
+    rag_tasks: list[asyncio.Task] = []
+    for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
+
+        async def run_rag(rag_config=rag_config):
+            rag_runner = build_rag_workflow_runner(project, str(rag_config.id))
+            async for progress in rag_runner.run():
+                pass
+
+        rag_tasks.append(asyncio.create_task(run_rag()))
+
+    if rag_tasks:
+        await asyncio.gather(*rag_tasks)
+
+    return None
+
+
+def run_all_extractors_and_rag_workflows_no_wait(
+    project: Project,
+    document: Document,
+) -> None:
+    """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
+    Needed to make mocking easier in tests.
+    """
+    asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))
 
 
 async def run_rag_workflow_runner_with_status(
@@ -342,6 +395,88 @@ class GetRagConfigProgressRequest(BaseModel):
     )
 
 
+def build_rag_workflow_runner(
+    project: Project,
+    rag_config_id: str,
+) -> RagWorkflowRunner:
+    rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+    if rag_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="RAG config not found",
+        )
+
+    # should not happen, but id is optional in the datamodel
+    if (
+        rag_config.extractor_config_id is None
+        or rag_config.chunker_config_id is None
+        or rag_config.embedding_config_id is None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="RAG config is missing required configs",
+        )
+
+    extractor_config = ExtractorConfig.from_id_and_parent_path(
+        rag_config.extractor_config_id, project.path
+    )
+    if extractor_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Extractor config not found",
+        )
+
+    chunker_config = ChunkerConfig.from_id_and_parent_path(
+        rag_config.chunker_config_id, project.path
+    )
+    if chunker_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Chunker config not found",
+        )
+
+    embedding_config = EmbeddingConfig.from_id_and_parent_path(
+        rag_config.embedding_config_id, project.path
+    )
+    if embedding_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Embedding config not found",
+        )
+
+    runner = RagWorkflowRunner(
+        project,
+        RagWorkflowRunnerConfiguration(
+            rag_config=rag_config,
+            extractor_config=extractor_config,
+            chunker_config=chunker_config,
+            embedding_config=embedding_config,
+            step_runners=[
+                RagExtractionStepRunner(
+                    project,
+                    extractor_config,
+                    concurrency=50,
+                ),
+                RagChunkingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    concurrency=50,
+                ),
+                RagEmbeddingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    embedding_config,
+                    concurrency=50,
+                ),
+            ],
+        ),
+    )
+
+    return runner
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
@@ -391,15 +526,9 @@ def connect_document_api(app: FastAPI):
         )
         document.save_to_file()
 
-        for extractor_config in [
-            ec for ec in project.extractor_configs(readonly=True) if not ec.is_archived
-        ]:
-            extractor_runner = ExtractorRunner(
-                extractor_configs=[extractor_config],
-                documents=[document],
-            )
-            async for progress in extractor_runner.run():
-                pass
+        # we don't want the client to wait for these to complete - worst case the jobs fail and
+        # will try again on the next document creation or when the user runs them manually
+        run_all_extractors_and_rag_workflows_no_wait(project, document)
 
         return document
 
@@ -521,6 +650,8 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         extractor_config_id: str,
     ) -> StreamingResponse:
+        # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
+        # having duplicate extractions
         async with asyncio_mutex(f"docs:extract:{extractor_config_id}"):
             project = project_from_id(project_id)
             extractor_config = ExtractorConfig.from_id_and_parent_path(
@@ -1069,81 +1200,7 @@ def connect_document_api(app: FastAPI):
         # prevent concurrent runs of the same rag config that would result in duplicates
         async with asyncio_mutex(rag_config_id):
             project = project_from_id(project_id)
-            rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
-            if rag_config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="RAG config not found",
-                )
-
-            # should not happen, but id is optional in the datamodel
-            if (
-                rag_config.extractor_config_id is None
-                or rag_config.chunker_config_id is None
-                or rag_config.embedding_config_id is None
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail="RAG config is missing required configs",
-                )
-
-            extractor_config = ExtractorConfig.from_id_and_parent_path(
-                rag_config.extractor_config_id, project.path
-            )
-            if extractor_config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Extractor config not found",
-                )
-
-            chunker_config = ChunkerConfig.from_id_and_parent_path(
-                rag_config.chunker_config_id, project.path
-            )
-            if chunker_config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Chunker config not found",
-                )
-
-            embedding_config = EmbeddingConfig.from_id_and_parent_path(
-                rag_config.embedding_config_id, project.path
-            )
-            if embedding_config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Embedding config not found",
-                )
-
-            runner = RagWorkflowRunner(
-                project,
-                RagWorkflowRunnerConfiguration(
-                    rag_config=rag_config,
-                    extractor_config=extractor_config,
-                    chunker_config=chunker_config,
-                    embedding_config=embedding_config,
-                    step_runners=[
-                        RagExtractionStepRunner(
-                            project,
-                            extractor_config,
-                            concurrency=50,
-                        ),
-                        RagChunkingStepRunner(
-                            project,
-                            extractor_config,
-                            chunker_config,
-                            concurrency=50,
-                        ),
-                        RagEmbeddingStepRunner(
-                            project,
-                            extractor_config,
-                            chunker_config,
-                            embedding_config,
-                            concurrency=50,
-                        ),
-                    ],
-                ),
-            )
-
+            runner = build_rag_workflow_runner(project, rag_config_id)
             return await run_rag_workflow_runner_with_status(runner)
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
