@@ -108,10 +108,6 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 self.litellm_core_config.default_headers
             )
 
-        print(f"Completion kwargs: {json.dumps(completion_kwargs, indent=2)}")
-        print(f"Model id: {self.litellm_model_id}")
-        print(f"Options: {self.build_options().model_dump_json(exclude_none=True)}")
-
         response = await litellm.aembedding(
             model=self.litellm_model_id,
             input=input_texts,
