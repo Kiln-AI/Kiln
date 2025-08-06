@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.chunk import ChunkerConfig
 
 logger = logging.getLogger(__name__)
@@ -36,6 +35,3 @@ class BaseChunker(ABC):
     @abstractmethod
     async def _chunk(self, text: str) -> ChunkingResult:
         pass
-
-    def chunker_config_id(self) -> ID_TYPE:
-        return self.chunker_config.id

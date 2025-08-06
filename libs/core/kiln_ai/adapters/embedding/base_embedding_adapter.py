@@ -5,7 +5,6 @@ from typing import List
 from litellm import Usage
 from pydantic import BaseModel, Field
 
-from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,3 @@ class BaseEmbeddingAdapter(ABC):
     @abstractmethod
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         pass
-
-    @property
-    def embedding_config_id(self) -> ID_TYPE:
-        return self.embedding_config.id
