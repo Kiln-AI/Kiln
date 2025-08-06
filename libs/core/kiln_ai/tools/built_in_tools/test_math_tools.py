@@ -37,12 +37,12 @@ class TestAddTool:
     @pytest.mark.parametrize(
         "a, b, expected",
         [
-            (1, 2, 3),
-            (0, 0, 0),
-            (-1, 1, 0),
-            (2.5, 3.5, 6.0),
-            (-2.5, -3.5, -6.0),
-            (100, 200, 300),
+            (1, 2, "3"),
+            (0, 0, "0"),
+            (-1, 1, "0"),
+            (2.5, 3.5, "6.0"),
+            (-2.5, -3.5, "-6.0"),
+            (100, 200, "300"),
         ],
     )
     def test_run_various_inputs(self, a, b, expected):
@@ -83,12 +83,12 @@ class TestSubtractTool:
     @pytest.mark.parametrize(
         "a, b, expected",
         [
-            (5, 3, 2),
-            (0, 0, 0),
-            (1, -1, 2),
-            (5.5, 2.5, 3.0),
-            (-2.5, -3.5, 1.0),
-            (100, 200, -100),
+            (5, 3, "2"),
+            (0, 0, "0"),
+            (1, -1, "2"),
+            (5.5, 2.5, "3.0"),
+            (-2.5, -3.5, "1.0"),
+            (100, 200, "-100"),
         ],
     )
     def test_run_various_inputs(self, a, b, expected):
@@ -128,12 +128,12 @@ class TestMultiplyTool:
     @pytest.mark.parametrize(
         "a, b, expected",
         [
-            (2, 3, 6),
-            (0, 5, 0),
-            (-2, 3, -6),
-            (2.5, 4, 10.0),
-            (-2.5, -4, 10.0),
-            (1, 1, 1),
+            (2, 3, "6"),
+            (0, 5, "0"),
+            (-2, 3, "-6"),
+            (2.5, 4, "10.0"),
+            (-2.5, -4, "10.0"),
+            (1, 1, "1"),
         ],
     )
     def test_run_various_inputs(self, a, b, expected):
@@ -174,12 +174,12 @@ class TestDivideTool:
     @pytest.mark.parametrize(
         "a, b, expected",
         [
-            (6, 2, 3.0),
-            (1, 1, 1.0),
-            (-6, 2, -3.0),
-            (7.5, 2.5, 3.0),
-            (-10, -2, 5.0),
-            (0, 5, 0.0),
+            (6, 2, "3.0"),
+            (1, 1, "1.0"),
+            (-6, 2, "-3.0"),
+            (7.5, 2.5, "3.0"),
+            (-10, -2, "5.0"),
+            (0, 5, "0.0"),
         ],
     )
     def test_run_various_inputs(self, a, b, expected):

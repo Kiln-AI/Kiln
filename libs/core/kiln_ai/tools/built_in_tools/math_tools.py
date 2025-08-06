@@ -27,9 +27,9 @@ class AddTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    def run(self, a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    def run(self, a: Union[int, float], b: Union[int, float]) -> str:
         """Add two numbers and return the result."""
-        return a + b
+        return str(a + b)
 
 
 class SubtractTool(KilnTool):
@@ -57,9 +57,9 @@ class SubtractTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    def run(self, a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    def run(self, a: Union[int, float], b: Union[int, float]) -> str:
         """Subtract b from a and return the result."""
-        return a - b
+        return str(a - b)
 
 
 class MultiplyTool(KilnTool):
@@ -84,9 +84,9 @@ class MultiplyTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    def run(self, a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    def run(self, a: Union[int, float], b: Union[int, float]) -> str:
         """Multiply two numbers and return the result."""
-        return a * b
+        return str(a * b)
 
 
 class DivideTool(KilnTool):
@@ -117,8 +117,8 @@ class DivideTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    def run(self, a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
+    def run(self, a: Union[int, float], b: Union[int, float]) -> str:
         """Divide a by b and return the result."""
         if b == 0:
             raise ZeroDivisionError("Cannot divide by zero")
-        return a / b
+        return str(a / b)

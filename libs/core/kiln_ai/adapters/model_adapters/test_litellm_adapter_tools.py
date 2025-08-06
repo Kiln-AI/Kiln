@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import Mock, patch
@@ -664,7 +665,7 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
     )
     litellm_adapter = cast(LiteLlmAdapter, adapter)
 
-    mock_tool = MockTool("add", return_value=5)
+    mock_tool = MockTool("add", return_value="5")
     tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
 
     with patch.object(
@@ -696,8 +697,8 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     )
     litellm_adapter = cast(LiteLlmAdapter, adapter)
 
-    mock_tool_add = MockTool("add", return_value=5)
-    mock_tool_multiply = MockTool("multiply", return_value=6)
+    mock_tool_add = MockTool("add", return_value="5")
+    mock_tool_multiply = MockTool("multiply", return_value="6")
     tool_calls = [
         MockToolCall("call_1", "add", '{"a": 2, "b": 3}'),
         MockToolCall("call_2", "multiply", '{"a": 2, "b": 3}'),
@@ -847,33 +848,6 @@ async def test_process_tool_calls_tool_execution_error(tmp_path):
             litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_none_result(tmp_path):
-    """Test process_tool_calls when tool returns None"""
-    task = build_test_task(tmp_path)
-    adapter = adapter_for_task(
-        task,
-        RunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        ),
-    )
-    litellm_adapter = cast(LiteLlmAdapter, adapter)
-
-    mock_tool = MockTool("add", return_value=None)
-    tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
-
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[mock_tool]
-    ):
-        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
-
-    assert assistant_output is None
-    assert len(tool_messages) == 1
-    assert tool_messages[0]["content"] == "None"
-
-
 async def test_process_tool_calls_complex_result(tmp_path):
     """Test process_tool_calls when tool returns complex object"""
     task = build_test_task(tmp_path)
@@ -888,7 +862,9 @@ async def test_process_tool_calls_complex_result(tmp_path):
     )
     litellm_adapter = cast(LiteLlmAdapter, adapter)
 
-    complex_result = {"status": "success", "result": 42, "metadata": [1, 2, 3]}
+    complex_result = json.dumps(
+        {"status": "success", "result": 42, "metadata": [1, 2, 3]}
+    )
     mock_tool = MockTool("add", return_value=complex_result)
     tool_calls = [MockToolCall("call_1", "add", '{"a": 2, "b": 3}')]
 
@@ -899,7 +875,7 @@ async def test_process_tool_calls_complex_result(tmp_path):
 
     assert assistant_output is None
     assert len(tool_messages) == 1
-    assert tool_messages[0]["content"] == str(complex_result)
+    assert tool_messages[0]["content"] == complex_result
 
 
 async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):

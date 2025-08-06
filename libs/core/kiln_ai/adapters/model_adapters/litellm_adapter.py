@@ -625,8 +625,7 @@ class LiteLlmAdapter(BaseAdapter):
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_name,
-                    # TODO: check if this really needs to be a string. If it does, run should be forced to return a string and we should avoid the str()
-                    "content": str(result),
+                    "content": result,
                 }
             )
 
