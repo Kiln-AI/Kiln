@@ -1,12 +1,15 @@
 import io
+import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
+from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -24,7 +27,10 @@ from kiln_ai.datamodel.rag import RagConfig
 
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.document_api import connect_document_api
+from kiln_server.document_api import (
+    connect_document_api,
+    run_rag_workflow_runner_with_status,
+)
 
 
 @pytest.fixture
@@ -781,6 +787,19 @@ async def test_get_chunker_configs_success(client, mock_project, mock_chunker_co
     assert result[0]["id"] == mock_chunker_config.id
 
 
+@pytest.mark.asyncio
+async def test_get_chunker_configs_no_chunker_configs(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/chunker_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 0
+
+
 @pytest.mark.parametrize(
     "model_provider_name,model_name",
     [
@@ -854,6 +873,19 @@ async def test_get_embedding_configs_success(
     result = response.json()
     assert len(result) == 1
     assert result[0]["id"] == mock_embedding_config.id
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_configs_no_embedding_configs(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/embedding_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 0
 
 
 @pytest.mark.asyncio
@@ -1079,3 +1111,587 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
         "Model fake_model does not support document extraction"
         in response.json()["message"]
     )
+
+
+@pytest.mark.asyncio
+async def test_run_rag_config_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    # Create a rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+    )
+    rag_config.save_to_file()
+
+    mock_runner = MagicMock()
+    mock_streaming_response = MagicMock()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.build_rag_workflow_runner"
+        ) as mock_build_runner,
+        patch(
+            "kiln_server.document_api.run_rag_workflow_runner_with_status"
+        ) as mock_run_runner,
+        patch("kiln_ai.utils.asyncio_mutex") as mock_mutex,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_build_runner.return_value = mock_runner
+        mock_run_runner.return_value = mock_streaming_response
+        mock_mutex.return_value.__aenter__ = AsyncMock()
+        mock_mutex.return_value.__aexit__ = AsyncMock()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}/run"
+        )
+
+    assert response.status_code == 200
+    mock_build_runner.assert_called_once_with(mock_project, str(rag_config.id))
+    mock_run_runner.assert_called_once_with(mock_runner)
+
+
+@pytest.mark.asyncio
+async def test_run_rag_config_not_found(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.build_rag_workflow_runner"
+        ) as mock_build_runner,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_build_runner.side_effect = HTTPException(
+            status_code=404, detail="RAG config not found"
+        )
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/fake_id/run"
+        )
+
+    assert response.status_code == 404
+    assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_rag_config_missing_configs(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    # Create a rag config with missing configs
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.build_rag_workflow_runner"
+        ) as mock_build_runner,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_build_runner.side_effect = HTTPException(
+            status_code=400, detail="RAG config is missing required configs"
+        )
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}/run"
+        )
+
+    assert response.status_code == 400
+    assert "RAG config is missing required configs" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_progress_specific_configs(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    # Create rag configs
+    rag_configs = [
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config 1",
+            description="Test RAG Config 1 description",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config 2",
+            description="Test RAG Config 2 description",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+        ),
+    ]
+
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_configs"
+        ) as mock_compute_progress,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock the progress computation
+        expected_progress = {
+            str(rag_configs[0].id): RagProgress(
+                total_document_count=5,
+                total_document_completed_count=3,
+                total_document_extracted_count=3,
+                total_document_chunked_count=2,
+                total_document_embedded_count=1,
+            ),
+            str(rag_configs[1].id): RagProgress(
+                total_document_count=5,
+                total_document_completed_count=2,
+                total_document_extracted_count=2,
+                total_document_chunked_count=1,
+                total_document_embedded_count=0,
+            ),
+        }
+        mock_compute_progress.return_value = expected_progress
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/progress",
+            json={"rag_config_ids": [str(rag_configs[0].id), str(rag_configs[1].id)]},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 2
+    assert str(rag_configs[0].id) in result
+    assert str(rag_configs[1].id) in result
+    assert result[str(rag_configs[0].id)]["total_document_count"] == 5
+    assert result[str(rag_configs[0].id)]["total_document_completed_count"] == 3
+    assert result[str(rag_configs[1].id)]["total_document_count"] == 5
+    assert result[str(rag_configs[1].id)]["total_document_completed_count"] == 2
+
+    mock_compute_progress.assert_called_once()
+    call_args = mock_compute_progress.call_args
+    assert call_args[0][0] == mock_project
+    assert len(call_args[0][1]) == 2
+    assert call_args[0][1][0].id == rag_configs[0].id
+    assert call_args[0][1][1].id == rag_configs[1].id
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_progress_all_configs(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    # Create rag configs
+    rag_configs = [
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config 1",
+            description="Test RAG Config 1 description",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config 2",
+            description="Test RAG Config 2 description",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+        ),
+    ]
+
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_configs"
+        ) as mock_compute_progress,
+        patch(
+            "kiln_ai.datamodel.project.Project.rag_configs", return_value=rag_configs
+        ),
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock the progress computation
+        expected_progress = {
+            str(rag_configs[0].id): RagProgress(
+                total_document_count=5,
+                total_document_completed_count=3,
+                total_document_extracted_count=3,
+                total_document_chunked_count=2,
+                total_document_embedded_count=1,
+            ),
+            str(rag_configs[1].id): RagProgress(
+                total_document_count=5,
+                total_document_completed_count=2,
+                total_document_extracted_count=2,
+                total_document_chunked_count=1,
+                total_document_embedded_count=0,
+            ),
+        }
+        mock_compute_progress.return_value = expected_progress
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/progress",
+            json={"rag_config_ids": None},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 2
+    assert str(rag_configs[0].id) in result
+    assert str(rag_configs[1].id) in result
+
+    mock_compute_progress.assert_called_once()
+    call_args = mock_compute_progress.call_args
+    assert call_args[0][0] == mock_project
+    assert len(call_args[0][1]) == 2
+    assert call_args[0][1][0].id == rag_configs[0].id
+    assert call_args[0][1][1].id == rag_configs[1].id
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_progress_empty_list(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_configs"
+        ) as mock_compute_progress,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_compute_progress.return_value = {}
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/progress",
+            json={"rag_config_ids": []},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_progress_invalid_config_id(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+):
+    # Create a valid rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_configs"
+        ) as mock_compute_progress,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock the progress computation - should only return progress for valid config
+        expected_progress = {
+            str(rag_config.id): RagProgress(
+                total_document_count=5,
+                total_document_completed_count=3,
+                total_document_extracted_count=3,
+                total_document_chunked_count=2,
+                total_document_embedded_count=1,
+            ),
+        }
+        mock_compute_progress.return_value = expected_progress
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/progress",
+            json={"rag_config_ids": [str(rag_config.id), "fake_id"]},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 1
+    assert str(rag_config.id) in result
+    assert "fake_id" not in result
+
+
+@pytest.mark.asyncio
+async def test_run_rag_workflow_runner_with_status_success():
+    """Test successful execution of run_rag_workflow_runner_with_status"""
+
+    # Create mock progress objects
+    log_message = LogMessage(level="info", message="Processing documents...")
+
+    progress_updates = [
+        RagProgress(
+            total_document_count=5,
+            total_document_completed_count=0,
+            total_document_extracted_count=2,
+            total_document_chunked_count=1,
+            total_document_embedded_count=0,
+            logs=[log_message],
+        ),
+        RagProgress(
+            total_document_count=5,
+            total_document_completed_count=0,
+            total_document_extracted_count=4,
+            total_document_chunked_count=3,
+            total_document_embedded_count=1,
+            logs=[log_message],
+        ),
+        RagProgress(
+            total_document_count=5,
+            total_document_completed_count=5,
+            total_document_extracted_count=5,
+            total_document_chunked_count=5,
+            total_document_embedded_count=5,
+            logs=[log_message],
+        ),
+    ]
+
+    # Create a simple async generator for the mock runner
+    async def mock_run():
+        for progress in progress_updates:
+            yield progress
+
+    # Create mock runner
+    mock_runner = MagicMock()
+    mock_runner.run.return_value = mock_run()
+
+    # Call the function
+    response = await run_rag_workflow_runner_with_status(mock_runner)
+
+    # Verify response type
+    assert isinstance(response, StreamingResponse)
+    assert response.media_type == "text/event-stream"
+
+    # Read the streaming content
+    content = ""
+    async for chunk in response.body_iterator:
+        content += str(chunk)
+
+    # Parse the SSE content
+    lines = content.strip().split("\n")
+
+    # Should have 4 data events (3 progress updates + 1 complete)
+    data_lines = [line for line in lines if line.startswith("data: ")]
+    assert len(data_lines) == 4
+
+    # Check the progress data
+    for i, data_line in enumerate(data_lines[:-1]):  # Exclude the last "complete" line
+        json_str = data_line[6:]  # Remove "data: " prefix
+        data = json.loads(json_str)
+
+        expected_progress = progress_updates[i]
+        assert data["total_document_count"] == expected_progress.total_document_count
+        assert (
+            data["total_document_completed_count"]
+            == expected_progress.total_document_completed_count
+        )
+        assert (
+            data["total_document_extracted_count"]
+            == expected_progress.total_document_extracted_count
+        )
+        assert (
+            data["total_document_chunked_count"]
+            == expected_progress.total_document_chunked_count
+        )
+        assert (
+            data["total_document_embedded_count"]
+            == expected_progress.total_document_embedded_count
+        )
+        assert len(data["logs"]) == 1
+        assert data["logs"][0]["message"] == "Processing documents..."
+        assert data["logs"][0]["level"] == "info"
+
+    # Check the final complete message
+    assert data_lines[-1] == "data: complete"
+
+
+@pytest.mark.parametrize("logs", [None, []])
+@pytest.mark.asyncio
+async def test_run_rag_workflow_runner_with_status_no_logs(logs):
+    """Test run_rag_workflow_runner_with_status with progress that has no logs"""
+
+    # Create mock progress object with no logs
+    progress_update = RagProgress(
+        total_document_count=3,
+        total_document_completed_count=2,
+        total_document_extracted_count=3,
+        total_document_chunked_count=2,
+        total_document_embedded_count=2,
+        logs=logs,  # No logs
+    )
+
+    # Create a simple async generator for the mock runner
+    async def mock_run():
+        yield progress_update
+
+    # Create mock runner
+    mock_runner = MagicMock()
+    mock_runner.run.return_value = mock_run()
+
+    # Call the function
+    response = await run_rag_workflow_runner_with_status(mock_runner)
+
+    # Read the streaming content
+    content = ""
+    async for chunk in response.body_iterator:
+        content += str(chunk)
+
+    # Parse the SSE content
+    lines = content.strip().split("\n")
+    data_lines = [line for line in lines if line.startswith("data: ")]
+
+    # Should have 2 data events (1 progress update + 1 complete)
+    assert len(data_lines) == 2
+
+    # Check the progress data
+    json_str = data_lines[0][6:]  # Remove "data: " prefix
+    data = json.loads(json_str)
+
+    assert data["total_document_count"] == 3
+    assert data["total_document_completed_count"] == 2
+    assert data["total_document_extracted_count"] == 3
+    assert data["total_document_chunked_count"] == 2
+    assert data["total_document_embedded_count"] == 2
+    assert data["logs"] == []  # Should be empty list when logs is None
+
+    # Check the final complete message
+    assert data_lines[-1] == "data: complete"
+
+
+@pytest.mark.asyncio
+async def test_run_rag_workflow_runner_with_status_multiple_logs():
+    """Test run_rag_workflow_runner_with_status with multiple log messages"""
+
+    # Create mock progress object with multiple logs
+    log_messages = [
+        LogMessage(level="info", message="Starting extraction..."),
+        LogMessage(level="warning", message="Some documents failed"),
+        LogMessage(level="error", message="Critical error occurred"),
+    ]
+
+    progress_update = RagProgress(
+        total_document_count=10,
+        total_document_completed_count=8,
+        total_document_extracted_count=9,
+        total_document_chunked_count=8,
+        total_document_embedded_count=8,
+        logs=log_messages,
+    )
+
+    # Create a simple async generator for the mock runner
+    async def mock_run():
+        yield progress_update
+
+    # Create mock runner
+    mock_runner = MagicMock()
+    mock_runner.run.return_value = mock_run()
+
+    # Call the function
+    response = await run_rag_workflow_runner_with_status(mock_runner)
+
+    # Read the streaming content
+    content = ""
+    async for chunk in response.body_iterator:
+        content += str(chunk)
+
+    # Parse the SSE content
+    lines = content.strip().split("\n")
+    data_lines = [line for line in lines if line.startswith("data: ")]
+
+    # Should have 2 data events (1 progress update + 1 complete)
+    assert len(data_lines) == 2
+
+    # Check the progress data
+    json_str = data_lines[0][6:]  # Remove "data: " prefix
+    data = json.loads(json_str)
+
+    assert data["total_document_count"] == 10
+    assert data["total_document_completed_count"] == 8
+    assert len(data["logs"]) == 3
+
+    # Check log messages
+    assert data["logs"][0]["level"] == "info"
+    assert data["logs"][0]["message"] == "Starting extraction..."
+    assert data["logs"][1]["level"] == "warning"
+    assert data["logs"][1]["message"] == "Some documents failed"
+    assert data["logs"][2]["level"] == "error"
+    assert data["logs"][2]["message"] == "Critical error occurred"
+
+    # Check the final complete message
+    assert data_lines[-1] == "data: complete"
+
+
+@pytest.mark.asyncio
+async def test_run_rag_workflow_runner_with_status_no_progress():
+    """Test run_rag_workflow_runner_with_status when runner yields no progress updates"""
+
+    # Create a simple async generator for the mock runner that yields nothing
+    async def mock_run():
+        if False:  # This ensures it's an async generator
+            yield None
+
+    # Create mock runner
+    mock_runner = MagicMock()
+    mock_runner.run.return_value = mock_run()
+
+    # Call the function
+    response = await run_rag_workflow_runner_with_status(mock_runner)
+
+    # Read the streaming content
+    content = ""
+    async for chunk in response.body_iterator:
+        content += str(chunk)
+
+    # Parse the SSE content
+    lines = content.strip().split("\n")
+    data_lines = [line for line in lines if line.startswith("data: ")]
+
+    # Should have only 1 data event (complete message)
+    assert len(data_lines) == 1
+    assert data_lines[0] == "data: complete"
