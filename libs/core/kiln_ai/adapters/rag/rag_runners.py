@@ -263,7 +263,6 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
                                 )
                             ],
                         )
-                        error_idx += 1
 
 
 class RagChunkingStepRunner(AbstractRagStepRunner):
@@ -289,7 +288,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                 return True
         return False
 
-    async def collect_jobs(self):
+    async def collect_jobs(self) -> list[ChunkerJob]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
 
@@ -341,7 +340,6 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                                 )
                             ],
                         )
-                        error_idx += 1
 
 
 class RagEmbeddingStepRunner(AbstractRagStepRunner):
@@ -357,6 +355,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         self.extractor_config = extractor_config
         self.chunker_config = chunker_config
         self.embedding_config = embedding_config
+        self.concurrency = concurrency
         self.lock_key = f"docs:embedding:{self.embedding_config.id}"
 
     def stage(self) -> RagWorkflowStepNames:
@@ -368,7 +367,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                 return True
         return False
 
-    async def collect_jobs(self):
+    async def collect_jobs(self) -> list[EmbeddingJob]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
         target_embedding_config_id = self.embedding_config.id
@@ -405,7 +404,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
             runner = AsyncJobRunner(
                 jobs=jobs,
                 run_job_fn=lambda job: execute_embedding_job(job, embedding_adapter),
-                concurrency=10,
+                concurrency=self.concurrency,
                 observers=[observer],
             )
 
@@ -428,7 +427,6 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                                 )
                             ],
                         )
-                        error_idx += 1
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):
