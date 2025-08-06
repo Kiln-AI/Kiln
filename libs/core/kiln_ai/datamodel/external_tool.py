@@ -39,8 +39,6 @@ class ExternalTool(KilnParentedModel):
         if self.type == "remote_mcp":
             if not self.server_url:
                 raise ValueError("server_url must be set when type is 'remote_mcp'")
-            if self.headers is None or self.headers == {}:
-                raise ValueError(
-                    "headers must be a non-empty dictionary when type is 'remote_mcp'"
-                )
+            if not self.headers:
+                raise ValueError("headers must be set when type is 'remote_mcp'")
         return self
