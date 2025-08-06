@@ -974,23 +974,6 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.chunker_configs(readonly=True)
 
-    @app.get("/api/projects/{project_id}/chunker_configs/{chunker_config_id}")
-    async def get_chunker_config(
-        project_id: str,
-        chunker_config_id: str,
-    ) -> ChunkerConfig:
-        project = project_from_id(project_id)
-        chunker_config = ChunkerConfig.from_id_and_parent_path(
-            chunker_config_id, project.path
-        )
-        if chunker_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Chunker config not found",
-            )
-
-        return chunker_config
-
     @app.post("/api/projects/{project_id}/create_embedding_config")
     async def create_embedding_config(
         project_id: str,
@@ -1016,22 +999,6 @@ def connect_document_api(app: FastAPI):
     ) -> list[EmbeddingConfig]:
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
-
-    @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
-    async def get_embedding_config(
-        project_id: str,
-        embedding_config_id: str,
-    ) -> EmbeddingConfig:
-        project = project_from_id(project_id)
-        embedding_config = EmbeddingConfig.from_id_and_parent_path(
-            embedding_config_id, project.path
-        )
-        if embedding_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Embedding config not found",
-            )
-        return embedding_config
 
     @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
     async def create_rag_config(
