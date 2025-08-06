@@ -80,6 +80,12 @@ We suggest the following extensions for VSCode/Cursor. With them, you'll get com
 - Vitest
 - ESLint
 
+### HooksMCP
+
+We have a [hooks_mcp.yaml](./hooks_mcp.yaml) file, which defines how coding agents can interact with our developer tools (formatting, linting, etc).
+
+To use it, [setup HooksMCP](https://github.com/scosman/hooks_mcp?tab=readme-ov-file#running-hooksmcp) for your agents.
+
 ### llms.txt
 
 Vibing? Here are some [llms.txt](https://llmstxt.org) you may want to add.

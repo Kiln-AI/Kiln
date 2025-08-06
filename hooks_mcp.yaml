@@ -1,0 +1,72 @@
+# HooksMCP Configuration File for use with Kiln
+# https://github.com/scosman/hooks_mcp
+
+actions:
+  - name: "all_python_tests"
+    description: "Run all python tests in the project"
+    command: "uv run python -m pytest --benchmark-quiet -q ."
+
+  - name: "lint_python"
+    description: "Lint the python source code, checking for errors and warnings"
+    command: "uvx ruff check --extend-select I,F401"
+
+  - name: "lint_fix_python"
+    description: "Lint the pythong source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
+    command: "uvx ruff check --extend-select I,F401 --fix"
+
+  - name: "check_format_python"
+    description: "Check if the python source code is formatted correctly"
+    command: "uvx ruff format --check ."
+
+  - name: "format_python"
+    description: "Format the python source code"
+    command: "uvx ruff format ."
+
+  - name: "typecheck_python"
+    description: "Typecheck the source code"
+    command: "uv run pyright ."
+
+  - name: "test_file_python"
+    description: "Run tests in a specific python file or directory"
+    command: "uv run python -m pytest $TEST_PATH"
+    parameters:
+      - name: "TEST_PATH"
+        type: "project_file_path"
+        description: "Path to test file or directory"
+
+  - name: "test_specific_python"
+    description: "Run a specific python test by name"
+    command: "uv run python -m pytest $TEST_PATH -k $TEST_NAME"
+    parameters:
+      - name: "TEST_PATH"
+        type: "project_file_path"
+        description: "Path to test file or directory"
+        default: "./tests"
+      - name: "TEST_NAME"
+        type: "insecure_string"
+        description: "Name of the test to run"
+
+  - name: "check_format_web"
+    description: "Check if the app/web_ui source code is formatted correctly"
+    command: "npm run format_check"
+    run_path: "app/web_ui"
+
+  - name: "lint_web"
+    description: "Lint the app/web_ui source code"
+    command: "npm run lint"
+    run_path: "app/web_ui"
+
+  - name: "check_web"
+    description: "Run svelte-check type checks and code checks on the app/web_ui source code"
+    command: "npm run check"
+    run_path: "app/web_ui"
+
+  - name: "test_web"
+    description: "Run tests for the app/web_ui"
+    command: "npm run test_run"
+    run_path: "app/web_ui"
+
+  - name: "build_web"
+    description: "Build the app/web_ui application, which will report any build issues"
+    command: "npm run build_quiet"
+    run_path: "app/web_ui"
