@@ -179,7 +179,8 @@ def test_external_tool_headers_validation():
 
     # Test that None headers are rejected for remote_mcp type
     with pytest.raises(
-        ValidationError, match="headers must be set when type is 'remote_mcp'"
+        ValidationError,
+        match="headers must be a non-empty dictionary when type is 'remote_mcp'",
     ):
         ExternalTool(
             name="test_tool",
@@ -190,7 +191,8 @@ def test_external_tool_headers_validation():
 
     # Test that empty headers dict is rejected
     with pytest.raises(
-        ValidationError, match="headers must be set when type is 'remote_mcp'"
+        ValidationError,
+        match="headers must be a non-empty dictionary when type is 'remote_mcp'",
     ):
         ExternalTool(
             name="test_tool",
