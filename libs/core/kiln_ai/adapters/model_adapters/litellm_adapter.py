@@ -42,6 +42,7 @@ class ModelTurnResult:
     all_messages: list[dict[str, Any]]
     model_response: ModelResponse | None
     model_choice: Choices | None
+    usage: Usage
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -82,6 +83,7 @@ class LiteLlmAdapter(BaseAdapter):
         It may make handle iterations of tool calls between the user/agent message if needed.
         """
 
+        usage = Usage()
         messages = list(prior_messages)
         tool_calls_count = 0
 
@@ -98,6 +100,9 @@ class LiteLlmAdapter(BaseAdapter):
             model_response, response_choice = await self.acompletion_checking_response(
                 **completion_kwargs
             )
+
+            # count the usage
+            usage += self.usage_from_response(model_response)
 
             # Extract content and tool_calls safely
             content = None
@@ -133,6 +138,7 @@ class LiteLlmAdapter(BaseAdapter):
                         all_messages=messages,
                         model_response=model_response,
                         model_choice=response_choice,
+                        usage=usage,
                     )
 
                 # If there were tool calls, increment counter and continue
@@ -147,6 +153,7 @@ class LiteLlmAdapter(BaseAdapter):
                     all_messages=messages,
                     model_response=model_response,
                     model_choice=response_choice,
+                    usage=usage,
                 )
 
             # If we get here with no content and no tool calls, break
@@ -157,6 +164,8 @@ class LiteLlmAdapter(BaseAdapter):
         )
 
     async def _run(self, input: Dict | str) -> tuple[RunOutput, Usage | None]:
+        usage = Usage()
+
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
@@ -165,7 +174,6 @@ class LiteLlmAdapter(BaseAdapter):
         messages = []
 
         prior_output: str | None = None
-        last_response: ModelResponse | None = None
         final_choice: Choices | None = None
         turns = 0
 
@@ -193,9 +201,10 @@ class LiteLlmAdapter(BaseAdapter):
                 skip_response_format,
             )
 
+            usage += turn_result.usage
+
             prior_output = turn_result.assistant_message
             messages = turn_result.all_messages
-            last_response = turn_result.model_response
             final_choice = turn_result.model_choice
 
             if not prior_output:
@@ -243,13 +252,6 @@ class LiteLlmAdapter(BaseAdapter):
             intermediate_outputs=intermediate_outputs,
             output_logprobs=logprobs,
             trace=messages,
-        )
-
-        # TODO: usage is likely incorrect. We're only getting the usage from the final response, not each call
-        usage = (
-            self.usage_from_response(last_response)
-            if last_response is not None
-            else None
         )
 
         return output, usage
@@ -528,7 +530,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         return completion_kwargs
 
-    def usage_from_response(self, response: ModelResponse) -> Usage | None:
+    def usage_from_response(self, response: ModelResponse) -> Usage:
         litellm_usage = response.get("usage", None)
 
         # LiteLLM isn't consistent in how it returns the cost.
@@ -536,10 +538,10 @@ class LiteLlmAdapter(BaseAdapter):
         if cost is None and litellm_usage:
             cost = litellm_usage.get("cost", None)
 
-        if not litellm_usage and not cost:
-            return None
-
         usage = Usage()
+
+        if not litellm_usage and not cost:
+            return usage
 
         if litellm_usage and isinstance(litellm_usage, LiteLlmUsage):
             usage.input_tokens = litellm_usage.get("prompt_tokens", None)

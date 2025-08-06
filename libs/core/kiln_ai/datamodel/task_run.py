@@ -35,6 +35,42 @@ class Usage(BaseModel):
         ge=0,
     )
 
+    def __add__(self, other: "Usage") -> "Usage":
+        """Add two Usage objects together, handling None values gracefully.
+
+        None + None = None
+        None + value = value
+        value + None = value
+        value1 + value2 = value1 + value2
+        """
+        if not isinstance(other, Usage):
+            raise TypeError(f"Cannot add Usage with {type(other).__name__}")
+
+        def _add_optional_int(a: int | None, b: int | None) -> int | None:
+            if a is None and b is None:
+                return None
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return a + b
+
+        def _add_optional_float(a: float | None, b: float | None) -> float | None:
+            if a is None and b is None:
+                return None
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return a + b
+
+        return Usage(
+            input_tokens=_add_optional_int(self.input_tokens, other.input_tokens),
+            output_tokens=_add_optional_int(self.output_tokens, other.output_tokens),
+            total_tokens=_add_optional_int(self.total_tokens, other.total_tokens),
+            cost=_add_optional_float(self.cost, other.cost),
+        )
+
 
 class TaskRun(KilnParentedModel):
     """
