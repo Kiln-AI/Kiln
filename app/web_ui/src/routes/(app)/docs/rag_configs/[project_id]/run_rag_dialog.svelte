@@ -27,7 +27,12 @@
     const logs_string = logs
       .map((log) => `${log.level.toUpperCase()}: ${log.message}`)
       .join("\n")
-    navigator.clipboard.writeText(logs_string)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(logs_string).catch(console.error)
+    } else {
+      // Fallback for older browsers or non-HTTPS contexts
+      console.warn("Clipboard API not available")
+    }
   }
 
   function download_logs(logs: LogMessage[], step_name: string) {
