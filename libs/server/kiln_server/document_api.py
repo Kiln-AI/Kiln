@@ -2,10 +2,6 @@ import asyncio
 import datetime
 import json
 import logging
-import os
-import subprocess
-import sys
-from pathlib import Path
 from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -45,6 +41,7 @@ from kiln_ai.datamodel.extraction import (
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.utils import asyncio_mutex
+from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -52,15 +49,6 @@ from pydantic import BaseModel, Field, model_validator
 from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
-
-
-def open_folder(path: str | Path) -> None:
-    if sys.platform.startswith("darwin"):
-        subprocess.run(["open", path], check=True)
-    elif sys.platform.startswith("win"):
-        os.startfile(path)  # type: ignore[attr-defined]
-    else:
-        subprocess.run(["xdg-open", path], check=True)
 
 
 # TODO: extract out into common utils
@@ -795,7 +783,7 @@ def connect_document_api(app: FastAPI):
                 detail="Document path not found",
             )
 
-        open_folder(document.path.parent)
+        open_folder(document.path)
 
         return OpenFileResponse(path=str(document.path.parent))
 
