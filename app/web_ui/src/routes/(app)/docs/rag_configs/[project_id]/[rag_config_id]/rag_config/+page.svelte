@@ -13,7 +13,7 @@
     load_available_models,
     model_name,
     provider_name_from_id,
-  } from "../../../../../../../lib/stores"
+  } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
