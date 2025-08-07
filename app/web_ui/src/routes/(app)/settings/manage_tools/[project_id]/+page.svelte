@@ -1,10 +1,12 @@
 <script lang="ts">
-  import AppPage from "../../app_page.svelte"
+  import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import { ui_state } from "$lib/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
+  import { page } from "$app/stores"
   import type { KilnToolDescription } from "$lib/types"
+
+  $: project_id = $page.params.project_id
 
   let tools: KilnToolDescription[] | null = null
   let loading = true
@@ -19,9 +21,8 @@
       loading = true
       error = null
 
-      const project_id = $ui_state?.current_project_id
       if (!project_id) {
-        throw new Error("No current project selected")
+        throw new Error("No project ID provided")
       }
 
       const { data, error: fetch_error } = await client.GET(
@@ -55,7 +56,7 @@
     action_buttons={[
       {
         label: "Add Tool",
-        href: "/settings/manage_tools/add_tool",
+        href: `/settings/manage_tools/${project_id}/add_tools`,
         primary: true,
       },
     ]}
@@ -96,7 +97,9 @@
     {:else}
       <div class="font-light text-gray-500 text-sm">
         No available tools found for this project.{" "}
-        <a href="/settings/tools/add_tool" class="link"> Add one now </a>
+        <a href={`/settings/manage_tools/${project_id}/add_tools`} class="link">
+          Add one now
+        </a>
         .
       </div>
     {/if}

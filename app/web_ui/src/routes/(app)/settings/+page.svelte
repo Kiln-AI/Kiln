@@ -65,7 +65,7 @@
           name: "Manage Tools",
           description:
             "Connect your projects to tools like remote MCP servers, Kiln built-in tools, and more",
-          href: "/settings/manage_tools",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
           button_text: "Manage Tools",
         },
       ],
