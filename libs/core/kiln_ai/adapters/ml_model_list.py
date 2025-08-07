@@ -1246,12 +1246,6 @@ built_in_models: List[KilnModel] = [
         friendly_name="Llama 3.2 1B",
         providers=[
             KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="llama-3.2-1b-preview",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_structured_output=False,
                 supports_data_gen=False,
@@ -1272,11 +1266,6 @@ built_in_models: List[KilnModel] = [
         name=ModelName.llama_3_2_3b,
         friendly_name="Llama 3.2 3B",
         providers=[
-            KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="llama-3.2-3b-preview",
-                supports_data_gen=False,
-            ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_structured_output=False,
@@ -1317,19 +1306,6 @@ built_in_models: List[KilnModel] = [
                 model_id="llama3.2-vision",
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
-                model_id="accounts/fireworks/models/llama-v3p2-11b-vision-instruct",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="meta-llama/Llama-3.2-11B-Vision-Instruct",
-                supports_structured_output=False,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
                 supports_structured_output=False,
@@ -1352,13 +1328,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.ollama,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="llama3.2-vision:90b",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
-                model_id="accounts/fireworks/models/llama-v3p2-90b-vision-instruct",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -1432,13 +1401,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 model_id="microsoft/phi-3.5-mini-128k-instruct",
                 structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
-                supports_structured_output=False,
-                supports_data_gen=False,
-                model_id="accounts/fireworks/models/phi-3-vision-128k-instruct",
             ),
         ],
     ),
