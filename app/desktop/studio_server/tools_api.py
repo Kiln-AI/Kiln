@@ -38,6 +38,17 @@ def connect_tools_api(app: FastAPI):
             for tool in project.external_tools()
         ]
 
+    @app.get("/api/projects/{project_id}/tools/{tool_id}")
+    async def get_tool(project_id: str, tool_id: str) -> ExternalTool:
+        project = project_from_id(project_id)
+        tool = next(
+            (t for t in project.external_tools(readonly=True) if t.id == tool_id), None
+        )
+        if not tool:
+            raise HTTPException(status_code=404, detail="Tool not found")
+
+        return tool
+
     @app.post("/api/projects/{project_id}/connect_remote_MCP")
     async def connect_remote_MCP(
         project_id: str, tool_data: ExternalToolCreationRequest

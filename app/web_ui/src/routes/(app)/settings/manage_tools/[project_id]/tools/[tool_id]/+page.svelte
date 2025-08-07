@@ -5,12 +5,12 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { KilnToolDescription } from "$lib/types"
+  import type { ExternalTool } from "$lib/types"
 
   $: project_id = $page.params.project_id
   $: tool_id = $page.params.tool_id
 
-  let tool: KilnToolDescription | null = null
+  let tool: ExternalTool | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -31,13 +31,14 @@
         throw new Error("No tool ID provided")
       }
 
-      // Fetch all available tools and find the specific one
+      // Fetch the specific tool by ID
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/available_tools",
+        "/api/projects/{project_id}/tools/{tool_id}",
         {
           params: {
             path: {
               project_id,
+              tool_id,
             },
           },
         },
@@ -47,13 +48,7 @@
         throw fetch_error
       }
 
-      // Find the specific tool by ID
-      const foundTool = data?.find((t) => t.id === tool_id)
-      if (!foundTool) {
-        throw new Error(`Tool with ID "${tool_id}" not found`)
-      }
-
-      tool = foundTool
+      tool = data as ExternalTool
     } catch (err) {
       error = createKilnError(err)
     } finally {

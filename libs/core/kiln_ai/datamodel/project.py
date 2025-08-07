@@ -25,5 +25,5 @@ class Project(
     def tasks(self) -> list[Task]:
         return super().tasks()  # type: ignore
 
-    def external_tools(self) -> list[ExternalTool]:
-        return super().external_tools()  # type: ignore
+    def external_tools(self, readonly: bool = False) -> list[ExternalTool]:
+        return super().external_tools(readonly=readonly)  # type: ignore

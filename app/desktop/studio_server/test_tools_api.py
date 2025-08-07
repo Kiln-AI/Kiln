@@ -211,3 +211,55 @@ def test_get_available_tools_with_tool(client, test_project):
         assert result[0]["name"] == "my_tool"
         assert result[0]["id"] == created_tool["id"]
         assert result[0]["description"] == "My awesome tool"
+
+
+def test_get_tool_success(client, test_project):
+    # First create a tool
+    tool_data = {
+        "name": "test_get_tool",
+        "server_url": "https://example.com/api",
+        "headers": {"Authorization": "Bearer token"},
+        "description": "Tool for get test",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tools_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create the tool
+        create_response = client.post(
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            json=tool_data,
+        )
+        assert create_response.status_code == 200
+        created_tool = create_response.json()
+        tool_id = created_tool["id"]
+
+        # Now get the tool
+        response = client.get(f"/api/projects/{test_project.id}/tools/{tool_id}")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["id"] == tool_id
+        assert result["name"] == "test_get_tool"
+        assert result["type"] == "remote_mcp"
+        assert result["description"] == "Tool for get test"
+        assert result["properties"]["server_url"] == "https://example.com/api"
+        assert result["properties"]["headers"]["Authorization"] == "Bearer token"
+
+
+def test_get_tool_not_found(client, test_project):
+    with patch(
+        "app.desktop.studio_server.tools_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Try to get a non-existent tool
+        response = client.get(
+            f"/api/projects/{test_project.id}/tools/nonexistent-tool-id"
+        )
+
+        assert response.status_code == 404
+        result = response.json()
+        assert result["detail"] == "Tool not found"
