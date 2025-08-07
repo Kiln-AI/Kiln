@@ -61,6 +61,7 @@
       },
     ]}
   >
+    <div class="font-medium mt-8">Available Tools</div>
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -75,24 +76,29 @@
         </div>
       </div>
     {:else if tools && tools.length > 0}
-      <div class="flex flex-col gap-6 max-w-[800px] mx-auto">
-        {#each tools as tool}
-          <div
-            class="card card-bordered border-base-300 bg-base-200 shadow-md w-full p-6"
-          >
-            <div class="flex flex-col">
-              <div class="font-medium text-lg">
-                {tool.name}
-              </div>
-              <div class="text-sm text-gray-500 mt-1">
-                Type: {tool.id}
-              </div>
-              <div class="font-light pt-2">
-                {tool.description || "No description available"}
-              </div>
-            </div>
-          </div>
-        {/each}
+      <div class="overflow-x-auto rounded-lg border mt-4">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>ID</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each tools as tool}
+              <tr class="hover:bg-base-200 cursor-pointer">
+                <td class="font-medium">{tool.name}</td>
+                <td class="text-sm text-gray-500">{tool.id}</td>
+                <td class="text-sm">{tool.type}</td>
+                <td class="text-sm">
+                  {tool.description || "No description available"}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     {:else}
       <div class="font-light text-gray-500 text-sm">

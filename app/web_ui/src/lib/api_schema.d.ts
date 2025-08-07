@@ -1090,6 +1090,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/connect_remote_MCP": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect Remote Mcp */
+        post: operations["connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1836,6 +1853,65 @@ export interface components {
          */
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
+         * ExternalTool
+         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tools can be remote or local.
+         *
+         *     This model stores the necessary configuration to connect to and authenticate with
+         *     external MCP servers that provide tools for LLM interactions.
+         */
+        ExternalTool: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the external tool.
+             */
+            name: string;
+            /** @description The type of external tool. Remote tools are hosted on a remote server */
+            type: components["schemas"]["ToolType"];
+            /**
+             * Description
+             * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
+             */
+            description?: string | null;
+            /**
+             * Properties
+             * @description Configuration properties specific to the tool type.
+             * @default {}
+             */
+            properties: Record<string, never>;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** ExternalToolCreationRequest */
+        ExternalToolCreationRequest: {
+            /** Name */
+            name: string;
+            /** Server Url */
+            server_url: string;
+            /**
+             * Headers
+             * @default {}
+             */
+            headers: Record<string, never>;
+            /** Description */
+            description?: string | null;
+        };
+        /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
          */
@@ -2119,7 +2195,8 @@ export interface components {
             /** Name */
             name: string;
             /** Id */
-            id: string;
+            id: string | null;
+            type: components["schemas"]["ToolType"];
             /** Description */
             description: string | null;
         };
@@ -2926,6 +3003,12 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /**
+         * ToolType
+         * @description Enumeration of supported external tool types.
+         * @enum {string}
+         */
+        ToolType: "remote_mcp";
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
             /** Name */
@@ -5424,6 +5507,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KilnToolDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalToolCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalTool"];
                 };
             };
             /** @description Validation Error */

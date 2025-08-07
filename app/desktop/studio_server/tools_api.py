@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 class KilnToolDescription(BaseModel):
     name: str
     id: ID_TYPE
+    type: ToolType
     description: str | None
 
 
@@ -31,6 +32,7 @@ def connect_tools_api(app: FastAPI):
             KilnToolDescription(
                 name=tool.name,
                 id=tool.id,
+                type=tool.type,
                 description=tool.description,
             )
             for tool in project.external_tools()
