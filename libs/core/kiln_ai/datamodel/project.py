@@ -6,6 +6,7 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 
 
 class Project(
@@ -17,6 +18,7 @@ class Project(
         "chunker_configs": ChunkerConfig,
         "embedding_configs": EmbeddingConfig,
         "rag_configs": RagConfig,
+        "vector_store_configs": VectorStoreConfig,
     },
 ):
     """
@@ -47,6 +49,9 @@ class Project(
 
     def embedding_configs(self, readonly: bool = False) -> list[EmbeddingConfig]:
         return super().embedding_configs(readonly=readonly)  # type: ignore
+
+    def vector_store_configs(self, readonly: bool = False) -> list[VectorStoreConfig]:
+        return super().vector_store_configs(readonly=readonly)  # type: ignore
 
     def rag_configs(self, readonly: bool = False) -> list[RagConfig]:
         return super().rag_configs(readonly=readonly)  # type: ignore

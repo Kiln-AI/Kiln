@@ -420,6 +420,18 @@ wheels = [
 ]
 
 [[package]]
+name = "deprecation"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/d3/8ae2869247df154b64c1884d7346d412fed0c49df84db635aab2d1c40e62/deprecation-2.1.0.tar.gz", hash = "sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff", size = 173788 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/c3/253a89ee03fc9b9682f1541728eb66db7db22148cd94f89ab22528cd1e1b/deprecation-2.1.0-py2.py3-none-any.whl", hash = "sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a", size = 11178 },
+]
+
+[[package]]
 name = "dirtyjson"
 version = "1.0.8"
 source = { registry = "https://pypi.org/simple" }
@@ -1136,6 +1148,7 @@ dependencies = [
     { name = "google-cloud-aiplatform" },
     { name = "google-genai" },
     { name = "jsonschema" },
+    { name = "lancedb" },
     { name = "litellm" },
     { name = "openai" },
     { name = "pdoc" },
@@ -1165,6 +1178,7 @@ requires-dist = [
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
     { name = "google-genai", specifier = ">=1.21.1" },
     { name = "jsonschema", specifier = ">=4.23.0" },
+    { name = "lancedb", specifier = ">=0.24.2" },
     { name = "litellm", specifier = ">=1.72.6" },
     { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
@@ -1215,8 +1229,8 @@ requires-dist = [
     { name = "certifi", specifier = ">=2024.8.30" },
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
-    { name = "llama-index-core", specifier = ">=0.12.42" },
     { name = "kiln-studio-desktop", editable = "app/desktop" },
+    { name = "llama-index-core", specifier = ">=0.12.42" },
 ]
 
 [package.metadata.requires-dev]
@@ -1294,6 +1308,29 @@ requires-dist = [
     { name = "pyinstaller", specifier = "==6.11.1" },
     { name = "pystray", specifier = ">=0.19.5" },
     { name = "scipy", specifier = ">=1.15.2" },
+]
+
+[[package]]
+name = "lancedb"
+version = "0.24.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "deprecation" },
+    { name = "numpy" },
+    { name = "overrides" },
+    { name = "packaging" },
+    { name = "pyarrow", marker = "sys_platform == 'never'" },
+    { name = "pydantic" },
+    { name = "tqdm" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/9b/2613660f837b1e2490b786bb1c96e522f1a493292fc04fe58c92a0d6a895/lancedb-0.24.2-cp39-abi3-macosx_10_15_x86_64.whl", hash = "sha256:925a71f8f865ebd8d3792bbe1d5743bc43ae28263ef33ec4781bee4cc6f18b6a", size = 33273298 },
+    { url = "https://files.pythonhosted.org/packages/7c/06/98fc4a166721cea4d9dd9c55ed7bcf59772b701c60267cec9d7692f8414e/lancedb-0.24.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:5894c09b03b833e8480c8921178ebcf917599e05000d4a74990e5f1b9ddd1b6a", size = 30711981 },
+    { url = "https://files.pythonhosted.org/packages/20/42/420a9bd2349c1c1607f52b353acf9b0af48b2860e15ad333d86c7b68054f/lancedb-0.24.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:482f8e0f09ac68f50a511baea420501908adbf749d09bf04af0b27a018260831", size = 31595926 },
+    { url = "https://files.pythonhosted.org/packages/d9/6c/f315ce4161c38085cce929c1c4e9900ada617ab9c8a95166126cdd67184b/lancedb-0.24.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d4a33fb4327880eecc71b9bdc5b4bd722b8fa0f0cbe1cf454b3b0f8521147cd8", size = 34792190 },
+    { url = "https://files.pythonhosted.org/packages/06/e8/5cb49026bd47947ab8fa78beff241a48bbf7d70d858c825f30f56bfd6803/lancedb-0.24.2-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:cf8473303853fc798f023495d4a4ace3ba95ce816b9da85aad691ec189e7be45", size = 31598038 },
+    { url = "https://files.pythonhosted.org/packages/42/61/9e19fffa106c32b7cb29600ee5ad8530b536dc6b836b695d807795605fae/lancedb-0.24.2-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:693ce4dfcdbf9d1f0d6b79bac12e089091e2576cd5f1e2a5ba08cdbf635179f2", size = 34829210 },
+    { url = "https://files.pythonhosted.org/packages/2f/51/242c53238f1a345203ed85910c0b5777aeb0437f3d66f230ba97ede74fe3/lancedb-0.24.2-cp39-abi3-win_amd64.whl", hash = "sha256:46c211f1a0a3cfc385e9031d8ebe30a98d7dfb60751aed0f9626a4f61795ea57", size = 36791580 },
 ]
 
 [[package]]
@@ -1658,6 +1695,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/99/b1/318f5d4c482f19c5fcbcde190801bfaaaec23413cda0b88a29f6897448ff/openai-1.75.0.tar.gz", hash = "sha256:fb3ea907efbdb1bcfd0c44507ad9c961afd7dce3147292b54505ecfd17be8fd1", size = 429492 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/80/9a/f34f163294345f123673ed03e77c33dee2534f3ac1f9d18120384457304d/openai-1.75.0-py3-none-any.whl", hash = "sha256:fe6f932d2ded3b429ff67cc9ad118c71327db32eb9d32dd723de3acfca337125", size = 646972 },
+]
+
+[[package]]
+name = "overrides"
+version = "7.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/86/b585f53236dec60aba864e050778b25045f857e17f6e5ea0ae95fe80edd2/overrides-7.7.0.tar.gz", hash = "sha256:55158fa3d93b98cc75299b1e67078ad9003ca27945c76162c1c0766d6f91820a", size = 22812 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/ab/fc8290c6a4c722e5514d80f62b2dc4c4df1a68a41d1364e625c35990fcf3/overrides-7.7.0-py3-none-any.whl", hash = "sha256:c7ed9d062f78b8e4c1a7b70bd8796b35ead4d9f510227ef9c5dc7626c60d7e49", size = 17832 },
 ]
 
 [[package]]
