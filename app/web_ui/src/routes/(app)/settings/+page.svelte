@@ -59,6 +59,18 @@
       ],
     },
     {
+      category: "Tools",
+      items: [
+        {
+          name: "Manage Tools",
+          description:
+            "Connect your projects to tools like remote MCP servers, Kiln built-in tools, and more",
+          href: "/settings/tools",
+          button_text: "Manage Tools",
+        },
+      ],
+    },
+    {
       category: "Projects",
       items: [
         {
@@ -71,7 +83,7 @@
       ],
     },
     {
-      category: "Tools & Support",
+      category: "Support",
       items: [
         {
           name: "Application Logs",
