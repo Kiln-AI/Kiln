@@ -1,5 +1,3 @@
-from typing import Any
-
 import pytest
 
 from kiln_ai.tools.base_tool import KilnTool, KilnToolInterface
@@ -17,7 +15,7 @@ class TestKilnToolInterface:
 class ConcreteTestTool(KilnTool):
     """Concrete implementation of KilnTool for testing."""
 
-    def run(self, **kwargs) -> Any:
+    def run(self, **kwargs) -> str:
         return f"test_result: {kwargs}"
 
 
