@@ -25,6 +25,7 @@ def sample_rag_config_data():
         "extractor_config_id": "extractor123",
         "chunker_config_id": "chunker456",
         "embedding_config_id": "embedding789",
+        "vector_store_config_id": "vector_store123",
     }
 
 
@@ -37,6 +38,7 @@ def test_rag_config_valid_creation(sample_rag_config_data):
     assert rag_config.extractor_config_id == "extractor123"
     assert rag_config.chunker_config_id == "chunker456"
     assert rag_config.embedding_config_id == "embedding789"
+    assert rag_config.vector_store_config_id == "vector_store123"
 
 
 def test_rag_config_minimal_creation():
@@ -46,6 +48,7 @@ def test_rag_config_minimal_creation():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     assert rag_config.name == "Minimal RAG Config"
@@ -53,6 +56,7 @@ def test_rag_config_minimal_creation():
     assert rag_config.extractor_config_id == "extractor123"
     assert rag_config.chunker_config_id == "chunker456"
     assert rag_config.embedding_config_id == "embedding789"
+    assert rag_config.vector_store_config_id == "vector_store123"
 
 
 def test_rag_config_missing_required_fields():
@@ -63,6 +67,7 @@ def test_rag_config_missing_required_fields():
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
     errors = exc_info.value.errors()
     assert any(error["loc"][0] == "name" for error in errors)
@@ -73,6 +78,7 @@ def test_rag_config_missing_required_fields():
             name="Test Config",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
     errors = exc_info.value.errors()
     assert any(error["loc"][0] == "extractor_config_id" for error in errors)
@@ -83,6 +89,7 @@ def test_rag_config_missing_required_fields():
             name="Test Config",
             extractor_config_id="extractor123",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
     errors = exc_info.value.errors()
     assert any(error["loc"][0] == "chunker_config_id" for error in errors)
@@ -93,9 +100,21 @@ def test_rag_config_missing_required_fields():
             name="Test Config",
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
+            vector_store_config_id="vector_store123",
         )
     errors = exc_info.value.errors()
     assert any(error["loc"][0] == "embedding_config_id" for error in errors)
+
+    # Test missing vector_store_config_id
+    with pytest.raises(ValidationError) as exc_info:
+        RagConfig(
+            name="Test Config",
+            extractor_config_id="extractor123",
+            chunker_config_id="chunker456",
+            embedding_config_id="embedding789",
+        )
+    errors = exc_info.value.errors()
+    assert any(error["loc"][0] == "vector_store_config_id" for error in errors)
 
 
 def test_rag_config_name_validation():
@@ -106,6 +125,7 @@ def test_rag_config_name_validation():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     RagConfig(
@@ -113,6 +133,7 @@ def test_rag_config_name_validation():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     RagConfig(
@@ -120,6 +141,7 @@ def test_rag_config_name_validation():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     RagConfig(
@@ -127,6 +149,7 @@ def test_rag_config_name_validation():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     # Invalid names
@@ -136,6 +159,7 @@ def test_rag_config_name_validation():
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
 
     with pytest.raises(ValidationError):
@@ -144,6 +168,7 @@ def test_rag_config_name_validation():
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
 
     with pytest.raises(ValidationError):
@@ -152,6 +177,7 @@ def test_rag_config_name_validation():
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
 
     with pytest.raises(ValidationError):
@@ -160,6 +186,7 @@ def test_rag_config_name_validation():
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
         )
 
 
@@ -171,6 +198,7 @@ def test_rag_config_description_optional():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     assert rag_config.description is None
@@ -184,6 +212,7 @@ def test_rag_config_description_string():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     assert rag_config.description == "A detailed description of the RAG config"
@@ -196,6 +225,7 @@ def test_rag_config_id_generation():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     assert rag_config.id is not None
@@ -210,6 +240,7 @@ def test_rag_config_inheritance():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     # Test that it has the expected base class attributes
@@ -228,6 +259,7 @@ def test_rag_config_model_type():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     assert rag_config.model_type == "rag_config"
@@ -241,11 +273,13 @@ def test_rag_config_config_id_types():
         extractor_config_id="123",
         chunker_config_id="456",
         embedding_config_id="789",
+        vector_store_config_id="999",
     )
 
     assert rag_config.extractor_config_id == "123"
     assert rag_config.chunker_config_id == "456"
     assert rag_config.embedding_config_id == "789"
+    assert rag_config.vector_store_config_id == "999"
 
     # Test with UUID-like strings
     rag_config = RagConfig(
@@ -253,11 +287,13 @@ def test_rag_config_config_id_types():
         extractor_config_id="extractor-123-456-789",
         chunker_config_id="chunker-abc-def-ghi",
         embedding_config_id="embedding-xyz-uvw-rst",
+        vector_store_config_id="vector-store-abc-def-ghi",
     )
 
     assert rag_config.extractor_config_id == "extractor-123-456-789"
     assert rag_config.chunker_config_id == "chunker-abc-def-ghi"
     assert rag_config.embedding_config_id == "embedding-xyz-uvw-rst"
+    assert rag_config.vector_store_config_id == "vector-store-abc-def-ghi"
 
 
 def test_rag_config_serialization():
@@ -268,6 +304,7 @@ def test_rag_config_serialization():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     # Serialize to dict
@@ -285,6 +322,10 @@ def test_rag_config_serialization():
     assert (
         deserialized_config.embedding_config_id == original_config.embedding_config_id
     )
+    assert (
+        deserialized_config.vector_store_config_id
+        == original_config.vector_store_config_id
+    )
 
 
 def test_rag_config_default_values():
@@ -294,6 +335,7 @@ def test_rag_config_default_values():
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     # Test default values
@@ -313,6 +355,7 @@ def test_project_has_rag_configs(mock_project):
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
     )
 
     rag_config_2 = RagConfig(
@@ -321,6 +364,7 @@ def test_project_has_rag_configs(mock_project):
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
         embedding_config_id="embedding789",
+        vector_store_config_id="vector_store456",
     )
 
     # save the rag configs

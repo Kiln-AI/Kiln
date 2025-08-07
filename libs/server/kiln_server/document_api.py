@@ -40,6 +40,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.utils import asyncio_mutex
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -1038,6 +1039,24 @@ def connect_document_api(app: FastAPI):
                 detail=f"Embedding config {request.embedding_config_id} not found",
             )
 
+        # TODO: factor this out as a built-in vector store config
+        lancedb_vector_store_config_id = f"kiln::{project.id}::lancedb::local"
+        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+            lancedb_vector_store_config_id, project.path
+        )
+        if not vector_store_config:
+            vector_store_config = VectorStoreConfig(
+                id="kiln:vector_store:lancedb",
+                parent=project,
+                name=string_to_valid_name(request.name or generate_memorable_name()),
+                store_type=VectorStoreType.LANCE_DB,
+                properties={
+                    "path": "~/.kiln_ai/kiln_data",
+                    "table_schema_version": "1",
+                    "vector_dimensions": 1536,
+                },
+            )
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1045,6 +1064,7 @@ def connect_document_api(app: FastAPI):
             extractor_config_id=extractor_config.id,
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
+            vector_store_config_id=vector_store_config.id,
         )
         rag_config.save_to_file()
 

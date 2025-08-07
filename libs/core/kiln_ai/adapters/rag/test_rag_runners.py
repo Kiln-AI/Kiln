@@ -130,6 +130,7 @@ def real_rag_config(mock_project):
         extractor_config_id="extractor-123",
         chunker_config_id="chunker-123",
         embedding_config_id="embedding-123",
+        vector_store_config_id="vector-store-123",
         parent=mock_project,
     )
 

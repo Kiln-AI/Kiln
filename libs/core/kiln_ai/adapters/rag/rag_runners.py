@@ -26,6 +26,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
 )
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
 from kiln_ai.utils.lock import asyncio_mutex
 from pydantic import BaseModel, ConfigDict, Field
@@ -93,6 +94,7 @@ class RagWorkflowStepNames(str, Enum):
     EXTRACTING = "extracting"
     CHUNKING = "chunking"
     EMBEDDING = "embedding"
+    INDEXING = "indexing"
 
 
 async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> bool:
@@ -426,6 +428,28 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                                 )
                             ],
                         )
+
+
+class RagIndexingStepRunner(AbstractRagStepRunner):
+    def __init__(
+        self,
+        project: Project,
+        extractor_config: ExtractorConfig,
+        chunker_config: ChunkerConfig,
+        embedding_config: EmbeddingConfig,
+        vector_store_config: VectorStoreConfig,
+        concurrency: int = 10,
+    ):
+        pass
+
+    def stage(self) -> RagWorkflowStepNames:
+        return RagWorkflowStepNames.INDEXING
+
+    async def collect_jobs(self) -> list[EmbeddingJob]:
+        raise NotImplementedError("Not implemented")
+
+    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
+        raise NotImplementedError("Not implemented")
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):
