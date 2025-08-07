@@ -65,7 +65,7 @@
           name: "Manage Tools",
           description:
             "Connect your projects to tools like remote MCP servers, Kiln built-in tools, and more",
-          href: "/settings/tools",
+          href: "/settings/manage_tools",
           button_text: "Manage Tools",
         },
       ],

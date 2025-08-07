@@ -55,7 +55,7 @@
     action_buttons={[
       {
         label: "Add Tool",
-        href: "/settings/tools/add_tool",
+        href: "/settings/manage_tools/add_tool",
         primary: true,
       },
     ]}
