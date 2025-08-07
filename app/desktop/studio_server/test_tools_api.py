@@ -44,7 +44,7 @@ def test_create_tool_success(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
 
@@ -73,7 +73,7 @@ def test_create_tool_no_headers(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
 
@@ -94,7 +94,7 @@ def test_create_tool_empty_headers(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
 
@@ -117,7 +117,7 @@ def test_create_tool_missing_server_url(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
 
@@ -138,7 +138,7 @@ def test_create_tool_missing_name(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
 
@@ -159,7 +159,7 @@ def test_create_tool_no_description(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
 
@@ -196,7 +196,7 @@ def test_get_available_tools_with_tool(client, test_project):
         mock_project_from_id.return_value = test_project
 
         create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_external_tool",
+            f"/api/projects/{test_project.id}/connect_remote_MCP",
             json=tool_data,
         )
         assert create_response.status_code == 200

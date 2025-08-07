@@ -36,8 +36,8 @@ def connect_tools_api(app: FastAPI):
             for tool in project.external_tools()
         ]
 
-    @app.post("/api/projects/{project_id}/connect_external_tool")
-    async def connect_external_tool(
+    @app.post("/api/projects/{project_id}/connect_remote_MCP")
+    async def connect_remote_MCP(
         project_id: str, tool_data: ExternalToolCreationRequest
     ) -> ExternalTool:
         project = project_from_id(project_id)
