@@ -53,6 +53,10 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_5 = "gpt_5"
+    gpt_5_chat = "gpt_5_chat"
+    gpt_5_mini = "gpt_5_mini"
+    gpt_5_nano = "gpt_5_nano"
     gpt_4o_mini = "gpt_4o_mini"
     gpt_4o = "gpt_4o"
     gpt_4_1 = "gpt_4_1"
@@ -229,6 +233,63 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 5
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5,
+        friendly_name="GPT-5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # GPT 5 Mini
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_mini,
+        friendly_name="GPT-5 Mini",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+        ],
+    ),
+    # GPT 5 Nano
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_nano,
+        friendly_name="GPT-5 Nano",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # GPT 5 Chat
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_chat,
+        friendly_name="GPT-5 Chat",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5-chat-latest",
+                # Oddly no json_schema support for this model.
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+        ],
+    ),
     # GPT 4.1
     KilnModel(
         family=ModelFamily.gpt,
@@ -241,7 +302,6 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4.1-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
@@ -249,13 +309,11 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-4.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1",
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
         ],
