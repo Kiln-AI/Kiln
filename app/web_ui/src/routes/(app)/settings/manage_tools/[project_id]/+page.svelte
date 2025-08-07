@@ -4,6 +4,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
   import type { KilnToolDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id
@@ -47,6 +48,12 @@
       loading = false
     }
   }
+
+  function navigateToTool(tool: KilnToolDescription) {
+    if (tool.id) {
+      goto(`/settings/manage_tools/${project_id}/tools/${tool.id}`)
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -88,7 +95,13 @@
           </thead>
           <tbody>
             {#each tools as tool}
-              <tr class="hover:bg-base-200 cursor-pointer">
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() => navigateToTool(tool)}
+                on:keydown={(e) => e.key === "Enter" && navigateToTool(tool)}
+                role="button"
+                tabindex="0"
+              >
                 <td class="font-medium">{tool.name}</td>
                 <td class="text-sm text-gray-500">{tool.id}</td>
                 <td class="text-sm">{tool.type}</td>
