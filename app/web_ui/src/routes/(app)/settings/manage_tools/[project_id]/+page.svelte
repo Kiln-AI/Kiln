@@ -6,6 +6,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import type { KilnToolDescription } from "$lib/types"
+  import { toolTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
 
@@ -100,7 +101,7 @@
                 tabindex="0"
               >
                 <td class="font-medium">{tool.name}</td>
-                <td class="text-sm">{tool.type}</td>
+                <td class="text-sm">{toolTypeToString(tool.type)}</td>
                 <td class="text-sm">
                   {tool.description || "No description available"}
                 </td>
