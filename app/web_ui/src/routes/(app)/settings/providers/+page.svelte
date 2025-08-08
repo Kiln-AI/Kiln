@@ -10,7 +10,7 @@
   sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
   action_buttons={[
     {
-      label: "Add Models",
+      label: "Custom Models",
       href: "/settings/providers/add_models",
       primary: true,
     },

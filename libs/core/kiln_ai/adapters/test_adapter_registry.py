@@ -16,6 +16,7 @@ def mock_config():
     with patch("kiln_ai.adapters.adapter_registry.Config") as mock:
         mock.shared.return_value.open_ai_api_key = "test-openai-key"
         mock.shared.return_value.open_router_api_key = "test-openrouter-key"
+        mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         yield mock
 
 
@@ -85,6 +86,33 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
     }
 
 
+def test_siliconflow_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            model_provider_name=ModelProviderName.siliconflow_cn,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert (
+        adapter.config.run_config_properties.model_name
+        == "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+    )
+    assert adapter.config.additional_body_options == {"api_key": "test-siliconflow-key"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.siliconflow_cn
+    )
+    assert adapter.config.default_headers == {
+        "HTTP-Referer": "https://getkiln.ai/siliconflow",
+        "X-Title": "KilnAI",
+    }
+
+
 @pytest.mark.parametrize(
     "provider",
     [
@@ -109,7 +137,7 @@ def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
     assert adapter.run_config.model_name == "test-model"
 
 
-# TODO should run for all cases
+# We should run for all cases
 def test_custom_prompt_builder(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
@@ -124,7 +152,7 @@ def test_custom_prompt_builder(mock_config, basic_task):
     assert adapter.run_config.prompt_id == "simple_chain_of_thought_prompt_builder"
 
 
-# TODO should run for all cases
+# We should run for all cases
 def test_tags_passed_through(mock_config, basic_task):
     tags = ["test-tag-1", "test-tag-2"]
     adapter = adapter_for_task(

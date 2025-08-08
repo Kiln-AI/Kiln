@@ -6,7 +6,7 @@ from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_f
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
 
-# TODO add evaluator rating
+# We should add evaluator rating
 class RepairTaskInput(BaseModel):
     original_prompt: str
     original_input: str

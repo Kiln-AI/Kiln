@@ -32,7 +32,8 @@ jobs:
         run: mkdir -p static
 
       - name: Generate Config
-        run: uv run python -m kiln_ai.adapters.remote_config static/kiln_config.json
+        run: |
+          uv run python -m kiln_ai.adapters.remote_config static/kiln_config_v2.json
 
       - name: Setup Pages
         id: pages

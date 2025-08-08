@@ -235,7 +235,7 @@ class LiteLlmAdapter(BaseAdapter):
         }
 
     def build_extra_body(self, provider: KilnModelProvider) -> dict[str, Any]:
-        # TODO P1: Don't love having this logic here. But it's a usability improvement
+        # Don't love having this logic here. But it's worth the usability improvement
         # so better to keep it than exclude it. Should figure out how I want to isolate
         # this sort of logic so it's config driven and can be overridden
 
@@ -249,6 +249,11 @@ class LiteLlmAdapter(BaseAdapter):
             # https://openrouter.ai/docs/use-cases/reasoning-tokens
             extra_body["reasoning"] = {
                 "exclude": False,
+            }
+
+        if provider.gemini_reasoning_enabled:
+            extra_body["reasoning"] = {
+                "enabled": True,
             }
 
         if provider.name == ModelProviderName.openrouter:
@@ -279,6 +284,10 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.openrouter_skip_required_parameters:
             # Oddball case, R1 14/8/1.5B fail with this param, even though they support thinking params.
             provider_options["require_parameters"] = False
+
+        # Siliconflow uses a bool flag for thinking, for some models
+        if provider.siliconflow_enable_thinking is not None:
+            extra_body["enable_thinking"] = provider.siliconflow_enable_thinking
 
         if len(provider_options) > 0:
             extra_body["provider"] = provider_options
@@ -325,6 +334,10 @@ class LiteLlmAdapter(BaseAdapter):
                 litellm_provider_name = "vertex_ai"
             case ModelProviderName.together_ai:
                 litellm_provider_name = "together_ai"
+            case ModelProviderName.cerebras:
+                litellm_provider_name = "cerebras"
+            case ModelProviderName.siliconflow_cn:
+                is_custom = True
             case ModelProviderName.openai_compatible:
                 is_custom = True
             case ModelProviderName.kiln_custom_registry:

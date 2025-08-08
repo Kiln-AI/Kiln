@@ -48,5 +48,13 @@ module.exports = {
         caughtErrorsIgnorePattern: "^_$",
       },
     ],
+
+    // Don't allow console.log (but allow console.error/warn/info)
+    "no-console": [
+      "error",
+      {
+        allow: ["warn", "error", "info"],
+      },
+    ],
   },
 }

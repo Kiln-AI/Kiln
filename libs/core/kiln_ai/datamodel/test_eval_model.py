@@ -517,13 +517,13 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
     valid_eval_config.parent = eval
 
     # Correct
-    run = EvalRun(
+    EvalRun(
         parent=valid_eval_config,
         **{**valid_eval_run_data, "scores": {"accuracy": 4.5, "critical": 1.0}},
     )
 
     # Correct but wrong order still okay
-    run = EvalRun(
+    EvalRun(
         parent=valid_eval_config,
         **{**valid_eval_run_data, "scores": {"critical": 1.0, "accuracy": 4.5}},
     )
@@ -533,7 +533,7 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         ValueError,
         match="The scores produced by the evaluator must match the scores expected by the eval",
     ):
-        run = EvalRun(
+        EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 4.5}},
         )
@@ -543,7 +543,7 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         ValueError,
         match="The scores produced by the evaluator must match the scores expected by the eval",
     ):
-        run = EvalRun(
+        EvalRun(
             parent=valid_eval_config,
             **{
                 **valid_eval_run_data,
@@ -556,7 +556,7 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         ValueError,
         match="The scores produced by the evaluator must match the scores expected by the eval",
     ):
-        run = EvalRun(
+        EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 4.5, "wrong": 1.0}},
         )
@@ -566,7 +566,7 @@ def test_eval_run_custom_scores_not_allowed(valid_eval_config, valid_eval_run_da
     with pytest.raises(
         ValueError, match="Custom scores are not supported in evaluators"
     ):
-        eval = Eval(
+        Eval(
             name="Test Eval",
             eval_set_filter_id="tag::tag1",
             eval_configs_filter_id="tag::tag2",

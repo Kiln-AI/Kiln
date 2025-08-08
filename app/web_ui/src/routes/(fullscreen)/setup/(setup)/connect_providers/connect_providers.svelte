@@ -61,8 +61,7 @@
     {
       name: "Groq",
       id: "groq",
-      description:
-        "The fastest model host. Providing Llama, Gemma and Mistral models.",
+      description: "Exceptionally fast inference on custom hardware.",
       featured: false,
       api_key_steps: [
         "Go to https://console.groq.com/keys",
@@ -182,6 +181,32 @@
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
+      name: "SiliconFlow (硅基流动)",
+      id: "siliconflow_cn",
+      description: "AI provider for users in China.",
+      api_key_warning:
+        "SiliconFlow.cn is a Chinese provider. It is not available to users outside of China.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.siliconflow.cn/account/ak",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Cerebras",
+      id: "cerebras",
+      description: "Exceptionally fast inference on custom hardware.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.cerebras.ai/platform",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       description: "Track and visualize your experiments.",
@@ -294,6 +319,18 @@
       error: null,
       custom_description: null,
     },
+    siliconflow_cn: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    cerebras: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
   }
 
   export let has_connected_providers = false
@@ -301,6 +338,7 @@
     (provider) => provider.connected,
   )
   export let intermediate_step = false
+  export let centered = false
   let api_key_provider: Provider | null = null
   $: {
     intermediate_step = api_key_provider != null
@@ -564,8 +602,14 @@
       if (data["together_api_key"]) {
         status.together_ai.connected = true
       }
+      if (data["siliconflow_cn_api_key"]) {
+        status.siliconflow_cn.connected = true
+      }
       if (data["wandb_api_key"]) {
         status.wandb.connected = true
+      }
+      if (data["cerebras_api_key"]) {
+        status.cerebras.connected = true
       }
       if (
         data["openai_compatible_providers"] &&
@@ -690,7 +734,7 @@
   }
 </script>
 
-<div class="w-full">
+<div class="w-full {centered && 'flex flex-col items-center'}">
   {#if api_key_provider}
     <div class="grow h-full max-w-[400px] flex flex-col place-content-center">
       <div class="grow"></div>

@@ -102,7 +102,7 @@ async def test_model_provider_invalid_provider_model_name(base_task):
     """Test error when model or provider name is missing"""
     # Test with missing model name
     with pytest.raises(ValueError, match="Input should be"):
-        adapter = MockAdapter(
+        MockAdapter(
             run_config=RunConfig(
                 task=base_task,
                 model_name="test_model",

@@ -5,18 +5,13 @@ from typing import Dict, List
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
 )
-from kiln_ai.adapters.model_adapters.litellm_config import (
-    LiteLlmConfig,
-)
-from kiln_ai.adapters.ollama_tools import (
-    get_ollama_connection,
-)
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.registry import project_from_id
@@ -75,30 +70,24 @@ def builtin_model_from(
     name: str, provider_name: str | None = None
 ) -> KilnModelProvider | None:
     """
-    Gets a model and provider from the built-in list of models.
+    Gets a model provider from the built-in list of models.
 
     Args:
         name: The name of the model to get
         provider_name: Optional specific provider to use (defaults to first available)
 
     Returns:
-        A tuple of (provider, model)
-
-    Raises:
-        ValueError: If the model or provider is not found, or if the provider is misconfigured
+        A KilnModelProvider, or None if not found
     """
-    if name not in ModelName.__members__:
+    # Select the model from built_in_models using the name
+    model = next(filter(lambda m: m.name == name, built_in_models), None)
+    if model is None:
         return None
 
-    # Select the model from built_in_models using the name
-    model = next(filter(lambda m: m.name == name, built_in_models))
-    if model is None:
-        raise ValueError(f"Model {name} not found")
-
-    # If a provider is provided, select the provider from the model's provider_config
+    # If a provider is provided, select the appropriate provider. Otherwise, use the first available.
     provider: KilnModelProvider | None = None
     if model.providers is None or len(model.providers) == 0:
-        raise ValueError(f"Model {name} has no providers")
+        return None
     elif provider_name is None:
         provider = model.providers[0]
     else:
@@ -384,6 +373,10 @@ def provider_name_from_id(id: str) -> str:
                 return "Google Vertex AI"
             case ModelProviderName.together_ai:
                 return "Together AI"
+            case ModelProviderName.siliconflow_cn:
+                return "SiliconFlow"
+            case ModelProviderName.cerebras:
+                return "Cerebras"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -441,5 +434,13 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.together_ai: ModelProviderWarning(
         required_config_keys=["together_api_key"],
         message="Attempted to use Together without an API key set. \nGet your API key from https://together.ai/settings/keys",
+    ),
+    ModelProviderName.siliconflow_cn: ModelProviderWarning(
+        required_config_keys=["siliconflow_cn_api_key"],
+        message="Attempted to use SiliconFlow without an API key set. \nGet your API key from https://cloud.siliconflow.cn/account/ak",
+    ),
+    ModelProviderName.cerebras: ModelProviderWarning(
+        required_config_keys=["cerebras_api_key"],
+        message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
     ),
 }
