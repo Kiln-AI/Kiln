@@ -203,6 +203,17 @@ def adapter_for_task(
                     },
                 ),
             )
+        case ModelProviderName.cerebras:
+            return LiteLlmAdapter(
+                kiln_task=kiln_task,
+                base_adapter_config=base_adapter_config,
+                config=LiteLlmConfig(
+                    run_config_properties=run_config_properties,
+                    additional_body_options={
+                        "api_key": Config.shared().cerebras_api_key,
+                    },
+                ),
+            )
         # These are virtual providers that should have mapped to an actual provider in core_provider
         case ModelProviderName.kiln_fine_tune:
             raise ValueError(

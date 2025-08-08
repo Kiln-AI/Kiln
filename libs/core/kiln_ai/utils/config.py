@@ -142,6 +142,11 @@ class Config:
                 default_lambda=lambda: [],
                 sensitive_keys=["api_key"],
             ),
+            "cerebras_api_key": ConfigProperty(
+                str,
+                env_var="CEREBRAS_API_KEY",
+                sensitive=True,
+            ),
         }
         self._lock = threading.Lock()
         self._settings = self.load_settings()

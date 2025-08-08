@@ -299,6 +299,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_together(parse_api_key(key_data))
             case ModelProviderName.siliconflow_cn:
                 return await connect_siliconflow(parse_api_key(key_data))
+            case ModelProviderName.cerebras:
+                return await connect_cerebras(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -356,6 +358,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().together_api_key = None
                 case ModelProviderName.siliconflow_cn:
                     Config.shared().siliconflow_cn_api_key = None
+                case ModelProviderName.cerebras:
+                    Config.shared().cerebras_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -829,6 +833,39 @@ async def connect_azure_openai(key: str, endpoint: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Azure OpenAI. Error: {str(e)}"},
+        )
+
+
+async def connect_cerebras(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get("https://api.cerebras.ai/v1/models", headers=headers)
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Cerebras. Invalid API key."},
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Cerebras. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().cerebras_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Cerebras"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Cerebras. Error: {str(e)}"},
         )
 
 

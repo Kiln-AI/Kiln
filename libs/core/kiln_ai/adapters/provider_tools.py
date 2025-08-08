@@ -375,6 +375,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Together AI"
             case ModelProviderName.siliconflow_cn:
                 return "SiliconFlow"
+            case ModelProviderName.cerebras:
+                return "Cerebras"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -436,5 +438,9 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.siliconflow_cn: ModelProviderWarning(
         required_config_keys=["siliconflow_cn_api_key"],
         message="Attempted to use SiliconFlow without an API key set. \nGet your API key from https://cloud.siliconflow.cn/account/ak",
+    ),
+    ModelProviderName.cerebras: ModelProviderWarning(
+        required_config_keys=["cerebras_api_key"],
+        message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
     ),
 }

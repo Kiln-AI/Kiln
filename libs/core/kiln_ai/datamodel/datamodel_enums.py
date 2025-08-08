@@ -98,3 +98,4 @@ class ModelProviderName(str, Enum):
     vertex = "vertex"
     together_ai = "together_ai"
     siliconflow_cn = "siliconflow_cn"
+    cerebras = "cerebras"

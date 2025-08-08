@@ -334,6 +334,8 @@ class LiteLlmAdapter(BaseAdapter):
                 litellm_provider_name = "vertex_ai"
             case ModelProviderName.together_ai:
                 litellm_provider_name = "together_ai"
+            case ModelProviderName.cerebras:
+                litellm_provider_name = "cerebras"
             case ModelProviderName.siliconflow_cn:
                 is_custom = True
             case ModelProviderName.openai_compatible:
