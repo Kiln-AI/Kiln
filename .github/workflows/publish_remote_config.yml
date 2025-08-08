@@ -31,16 +31,9 @@ jobs:
       - name: Make static dir
         run: mkdir -p static
 
-      # Two configs for backward compatibility:
-      # - kiln_config_v1.json: v0.19+ clients (graceful handling of model validation failures)
-      # - kiln_config.json: v0.18 clients (fails completely on any validation error from new providers/enums)
       - name: Generate Config
         run: |
-          uv run python -m kiln_ai.adapters.remote_config static/kiln_config_v1.json
-
-      - name: Generate Legacy Config for < v0.18
-        run: |
-          uv run python -m kiln_ai.adapters.remote_config_legacy static/kiln_config.json
+          uv run python -m kiln_ai.adapters.remote_config static/kiln_config_v2.json
 
       - name: Setup Pages
         id: pages

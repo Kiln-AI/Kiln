@@ -24,8 +24,9 @@ from app.desktop.studio_server.webhost import connect_webhost
 
 # Loads github pages hosted JSON config.
 # You can see public config build logs here: https://github.com/Kiln-AI/remote_config/actions/workflows/publish_remote_config.yml
-# URL is Cloudflare proxy to Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
-REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v1.json"
+# Content is hosted on Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
+# V2 explained: Kiln v0.18 was the first release with remote config, but had bugs. We no longer publish v1 URL (client falls back to local) and instead use v2.
+REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 
 @asynccontextmanager
