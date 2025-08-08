@@ -170,7 +170,6 @@ class ModelParserID(str, Enum):
 
     r1_thinking = "r1_thinking"
     optional_r1_thinking = "optional_r1_thinking"
-    reasoning_answer_tags = "reasoning_answer_tags"
 
 
 class ModelFormatterID(str, Enum):
@@ -3002,23 +3001,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
                 reasoning_optional_for_structured_output=True,
-                supports_data_gen=False,
-            ),
-        ],
-    ),
-    # Hunyuan A13B Instruct Non-Thinking
-    KilnModel(
-        family=ModelFamily.hunyuan,
-        name=ModelName.hunyuan_a13b_no_thinking,
-        friendly_name="Hunyuan A13B Non-Thinking",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="tencent/Hunyuan-A13B-Instruct",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=False,
-                siliconflow_enable_thinking=False,
-                parser=ModelParserID.reasoning_answer_tags,
                 supports_data_gen=False,
             ),
         ],
