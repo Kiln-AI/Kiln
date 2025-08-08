@@ -82,7 +82,7 @@
       ],
     },
     {
-      category: "Support",
+      category: "Help & Resources",
       items: [
         {
           name: "Application Logs",
