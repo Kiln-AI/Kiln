@@ -8,7 +8,7 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.adapters.remote_config import (
-    deserialize_config,
+    deserialize_config_at_path,
     dump_builtin_config,
     load_from_url,
     load_remote_models,
@@ -19,14 +19,15 @@ from kiln_ai.adapters.remote_config import (
 def test_round_trip(tmp_path):
     path = tmp_path / "models.json"
     serialize_config(built_in_models, path)
-    loaded = deserialize_config(path)
+    loaded = deserialize_config_at_path(path)
     assert [m.model_dump(mode="json") for m in loaded] == [
         m.model_dump(mode="json") for m in built_in_models
     ]
 
 
 def test_load_from_url():
-    sample = [built_in_models[0].model_dump(mode="json")]
+    sample_model = built_in_models[0]
+    sample = [sample_model.model_dump(mode="json")]
 
     class FakeResponse:
         def raise_for_status(self):
@@ -39,13 +40,49 @@ def test_load_from_url():
         "kiln_ai.adapters.remote_config.requests.get", return_value=FakeResponse()
     ):
         models = load_from_url("http://example.com/models.json")
-    assert [m.model_dump(mode="json") for m in models] == sample
+
+    assert len(models) == 1
+    assert sample_model == models[0]
+
+
+def test_load_from_url_calls_deserialize_config_data():
+    """Test that load_from_url calls deserialize_config_data with the model_list from the response."""
+    sample_model_data = [built_in_models[0].model_dump(mode="json")]
+    response_data = {"model_list": sample_model_data}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return response_data
+
+    with (
+        patch(
+            "kiln_ai.adapters.remote_config.requests.get", return_value=FakeResponse()
+        ) as mock_get,
+        patch(
+            "kiln_ai.adapters.remote_config.deserialize_config_data"
+        ) as mock_deserialize,
+    ):
+        mock_deserialize.return_value = [built_in_models[0]]
+
+        result = load_from_url("http://example.com/models.json")
+
+        # Verify requests.get was called with correct URL
+        mock_get.assert_called_once_with("http://example.com/models.json", timeout=10)
+
+        # Verify deserialize_config_data was called with the model_list data
+        mock_deserialize.assert_called_once_with(response_data)
+
+        # Verify the result is what deserialize_config_data returned
+        assert result == [built_in_models[0]]
 
 
 def test_dump_builtin_config(tmp_path):
     path = tmp_path / "out.json"
     dump_builtin_config(path)
-    loaded = deserialize_config(path)
+    loaded = deserialize_config_at_path(path)
     assert [m.model_dump(mode="json") for m in loaded] == [
         m.model_dump(mode="json") for m in built_in_models
     ]
@@ -95,7 +132,7 @@ def test_deserialize_config_with_extra_keys(tmp_path):
     path = tmp_path / "extra.json"
     path.write_text(json.dumps(data))
     # Should NOT raise, and extra key should be ignored
-    models = deserialize_config(path)
+    models = deserialize_config_at_path(path)
     assert hasattr(models[0], "family")
     assert not hasattr(models[0], "extra_key")
     assert hasattr(models[0], "providers")
@@ -177,7 +214,7 @@ def test_deserialize_config_with_invalid_models(tmp_path, caplog):
 
     # Enable logging to capture warnings
     with caplog.at_level(logging.WARNING):
-        models = deserialize_config(path)
+        models = deserialize_config_at_path(path)
 
     # Should have 4 valid models (original + 3 with provider issues but valid model structure)
     assert len(models) == 4
@@ -244,7 +281,7 @@ def test_deserialize_config_empty_provider_list(tmp_path):
     path = tmp_path / "empty_providers.json"
     path.write_text(json.dumps(data))
 
-    models = deserialize_config(path)
+    models = deserialize_config_at_path(path)
     assert len(models) == 1
     assert len(models[0].providers) == 0
 
@@ -259,7 +296,7 @@ def test_deserialize_config_missing_provider_field(tmp_path, caplog):
     path.write_text(json.dumps(data))
 
     with caplog.at_level(logging.WARNING):
-        models = deserialize_config(path)
+        models = deserialize_config_at_path(path)
 
     # Model should be kept with empty providers (deserialize_config handles missing providers gracefully)
     assert len(models) == 1
@@ -287,7 +324,7 @@ def test_deserialize_config_provider_with_extra_fields(tmp_path):
     path = tmp_path / "extra_provider_fields.json"
     path.write_text(json.dumps(data))
 
-    models = deserialize_config(path)
+    models = deserialize_config_at_path(path)
     assert len(models) == 1
     assert len(models[0].providers) == 3  # built_in_models[0] has 3 providers
     # Extra fields should be ignored, not present in the final object
@@ -305,7 +342,7 @@ def test_deserialize_config_model_with_extra_fields(tmp_path):
     path = tmp_path / "extra_model_fields.json"
     path.write_text(json.dumps(data))
 
-    models = deserialize_config(path)
+    models = deserialize_config_at_path(path)
     assert len(models) == 1
     assert models[0].name == built_in_models[0].name
     # Extra fields should be ignored, not present in the final object
@@ -348,7 +385,7 @@ def test_deserialize_config_mixed_valid_invalid_providers_single_model(
     path.write_text(json.dumps(data))
 
     with caplog.at_level(logging.WARNING):
-        models = deserialize_config(path)
+        models = deserialize_config_at_path(path)
 
     # Should have 1 model with 2 valid providers
     assert len(models) == 1
@@ -372,11 +409,11 @@ def test_deserialize_config_empty_json_structures(tmp_path):
     data = {"model_list": []}
     path = tmp_path / "empty_model_list.json"
     path.write_text(json.dumps(data))
-    models = deserialize_config(path)
+    models = deserialize_config_at_path(path)
     assert len(models) == 0
 
     # Test empty object with no model_list key
     path = tmp_path / "empty_object.json"
     path.write_text(json.dumps({}))
-    models = deserialize_config(path)
-    assert len(models) == 0
+    with pytest.raises(ValueError):
+        deserialize_config_at_path(path)

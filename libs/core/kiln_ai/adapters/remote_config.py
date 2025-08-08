@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 import requests
 from pydantic import ValidationError
@@ -19,9 +19,16 @@ def serialize_config(models: List[KilnModel], path: str | Path) -> None:
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True))
 
 
-def deserialize_config(path: str | Path) -> List[KilnModel]:
+def deserialize_config_at_path(path: str | Path) -> List[KilnModel]:
     raw = json.loads(Path(path).read_text())
-    model_data = raw.get("model_list", [])
+    return deserialize_config_data(raw)
+
+
+def deserialize_config_data(config_data: Any) -> List[KilnModel]:
+    if not isinstance(config_data, dict):
+        raise ValueError(f"Remote config expected dict, got {type(config_data)}")
+
+    model_data = config_data.get("model_list", None)
     if not isinstance(model_data, list):
         raise ValueError(
             f"Remote config expected list of models, got {type(model_data)}"
@@ -66,11 +73,7 @@ def load_from_url(url: str) -> List[KilnModel]:
     response = requests.get(url, timeout=10)
     response.raise_for_status()
     data = response.json()
-    if isinstance(data, list):
-        model_data = data
-    else:
-        model_data = data.get("model_list", [])
-    return [KilnModel.model_validate(item) for item in model_data]
+    return deserialize_config_data(data)
 
 
 def dump_builtin_config(path: str | Path) -> None:
