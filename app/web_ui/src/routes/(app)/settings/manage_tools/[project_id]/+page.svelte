@@ -7,8 +7,10 @@
   import { goto } from "$app/navigation"
   import type { KilnToolDescription } from "$lib/types"
   import { toolTypeToString } from "$lib/utils/formatters"
+  import EmptyTools from "./empty_tools.svelte"
 
   $: project_id = $page.params.project_id
+  $: is_empty = !tools || tools.length == 0
 
   let tools: KilnToolDescription[] | null = null
   let loading = true
@@ -61,12 +63,14 @@
   <AppPage
     title="Tools"
     subtitle="Connect your project to tools with MCP servers"
-    action_buttons={[
-      {
-        label: "Add Tool",
-        href: `/settings/manage_tools/${project_id}/add_tools`,
-      },
-    ]}
+    action_buttons={is_empty
+      ? []
+      : [
+          {
+            label: "Add Tool",
+            href: `/settings/manage_tools/${project_id}/add_tools`,
+          },
+        ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -110,14 +114,8 @@
           </tbody>
         </table>
       </div>
-    {:else}
-      <div class="font-light text-gray-500 text-sm">
-        No available tools found for this project.{" "}
-        <a href={`/settings/manage_tools/${project_id}/add_tools`} class="link">
-          Add one now
-        </a>
-        .
-      </div>
+    {:else if is_empty}
+      <EmptyTools {project_id} />
     {/if}
   </AppPage>
 </div>
