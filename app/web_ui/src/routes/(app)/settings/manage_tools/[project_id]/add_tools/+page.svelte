@@ -123,51 +123,49 @@
       />
 
       <!-- Headers section -->
-      <div class="form-control w-full">
-        <div class="label">
-          <span class="label-text">Headers</span>
-          <span class="label-text-alt text-xs opacity-70">Optional</span>
-        </div>
-        <div class="space-y-3">
-          <p class="text-sm text-gray-600 mb-3">
-            Add authentication headers or other required headers for the MCP
-            server
-          </p>
+      <FormElement
+        inputType="header_only"
+        label="Headers"
+        id="headers"
+        description="Add authentication headers or other required headers for the MCP server"
+        optional={true}
+        bind:value={headers}
+      />
 
-          {#each headers as header, index}
-            <div class="flex gap-2 items-center">
-              <input
-                type="text"
-                placeholder="Header name (e.g., Authorization)"
-                class="input input-bordered flex-1"
-                bind:value={header.key}
-              />
-              <input
-                type="text"
-                placeholder="Header value (e.g., Bearer token-here)"
-                class="input input-bordered flex-1"
-                bind:value={header.value}
-              />
-              <button
-                type="button"
-                class="btn btn-error btn-sm"
-                on:click={() => removeHeader(index)}
-                disabled={headers.length === 1}
-                aria-label="Remove header"
-              >
-                ✕
-              </button>
-            </div>
-          {/each}
+      <div class="space-y-3">
+        {#each headers as header, index}
+          <div class="flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder="Header name (e.g., Authorization)"
+              class="input input-bordered flex-1"
+              bind:value={header.key}
+            />
+            <input
+              type="text"
+              placeholder="Header value (e.g., Bearer token-here)"
+              class="input input-bordered flex-1"
+              bind:value={header.value}
+            />
+            <button
+              type="button"
+              class="btn btn-error btn-sm"
+              on:click={() => removeHeader(index)}
+              disabled={headers.length === 1}
+              aria-label="Remove header"
+            >
+              ✕
+            </button>
+          </div>
+        {/each}
 
-          <button
-            type="button"
-            class="btn btn-outline btn-sm"
-            on:click={addHeader}
-          >
-            + Add Header
-          </button>
-        </div>
+        <button
+          type="button"
+          class="btn btn-outline btn-sm"
+          on:click={addHeader}
+        >
+          + Add Header
+        </button>
       </div>
 
       <FormElement

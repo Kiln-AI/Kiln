@@ -64,7 +64,7 @@ def test_create_tool_no_headers(client, test_project):
         "name": "test_tool",
         "server_url": "https://example.com/api",
         "description": "A test tool",
-        # headers defaults to empty dict, but validation requires non-empty headers
+        # headers defaults to empty dict, which is allowed
     }
 
     with patch(
@@ -77,14 +77,17 @@ def test_create_tool_no_headers(client, test_project):
             json=tool_data,
         )
 
-        assert response.status_code == 422  # Validation error - headers required
+        assert response.status_code == 200  # Empty headers are allowed
+        result = response.json()
+        assert result["name"] == "test_tool"
+        assert result["properties"]["headers"] == {}
 
 
 def test_create_tool_empty_headers(client, test_project):
     tool_data = {
         "name": "test_tool",
         "server_url": "https://example.com/api",
-        "headers": {},  # Empty headers fail validation
+        "headers": {},  # Empty headers are allowed
         "description": "A test tool",
     }
 
@@ -98,9 +101,10 @@ def test_create_tool_empty_headers(client, test_project):
             json=tool_data,
         )
 
-        assert (
-            response.status_code == 422
-        )  # Validation error - headers must be non-empty
+        assert response.status_code == 200  # Empty headers are allowed
+        result = response.json()
+        assert result["name"] == "test_tool"
+        assert result["properties"]["headers"] == {}
 
 
 def test_create_tool_missing_server_url(client, test_project):
