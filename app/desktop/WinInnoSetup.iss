@@ -3,7 +3,7 @@
 
 #define MyAppPath "build\dist\Kiln"
 #define MyAppName "Kiln"
-#define MyAppVersion "0.19.0"
+#define MyAppVersion "0.19.1"
 #define MyAppPublisher "Chesterfield Laboratories Inc"
 #define MyAppURL "https://getkiln.ai"
 #define MyAppExeName "Kiln.exe"
