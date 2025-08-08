@@ -446,6 +446,6 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ),
     ModelProviderName.cerebras: ModelProviderWarning(
         required_config_keys=["cerebras_api_key"],
-        message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cerebras.ai/settings/keys",
+        message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
     ),
 }
