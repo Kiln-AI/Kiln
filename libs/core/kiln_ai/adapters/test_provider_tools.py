@@ -421,6 +421,17 @@ async def test_builtin_model_from_invalid_provider(mock_config):
 
 
 @pytest.mark.asyncio
+async def test_builtin_model_future_proof():
+    """Test handling of a model that doesn't exist yet but could be added over the air"""
+    with patch("kiln_ai.adapters.provider_tools.built_in_models") as mock_models:
+        mock_models.__iter__.return_value = []
+
+        # should not find it, but should not raise an error
+        result = builtin_model_from("gpt_99")
+        assert result is None
+
+
+@pytest.mark.asyncio
 async def test_builtin_model_from_model_no_providers():
     """Test handling of a model with no providers"""
     with patch("kiln_ai.adapters.provider_tools.built_in_models") as mock_models:
@@ -433,10 +444,8 @@ async def test_builtin_model_from_model_no_providers():
         )
         mock_models.__iter__.return_value = [mock_model]
 
-        with pytest.raises(ValueError) as exc_info:
-            await builtin_model_from(ModelName.phi_3_5)
-
-        assert str(exc_info.value) == f"Model {ModelName.phi_3_5} has no providers"
+        result = builtin_model_from(ModelName.phi_3_5)
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -461,7 +470,7 @@ def test_finetune_provider_model_success(mock_project, mock_task, mock_finetune)
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_finetune_provider_model_success_final_and_intermediate(
@@ -476,7 +485,7 @@ def test_finetune_provider_model_success_final_and_intermediate(
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_finetune_provider_model_success_r1_compatible(
@@ -590,7 +599,7 @@ def test_finetune_provider_model_structured_mode(
     assert provider.model_id == "fireworks-model-123"
     assert provider.structured_output_mode == expected_mode
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_openai_compatible_provider_config(mock_shared_config):

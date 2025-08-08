@@ -7,7 +7,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_FIELD,
+    FilenameString,
     KilnParentedModel,
     KilnParentModel,
 )
@@ -202,7 +202,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
     A eval might have many configs, example running the same eval with 2 different models. Comparing eval results is only valid within the scope of the same config.
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the eval config.")
     model_name: str = Field(
         description="The name of the model to use for this eval config. ",
     )
@@ -257,7 +257,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the eval.")
     description: str | None = Field(
         default=None, description="The description of the eval"
     )

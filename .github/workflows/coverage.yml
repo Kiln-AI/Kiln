@@ -1,0 +1,219 @@
+name: Coverage Report
+
+on:
+    pull_request:
+    push:
+        branches: [ main ]
+
+jobs:
+  coverage:
+    name: Generate Coverage Report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read          # To checkout the code
+      pull-requests: write    # To comment on PRs
+      issues: write          # To comment on issues (PRs are issues)
+      actions: read          # To read workflow artifacts
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch full history for diff coverage analysis
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
+      - name: Run coverage
+        run: |
+          uv run coverage run -m pytest
+          uv run coverage report
+          uv run coverage html
+          uv run coverage xml
+
+      - name: Upload coverage HTML report as artifact
+        uses: actions/upload-artifact@v4
+        id: upload-html-coverage
+        with:
+          name: coverage-report-html
+          path: htmlcov/
+          retention-days: 30
+
+      - name: Upload coverage XML for analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-xml
+          path: coverage.xml
+          retention-days: 30
+
+      - name: Generate diff coverage report (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          # Generate diff coverage reports
+          uv run diff-cover coverage.xml --compare-branch=origin/${{ github.event.pull_request.base.ref }} --format markdown:diff-coverage.md
+          uv run diff-cover coverage.xml --compare-branch=origin/${{ github.event.pull_request.base.ref }} --format html:diff-coverage.html
+          
+          # Also generate a fail-under report for potential future use
+          uv run diff-cover coverage.xml --compare-branch=origin/${{ github.event.pull_request.base.ref }} --fail-under=80 || echo "Diff coverage below 80%"
+
+      - name: Upload diff coverage report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        id: upload-diff-coverage
+        with:
+          name: diff-coverage-report
+          path: |
+            diff-coverage.html
+            diff-coverage.md
+          retention-days: 30
+
+      - name: Comment PR with coverage info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        continue-on-error: true  # Don't fail the workflow if we can't comment (e.g., from forks)
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Read diff coverage markdown if it exists
+            let diffCoverageContent = '';
+            try {
+                const fullDiffCoverage = fs.readFileSync('diff-coverage.md', 'utf8');
+
+                // Extract only the high-level sections (header, diff info, and summary)
+                // Stop before the detailed file-by-file breakdown
+                const lines = fullDiffCoverage.split('\n');
+                const summaryLines = [];
+                let inDetailedSection = false;
+                let detailedSectionLines = [];
+
+                for (const line of lines) {
+                    if (inDetailedSection) {
+                        detailedSectionLines.push(line);
+                        continue;
+                    }
+
+                    // Skip giant redundant header
+                    if (line === '# Diff Coverage') {
+                        continue;
+                    }
+
+                    // Stop when we hit a file-specific section (## followed by a file path)
+                    // But keep the sections we want: "## Diff:" and "## Summary"
+                    if (line.startsWith('## ') &&
+                        !line.startsWith('## Diff:') &&
+                        !line.startsWith('## Summary')) {
+                        inDetailedSection = true;
+                        detailedSectionLines.push(line);
+                        continue;
+                    }
+
+
+                    // Clean up the diff line to be more concise
+                    let cleanedLine = line;
+                    if (line.startsWith('## Diff: ') && line.includes(', staged and unstaged changes')) {
+                        // Extract just the branch comparison part
+                        const match = line.match(/## (.+?), staged and unstaged changes/);
+                        if (match) {
+                            cleanedLine = `## ${match[1]}`;
+                        }
+                    }
+
+                    summaryLines.push(cleanedLine);
+                }
+
+                diffCoverageContent = summaryLines.join('\n').trim();
+
+                // Github PR comment limit is 65536 characters - we truncate the detailed section to fit
+                let detailedSectionString = detailedSectionLines.join('\n');
+                const detailedSectionLinesMaxChars = 65536 - diffCoverageContent.length - 10000; // 10000 is arbitrary slack to make sure it fits
+                if (detailedSectionString.length > detailedSectionLinesMaxChars) {
+                    detailedSectionString = detailedSectionString.slice(0, detailedSectionLinesMaxChars) + '\n\n... (truncated - see full report for details) ...';
+                }
+
+                if (detailedSectionLines.length > 0) {
+                    diffCoverageContent += `\n\n## Line-by-line\n\n<details>\n<summary>View line-by-line diff coverage</summary>\n\n${detailedSectionString}\n</details>`;
+                }
+            } catch (error) {
+                console.log('No diff coverage report found');
+            }
+
+            // Get overall coverage percentage
+            const {
+                execSync
+            } = require('child_process');
+            let coveragePercentage = '';
+            try {
+                const output = execSync('uv run coverage report --format=text', {
+                    encoding: 'utf8'
+                });
+                const match = output.match(/TOTAL\s+\d+\s+\d+\s+(\d+%)/);
+                if (match) {
+                    coveragePercentage = match[1];
+                }
+            } catch (error) {
+                console.log('Could not extract coverage percentage');
+            }
+
+            let body = '## 📊 Coverage Report\n\n';
+            body += `**Overall Coverage:** ${coveragePercentage || 'Unknown'}\n\n`;
+            body += `${diffCoverageContent || 'No diff coverage data available'}\n\n`;
+            body += '---\n';
+            body += '- [📊 HTML Coverage Report](${{ steps.upload-html-coverage.outputs.artifact-url }}) - Interactive coverage report\n';
+            if ('${{ github.event_name }}' === 'pull_request') {
+                body += '- [📈 Diff Coverage Report](${{ steps.upload-diff-coverage.outputs.artifact-url }}) - Detailed diff analysis\n';
+            }
+            body += '- [Github Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) - View the full coverage report';
+
+            // Find existing coverage comment
+            const {
+                data: comments
+            } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(comment =>
+                comment.body.includes('📊 Coverage Report')
+            );
+
+            try {
+              if (existingComment) {
+                  // Update existing comment
+                  await github.rest.issues.updateComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      comment_id: existingComment.id,
+                      body: body
+                  });
+                  console.log('Updated existing coverage comment');
+              } else {
+                  // Create new comment
+                  await github.rest.issues.createComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: context.issue.number,
+                      body: body
+                  });
+                  console.log('Created new coverage comment');
+              }
+            } catch (error) {
+                console.log('Failed to comment on PR (likely due to permissions from fork):', error.message);
+                console.log('Coverage reports are still available as artifacts');
+            }
+
+      - name: Coverage Summary
+        run: |
+          echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          uv run coverage report >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

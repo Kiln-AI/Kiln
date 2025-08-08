@@ -7,8 +7,8 @@ from kiln_ai.datamodel import Finetune
 from kiln_ai.datamodel.basemodel import (
     ID_FIELD,
     ID_TYPE,
-    NAME_FIELD,
-    SHORT_NAME_FIELD,
+    FilenameString,
+    FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
 )
@@ -38,7 +38,7 @@ class TaskRequirement(BaseModel):
     """
 
     id: ID_TYPE = ID_FIELD
-    name: str = SHORT_NAME_FIELD
+    name: FilenameStringShort = Field(description="The name of the task requirement.")
     description: str | None = Field(default=None)
     instruction: str = Field(min_length=1)
     priority: Priority = Field(default=Priority.p2)
@@ -103,7 +103,7 @@ class TaskRunConfig(KilnParentedModel):
     A run config includes everything needed to run a task, except the input. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the task run config.")
     description: str | None = Field(
         default=None, description="The description of the task run config."
     )
@@ -189,7 +189,7 @@ class Task(
     a collection of task runs.
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the task.")
     description: str | None = Field(
         default=None,
         description="A description of the task for you and your team. Will not be used in prompts/training/validation.",
@@ -216,7 +216,7 @@ class Task(
             return None
         return schema_from_json_str(self.input_json_schema)
 
-    # These wrappers help for typechecking. TODO P2: fix this in KilnParentModel
+    # These wrappers help for typechecking. We should fix this in KilnParentModel
     def runs(self, readonly: bool = False) -> list[TaskRun]:
         return super().runs(readonly=readonly)  # type: ignore
 
