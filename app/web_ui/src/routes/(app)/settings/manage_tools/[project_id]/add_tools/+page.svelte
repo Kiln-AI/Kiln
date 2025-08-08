@@ -2,6 +2,8 @@
   import AppPage from "../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormList from "$lib/utils/form_list.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
@@ -23,16 +25,6 @@
   // Form state
   let error: KilnError | null = null
   let submitting = false
-
-  function addHeader() {
-    headers = [...headers, { key: "", value: "" }]
-  }
-
-  function removeHeader(index: number) {
-    if (headers.length > 1) {
-      headers = headers.filter((_, i) => i !== index)
-    }
-  }
 
   function buildHeadersObject(): Record<string, string> {
     const headersObj: Record<string, string> = {}
@@ -57,6 +49,16 @@
       }
       if (!server_url.trim()) {
         throw new Error("Server URL is required")
+      }
+      if (headers.length > 0) {
+        for (const header of headers) {
+          if (!header.key.trim()) {
+            throw new Error("Header name is required")
+          }
+          if (!header.value.trim()) {
+            throw new Error("Header value is required")
+          }
+        }
       }
 
       const headersObj = buildHeadersObject()
@@ -128,44 +130,69 @@
       />
 
       <!-- Headers section -->
-      <FormElement
-        inputType="header_only"
-        label="Headers"
-        id="headers"
-        description="Add authentication headers or other required headers for the MCP server"
-        optional={true}
-        bind:value={headers}
-      />
-
-      {#each headers as header, index}
-        <div class="flex gap-2 items-center">
-          <input
-            type="text"
-            placeholder="Header name (e.g., Authorization)"
-            class="input input-bordered flex-1"
-            bind:value={header.key}
-          />
-          <input
-            type="text"
-            placeholder="Header value (e.g., Bearer token-here)"
-            class="input input-bordered flex-1"
-            bind:value={header.value}
-          />
-          <button
-            type="button"
-            class="btn hover:btn-error btn-sm"
-            on:click={() => removeHeader(index)}
-            disabled={headers.length === 1}
-            aria-label="Remove header"
-          >
-            ✕
-          </button>
+      <div class="text-sm font-medium text-left flex flex-col gap-1 w-full">
+        <div class="flex flex-row items-center">
+          <span class="grow">Headers</span>
         </div>
-      {/each}
+        <div class="text-xs text-gray-500">
+          Add authentication headers or other required headers for the MCP
+          server.
+        </div>
+      </div>
 
-      <button type="button" class="btn btn-outline btn-sm" on:click={addHeader}>
-        + Add Header
-      </button>
+      <FormList
+        content={headers}
+        content_label="Header"
+        start_with_one={false}
+        empty_content={{
+          key: "",
+          value: "",
+        }}
+        let:item_index
+      >
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label
+              class="text-sm font-medium text-left flex flex-col gap-1 w-full"
+            >
+              <div class="flex flex-row items-center">
+                <span class="grow text-xs text-gray-500 h-4">Header Name</span>
+                <div class="text-gray-500 h-4 mt-[-4px]">
+                  <InfoTooltip
+                    tooltip_text="The HTTP header name, such as 'Authorization'"
+                  />
+                </div>
+              </div>
+              <input
+                type="text"
+                placeholder="Header name"
+                class="input input-bordered"
+                bind:value={headers[item_index].key}
+              />
+            </label>
+          </div>
+          <div class="flex-1">
+            <label
+              class="text-sm font-medium text-left flex flex-col gap-1 w-full"
+            >
+              <div class="flex flex-row items-center">
+                <span class="grow text-xs text-gray-500 h-4">Value</span>
+                <div class="text-gray-500 h-4 mt-[-4px]">
+                  <InfoTooltip
+                    tooltip_text="The header value, such as 'Bearer your-token-here'"
+                  />
+                </div>
+              </div>
+              <input
+                type="text"
+                placeholder="Value"
+                class="input input-bordered"
+                bind:value={headers[item_index].value}
+              />
+            </label>
+          </div>
+        </div>
+      </FormList>
     </FormContainer>
   </div>
 </AppPage>
