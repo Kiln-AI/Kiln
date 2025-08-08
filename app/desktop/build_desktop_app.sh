@@ -26,8 +26,8 @@ if [[ $* == *--build-bootloader* ]]; then
   echo "Downloading pyinstaller"
   curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.tar.gz -o pyinstaller.tar.gz
   tar -xzf pyinstaller.tar.gz
-  # Remove the old pyinstaller
-  rm -r pyinstaller
+  # Remove the old pyinstaller if it exists
+  rm -rf pyinstaller
   mv pyinstaller-6.11.1 pyinstaller
   cd pyinstaller/bootloader
 
