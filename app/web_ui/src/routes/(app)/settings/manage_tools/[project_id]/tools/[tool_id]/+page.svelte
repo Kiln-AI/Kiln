@@ -112,12 +112,51 @@
                 <div class="badge badge-outline">{tool.type}</div>
               </div>
 
+              <div>
+                <div class="font-medium text-sm mb-1">Version</div>
+                <div class="text-sm">{tool.v}</div>
+              </div>
+
+              <div>
+                <div class="font-medium text-sm mb-1">Model Type</div>
+                <div class="text-sm">{tool.model_type}</div>
+              </div>
+
+              {#if tool.created_at}
+                <div>
+                  <div class="font-medium text-sm mb-1">Created At</div>
+                  <div class="text-sm">
+                    {new Date(tool.created_at).toLocaleString()}
+                  </div>
+                </div>
+              {/if}
+
+              {#if tool.created_by}
+                <div>
+                  <div class="font-medium text-sm mb-1">Created By</div>
+                  <div class="text-sm">{tool.created_by}</div>
+                </div>
+              {/if}
+
               <div class="md:col-span-2">
                 <div class="font-medium text-sm mb-1">Description</div>
                 <div class="text-sm">
                   {tool.description || "No description available"}
                 </div>
               </div>
+
+              {#if tool.properties && Object.keys(tool.properties).length > 0}
+                <div class="md:col-span-2">
+                  <div class="font-medium text-sm mb-1">Properties</div>
+                  <div class="bg-base-200 rounded p-3">
+                    <pre class="text-xs overflow-x-auto">{JSON.stringify(
+                        tool.properties,
+                        null,
+                        2,
+                      )}</pre>
+                  </div>
+                </div>
+              {/if}
             </div>
           </div>
         </div>
