@@ -1,4 +1,8 @@
-import { type EvalConfigType, type StructuredOutputMode } from "$lib/types"
+import {
+  type EvalConfigType,
+  type StructuredOutputMode,
+  type ToolType,
+} from "$lib/types"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
@@ -114,6 +118,25 @@ export function structuredOutputModeToString(
       // and don't handle it above, TypeScript will error here
       const exhaustiveCheck: never = mode
       console.warn(`Unhandled StructuredOutputMode: ${exhaustiveCheck}`)
+      return undefined
+    }
+  }
+}
+
+/**
+ * Converts ToolType to a human-readable string.
+ * This function uses exhaustive case checking - if you add a new case to ToolType,
+ * TypeScript will force you to handle it here.
+ */
+export function toolTypeToString(toolType: ToolType): string | undefined {
+  switch (toolType) {
+    case "remote_mcp":
+      return "Remote MCP"
+    default: {
+      // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+      // and don't handle it above, TypeScript will error here
+      const exhaustiveCheck: never = toolType
+      console.warn(`Unhandled toolType: ${exhaustiveCheck}`)
       return undefined
     }
   }

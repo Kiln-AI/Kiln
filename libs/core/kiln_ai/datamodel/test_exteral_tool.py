@@ -186,8 +186,9 @@ def test_external_tool_empty_string_validation():
 
 def test_external_tool_headers_validation():
     """Test headers field validation."""
-    # Valid headers
+    # Valid headers (including empty headers)
     valid_headers = [
+        {},  # Empty headers are now allowed
         {"Authorization": "Bearer token123"},
         {"Content-Type": "application/json", "Accept": "application/json"},
         {"X-API-Key": "secret", "User-Agent": "MyApp/1.0"},
@@ -218,18 +219,16 @@ def test_external_tool_headers_validation():
             },
         )
 
-    # Test that empty headers dict is rejected
-    with pytest.raises(
-        ValidationError, match="headers must be set when type is 'remote_mcp'"
-    ):
-        ExternalTool(
-            name="test_tool",
-            type=ToolType.remote_mcp,
-            properties={
-                "server_url": "https://api.example.com",
-                "headers": {},
-            },
-        )
+    # Test that empty headers dict is allowed
+    tool = ExternalTool(
+        name="test_tool",
+        type=ToolType.remote_mcp,
+        properties={
+            "server_url": "https://api.example.com",
+            "headers": {},
+        },
+    )
+    assert tool.properties["headers"] == {}
 
 
 def test_external_tool_server_url_validation():

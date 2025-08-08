@@ -55,7 +55,7 @@ class ExternalTool(KilnParentedModel):
                     )
 
                 headers = self.properties.get("headers", None)
-                if not headers:
+                if headers is None:
                     raise ValueError("headers must be set when type is 'remote_mcp'")
                 if not isinstance(headers, dict):
                     raise ValueError(
