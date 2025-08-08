@@ -108,8 +108,8 @@ class LiteLlmAdapter(BaseAdapter):
                 if tool_call:
                     prior_output = tool_call.function.arguments
 
-        if not prior_output:
-            raise RuntimeError("No output returned from model")
+            if not prior_output:
+                raise RuntimeError("No output returned from model")
 
         if response is None or prior_message is None:
             raise RuntimeError("No response returned from model")
