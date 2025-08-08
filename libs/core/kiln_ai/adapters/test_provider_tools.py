@@ -25,11 +25,7 @@ from kiln_ai.adapters.provider_tools import (
     provider_name_from_id,
     provider_warnings,
 )
-from kiln_ai.datamodel import (
-    Finetune,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -199,6 +195,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.ollama, "Ollama"),
         (ModelProviderName.openai, "OpenAI"),
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
+        (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],

@@ -17,6 +17,7 @@ const provider_image_map: Record<ModelProviderName | "wandb", string> = {
   kiln_fine_tune: "/images/logo.svg",
   kiln_custom_registry: "/images/logo.svg",
   wandb: "/images/wandb.svg",
+  siliconflow_cn: "/images/siliconflow.svg",
   cerebras: "/images/cerebras.svg",
 }
 
