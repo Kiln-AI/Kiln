@@ -182,6 +182,20 @@
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
+      name: "SiliconFlow (硅基流动)",
+      id: "siliconflow_cn",
+      description: "AI provider for users in China.",
+      api_key_warning:
+        "SiliconFlow.cn is a Chinese provider. It is not available to users outside of China.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.siliconflow.cn/account/ak",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       description: "Track and visualize your experiments.",
@@ -194,18 +208,6 @@
       ],
       api_key_fields: ["API Key", "Base URL"],
       optional_fields: ["Base URL"],
-    },
-    {
-      name: "SiliconFlow (硅基流动)",
-      id: "siliconflow_cn",
-      description: "One of China's most popular model providers.",
-      featured: false,
-      api_key_steps: [
-        "Go to https://cloud.siliconflow.cn/account/ak",
-        "Create a new API Key",
-        "Copy the new API Key, paste it below and click 'Connect'",
-      ],
-      api_key_fields: ["API Key"],
     },
     {
       name: "Custom API",
