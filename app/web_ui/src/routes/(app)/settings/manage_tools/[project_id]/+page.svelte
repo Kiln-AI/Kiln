@@ -59,16 +59,14 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Tools"
-    sub_subtitle="Connect your projects to tools like remote MCP servers, Kiln built-in tools, and more"
+    subtitle="Connect your project to tools with MCP servers"
     action_buttons={[
       {
         label: "Add Tool",
         href: `/settings/manage_tools/${project_id}/add_tools`,
-        primary: true,
       },
     ]}
   >
-    <div class="font-medium mt-8">Available Tools</div>
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -88,7 +86,6 @@
           <thead>
             <tr>
               <th>Name</th>
-              <th>ID</th>
               <th>Type</th>
               <th>Description</th>
             </tr>
@@ -103,7 +100,6 @@
                 tabindex="0"
               >
                 <td class="font-medium">{tool.name}</td>
-                <td class="text-sm text-gray-500">{tool.id}</td>
                 <td class="text-sm">{tool.type}</td>
                 <td class="text-sm">
                   {tool.description || "No description available"}

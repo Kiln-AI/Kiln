@@ -62,17 +62,7 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage
-    title={tool?.name || "Tool Details"}
-    subtitle="Tool Information"
-    action_buttons={[
-      {
-        label: "Back to Tools",
-        href: `/settings/manage_tools/${project_id}`,
-        primary: false,
-      },
-    ]}
-  >
+  <AppPage title={"Tool Details"}>
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>

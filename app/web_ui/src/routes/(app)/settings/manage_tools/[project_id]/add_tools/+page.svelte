@@ -20,7 +20,7 @@
     value: string
   }
 
-  let headers: HeaderPair[] = [{ key: "", value: "" }]
+  let headers: HeaderPair[] = []
 
   // Form state
   let error: KilnError | null = null
@@ -96,18 +96,14 @@
   }
 </script>
 
-<AppPage title="Add Tools">
+<AppPage
+  title="Connect Remote MCP Server"
+  sub_subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
+        tools to your project."
+>
   <div class="max-w-2xl">
-    <div class="mb-6">
-      <h2 class="text-xl font-semibold mb-2">Connect Remote MCP Server</h2>
-      <p class="text-sm text-gray-600">
-        Connect to a remote Model Context Protocol (MCP) server to add external
-        tools to your project.
-      </p>
-    </div>
-
     <FormContainer
-      submit_label="Connect Remote MCP"
+      submit_label="Connect"
       on:submit={connect_remote_mcp}
       bind:error
       bind:submitting
