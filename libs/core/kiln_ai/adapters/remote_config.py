@@ -21,10 +21,11 @@ def serialize_config(models: List[KilnModel], path: str | Path) -> None:
 
 def deserialize_config(path: str | Path) -> List[KilnModel]:
     raw = json.loads(Path(path).read_text())
-    if isinstance(raw, list):
-        model_data = raw
-    else:
-        model_data = raw.get("model_list", [])
+    model_data = raw.get("model_list", [])
+    if not isinstance(model_data, list):
+        raise ValueError(
+            f"Remote config expected list of models, got {type(model_data)}"
+        )
 
     # We must be careful here, because some of the JSON data may be generated from a forward
     # version of the code that has newer fields / versions of the fields, that may cause

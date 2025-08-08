@@ -313,23 +313,6 @@ def test_deserialize_config_model_with_extra_fields(tmp_path):
     assert not hasattr(models[0], "complex_extra")
 
 
-def test_deserialize_config_legacy_format_as_list(tmp_path):
-    """Test that the legacy format where JSON is directly a list works."""
-    # Test the legacy format where the JSON is directly a list, not wrapped in model_list
-    models_data = [
-        built_in_models[0].model_dump(mode="json"),
-        built_in_models[1].model_dump(mode="json"),
-    ]
-
-    path = tmp_path / "legacy_list.json"
-    path.write_text(json.dumps(models_data))
-
-    models = deserialize_config(path)
-    assert len(models) == 2
-    assert models[0].name == built_in_models[0].name
-    assert models[1].name == built_in_models[1].name
-
-
 def test_deserialize_config_mixed_valid_invalid_providers_single_model(
     tmp_path, caplog
 ):
@@ -389,12 +372,6 @@ def test_deserialize_config_empty_json_structures(tmp_path):
     data = {"model_list": []}
     path = tmp_path / "empty_model_list.json"
     path.write_text(json.dumps(data))
-    models = deserialize_config(path)
-    assert len(models) == 0
-
-    # Test empty list directly
-    path = tmp_path / "empty_list.json"
-    path.write_text(json.dumps([]))
     models = deserialize_config(path)
     assert len(models) == 0
 
