@@ -1870,7 +1870,7 @@ async def test_connect_huggingface_success(mock_config_shared, mock_requests_get
             "Content-Type": "application/json",
         },
     )
-    mock_config.huggingface_api_key = "test_api_key"
+    assert mock_config.huggingface_api_key == "test_api_key"
     assert result.status_code == 200
     assert json.loads(result.body)["message"] == "Connected to Huggingface"
 
@@ -1961,7 +1961,7 @@ async def test_connect_huggingface_non_401_response(
         },
     )
     # Even with a 404, we should save the key as the function considers any non-401 as valid auth
-    mock_config.huggingface_api_key = "test_api_key"
+    assert mock_config.huggingface_api_key == "test_api_key"
     assert result.status_code == 200
     assert json.loads(result.body)["message"] == "Connected to Huggingface"
 
@@ -2049,7 +2049,7 @@ async def test_connect_together_success(mock_config_shared, mock_requests_get):
             "Content-Type": "application/json",
         },
     )
-    mock_config.together_api_key = "test_api_key"
+    assert mock_config.together_api_key == "test_api_key"
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Together.ai"}'
 
@@ -2124,7 +2124,7 @@ async def test_connect_together_non_401_response(mock_config_shared, mock_reques
     # Assert
     mock_requests_get.assert_called_once()
     # Even with a 500 error, if it's not 401, we consider the key valid
-    mock_config.together_api_key = "test_api_key"
+    assert mock_config.together_api_key == "test_api_key"
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Together.ai"}'
 
@@ -2150,7 +2150,7 @@ async def test_connect_siliconflow_success(mock_config_shared, mock_requests_get
             "Content-Type": "application/json",
         },
     )
-    mock_config.siliconflow_cn_api_key = "test_api_key"
+    assert mock_config.siliconflow_cn_api_key == "test_api_key"
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to SiliconFlow"}'
 
