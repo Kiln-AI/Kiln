@@ -260,10 +260,12 @@ def test_deserialize_config_with_invalid_models(tmp_path, caplog):
 
     # Check that warning messages contain expected content
     model_warnings = [
-        log for log in warning_logs if "Failed to validate model" in log.message
+        log for log in warning_logs if "Failed to validate a model from" in log.message
     ]
     provider_warnings = [
-        log for log in warning_logs if "Failed to validate provider" in log.message
+        log
+        for log in warning_logs
+        if "Failed to validate a model provider" in log.message
     ]
 
     assert len(model_warnings) == 3  # 3 completely invalid models
@@ -398,7 +400,7 @@ def test_deserialize_config_mixed_valid_invalid_providers_single_model(
         log
         for log in caplog.records
         if log.levelno == logging.WARNING
-        and "Failed to validate provider" in log.message
+        and "Failed to validate a model provider" in log.message
     ]
     assert len(provider_warnings) == 3
 
