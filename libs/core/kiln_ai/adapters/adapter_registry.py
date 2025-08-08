@@ -59,6 +59,7 @@ def adapter_for_task(
                         "api_key": Config.shared().siliconflow_cn_api_key,
                     },
                 ),
+                base_adapter_config=base_adapter_config,
             )
         case ModelProviderName.openai:
             return LiteLlmAdapter(
