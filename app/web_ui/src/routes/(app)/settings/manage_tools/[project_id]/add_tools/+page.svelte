@@ -129,15 +129,14 @@
       />
 
       <!-- Headers section -->
-      <div class="text-sm font-medium text-left flex flex-col gap-1 w-full">
-        <div class="flex flex-row items-center">
-          <span class="grow">Headers</span>
-        </div>
-        <div class="text-xs text-gray-500">
-          Add authentication headers or other required headers for the MCP
-          server.
-        </div>
-      </div>
+      <FormElement
+        inputType="header_only"
+        label="Headers"
+        id="headers_section"
+        description="If the documentation for the server you're adding requires custom headers, enter them here."
+        optional={true}
+        value=""
+      />
 
       <FormList
         content={headers}
