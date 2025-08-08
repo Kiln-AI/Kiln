@@ -6,7 +6,15 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    KilnModel,
+    KilnModelProvider,
+    ModelFamily,
+    ModelName,
+    ModelProviderName,
+    StructuredOutputMode,
+    built_in_models,
+)
 from kiln_ai.adapters.remote_config import (
     deserialize_config_at_path,
     dump_builtin_config,
@@ -14,6 +22,37 @@ from kiln_ai.adapters.remote_config import (
     load_remote_models,
     serialize_config,
 )
+
+
+@pytest.fixture
+def mock_model() -> KilnModel:
+    return KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4_1,
+        friendly_name="GPT 4.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4.1",
+                provider_finetune_id="gpt-4.1-2025-04-14",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-4.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_logprobs=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.azure_openai,
+                model_id="gpt-4.1",
+                suggested_for_evals=True,
+            ),
+        ],
+    )
 
 
 def test_round_trip(tmp_path):
@@ -25,8 +64,8 @@ def test_round_trip(tmp_path):
     ]
 
 
-def test_load_from_url():
-    sample_model = built_in_models[0]
+def test_load_from_url(mock_model):
+    sample_model = mock_model
     sample = [sample_model.model_dump(mode="json")]
 
     class FakeResponse:
@@ -45,9 +84,9 @@ def test_load_from_url():
     assert sample_model == models[0]
 
 
-def test_load_from_url_calls_deserialize_config_data():
+def test_load_from_url_calls_deserialize_config_data(mock_model):
     """Test that load_from_url calls deserialize_config_data with the model_list from the response."""
-    sample_model_data = [built_in_models[0].model_dump(mode="json")]
+    sample_model_data = [mock_model.model_dump(mode="json")]
     response_data = {"model_list": sample_model_data}
 
     class FakeResponse:
@@ -65,7 +104,7 @@ def test_load_from_url_calls_deserialize_config_data():
             "kiln_ai.adapters.remote_config.deserialize_config_data"
         ) as mock_deserialize,
     ):
-        mock_deserialize.return_value = [built_in_models[0]]
+        mock_deserialize.return_value = [mock_model]
 
         result = load_from_url("http://example.com/models.json")
 
@@ -76,7 +115,7 @@ def test_load_from_url_calls_deserialize_config_data():
         mock_deserialize.assert_called_once_with(response_data)
 
         # Verify the result is what deserialize_config_data returned
-        assert result == [built_in_models[0]]
+        assert result == [mock_model]
 
 
 def test_dump_builtin_config(tmp_path):
@@ -89,10 +128,10 @@ def test_dump_builtin_config(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_load_remote_models_success(monkeypatch):
+async def test_load_remote_models_success(monkeypatch, mock_model):
     del os.environ["KILN_SKIP_REMOTE_MODEL_LIST"]
     original = built_in_models.copy()
-    sample_models = [built_in_models[0]]
+    sample_models = [mock_model]
 
     def fake_fetch(url):
         return sample_models
@@ -119,13 +158,9 @@ async def test_load_remote_models_failure(monkeypatch):
     assert built_in_models == original
 
 
-def test_deserialize_config_with_extra_keys(tmp_path):
+def test_deserialize_config_with_extra_keys(tmp_path, mock_model):
     # Take a valid model and add an extra key, ensure it is ignored and still loads
-    import json
-
-    from kiln_ai.adapters.ml_model_list import built_in_models
-
-    model_dict = built_in_models[0].model_dump(mode="json")
+    model_dict = mock_model.model_dump(mode="json")
     model_dict["extra_key"] = "should be ignored or error"
     model_dict["providers"][0]["extra_key"] = "should be ignored or error"
     data = {"model_list": [model_dict]}
@@ -139,30 +174,30 @@ def test_deserialize_config_with_extra_keys(tmp_path):
     assert not hasattr(models[0].providers[0], "extra_key")
 
 
-def test_deserialize_config_with_invalid_models(tmp_path, caplog):
+def test_deserialize_config_with_invalid_models(tmp_path, caplog, mock_model):
     """Test comprehensive handling of invalid models and providers during deserialization."""
 
     # Create a fully valid model as baseline
-    valid_model = built_in_models[0].model_dump(mode="json")
+    valid_model = mock_model.model_dump(mode="json")
 
     # Case 1: Invalid model - missing required field 'family'
-    invalid_model_missing_family = built_in_models[0].model_dump(mode="json")
+    invalid_model_missing_family = mock_model.model_dump(mode="json")
     del invalid_model_missing_family["family"]
 
     # Case 2: Invalid model - invalid data type for required field
-    invalid_model_wrong_type = built_in_models[0].model_dump(mode="json")
+    invalid_model_wrong_type = mock_model.model_dump(mode="json")
     invalid_model_wrong_type["name"] = None  # name should be a string, not None
 
     # Case 3: Invalid model - completely malformed
     invalid_model_malformed = {"not_a_valid_model": "at_all"}
 
     # Case 4: Valid model with one invalid provider (should keep model, skip invalid provider)
-    valid_model_invalid_provider = built_in_models[0].model_dump(mode="json")
+    valid_model_invalid_provider = mock_model.model_dump(mode="json")
     valid_model_invalid_provider["name"] = "test_model_invalid_provider"  # Unique name
     valid_model_invalid_provider["providers"][0]["name"] = "unknown-provider-123"
 
     # Case 5: Valid model with mixed valid/invalid providers (should keep model and valid providers)
-    valid_model_mixed_providers = built_in_models[0].model_dump(mode="json")
+    valid_model_mixed_providers = mock_model.model_dump(mode="json")
     valid_model_mixed_providers["name"] = "test_model_mixed_providers"  # Unique name
     # Add a second provider that's valid
     valid_provider = valid_model_mixed_providers["providers"][0].copy()
@@ -184,7 +219,7 @@ def test_deserialize_config_with_invalid_models(tmp_path, caplog):
     ]
 
     # Case 6: Valid model with all invalid providers (should keep model with empty providers)
-    valid_model_all_invalid_providers = built_in_models[0].model_dump(mode="json")
+    valid_model_all_invalid_providers = mock_model.model_dump(mode="json")
     valid_model_all_invalid_providers["name"] = (
         "test_model_all_invalid_providers"  # Unique name
     )
@@ -220,9 +255,9 @@ def test_deserialize_config_with_invalid_models(tmp_path, caplog):
     assert len(models) == 4
 
     # Check the first model is fully intact
-    assert models[0].name == built_in_models[0].name
-    assert models[0].family == built_in_models[0].family
-    assert len(models[0].providers) == 3  # built_in_models[0] has 3 providers
+    assert models[0].name == mock_model.name
+    assert models[0].family == mock_model.family
+    assert len(models[0].providers) == 3  # mock_model has 3 providers
 
     # Check model with invalid provider has remaining valid providers
     model_with_invalid_provider = next(
@@ -274,9 +309,9 @@ def test_deserialize_config_with_invalid_models(tmp_path, caplog):
     )  # Exactly 7 invalid providers across different models
 
 
-def test_deserialize_config_empty_provider_list(tmp_path):
+def test_deserialize_config_empty_provider_list(tmp_path, mock_model):
     """Test that models with empty provider lists are handled correctly."""
-    model_with_empty_providers = built_in_models[0].model_dump(mode="json")
+    model_with_empty_providers = mock_model.model_dump(mode="json")
     model_with_empty_providers["providers"] = []
 
     data = {"model_list": [model_with_empty_providers]}
@@ -288,9 +323,9 @@ def test_deserialize_config_empty_provider_list(tmp_path):
     assert len(models[0].providers) == 0
 
 
-def test_deserialize_config_missing_provider_field(tmp_path, caplog):
+def test_deserialize_config_missing_provider_field(tmp_path, caplog, mock_model):
     """Test that models missing the providers field are handled correctly."""
-    model_without_providers = built_in_models[0].model_dump(mode="json")
+    model_without_providers = mock_model.model_dump(mode="json")
     del model_without_providers["providers"]
 
     data = {"model_list": [model_without_providers]}
@@ -303,7 +338,7 @@ def test_deserialize_config_missing_provider_field(tmp_path, caplog):
     # Model should be kept with empty providers (deserialize_config handles missing providers gracefully)
     assert len(models) == 1
     assert len(models[0].providers) == 0
-    assert models[0].name == built_in_models[0].name
+    assert models[0].name == mock_model.name
 
     # Should not have any warnings since the function handles missing providers gracefully
     warning_logs = [
@@ -312,9 +347,9 @@ def test_deserialize_config_missing_provider_field(tmp_path, caplog):
     assert len(warning_logs) == 0
 
 
-def test_deserialize_config_provider_with_extra_fields(tmp_path):
+def test_deserialize_config_provider_with_extra_fields(tmp_path, mock_model):
     """Test that providers with extra unknown fields are handled gracefully."""
-    model_with_extra_provider_fields = built_in_models[0].model_dump(mode="json")
+    model_with_extra_provider_fields = mock_model.model_dump(mode="json")
     model_with_extra_provider_fields["providers"][0]["unknown_field"] = (
         "should_be_ignored"
     )
@@ -328,15 +363,15 @@ def test_deserialize_config_provider_with_extra_fields(tmp_path):
 
     models = deserialize_config_at_path(path)
     assert len(models) == 1
-    assert len(models[0].providers) == 3  # built_in_models[0] has 3 providers
+    assert len(models[0].providers) == 3  # mock_model has 3 providers
     # Extra fields should be ignored, not present in the final object
     assert not hasattr(models[0].providers[0], "unknown_field")
     assert not hasattr(models[0].providers[0], "another_extra")
 
 
-def test_deserialize_config_model_with_extra_fields(tmp_path):
+def test_deserialize_config_model_with_extra_fields(tmp_path, mock_model):
     """Test that models with extra unknown fields are handled gracefully."""
-    model_with_extra_fields = built_in_models[0].model_dump(mode="json")
+    model_with_extra_fields = mock_model.model_dump(mode="json")
     model_with_extra_fields["future_field"] = "should_be_ignored"
     model_with_extra_fields["complex_extra"] = {"nested": {"data": [1, 2, 3]}}
 
@@ -346,17 +381,17 @@ def test_deserialize_config_model_with_extra_fields(tmp_path):
 
     models = deserialize_config_at_path(path)
     assert len(models) == 1
-    assert models[0].name == built_in_models[0].name
+    assert models[0].name == mock_model.name
     # Extra fields should be ignored, not present in the final object
     assert not hasattr(models[0], "future_field")
     assert not hasattr(models[0], "complex_extra")
 
 
 def test_deserialize_config_mixed_valid_invalid_providers_single_model(
-    tmp_path, caplog
+    tmp_path, caplog, mock_model
 ):
     """Test a single model with a mix of valid and invalid providers in detail."""
-    model = built_in_models[0].model_dump(mode="json")
+    model = mock_model.model_dump(mode="json")
 
     # Create a mix of provider scenarios
     valid_provider_1 = model["providers"][0].copy()
