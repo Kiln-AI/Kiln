@@ -56,10 +56,27 @@ def client(app):
     return TestClient(app)
 
 
-def test_connect_api_key_invalid_payload(client):
+@pytest.mark.parametrize(
+    "provider",
+    [
+        "openai",
+        "groq",
+        "openrouter",
+        "fireworks_ai",
+        "amazon_bedrock",
+        "anthropic",
+        "gemini_api",
+        "azure_openai",
+        "huggingface",
+        "vertex",
+        "together_ai",
+        "siliconflow_cn",
+    ],
+)
+def test_connect_api_key_invalid_payload(client, provider):
     response = client.post(
         "/api/provider/connect_api_key",
-        json={"provider": "openai", "key_data": "invalid"},
+        json={"provider": provider, "key_data": "invalid"},
     )
     assert response.status_code == 400
     assert response.json() == {"message": "Invalid key_data or provider"}
@@ -84,6 +101,18 @@ def test_connect_api_key_openai_success(mock_connect_openai, client):
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to OpenAI"}
     mock_connect_openai.assert_called_once_with("test_key")
+
+
+@patch("app.desktop.studio_server.provider_api.connect_siliconflow")
+def test_connect_api_key_siliconflow_success(mock_connect_siliconflow, client):
+    mock_connect_siliconflow.return_value = {"message": "Connected to Siliconflow"}
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "siliconflow_cn", "key_data": {"API Key": "test_key"}},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to Siliconflow"}
+    mock_connect_siliconflow.assert_called_once_with("test_key")
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")
@@ -1399,6 +1428,7 @@ def mock_config_all_providers():
     mock_config.fireworks_account_id = "test_key"
     mock_config.bedrock_access_key = "test_key"
     mock_config.bedrock_secret_key = "test_key"
+    mock_config.siliconflow_cn_api_key = "test_key"
     return mock_config
 
 
@@ -1418,6 +1448,24 @@ async def test_disconnect_api_key_openai(client, mock_config_all_providers):
 
         # Check it didn't unset the other providers
         assert mock_config_all_providers.groq_api_key is not None
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_siliconflow(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "siliconflow_cn"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.siliconflow_cn_api_key is None
+
+        # Check it didn't unset the other providers
+        assert mock_config_all_providers.open_ai_api_key is not None
 
 
 @pytest.mark.asyncio
