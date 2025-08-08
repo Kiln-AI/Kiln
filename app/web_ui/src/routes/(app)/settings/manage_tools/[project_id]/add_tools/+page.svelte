@@ -7,8 +7,6 @@
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
-  $: project_id = $page.params.project_id
-
   // Form fields
   let name = ""
   let server_url = ""
@@ -68,7 +66,7 @@
         {
           params: {
             path: {
-              project_id,
+              project_id: $page.params.project_id,
             },
           },
           body: {
@@ -86,7 +84,9 @@
 
       if (data?.id) {
         // Navigate to the tools page for the created tool
-        goto(`/settings/manage_tools/${project_id}/tools/${data.id}`)
+        goto(
+          `/settings/manage_tools/${$page.params.project_id}/tools/${data.id}`,
+        )
       }
     } catch (e) {
       error = createKilnError(e)
@@ -111,6 +111,15 @@
       <FormElement label="Name" id="name" bind:value={name} max_length={120} />
 
       <FormElement
+        label="Description"
+        inputType="textarea"
+        id="mcp_description"
+        description="A description of this MCP server for your reference."
+        optional={true}
+        bind:value={description}
+      />
+
+      <FormElement
         label="Server URL"
         id="mcp_server_url"
         description="The URL of the remote MCP server"
@@ -128,50 +137,35 @@
         bind:value={headers}
       />
 
-      <div class="space-y-3">
-        {#each headers as header, index}
-          <div class="flex gap-2 items-center">
-            <input
-              type="text"
-              placeholder="Header name (e.g., Authorization)"
-              class="input input-bordered flex-1"
-              bind:value={header.key}
-            />
-            <input
-              type="text"
-              placeholder="Header value (e.g., Bearer token-here)"
-              class="input input-bordered flex-1"
-              bind:value={header.value}
-            />
-            <button
-              type="button"
-              class="btn btn-error btn-sm"
-              on:click={() => removeHeader(index)}
-              disabled={headers.length === 1}
-              aria-label="Remove header"
-            >
-              ✕
-            </button>
-          </div>
-        {/each}
+      {#each headers as header, index}
+        <div class="flex gap-2 items-center">
+          <input
+            type="text"
+            placeholder="Header name (e.g., Authorization)"
+            class="input input-bordered flex-1"
+            bind:value={header.key}
+          />
+          <input
+            type="text"
+            placeholder="Header value (e.g., Bearer token-here)"
+            class="input input-bordered flex-1"
+            bind:value={header.value}
+          />
+          <button
+            type="button"
+            class="btn hover:btn-error btn-sm"
+            on:click={() => removeHeader(index)}
+            disabled={headers.length === 1}
+            aria-label="Remove header"
+          >
+            ✕
+          </button>
+        </div>
+      {/each}
 
-        <button
-          type="button"
-          class="btn btn-outline btn-sm"
-          on:click={addHeader}
-        >
-          + Add Header
-        </button>
-      </div>
-
-      <FormElement
-        label="Description"
-        inputType="textarea"
-        id="mcp_description"
-        description="Optional description of what this tool does"
-        optional={true}
-        bind:value={description}
-      />
+      <button type="button" class="btn btn-outline btn-sm" on:click={addHeader}>
+        + Add Header
+      </button>
     </FormContainer>
   </div>
 </AppPage>
