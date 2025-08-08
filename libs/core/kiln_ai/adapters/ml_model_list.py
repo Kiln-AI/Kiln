@@ -58,6 +58,10 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_5 = "gpt_5"
+    gpt_5_chat = "gpt_5_chat"
+    gpt_5_mini = "gpt_5_mini"
+    gpt_5_nano = "gpt_5_nano"
     gpt_4o_mini = "gpt_4o_mini"
     gpt_4o = "gpt_4o"
     gpt_4_1 = "gpt_4_1"
@@ -254,6 +258,63 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 5
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5,
+        friendly_name="GPT-5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # GPT 5 Mini
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_mini,
+        friendly_name="GPT-5 Mini",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+        ],
+    ),
+    # GPT 5 Nano
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_nano,
+        friendly_name="GPT-5 Nano",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # GPT 5 Chat
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_chat,
+        friendly_name="GPT-5 Chat",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5-chat-latest",
+                # Oddly no json_schema support for this model.
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+        ],
+    ),
     # GPT 4.1
     KilnModel(
         family=ModelFamily.gpt,
@@ -266,7 +327,6 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4.1-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
@@ -274,13 +334,11 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-4.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1",
-                suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
         ],
@@ -1288,12 +1346,6 @@ built_in_models: List[KilnModel] = [
         friendly_name="Llama 3.2 1B",
         providers=[
             KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="llama-3.2-1b-preview",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_structured_output=False,
                 supports_data_gen=False,
@@ -1314,11 +1366,6 @@ built_in_models: List[KilnModel] = [
         name=ModelName.llama_3_2_3b,
         friendly_name="Llama 3.2 3B",
         providers=[
-            KilnModelProvider(
-                name=ModelProviderName.groq,
-                model_id="llama-3.2-3b-preview",
-                supports_data_gen=False,
-            ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 supports_structured_output=False,
@@ -1359,19 +1406,6 @@ built_in_models: List[KilnModel] = [
                 model_id="llama3.2-vision",
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
-                model_id="accounts/fireworks/models/llama-v3p2-11b-vision-instruct",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.huggingface,
-                model_id="meta-llama/Llama-3.2-11B-Vision-Instruct",
-                supports_structured_output=False,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
                 supports_structured_output=False,
@@ -1394,13 +1428,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.ollama,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="llama3.2-vision:90b",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
-                model_id="accounts/fireworks/models/llama-v3p2-90b-vision-instruct",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
@@ -1474,13 +1501,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=False,
                 model_id="microsoft/phi-3.5-mini-128k-instruct",
                 structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                # No finetune support. https://docs.fireworks.ai/fine-tuning/fine-tuning-models
-                supports_structured_output=False,
-                supports_data_gen=False,
-                model_id="accounts/fireworks/models/phi-3-vision-128k-instruct",
             ),
         ],
     ),
