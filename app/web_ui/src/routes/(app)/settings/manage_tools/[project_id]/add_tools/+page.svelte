@@ -3,7 +3,6 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
@@ -152,44 +151,24 @@
       >
         <div class="flex gap-2">
           <div class="flex-1">
-            <label
-              class="text-sm font-medium text-left flex flex-col gap-1 w-full"
-            >
-              <div class="flex flex-row items-center">
-                <span class="grow text-xs text-gray-500 h-4">Header Name</span>
-                <div class="text-gray-500 h-4 mt-[-4px]">
-                  <InfoTooltip
-                    tooltip_text="The HTTP header name, such as 'Authorization'"
-                  />
-                </div>
-              </div>
-              <input
-                type="text"
-                placeholder="Header name"
-                class="input input-bordered"
-                bind:value={headers[item_index].key}
-              />
-            </label>
+            <FormElement
+              label="Header Name"
+              id="header_name_{item_index}"
+              info_description="The HTTP header name, such as 'Authorization'"
+              placeholder="Header name"
+              light_label={true}
+              bind:value={headers[item_index].key}
+            />
           </div>
           <div class="flex-1">
-            <label
-              class="text-sm font-medium text-left flex flex-col gap-1 w-full"
-            >
-              <div class="flex flex-row items-center">
-                <span class="grow text-xs text-gray-500 h-4">Value</span>
-                <div class="text-gray-500 h-4 mt-[-4px]">
-                  <InfoTooltip
-                    tooltip_text="The header value, such as 'Bearer your-token-here'"
-                  />
-                </div>
-              </div>
-              <input
-                type="text"
-                placeholder="Value"
-                class="input input-bordered"
-                bind:value={headers[item_index].value}
-              />
-            </label>
+            <FormElement
+              label="Value"
+              id="header_value_{item_index}"
+              info_description="The header value, such as 'Bearer your-token-here'"
+              placeholder="Value"
+              light_label={true}
+              bind:value={headers[item_index].value}
+            />
           </div>
         </div>
       </FormList>
