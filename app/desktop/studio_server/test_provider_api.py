@@ -32,6 +32,7 @@ from app.desktop.studio_server.provider_api import (
     connect_ollama,
     connect_openrouter,
     connect_provider_api,
+    connect_siliconflow,
     connect_together,
     connect_vertex,
     connect_wandb,
@@ -2126,6 +2127,102 @@ async def test_connect_together_non_401_response(mock_config_shared, mock_reques
     mock_config.together_api_key = "test_api_key"
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Together.ai"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_success(mock_config_shared, mock_requests_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"models": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_siliconflow("test_api_key")
+
+    mock_requests_get.assert_called_once_with(
+        "https://api.siliconflow.cn/v1/models",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config.siliconflow_cn_api_key = "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to SiliconFlow"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_invalid_api_key(
+    mock_config_shared, mock_requests_get
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = '{"error": "Unauthorized"}'
+    mock_requests_get.return_value = mock_response
+
+    result = await connect_siliconflow("invalid_api_key")
+
+    mock_requests_get.assert_called_once_with(
+        "https://api.siliconflow.cn/v1/models",
+        headers={
+            "Authorization": "Bearer invalid_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to SiliconFlow. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    result = await connect_siliconflow("test_api_key")
+
+    mock_requests_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to SiliconFlow. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_non_200_response(
+    mock_config_shared, mock_requests_get
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_requests_get.return_value = mock_response
+
+    result = await connect_siliconflow("test_api_key")
+
+    mock_requests_get.assert_called_once()
+    # Should NOT save key on non-200
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to SiliconFlow. Error: [500] Internal Server Error"}'
+    )
 
 
 @pytest.mark.asyncio
