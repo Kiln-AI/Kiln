@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
@@ -17,7 +17,7 @@ class KilnToolDescription(BaseModel):
 class ExternalToolCreationRequest(BaseModel):
     name: str
     server_url: str
-    headers: Dict[str, Any] = {}
+    headers: Dict[str, str] = {}
     description: str | None = None
 
 

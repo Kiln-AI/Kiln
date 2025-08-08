@@ -72,7 +72,7 @@
           body: {
             name: name.trim(),
             server_url: server_url.trim(),
-            headers: headersObj as unknown as Record<string, never>, // Type assertion to work around schema issue
+            headers: headersObj,
             description: description.trim() || null,
           },
         },

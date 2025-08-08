@@ -1924,7 +1924,9 @@ export interface components {
              * Headers
              * @default {}
              */
-            headers: Record<string, never>;
+            headers: {
+                [key: string]: string;
+            };
             /** Description */
             description?: string | null;
         };
