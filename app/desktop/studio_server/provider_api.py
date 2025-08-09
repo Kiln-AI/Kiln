@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
     DockerModelRunnerConnection,
+    docker_model_runner_base_url,
     get_docker_model_runner_connection,
 )
 from kiln_ai.adapters.ml_model_list import (
@@ -96,10 +97,6 @@ async def connect_docker_model_runner(
         )
 
     try:
-        from kiln_ai.adapters.docker_model_runner_tools import (
-            docker_model_runner_base_url,
-        )
-
         base_url = custom_docker_url or docker_model_runner_base_url()
 
         # Use OpenAI client to test connection
