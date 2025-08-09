@@ -470,7 +470,7 @@
       custom_url_str
   }
 
-  let custom_docker_url: string | null = null
+  let docker_model_runner_custom_url: string | null = null
 
   const connect_docker_model_runner = async (
     user_initiated: boolean = true,
@@ -485,7 +485,8 @@
         {
           params: {
             query: {
-              custom_docker_url: custom_docker_url || undefined,
+              docker_model_runner_custom_url:
+                docker_model_runner_custom_url || undefined,
             },
           },
         },
@@ -535,9 +536,10 @@
           ". "
         : ""
     const custom_url_str =
-      custom_docker_url &&
-      custom_docker_url !== "http://localhost:12434/engines/llama.cpp"
-        ? "Custom Docker Model Runner URL: " + custom_docker_url
+      docker_model_runner_custom_url &&
+      docker_model_runner_custom_url !==
+        "http://localhost:12434/engines/llama.cpp"
+        ? "Custom Docker Model Runner URL: " + docker_model_runner_custom_url
         : ""
     status.docker_model_runner.custom_description =
       "Docker Model Runner connected. " +
@@ -644,6 +646,9 @@
       if (data["ollama_base_url"]) {
         custom_ollama_url = data["ollama_base_url"]
       }
+      if (data["docker_model_runner_base_url"]) {
+        docker_model_runner_custom_url = data["docker_model_runner_base_url"]
+      }
       if (data["anthropic_api_key"]) {
         status.anthropic.connected = true
       }
@@ -694,6 +699,11 @@
   function show_custom_ollama_url_dialog() {
     // @ts-expect-error showModal is not a method on HTMLElement
     document.getElementById("ollama_dialog")?.showModal()
+  }
+
+  function show_docker_model_runner_curstom_url_dialog() {
+    // @ts-expect-error showModal is not a method on HTMLElement
+    document.getElementById("docker_model_runner_dialog")?.showModal()
   }
 
   function show_custom_api_dialog() {
@@ -905,6 +915,14 @@
                 Set Custom Ollama URL
               </button>
             {/if}
+            {#if provider.id === "docker_model_runner" && status[provider.id] && status[provider.id].error}
+              <button
+                class="link text-left text-sm text-gray-500"
+                on:click={show_docker_model_runner_curstom_url_dialog}
+              >
+                Set Docker Model Runner Custom URL
+              </button>
+            {/if}
           </div>
 
           {#if loading_initial_providers}
@@ -987,6 +1005,50 @@
           connect_ollama(true)
           // @ts-expect-error showModal is not a method on HTMLElement
           document.getElementById("ollama_dialog")?.close()
+        }}
+      >
+        Connect
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>
+
+<dialog id="docker_model_runner_dialog" class="modal">
+  <div class="modal-box">
+    <form method="dialog">
+      <button
+        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
+        >✕</button
+      >
+    </form>
+
+    <h3 class="text-lg font-bold">Custom Docker Model Runner URL</h3>
+    <p class="text-sm font-light mb-8">
+      By default, Kiln attempts to connect to Docker Model Runner at
+      http://localhost:12434/engines. If you run it on a different host or port,
+      enter the full base URL here.
+    </p>
+    <FormElement
+      id="docker_model_runner_url"
+      label="Docker Model Runner URL"
+      info_description="It should include the http prefix, host, port and engine path. For example, http://localhost:12434/engines/llama.cpp"
+      bind:value={docker_model_runner_custom_url}
+      placeholder="http://localhost:12434/engines"
+    />
+    <div class="flex flex-row gap-4 items-center mt-4 justify-end">
+      <form method="dialog">
+        <button class="btn">Cancel</button>
+      </form>
+      <button
+        class="btn btn-primary"
+        disabled={!docker_model_runner_custom_url}
+        on:click={() => {
+          connect_docker_model_runner(true)
+          // @ts-expect-error showModal is not a method on HTMLElement
+          document.getElementById("docker_model_runner_dialog")?.close()
         }}
       >
         Connect

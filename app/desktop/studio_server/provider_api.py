@@ -84,12 +84,12 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
 
 
 async def connect_docker_model_runner(
-    custom_docker_url: str | None = None,
+    docker_model_runner_curstom_url: str | None = None,
 ) -> DockerModelRunnerConnection:
     if (
-        custom_docker_url
-        and not custom_docker_url.startswith("http://")
-        and not custom_docker_url.startswith("https://")
+        docker_model_runner_curstom_url
+        and not docker_model_runner_curstom_url.startswith("http://")
+        and not docker_model_runner_curstom_url.startswith("https://")
     ):
         raise HTTPException(
             status_code=400,
@@ -97,7 +97,7 @@ async def connect_docker_model_runner(
         )
 
     try:
-        base_url = custom_docker_url or docker_model_runner_base_url()
+        base_url = docker_model_runner_curstom_url or docker_model_runner_base_url()
 
         # Use OpenAI client to test connection
         client = openai.OpenAI(
@@ -134,10 +134,13 @@ async def connect_docker_model_runner(
 
     # Save the custom Docker URL if used to connect
     if (
-        custom_docker_url
-        and custom_docker_url != Config.shared().docker_model_runner_base_url
+        docker_model_runner_curstom_url
+        and docker_model_runner_curstom_url
+        != Config.shared().docker_model_runner_base_url
     ):
-        Config.shared().save_setting("docker_model_runner_base_url", custom_docker_url)
+        Config.shared().save_setting(
+            "docker_model_runner_base_url", docker_model_runner_curstom_url
+        )
 
     return docker_connection
 
@@ -264,9 +267,10 @@ def connect_provider_api(app: FastAPI):
 
     @app.get("/api/provider/docker_model_runner/connect")
     async def connect_docker_model_runner_api(
-        custom_docker_url: str | None = None,
+        docker_model_runner_custom_url: str | None = None,
     ) -> DockerModelRunnerConnection:
-        return await connect_docker_model_runner(custom_docker_url)
+        chosen_url = docker_model_runner_custom_url
+        return await connect_docker_model_runner(chosen_url)
 
     @app.post("/api/provider/openai_compatible")
     async def save_openai_compatible_providers(name: str, base_url: str, api_key: str):

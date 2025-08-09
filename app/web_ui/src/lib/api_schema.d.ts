@@ -420,23 +420,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-  "/api/provider/docker_model_runner/connect": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/provider/docker_model_runner/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connect Docker Model Runner Api */
+        get: operations["connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Connect Docker Model Runner Api */
-    get: operations["connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
     "/api/provider/openai_compatible": {
         parameters: {
             query?: never;
@@ -3913,7 +3913,7 @@ export interface operations {
     connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get: {
         parameters: {
             query?: {
-                custom_docker_url?: string | null;
+                docker_model_runner_custom_url?: string | null;
             };
             header?: never;
             path?: never;
