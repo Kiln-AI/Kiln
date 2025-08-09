@@ -263,13 +263,13 @@ class BaseAdapter(metaclass=ABCMeta):
         usage: Usage | None = None,
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
-        input_str = (
-            json.dumps(input, ensure_ascii=False) if isinstance(input, dict) else input
+        input_str: str = (
+            input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
         )
         output_str = (
-            json.dumps(run_output.output, ensure_ascii=False)
-            if isinstance(run_output.output, dict)
-            else run_output.output
+            run_output.output
+            if isinstance(run_output.output, str)
+            else json.dumps(run_output.output, ensure_ascii=False)
         )
 
         # If no input source is provided, use the human data source

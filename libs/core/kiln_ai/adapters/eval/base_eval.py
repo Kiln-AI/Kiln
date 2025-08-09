@@ -2,13 +2,14 @@ import json
 from abc import abstractmethod
 from typing import Dict
 
+from typing_extensions import assert_never
+
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalScores
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfig, TaskOutputRatingType, TaskRun
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class BaseEval:
@@ -158,7 +159,7 @@ class BaseEval:
                     # Skip custom rating types in evals
                     continue
                 case _:
-                    raise_exhaustive_enum_error(output_score.type)
+                    assert_never(output_score.type)
 
             properties[output_score_json_key] = property
 

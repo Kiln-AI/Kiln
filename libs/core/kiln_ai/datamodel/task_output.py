@@ -3,13 +3,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Type, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
-from typing_extensions import Self
+from typing_extensions import Self, assert_never
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnBaseModel
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -42,7 +41,7 @@ def normalize_rating(rating: float, rating_type: TaskOutputRatingType) -> float:
         case TaskOutputRatingType.custom:
             raise ValueError("Custom rating type can not be normalized")
         case _:
-            raise_exhaustive_enum_error(rating_type)
+            assert_never(rating_type)
 
 
 class TaskOutputRating(KilnBaseModel):

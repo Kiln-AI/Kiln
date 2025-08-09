@@ -13,10 +13,10 @@ def test_model_parser_from_id_invalid():
     class MockModelParserID:
         mock_value = "mock_value"
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(AssertionError) as exc_info:
         model_parser_from_id(MockModelParserID.mock_value)  # type: ignore
 
-    assert "Unhandled enum value" in str(exc_info.value)
+    assert "Expected code to be unreachable" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
