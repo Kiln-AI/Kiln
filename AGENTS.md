@@ -12,7 +12,7 @@ uvx  ruff check --select I
 # Formatting 2:
 uvx ruff format --check .
 # type checking: warnings in output are acceptable, but error codes are not
-uv run pyright .
+uvx ty check
 # tests:
 uv run python3 -m pytest --benchmark-quiet -q .
 ```
