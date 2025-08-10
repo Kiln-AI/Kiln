@@ -87,12 +87,17 @@ def parse_docker_model_runner_models(
     )
 
 
-async def get_docker_model_runner_connection() -> DockerModelRunnerConnection | None:
+async def get_docker_model_runner_connection(
+    custom_url: str | None = None,
+) -> DockerModelRunnerConnection | None:
     """
     Gets the connection status for Docker Model Runner.
+
+    Args:
+        custom_url: Optional custom URL to use instead of the configured one
     """
     try:
-        base_url = docker_model_runner_base_url()
+        base_url = custom_url or docker_model_runner_base_url()
         # Use OpenAI client to get models list
         client = openai.OpenAI(
             api_key="dummy",  # Docker Model Runner doesn't require API key

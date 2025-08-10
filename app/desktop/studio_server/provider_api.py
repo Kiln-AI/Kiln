@@ -11,7 +11,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
     DockerModelRunnerConnection,
-    docker_model_runner_base_url,
     get_docker_model_runner_connection,
 )
 from kiln_ai.adapters.ml_model_list import (
@@ -97,33 +96,16 @@ async def connect_docker_model_runner(
         )
 
     try:
-        base_url = docker_model_runner_curstom_url or docker_model_runner_base_url()
-
-        # Use OpenAI client to test connection
-        client = openai.OpenAI(
-            api_key="dummy",  # Docker Model Runner doesn't require API key
-            base_url=f"{base_url}/v1",
-            max_retries=0,
+        docker_connection = await get_docker_model_runner_connection(
+            docker_model_runner_curstom_url
         )
-        models_response = client.models.list()
-
-        from kiln_ai.adapters.docker_model_runner_tools import (
-            parse_docker_model_runner_models,
-        )
-
-        docker_connection = parse_docker_model_runner_models(list(models_response))
 
         if docker_connection is None:
             raise HTTPException(
-                status_code=500,
-                detail="Failed to parse Docker Model Runner data - unsure which models are available.",
+                status_code=417,
+                detail="Failed to connect. Ensure Docker Model Runner is running and you enabled TCP connections. See the Docker Model Runner docs for instructions.",
             )
 
-    except openai.APIConnectionError:
-        raise HTTPException(
-            status_code=417,
-            detail="Failed to connect. Ensure Docker Model Runner is running and you enabled TCP connections. See the Docker Model Runner docs for instructions.",
-        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
