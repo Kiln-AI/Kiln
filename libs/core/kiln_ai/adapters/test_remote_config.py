@@ -454,3 +454,101 @@ def test_deserialize_config_empty_json_structures(tmp_path):
     path.write_text(json.dumps({}))
     with pytest.raises(ValueError):
         deserialize_config_at_path(path)
+
+
+def test_backwards_compatibility_with_v0_19(tmp_path):
+    """Test that kiln-ai v0.19 (first version with remote config) can parse JSON from current version.
+
+    This ensures our serialization format remains backwards compatible using uv scripts.
+
+    Skipped in CI/CD/VScode (needs UV), so you have to run it from the CLI (fine since it's slow):
+    Run from CLI: KILN_TEST_COMPATIBILITY=1 uv run python3 -m pytest libs/core/kiln_ai/adapters/test_remote_config.py::test_backwards_compatibility_with_v0_19 -s -v
+    """
+
+    # Skip unless explicitly requested via environment variable
+    if not os.environ.get("KILN_TEST_COMPATIBILITY"):
+        pytest.skip(
+            "Compatibility test skipped. Set KILN_TEST_COMPATIBILITY=1 to run this test."
+        )
+
+    import shutil
+    import subprocess
+
+    # Check if uv is available
+    if not shutil.which("uv"):
+        pytest.skip("uv is not available for compatibility test")
+
+    # Create JSON with current version
+    current_json_path = tmp_path / "current_models.json"
+    serialize_config(built_in_models, current_json_path)
+
+    # Test script using uv inline script metadata to install v0.19
+    test_script = f'''# /// script
+# dependencies = [
+#   "kiln-ai==0.19.0",
+#   "pandas",
+# ]
+# ///
+import sys
+import json
+from pathlib import Path
+
+# Import from v0.19
+try:
+    from kiln_ai.adapters.remote_config import deserialize_config_at_path
+    from kiln_ai.adapters.ml_model_list import KilnModel
+
+    # Try to deserialize current JSON with v0.19 code
+    models = deserialize_config_at_path("{current_json_path}")
+
+    # Basic validation - should have parsed successfully
+    assert len(models) > 0
+    assert all(isinstance(m, KilnModel) for m in models)
+
+    # Check basic fields exist and have expected types
+    for model in models:
+        assert hasattr(model, 'family') and isinstance(model.family, str)
+        assert hasattr(model, 'name') and isinstance(model.name, str)
+        assert hasattr(model, 'friendly_name') and isinstance(model.friendly_name, str)
+        assert hasattr(model, 'providers') and isinstance(model.providers, list)
+
+        # Check providers have basic fields
+        for provider in model.providers:
+            assert hasattr(provider, 'name')
+
+    sys.stdout.write("SUCCESS: v0.19 successfully parsed JSON from current version")
+    sys.stdout.write(f"Parsed {{len(models)}} models")
+
+except Exception as e:
+    sys.stdout.write(f"ERROR: {{e}}")
+    sys.exit(1)
+'''
+
+    try:
+        # Write the uv script
+        script_path = tmp_path / "test_v0_19.py"
+        script_path.write_text(test_script)
+
+        # Run the script using uv
+        result = subprocess.run(
+            ["uv", "run", str(script_path)], capture_output=True, text=True
+        )
+
+        # Check if the test passed
+        if result.returncode != 0:
+            pytest.fail(
+                f"v0.19 compatibility test failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            )
+
+        # Verify success message was printed
+        assert (
+            "SUCCESS: v0.19 successfully parsed JSON from current version"
+            in result.stdout
+        )
+
+    except subprocess.CalledProcessError as e:
+        # If we can't run uv, skip the test (might be network issues, etc.)
+        pytest.skip(f"Could not run uv script for compatibility test: {e}")
+    except FileNotFoundError:
+        # If uv command not found
+        pytest.skip("uv command not found for compatibility test")
