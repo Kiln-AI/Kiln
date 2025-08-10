@@ -157,6 +157,8 @@ class ModelName(str, Enum):
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_4_5 = "glm_4_5"
+    glm_4_5_air = "glm_4_5_air"
     glm_4_1v_9b_thinking = "glm_4_1v_9b_thinking"
     glm_z1_32b_0414 = "glm_z1_32b_0414"
     glm_z1_9b_0414 = "glm_z1_9b_0414"
@@ -2911,6 +2913,53 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # GLM 4.5
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_5,
+        friendly_name="GLM 4.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-4p5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
+    # GLM 4.5 AIR
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_5_air,
+        friendly_name="GLM 4.5 AIR",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.5-air",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-4p5-air",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-4.5-Air-FP8",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                parser=ModelParserID.r1_thinking,
             ),
         ],
     ),
