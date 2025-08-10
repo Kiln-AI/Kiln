@@ -516,11 +516,11 @@ try:
         for provider in model.providers:
             assert hasattr(provider, 'name')
 
-    print("SUCCESS: v0.19 successfully parsed JSON from current version")
-    print(f"Parsed {{len(models)}} models")
+    sys.stdout.write("SUCCESS: v0.19 successfully parsed JSON from current version")
+    sys.stdout.write(f"Parsed {{len(models)}} models")
 
 except Exception as e:
-    print(f"ERROR: {{e}}")
+    sys.stdout.write(f"ERROR: {{e}}")
     sys.exit(1)
 '''
 
