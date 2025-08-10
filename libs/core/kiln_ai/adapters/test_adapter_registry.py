@@ -16,6 +16,7 @@ def mock_config():
     with patch("kiln_ai.adapters.adapter_registry.Config") as mock:
         mock.shared.return_value.open_ai_api_key = "test-openai-key"
         mock.shared.return_value.open_router_api_key = "test-openrouter-key"
+        mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         yield mock
 
 
@@ -81,6 +82,33 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
     )
     assert adapter.config.default_headers == {
         "HTTP-Referer": "https://getkiln.ai/openrouter",
+        "X-Title": "KilnAI",
+    }
+
+
+def test_siliconflow_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            model_provider_name=ModelProviderName.siliconflow_cn,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert (
+        adapter.config.run_config_properties.model_name
+        == "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+    )
+    assert adapter.config.additional_body_options == {"api_key": "test-siliconflow-key"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.siliconflow_cn
+    )
+    assert adapter.config.default_headers == {
+        "HTTP-Referer": "https://getkiln.ai/siliconflow",
         "X-Title": "KilnAI",
     }
 

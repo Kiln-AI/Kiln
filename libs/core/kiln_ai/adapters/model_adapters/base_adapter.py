@@ -153,9 +153,16 @@ class BaseAdapter(metaclass=ABCMeta):
                 )
 
         # Validate reasoning content is present (if reasoning)
-        if provider.reasoning_capable and (
-            not parsed_output.intermediate_outputs
-            or "reasoning" not in parsed_output.intermediate_outputs
+        if (
+            provider.reasoning_capable
+            and (
+                not parsed_output.intermediate_outputs
+                or "reasoning" not in parsed_output.intermediate_outputs
+            )
+            and not (
+                provider.reasoning_optional_for_structured_output
+                and self.has_structured_output()
+            )
         ):
             raise RuntimeError(
                 "Reasoning is required for this model, but no reasoning was returned."

@@ -162,14 +162,51 @@
       saved = true
       // Wait for saved to propagate to warn_before_unload
       await tick()
+
       if (redirect_on_created && data?.id) {
-        redirect_to_project(data.id)
+        // Check if the imported project has tasks to decide where to redirect
+        const should_skip_task_creation = await project_has_tasks(data.id)
+
+        if (should_skip_task_creation) {
+          // Project has tasks, go to select task page
+          goto("/setup/select_task")
+        } else {
+          // Project has no tasks, go to task creation page
+          redirect_to_project(data.id)
+        }
         return
       }
     } catch (e) {
       error = createKilnError(e)
     } finally {
       submitting = false
+    }
+  }
+
+  // Check if an imported project has existing tasks
+  async function project_has_tasks(project_id: string): Promise<boolean> {
+    try {
+      const { data: tasks_data, error: tasks_error } = await client.GET(
+        "/api/projects/{project_id}/tasks",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (tasks_error) {
+        // If we can't fetch tasks, assume we need to create one
+        return false
+      }
+
+      // Return true if project has at least one task
+      return tasks_data && tasks_data.length > 0
+    } catch (e) {
+      // If error checking tasks, default to going to task creation
+      return false
     }
   }
 </script>

@@ -25,11 +25,7 @@ from kiln_ai.adapters.provider_tools import (
     provider_name_from_id,
     provider_warnings,
 )
-from kiln_ai.datamodel import (
-    Finetune,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -199,6 +195,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.ollama, "Ollama"),
         (ModelProviderName.openai, "OpenAI"),
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
+        (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -421,6 +418,17 @@ async def test_builtin_model_from_invalid_provider(mock_config):
 
 
 @pytest.mark.asyncio
+async def test_builtin_model_future_proof():
+    """Test handling of a model that doesn't exist yet but could be added over the air"""
+    with patch("kiln_ai.adapters.provider_tools.built_in_models") as mock_models:
+        mock_models.__iter__.return_value = []
+
+        # should not find it, but should not raise an error
+        result = builtin_model_from("gpt_99")
+        assert result is None
+
+
+@pytest.mark.asyncio
 async def test_builtin_model_from_model_no_providers():
     """Test handling of a model with no providers"""
     with patch("kiln_ai.adapters.provider_tools.built_in_models") as mock_models:
@@ -433,10 +441,8 @@ async def test_builtin_model_from_model_no_providers():
         )
         mock_models.__iter__.return_value = [mock_model]
 
-        with pytest.raises(ValueError) as exc_info:
-            await builtin_model_from(ModelName.phi_3_5)
-
-        assert str(exc_info.value) == f"Model {ModelName.phi_3_5} has no providers"
+        result = builtin_model_from(ModelName.phi_3_5)
+        assert result is None
 
 
 @pytest.mark.asyncio
