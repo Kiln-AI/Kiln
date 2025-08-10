@@ -106,14 +106,12 @@ async def connect_docker_model_runner(
             max_retries=0,
         )
         models_response = client.models.list()
-        # Convert to dict format for parsing
-        models_dict = {"data": [{"id": model.id} for model in models_response]}
 
         from kiln_ai.adapters.docker_model_runner_tools import (
             parse_docker_model_runner_models,
         )
 
-        docker_connection = parse_docker_model_runner_models(models_dict)
+        docker_connection = parse_docker_model_runner_models(list(models_response))
 
         if docker_connection is None:
             raise HTTPException(

@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import List
 
 import httpx
 import openai
@@ -52,7 +52,7 @@ class DockerModelRunnerConnection(BaseModel):
 
 # Parse the Docker Model Runner /v1/models response
 def parse_docker_model_runner_models(
-    models_response: Any,
+    models: List[openai.types.Model],
 ) -> DockerModelRunnerConnection | None:
     # Build a list of models we support for Docker Model Runner from the built-in model list
     supported_docker_models = [
@@ -63,25 +63,22 @@ def parse_docker_model_runner_models(
     ]
     # Note: Docker Model Runner aliases will be added when we configure models
 
-    if "data" in models_response:
-        models = models_response["data"]
-        if isinstance(models, list):
-            model_names = [model["id"] for model in models if "id" in model]
-            available_supported_models = []
-            untested_models = []
+    model_names = [model.id for model in models]
+    available_supported_models = []
+    untested_models = []
 
-            for model in model_names:
-                if model in supported_docker_models:
-                    available_supported_models.append(model)
-                else:
-                    untested_models.append(model)
+    for model_name in model_names:
+        if model_name in supported_docker_models:
+            available_supported_models.append(model_name)
+        else:
+            untested_models.append(model_name)
 
-            if available_supported_models or untested_models:
-                return DockerModelRunnerConnection(
-                    message="Docker Model Runner connected",
-                    supported_models=available_supported_models,
-                    untested_models=untested_models,
-                )
+    if available_supported_models or untested_models:
+        return DockerModelRunnerConnection(
+            message="Docker Model Runner connected",
+            supported_models=available_supported_models,
+            untested_models=untested_models,
+        )
 
     return DockerModelRunnerConnection(
         message="Docker Model Runner is running, but no supported models are available. Ensure models like 'ai/llama3.2:3B-Q4_K_M', 'ai/qwen3:8B-Q4_K_M', or 'ai/gemma3n:4B-Q4_K_M' are loaded.",
@@ -103,13 +100,11 @@ async def get_docker_model_runner_connection() -> DockerModelRunnerConnection | 
             max_retries=0,
         )
         models_response = client.models.list()
-        # Convert to dict format for parsing
-        models_dict = {"data": [{"id": model.id} for model in models_response]}
 
     except (openai.APIConnectionError, openai.APIError, httpx.RequestError):
         return None
 
-    return parse_docker_model_runner_models(models_dict)
+    return parse_docker_model_runner_models(list(models_response))
 
 
 def docker_model_runner_model_installed(

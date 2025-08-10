@@ -1,6 +1,8 @@
+from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
+import openai
 import pytest
 
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -31,27 +33,29 @@ def test_docker_model_runner_base_url_from_config():
 
 def test_parse_docker_model_runner_models_with_supported_models():
     """Test parsing Docker Model Runner models response with supported models."""
-    mock_response = {
-        "data": [
-            {"id": "ai/llama3.2:3B-Q4_K_M"},
-            {"id": "ai/qwen3:8B-Q4_K_M"},
-            {"id": "ai/gemma3n:4B-Q4_K_M"},
-            {"id": "unsupported-model"},
-        ]
-    }
+    # Create mock OpenAI Model objects
+    mock_models = cast(
+        list[openai.types.Model],
+        [
+            Mock(id="ai/llama3.2:3B-Q4_K_M"),
+            Mock(id="ai/qwen3:8B-Q4_K_M"),
+            Mock(id="ai/gemma3n:4B-Q4_K_M"),
+            Mock(id="unsupported-model"),
+        ],
+    )
 
     with patch(
         "kiln_ai.adapters.docker_model_runner_tools.built_in_models"
-    ) as mock_models:
+    ) as mock_built_in_models:
         # Mock built-in models with Docker Model Runner providers
         mock_model = Mock()
         mock_provider = Mock()
         mock_provider.name = ModelProviderName.docker_model_runner
         mock_provider.model_id = "ai/llama3.2:3B-Q4_K_M"
         mock_model.providers = [mock_provider]
-        mock_models.__iter__ = Mock(return_value=iter([mock_model]))
+        mock_built_in_models.__iter__ = Mock(return_value=iter([mock_model]))
 
-        result = parse_docker_model_runner_models(mock_response)
+        result = parse_docker_model_runner_models(mock_models)
 
         assert result is not None
         assert result.message == "Docker Model Runner connected"
@@ -61,25 +65,14 @@ def test_parse_docker_model_runner_models_with_supported_models():
 
 def test_parse_docker_model_runner_models_no_models():
     """Test parsing Docker Model Runner models response with no models."""
-    mock_response = {"data": []}
+    mock_models = []
 
-    result = parse_docker_model_runner_models(mock_response)
+    result = parse_docker_model_runner_models(mock_models)
 
     assert result is not None
     assert "no supported models are available" in result.message
     assert len(result.supported_models) == 0
     assert len(result.untested_models) == 0
-
-
-def test_parse_docker_model_runner_models_invalid_response():
-    """Test parsing invalid Docker Model Runner models response."""
-    mock_response = {"invalid": "response"}
-
-    result = parse_docker_model_runner_models(mock_response)
-
-    assert result is not None
-    assert "no supported models are available" in result.message
-    assert len(result.supported_models) == 0
 
 
 def test_docker_model_runner_connection_all_models():
