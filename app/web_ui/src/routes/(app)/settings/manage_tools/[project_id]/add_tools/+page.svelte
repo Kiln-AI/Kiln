@@ -148,6 +148,7 @@
         content={headers}
         content_label="Header"
         start_with_one={false}
+        empty_description="No Headers"
         empty_content={{
           key: "",
           value: "",
