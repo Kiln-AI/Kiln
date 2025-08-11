@@ -104,12 +104,15 @@
     return properties
   }
   function getHeadersProperties(tool: ExternalTool) {
-    return Object.entries(tool.properties["headers"] || {}).map(
-      ([key, value]) => ({
-        name: key,
-        value: String(value || "N/A"),
-      }),
-    )
+    const headers = Object.entries(tool.properties["headers"] || {})
+    if (headers.length === 0) {
+      return [{ name: "No Headers", value: "" }]
+    }
+
+    return headers.map(([key, value]) => ({
+      name: key,
+      value: String(value || "N/A"),
+    }))
   }
 </script>
 
