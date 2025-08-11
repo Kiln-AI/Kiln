@@ -62,17 +62,14 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function getToolProperties(tool: ExternalTool) {
+  function getDetailsProperties(tool: ExternalTool) {
     const properties = [
+      { name: "ID", value: tool.id || "Unknown" },
       { name: "Name", value: tool.name || "Unknown" },
       {
         name: "Description",
         value: tool.description || "N/A",
       },
-      { name: "ID", value: tool.id || "Unknown" },
-      { name: "Type", value: toolTypeToString(tool.type) || "Unknown" },
-      { name: "Version", value: tool.v || "Unknown" },
-      { name: "Model Type", value: tool.model_type || "Unknown" },
     ]
 
     if (tool.created_at) {
@@ -90,6 +87,29 @@
     }
 
     return properties
+  }
+
+  function getConnectionProperties(tool: ExternalTool) {
+    const properties = [
+      { name: "Type", value: toolTypeToString(tool.type) || "Unknown" },
+    ]
+
+    if (tool.properties["server_url"]) {
+      properties.push({
+        name: "Server URL",
+        value: tool.properties["server_url"],
+      })
+    }
+
+    return properties
+  }
+  function getHeadersProperties(tool: ExternalTool) {
+    return Object.entries(tool.properties["headers"] || {}).map(
+      ([key, value]) => ({
+        name: key,
+        value: String(value || "N/A"),
+      }),
+    )
   }
 </script>
 
@@ -114,23 +134,22 @@
     {:else if tool}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
         <div class="grow flex flex-col gap-4">
-          <PropertyList properties={getToolProperties(tool)} title="Details" />
-
-          {#if tool.properties && Object.keys(tool.properties).length > 0}
-            <div class="mt-6">
-              <div class="text-xl font-bold mb-4">Properties</div>
-              <div class="bg-base-200 rounded p-3">
-                <pre class="text-xs overflow-x-auto">{JSON.stringify(
-                    tool.properties,
-                    null,
-                    2,
-                  )}</pre>
-              </div>
-            </div>
-          {/if}
+          <PropertyList
+            properties={getDetailsProperties(tool)}
+            title="Properties"
+          />
         </div>
         <div class="grow flex flex-col gap-4">
-          <PropertyList properties={getToolProperties(tool)} title="Status" />
+          {#if tool.type === "remote_mcp"}
+            <PropertyList
+              properties={getConnectionProperties(tool)}
+              title="Connection Details"
+            />
+            <PropertyList
+              properties={getHeadersProperties(tool)}
+              title="Headers"
+            />
+          {/if}
         </div>
       </div>
     {:else}
