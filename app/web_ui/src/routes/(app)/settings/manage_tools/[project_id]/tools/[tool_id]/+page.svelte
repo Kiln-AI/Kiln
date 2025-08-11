@@ -145,13 +145,15 @@
               properties={getConnectionProperties(tool)}
               title="Connection Details"
             />
-            <!-- Manually add a gap between the connection details and the headers -->
-            <div class="mt-8">
-              <PropertyList
-                properties={getHeadersProperties(tool)}
-                title="Headers"
-              />
-            </div>
+            {#if getHeadersProperties(tool).length > 0}
+              <!-- Manually add a gap between the connection details and the headers -->
+              <div class="mt-8">
+                <PropertyList
+                  properties={getHeadersProperties(tool)}
+                  title="Headers"
+                />
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
