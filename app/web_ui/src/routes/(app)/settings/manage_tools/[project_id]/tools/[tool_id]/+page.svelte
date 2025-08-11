@@ -133,22 +133,25 @@
       </div>
     {:else if tool}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
-        <div class="grow flex flex-col gap-4">
+        <div class="grow flex flex-col">
           <PropertyList
             properties={getDetailsProperties(tool)}
             title="Properties"
           />
         </div>
-        <div class="grow flex flex-col gap-4">
+        <div class="grow flex flex-col">
           {#if tool.type === "remote_mcp"}
             <PropertyList
               properties={getConnectionProperties(tool)}
               title="Connection Details"
             />
-            <PropertyList
-              properties={getHeadersProperties(tool)}
-              title="Headers"
-            />
+            <!-- Manually add a gap between the connection details and the headers -->
+            <div class="mt-8">
+              <PropertyList
+                properties={getHeadersProperties(tool)}
+                title="Headers"
+              />
+            </div>
           {/if}
         </div>
       </div>
