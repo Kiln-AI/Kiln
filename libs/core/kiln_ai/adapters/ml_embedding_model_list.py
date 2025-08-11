@@ -118,9 +118,17 @@ def get_model_by_name(name: EmbeddingModelName) -> KilnEmbeddingModel:
 def built_in_embedding_models_from_provider(
     provider_name: ModelProviderName, model_name: str
 ) -> KilnEmbeddingModelProvider | None:
+    print(f"SEARCHING: provider_name: {provider_name}, model_name: {model_name}:")
     for model in built_in_embedding_models:
+        print(f"model.name: {model.name}, model_name: {model_name}")
         if model.name == model_name:
+            print(f"\tfound: model.name: {model.name}, model_name: {model_name}")
             for p in model.providers:
+                print(f"\t\tp.name: {p.name}, provider_name: {provider_name}")
                 if p.name == provider_name:
+                    print(
+                        f"\t\t\tfound: p.name: {p.name}, provider_name: {provider_name}"
+                    )
                     return p
+    print(f"NOT FOUND: provider_name: {provider_name}, model_name: {model_name}")
     return None

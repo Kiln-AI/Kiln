@@ -17,10 +17,25 @@ class LanceDBTableSchemaVersion(str, Enum):
     V1 = "1"
 
 
+class LanceDBVectorIndexType(str, Enum):
+    HNSW = "hnsw"
+    BRUTEFORCE = "bruteforce"
+
+
+class LanceDBVectorIndexMetric(str, Enum):
+    DOT = "dot"
+    COSINE = "cosine"
+    L2 = "l2"
+
+
 class LanceDBConfigProperties(BaseModel):
-    path: str
     table_schema_version: LanceDBTableSchemaVersion
-    vector_dimensions: int
+    vector_index_type: LanceDBVectorIndexType
+
+    # HNSW specific properties - https://lancedb.github.io/lancedb/concepts/index_hnsw/#k-nearest-neighbor-graphs-and-k-approximate-nearest-neighbor-graphs
+    hnsw_distance_type: LanceDBVectorIndexMetric | None
+    hnsw_m: int | None
+    hnsw_ef_construction: int | None
 
 
 class VectorStoreConfig(KilnParentedModel):
@@ -41,26 +56,74 @@ class VectorStoreConfig(KilnParentedModel):
                 raise ValueError("Invalid vector store type")
 
     def validate_lance_db_properties(self):
-        # some of the options we could add: https://lancedb.github.io/lancedb/guides/storage/#general-configuration
-        if "path" not in self.properties:
-            raise ValueError("LanceDB path not found in properties")
         if "table_schema_version" not in self.properties or self.properties[
             "table_schema_version"
         ] not in [v.value for v in LanceDBTableSchemaVersion]:
             raise ValueError("LanceDB table schema version not found in properties")
-        if "vector_dimensions" not in self.properties or not isinstance(
-            self.properties["vector_dimensions"], int
-        ):
-            raise ValueError("LanceDB vector dimensions not found in properties")
+        if "vector_index_type" not in self.properties or self.properties[
+            "vector_index_type"
+        ] not in [v.value for v in LanceDBVectorIndexType]:
+            raise ValueError("LanceDB vector index type not found in properties")
+
+        # HNSW specific properties
+        if self.properties["vector_index_type"] == LanceDBVectorIndexType.HNSW:
+            if (
+                "hnsw_m" not in self.properties
+                or "hnsw_ef_construction" not in self.properties
+                or "hnsw_distance_type" not in self.properties
+            ):
+                raise ValueError("HNSW specific properties not found in properties")
+            if self.properties["hnsw_distance_type"] not in [
+                v.value for v in LanceDBVectorIndexMetric
+            ]:
+                raise ValueError("HNSW distance type not found in properties")
+            if self.properties["hnsw_m"] is None or not isinstance(
+                self.properties["hnsw_m"], int
+            ):
+                raise ValueError("HNSW m must be a positive integer")
+            if self.properties["hnsw_ef_construction"] is None or not isinstance(
+                self.properties["hnsw_ef_construction"], int
+            ):
+                raise ValueError("HNSW ef_construction must be a positive integer")
+
         return self
 
     def lancedb_typed_properties(self) -> LanceDBConfigProperties:
+        if self.store_type != VectorStoreType.LANCE_DB:
+            raise ValueError(
+                "lancedb_typed_properties can only be called for LanceDB vector store configs"
+            )
+
+        def safe_int(value) -> int | None:
+            if value is None:
+                return None
+            return int(value)
+
+        # Get HNSW properties only if they exist
+        hnsw_distance_type = None
+        hnsw_m = None
+        hnsw_ef_construction = None
+
+        if self.properties.get("hnsw_distance_type"):
+            hnsw_distance_type = LanceDBVectorIndexMetric(
+                self.properties.get("hnsw_distance_type")
+            )
+        if self.properties.get("hnsw_m"):
+            hnsw_m = safe_int(self.properties.get("hnsw_m"))
+        if self.properties.get("hnsw_ef_construction"):
+            hnsw_ef_construction = safe_int(self.properties.get("hnsw_ef_construction"))
+
         return LanceDBConfigProperties(
-            path=str(self.properties["path"]),
             table_schema_version=LanceDBTableSchemaVersion(
-                self.properties["table_schema_version"]
+                self.properties.get("table_schema_version")
             ),
-            vector_dimensions=int(self.properties["vector_dimensions"]),
+            vector_index_type=LanceDBVectorIndexType(
+                self.properties.get("vector_index_type")
+            ),
+            # hnsw specific properties
+            hnsw_distance_type=hnsw_distance_type,
+            hnsw_m=hnsw_m,
+            hnsw_ef_construction=hnsw_ef_construction,
         )
 
     # Workaround to return typed parent without importing Project

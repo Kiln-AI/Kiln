@@ -7,7 +7,10 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
-from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    built_in_embedding_models_from_provider,
+)
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.rag.progress import (
     RagProgress,
@@ -987,6 +990,16 @@ def connect_document_api(app: FastAPI):
     ) -> EmbeddingConfig:
         project = project_from_id(project_id)
 
+        model = built_in_embedding_models_from_provider(
+            provider_name=request.model_provider_name,
+            model_name=request.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {request.model_name} not found in {request.model_provider_name}",
+            )
+
         embedding_config = EmbeddingConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1053,7 +1066,7 @@ def connect_document_api(app: FastAPI):
                 properties={
                     "path": "~/.kiln_ai/kiln_data",
                     "table_schema_version": "1",
-                    "vector_dimensions": 1536,
+                    "vector_index_type": "bruteforce",
                 },
             )
 

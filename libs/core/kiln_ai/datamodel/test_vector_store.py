@@ -4,6 +4,8 @@ from pydantic import ValidationError
 from kiln_ai.datamodel.vector_store import (
     LanceDBConfigProperties,
     LanceDBTableSchemaVersion,
+    LanceDBVectorIndexMetric,
+    LanceDBVectorIndexType,
     VectorStoreConfig,
     VectorStoreType,
 )
@@ -25,19 +27,27 @@ class TestLanceDBConfigProperties:
     def test_valid_lance_db_config_properties(self):
         """Test creating valid LanceDBConfigProperties."""
         config = LanceDBConfigProperties(
-            path="/path/to/db",
             table_schema_version=LanceDBTableSchemaVersion.V1,
-            vector_dimensions=768,
+            vector_index_type=LanceDBVectorIndexType.HNSW,
+            hnsw_m=16,
+            hnsw_ef_construction=100,
+            hnsw_distance_type=LanceDBVectorIndexMetric.COSINE,
         )
 
-        assert config.path == "/path/to/db"
         assert config.table_schema_version == LanceDBTableSchemaVersion.V1
-        assert config.vector_dimensions == 768
+        assert config.vector_index_type == LanceDBVectorIndexType.HNSW
+        assert config.hnsw_m == 16
+        assert config.hnsw_ef_construction == 100
+        assert config.hnsw_distance_type == LanceDBVectorIndexMetric.COSINE
 
     def test_lance_db_config_properties_with_string_schema_version(self):
         """Test creating LanceDBConfigProperties with string schema version."""
         config = LanceDBConfigProperties(
-            path="/path/to/db", table_schema_version="1", vector_dimensions=512
+            table_schema_version="1",
+            vector_index_type=LanceDBVectorIndexType.HNSW,
+            hnsw_m=16,
+            hnsw_ef_construction=100,
+            hnsw_distance_type=LanceDBVectorIndexMetric.COSINE,
         )
 
         assert config.table_schema_version == LanceDBTableSchemaVersion.V1
@@ -50,28 +60,21 @@ class TestVectorStoreConfig:
             name="test_store",
             store_type=VectorStoreType.LANCE_DB,
             properties={
-                "path": "/path/to/db",
                 "table_schema_version": "1",
-                "vector_dimensions": 768,
+                "vector_index_type": "hnsw",
+                "hnsw_m": 16,
+                "hnsw_ef_construction": 100,
+                "hnsw_distance_type": "cosine",
             },
         )
 
         assert config.name == "test_store"
         assert config.store_type == VectorStoreType.LANCE_DB
-        assert config.properties["path"] == "/path/to/db"
         assert config.properties["table_schema_version"] == "1"
-        assert config.properties["vector_dimensions"] == 768
-
-    def test_vector_store_config_missing_path(self):
-        """Test VectorStoreConfig validation fails when path is missing."""
-        with pytest.raises(
-            ValidationError, match="LanceDB path not found in properties"
-        ):
-            VectorStoreConfig(
-                name="test_store",
-                store_type=VectorStoreType.LANCE_DB,
-                properties={"table_schema_version": "1", "vector_dimensions": 768},
-            )
+        assert config.properties["vector_index_type"] == "hnsw"
+        assert config.properties["hnsw_m"] == 16
+        assert config.properties["hnsw_ef_construction"] == 100
+        assert config.properties["hnsw_distance_type"] == "cosine"
 
     def test_vector_store_config_missing_table_schema_version(self):
         """Test VectorStoreConfig validation fails when table_schema_version is missing."""
@@ -82,7 +85,12 @@ class TestVectorStoreConfig:
             VectorStoreConfig(
                 name="test_store",
                 store_type=VectorStoreType.LANCE_DB,
-                properties={"path": "/path/to/db", "vector_dimensions": 768},
+                properties={
+                    "vector_index_type": "hnsw",
+                    "hnsw_m": 16,
+                    "hnsw_ef_construction": 100,
+                    "hnsw_distance_type": "cosine",
+                },
             )
 
     def test_vector_store_config_invalid_table_schema_version(self):
@@ -97,33 +105,10 @@ class TestVectorStoreConfig:
                 properties={
                     "path": "/path/to/db",
                     "table_schema_version": "invalid",
-                    "vector_dimensions": 768,
-                },
-            )
-
-    def test_vector_store_config_missing_vector_dimensions(self):
-        """Test VectorStoreConfig validation fails when vector_dimensions is missing."""
-        with pytest.raises(
-            ValidationError, match="LanceDB vector dimensions not found in properties"
-        ):
-            VectorStoreConfig(
-                name="test_store",
-                store_type=VectorStoreType.LANCE_DB,
-                properties={"path": "/path/to/db", "table_schema_version": "1"},
-            )
-
-    def test_vector_store_config_invalid_vector_dimensions(self):
-        """Test VectorStoreConfig validation fails when vector_dimensions is not a digit."""
-        with pytest.raises(
-            ValidationError, match="LanceDB vector dimensions not found in properties"
-        ):
-            VectorStoreConfig(
-                name="test_store",
-                store_type=VectorStoreType.LANCE_DB,
-                properties={
-                    "path": "/path/to/db",
-                    "table_schema_version": "1",
-                    "vector_dimensions": "not_a_number",
+                    "vector_index_type": "hnsw",
+                    "hnsw_m": 16,
+                    "hnsw_ef_construction": 100,
+                    "hnsw_distance_type": "cosine",
                 },
             )
 
@@ -136,7 +121,10 @@ class TestVectorStoreConfig:
                 properties={
                     "path": "/path/to/db",
                     "table_schema_version": "1",
-                    "vector_dimensions": "768",
+                    "vector_index_type": "hnsw",
+                    "hnsw_m": 16,
+                    "hnsw_ef_construction": 100,
+                    "hnsw_distance_type": "cosine",
                 },
             )
 
@@ -146,18 +134,22 @@ class TestVectorStoreConfig:
             name="test_store",
             store_type=VectorStoreType.LANCE_DB,
             properties={
-                "path": "/path/to/db",
                 "table_schema_version": "1",
-                "vector_dimensions": 768,
+                "vector_index_type": "hnsw",
+                "hnsw_m": 16,
+                "hnsw_ef_construction": 100,
+                "hnsw_distance_type": "cosine",
             },
         )
 
         typed_props = config.lancedb_typed_properties()
 
         assert isinstance(typed_props, LanceDBConfigProperties)
-        assert typed_props.path == "/path/to/db"
         assert typed_props.table_schema_version == LanceDBTableSchemaVersion.V1
-        assert typed_props.vector_dimensions == 768
+        assert typed_props.vector_index_type == "hnsw"
+        assert typed_props.hnsw_m == 16
+        assert typed_props.hnsw_ef_construction == 100
+        assert typed_props.hnsw_distance_type == "cosine"
 
     def test_vector_store_config_inherits_from_kiln_parented_model(self):
         """Test that VectorStoreConfig inherits from KilnParentedModel."""
@@ -165,9 +157,11 @@ class TestVectorStoreConfig:
             name="test_store",
             store_type=VectorStoreType.LANCE_DB,
             properties={
-                "path": "/path/to/db",
                 "table_schema_version": "1",
-                "vector_dimensions": 768,
+                "vector_index_type": "hnsw",
+                "hnsw_m": 16,
+                "hnsw_ef_construction": 100,
+                "hnsw_distance_type": "cosine",
             },
         )
 
@@ -176,7 +170,6 @@ class TestVectorStoreConfig:
         assert hasattr(config, "v")
         assert hasattr(config, "created_at")
         assert hasattr(config, "created_by")
-        assert hasattr(config, "path")
         assert hasattr(config, "parent")
 
     @pytest.mark.parametrize(
@@ -189,9 +182,11 @@ class TestVectorStoreConfig:
             name=name,
             store_type=VectorStoreType.LANCE_DB,
             properties={
-                "path": "/path/to/db",
                 "table_schema_version": "1",
-                "vector_dimensions": 768,
+                "vector_index_type": "hnsw",
+                "hnsw_m": 16,
+                "hnsw_ef_construction": 100,
+                "hnsw_distance_type": "cosine",
             },
         )
         assert config.name == name
@@ -213,8 +208,10 @@ class TestVectorStoreConfig:
                 name=name,
                 store_type=VectorStoreType.LANCE_DB,
                 properties={
-                    "path": "/path/to/db",
                     "table_schema_version": "1",
-                    "vector_dimensions": 768,
+                    "vector_index_type": "hnsw",
+                    "hnsw_m": 16,
+                    "hnsw_ef_construction": 100,
+                    "hnsw_distance_type": "cosine",
                 },
             )

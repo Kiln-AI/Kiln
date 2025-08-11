@@ -118,9 +118,11 @@ def mock_vector_store_config(mock_project, tmp_path):
         name="Test Vector Store",
         store_type=VectorStoreType.LANCE_DB,
         properties={
-            "path": str(tmp_path / "test_vector_store"),
             "table_schema_version": "1",
-            "vector_dimensions": 1536,
+            "vector_index_type": "hnsw",
+            "hnsw_m": 16,
+            "hnsw_ef_construction": 100,
+            "hnsw_distance_type": "cosine",
         },
     )
     vector_store_config.save_to_file()
