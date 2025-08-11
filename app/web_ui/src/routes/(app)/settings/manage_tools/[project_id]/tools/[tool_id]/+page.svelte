@@ -94,7 +94,7 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title={"Tool Details"}>
+  <AppPage title={"Tool"} subtitle={`Name: ${tool?.name || ""}`}>
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -112,28 +112,25 @@
         </button>
       </div>
     {:else if tool}
-      <div class="space-y-6 mt-6">
-        <!-- Tool Information Card -->
-        <div class="card bg-base-100 border">
-          <div class="card-body">
-            <PropertyList
-              properties={getToolProperties(tool)}
-              title="Tool Information"
-            />
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
+        <div class="grow flex flex-col gap-4">
+          <PropertyList properties={getToolProperties(tool)} title="Details" />
 
-            {#if tool.properties && Object.keys(tool.properties).length > 0}
-              <div class="mt-6">
-                <div class="text-xl font-bold mb-4">Properties</div>
-                <div class="bg-base-200 rounded p-3">
-                  <pre class="text-xs overflow-x-auto">{JSON.stringify(
-                      tool.properties,
-                      null,
-                      2,
-                    )}</pre>
-                </div>
+          {#if tool.properties && Object.keys(tool.properties).length > 0}
+            <div class="mt-6">
+              <div class="text-xl font-bold mb-4">Properties</div>
+              <div class="bg-base-200 rounded p-3">
+                <pre class="text-xs overflow-x-auto">{JSON.stringify(
+                    tool.properties,
+                    null,
+                    2,
+                  )}</pre>
               </div>
-            {/if}
-          </div>
+            </div>
+          {/if}
+        </div>
+        <div class="grow flex flex-col gap-4">
+          <PropertyList properties={getToolProperties(tool)} title="Status" />
         </div>
       </div>
     {:else}
