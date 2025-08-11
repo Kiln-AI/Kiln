@@ -744,7 +744,7 @@
     document.getElementById("ollama_dialog")?.showModal()
   }
 
-  function show_docker_model_runner_curstom_url_dialog() {
+  function show_docker_model_runner_custom_url_dialog() {
     // @ts-expect-error showModal is not a method on HTMLElement
     document.getElementById("docker_model_runner_dialog")?.showModal()
   }
@@ -961,7 +961,7 @@
             {#if provider.id === "docker_model_runner" && status[provider.id] && status[provider.id].error}
               <button
                 class="link text-left text-sm text-gray-500"
-                on:click={show_docker_model_runner_curstom_url_dialog}
+                on:click={show_docker_model_runner_custom_url_dialog}
               >
                 Set Docker Model Runner Custom URL
               </button>

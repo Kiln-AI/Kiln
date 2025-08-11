@@ -83,12 +83,12 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
 
 
 async def connect_docker_model_runner(
-    docker_model_runner_curstom_url: str | None = None,
+    docker_model_runner_custom_url: str | None = None,
 ) -> DockerModelRunnerConnection:
     if (
-        docker_model_runner_curstom_url
-        and not docker_model_runner_curstom_url.startswith("http://")
-        and not docker_model_runner_curstom_url.startswith("https://")
+        docker_model_runner_custom_url
+        and not docker_model_runner_custom_url.startswith("http://")
+        and not docker_model_runner_custom_url.startswith("https://")
     ):
         raise HTTPException(
             status_code=400,
@@ -97,7 +97,7 @@ async def connect_docker_model_runner(
 
     try:
         docker_connection = await get_docker_model_runner_connection(
-            docker_model_runner_curstom_url
+            docker_model_runner_custom_url
         )
 
         if docker_connection is None:
@@ -114,12 +114,12 @@ async def connect_docker_model_runner(
 
     # Save the custom Docker URL if used to connect
     if (
-        docker_model_runner_curstom_url
-        and docker_model_runner_curstom_url
+        docker_model_runner_custom_url
+        and docker_model_runner_custom_url
         != Config.shared().docker_model_runner_base_url
     ):
         Config.shared().save_setting(
-            "docker_model_runner_base_url", docker_model_runner_curstom_url
+            "docker_model_runner_base_url", docker_model_runner_custom_url
         )
 
     return docker_connection
