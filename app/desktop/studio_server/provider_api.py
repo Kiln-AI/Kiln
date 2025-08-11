@@ -216,15 +216,15 @@ def connect_provider_api(app: FastAPI):
                             )
                         )
 
+        # Docker Model Runner is special: check which models are installed
+        docker_models = await available_docker_model_runner_models()
+        if docker_models:
+            models.insert(0, docker_models)
+
         # Ollama is special: check which models are installed
         ollama_models = await available_ollama_models()
         if ollama_models:
             models.insert(0, ollama_models)
-
-        # Docker Model Runner is special: check which models are installed
-        docker_models = await available_docker_model_runner_models()
-        if docker_models:
-            models.insert(-1 if ollama_models else 0, docker_models)
 
         # Add any fine tuned models
         fine_tuned_models = all_fine_tuned_models()
