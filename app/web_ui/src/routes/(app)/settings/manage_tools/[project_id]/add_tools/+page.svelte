@@ -109,7 +109,13 @@
       bind:error
       bind:submitting
     >
-      <FormElement label="Name" id="name" bind:value={name} max_length={120} />
+      <FormElement
+        label="Name"
+        id="name"
+        description="A name to identify this MCP server."
+        bind:value={name}
+        max_length={120}
+      />
 
       <FormElement
         label="Description"
@@ -123,7 +129,7 @@
       <FormElement
         label="Server URL"
         id="mcp_server_url"
-        description="The URL of the remote MCP server"
+        description="The URL of the remote MCP server."
         placeholder="https://example.com/mcp"
         bind:value={server_url}
       />
@@ -134,7 +140,7 @@
         label="Headers"
         id="headers_section"
         description="If the documentation for the server you're adding requires custom headers, enter them here."
-        optional={true}
+        info_description="These are usually not needed. Some MCP servers require custom headers, such as the 'Authorization' headers. Refer to the documentation for the server you're adding to see if they require headers."
         value=""
       />
 

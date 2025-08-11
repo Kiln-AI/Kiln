@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Intro from "$lib/ui/intro.svelte"
+
   export let project_id: string
 </script>
 
@@ -19,14 +21,19 @@
         />
       </svg>
     </div>
-    <div class="font-medium text-lg">No tools found for this project.</div>
-    <div>To get started, add a tool with MCP server to your project.</div>
-
-    <a
-      class="btn btn-primary"
-      href={`/settings/manage_tools/${project_id}/add_tools`}
-    >
-      Add Tool
-    </a>
+    <Intro
+      title="Add Tools to Your Project"
+      description_paragraphs={[
+        "Tools can provide powerful capabilities to your AI tasks.",
+        "To get started, add MCP servers to give your system new skills.",
+      ]}
+      action_buttons={[
+        {
+          label: "Add Tool",
+          href: `/settings/manage_tools/${project_id}/add_tools`,
+          is_primary: true,
+        },
+      ]}
+    />
   </div>
 </div>

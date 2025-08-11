@@ -115,7 +115,9 @@
         </table>
       </div>
     {:else if is_empty}
-      <EmptyTools {project_id} />
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <EmptyTools {project_id} />
+      </div>
     {/if}
   </AppPage>
 </div>
