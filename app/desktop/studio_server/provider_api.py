@@ -106,7 +106,10 @@ async def connect_docker_model_runner(
                 detail="Failed to connect. Ensure Docker Model Runner is running and you enabled TCP connections. See the Docker Model Runner docs for instructions.",
             )
 
-    except Exception as e:
+    except HTTPException:
+        # Preserve status/details from earlier raises (e.g., 400/417)
+        raise
+    except (openai.APIError, httpx.RequestError) as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to connect to Docker Model Runner: {e}",
