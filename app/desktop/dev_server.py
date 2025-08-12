@@ -22,4 +22,6 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=8757,
         reload=True,
+        # Debounce when changing many files (changing branch)
+        reload_delay=0.1,
     )
