@@ -1078,7 +1078,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                 ModelDetails(
                     id=docker_model,
                     name=docker_model,
-                    supports_structured_output=False,
+                    supports_structured_output=True,
                     supports_data_gen=False,
                     supports_logprobs=False,
                     untested_model=True,
