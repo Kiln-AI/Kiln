@@ -15,6 +15,7 @@ from kiln_ai.adapters.rag.progress import (
     RagProgress,
     compute_current_progress_for_rag_config,
 )
+from kiln_ai.adapters.vector_store.registry import vector_store_adapter_for_config
 from kiln_ai.datamodel import Project
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig
@@ -438,18 +439,102 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         chunker_config: ChunkerConfig,
         embedding_config: EmbeddingConfig,
         vector_store_config: VectorStoreConfig,
+        rag_config: RagConfig,
         concurrency: int = 10,
     ):
-        pass
+        self.project = project
+        self.extractor_config = extractor_config
+        self.chunker_config = chunker_config
+        self.embedding_config = embedding_config
+        self.vector_store_config = vector_store_config
+        self.rag_config = rag_config
+        self.concurrency = concurrency
+
+    @property
+    def lock_key(self) -> str:
+        return f"rag:index:{self.vector_store_config.id}"
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.INDEXING
 
-    async def collect_jobs(self) -> list[EmbeddingJob]:
-        raise NotImplementedError("Not implemented")
+    async def collect_records(
+        self,
+        batch_size: int = 100,
+    ) -> AsyncGenerator[list[Tuple[str, ChunkedDocument, ChunkEmbeddings]], None]:
+        target_extractor_config_id = self.extractor_config.id
+        target_chunker_config_id = self.chunker_config.id
+        target_embedding_config_id = self.embedding_config.id
+
+        # (document_id, chunked_document, embedding)
+        jobs: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]] = []
+        for document in self.project.documents(readonly=True):
+            extractions = document.extractions(readonly=True)
+            for extraction in extractions:
+                if extraction.extractor_config_id == target_extractor_config_id:
+                    for chunked_document in extraction.chunked_documents(readonly=True):
+                        if (
+                            chunked_document.chunker_config_id
+                            == target_chunker_config_id
+                        ):
+                            for chunk_embedding in chunked_document.chunk_embeddings(
+                                readonly=True
+                            ):
+                                if (
+                                    chunk_embedding.embedding_config_id
+                                    == target_embedding_config_id
+                                ):
+                                    jobs.append(
+                                        (
+                                            str(document.id),
+                                            chunked_document,
+                                            chunk_embedding,
+                                        )
+                                    )
+
+                                    if len(jobs) >= batch_size:
+                                        yield jobs
+                                        jobs = []
+
+            if len(jobs) > 0:
+                yield jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        raise NotImplementedError("Not implemented")
+        async with asyncio_mutex(self.lock_key):
+            vector_dimensions: int | None = None
+
+            # infer dimensionality - we peek into the first record to get the vector dimensions
+            # vector dimensions are not stored in the config because they are derived from the model
+            # and in some cases dynamic shortening of the vector (OpenAI has this)
+            async for records in self.collect_records(batch_size=1):
+                if len(records) > 0:
+                    embedding = records[0][2].embeddings[0]
+                    vector_dimensions = len(embedding.vector)
+                    break
+
+            if vector_dimensions is None:
+                raise ValueError("Vector dimensions are not set")
+
+            vector_store = await vector_store_adapter_for_config(
+                self.vector_store_config,
+            )
+
+            # create index from scratch
+            collection = await vector_store.create_collection(
+                rag_config=self.rag_config,
+                vector_dimensions=vector_dimensions,
+            )
+
+            # TODO: count the number of records to upsert, we need to do a separate first pass
+            # to count, because we cannot just acc everything into an array (would be too big
+            # if the user has thousands of documents
+            # that is N(docs) * (N(chunks) + N(embeddings))
+
+            async for records in self.collect_records(25):
+                await collection.upsert_chunks(records)
+                yield RagStepRunnerProgress(
+                    success_count=1,
+                    error_count=0,
+                )
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):

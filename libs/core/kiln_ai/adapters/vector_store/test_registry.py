@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import lancedb
 import pytest
+
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import VectorStoreConfig
 from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
 from kiln_ai.adapters.vector_store.registry import (

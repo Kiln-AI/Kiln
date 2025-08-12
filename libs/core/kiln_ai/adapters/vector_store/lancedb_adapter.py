@@ -2,6 +2,10 @@ import logging
 from typing import List, Tuple
 
 import lancedb
+from lancedb import AsyncConnection, AsyncTable
+from lancedb.index import FTS, HnswSq
+from lancedb.pydantic import LanceModel, Vector
+
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     BaseVectorStoreCollection,
@@ -12,9 +16,6 @@ from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import LanceDBVectorIndexType
-from lancedb import AsyncConnection, AsyncTable
-from lancedb.index import FTS, HnswSq
-from lancedb.pydantic import LanceModel, Vector
 
 logger = logging.getLogger(__name__)
 

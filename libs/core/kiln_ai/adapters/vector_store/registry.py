@@ -1,6 +1,7 @@
 import logging
 
 import lancedb
+
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     VectorStoreConfig,

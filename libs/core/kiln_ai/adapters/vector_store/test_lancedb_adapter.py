@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import lancedb
 import pytest
+
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import SimilarityMetric
 from kiln_ai.adapters.vector_store.lancedb_adapter import (
     LanceDBAdapter,
@@ -64,7 +65,6 @@ def embedding_config():
         name="test_embedding",
         model_provider_name=ModelProviderName.openai,
         model_name="text-embedding-ada-002",
-        dimensions=2,
         properties={},
     )
 
