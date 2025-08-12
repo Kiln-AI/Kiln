@@ -24,6 +24,4 @@ if __name__ == "__main__":
         reload=True,
         # Debounce when changing many files (changing branch)
         reload_delay=0.1,
-        # Only reload if python files change
-        reload_includes="*.py",
     )
