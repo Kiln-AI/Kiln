@@ -9,11 +9,12 @@ from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.ml_model_list import KilnModelProvider
+from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     ModelTurnResult,
 )
+from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -40,7 +41,7 @@ def build_test_task(tmp_path: Path):
     )
     r3 = datamodel.TaskRequirement(
         name="use tools for math",
-        instruction="Use the tools provided for math tasks",
+        instruction="Always use the tools provided for math tasks",
     )
     r4 = datamodel.TaskRequirement(
         name="Answer format",
@@ -49,7 +50,7 @@ def build_test_task(tmp_path: Path):
     task = datamodel.Task(
         parent=project,
         name="test task",
-        instruction="You are an assistant which performs math tasks provided in plain text.",
+        instruction="You are an assistant which performs math tasks provided in plain text using functions/tools.\n\nYou must use function calling (tools) for math tasks or you will be penalized. For example if requested to answer 2+2, you must call the 'add' function with a=2 and b=2 or the answer will be rejected.",
         requirements=[r1, r2, r3, r4],
     )
     task.save_to_file()
@@ -62,6 +63,7 @@ async def run_simple_task_with_tools(
     task: datamodel.Task,
     model_name: str,
     provider: str,
+    simplified: bool = False,
     prompt_id: PromptId | None = None,
 ) -> datamodel.TaskRun:
     adapter = adapter_for_task(
@@ -82,39 +84,52 @@ async def run_simple_task_with_tools(
     mock_math_tools = [add_spy, SubtractTool(), multiply_spy, DivideTool()]
 
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
-        run = await adapter.invoke(
-            "You should answer the following question: four plus six times 10"
-        )
+        if simplified:
+            run = await adapter.invoke("what is 2+2")
 
-        # Verify that MultiplyTool.run was called with correct parameters
-        multiply_spy.run.assert_called()
-        multiply_call_args = multiply_spy.run.call_args
-        multiply_kwargs = multiply_call_args.kwargs
-        # Check that multiply was called with a=6, b=10 (or vice versa)
-        assert (multiply_kwargs.get("a") == 6 and multiply_kwargs.get("b") == 10) or (
-            multiply_kwargs.get("a") == 10 and multiply_kwargs.get("b") == 6
-        ), (
-            f"Expected multiply to be called with a=6, b=10 or a=10, b=6, but got {multiply_kwargs}"
-        )
+            # Verify that AddTool.run was called with correct parameters
+            add_spy.run.assert_called()
+            add_call_args = add_spy.run.call_args
+            add_kwargs = add_call_args.kwargs
+            assert add_kwargs.get("a") == 2
+            assert add_kwargs.get("b") == 2
 
-        # Verify that AddTool.run was called with correct parameters
-        add_spy.run.assert_called()
-        add_call_args = add_spy.run.call_args
-        add_kwargs = add_call_args.kwargs
-        # Check that add was called with a=60, b=4 (or vice versa)
-        assert (add_kwargs.get("a") == 60 and add_kwargs.get("b") == 4) or (
-            add_kwargs.get("a") == 4 and add_kwargs.get("b") == 60
-        ), (
-            f"Expected add to be called with a=60, b=4 or a=4, b=60, but got {add_kwargs}"
-        )
+            assert "4" in run.output.output
+        else:
+            run = await adapter.invoke(
+                "You should answer the following question: four plus six times 10"
+            )
 
-        assert "64" in run.output.output
+            # Verify that MultiplyTool.run was called with correct parameters
+            multiply_spy.run.assert_called()
+            multiply_call_args = multiply_spy.run.call_args
+            multiply_kwargs = multiply_call_args.kwargs
+            # Check that multiply was called with a=6, b=10 (or vice versa)
+            assert (
+                multiply_kwargs.get("a") == 6 and multiply_kwargs.get("b") == 10
+            ) or (multiply_kwargs.get("a") == 10 and multiply_kwargs.get("b") == 6), (
+                f"Expected multiply to be called with a=6, b=10 or a=10, b=6, but got {multiply_kwargs}"
+            )
+
+            # Verify that AddTool.run was called with correct parameters
+            add_spy.run.assert_called()
+            add_call_args = add_spy.run.call_args
+            add_kwargs = add_call_args.kwargs
+            # Check that add was called with a=60, b=4 (or vice versa)
+            assert (add_kwargs.get("a") == 60 and add_kwargs.get("b") == 4) or (
+                add_kwargs.get("a") == 4 and add_kwargs.get("b") == 60
+            ), (
+                f"Expected add to be called with a=60, b=4 or a=4, b=60, but got {add_kwargs}"
+            )
+
+            assert "64" in run.output.output
+            assert (
+                run.input
+                == "You should answer the following question: four plus six times 10"
+            )
+            assert "64" in run.output.output
+
         assert run.id is not None
-        assert (
-            run.input
-            == "You should answer the following question: four plus six times 10"
-        )
-        assert "64" in run.output.output
         source_props = run.output.source.properties if run.output.source else {}
         assert source_props["adapter_name"] in [
             "kiln_langchain_adapter",
@@ -133,6 +148,39 @@ async def run_simple_task_with_tools(
 async def test_tools_gpt_4_1_mini(tmp_path):
     task = build_test_task(tmp_path)
     await run_simple_task_with_tools(task, "gpt_4_1_mini", ModelProviderName.openai)
+
+
+@pytest.mark.paid
+async def test_tools_gpt_4_1_mini_simplified(tmp_path):
+    task = build_test_task(tmp_path)
+    await run_simple_task_with_tools(
+        task, "gpt_4_1_mini", ModelProviderName.openai, simplified=True
+    )
+
+
+def check_supports_structured_output(model_name: str, provider_name: str):
+    for model in built_in_models:
+        if model.name != model_name:
+            continue
+        for provider in model.providers:
+            if provider.name != provider_name:
+                continue
+            if not provider.supports_function_calling:
+                pytest.skip(
+                    f"Skipping {model.name} {provider.name} because it does not support function calling"
+                )
+            return
+    raise RuntimeError(f"No model {model_name} {provider_name} found")
+
+
+@pytest.mark.paid
+@pytest.mark.ollama
+@pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
+async def test_tools_all_built_in_models(tmp_path, model_name, provider_name):
+    check_supports_structured_output(model_name, provider_name)
+    task = build_test_task(tmp_path)
+    # For the test of all models run the simplified test, we're checking if it can handle any tool calls, not getting fancy with it
+    await run_simple_task_with_tools(task, model_name, provider_name, simplified=True)
 
 
 async def test_tools_mocked(tmp_path):
