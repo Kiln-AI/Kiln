@@ -8,9 +8,7 @@ from litellm.types.utils import ChoiceLogprobs
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
-from kiln_ai.adapters.model_adapters.litellm_config import (
-    LiteLlmConfig,
-)
+from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -249,6 +247,8 @@ def test_tool_call_params_strict(config, mock_task):
         (ModelProviderName.huggingface, "huggingface"),
         (ModelProviderName.vertex, "vertex_ai"),
         (ModelProviderName.together_ai, "together_ai"),
+        # for openai-compatible providers, we expect openai as the provider name
+        (ModelProviderName.siliconflow_cn, "openai"),
     ],
 )
 def test_litellm_model_id_standard_providers(
@@ -957,3 +957,22 @@ class TestExtractReasoningToIntermediateOutputs:
         adapter._extract_reasoning_to_intermediate_outputs(None, intermediate_outputs)
 
         assert "reasoning" not in intermediate_outputs
+
+
+@pytest.mark.parametrize(
+    "enable_thinking",
+    [
+        True,
+        False,
+    ],
+)
+def test_build_extra_body_enable_thinking(config, mock_task, enable_thinking):
+    provider = Mock()
+    provider.name = ModelProviderName.siliconflow_cn
+    provider.siliconflow_enable_thinking = enable_thinking
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert extra_body["enable_thinking"] == enable_thinking
