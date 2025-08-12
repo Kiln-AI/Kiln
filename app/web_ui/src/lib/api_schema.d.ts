@@ -1073,57 +1073,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/available_tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Available Tools */
-        get: operations["get_available_tools_api_projects__project_id__available_tools_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tools/{tool_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Tool */
-        get: operations["get_tool_api_projects__project_id__tools__tool_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/connect_remote_MCP": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Connect Remote Mcp */
-        post: operations["connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1870,67 +1819,6 @@ export interface components {
          */
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
-         * ExternalTool
-         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tools can be remote or local.
-         *
-         *     This model stores the necessary configuration to connect to and authenticate with
-         *     external MCP servers that provide tools for LLM interactions.
-         */
-        ExternalTool: {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /**
-             * Name
-             * @description The name of the external tool.
-             */
-            name: string;
-            /** @description The type of external tool. Remote tools are hosted on a remote server */
-            type: components["schemas"]["ToolType"];
-            /**
-             * Description
-             * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
-             */
-            description?: string | null;
-            /**
-             * Properties
-             * @description Configuration properties specific to the tool type.
-             * @default {}
-             */
-            properties: Record<string, never>;
-            /** Model Type */
-            readonly model_type: string;
-        };
-        /** ExternalToolCreationRequest */
-        ExternalToolCreationRequest: {
-            /** Name */
-            name: string;
-            /** Server Url */
-            server_url: string;
-            /**
-             * Headers
-             * @default {}
-             */
-            headers: {
-                [key: string]: string;
-            };
-            /** Description */
-            description?: string | null;
-        };
-        /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
          */
@@ -2209,16 +2097,6 @@ export interface components {
             /** File Path */
             file_path: string | null;
         };
-        /** KilnToolDescription */
-        KilnToolDescription: {
-            /** Name */
-            name: string;
-            /** Id */
-            id: string | null;
-            type: components["schemas"]["ToolType"];
-            /** Description */
-            description: string | null;
-        };
         /** MeanUsage */
         MeanUsage: {
             /** Mean Input Tokens */
@@ -2265,13 +2143,13 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_oss_20b" | "gpt_oss_120b" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b_2507" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_2507_no_thinking" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b_2507" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_2507_no_thinking" | "qwen_3_235b_a22b_no_thinking" | "kimi_k2";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_5" | "gpt_5_chat" | "gpt_5_mini" | "gpt_5_nano" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_oss_20b" | "gpt_oss_120b" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_0528_distill_qwen3_8b" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b_2507" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_2507_no_thinking" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b_2507" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_2507_no_thinking" | "qwen_3_235b_a22b_no_thinking" | "qwen_long_l1_32b" | "kimi_k2" | "kimi_dev_72b" | "glm_4_1v_9b_thinking" | "glm_z1_32b_0414" | "glm_z1_9b_0414" | "ernie_4_5_300b_a47b" | "hunyuan_a13b" | "hunyuan_a13b_no_thinking" | "minimax_m1_80k" | "pangu_pro_moe_72b_a16b";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -3022,12 +2900,6 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /**
-         * ToolType
-         * @description Enumeration of supported external tool types.
-         * @enum {string}
-         */
-        ToolType: "remote_mcp";
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
             /** Name */
@@ -5495,104 +5367,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KilnFileResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_available_tools_api_projects__project_id__available_tools_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KilnToolDescription"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_tool_api_projects__project_id__tools__tool_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                tool_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExternalTool"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExternalToolCreationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExternalTool"];
                 };
             };
             /** @description Validation Error */

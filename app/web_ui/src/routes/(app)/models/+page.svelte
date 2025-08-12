@@ -152,7 +152,7 @@
       error = null
 
       const response = await fetch(
-        "https://remote-config.getkiln.ai/kiln_config.json",
+        "https://remote-config.getkiln.ai/kiln_config_v2.json",
       )
       if (!response.ok) {
         throw new Error(`Failed to fetch models: ${response.status}`)
