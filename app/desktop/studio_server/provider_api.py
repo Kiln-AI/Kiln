@@ -1067,8 +1067,8 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             supports_logprobs=docker_provider.supports_logprobs,
                             suggested_for_data_gen=docker_provider.suggested_for_data_gen,
                             suggested_for_evals=docker_provider.suggested_for_evals,
-                            uncensored=False,
-                            suggested_for_uncensored_data_gen=False,
+                            uncensored=docker_provider.uncensored,
+                            suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                         )
