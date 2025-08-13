@@ -313,7 +313,7 @@ def connect_run_api(app: FastAPI):
             imported_count = importer.create_runs_from_file()
         except KilnInvalidImportFormat as e:
             logger.error(
-                f"Invalid import format in {file_name}: {str(e)}",
+                f"Invalid import format in {file_name}: {e!s}",
                 exc_info=True,
             )
             raise HTTPException(

@@ -414,7 +414,7 @@ async def connect_openrouter(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenRouter. Error: {str(e)}"},
+            content={"message": f"Failed to connect to OpenRouter. Error: {e!s}"},
         )
 
 
@@ -454,7 +454,7 @@ async def connect_siliconflow(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to SiliconFlow. Error: {str(e)}"},
+            content={"message": f"Failed to connect to SiliconFlow. Error: {e!s}"},
         )
 
 
@@ -509,7 +509,7 @@ async def connect_fireworks(key_data: dict):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Fireworks. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Fireworks. Error: {e!s}"},
         )
 
 
@@ -534,7 +534,7 @@ async def connect_openai(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenAI. Error: {str(e)}"},
+            content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
         )
 
     # It worked! Save the key and return success
@@ -568,7 +568,7 @@ async def connect_groq(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Groq. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Groq. Error: {e!s}"},
         )
 
     # It worked! Save the key and return success
@@ -607,7 +607,7 @@ async def connect_gemini(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Gemini. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Gemini. Error: {e!s}"},
         )
 
 
@@ -630,7 +630,7 @@ async def connect_vertex(project_id: str, project_location: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Vertex. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Vertex. Error: {e!s}"},
         )
 
 
@@ -662,7 +662,7 @@ async def connect_together(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Together.ai. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Together.ai. Error: {e!s}"},
         )
 
 
@@ -694,7 +694,7 @@ async def connect_huggingface(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Huggingface. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Huggingface. Error: {e!s}"},
         )
 
 
@@ -728,7 +728,7 @@ async def connect_anthropic(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Anthropic. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Anthropic. Error: {e!s}"},
         )
 
 
@@ -794,7 +794,7 @@ async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to W&B. Error: {str(e)}"},
+            content={"message": f"Failed to connect to W&B. Error: {e!s}"},
         )
 
 
@@ -832,7 +832,7 @@ async def connect_azure_openai(key: str, endpoint: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Azure OpenAI. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Azure OpenAI. Error: {e!s}"},
         )
 
 
@@ -865,7 +865,7 @@ async def connect_cerebras(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Cerebras. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
         )
 
 

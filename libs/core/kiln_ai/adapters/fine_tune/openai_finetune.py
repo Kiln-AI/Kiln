@@ -79,7 +79,7 @@ class OpenAIFinetune(BaseFinetuneAdapter):
                 )
             return FineTuneStatus(
                 status=FineTuneStatusType.unknown,
-                message=f"Unknown error: [{str(e)}]",
+                message=f"Unknown error: [{e!s}]",
             )
 
         if not response or not isinstance(response, FineTuningJob):
