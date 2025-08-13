@@ -34,7 +34,7 @@ dependencies = [
     "together",
     "typing-extensions>=4.12.2",
     "vertexai>=1.43.0",
-    "pymilvus>=2.6.0",
+    "qdrant-client>=1.15.1",
 ]
 
 [dependency-groups]
