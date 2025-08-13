@@ -34,7 +34,7 @@ dependencies = [
     "together",
     "typing-extensions>=4.12.2",
     "vertexai>=1.43.0",
-    "qdrant-client>=1.15.1",
+    "chromadb>=1.0.16",
 ]
 
 [dependency-groups]
