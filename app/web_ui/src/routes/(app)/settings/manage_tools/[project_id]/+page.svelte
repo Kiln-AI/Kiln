@@ -17,10 +17,10 @@
   let error: KilnError | null = null
 
   onMount(async () => {
-    await fetch_available_tools()
+    await fetch_available_tool_servers()
   })
 
-  async function fetch_available_tools() {
+  async function fetch_available_tool_servers() {
     try {
       loading = true
       error = null
@@ -30,7 +30,7 @@
       }
 
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/available_tools",
+        "/api/projects/{project_id}/available_tool_servers",
         {
           params: {
             path: {
@@ -52,9 +52,11 @@
     }
   }
 
-  function navigateToTool(tool: KilnToolServerDescription) {
-    if (tool.id) {
-      goto(`/settings/manage_tools/${project_id}/tools/${tool.id}`)
+  function navigateToToolServer(tool_server: KilnToolServerDescription) {
+    if (tool_server.id) {
+      goto(
+        `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
+      )
     }
   }
 </script>
@@ -99,8 +101,9 @@
             {#each tools as tool}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
-                on:click={() => navigateToTool(tool)}
-                on:keydown={(e) => e.key === "Enter" && navigateToTool(tool)}
+                on:click={() => navigateToToolServer(tool)}
+                on:keydown={(e) =>
+                  e.key === "Enter" && navigateToToolServer(tool)}
                 role="button"
                 tabindex="0"
               >

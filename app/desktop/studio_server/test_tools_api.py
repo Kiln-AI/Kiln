@@ -30,7 +30,7 @@ def test_project(tmp_path):
     return project
 
 
-def test_create_tool_success(client, test_project):
+def test_create_tool_server_success(client, test_project):
     tool_data = {
         "name": "test_mcp_tool",
         "server_url": "https://example.com/mcp",
@@ -59,7 +59,7 @@ def test_create_tool_success(client, test_project):
         assert "created_at" in result
 
 
-def test_create_tool_no_headers(client, test_project):
+def test_create_tool_server_no_headers(client, test_project):
     tool_data = {
         "name": "test_tool",
         "server_url": "https://example.com/api",
@@ -83,7 +83,7 @@ def test_create_tool_no_headers(client, test_project):
         assert result["properties"]["headers"] == {}
 
 
-def test_create_tool_empty_headers(client, test_project):
+def test_create_tool_server_empty_headers(client, test_project):
     tool_data = {
         "name": "test_tool",
         "server_url": "https://example.com/api",
@@ -107,7 +107,7 @@ def test_create_tool_empty_headers(client, test_project):
         assert result["properties"]["headers"] == {}
 
 
-def test_create_tool_missing_server_url(client, test_project):
+def test_create_tool_server_missing_server_url(client, test_project):
     tool_data = {
         "name": "test_tool",
         "headers": {"Authorization": "Bearer token"},
@@ -128,7 +128,7 @@ def test_create_tool_missing_server_url(client, test_project):
         assert response.status_code == 422  # Validation error
 
 
-def test_create_tool_missing_name(client, test_project):
+def test_create_tool_server_missing_name(client, test_project):
     tool_data = {
         "server_url": "https://example.com/api",
         "headers": {"Authorization": "Bearer token"},
@@ -149,7 +149,7 @@ def test_create_tool_missing_name(client, test_project):
         assert response.status_code == 422  # Validation error
 
 
-def test_create_tool_no_description(client, test_project):
+def test_create_tool_server_no_description(client, test_project):
     tool_data = {
         "name": "test_tool",
         "server_url": "https://example.com/api",
@@ -172,21 +172,21 @@ def test_create_tool_no_description(client, test_project):
         assert result["description"] is None
 
 
-def test_get_available_tools_empty(client, test_project):
+def test_get_available_tool_servers_empty(client, test_project):
     with patch(
         "app.desktop.studio_server.tools_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+        response = client.get(f"/api/projects/{test_project.id}/available_tool_servers")
 
         assert response.status_code == 200
         result = response.json()
         assert result == []
 
 
-def test_get_available_tools_with_tool(client, test_project):
-    # First create a tool
+def test_get_available_tool_servers_with_tool_server(client, test_project):
+    # First create a tool server
     tool_data = {
         "name": "my_tool",
         "server_url": "https://api.example.com",
@@ -206,8 +206,8 @@ def test_get_available_tools_with_tool(client, test_project):
         assert create_response.status_code == 200
         created_tool = create_response.json()
 
-        # Then get the list of tools
-        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+        # Then get the list of tool servers
+        response = client.get(f"/api/projects/{test_project.id}/available_tool_servers")
 
         assert response.status_code == 200
         result = response.json()
@@ -217,8 +217,8 @@ def test_get_available_tools_with_tool(client, test_project):
         assert result[0]["description"] == "My awesome tool"
 
 
-def test_get_tool_success(client, test_project):
-    # First create a tool
+def test_get_tool_server_success(client, test_project):
+    # First create a tool server
     tool_data = {
         "name": "test_get_tool",
         "server_url": "https://example.com/api",
@@ -238,14 +238,16 @@ def test_get_tool_success(client, test_project):
         )
         assert create_response.status_code == 200
         created_tool = create_response.json()
-        tool_id = created_tool["id"]
+        tool_server_id = created_tool["id"]
 
-        # Now get the tool
-        response = client.get(f"/api/projects/{test_project.id}/tools/{tool_id}")
+        # Now get the tool server
+        response = client.get(
+            f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+        )
 
         assert response.status_code == 200
         result = response.json()
-        assert result["id"] == tool_id
+        assert result["id"] == tool_server_id
         assert result["name"] == "test_get_tool"
         assert result["type"] == "remote_mcp"
         assert result["description"] == "Tool for get test"
@@ -253,15 +255,15 @@ def test_get_tool_success(client, test_project):
         assert result["properties"]["headers"]["Authorization"] == "Bearer token"
 
 
-def test_get_tool_not_found(client, test_project):
+def test_get_tool_server_not_found(client, test_project):
     with patch(
         "app.desktop.studio_server.tools_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Try to get a non-existent tool
+        # Try to get a non-existent tool server
         response = client.get(
-            f"/api/projects/{test_project.id}/tools/nonexistent-tool-id"
+            f"/api/projects/{test_project.id}/tool_servers/nonexistent-tool-server-id"
         )
 
         assert response.status_code == 404

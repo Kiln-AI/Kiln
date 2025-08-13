@@ -1073,15 +1073,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/available_tools": {
+    "/api/projects/{project_id}/available_tool_servers": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Available Tools */
-        get: operations["get_available_tools_api_projects__project_id__available_tools_get"];
+        /** Get Available Tool Servers */
+        get: operations["get_available_tool_servers_api_projects__project_id__available_tool_servers_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1090,15 +1090,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tools/{tool_id}": {
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Tool */
-        get: operations["get_tool_api_projects__project_id__tools__tool_id__get"];
+        /** Get Tool Server */
+        get: operations["get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5508,7 +5508,7 @@ export interface operations {
             };
         };
     };
-    get_available_tools_api_projects__project_id__available_tools_get: {
+    get_available_tool_servers_api_projects__project_id__available_tool_servers_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5539,13 +5539,13 @@ export interface operations {
             };
         };
     };
-    get_tool_api_projects__project_id__tools__tool_id__get: {
+    get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 project_id: string;
-                tool_id: string;
+                tool_server_id: string;
             };
             cookie?: never;
         };

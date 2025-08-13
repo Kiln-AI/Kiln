@@ -22,8 +22,8 @@ class ExternalToolServerCreationRequest(BaseModel):
 
 
 def connect_tools_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/available_tools")
-    async def get_available_tools(
+    @app.get("/api/projects/{project_id}/available_tool_servers")
+    async def get_available_tool_servers(
         project_id: str,
     ) -> List[KilnToolServerDescription]:
         project = project_from_id(project_id)
@@ -38,14 +38,16 @@ def connect_tools_api(app: FastAPI):
             for tool in project.external_tool_servers()
         ]
 
-    @app.get("/api/projects/{project_id}/tools/{tool_id}")
-    async def get_tool(project_id: str, tool_id: str) -> ExternalToolServer:
+    @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
+    async def get_tool_server(
+        project_id: str, tool_server_id: str
+    ) -> ExternalToolServer:
         project = project_from_id(project_id)
         tool = next(
             (
                 t
                 for t in project.external_tool_servers(readonly=True)
-                if t.id == tool_id
+                if t.id == tool_server_id
             ),
             None,
         )
