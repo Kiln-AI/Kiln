@@ -7,7 +7,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import type { ExternalToolServer } from "$lib/types"
-  import { toolTypeToString } from "$lib/utils/formatters"
+  import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: tool_id = $page.params.tool_id
@@ -91,7 +91,7 @@
 
   function getConnectionProperties(tool: ExternalToolServer) {
     const properties = [
-      { name: "Type", value: toolTypeToString(tool.type) || "Unknown" },
+      { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
 
     if (tool.properties["server_url"]) {

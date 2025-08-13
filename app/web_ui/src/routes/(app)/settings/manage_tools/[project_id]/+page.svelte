@@ -6,7 +6,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import type { KilnToolServerDescription } from "$lib/types"
-  import { toolTypeToString } from "$lib/utils/formatters"
+  import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
 
   $: project_id = $page.params.project_id
@@ -105,7 +105,7 @@
                 tabindex="0"
               >
                 <td class="font-medium">{tool.name}</td>
-                <td class="text-sm">{toolTypeToString(tool.type)}</td>
+                <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">
                   {tool.description || "No description available"}
                 </td>
