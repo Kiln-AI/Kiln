@@ -1870,13 +1870,13 @@ export interface components {
          */
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
-         * ExternalTool
-         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tools can be remote or local.
+         * ExternalToolServer
+         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
          *
          *     This model stores the necessary configuration to connect to and authenticate with
          *     external MCP servers that provide tools for LLM interactions.
          */
-        ExternalTool: {
+        ExternalToolServer: {
             /**
              * V
              * @default 1
@@ -1898,8 +1898,8 @@ export interface components {
              * @description The name of the external tool.
              */
             name: string;
-            /** @description The type of external tool. Remote tools are hosted on a remote server */
-            type: components["schemas"]["ToolType"];
+            /** @description The type of external tool server. Remote tools are hosted on a remote server */
+            type: components["schemas"]["ToolServerType"];
             /**
              * Description
              * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
@@ -1914,8 +1914,8 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** ExternalToolCreationRequest */
-        ExternalToolCreationRequest: {
+        /** ExternalToolServerCreationRequest */
+        ExternalToolServerCreationRequest: {
             /** Name */
             name: string;
             /** Server Url */
@@ -2209,13 +2209,13 @@ export interface components {
             /** File Path */
             file_path: string | null;
         };
-        /** KilnToolDescription */
-        KilnToolDescription: {
+        /** KilnToolServerDescription */
+        KilnToolServerDescription: {
             /** Name */
             name: string;
             /** Id */
             id: string | null;
-            type: components["schemas"]["ToolType"];
+            type: components["schemas"]["ToolServerType"];
             /** Description */
             description: string | null;
         };
@@ -3023,11 +3023,11 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * ToolType
-         * @description Enumeration of supported external tool types.
+         * ToolServerType
+         * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
-        ToolType: "remote_mcp";
+        ToolServerType: "remote_mcp";
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
             /** Name */
@@ -5525,7 +5525,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KilnToolDescription"][];
+                    "application/json": components["schemas"]["KilnToolServerDescription"][];
                 };
             };
             /** @description Validation Error */
@@ -5557,7 +5557,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExternalTool"];
+                    "application/json": components["schemas"]["ExternalToolServer"];
                 };
             };
             /** @description Validation Error */
@@ -5582,7 +5582,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ExternalToolCreationRequest"];
+                "application/json": components["schemas"]["ExternalToolServerCreationRequest"];
             };
         };
         responses: {
@@ -5592,7 +5592,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExternalTool"];
+                    "application/json": components["schemas"]["ExternalToolServer"];
                 };
             };
             /** @description Validation Error */

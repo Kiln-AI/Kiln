@@ -1,12 +1,12 @@
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
-from kiln_ai.datamodel.external_tool import ExternalTool
+from kiln_ai.datamodel.external_tool import ExternalToolServer
 from kiln_ai.datamodel.task import Task
 
 
 class Project(
-    KilnParentModel, parent_of={"tasks": Task, "external_tools": ExternalTool}
+    KilnParentModel, parent_of={"tasks": Task, "external_tools": ExternalToolServer}
 ):
     """
     A collection of related tasks.
@@ -25,5 +25,5 @@ class Project(
     def tasks(self) -> list[Task]:
         return super().tasks()  # type: ignore
 
-    def external_tools(self, readonly: bool = False) -> list[ExternalTool]:
+    def external_tools(self, readonly: bool = False) -> list[ExternalToolServer]:
         return super().external_tools(readonly=readonly)  # type: ignore

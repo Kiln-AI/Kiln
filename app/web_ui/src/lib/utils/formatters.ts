@@ -1,7 +1,7 @@
 import {
   type EvalConfigType,
   type StructuredOutputMode,
-  type ToolType,
+  type ToolServerType,
 } from "$lib/types"
 
 export function formatDate(dateString: string | undefined): string {
@@ -128,14 +128,14 @@ export function structuredOutputModeToString(
  * This function uses exhaustive case checking - if you add a new case to ToolType,
  * TypeScript will force you to handle it here.
  */
-export function toolTypeToString(toolType: ToolType): string | undefined {
-  switch (toolType) {
+export function toolTypeToString(type: ToolServerType): string | undefined {
+  switch (type) {
     case "remote_mcp":
       return "Remote MCP"
     default: {
       // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
       // and don't handle it above, TypeScript will error here
-      const exhaustiveCheck: never = toolType
+      const exhaustiveCheck: never = type
       console.warn(`Unhandled toolType: ${exhaustiveCheck}`)
       return undefined
     }

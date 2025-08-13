@@ -6,13 +6,13 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalTool } from "$lib/types"
+  import type { ExternalToolServer } from "$lib/types"
   import { toolTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: tool_id = $page.params.tool_id
 
-  let tool: ExternalTool | null = null
+  let tool: ExternalToolServer | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -50,7 +50,7 @@
         throw fetch_error
       }
 
-      tool = data as ExternalTool
+      tool = data as ExternalToolServer
     } catch (err) {
       error = createKilnError(err)
     } finally {
@@ -62,7 +62,7 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function getDetailsProperties(tool: ExternalTool) {
+  function getDetailsProperties(tool: ExternalToolServer) {
     const properties = [
       { name: "ID", value: tool.id || "Unknown" },
       { name: "Name", value: tool.name || "Unknown" },
@@ -89,7 +89,7 @@
     return properties
   }
 
-  function getConnectionProperties(tool: ExternalTool) {
+  function getConnectionProperties(tool: ExternalToolServer) {
     const properties = [
       { name: "Type", value: toolTypeToString(tool.type) || "Unknown" },
     ]
@@ -103,7 +103,7 @@
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalTool) {
+  function getHeadersProperties(tool: ExternalToolServer) {
     return Object.entries(tool.properties["headers"] || {}).map(
       ([key, value]) => ({
         name: key,

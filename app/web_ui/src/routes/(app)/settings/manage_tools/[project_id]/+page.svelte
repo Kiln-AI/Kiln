@@ -5,14 +5,14 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { KilnToolDescription } from "$lib/types"
+  import type { KilnToolServerDescription } from "$lib/types"
   import { toolTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
 
   $: project_id = $page.params.project_id
   $: is_empty = !tools || tools.length == 0
 
-  let tools: KilnToolDescription[] | null = null
+  let tools: KilnToolServerDescription[] | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -52,7 +52,7 @@
     }
   }
 
-  function navigateToTool(tool: KilnToolDescription) {
+  function navigateToTool(tool: KilnToolServerDescription) {
     if (tool.id) {
       goto(`/settings/manage_tools/${project_id}/tools/${tool.id}`)
     }
