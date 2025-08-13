@@ -35,14 +35,19 @@ def connect_tools_api(app: FastAPI):
                 type=tool.type,
                 description=tool.description,
             )
-            for tool in project.external_tools()
+            for tool in project.external_tool_servers()
         ]
 
     @app.get("/api/projects/{project_id}/tools/{tool_id}")
     async def get_tool(project_id: str, tool_id: str) -> ExternalToolServer:
         project = project_from_id(project_id)
         tool = next(
-            (t for t in project.external_tools(readonly=True) if t.id == tool_id), None
+            (
+                t
+                for t in project.external_tool_servers(readonly=True)
+                if t.id == tool_id
+            ),
+            None,
         )
         if not tool:
             raise HTTPException(status_code=404, detail="Tool not found")
