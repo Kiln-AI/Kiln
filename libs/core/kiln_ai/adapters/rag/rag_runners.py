@@ -505,19 +505,26 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             # infer dimensionality - we peek into the first record to get the vector dimensions
             # vector dimensions are not stored in the config because they are derived from the model
             # and in some cases dynamic shortening of the vector (OpenAI has this)
+            print("======================")
+            print("Collecting records for vector dimensions")
             async for records in self.collect_records(batch_size=1):
                 if len(records) > 0:
                     embedding = records[0][2].embeddings[0]
                     vector_dimensions = len(embedding.vector)
+                    print(f"Vector dimensions: {vector_dimensions}")
                     break
 
             if vector_dimensions is None:
                 raise ValueError("Vector dimensions are not set")
 
+            print("======================")
+            print("Creating vector store collection")
             vector_store = await vector_store_adapter_for_config(
                 self.vector_store_config,
             )
 
+            print("======================")
+            print("Creating vector store collection")
             # create index from scratch
             collection = await vector_store.create_collection(
                 rag_config=self.rag_config,
@@ -529,7 +536,10 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             # if the user has thousands of documents
             # that is N(docs) * (N(chunks) + N(embeddings))
 
+            print("======================")
+            print("Upserting records")
             async for records in self.collect_records(25):
+                print(f"Upserting {len(records)} records")
                 await collection.upsert_chunks(records)
                 yield RagStepRunnerProgress(
                     success_count=1,
@@ -651,4 +661,7 @@ class RagWorkflowRunner:
                     continue
 
                 async for progress in step.run():
-                    yield self.update_workflow_progress(step.stage(), progress)
+                    if step.stage() == RagWorkflowStepNames.INDEXING:
+                        print(f"Indexing progress: {progress}")
+                    else:
+                        yield self.update_workflow_progress(step.stage(), progress)
