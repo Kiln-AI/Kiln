@@ -63,7 +63,7 @@
       const headersObj = buildHeadersObject()
 
       const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/connect_remote_MCP",
+        "/api/projects/{project_id}/connect_remote_mcp",
         {
           params: {
             path: {
@@ -86,7 +86,7 @@
       if (data?.id) {
         // Navigate to the tools page for the created tool
         goto(
-          `/settings/manage_tools/${$page.params.project_id}/tools/${data.id}`,
+          `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,
         )
       }
     } catch (e) {

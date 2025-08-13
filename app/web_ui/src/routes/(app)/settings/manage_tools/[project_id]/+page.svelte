@@ -5,22 +5,22 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { KilnToolDescription } from "$lib/types"
-  import { toolTypeToString } from "$lib/utils/formatters"
+  import type { KilnToolServerDescription } from "$lib/types"
+  import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
 
   $: project_id = $page.params.project_id
   $: is_empty = !tools || tools.length == 0
 
-  let tools: KilnToolDescription[] | null = null
+  let tools: KilnToolServerDescription[] | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
-    await fetch_available_tools()
+    await fetch_available_tool_servers()
   })
 
-  async function fetch_available_tools() {
+  async function fetch_available_tool_servers() {
     try {
       loading = true
       error = null
@@ -30,7 +30,7 @@
       }
 
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/available_tools",
+        "/api/projects/{project_id}/available_tool_servers",
         {
           params: {
             path: {
@@ -52,22 +52,24 @@
     }
   }
 
-  function navigateToTool(tool: KilnToolDescription) {
-    if (tool.id) {
-      goto(`/settings/manage_tools/${project_id}/tools/${tool.id}`)
+  function navigateToToolServer(tool_server: KilnToolServerDescription) {
+    if (tool_server.id) {
+      goto(
+        `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
+      )
     }
   }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Tools"
+    title="Manage Tools"
     subtitle="Connect your project to tools with MCP servers"
     action_buttons={is_empty
       ? []
       : [
           {
-            label: "Add Tool",
+            label: "Connect MCP Server",
             href: `/settings/manage_tools/${project_id}/add_tools`,
           },
         ]}
@@ -90,7 +92,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Server Name</th>
               <th>Type</th>
               <th>Description</th>
             </tr>
@@ -99,13 +101,14 @@
             {#each tools as tool}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
-                on:click={() => navigateToTool(tool)}
-                on:keydown={(e) => e.key === "Enter" && navigateToTool(tool)}
+                on:click={() => navigateToToolServer(tool)}
+                on:keydown={(e) =>
+                  e.key === "Enter" && navigateToToolServer(tool)}
                 role="button"
                 tabindex="0"
               >
                 <td class="font-medium">{tool.name}</td>
-                <td class="text-sm">{toolTypeToString(tool.type)}</td>
+                <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">
                   {tool.description || "No description available"}
                 </td>

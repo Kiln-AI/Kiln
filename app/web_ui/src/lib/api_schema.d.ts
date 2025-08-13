@@ -1073,15 +1073,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/available_tools": {
+    "/api/projects/{project_id}/available_tool_servers": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Available Tools */
-        get: operations["get_available_tools_api_projects__project_id__available_tools_get"];
+        /** Get Available Tool Servers */
+        get: operations["get_available_tool_servers_api_projects__project_id__available_tool_servers_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1090,15 +1090,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tools/{tool_id}": {
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Tool */
-        get: operations["get_tool_api_projects__project_id__tools__tool_id__get"];
+        /** Get Tool Server */
+        get: operations["get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1107,7 +1107,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/connect_remote_MCP": {
+    "/api/projects/{project_id}/connect_remote_mcp": {
         parameters: {
             query?: never;
             header?: never;
@@ -1117,7 +1117,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Connect Remote Mcp */
-        post: operations["connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post"];
+        post: operations["connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1870,13 +1870,13 @@ export interface components {
          */
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
-         * ExternalTool
-         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tools can be remote or local.
+         * ExternalToolServer
+         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
          *
          *     This model stores the necessary configuration to connect to and authenticate with
          *     external MCP servers that provide tools for LLM interactions.
          */
-        ExternalTool: {
+        ExternalToolServer: {
             /**
              * V
              * @default 1
@@ -1898,8 +1898,8 @@ export interface components {
              * @description The name of the external tool.
              */
             name: string;
-            /** @description The type of external tool. Remote tools are hosted on a remote server */
-            type: components["schemas"]["ToolType"];
+            /** @description The type of external tool server. Remote tools are hosted on a remote server */
+            type: components["schemas"]["ToolServerType"];
             /**
              * Description
              * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
@@ -1914,17 +1914,14 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** ExternalToolCreationRequest */
-        ExternalToolCreationRequest: {
+        /** ExternalToolServerCreationRequest */
+        ExternalToolServerCreationRequest: {
             /** Name */
             name: string;
             /** Server Url */
             server_url: string;
-            /**
-             * Headers
-             * @default {}
-             */
-            headers: {
+            /** Headers */
+            headers?: {
                 [key: string]: string;
             };
             /** Description */
@@ -2209,13 +2206,13 @@ export interface components {
             /** File Path */
             file_path: string | null;
         };
-        /** KilnToolDescription */
-        KilnToolDescription: {
+        /** KilnToolServerDescription */
+        KilnToolServerDescription: {
             /** Name */
             name: string;
             /** Id */
             id: string | null;
-            type: components["schemas"]["ToolType"];
+            type: components["schemas"]["ToolServerType"];
             /** Description */
             description: string | null;
         };
@@ -3023,11 +3020,11 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * ToolType
-         * @description Enumeration of supported external tool types.
+         * ToolServerType
+         * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
-        ToolType: "remote_mcp";
+        ToolServerType: "remote_mcp";
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
             /** Name */
@@ -5508,7 +5505,7 @@ export interface operations {
             };
         };
     };
-    get_available_tools_api_projects__project_id__available_tools_get: {
+    get_available_tool_servers_api_projects__project_id__available_tool_servers_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5525,7 +5522,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KilnToolDescription"][];
+                    "application/json": components["schemas"]["KilnToolServerDescription"][];
                 };
             };
             /** @description Validation Error */
@@ -5539,13 +5536,13 @@ export interface operations {
             };
         };
     };
-    get_tool_api_projects__project_id__tools__tool_id__get: {
+    get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 project_id: string;
-                tool_id: string;
+                tool_server_id: string;
             };
             cookie?: never;
         };
@@ -5557,7 +5554,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExternalTool"];
+                    "application/json": components["schemas"]["ExternalToolServer"];
                 };
             };
             /** @description Validation Error */
@@ -5571,7 +5568,7 @@ export interface operations {
             };
         };
     };
-    connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post: {
+    connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5582,7 +5579,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ExternalToolCreationRequest"];
+                "application/json": components["schemas"]["ExternalToolServerCreationRequest"];
             };
         };
         responses: {
@@ -5592,7 +5589,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExternalTool"];
+                    "application/json": components["schemas"]["ExternalToolServer"];
                 };
             };
             /** @description Validation Error */

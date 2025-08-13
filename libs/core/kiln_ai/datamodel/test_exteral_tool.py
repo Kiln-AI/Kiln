@@ -1,14 +1,14 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.external_tool import ExternalTool, ToolType
+from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 
 
 def test_external_tool_creation():
-    """Test successful creation of ExternalTool with valid data."""
-    tool = ExternalTool(
+    """Test successful creation of ExternalToolServer with valid data."""
+    tool = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         description="A test external tool",
         properties={
             "server_url": "https://api.example.com",
@@ -29,11 +29,11 @@ def test_external_tool_creation():
     assert tool.id is not None  # Should have auto-generated ID
 
 
-def test_external_tool_creation_minimal():
-    """Test creation of ExternalTool with minimal required fields."""
-    tool = ExternalTool(
+def test_external_tool_server_creation_minimal():
+    """Test creation of ExternalToolServer with minimal required fields."""
+    tool = ExternalToolServer(
         name="minimal_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         properties={
             "server_url": "https://api.example.com",
             "headers": {"Authorization": "Bearer token"},
@@ -46,14 +46,14 @@ def test_external_tool_creation_minimal():
     assert tool.properties["headers"] == {"Authorization": "Bearer token"}
 
 
-def test_external_tool_name_validation():
+def test_external_tool_server_name_validation():
     """Test that name field validates as FilenameString."""
     # Test valid names
     valid_names = ["test_tool", "Tool123", "my-tool", "Tool_Name_v2"]
     for name in valid_names:
-        tool = ExternalTool(
+        tool = ExternalToolServer(
             name=name,
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
                 "headers": {"Authorization": "Bearer token"},
@@ -79,9 +79,9 @@ def test_external_tool_name_validation():
 
     for invalid_name in invalid_names:
         with pytest.raises(ValidationError):
-            ExternalTool(
+            ExternalToolServer(
                 name=invalid_name,
-                type=ToolType.remote_mcp,
+                type=ToolServerType.remote_mcp,
                 properties={
                     "server_url": "https://api.example.com",
                     "headers": {"Authorization": "Bearer token"},
@@ -93,9 +93,9 @@ def test_external_tool_name_length_constraints():
     """Test name length constraints (FilenameString: 1-120 chars)."""
     # Test empty name
     with pytest.raises(ValidationError):
-        ExternalTool(
+        ExternalToolServer(
             name="",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
                 "headers": {"Authorization": "Bearer token"},
@@ -105,9 +105,9 @@ def test_external_tool_name_length_constraints():
     # Test name that's too long (> 120 chars)
     long_name = "a" * 121
     with pytest.raises(ValidationError):
-        ExternalTool(
+        ExternalToolServer(
             name=long_name,
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
                 "headers": {"Authorization": "Bearer token"},
@@ -116,9 +116,9 @@ def test_external_tool_name_length_constraints():
 
     # Test maximum valid length (120 chars)
     max_name = "a" * 120
-    tool = ExternalTool(
+    tool = ExternalToolServer(
         name=max_name,
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         properties={
             "server_url": "https://api.example.com",
             "headers": {"Authorization": "Bearer token"},
@@ -131,8 +131,8 @@ def test_external_tool_required_fields():
     """Test that missing required fields raise ValidationError."""
     # Missing name
     with pytest.raises(ValidationError):
-        ExternalTool(
-            type=ToolType.remote_mcp,
+        ExternalToolServer(
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
                 "headers": {"Authorization": "Bearer token"},
@@ -141,9 +141,9 @@ def test_external_tool_required_fields():
 
     # Missing server_url
     with pytest.raises(ValidationError):
-        ExternalTool(
+        ExternalToolServer(
             name="test_tool",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "headers": {"Authorization": "Bearer token"},
             },
@@ -151,7 +151,7 @@ def test_external_tool_required_fields():
 
     # Missing type
     with pytest.raises(ValidationError):
-        ExternalTool(
+        ExternalToolServer(
             name="test_tool",
             properties={
                 "server_url": "https://api.example.com",
@@ -161,9 +161,9 @@ def test_external_tool_required_fields():
 
     # Missing headers
     with pytest.raises(ValidationError):
-        ExternalTool(
+        ExternalToolServer(
             name="test_tool",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
             },
@@ -174,9 +174,9 @@ def test_external_tool_empty_string_validation():
     """Test that empty strings for required fields raise ValidationError."""
     # Empty server_url
     with pytest.raises(ValidationError):
-        ExternalTool(
+        ExternalToolServer(
             name="test_tool",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "",
                 "headers": {"Authorization": "Bearer token"},
@@ -196,9 +196,9 @@ def test_external_tool_headers_validation():
     ]
 
     for headers in valid_headers:
-        tool = ExternalTool(
+        tool = ExternalToolServer(
             name="test_tool",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
                 "headers": headers,
@@ -210,9 +210,9 @@ def test_external_tool_headers_validation():
     with pytest.raises(
         ValidationError, match="headers must be set when type is 'remote_mcp'"
     ):
-        ExternalTool(
+        ExternalToolServer(
             name="test_tool",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://api.example.com",
                 "headers": None,
@@ -220,9 +220,9 @@ def test_external_tool_headers_validation():
         )
 
     # Test that empty headers dict is allowed
-    tool = ExternalTool(
+    tool = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         properties={
             "server_url": "https://api.example.com",
             "headers": {},
@@ -243,9 +243,9 @@ def test_external_tool_server_url_validation():
     ]
 
     for url in valid_urls:
-        tool = ExternalTool(
+        tool = ExternalToolServer(
             name="test_tool",
-            type=ToolType.remote_mcp,
+            type=ToolServerType.remote_mcp,
             properties={
                 "server_url": url,
                 "headers": {"Authorization": "Bearer token"},
@@ -257,9 +257,9 @@ def test_external_tool_server_url_validation():
 def test_external_tool_description_optional():
     """Test that description field is optional and can be None."""
     # With description
-    tool_with_desc = ExternalTool(
+    tool_with_desc = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         description="A test tool",
         properties={
             "server_url": "https://api.example.com",
@@ -269,9 +269,9 @@ def test_external_tool_description_optional():
     assert tool_with_desc.description == "A test tool"
 
     # Without description (should be None)
-    tool_without_desc = ExternalTool(
+    tool_without_desc = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         properties={
             "server_url": "https://api.example.com",
             "headers": {"Authorization": "Bearer token"},
@@ -280,9 +280,9 @@ def test_external_tool_description_optional():
     assert tool_without_desc.description is None
 
     # Explicitly set to None
-    tool_none_desc = ExternalTool(
+    tool_none_desc = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         description=None,
         properties={
             "server_url": "https://api.example.com",
@@ -293,10 +293,10 @@ def test_external_tool_description_optional():
 
 
 def test_external_tool_inheritance():
-    """Test that ExternalTool properly inherits from KilnParentedModel."""
-    tool = ExternalTool(
+    """Test that ExternalToolServer properly inherits from KilnParentedModel."""
+    tool = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         properties={
             "server_url": "https://api.example.com",
             "headers": {"Authorization": "Bearer token"},
@@ -314,14 +314,14 @@ def test_external_tool_inheritance():
     assert hasattr(tool, "parent")
 
     # Test model_type
-    assert tool.model_type == "external_tool"
+    assert tool.model_type == "external_tool_server"
 
 
 def test_external_tool_model_validation_assignment():
     """Test that model validation works on assignment."""
-    tool = ExternalTool(
+    tool = ExternalToolServer(
         name="test_tool",
-        type=ToolType.remote_mcp,
+        type=ToolServerType.remote_mcp,
         properties={
             "server_url": "https://api.example.com",
             "headers": {"Authorization": "Bearer token"},

@@ -6,21 +6,21 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalTool } from "$lib/types"
-  import { toolTypeToString } from "$lib/utils/formatters"
+  import type { ExternalToolServer } from "$lib/types"
+  import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
-  $: tool_id = $page.params.tool_id
+  $: tool_server_id = $page.params.tool_server_id
 
-  let tool: ExternalTool | null = null
+  let tool_server: ExternalToolServer | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
-    await fetch_tool()
+    await fetch_tool_server()
   })
 
-  async function fetch_tool() {
+  async function fetch_tool_server() {
     try {
       loading = true
       error = null
@@ -29,18 +29,18 @@
         throw new Error("No project ID provided")
       }
 
-      if (!tool_id) {
+      if (!tool_server_id) {
         throw new Error("No tool ID provided")
       }
 
       // Fetch the specific tool by ID
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tools/{tool_id}",
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}",
         {
           params: {
             path: {
               project_id,
-              tool_id,
+              tool_server_id,
             },
           },
         },
@@ -50,7 +50,7 @@
         throw fetch_error
       }
 
-      tool = data as ExternalTool
+      tool_server = data as ExternalToolServer
     } catch (err) {
       error = createKilnError(err)
     } finally {
@@ -62,7 +62,7 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function getDetailsProperties(tool: ExternalTool) {
+  function getDetailsProperties(tool: ExternalToolServer) {
     const properties = [
       { name: "ID", value: tool.id || "Unknown" },
       { name: "Name", value: tool.name || "Unknown" },
@@ -89,9 +89,9 @@
     return properties
   }
 
-  function getConnectionProperties(tool: ExternalTool) {
+  function getConnectionProperties(tool: ExternalToolServer) {
     const properties = [
-      { name: "Type", value: toolTypeToString(tool.type) || "Unknown" },
+      { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
 
     if (tool.properties["server_url"]) {
@@ -103,7 +103,7 @@
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalTool) {
+  function getHeadersProperties(tool: ExternalToolServer) {
     return Object.entries(tool.properties["headers"] || {}).map(
       ([key, value]) => ({
         name: key,
@@ -114,7 +114,7 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title={"Tool"} subtitle={`Name: ${tool?.name || ""}`}>
+  <AppPage title={"Tool Server"} subtitle={`Name: ${tool_server?.name || ""}`}>
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -131,25 +131,25 @@
           Back to Tools
         </button>
       </div>
-    {:else if tool}
+    {:else if tool_server}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
         <div class="grow flex flex-col">
           <PropertyList
-            properties={getDetailsProperties(tool)}
+            properties={getDetailsProperties(tool_server)}
             title="Properties"
           />
         </div>
         <div class="grow flex flex-col">
-          {#if tool.type === "remote_mcp"}
+          {#if tool_server.type === "remote_mcp"}
             <PropertyList
-              properties={getConnectionProperties(tool)}
+              properties={getConnectionProperties(tool_server)}
               title="Connection Details"
             />
-            {#if getHeadersProperties(tool).length > 0}
+            {#if getHeadersProperties(tool_server).length > 0}
               <!-- Manually add a gap between the connection details and the headers -->
               <div class="mt-8">
                 <PropertyList
-                  properties={getHeadersProperties(tool)}
+                  properties={getHeadersProperties(tool_server)}
                   title="Headers"
                 />
               </div>

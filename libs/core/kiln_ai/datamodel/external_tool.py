@@ -10,25 +10,25 @@ from kiln_ai.datamodel.basemodel import (
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
-class ToolType(str, Enum):
+class ToolServerType(str, Enum):
     """
-    Enumeration of supported external tool types.
+    Enumeration of supported external tool server types.
     """
 
     remote_mcp = "remote_mcp"
 
 
-class ExternalTool(KilnParentedModel):
+class ExternalToolServer(KilnParentedModel):
     """
-    Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tools can be remote or local.
+    Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
 
     This model stores the necessary configuration to connect to and authenticate with
     external MCP servers that provide tools for LLM interactions.
     """
 
     name: FilenameString = Field(description="The name of the external tool.")
-    type: ToolType = Field(
-        description="The type of external tool. Remote tools are hosted on a remote server",
+    type: ToolServerType = Field(
+        description="The type of external tool server. Remote tools are hosted on a remote server",
     )
     description: str | None = Field(
         default=None,
@@ -40,10 +40,10 @@ class ExternalTool(KilnParentedModel):
     )
 
     @model_validator(mode="after")
-    def validate_required_fields(self) -> "ExternalTool":
+    def validate_required_fields(self) -> "ExternalToolServer":
         """Validate that each tool type has the required configuration."""
         match self.type:
-            case ToolType.remote_mcp:
+            case ToolServerType.remote_mcp:
                 server_url = self.properties.get("server_url", None)
                 if not isinstance(server_url, str):
                     raise ValueError(
