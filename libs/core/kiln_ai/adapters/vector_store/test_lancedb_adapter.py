@@ -251,7 +251,7 @@ async def test_upsert_chunks_success(
     results = await collection.search_vector([54, 56], 1, SimilarityMetric.L2)
     assert len(results) == 1
     assert (
-        results[0]["text"]
+        results[0].chunk_text
         == "The area of New York City, USA is approximately 783.8 square kilometers"
     )
 
@@ -260,7 +260,7 @@ async def test_upsert_chunks_success(
     assert len(results) == 2
     # check that we get back the correct documents
     for result in results:
-        assert result["text"] in [
+        assert result.chunk_text in [
             "London, UK has a population of roughly 9 million people",
             "The area of London, UK is approximately 1,572 square kilometers",
         ]

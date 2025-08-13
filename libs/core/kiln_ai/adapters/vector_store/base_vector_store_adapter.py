@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List, Tuple
 
+from pydantic import BaseModel, Field
+
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
@@ -12,6 +14,15 @@ class SimilarityMetric(str, Enum):
     L2 = "l2"
     COSINE = "cosine"
     DOT_PRODUCT = "dot_product"
+
+
+class SearchResult(BaseModel):
+    document_id: str = Field(description="The id of the Kiln document.")
+    chunk_idx: int = Field(description="The index of the chunk in the Kiln document.")
+    chunk_text: str = Field(description="The text of the chunk.")
+    score: float = Field(
+        description="The score of the chunk, which depends on the similarity metric used."
+    )
 
 
 class BaseVectorStoreAdapter(ABC):
@@ -68,7 +79,7 @@ class BaseVectorStoreCollection(ABC):
         self,
         query: str,
         k: int,
-    ):
+    ) -> List[SearchResult]:
         """
         Searches the full text index for the given query.
         """
@@ -80,7 +91,7 @@ class BaseVectorStoreCollection(ABC):
         vector: List[float],
         k: int,
         distance_type: SimilarityMetric,
-    ):
+    ) -> List[SearchResult]:
         """
         Searches using vector similarity.
         """

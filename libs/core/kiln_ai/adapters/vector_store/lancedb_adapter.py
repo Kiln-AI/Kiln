@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import List, Tuple
 
@@ -9,6 +10,7 @@ from lancedb.pydantic import LanceModel, Vector
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     BaseVectorStoreCollection,
+    SearchResult,
     SimilarityMetric,
     VectorStoreConfig,
 )
@@ -163,6 +165,24 @@ class LanceDBCollection(BaseVectorStoreCollection):
         # do this here, FTS search after an upsert raises an error
         await self.table.create_index("text", config=FTS(), replace=False)
 
+    def map_to_search_results(self, results: List[dict]) -> List[SearchResult]:
+        search_results: List[SearchResult] = []
+        for result in results:
+            document_id = result["id"].split("_")[0]
+            chunk_idx = int(result["id"].split("_")[1])
+            chunk_text = result["text"]
+            # LanceDB returns _distance for vector search and _score for FTS search
+            score = result.get("_distance", None) or result.get("_score", -1)
+            search_results.append(
+                SearchResult(
+                    document_id=document_id,
+                    chunk_idx=chunk_idx,
+                    chunk_text=chunk_text,
+                    score=score,
+                )
+            )
+        return search_results
+
     async def search_fts(self, query: str, k: int):
         results = (
             await (
@@ -171,21 +191,23 @@ class LanceDBCollection(BaseVectorStoreCollection):
             .limit(k)
             .to_list()
         )
-        return results
+
+        return self.map_to_search_results(results)
 
     async def search_vector(
         self,
         vector: List[float],
         k: int,
         distance_type: SimilarityMetric,
-    ):
+    ) -> List[SearchResult]:
         results = (
             await (await self.table.search(vector))
             .distance_type(distance_type)
             .limit(k)
             .to_list()
         )
-        return results
+
+        return self.map_to_search_results(results)
 
     async def count_records(self) -> int:
         return await self.table.count_rows()
