@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 class VectorStoreType(str, Enum):
     LANCE_DB = "lancedb"
     CHROMA = "chroma"
+    WEAVIATE = "weaviate"
 
 
 class LanceDBTableSchemaVersion(str, Enum):
@@ -43,6 +44,10 @@ class ChromaConfigProperties(BaseModel):
     pass
 
 
+class WeaviateConfigProperties(BaseModel):
+    pass
+
+
 class VectorStoreConfig(KilnParentedModel):
     name: str = NAME_FIELD
     store_type: VectorStoreType = Field(
@@ -59,6 +64,8 @@ class VectorStoreConfig(KilnParentedModel):
                 return self.validate_lance_db_properties()
             case VectorStoreType.CHROMA:
                 return self.validate_chroma_properties()
+            case VectorStoreType.WEAVIATE:
+                return self.validate_weaviate_properties()
             case _:
                 raise ValueError("Invalid vector store type")
 
@@ -144,6 +151,16 @@ class VectorStoreConfig(KilnParentedModel):
                 "chroma_typed_properties can only be called for Chroma vector store configs"
             )
         return ChromaConfigProperties()
+
+    def validate_weaviate_properties(self):
+        return self
+
+    def weaviate_typed_properties(self) -> WeaviateConfigProperties:
+        if self.store_type != VectorStoreType.WEAVIATE:
+            raise ValueError(
+                "weaviate_typed_properties can only be called for Weaviate vector store configs"
+            )
+        return WeaviateConfigProperties()
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:
