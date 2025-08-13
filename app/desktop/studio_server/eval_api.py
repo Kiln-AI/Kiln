@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Set, Tuple
+from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -450,8 +450,8 @@ def connect_evals_api(app: FastAPI):
         task_id: str,
         eval_id: str,
         eval_config_id: str,
-        run_config_ids: list[str] = Query([]),
-        all_run_configs: bool = Query(False),
+        run_config_ids: Annotated[list[str], Query()] = [],
+        all_run_configs: Annotated[bool, Query()] = False,
     ) -> StreamingResponse:
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
 

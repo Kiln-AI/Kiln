@@ -4,7 +4,7 @@ import os
 import tempfile
 from asyncio import Lock
 from datetime import datetime
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -280,9 +280,9 @@ def connect_run_api(app: FastAPI):
     async def bulk_upload(
         project_id: str,
         task_id: str,
-        file: UploadFile = File(...),
+        file: Annotated[UploadFile, File(...)],
         # JSON string since multipart/form-data doesn't support dictionary types
-        splits: str | None = Form(None),
+        splits: Annotated[str | None, Form()] = None,
     ) -> BulkUploadResponse:
         task = task_from_id(project_id, task_id)
 
