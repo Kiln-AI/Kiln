@@ -51,7 +51,7 @@ exclude = []
 
 [tool.ruff.lint]
 # I is import sorting, F401 is unused imports, 012+008 are mutable defaults
-extend-select = ["I","F401","RUF012","RUF008"]
+extend-select = ["I","F401","RUF"]
 
 [tool.pytest.ini_options]
  addopts="-n auto"
