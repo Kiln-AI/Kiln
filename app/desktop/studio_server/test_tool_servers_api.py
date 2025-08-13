@@ -44,7 +44,7 @@ def test_create_tool_server_success(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
@@ -73,7 +73,7 @@ def test_create_tool_server_no_headers(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
@@ -97,7 +97,7 @@ def test_create_tool_server_empty_headers(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
@@ -121,7 +121,7 @@ def test_create_tool_server_missing_server_url(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
@@ -142,7 +142,7 @@ def test_create_tool_server_missing_name(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
@@ -163,7 +163,7 @@ def test_create_tool_server_no_description(client, test_project):
         mock_project_from_id.return_value = test_project
 
         response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
@@ -200,7 +200,7 @@ def test_get_available_tool_servers_with_tool_server(client, test_project):
         mock_project_from_id.return_value = test_project
 
         create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
         assert create_response.status_code == 200
@@ -233,7 +233,7 @@ def test_get_tool_server_success(client, test_project):
 
         # Create the tool
         create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_MCP",
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
         assert create_response.status_code == 200

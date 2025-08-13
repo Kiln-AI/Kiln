@@ -1107,7 +1107,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/connect_remote_MCP": {
+    "/api/projects/{project_id}/connect_remote_mcp": {
         parameters: {
             query?: never;
             header?: never;
@@ -1117,7 +1117,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Connect Remote Mcp */
-        post: operations["connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post"];
+        post: operations["connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1920,11 +1920,8 @@ export interface components {
             name: string;
             /** Server Url */
             server_url: string;
-            /**
-             * Headers
-             * @default {}
-             */
-            headers: {
+            /** Headers */
+            headers?: {
                 [key: string]: string;
             };
             /** Description */
@@ -5571,7 +5568,7 @@ export interface operations {
             };
         };
     };
-    connect_remote_MCP_api_projects__project_id__connect_remote_MCP_post: {
+    connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post: {
         parameters: {
             query?: never;
             header?: never;

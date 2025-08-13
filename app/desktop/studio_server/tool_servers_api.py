@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_server.project_api import project_from_id
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 
 class KilnToolServerDescription(BaseModel):
@@ -17,7 +17,7 @@ class KilnToolServerDescription(BaseModel):
 class ExternalToolServerCreationRequest(BaseModel):
     name: str
     server_url: str
-    headers: Dict[str, str] = {}
+    headers: Dict[str, str] = Field(default_factory=dict)
     description: str | None = None
 
 
@@ -56,8 +56,8 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool
 
-    @app.post("/api/projects/{project_id}/connect_remote_MCP")
-    async def connect_remote_MCP(
+    @app.post("/api/projects/{project_id}/connect_remote_mcp")
+    async def connect_remote_mcp(
         project_id: str, tool_data: ExternalToolServerCreationRequest
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
