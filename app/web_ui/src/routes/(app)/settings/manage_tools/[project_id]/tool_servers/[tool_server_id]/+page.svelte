@@ -114,7 +114,7 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title={"Tool"} subtitle={`Name: ${tool_server?.name || ""}`}>
+  <AppPage title={"Tool Server"} subtitle={`Name: ${tool_server?.name || ""}`}>
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>

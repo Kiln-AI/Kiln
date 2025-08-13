@@ -63,13 +63,13 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Tools"
+    title="Manage Tools"
     subtitle="Connect your project to tools with MCP servers"
     action_buttons={is_empty
       ? []
       : [
           {
-            label: "Add Tool",
+            label: "Connect MCP Server",
             href: `/settings/manage_tools/${project_id}/add_tools`,
           },
         ]}
@@ -92,7 +92,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Server Name</th>
               <th>Type</th>
               <th>Description</th>
             </tr>
