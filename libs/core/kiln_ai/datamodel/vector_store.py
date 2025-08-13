@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 class VectorStoreType(str, Enum):
     LANCE_DB = "lancedb"
+    CHROMA = "chroma"
 
 
 class LanceDBTableSchemaVersion(str, Enum):
@@ -38,6 +39,10 @@ class LanceDBConfigProperties(BaseModel):
     hnsw_ef_construction: int | None
 
 
+class ChromaConfigProperties(BaseModel):
+    pass
+
+
 class VectorStoreConfig(KilnParentedModel):
     name: str = NAME_FIELD
     store_type: VectorStoreType = Field(
@@ -52,6 +57,8 @@ class VectorStoreConfig(KilnParentedModel):
         match self.store_type:
             case VectorStoreType.LANCE_DB:
                 return self.validate_lance_db_properties()
+            case VectorStoreType.CHROMA:
+                return self.validate_chroma_properties()
             case _:
                 raise ValueError("Invalid vector store type")
 
@@ -125,6 +132,18 @@ class VectorStoreConfig(KilnParentedModel):
             hnsw_m=hnsw_m,
             hnsw_ef_construction=hnsw_ef_construction,
         )
+
+    def validate_chroma_properties(self):
+        # ChromaDB doesn't require specific properties for basic operation
+        # but we can validate any properties that are provided
+        return self
+
+    def chroma_typed_properties(self) -> ChromaConfigProperties:
+        if self.store_type != VectorStoreType.CHROMA:
+            raise ValueError(
+                "chroma_typed_properties can only be called for Chroma vector store configs"
+            )
+        return ChromaConfigProperties()
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:

@@ -20,7 +20,7 @@ class SearchResult(BaseModel):
     document_id: str = Field(description="The id of the Kiln document.")
     chunk_idx: int = Field(description="The index of the chunk in the Kiln document.")
     chunk_text: str = Field(description="The text of the chunk.")
-    score: float = Field(
+    score: float | None = Field(
         description="The score of the chunk, which depends on the similarity metric used."
     )
 

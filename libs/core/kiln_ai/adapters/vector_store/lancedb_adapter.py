@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import List, Tuple
 
@@ -41,6 +40,8 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
         class ChunkLanceDBSchema(LanceModel):
             id: lancedb.Optional[str]
+            document_id: lancedb.Optional[str]
+            chunk_idx: lancedb.Optional[int]
             vector: lancedb.Optional[Vector(dim=vector_dimensions, nullable=False)]  # type: ignore
             text: lancedb.Optional[str]
 
@@ -77,12 +78,12 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         """
         table_name = self.table_name_for_rag_config(rag_config=rag_config)
 
+        # we must throw if the table already exists - must destroy it first
         table = await self.connection.create_table(
             name=table_name,
-            exist_ok=True,
+            exist_ok=False,
             schema=self.schema(vector_dimensions),
-            # we overwrite the table if it already exists
-            mode="overwrite",
+            mode="create",
         )
 
         # many options for preprocessing the text (stemming, tokenization, etc.):
@@ -141,7 +142,9 @@ class LanceDBCollection(BaseVectorStoreCollection):
             ):
                 records.append(
                     {
-                        "id": f"{document_id}_{chunk_id}",
+                        "id": f"{document_id}::{chunk_id}",
+                        "document_id": document_id,
+                        "chunk_idx": chunk_id,
                         "vector": embedding.vector,
                         "text": chunk_text,
                     }
@@ -168,8 +171,8 @@ class LanceDBCollection(BaseVectorStoreCollection):
     def map_to_search_results(self, results: List[dict]) -> List[SearchResult]:
         search_results: List[SearchResult] = []
         for result in results:
-            document_id = result["id"].split("_")[0]
-            chunk_idx = int(result["id"].split("_")[1])
+            document_id = result["document_id"]
+            chunk_idx = result["chunk_idx"]
             chunk_text = result["text"]
             # LanceDB returns _distance for vector search and _score for FTS search
             score = result.get("_distance", None) or result.get("_score", -1)

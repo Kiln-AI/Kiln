@@ -1,5 +1,6 @@
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import lancedb
@@ -56,7 +57,7 @@ class TestConnectLanceDB:
     async def test_connect_lancedb_success(self, temp_db_path):
         """Test successful connection to LanceDB."""
         with patch("kiln_ai.utils.config.Config.shared") as mock_config:
-            mock_config.return_value.local_data_dir.return_value = temp_db_path
+            mock_config.return_value.local_data_dir.return_value = Path(temp_db_path)
 
             connection = await connect_lancedb()
 
@@ -76,7 +77,9 @@ class TestConnectLanceDB:
     async def test_connect_lancedb_uses_config_shared(self):
         """Test that connect_lancedb uses Config.shared().local_data_dir()."""
         with patch("kiln_ai.utils.config.Config.shared") as mock_config:
-            mock_config.return_value.local_data_dir.return_value = tempfile.mkdtemp()
+            mock_config.return_value.local_data_dir.return_value = Path(
+                tempfile.mkdtemp()
+            )
 
             await connect_lancedb()
 
