@@ -40,7 +40,8 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          uvx ruff check --select I .
+          uvx ruff check
+
       - name: Format with ruff
         run: |
           uvx ruff format --check .
