@@ -5,13 +5,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.project import Project
 
-from app.desktop.studio_server.tools_api import connect_tools_api
+from app.desktop.studio_server.tool_servers_api import connect_tool_servers_api
 
 
 @pytest.fixture
 def app():
     test_app = FastAPI()
-    connect_tools_api(test_app)
+    connect_tool_servers_api(test_app)
     return test_app
 
 
@@ -39,7 +39,7 @@ def test_create_tool_server_success(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -68,7 +68,7 @@ def test_create_tool_server_no_headers(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -92,7 +92,7 @@ def test_create_tool_server_empty_headers(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -116,7 +116,7 @@ def test_create_tool_server_missing_server_url(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -137,7 +137,7 @@ def test_create_tool_server_missing_name(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -158,7 +158,7 @@ def test_create_tool_server_no_description(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -174,7 +174,7 @@ def test_create_tool_server_no_description(client, test_project):
 
 def test_get_available_tool_servers_empty(client, test_project):
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -195,7 +195,7 @@ def test_get_available_tool_servers_with_tool_server(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -227,7 +227,7 @@ def test_get_tool_server_success(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -257,7 +257,7 @@ def test_get_tool_server_success(client, test_project):
 
 def test_get_tool_server_not_found(client, test_project):
     with patch(
-        "app.desktop.studio_server.tools_api.project_from_id"
+        "app.desktop.studio_server.tool_servers_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 

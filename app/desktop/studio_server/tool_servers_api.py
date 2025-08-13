@@ -21,7 +21,7 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
 
 
-def connect_tools_api(app: FastAPI):
+def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(
         project_id: str,
