@@ -236,6 +236,11 @@ class ChromaCollection(BaseVectorStoreCollection):
         )
         return self.map_vector_search_results(results)
 
+    async def search_hybrid(
+        self, query: str, vector: List[float], k: int, distance_type: SimilarityMetric
+    ) -> List[SearchResult]:
+        raise NotImplementedError("Hybrid search is not supported for Chroma")
+
     async def count_records(self) -> int:
         return self.chroma_collection.count()
 

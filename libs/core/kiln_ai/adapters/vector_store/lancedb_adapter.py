@@ -212,6 +212,11 @@ class LanceDBCollection(BaseVectorStoreCollection):
 
         return self.map_to_search_results(results)
 
+    async def search_hybrid(
+        self, query: str, vector: List[float], k: int, distance_type: SimilarityMetric
+    ) -> List[SearchResult]:
+        raise NotImplementedError("Hybrid search is not supported for LanceDB")
+
     async def count_records(self) -> int:
         return await self.table.count_rows()
 

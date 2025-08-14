@@ -321,6 +321,37 @@ async def test_search_vector(
 
 
 @pytest.mark.asyncio
+async def test_search_hybrid(
+    vector_store_config, temp_db_path, rag_config, mock_chunked_documents
+):
+    """Test hybrid search functionality."""
+    vector_store_config.properties["distance"] = QdrantVectorIndexMetric.EUCLID.value
+    adapter = await build_qdrant_adapter(vector_store_config, temp_db_path)
+    collection = await adapter.create_collection(rag_config, vector_dimensions=2)
+
+    # Insert real data first
+    await collection.upsert_chunks(mock_chunked_documents)
+
+    # just for the sake of testing, we use a different FTS query and vector
+    # - the query is about tokyo
+    # - the vector is [55.0, 55.0] which is the same as the vector about new york population
+    # in reality, the vector would be the same as the query (vectorized)
+    results = await collection.search_hybrid(
+        "Tokyo", [55.0, 55.0], 4, SimilarityMetric.L2
+    )
+
+    # should find 2 results about tokyo (due to FTS)
+    # and at least one result (matching the vector) should be about new york
+    assert len(results) >= 3
+
+    # check that two results are about tokyo and two are about new york
+    tokyo_results = [r for r in results if "Tokyo" in r.chunk_text]
+    assert len(tokyo_results) == 2
+    new_york_results = [r for r in results if "New York" in r.chunk_text]
+    assert len(new_york_results) >= 1
+
+
+@pytest.mark.asyncio
 async def test_search_vector_different_distance_type(
     vector_store_config, temp_db_path, rag_config
 ):

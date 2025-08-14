@@ -98,6 +98,19 @@ class BaseVectorStoreCollection(ABC):
         pass
 
     @abstractmethod
+    async def search_hybrid(
+        self,
+        query: str,
+        vector: List[float],
+        k: int,
+        distance_type: SimilarityMetric,
+    ) -> List[SearchResult]:
+        """
+        Searches using hybrid search.
+        """
+        pass
+
+    @abstractmethod
     async def count_records(self) -> int:
         """
         Counts the number of records in the index.

@@ -7,9 +7,12 @@ from qdrant_client.models import (
     CollectionInfo,
     Distance,
     Document,
+    Fusion,
+    FusionQuery,
     HnswConfigDiff,
     Modifier,
     PointStruct,
+    Prefetch,
     SparseVectorParams,
     VectorParams,
 )
@@ -202,18 +205,25 @@ class QdrantCollection(BaseVectorStoreCollection):
 
         return results
 
+    def map_similarity_metric_to_qdrant_distance(
+        self, distance_type: SimilarityMetric
+    ) -> Distance:
+        qdrant_distance_mapping = {
+            "cosine": "Cosine",
+            "l2": "Euclid",
+            "dot_product": "Dot",
+        }
+        return Distance(qdrant_distance_mapping.get(distance_type.value))
+
     async def search_vector(
         self,
         vector: List[float],
         k: int,
         distance_type: SimilarityMetric,
     ) -> List[SearchResult]:
-        qdrant_distance_mapping = {
-            "cosine": "Cosine",
-            "l2": "Euclid",
-            "dot_product": "Dot",
-        }
-        expected_qdrant_distance = qdrant_distance_mapping.get(distance_type.value)
+        expected_qdrant_distance = self.map_similarity_metric_to_qdrant_distance(
+            distance_type
+        )
         if expected_qdrant_distance != self.distance_type.value:
             raise ValueError(
                 f"Distance type {distance_type} does not match the distance type of the collection {self.distance_type}"
@@ -224,6 +234,61 @@ class QdrantCollection(BaseVectorStoreCollection):
             query=vector,
             limit=k,
             using="chunk_embeddings",
+        )
+
+        results: List[SearchResult] = []
+        for scored_point in hits.points:
+            score = scored_point.score
+            payload = scored_point.payload
+            if not payload:
+                raise RuntimeError("Payload is empty")
+
+            document_id = payload.get("document_id")
+            if not document_id or not isinstance(document_id, str):
+                raise RuntimeError("Document ID is empty")
+
+            chunk_idx = payload.get("chunk_idx")
+            if not isinstance(chunk_idx, int):
+                raise RuntimeError("Chunk index is empty")
+
+            chunk_text = payload.get("chunk_text")
+            if not chunk_text or not isinstance(chunk_text, str):
+                raise RuntimeError("Chunk text is empty")
+
+            results.append(
+                SearchResult(
+                    score=score,
+                    document_id=document_id,
+                    chunk_idx=chunk_idx,
+                    chunk_text=chunk_text,
+                )
+            )
+
+        return results
+
+    async def search_hybrid(
+        self, query: str, vector: List[float], k: int, distance_type: SimilarityMetric
+    ) -> List[SearchResult]:
+        expected_qdrant_distance = self.map_similarity_metric_to_qdrant_distance(
+            distance_type
+        )
+        if expected_qdrant_distance != self.distance_type.value:
+            raise ValueError(
+                f"Distance type {distance_type} does not match the distance type of the collection {self.distance_type}"
+            )
+
+        hits = await self.client.query_points(
+            collection_name=self.collection_name,
+            prefetch=[
+                Prefetch(
+                    query=Document(text=query, model="Qdrant/bm25"),
+                    using="bm25",
+                    limit=10,
+                ),
+                Prefetch(query=vector, using="chunk_embeddings", limit=k),
+            ],
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=k,
         )
 
         results: List[SearchResult] = []
