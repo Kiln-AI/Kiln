@@ -44,7 +44,12 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.datamodel.vector_store import (
+    QdrantVectorIndexMetric,
+    QdrantVectorIndexType,
+    VectorStoreConfig,
+    VectorStoreType,
+)
 from kiln_ai.utils import asyncio_mutex
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -1074,8 +1079,14 @@ def connect_document_api(app: FastAPI):
         vector_store_config = VectorStoreConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
-            store_type=VectorStoreType.CHROMA,
-            properties={},
+            store_type=VectorStoreType.QDRANT,
+            properties={
+                "vector_index_type": QdrantVectorIndexType.HNSW,
+                "distance": QdrantVectorIndexMetric.COSINE,
+                "hnsw_m": 16,
+                "hnsw_ef_construction": 100,
+                "hnsw_payload_m": 16,
+            },
         )
         vector_store_config.save_to_file()
 

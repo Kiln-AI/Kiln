@@ -1,11 +1,15 @@
+import json
 import tempfile
 from pathlib import Path
 
 import pytest
+from kiln_server.project_api import project_from_id
 from qdrant_client import AsyncQdrantClient
 
+from kiln_ai.adapters.embedding.registry import embedding_adapter_from_type
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import SimilarityMetric
 from kiln_ai.adapters.vector_store.qdrant_adapter import QdrantAdapter, QdrantCollection
+from kiln_ai.adapters.vector_store.registry import vector_store_adapter_for_config
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -650,3 +654,79 @@ async def test_bruteforce_index_type(vector_store_config, temp_db_path, rag_conf
 
     # Cleanup
     await adapter.destroy_collection(rag_config)
+
+
+@pytest.mark.skip(
+    reason="Toy test to check models created via the dashboard. TODO: remove this test"
+)
+async def test_qdrant_integration(temp_db_path):
+    """Toy test to check models created via the dashboard"""
+    project_id = "268221037813"
+    project = project_from_id(project_id)
+    if not project:
+        raise ValueError(f"Project {project_id} not found")
+
+    rag_config_id = "230620363231"
+    rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+    if not rag_config:
+        raise ValueError(f"Rag config {rag_config_id} not found")
+
+    vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+        str(rag_config.vector_store_config_id), project.path
+    )
+    if not vector_store_config:
+        raise ValueError(
+            f"Vector store config {rag_config.vector_store_config_id} not found"
+        )
+
+    embedding_config = EmbeddingConfig.from_id_and_parent_path(
+        str(rag_config.embedding_config_id), project.path
+    )
+    if not embedding_config:
+        raise ValueError(f"Embedding config {rag_config.embedding_config_id} not found")
+
+    vectore_store = await vector_store_adapter_for_config(vector_store_config)
+
+    collection = await vectore_store.collection(rag_config)
+
+    fts_results = await collection.search_fts("parrot green", 10)
+    print("======================")
+    print("FTS results:")
+    print(
+        json.dumps([r.model_dump() for r in fts_results], indent=2, ensure_ascii=False)
+    )
+    print("======================")
+
+    embedding_adapter = embedding_adapter_from_type(embedding_config)
+    if not embedding_adapter:
+        raise ValueError(f"Embedding adapter for {embedding_config.id} not found")
+
+    query_embeddings = await embedding_adapter.generate_embeddings(["parrot green"])
+    if not query_embeddings:
+        raise ValueError(f"Query for {embedding_config.id} not found")
+
+    query_vector = query_embeddings.embeddings[0].vector
+
+    vec_results = await collection.search_vector(
+        query_vector, 10, SimilarityMetric.COSINE
+    )
+    print("======================")
+    print("Vector results:")
+    print(
+        json.dumps([r.model_dump() for r in vec_results], indent=2, ensure_ascii=False)
+    )
+    print("======================")
+
+    hybrid_results = await collection.search_hybrid(
+        "parrot green", query_vector, 10, SimilarityMetric.COSINE
+    )
+    print("======================")
+    print("Hybrid results:")
+    print(
+        json.dumps(
+            [r.model_dump() for r in hybrid_results], indent=2, ensure_ascii=False
+        )
+    )
+    print("======================")
+
+    await collection.close()

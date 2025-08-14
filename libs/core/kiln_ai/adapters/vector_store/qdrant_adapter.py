@@ -27,7 +27,10 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import QdrantVectorIndexMetric
+from kiln_ai.datamodel.vector_store import (
+    QdrantVectorIndexMetric,
+    QdrantVectorIndexType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +46,21 @@ class QdrantAdapter(BaseVectorStoreAdapter):
         self.config_properties = self.vector_store_config.qdrant_typed_properties()
 
     async def create_collection(self, rag_config: RagConfig, vector_dimensions: int):
-        # TODO: check that it throws an error if the collection already exists
+        hnsw_config = None
+        if self.config_properties.vector_index_type == QdrantVectorIndexType.HNSW:
+            hnsw_config = HnswConfigDiff(
+                m=self.config_properties.hnsw_m,
+                ef_construct=self.config_properties.hnsw_ef_construction,
+                payload_m=self.config_properties.hnsw_payload_m,
+            )
+
         operation_result = await self.client.create_collection(
             self.table_name_for_rag_config(rag_config),
             vectors_config={
                 "chunk_embeddings": VectorParams(
                     size=vector_dimensions,
                     distance=Distance(self.config_properties.distance),
-                    hnsw_config=HnswConfigDiff(
-                        m=self.config_properties.hnsw_m,
-                        ef_construct=self.config_properties.hnsw_ef_construction,
-                        payload_m=self.config_properties.hnsw_payload_m,
-                    ),
+                    hnsw_config=hnsw_config,
                 )
             },
             sparse_vectors_config={"bm25": SparseVectorParams(modifier=Modifier.IDF)},
