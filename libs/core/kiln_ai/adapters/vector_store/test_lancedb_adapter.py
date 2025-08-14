@@ -44,16 +44,7 @@ def vector_store_config(temp_db_path):
             store_type=VectorStoreType.LANCE_DB,
             properties={
                 "table_schema_version": LanceDBTableSchemaVersion.V1.value,
-                "vector_index_type": "hnsw",
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_metric": "cosine",
-                "hnsw_distance_type": "cosine",
-                "hnsw_num_partitions": 4,
-                "hnsw_num_sub_vectors": 4,
-                "hnsw_num_bits": 8,
-                "hnsw_max_iterations": 50,
-                "hnsw_sample_rate": 256,
+                "vector_index_type": "bruteforce",
             },
         )
 
@@ -353,36 +344,3 @@ async def test_lancedb_recreate_collection(
     # check the data is correctly gone
     count2 = await collection2.count_records()
     assert count2 == 0
-
-
-async def test_create_collection_hnsw_index_empty_table(
-    vector_store_config, temp_db_path, rag_config
-):
-    """Test creating a collection with an HNSW index."""
-    vector_store_config.properties["vector_index_type"] = "hnsw"
-    vector_store_config.properties["hnsw_m"] = 16
-    vector_store_config.properties["hnsw_ef_construction"] = 100
-    vector_store_config.properties["hnsw_distance_type"] = "cosine"
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-
-    # HNSW needs data in the table; if the table is empty, we should do nothing and not raise an error
-    await adapter.create_collection(rag_config, vector_dimensions=2)
-
-
-async def test_create_collection_hnsw_index_with_data(
-    vector_store_config, temp_db_path, rag_config, mock_chunked_documents
-):
-    """Test creating a collection with an HNSW index."""
-    vector_store_config.properties["vector_index_type"] = "hnsw"
-    vector_store_config.properties["hnsw_m"] = 16
-    vector_store_config.properties["hnsw_ef_construction"] = 100
-    vector_store_config.properties["hnsw_distance_type"] = "cosine"
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-
-    # insert some data
-    collection = await adapter.create_collection(rag_config, vector_dimensions=2)
-    await collection.upsert_chunks(mock_chunked_documents)
-
-    # try a vector search
-    results = await collection.search_vector([54, 56], 1, SimilarityMetric.COSINE)
-    assert len(results) == 1

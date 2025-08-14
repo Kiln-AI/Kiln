@@ -4,7 +4,6 @@ from pydantic import ValidationError
 from kiln_ai.datamodel.vector_store import (
     LanceDBConfigProperties,
     LanceDBTableSchemaVersion,
-    LanceDBVectorIndexMetric,
     LanceDBVectorIndexType,
     VectorStoreConfig,
     VectorStoreType,
@@ -28,26 +27,17 @@ class TestLanceDBConfigProperties:
         """Test creating valid LanceDBConfigProperties."""
         config = LanceDBConfigProperties(
             table_schema_version=LanceDBTableSchemaVersion.V1,
-            vector_index_type=LanceDBVectorIndexType.HNSW,
-            hnsw_m=16,
-            hnsw_ef_construction=100,
-            hnsw_distance_type=LanceDBVectorIndexMetric.COSINE,
+            vector_index_type=LanceDBVectorIndexType.BRUTEFORCE,
         )
 
         assert config.table_schema_version == LanceDBTableSchemaVersion.V1
-        assert config.vector_index_type == LanceDBVectorIndexType.HNSW
-        assert config.hnsw_m == 16
-        assert config.hnsw_ef_construction == 100
-        assert config.hnsw_distance_type == LanceDBVectorIndexMetric.COSINE
+        assert config.vector_index_type == LanceDBVectorIndexType.BRUTEFORCE
 
     def test_lance_db_config_properties_with_string_schema_version(self):
         """Test creating LanceDBConfigProperties with string schema version."""
         config = LanceDBConfigProperties(
             table_schema_version="1",
-            vector_index_type=LanceDBVectorIndexType.HNSW,
-            hnsw_m=16,
-            hnsw_ef_construction=100,
-            hnsw_distance_type=LanceDBVectorIndexMetric.COSINE,
+            vector_index_type=LanceDBVectorIndexType.BRUTEFORCE,
         )
 
         assert config.table_schema_version == LanceDBTableSchemaVersion.V1
@@ -61,20 +51,14 @@ class TestVectorStoreConfig:
             store_type=VectorStoreType.LANCE_DB,
             properties={
                 "table_schema_version": "1",
-                "vector_index_type": "hnsw",
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_distance_type": "cosine",
+                "vector_index_type": "bruteforce",
             },
         )
 
         assert config.name == "test_store"
         assert config.store_type == VectorStoreType.LANCE_DB
         assert config.properties["table_schema_version"] == "1"
-        assert config.properties["vector_index_type"] == "hnsw"
-        assert config.properties["hnsw_m"] == 16
-        assert config.properties["hnsw_ef_construction"] == 100
-        assert config.properties["hnsw_distance_type"] == "cosine"
+        assert config.properties["vector_index_type"] == "bruteforce"
 
     def test_vector_store_config_missing_table_schema_version(self):
         """Test VectorStoreConfig validation fails when table_schema_version is missing."""
@@ -86,10 +70,7 @@ class TestVectorStoreConfig:
                 name="test_store",
                 store_type=VectorStoreType.LANCE_DB,
                 properties={
-                    "vector_index_type": "hnsw",
-                    "hnsw_m": 16,
-                    "hnsw_ef_construction": 100,
-                    "hnsw_distance_type": "cosine",
+                    "vector_index_type": "bruteforce",
                 },
             )
 
@@ -105,10 +86,7 @@ class TestVectorStoreConfig:
                 properties={
                     "path": "/path/to/db",
                     "table_schema_version": "invalid",
-                    "vector_index_type": "hnsw",
-                    "hnsw_m": 16,
-                    "hnsw_ef_construction": 100,
-                    "hnsw_distance_type": "cosine",
+                    "vector_index_type": "bruteforce",
                 },
             )
 
@@ -121,10 +99,7 @@ class TestVectorStoreConfig:
                 properties={
                     "path": "/path/to/db",
                     "table_schema_version": "1",
-                    "vector_index_type": "hnsw",
-                    "hnsw_m": 16,
-                    "hnsw_ef_construction": 100,
-                    "hnsw_distance_type": "cosine",
+                    "vector_index_type": "bruteforce",
                 },
             )
 
@@ -135,10 +110,7 @@ class TestVectorStoreConfig:
             store_type=VectorStoreType.LANCE_DB,
             properties={
                 "table_schema_version": "1",
-                "vector_index_type": "hnsw",
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_distance_type": "cosine",
+                "vector_index_type": "bruteforce",
             },
         )
 
@@ -146,10 +118,7 @@ class TestVectorStoreConfig:
 
         assert isinstance(typed_props, LanceDBConfigProperties)
         assert typed_props.table_schema_version == LanceDBTableSchemaVersion.V1
-        assert typed_props.vector_index_type == "hnsw"
-        assert typed_props.hnsw_m == 16
-        assert typed_props.hnsw_ef_construction == 100
-        assert typed_props.hnsw_distance_type == "cosine"
+        assert typed_props.vector_index_type == "bruteforce"
 
     def test_vector_store_config_inherits_from_kiln_parented_model(self):
         """Test that VectorStoreConfig inherits from KilnParentedModel."""
@@ -158,10 +127,7 @@ class TestVectorStoreConfig:
             store_type=VectorStoreType.LANCE_DB,
             properties={
                 "table_schema_version": "1",
-                "vector_index_type": "hnsw",
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_distance_type": "cosine",
+                "vector_index_type": "bruteforce",
             },
         )
 
@@ -183,10 +149,7 @@ class TestVectorStoreConfig:
             store_type=VectorStoreType.LANCE_DB,
             properties={
                 "table_schema_version": "1",
-                "vector_index_type": "hnsw",
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_distance_type": "cosine",
+                "vector_index_type": "bruteforce",
             },
         )
         assert config.name == name
@@ -209,9 +172,6 @@ class TestVectorStoreConfig:
                 store_type=VectorStoreType.LANCE_DB,
                 properties={
                     "table_schema_version": "1",
-                    "vector_index_type": "hnsw",
-                    "hnsw_m": 16,
-                    "hnsw_ef_construction": 100,
-                    "hnsw_distance_type": "cosine",
+                    "vector_index_type": "bruteforce",
                 },
             )

@@ -333,23 +333,6 @@ async def test_chroma_recreate_collection(
     assert count2 == 0
 
 
-async def test_create_collection_hnsw_configuration(
-    vector_store_config, temp_db_path, rag_config
-):
-    """Test creating a collection with HNSW configuration."""
-    vector_store_config.properties["ef_construction"] = 200
-    vector_store_config.properties["max_neighbors"] = 150
-    vector_store_config.properties["space"] = "l2"
-
-    adapter = await build_chroma_adapter(vector_store_config, temp_db_path)
-
-    # Should create collection with custom HNSW settings
-    collection = await adapter.create_collection(rag_config, vector_dimensions=2)
-    assert collection is not None
-
-    await collection.close()
-
-
 async def test_table_name_for_rag_config(vector_store_config, temp_db_path):
     """Test that table names are generated correctly."""
     adapter = await build_chroma_adapter(vector_store_config, temp_db_path)

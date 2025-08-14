@@ -1081,11 +1081,8 @@ def connect_document_api(app: FastAPI):
             name=string_to_valid_name(request.name or generate_memorable_name()),
             store_type=VectorStoreType.QDRANT,
             properties={
-                "vector_index_type": QdrantVectorIndexType.HNSW,
+                "vector_index_type": QdrantVectorIndexType.BRUTEFORCE,
                 "distance": QdrantVectorIndexMetric.COSINE,
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_payload_m": 16,
             },
         )
         vector_store_config.save_to_file()

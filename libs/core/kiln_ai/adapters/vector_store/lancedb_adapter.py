@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import lancedb
 from lancedb import AsyncConnection, AsyncTable
-from lancedb.index import FTS, HnswSq
+from lancedb.index import FTS
 from lancedb.pydantic import LanceModel, Vector
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
@@ -16,7 +16,6 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import LanceDBVectorIndexType
 
 logger = logging.getLogger(__name__)
 
@@ -47,30 +46,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
         return ChunkLanceDBSchema
 
-    async def create_hnsw_index(self, table: AsyncTable):
-        count = await table.count_rows()
-        if count == 0:
-            logger.warning(f"Table {table.name} is empty, skipping HNSW index creation")
-            return
-
-        # many more options: https://lancedb.github.io/lancedb/js/interfaces/HnswSqOptions/
-        kwargs = {}
-        if self.config_properties.hnsw_distance_type:
-            kwargs["distance_type"] = self.config_properties.hnsw_distance_type
-        if self.config_properties.hnsw_m:
-            kwargs["m"] = self.config_properties.hnsw_m
-        if self.config_properties.hnsw_ef_construction:
-            kwargs["ef_construction"] = self.config_properties.hnsw_ef_construction
-
-        await table.create_index(
-            "vector",
-            # another option is to use HnswPQ - Scalar Quantization (SQ) is the simpler one
-            # https://lancedb.github.io/lancedb/js/interfaces/HnswSqOptions/
-            # https://lancedb.github.io/lancedb/js/interfaces/HnswPqOptions/
-            config=HnswSq(**kwargs),
-            replace=True,
-        )
-
     async def create_collection(self, rag_config: RagConfig, vector_dimensions: int):
         """
         Create a table for the given RagConfig and return a collection adapter.
@@ -89,12 +64,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         # many options for preprocessing the text (stemming, tokenization, etc.):
         # https://lancedb.github.io/lancedb/fts/#tokenization
         await table.create_index("text", config=FTS())
-
-        if self.config_properties.vector_index_type == LanceDBVectorIndexType.HNSW:
-            await self.create_hnsw_index(table)
-        else:
-            # by default, when we don't create a specific index, LanceDB uses bruteforce KNN search
-            pass
 
         # create_table also opens the table so we don't need to do it separately
         return LanceDBCollection(self.vector_store_config, table)
@@ -171,9 +140,15 @@ class LanceDBCollection(BaseVectorStoreCollection):
     def map_to_search_results(self, results: List[dict]) -> List[SearchResult]:
         search_results: List[SearchResult] = []
         for result in results:
-            document_id = result["document_id"]
-            chunk_idx = result["chunk_idx"]
-            chunk_text = result["text"]
+            document_id = result.get("document_id")
+            if not document_id:
+                raise ValueError("Document id is required")
+            chunk_idx = result.get("chunk_idx")
+            if not isinstance(chunk_idx, int):
+                raise ValueError("Chunk index is required")
+            chunk_text = result.get("text")
+            if not chunk_text:
+                raise ValueError("Chunk text is required")
             # LanceDB returns _distance for vector search and _score for FTS search
             score = result.get("_distance", None) or result.get("_score", -1)
             search_results.append(

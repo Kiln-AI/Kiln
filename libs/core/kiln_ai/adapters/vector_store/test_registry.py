@@ -36,16 +36,7 @@ def vector_store_config(temp_db_path):
             store_type=VectorStoreType.LANCE_DB,
             properties={
                 "table_schema_version": LanceDBTableSchemaVersion.V1.value,
-                "vector_index_type": "hnsw",
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_metric": "cosine",
-                "hnsw_distance_type": "cosine",
-                "hnsw_num_partitions": 4,
-                "hnsw_num_sub_vectors": 4,
-                "hnsw_num_bits": 8,
-                "hnsw_max_iterations": 50,
-                "hnsw_sample_rate": 256,
+                "vector_index_type": "bruteforce",
             },
         )
 

@@ -3,9 +3,7 @@ from typing import List, Sequence, Tuple
 
 from chromadb import Collection, GetResult, Metadata
 from chromadb.api import ClientAPI
-from chromadb.api.collection_configuration import (
-    CreateCollectionConfiguration,  # CreateHNSWConfiguration,
-)
+from chromadb.api.collection_configuration import CreateCollectionConfiguration
 from chromadb.api.types import OneOrMany, QueryResult
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
@@ -37,16 +35,7 @@ class ChromaAdapter(BaseVectorStoreAdapter):
             name=self.table_name_for_rag_config(rag_config),
             configuration=CreateCollectionConfiguration(
                 # HNSW documented here: https://docs.trychroma.com/docs/collections/configure#hnsw-index-configuration
-                # TODO: for now we disable HNSW to avoid causing noise in tests
-                # hnsw=CreateHNSWConfiguration(
-                #     # TODO: get these from properties
-                #     ef_construction=100,
-                #     max_neighbors=100,
-                #     space="cosine",  # cosine, l2, ip (Inner Product aka dot product)
-                # ),
             ),
-            # TODO: have test to see what it does if collection already exists
-            # and this is False - does it throw or not
             get_or_create=False,
         )
 
@@ -89,11 +78,6 @@ class ChromaCollection(BaseVectorStoreCollection):
         self,
         chunks: List[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
     ):
-        # TODO: upsert is good, but may be misused if people think that upserting
-        # chunks will overwrite whatever chunks there were before for that document,
-        # in the case where the new chunks are fewer than the old chunks, there will
-        # be lingering old chunks that never get deleted
-        # maybe something to somehow make explicit, or expose a delete document method
         ids: List[str] = []
         embeddings: List[Sequence[float]] = []
         documents: List[str] = []

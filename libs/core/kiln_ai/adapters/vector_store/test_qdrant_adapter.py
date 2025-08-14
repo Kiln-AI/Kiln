@@ -44,11 +44,8 @@ def vector_store_config():
         name="test_config",
         store_type=VectorStoreType.QDRANT,
         properties={
-            "vector_index_type": QdrantVectorIndexType.HNSW.value,
-            "distance": QdrantVectorIndexMetric.COSINE.value,
-            "hnsw_m": 16,
-            "hnsw_ef_construction": 100,
-            "hnsw_payload_m": 64,
+            "vector_index_type": QdrantVectorIndexType.BRUTEFORCE,
+            "distance": QdrantVectorIndexMetric.COSINE,
         },
     )
 
@@ -579,11 +576,8 @@ async def test_different_distance_types(vector_store_config, rag_config):
         name="test_config_euclid",
         store_type=VectorStoreType.QDRANT,
         properties={
-            "vector_index_type": QdrantVectorIndexType.HNSW.value,
-            "distance": QdrantVectorIndexMetric.EUCLID.value,
-            "hnsw_m": 16,
-            "hnsw_ef_construction": 100,
-            "hnsw_payload_m": 64,
+            "vector_index_type": QdrantVectorIndexType.BRUTEFORCE,
+            "distance": QdrantVectorIndexMetric.EUCLID,
         },
     )
 
@@ -608,11 +602,8 @@ async def test_different_distance_types(vector_store_config, rag_config):
             name="test_config_dot",
             store_type=VectorStoreType.QDRANT,
             properties={
-                "vector_index_type": QdrantVectorIndexType.HNSW.value,
-                "distance": QdrantVectorIndexMetric.DOT.value,
-                "hnsw_m": 16,
-                "hnsw_ef_construction": 100,
-                "hnsw_payload_m": 64,
+                "vector_index_type": QdrantVectorIndexType.BRUTEFORCE,
+                "distance": QdrantVectorIndexMetric.DOT,
             },
         )
 
