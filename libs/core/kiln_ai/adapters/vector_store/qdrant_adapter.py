@@ -2,7 +2,6 @@ import logging
 import uuid
 from typing import List, Tuple
 
-from fastembed import SparseTextEmbedding, sparse
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     CollectionInfo,
@@ -11,7 +10,6 @@ from qdrant_client.models import (
     HnswConfigDiff,
     Modifier,
     PointStruct,
-    Query,
     SparseVectorParams,
     VectorParams,
 )
