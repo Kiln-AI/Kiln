@@ -1124,6 +1124,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/available_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Tools */
+        get: operations["get_available_tools_api_projects__project_id__tool_servers__tool_server_id__available_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2216,6 +2233,20 @@ export interface components {
             /** Description */
             description: string | null;
         };
+        /**
+         * ListToolsResult
+         * @description The server's response to a tools/list request from the client.
+         */
+        ListToolsResult: {
+            /** Meta */
+            _meta?: Record<string, never> | null;
+            /** Nextcursor */
+            nextCursor?: string | null;
+            /** Tools */
+            tools: components["schemas"]["Tool"][];
+        } & {
+            [key: string]: unknown;
+        };
         /** MeanUsage */
         MeanUsage: {
             /** Mean Input Tokens */
@@ -3018,6 +3049,52 @@ export interface components {
             prompt?: components["schemas"]["BasePrompt"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * Tool
+         * @description Definition for a tool the client can call.
+         */
+        Tool: {
+            /** Name */
+            name: string;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Inputschema */
+            inputSchema: Record<string, never>;
+            /** Outputschema */
+            outputSchema?: Record<string, never> | null;
+            annotations?: components["schemas"]["ToolAnnotations"] | null;
+            /** Meta */
+            _meta?: Record<string, never> | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * ToolAnnotations
+         * @description Additional properties describing a Tool to clients.
+         *
+         *     NOTE: all properties in ToolAnnotations are **hints**.
+         *     They are not guaranteed to provide a faithful description of
+         *     tool behavior (including descriptive properties like `title`).
+         *
+         *     Clients should never make tool use decisions based on ToolAnnotations
+         *     received from untrusted servers.
+         */
+        ToolAnnotations: {
+            /** Title */
+            title?: string | null;
+            /** Readonlyhint */
+            readOnlyHint?: boolean | null;
+            /** Destructivehint */
+            destructiveHint?: boolean | null;
+            /** Idempotenthint */
+            idempotentHint?: boolean | null;
+            /** Openworldhint */
+            openWorldHint?: boolean | null;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * ToolServerType
@@ -5590,6 +5667,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_available_tools_api_projects__project_id__tool_servers__tool_server_id__available_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListToolsResult"];
                 };
             };
             /** @description Validation Error */

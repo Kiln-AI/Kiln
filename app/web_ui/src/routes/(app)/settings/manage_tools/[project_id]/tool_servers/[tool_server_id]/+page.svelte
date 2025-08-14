@@ -6,18 +6,19 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServer } from "$lib/types"
+  import type { ExternalToolServer, ListToolsResult, Tool } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
 
   let tool_server: ExternalToolServer | null = null
+  let available_tools: ListToolsResult | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
-    await fetch_tool_server()
+    await Promise.all([fetch_tool_server(), fetch_available_tools()])
   })
 
   async function fetch_tool_server() {
@@ -55,6 +56,37 @@
       error = createKilnError(err)
     } finally {
       loading = false
+    }
+  }
+
+  async function fetch_available_tools() {
+    try {
+      if (!tool_server) {
+        return
+      }
+
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}/available_tools",
+        {
+          params: {
+            path: {
+              project_id,
+              tool_server_id,
+            },
+          },
+        },
+      )
+
+      if (fetch_error) {
+        available_tools = null
+        throw fetch_error
+      }
+
+      available_tools = data as ListToolsResult
+    } catch (err) {
+      // Do nothing
+    } finally {
+      // Do nothing
     }
   }
 
@@ -111,6 +143,14 @@
       }),
     )
   }
+
+  function getAvailableTools() {
+    const properties = available_tools?.tools.map((tool: Tool) => ({
+      name: tool.name,
+      value: tool.description || "No description available",
+    }))
+    return properties || []
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -138,6 +178,14 @@
             properties={getDetailsProperties(tool_server)}
             title="Properties"
           />
+          {#if getAvailableTools().length > 0}
+            <div class="mt-8">
+              <PropertyList
+                properties={getAvailableTools()}
+                title="Available Tools"
+              />
+            </div>
+          {/if}
         </div>
         <div class="grow flex flex-col">
           {#if tool_server.type === "remote_mcp"}

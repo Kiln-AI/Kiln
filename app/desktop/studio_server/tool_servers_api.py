@@ -3,7 +3,9 @@ from typing import Dict, List
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.tools.mcp_server import MCPServer
 from kiln_server.project_api import project_from_id
+from mcp import ListToolsResult
 from pydantic import BaseModel, Field, ValidationError
 
 
@@ -86,3 +88,15 @@ def connect_tool_servers_api(app: FastAPI):
                 status_code=422,
                 detail=f"Validation error: {str(e)}",
             )
+
+    @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}/available_tools")
+    async def get_available_tools(
+        project_id: str, tool_server_id: str
+    ) -> ListToolsResult | None:
+        tool_server = await get_tool_server(project_id, tool_server_id)
+        if tool_server.type == ToolServerType.remote_mcp:
+            mcp_server = MCPServer(tool_server)
+            tools_result = await mcp_server.list_tools()
+            return tools_result
+
+        return None
