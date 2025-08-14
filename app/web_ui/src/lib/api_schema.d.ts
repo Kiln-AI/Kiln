@@ -1914,6 +1914,47 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** ExternalToolServerApiDescription */
+        ExternalToolServerApiDescription: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the external tool.
+             */
+            name: string;
+            /** @description The type of external tool server. Remote tools are hosted on a remote server */
+            type: components["schemas"]["ToolServerType"];
+            /**
+             * Description
+             * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
+             */
+            description?: string | null;
+            /**
+             * Properties
+             * @description Configuration properties specific to the tool type.
+             * @default {}
+             */
+            properties: Record<string, never>;
+            /** Available Tools */
+            available_tools: components["schemas"]["Tool"][];
+            /** Model Type */
+            readonly model_type: string;
+        };
         /** ExternalToolServerCreationRequest */
         ExternalToolServerCreationRequest: {
             /** Name */
@@ -3018,6 +3059,52 @@ export interface components {
             prompt?: components["schemas"]["BasePrompt"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * Tool
+         * @description Definition for a tool the client can call.
+         */
+        Tool: {
+            /** Name */
+            name: string;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Inputschema */
+            inputSchema: Record<string, never>;
+            /** Outputschema */
+            outputSchema?: Record<string, never> | null;
+            annotations?: components["schemas"]["ToolAnnotations"] | null;
+            /** Meta */
+            _meta?: Record<string, never> | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * ToolAnnotations
+         * @description Additional properties describing a Tool to clients.
+         *
+         *     NOTE: all properties in ToolAnnotations are **hints**.
+         *     They are not guaranteed to provide a faithful description of
+         *     tool behavior (including descriptive properties like `title`).
+         *
+         *     Clients should never make tool use decisions based on ToolAnnotations
+         *     received from untrusted servers.
+         */
+        ToolAnnotations: {
+            /** Title */
+            title?: string | null;
+            /** Readonlyhint */
+            readOnlyHint?: boolean | null;
+            /** Destructivehint */
+            destructiveHint?: boolean | null;
+            /** Idempotenthint */
+            idempotentHint?: boolean | null;
+            /** Openworldhint */
+            openWorldHint?: boolean | null;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * ToolServerType
@@ -5554,7 +5641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExternalToolServer"];
+                    "application/json": components["schemas"]["ExternalToolServerApiDescription"];
                 };
             };
             /** @description Validation Error */

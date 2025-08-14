@@ -6,13 +6,13 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServer } from "$lib/types"
+  import type { ExternalToolServerApiDescription, Tool } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
 
-  let tool_server: ExternalToolServer | null = null
+  let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -50,7 +50,7 @@
         throw fetch_error
       }
 
-      tool_server = data as ExternalToolServer
+      tool_server = data as ExternalToolServerApiDescription
     } catch (err) {
       error = createKilnError(err)
     } finally {
@@ -62,7 +62,7 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function getDetailsProperties(tool: ExternalToolServer) {
+  function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
       { name: "ID", value: tool.id || "Unknown" },
       { name: "Name", value: tool.name || "Unknown" },
@@ -89,7 +89,7 @@
     return properties
   }
 
-  function getConnectionProperties(tool: ExternalToolServer) {
+  function getConnectionProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
       { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
@@ -103,13 +103,21 @@
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalToolServer) {
+  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
     return Object.entries(tool.properties["headers"] || {}).map(
       ([key, value]) => ({
         name: key,
         value: String(value || "N/A"),
       }),
     )
+  }
+
+  function getAvailableTools(tool: ExternalToolServerApiDescription) {
+    const properties = tool.available_tools.map((tool: Tool) => ({
+      name: tool.name,
+      value: tool.description || "No description available",
+    }))
+    return properties
   }
 </script>
 
@@ -138,6 +146,14 @@
             properties={getDetailsProperties(tool_server)}
             title="Properties"
           />
+          {#if getAvailableTools(tool_server).length > 0}
+            <div class="mt-8">
+              <PropertyList
+                properties={getAvailableTools(tool_server)}
+                title="Available Tools"
+              />
+            </div>
+          {/if}
         </div>
         <div class="grow flex flex-col">
           {#if tool_server.type === "remote_mcp"}
