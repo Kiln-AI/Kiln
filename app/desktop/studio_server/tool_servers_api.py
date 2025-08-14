@@ -5,7 +5,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_server import MCPServer
 from kiln_server.project_api import project_from_id
-from mcp import ListToolsResult
+from mcp import Tool
 from pydantic import BaseModel, Field, ValidationError
 
 
@@ -21,6 +21,10 @@ class ExternalToolServerCreationRequest(BaseModel):
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
     description: str | None = None
+
+
+class ExternalToolServerApiDescription(ExternalToolServer):
+    available_tools: list[Tool]
 
 
 def connect_tool_servers_api(app: FastAPI):
@@ -43,9 +47,9 @@ def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def get_tool_server(
         project_id: str, tool_server_id: str
-    ) -> ExternalToolServer:
+    ) -> ExternalToolServerApiDescription:
         project = project_from_id(project_id)
-        tool = next(
+        tool_server = next(
             (
                 t
                 for t in project.external_tool_servers(readonly=True)
@@ -53,10 +57,24 @@ def connect_tool_servers_api(app: FastAPI):
             ),
             None,
         )
-        if not tool:
-            raise HTTPException(status_code=404, detail="Tool not found")
+        if not tool_server:
+            raise HTTPException(status_code=404, detail="Tool Server not found")
 
-        return tool
+        # Get available tools based on server type
+        available_tools = []
+        if tool_server.type == ToolServerType.remote_mcp:
+            mcp_server = MCPServer(tool_server)
+            tools_result = await mcp_server.list_tools()
+            available_tools = tools_result.tools
+
+        return ExternalToolServerApiDescription(
+            name=tool_server.name,
+            type=tool_server.type,
+            description=tool_server.description,
+            properties=tool_server.properties,
+            parent=tool_server.parent,
+            available_tools=available_tools,
+        )
 
     @app.post("/api/projects/{project_id}/connect_remote_mcp")
     async def connect_remote_mcp(
@@ -88,15 +106,3 @@ def connect_tool_servers_api(app: FastAPI):
                 status_code=422,
                 detail=f"Validation error: {str(e)}",
             )
-
-    @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}/available_tools")
-    async def get_available_tools(
-        project_id: str, tool_server_id: str
-    ) -> ListToolsResult | None:
-        tool_server = await get_tool_server(project_id, tool_server_id)
-        if tool_server.type == ToolServerType.remote_mcp:
-            mcp_server = MCPServer(tool_server)
-            tools_result = await mcp_server.list_tools()
-            return tools_result
-
-        return None

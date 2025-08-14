@@ -6,19 +6,18 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServer, ListToolsResult, Tool } from "$lib/types"
+  import type { ExternalToolServerApiDescription, Tool } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
 
-  let tool_server: ExternalToolServer | null = null
-  let available_tools: ListToolsResult | null = null
+  let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
-    await Promise.all([fetch_tool_server(), fetch_available_tools()])
+    await fetch_tool_server()
   })
 
   async function fetch_tool_server() {
@@ -51,7 +50,7 @@
         throw fetch_error
       }
 
-      tool_server = data as ExternalToolServer
+      tool_server = data as ExternalToolServerApiDescription
     } catch (err) {
       error = createKilnError(err)
     } finally {
@@ -59,42 +58,11 @@
     }
   }
 
-  async function fetch_available_tools() {
-    try {
-      if (!tool_server) {
-        return
-      }
-
-      const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tool_servers/{tool_server_id}/available_tools",
-        {
-          params: {
-            path: {
-              project_id,
-              tool_server_id,
-            },
-          },
-        },
-      )
-
-      if (fetch_error) {
-        available_tools = null
-        throw fetch_error
-      }
-
-      available_tools = data as ListToolsResult
-    } catch (err) {
-      // Do nothing
-    } finally {
-      // Do nothing
-    }
-  }
-
   function goBack() {
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function getDetailsProperties(tool: ExternalToolServer) {
+  function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
       { name: "ID", value: tool.id || "Unknown" },
       { name: "Name", value: tool.name || "Unknown" },
@@ -121,7 +89,7 @@
     return properties
   }
 
-  function getConnectionProperties(tool: ExternalToolServer) {
+  function getConnectionProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
       { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
@@ -135,7 +103,7 @@
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalToolServer) {
+  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
     return Object.entries(tool.properties["headers"] || {}).map(
       ([key, value]) => ({
         name: key,
@@ -144,12 +112,12 @@
     )
   }
 
-  function getAvailableTools() {
-    const properties = available_tools?.tools.map((tool: Tool) => ({
+  function getAvailableTools(tool: ExternalToolServerApiDescription) {
+    const properties = tool.available_tools.map((tool: Tool) => ({
       name: tool.name,
       value: tool.description || "No description available",
     }))
-    return properties || []
+    return properties
   }
 </script>
 
@@ -178,10 +146,10 @@
             properties={getDetailsProperties(tool_server)}
             title="Properties"
           />
-          {#if getAvailableTools().length > 0}
+          {#if getAvailableTools(tool_server).length > 0}
             <div class="mt-8">
               <PropertyList
-                properties={getAvailableTools()}
+                properties={getAvailableTools(tool_server)}
                 title="Available Tools"
               />
             </div>

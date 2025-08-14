@@ -1124,23 +1124,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tool_servers/{tool_server_id}/available_tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Available Tools */
-        get: operations["get_available_tools_api_projects__project_id__tool_servers__tool_server_id__available_tools_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1931,6 +1914,47 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** ExternalToolServerApiDescription */
+        ExternalToolServerApiDescription: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the external tool.
+             */
+            name: string;
+            /** @description The type of external tool server. Remote tools are hosted on a remote server */
+            type: components["schemas"]["ToolServerType"];
+            /**
+             * Description
+             * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
+             */
+            description?: string | null;
+            /**
+             * Properties
+             * @description Configuration properties specific to the tool type.
+             * @default {}
+             */
+            properties: Record<string, never>;
+            /** Available Tools */
+            available_tools: components["schemas"]["Tool"][];
+            /** Model Type */
+            readonly model_type: string;
+        };
         /** ExternalToolServerCreationRequest */
         ExternalToolServerCreationRequest: {
             /** Name */
@@ -2232,20 +2256,6 @@ export interface components {
             type: components["schemas"]["ToolServerType"];
             /** Description */
             description: string | null;
-        };
-        /**
-         * ListToolsResult
-         * @description The server's response to a tools/list request from the client.
-         */
-        ListToolsResult: {
-            /** Meta */
-            _meta?: Record<string, never> | null;
-            /** Nextcursor */
-            nextCursor?: string | null;
-            /** Tools */
-            tools: components["schemas"]["Tool"][];
-        } & {
-            [key: string]: unknown;
         };
         /** MeanUsage */
         MeanUsage: {
@@ -5631,7 +5641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExternalToolServer"];
+                    "application/json": components["schemas"]["ExternalToolServerApiDescription"];
                 };
             };
             /** @description Validation Error */
@@ -5667,38 +5677,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExternalToolServer"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_available_tools_api_projects__project_id__tool_servers__tool_server_id__available_tools_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                tool_server_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListToolsResult"];
                 };
             };
             /** @description Validation Error */

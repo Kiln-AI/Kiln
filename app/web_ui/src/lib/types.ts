@@ -42,6 +42,7 @@ export type ModelProviderName = components["schemas"]["ModelProviderName"]
 export type KilnToolServerDescription =
   components["schemas"]["KilnToolServerDescription"]
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
+export type ExternalToolServerApiDescription =
+  components["schemas"]["ExternalToolServerApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
-export type ListToolsResult = components["schemas"]["ListToolsResult"]
 export type Tool = components["schemas"]["Tool"]
