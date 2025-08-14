@@ -1,7 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from mcp import ClientSession, ListToolsResult
 from mcp.client.streamable_http import streamablehttp_client
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+
+if TYPE_CHECKING:
+    from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
 
 class MCPServer:
@@ -33,6 +40,14 @@ class MCPServer:
                 # Initialize the connection
                 await session.initialize()
                 # List available tools
-                tools = await session.list_tools()
-                print(f"Available tools: {[tool.name for tool in tools.tools]}")
-                return tools
+                self._tools = await session.list_tools()
+                print(f"Available tools: {[tool.name for tool in self._tools.tools]}")
+                return self._tools
+
+    async def get_tool(self, tool_name: str) -> MCPServerTool:
+        if tool_name not in [tool.name for tool in self._tools.tools]:
+            raise ValueError(f"Tool {tool_name} not found")
+
+        from kiln_ai.tools.mcp_server_tool import MCPServerTool
+
+        return MCPServerTool(self, tool_name)
