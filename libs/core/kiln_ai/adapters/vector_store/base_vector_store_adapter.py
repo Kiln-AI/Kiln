@@ -64,7 +64,7 @@ class BaseVectorStoreCollection(ABC):
     async def upsert_chunks(
         self,
         chunks: List[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
-    ):
+    ) -> None:
         """
         Upsert documents into the index for the given RagConfig. The implementation
         must be idempotent.
@@ -105,14 +105,14 @@ class BaseVectorStoreCollection(ABC):
         pass
 
     @abstractmethod
-    async def optimize(self):
+    async def optimize(self) -> None:
         """
         Some stores may have a way to force process the index (e.g. compacting, merging, etc.)
         """
         pass
 
     @abstractmethod
-    async def close(self):
+    async def close(self) -> None:
         """
         Closes the collection and releases any resources, if applicable.
         """

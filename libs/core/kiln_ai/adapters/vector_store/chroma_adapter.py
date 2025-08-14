@@ -202,7 +202,7 @@ class ChromaCollection(BaseVectorStoreCollection):
             )
         return results
 
-    async def search_fts(self, query: str, k: int):
+    async def search_fts(self, query: str, k: int) -> List[SearchResult]:
         # TODO: need to check what they store in inverted index and if they tokenize
         # for a specific language
         #
@@ -219,7 +219,7 @@ class ChromaCollection(BaseVectorStoreCollection):
         vector: List[float],
         k: int,
         distance_type: SimilarityMetric,
-    ):
+    ) -> List[SearchResult]:
         # shape:
         # {
         #   'ids': [['doc_002_1']],

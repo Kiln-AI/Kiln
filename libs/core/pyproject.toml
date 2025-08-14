@@ -37,8 +37,8 @@ dependencies = [
     "together",
     "typing-extensions>=4.12.2",
     "vertexai>=1.43.0",
-    "weaviate-client>=4.16.7",
     "chromadb>=1.0.16",
+    "qdrant-client[fastembed]>=1.15.1",
 ]
 
 [dependency-groups]

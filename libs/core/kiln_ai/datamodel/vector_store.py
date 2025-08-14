@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class VectorStoreType(str, Enum):
     LANCE_DB = "lancedb"
     CHROMA = "chroma"
-    WEAVIATE = "weaviate"
+    QDRANT = "qdrant"
 
 
 class LanceDBTableSchemaVersion(str, Enum):
@@ -24,10 +24,22 @@ class LanceDBVectorIndexType(str, Enum):
     BRUTEFORCE = "bruteforce"
 
 
+class QdrantVectorIndexType(str, Enum):
+    HNSW = "hnsw"
+    BRUTEFORCE = "bruteforce"
+
+
 class LanceDBVectorIndexMetric(str, Enum):
     DOT = "dot"
     COSINE = "cosine"
     L2 = "l2"
+
+
+class QdrantVectorIndexMetric(str, Enum):
+    COSINE = "Cosine"
+    EUCLID = "Euclid"
+    DOT = "Dot"
+    MANHATTAN = "Manhattan"
 
 
 class LanceDBConfigProperties(BaseModel):
@@ -48,6 +60,14 @@ class WeaviateConfigProperties(BaseModel):
     pass
 
 
+class QdrantConfigProperties(BaseModel):
+    vector_index_type: QdrantVectorIndexType
+    distance: QdrantVectorIndexMetric
+    hnsw_m: int | None
+    hnsw_ef_construction: int | None
+    hnsw_payload_m: int | None
+
+
 class VectorStoreConfig(KilnParentedModel):
     name: str = NAME_FIELD
     store_type: VectorStoreType = Field(
@@ -64,8 +84,8 @@ class VectorStoreConfig(KilnParentedModel):
                 return self.validate_lance_db_properties()
             case VectorStoreType.CHROMA:
                 return self.validate_chroma_properties()
-            case VectorStoreType.WEAVIATE:
-                return self.validate_weaviate_properties()
+            case VectorStoreType.QDRANT:
+                return self.validate_qdrant_properties()
             case _:
                 raise ValueError("Invalid vector store type")
 
@@ -152,15 +172,56 @@ class VectorStoreConfig(KilnParentedModel):
             )
         return ChromaConfigProperties()
 
-    def validate_weaviate_properties(self):
+    def validate_qdrant_properties(self):
+        if "vector_index_type" not in self.properties or self.properties[
+            "vector_index_type"
+        ] not in [v.value for v in QdrantVectorIndexType]:
+            raise ValueError("Qdrant vector index type not found in properties")
+        if "distance" not in self.properties or self.properties["distance"] not in [
+            v.value for v in QdrantVectorIndexMetric
+        ]:
+            raise ValueError("Qdrant distance not found in properties")
+        if self.properties["vector_index_type"] == QdrantVectorIndexType.HNSW:
+            if (
+                "hnsw_m" not in self.properties
+                or "hnsw_ef_construction" not in self.properties
+                or "hnsw_payload_m" not in self.properties
+            ):
+                raise ValueError("HNSW specific properties not found in properties")
+            if self.properties["hnsw_m"] is None or not isinstance(
+                self.properties["hnsw_m"], int
+            ):
+                raise ValueError("HNSW m must be a positive integer")
+            if self.properties["hnsw_ef_construction"] is None or not isinstance(
+                self.properties["hnsw_ef_construction"], int
+            ):
+                raise ValueError("HNSW ef_construction must be a positive integer")
+            if self.properties["hnsw_payload_m"] is None or not isinstance(
+                self.properties["hnsw_payload_m"], int
+            ):
+                raise ValueError("HNSW payload_m must be a positive integer")
         return self
 
-    def weaviate_typed_properties(self) -> WeaviateConfigProperties:
-        if self.store_type != VectorStoreType.WEAVIATE:
+    def qdrant_typed_properties(self) -> QdrantConfigProperties:
+        if self.store_type != VectorStoreType.QDRANT:
             raise ValueError(
-                "weaviate_typed_properties can only be called for Weaviate vector store configs"
+                "qdrant_typed_properties can only be called for Qdrant vector store configs"
             )
-        return WeaviateConfigProperties()
+
+        def safe_int(value) -> int | None:
+            if value is None:
+                return None
+            return int(value)
+
+        return QdrantConfigProperties(
+            vector_index_type=QdrantVectorIndexType(
+                self.properties.get("vector_index_type")
+            ),
+            distance=QdrantVectorIndexMetric(self.properties.get("distance")),
+            hnsw_m=safe_int(self.properties.get("hnsw_m")),
+            hnsw_ef_construction=safe_int(self.properties.get("hnsw_ef_construction")),
+            hnsw_payload_m=safe_int(self.properties.get("hnsw_payload_m")),
+        )
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:

@@ -2,9 +2,9 @@ import logging
 
 import chromadb
 import lancedb
-import weaviate
 from chromadb.api import ClientAPI
 from chromadb.config import Settings
+from qdrant_client import AsyncQdrantClient
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -12,7 +12,7 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
 )
 from kiln_ai.adapters.vector_store.chroma_adapter import ChromaAdapter
 from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
-from kiln_ai.adapters.vector_store.weaviate_adapter import WeaviateAdapter
+from kiln_ai.adapters.vector_store.qdrant_adapter import QdrantAdapter
 from kiln_ai.datamodel.vector_store import VectorStoreType
 from kiln_ai.utils.config import Config
 
@@ -49,25 +49,11 @@ async def connect_chroma() -> ClientAPI:
         raise RuntimeError(f"Error connecting to Chroma: {e}")
 
 
-async def connect_weaviate() -> weaviate.WeaviateAsyncClient:
+async def connect_qdrant() -> AsyncQdrantClient:
     try:
-        # docs: https://docs.weaviate.io/deploy/installation-guides/embedded
-        client = weaviate.WeaviateAsyncClient(
-            embedded_options=weaviate.embedded.EmbeddedOptions(
-                additional_env_vars={
-                    "ENABLE_MODULES": "backup-filesystem",
-                    "BACKUP_FILESYSTEM_PATH": "/tmp/backups",
-                },
-                persistence_data_path=str(
-                    Config.shared().local_data_dir() / "weaviate"
-                ),
-            )
-        )
-        await client.connect()
-        return client
-
+        return AsyncQdrantClient(path=str(Config.shared().local_data_dir() / "qdrant"))
     except Exception as e:
-        raise RuntimeError(f"Error connecting to Weaviate: {e}")
+        raise RuntimeError(f"Error connecting to Qdrant: {e}")
 
 
 async def vector_store_adapter_for_config(
@@ -80,8 +66,8 @@ async def vector_store_adapter_for_config(
         case VectorStoreType.CHROMA:
             client = await connect_chroma()
             return ChromaAdapter(vector_store_config, client)
-        case VectorStoreType.WEAVIATE:
-            client = await connect_weaviate()
-            return WeaviateAdapter(vector_store_config, client)
+        case VectorStoreType.QDRANT:
+            client = await connect_qdrant()
+            return QdrantAdapter(vector_store_config, client)
         case _:
             raise ValueError(f"Unsupported vector store adapter: {vector_store_config}")

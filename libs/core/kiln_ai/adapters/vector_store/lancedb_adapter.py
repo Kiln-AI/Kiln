@@ -186,7 +186,7 @@ class LanceDBCollection(BaseVectorStoreCollection):
             )
         return search_results
 
-    async def search_fts(self, query: str, k: int):
+    async def search_fts(self, query: str, k: int) -> List[SearchResult]:
         results = (
             await (
                 await self.table.search(query, query_type="fts", fts_columns=["text"])
