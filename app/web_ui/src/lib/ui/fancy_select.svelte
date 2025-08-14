@@ -569,7 +569,7 @@
                   {#if multi_select}
                     <input
                       type="checkbox"
-                      class="checkbox no-animation"
+                      class="checkbox checkbox-sm no-animation"
                       checked={selected_values.includes(item.value)}
                     />
                   {/if}

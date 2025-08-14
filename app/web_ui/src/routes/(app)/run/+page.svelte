@@ -128,6 +128,8 @@
     run_complete = false
     clear_all()
   }
+
+  $: project_id = $current_project?.id || ""
 </script>
 
 <div class="max-w-[1400px]">
@@ -171,6 +173,7 @@
             bind:top_p
             bind:structured_output_mode
             has_structured_output={requires_structured_output}
+            {project_id}
           />
         </Collapse>
       </div>

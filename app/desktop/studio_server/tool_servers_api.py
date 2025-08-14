@@ -3,6 +3,7 @@ from typing import Dict, List
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.tools.tool_id import KilnBuiltInToolId, ToolId
 from kiln_server.project_api import project_from_id
 from pydantic import BaseModel, Field, ValidationError
 
@@ -21,7 +22,41 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
 
 
+class ToolApiDescription(BaseModel):
+    id: ToolId
+    name: str
+    description: str | None
+
+
 def connect_tool_servers_api(app: FastAPI):
+    @app.get("/api/projects/{project_id}/available_tools")
+    async def get_available_tools(
+        project_id: str,
+    ) -> List[ToolApiDescription]:
+        # TODO: add a real implementation of this
+        return [
+            ToolApiDescription(
+                id=KilnBuiltInToolId.ADD_NUMBERS,
+                name="Add Numbers",
+                description="Add two numbers",
+            ),
+            ToolApiDescription(
+                id=KilnBuiltInToolId.SUBTRACT_NUMBERS,
+                name="Subtract Numbers",
+                description="Subtract two numbers",
+            ),
+            ToolApiDescription(
+                id=KilnBuiltInToolId.MULTIPLY_NUMBERS,
+                name="Multiply Numbers",
+                description="Multiply two numbers",
+            ),
+            ToolApiDescription(
+                id=KilnBuiltInToolId.DIVIDE_NUMBERS,
+                name="Divide Numbers",
+                description="Divide two numbers",
+            ),
+        ]
+
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(
         project_id: str,

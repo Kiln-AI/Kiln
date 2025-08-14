@@ -1073,6 +1073,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/available_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Tools */
+        get: operations["get_available_tools_api_projects__project_id__available_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/available_tool_servers": {
         parameters: {
             query?: never;
@@ -2557,6 +2574,8 @@ export interface components {
             temperature: number;
             /** @description The structured output mode to use for this run config. */
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
+            /** @description The tools config to use for this run config. */
+            tools_config?: components["schemas"]["ToolsRunConfig"] | null;
         };
         /** RunSummary */
         RunSummary: {
@@ -3019,12 +3038,32 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** ToolApiDescription */
+        ToolApiDescription: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+        };
         /**
          * ToolServerType
          * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
         ToolServerType: "remote_mcp";
+        /**
+         * ToolsRunConfig
+         * @description A config describing which tools are available to a task.
+         */
+        ToolsRunConfig: {
+            /**
+             * Tools
+             * @description The IDs of the tools available to the task.
+             */
+            tools: string[];
+        };
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
             /** Name */
@@ -5492,6 +5531,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KilnFileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_available_tools_api_projects__project_id__available_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolApiDescription"][];
                 };
             };
             /** @description Validation Error */

@@ -158,6 +158,7 @@
         bind:top_p={task_run_config_top_p}
         bind:structured_output_mode={task_run_config_structured_output_mode}
         has_structured_output={!!$current_task?.output_json_schema}
+        {project_id}
       />
     </Collapse>
     {#if add_task_config_error}
