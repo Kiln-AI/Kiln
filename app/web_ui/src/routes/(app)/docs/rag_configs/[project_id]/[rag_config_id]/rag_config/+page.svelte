@@ -59,8 +59,8 @@
 </script>
 
 <AppPage
-  title="RAG Configuration"
-  subtitle={loading ? "" : rag_config?.name || "Unknown"}
+  title="Search Tool (RAG)"
+  subtitle={loading ? "" : `Name: ${rag_config?.name}` || "Unknown"}
   action_buttons={[]}
 >
   {#if loading}
@@ -86,6 +86,7 @@
       <!-- RAG Config Details -->
       <div>
         <PropertyList
+          title="Details"
           properties={[
             { name: "ID", value: rag_config.id || "N/A" },
             { name: "Name", value: rag_config.name || "N/A" },
@@ -163,7 +164,7 @@
         <!-- Embedding Step -->
         <div>
           <PropertyList
-            title="Embedding"
+            title="Embedding Model"
             properties={[
               {
                 name: "Provider",

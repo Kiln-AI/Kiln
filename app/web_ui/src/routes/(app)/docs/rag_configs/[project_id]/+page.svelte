@@ -68,16 +68,15 @@
 </script>
 
 <AppPage
-  title="RAG Configurations"
-  subtitle="Create your RAG configuration to use your documents in your Kiln Tasks"
+  title="Search Tools (RAG)"
+  subtitle="Make knowledge from your documents searchable by your tasks."
   no_y_padding={!!(rag_configs && rag_configs.length == 0)}
   action_buttons={rag_configs && rag_configs.length == 0
     ? []
     : [
         {
-          label: "Add RAG Configuration",
+          label: "Add Search Tool",
           href: `/docs/rag_configs/${project_id}/create_rag_config`,
-          primary: true,
         },
       ]}
 >
@@ -95,8 +94,8 @@
         <table class="table">
           <thead>
             <tr>
-              <th class="w-1/4">RAG Configuration</th>
-              <th class="w-2/4">Progress</th>
+              <th class="w-1/4">Details</th>
+              <th class="w-2/4">Status</th>
               <th class="w-1/4"></th>
             </tr>
           </thead>

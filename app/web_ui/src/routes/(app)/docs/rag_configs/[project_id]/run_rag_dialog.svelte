@@ -170,7 +170,7 @@
 </script>
 
 <Dialog
-  title={`Run RAG Configuration: ${rag_config?.name || "Unknown"}`}
+  title="Processing Status"
   width="wide"
   bind:this={dialog}
   action_buttons={[

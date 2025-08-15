@@ -124,7 +124,6 @@
         {
           label: "Add Extractor",
           href: `/docs/extractors/${project_id}/create_extractor`,
-          primary: true,
         },
       ]}
 >

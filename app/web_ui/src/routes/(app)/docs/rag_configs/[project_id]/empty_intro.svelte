@@ -45,21 +45,16 @@
         />
       </svg>
     </div>
-    <div class="font-medium text-lg">
-      Add RAG Configurations to Your Project
-    </div>
+    <div class="font-medium text-lg">Create a Search Tool</div>
     <div>
-      Configure your RAG configuration to use your documents in your Kiln Tasks.
-    </div>
-    <div>
-      Combine extractors, chunkers, embeddings and retrievers to create a RAG
-      configuration.
+      Allow your tasks to search the knowledge in your documents
+      (Retrieval-Augmented Generation).
     </div>
 
     <a
       class="btn btn-primary"
       href={`/docs/rag_configs/${project_id}/create_rag_config`}
-      >Create RAG Configuration</a
+      >Create Search Tool</a
     >
   </div>
 </div>

@@ -66,13 +66,11 @@
   // Convert configs to option groups for fancy select
   $: extractor_options = [
     {
-      label: "Actions",
       options: [
         {
-          label: "Create New Extractor",
+          label: "New Extractor Configuration",
           value: "create_new",
-          description: "Create a new extractor configuration",
-          badge: "Create",
+          badge: "New",
           badge_color: "primary",
         },
       ],
@@ -98,13 +96,11 @@
 
   $: chunker_options = [
     {
-      label: "Actions",
       options: [
         {
-          label: "Create New Chunker",
+          label: "New Chunker Configuration",
           value: "create_new",
-          description: "Create a new chunker configuration",
-          badge: "Create",
+          badge: "New",
           badge_color: "primary",
         },
       ],
@@ -127,13 +123,11 @@
 
   $: embedding_options = [
     {
-      label: "Actions",
       options: [
         {
-          label: "Create New Embedding Model",
+          label: "New Embedding Configuration",
           value: "create_new",
-          description: "Create a new embedding configuration",
-          badge: "Create",
+          badge: "New",
           badge_color: "primary",
         },
       ],
@@ -337,8 +331,8 @@
 </script>
 
 <AppPage
-  title="Create RAG Configuration"
-  subtitle="A configuration for extracting, chunking, and embedding your documents."
+  title="Create Search Tool (RAG)"
+  subtitle="A configuration for searching your docs, including extracting, chunking and embeddings."
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -348,7 +342,7 @@
     <div class="max-w-[900px]">
       <FormContainer
         submit_visible={true}
-        submit_label="Create RAG Configuration"
+        submit_label="Create Search Tool"
         on:submit={create_rag_config}
         {error}
         gap={4}
@@ -367,7 +361,8 @@
               <FormElement
                 id="extractor_select"
                 label="Extractor"
-                description="Choose an extractor to convert your documents into text."
+                description="Extractors convert your documents into text."
+                info_description="Documents like PDFs, images and videos need to be converted into text so they can be searched and read by models."
                 fancy_select_options={extractor_options}
                 bind:value={selected_extractor_config_id}
                 inputType="fancy_select"
@@ -386,7 +381,8 @@
               <FormElement
                 id="chunker_select"
                 label="Chunker"
-                description="Choose a chunker to split your documents into smaller pieces for better retrieval."
+                description="Split your documents into smaller chunks for search."
+                info_description="Splitting long documents into smaller chunks allows search to find relevant information."
                 fancy_select_options={chunker_options}
                 bind:value={selected_chunker_config_id}
                 inputType="fancy_select"
@@ -405,7 +401,8 @@
               <FormElement
                 id="embedding_select"
                 label="Embedding Model"
-                description="Choose an embedding model to convert your document chunks into vectors for similarity search."
+                description="Embedding models convert your document chunks into vectors for similarity search."
+                info_description="Embedding models are a type of AI model which create searchable vectors from your chunks."
                 fancy_select_options={embedding_options}
                 bind:value={selected_embedding_config_id}
                 inputType="fancy_select"
@@ -421,8 +418,8 @@
             <div class="collapse-title font-medium">Advanced Options</div>
             <div class="collapse-content flex flex-col gap-4">
               <FormElement
-                label="Configuration Name"
-                description="Leave blank and we'll generate one for you."
+                label="Search Tool Name"
+                description="A name to identify this tool. Leave blank and we'll generate one for you."
                 optional={true}
                 inputType="input"
                 id="rag_config_name"
@@ -430,7 +427,7 @@
               />
               <FormElement
                 label="Description"
-                description="A description of the RAG configuration for you and your team. This will have no effect on the configuration's behavior."
+                description="A description of the search tool for your reference."
                 optional={true}
                 inputType="textarea"
                 id="rag_config_description"
@@ -504,11 +501,6 @@
     }
   }}
 >
-  <div class="font-light text-sm mb-4">
-    Embedding models are used to convert your document chunks into vectors for
-    similarity search.
-  </div>
-
   <CreateEmbeddingForm
     keyboard_submit={modal_opened === "embedding"}
     on:success={async (e) => {
