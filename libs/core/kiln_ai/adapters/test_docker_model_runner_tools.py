@@ -126,3 +126,184 @@ async def test_docker_model_runner_online_failure():
         result = await docker_model_runner_online()
 
         assert result is False
+
+
+@pytest.mark.asyncio
+async def test_get_docker_model_runner_connection_success():
+    """Test get_docker_model_runner_connection with successful connection."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        get_docker_model_runner_connection,
+    )
+
+    # Mock OpenAI client and models response
+    mock_model = Mock()
+    mock_model.id = "ai/llama3.2:3B-Q4_K_M"
+    mock_models_response = [mock_model]
+
+    with (
+        patch(
+            "kiln_ai.adapters.docker_model_runner_tools.openai.OpenAI"
+        ) as mock_openai,
+        patch(
+            "kiln_ai.adapters.docker_model_runner_tools.parse_docker_model_runner_models"
+        ) as mock_parse,
+        patch(
+            "kiln_ai.adapters.docker_model_runner_tools.docker_model_runner_base_url"
+        ) as mock_base_url,
+    ):
+        mock_base_url.return_value = "http://localhost:12434/engines"
+        mock_client = Mock()
+        mock_client.models.list.return_value = mock_models_response
+        mock_openai.return_value = mock_client
+
+        expected_connection = DockerModelRunnerConnection(
+            message="Connected",
+            supported_models=["ai/llama3.2:3B-Q4_K_M"],
+            untested_models=[],
+        )
+        mock_parse.return_value = expected_connection
+
+        result = await get_docker_model_runner_connection()
+
+        assert result == expected_connection
+        mock_openai.assert_called_once_with(
+            api_key="dummy",
+            base_url="http://localhost:12434/engines/v1",
+            max_retries=0,
+        )
+        mock_parse.assert_called_once_with(mock_models_response)
+
+
+@pytest.mark.asyncio
+async def test_get_docker_model_runner_connection_with_custom_url():
+    """Test get_docker_model_runner_connection with custom URL."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        get_docker_model_runner_connection,
+    )
+
+    # Mock OpenAI client and models response
+    mock_model = Mock()
+    mock_model.id = "ai/llama3.2:3B-Q4_K_M"
+    mock_models_response = [mock_model]
+
+    with (
+        patch(
+            "kiln_ai.adapters.docker_model_runner_tools.openai.OpenAI"
+        ) as mock_openai,
+        patch(
+            "kiln_ai.adapters.docker_model_runner_tools.parse_docker_model_runner_models"
+        ) as mock_parse,
+    ):
+        mock_client = Mock()
+        mock_client.models.list.return_value = mock_models_response
+        mock_openai.return_value = mock_client
+
+        expected_connection = DockerModelRunnerConnection(
+            message="Connected",
+            supported_models=["ai/llama3.2:3B-Q4_K_M"],
+            untested_models=[],
+        )
+        mock_parse.return_value = expected_connection
+
+        custom_url = "http://custom:8080/engines/llama.cpp"
+        result = await get_docker_model_runner_connection(custom_url)
+
+        assert result == expected_connection
+        mock_openai.assert_called_once_with(
+            api_key="dummy",
+            base_url=f"{custom_url}/v1",
+            max_retries=0,
+        )
+        mock_parse.assert_called_once_with(mock_models_response)
+
+
+@pytest.mark.asyncio
+async def test_get_docker_model_runner_connection_api_error():
+    """Test get_docker_model_runner_connection with API error."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        get_docker_model_runner_connection,
+    )
+
+    with patch(
+        "kiln_ai.adapters.docker_model_runner_tools.openai.OpenAI"
+    ) as mock_openai:
+        mock_client = Mock()
+        mock_client.models.list.side_effect = openai.APIConnectionError(request=Mock())
+        mock_openai.return_value = mock_client
+
+        result = await get_docker_model_runner_connection()
+
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_docker_model_runner_connection_connection_error():
+    """Test get_docker_model_runner_connection with connection error."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        get_docker_model_runner_connection,
+    )
+
+    with patch(
+        "kiln_ai.adapters.docker_model_runner_tools.openai.OpenAI"
+    ) as mock_openai:
+        mock_client = Mock()
+        mock_client.models.list.side_effect = httpx.RequestError("Connection error")
+        mock_openai.return_value = mock_client
+
+        result = await get_docker_model_runner_connection()
+
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_docker_model_runner_connection_http_error():
+    """Test get_docker_model_runner_connection with HTTP error."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        get_docker_model_runner_connection,
+    )
+
+    with patch(
+        "kiln_ai.adapters.docker_model_runner_tools.openai.OpenAI"
+    ) as mock_openai:
+        mock_client = Mock()
+        mock_client.models.list.side_effect = httpx.RequestError("HTTP error")
+        mock_openai.return_value = mock_client
+
+        result = await get_docker_model_runner_connection()
+
+        assert result is None
+
+
+def test_docker_model_runner_model_installed_true():
+    """Test docker_model_runner_model_installed returns True when model is installed."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        docker_model_runner_model_installed,
+    )
+
+    connection = DockerModelRunnerConnection(
+        message="Test",
+        supported_models=["model1", "model2"],
+        untested_models=["model3", "model4"],
+    )
+
+    # Test model in supported_models
+    assert docker_model_runner_model_installed(connection, "model1") is True
+
+    # Test model in untested_models
+    assert docker_model_runner_model_installed(connection, "model3") is True
+
+
+def test_docker_model_runner_model_installed_false():
+    """Test docker_model_runner_model_installed returns False when model is not installed."""
+    from kiln_ai.adapters.docker_model_runner_tools import (
+        docker_model_runner_model_installed,
+    )
+
+    connection = DockerModelRunnerConnection(
+        message="Test",
+        supported_models=["model1", "model2"],
+        untested_models=["model3", "model4"],
+    )
+
+    # Test model not in any list
+    assert docker_model_runner_model_installed(connection, "nonexistent_model") is False
