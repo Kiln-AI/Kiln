@@ -15,6 +15,7 @@ from kiln_ai.adapters.rag.progress import (
     RagProgress,
     compute_current_progress_for_rag_config,
 )
+from kiln_ai.adapters.vector_store.registry import vector_store_adapter_for_config
 from kiln_ai.datamodel import Project
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig
@@ -26,6 +27,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
 )
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
 from kiln_ai.utils.lock import asyncio_mutex
 from pydantic import BaseModel, ConfigDict, Field
@@ -93,6 +95,7 @@ class RagWorkflowStepNames(str, Enum):
     EXTRACTING = "extracting"
     CHUNKING = "chunking"
     EMBEDDING = "embedding"
+    INDEXING = "indexing"
 
 
 async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> bool:
@@ -428,6 +431,122 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                         )
 
 
+class RagIndexingStepRunner(AbstractRagStepRunner):
+    def __init__(
+        self,
+        project: Project,
+        extractor_config: ExtractorConfig,
+        chunker_config: ChunkerConfig,
+        embedding_config: EmbeddingConfig,
+        vector_store_config: VectorStoreConfig,
+        rag_config: RagConfig,
+        concurrency: int = 10,
+    ):
+        self.project = project
+        self.extractor_config = extractor_config
+        self.chunker_config = chunker_config
+        self.embedding_config = embedding_config
+        self.vector_store_config = vector_store_config
+        self.rag_config = rag_config
+        self.concurrency = concurrency
+
+    @property
+    def lock_key(self) -> str:
+        return f"rag:index:{self.vector_store_config.id}"
+
+    def stage(self) -> RagWorkflowStepNames:
+        return RagWorkflowStepNames.INDEXING
+
+    async def collect_records(
+        self,
+        batch_size: int = 100,
+    ) -> AsyncGenerator[list[Tuple[str, ChunkedDocument, ChunkEmbeddings]], None]:
+        target_extractor_config_id = self.extractor_config.id
+        target_chunker_config_id = self.chunker_config.id
+        target_embedding_config_id = self.embedding_config.id
+
+        # (document_id, chunked_document, embedding)
+        jobs: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]] = []
+        for document in self.project.documents(readonly=True):
+            extractions = document.extractions(readonly=True)
+            for extraction in extractions:
+                if extraction.extractor_config_id == target_extractor_config_id:
+                    for chunked_document in extraction.chunked_documents(readonly=True):
+                        if (
+                            chunked_document.chunker_config_id
+                            == target_chunker_config_id
+                        ):
+                            for chunk_embedding in chunked_document.chunk_embeddings(
+                                readonly=True
+                            ):
+                                if (
+                                    chunk_embedding.embedding_config_id
+                                    == target_embedding_config_id
+                                ):
+                                    jobs.append(
+                                        (
+                                            str(document.id),
+                                            chunked_document,
+                                            chunk_embedding,
+                                        )
+                                    )
+
+                                    if len(jobs) >= batch_size:
+                                        yield jobs
+                                        jobs = []
+
+            if len(jobs) > 0:
+                yield jobs
+
+    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
+        async with asyncio_mutex(self.lock_key):
+            vector_dimensions: int | None = None
+
+            # infer dimensionality - we peek into the first record to get the vector dimensions
+            # vector dimensions are not stored in the config because they are derived from the model
+            # and in some cases dynamic shortening of the vector (OpenAI has this)
+            print("======================")
+            print("Collecting records for vector dimensions")
+            async for records in self.collect_records(batch_size=1):
+                if len(records) > 0:
+                    embedding = records[0][2].embeddings[0]
+                    vector_dimensions = len(embedding.vector)
+                    print(f"Vector dimensions: {vector_dimensions}")
+                    break
+
+            if vector_dimensions is None:
+                raise ValueError("Vector dimensions are not set")
+
+            print("======================")
+            print("Creating vector store collection")
+            vector_store = await vector_store_adapter_for_config(
+                self.vector_store_config,
+            )
+
+            print("======================")
+            print("Creating vector store collection")
+            # create index from scratch
+            collection = await vector_store.create_collection(
+                rag_config=self.rag_config,
+                vector_dimensions=vector_dimensions,
+            )
+
+            # TODO: count the number of records to upsert, we need to do a separate first pass
+            # to count, because we cannot just acc everything into an array (would be too big
+            # if the user has thousands of documents
+            # that is N(docs) * (N(chunks) + N(embeddings))
+
+            print("======================")
+            print("Upserting records")
+            async for records in self.collect_records(25):
+                print(f"Upserting {len(records)} records")
+                await collection.upsert_chunks(records)
+                yield RagStepRunnerProgress(
+                    success_count=1,
+                    error_count=0,
+                )
+
+
 class RagWorkflowRunnerConfiguration(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -542,4 +661,7 @@ class RagWorkflowRunner:
                     continue
 
                 async for progress in step.run():
-                    yield self.update_workflow_progress(step.stage(), progress)
+                    if step.stage() == RagWorkflowStepNames.INDEXING:
+                        print(f"Indexing progress: {progress}")
+                    else:
+                        yield self.update_workflow_progress(step.stage(), progress)

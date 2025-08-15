@@ -7,7 +7,10 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
-from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    built_in_embedding_models_from_provider,
+)
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.rag.progress import (
     RagProgress,
@@ -17,6 +20,7 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagChunkingStepRunner,
     RagEmbeddingStepRunner,
     RagExtractionStepRunner,
+    RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
 )
@@ -40,6 +44,12 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import (
+    QdrantVectorIndexMetric,
+    QdrantVectorIndexType,
+    VectorStoreConfig,
+    VectorStoreType,
+)
 from kiln_ai.utils import asyncio_mutex
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -437,6 +447,15 @@ def build_rag_workflow_runner(
             detail="Embedding config not found",
         )
 
+    vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+        str(rag_config.vector_store_config_id), project.path
+    )
+    if vector_store_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vector store config not found",
+        )
+
     runner = RagWorkflowRunner(
         project,
         RagWorkflowRunnerConfiguration(
@@ -462,6 +481,14 @@ def build_rag_workflow_runner(
                     chunker_config,
                     embedding_config,
                     concurrency=50,
+                ),
+                RagIndexingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    embedding_config,
+                    vector_store_config,
+                    rag_config,
                 ),
             ],
         ),
@@ -986,6 +1013,16 @@ def connect_document_api(app: FastAPI):
     ) -> EmbeddingConfig:
         project = project_from_id(project_id)
 
+        model = built_in_embedding_models_from_provider(
+            provider_name=request.model_provider_name,
+            model_name=request.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {request.model_name} not found in {request.model_provider_name}",
+            )
+
         embedding_config = EmbeddingConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1038,6 +1075,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Embedding config {request.embedding_config_id} not found",
             )
 
+        # TODO: get vector store config params from the request
+        vector_store_config = VectorStoreConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            store_type=VectorStoreType.QDRANT,
+            properties={
+                "vector_index_type": QdrantVectorIndexType.BRUTEFORCE,
+                "distance": QdrantVectorIndexMetric.COSINE,
+            },
+        )
+        vector_store_config.save_to_file()
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1045,6 +1094,7 @@ def connect_document_api(app: FastAPI):
             extractor_config_id=extractor_config.id,
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
+            vector_store_config_id=vector_store_config.id,
         )
         rag_config.save_to_file()
 
