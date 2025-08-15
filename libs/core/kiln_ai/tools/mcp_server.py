@@ -46,8 +46,6 @@ class MCPServer:
                 return self._tools
 
     async def get_tool(self, tool_name: str) -> MCPServerTool:
-        from kiln_ai.tools.mcp_server_tool import MCPServerTool
-
         if self._tools is None:
             self._tools = await self.list_tools()
 
