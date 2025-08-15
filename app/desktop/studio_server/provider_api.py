@@ -3,11 +3,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+import httpx
 import litellm
 import openai
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from kiln_ai.adapters.docker_model_runner_tools import (
+    DockerModelRunnerConnection,
+    get_docker_model_runner_connection,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -75,6 +80,52 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
         Config.shared().save_setting("ollama_base_url", custom_ollama_url)
 
     return ollama_connection
+
+
+async def connect_docker_model_runner(
+    docker_model_runner_custom_url: str | None = None,
+) -> DockerModelRunnerConnection:
+    if (
+        docker_model_runner_custom_url
+        and not docker_model_runner_custom_url.startswith("http://")
+        and not docker_model_runner_custom_url.startswith("https://")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Docker Model Runner URL. It must start with http:// or https://",
+        )
+
+    try:
+        docker_connection = await get_docker_model_runner_connection(
+            docker_model_runner_custom_url
+        )
+
+        if docker_connection is None:
+            raise HTTPException(
+                status_code=417,
+                detail="Failed to connect. Ensure Docker Model Runner is running and you enabled TCP connections. See the Docker Model Runner docs for instructions.",
+            )
+
+    except HTTPException:
+        # Preserve status/details from earlier raises (e.g., 400/417)
+        raise
+    except (openai.APIError, httpx.RequestError) as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to Docker Model Runner: {e}",
+        )
+
+    # Save the custom Docker URL if used to connect
+    if (
+        docker_model_runner_custom_url
+        and docker_model_runner_custom_url
+        != Config.shared().docker_model_runner_base_url
+    ):
+        Config.shared().save_setting(
+            "docker_model_runner_base_url", docker_model_runner_custom_url
+        )
+
+    return docker_connection
 
 
 class ModelDetails(BaseModel):
@@ -165,6 +216,11 @@ def connect_provider_api(app: FastAPI):
                             )
                         )
 
+        # Docker Model Runner is special: check which models are installed
+        docker_models = await available_docker_model_runner_models()
+        if docker_models:
+            models.insert(0, docker_models)
+
         # Ollama is special: check which models are installed
         ollama_models = await available_ollama_models()
         if ollama_models:
@@ -191,6 +247,13 @@ def connect_provider_api(app: FastAPI):
         custom_ollama_url: str | None = None,
     ) -> OllamaConnection:
         return await connect_ollama(custom_ollama_url)
+
+    @app.get("/api/provider/docker_model_runner/connect")
+    async def connect_docker_model_runner_api(
+        docker_model_runner_custom_url: str | None = None,
+    ) -> DockerModelRunnerConnection:
+        chosen_url = docker_model_runner_custom_url
+        return await connect_docker_model_runner(chosen_url)
 
     @app.post("/api/provider/openai_compatible")
     async def save_openai_compatible_providers(name: str, base_url: str, api_key: str):
@@ -306,6 +369,7 @@ def connect_provider_api(app: FastAPI):
                 | ModelProviderName.kiln_fine_tune
                 | ModelProviderName.openai_compatible
                 | ModelProviderName.ollama
+                | ModelProviderName.docker_model_runner
             ):
                 return JSONResponse(
                     status_code=400,
@@ -365,6 +429,7 @@ def connect_provider_api(app: FastAPI):
                     | ModelProviderName.kiln_fine_tune
                     | ModelProviderName.openai_compatible
                     | ModelProviderName.ollama
+                    | ModelProviderName.docker_model_runner
                 ):
                     return JSONResponse(
                         status_code=400,
@@ -973,6 +1038,88 @@ async def available_ollama_models() -> AvailableModels | None:
     except HTTPException:
         # skip ollama if it's not available
         return None
+
+
+async def available_docker_model_runner_models() -> AvailableModels | None:
+    # Try to connect to Docker Model Runner, and get the list of installed models
+    try:
+        docker_connection = await get_docker_model_runner_connection()
+        if docker_connection is None:
+            return None
+
+        docker_models = AvailableModels(
+            provider_name=provider_name_from_id(ModelProviderName.docker_model_runner),
+            provider_id=ModelProviderName.docker_model_runner,
+            models=[],
+        )
+
+        for docker_model_id in docker_connection.supported_models:
+            # Get all Kiln models that match the Docker Model Runner model ID
+            models = models_from_docker_model_runner_id(docker_model_id)
+            for model, docker_provider in models:
+                if model and docker_provider:
+                    docker_models.models.append(
+                        ModelDetails(
+                            id=model.name,
+                            name=model.friendly_name,
+                            supports_structured_output=docker_provider.supports_structured_output,
+                            supports_data_gen=docker_provider.supports_data_gen,
+                            supports_logprobs=docker_provider.supports_logprobs,
+                            suggested_for_data_gen=docker_provider.suggested_for_data_gen,
+                            suggested_for_evals=docker_provider.suggested_for_evals,
+                            uncensored=docker_provider.uncensored,
+                            suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
+                            # Docker Model Runner uses OpenAI-compatible API with JSON schema support
+                            structured_output_mode=StructuredOutputMode.json_schema,
+                        )
+                    )
+        for docker_model in docker_connection.untested_models:
+            docker_models.models.append(
+                ModelDetails(
+                    id=docker_model,
+                    name=docker_model,
+                    supports_structured_output=True,
+                    supports_data_gen=False,
+                    supports_logprobs=False,
+                    untested_model=True,
+                    suggested_for_data_gen=False,
+                    suggested_for_evals=False,
+                    uncensored=False,
+                    suggested_for_uncensored_data_gen=False,
+                    # Docker Model Runner uses OpenAI-compatible API with JSON schema support
+                    structured_output_mode=StructuredOutputMode.json_schema,
+                )
+            )
+
+        if len(docker_models.models) > 0:
+            return docker_models
+
+        return None
+    except (HTTPException, openai.APIError, httpx.RequestError):
+        # skip docker model runner if it's not available
+        return None
+
+
+def models_from_docker_model_runner_id(
+    model_id: str,
+) -> List[tuple[KilnModel | None, KilnModelProvider | None]]:
+    models: list[tuple[KilnModel | None, KilnModelProvider | None]] = []
+    for model in built_in_models:
+        docker_provider = next(
+            (
+                p
+                for p in model.providers
+                if p.name == ModelProviderName.docker_model_runner
+            ),
+            None,
+        )
+        if not docker_provider:
+            continue
+
+        if model_id == docker_provider.model_id:
+            models.append((model, docker_provider))
+
+    return models
 
 
 def models_from_ollama_tag(

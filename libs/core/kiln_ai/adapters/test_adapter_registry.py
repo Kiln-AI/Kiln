@@ -8,6 +8,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
@@ -17,6 +18,9 @@ def mock_config():
         mock.shared.return_value.open_ai_api_key = "test-openai-key"
         mock.shared.return_value.open_router_api_key = "test-openrouter-key"
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
+        mock.shared.return_value.docker_model_runner_base_url = (
+            "http://localhost:12434/engines/llama.cpp"
+        )
         yield mock
 
 
@@ -260,3 +264,78 @@ async def test_fine_tune_provider(mock_config, basic_task, mock_finetune_from_id
     )
     # The actual model name from the fine tune object
     assert provider.model_id == "test-model"
+
+
+def test_docker_model_runner_adapter_creation(mock_config, basic_task):
+    """Test Docker Model Runner adapter creation with default and custom base URL."""
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_2_3b",
+            model_provider_name=ModelProviderName.docker_model_runner,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "llama_3_2_3b"
+    assert adapter.config.additional_body_options == {"api_key": "DMR"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.docker_model_runner
+    )
+    assert adapter.config.base_url == "http://localhost:12434/engines/llama.cpp/v1"
+    assert adapter.config.default_headers is None
+
+
+def test_docker_model_runner_adapter_creation_with_custom_url(mock_config, basic_task):
+    """Test Docker Model Runner adapter creation with custom base URL."""
+    mock_config.shared.return_value.docker_model_runner_base_url = (
+        "http://custom:8080/engines/llama.cpp"
+    )
+
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_2_3b",
+            model_provider_name=ModelProviderName.docker_model_runner,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "llama_3_2_3b"
+    assert adapter.config.additional_body_options == {"api_key": "DMR"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.docker_model_runner
+    )
+    assert adapter.config.base_url == "http://custom:8080/engines/llama.cpp/v1"
+    assert adapter.config.default_headers is None
+
+
+def test_docker_model_runner_adapter_creation_with_none_url(mock_config, basic_task):
+    """Test Docker Model Runner adapter creation when config URL is None."""
+    mock_config.shared.return_value.docker_model_runner_base_url = None
+
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_2_3b",
+            model_provider_name=ModelProviderName.docker_model_runner,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "llama_3_2_3b"
+    assert adapter.config.additional_body_options == {"api_key": "DMR"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.docker_model_runner
+    )
+    assert adapter.config.base_url == "http://localhost:12434/engines/llama.cpp/v1"
+    assert adapter.config.default_headers is None

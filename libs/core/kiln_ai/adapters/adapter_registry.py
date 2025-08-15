@@ -123,6 +123,24 @@ def adapter_for_task(
                     },
                 ),
             )
+        case ModelProviderName.docker_model_runner:
+            docker_base_url = (
+                Config.shared().docker_model_runner_base_url
+                or "http://localhost:12434/engines/llama.cpp"
+            )
+            return LiteLlmAdapter(
+                kiln_task=kiln_task,
+                base_adapter_config=base_adapter_config,
+                config=LiteLlmConfig(
+                    run_config_properties=run_config_properties,
+                    # Docker Model Runner uses OpenAI-compatible API at /v1 endpoint
+                    base_url=docker_base_url + "/v1",
+                    additional_body_options={
+                        # LiteLLM errors without an api_key, even though Docker Model Runner doesn't require one.
+                        "api_key": "DMR",
+                    },
+                ),
+            )
         case ModelProviderName.fireworks_ai:
             return LiteLlmAdapter(
                 kiln_task=kiln_task,
