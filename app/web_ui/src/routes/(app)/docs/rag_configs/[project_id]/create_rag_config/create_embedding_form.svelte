@@ -155,13 +155,10 @@
       />
 
       {#if selectedModel && selectedModel.supports_custom_dimensions}
-        <Warning
-          warning_message="This model supports custom dimensions. You can override the default number of dimensions for this model. Leave blank to use the default."
-          warning_color="gray"
-        />
         <FormElement
           label="Custom Dimensions"
-          description="Override the default number of dimensions for this model. Leave blank to use the default."
+          description="This model supports custom dimensions. Leave blank to use the default."
+          info_description="This controls the size of the vector embedding which is generated. Leave blank for the default unless you understand how to tune this."
           optional={true}
           inputType="input_number"
           id="custom_dimensions"
