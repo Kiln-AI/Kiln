@@ -338,5 +338,4 @@ class BaseAdapter(metaclass=ABCMeta):
             return []
 
         tools = [tool_from_id(tool_id) for tool_id in tool_config.tools]
-        print(tools)
         return tools
