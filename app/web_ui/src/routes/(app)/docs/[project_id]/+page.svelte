@@ -13,20 +13,20 @@
       img: "/images/doc_library.svg",
     },
     {
+      name: "Search Tools (RAG)",
+      description:
+        "Make knowledge from your documents searchable by your tasks.",
+      button_text: "Manage Search Tools",
+      href: `/docs/rag_configs/${project_id}`,
+      img: "/images/card-search.svg",
+    },
+    {
       name: "Extractors",
       description:
         "Extractors convert files like PDFs or images into text your models can use.",
       button_text: "Manage Extractors",
       href: `/docs/extractors/${project_id}`,
       img: "/images/scanner.svg",
-    },
-    {
-      name: "RAG Configurations",
-      description:
-        "RAG workflows make knowledge from your documents searchable.",
-      button_text: "Manage RAG Configurations",
-      href: `/docs/rag_configs/${project_id}`,
-      img: "/images/card-search.svg",
     },
   ]
 </script>
