@@ -81,7 +81,7 @@
         },
       },
       completed_with_errors: {
-        label: "View details",
+        label: "View Progress",
         icon: null,
         isPrimary: false,
         action: () => {

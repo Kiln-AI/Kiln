@@ -14,9 +14,7 @@
 
   enum Section {
     Dataset,
-    DocumentsMain,
-    DocumentsLibrary,
-    DocumentsExtractors,
+    Documents,
     Settings,
     Prompts,
     Evals,
@@ -25,12 +23,6 @@
     FineTune,
     None,
   }
-
-  const documentSections = [
-    Section.DocumentsMain,
-    Section.DocumentsLibrary,
-    Section.DocumentsExtractors,
-  ]
 
   function path_start(root: string, pathname: string): boolean {
     if (pathname == root) {
@@ -57,12 +49,8 @@
       section = Section.Prompts
     } else if (path_start("/evals", $page.url.pathname)) {
       section = Section.Evals
-    } else if (path_start("/docs/library", $page.url.pathname)) {
-      section = Section.DocumentsLibrary
-    } else if (path_start("/docs/extractors", $page.url.pathname)) {
-      section = Section.DocumentsExtractors
     } else if (path_start("/docs", $page.url.pathname)) {
-      section = Section.DocumentsMain
+      section = Section.Documents
     } else {
       section = Section.None
     }
@@ -392,7 +380,7 @@
       <li class="menu-lg">
         <a
           href={`/docs/${$ui_state.current_project_id}`}
-          class={section == Section.DocumentsMain ? "active" : ""}
+          class={section == Section.Documents ? "active" : ""}
         >
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
           <svg
@@ -427,26 +415,6 @@
           </svg>
           Documents</a
         >
-        {#if documentSections.includes(section)}
-          <ul class="py-2 ml-6">
-            <li class="menu-nested-sm">
-              <a
-                class={section == Section.DocumentsLibrary ? "active" : ""}
-                href={`/docs/library/${$ui_state.current_project_id}`}
-              >
-                Library
-              </a>
-            </li>
-            <li class="menu-nested-sm">
-              <a
-                class={section == Section.DocumentsExtractors ? "active" : ""}
-                href={`/docs/extractors/${$ui_state.current_project_id}`}
-              >
-                Extractors
-              </a>
-            </li>
-          </ul>
-        {/if}
       </li>
 
       <li class="menu-lg">
