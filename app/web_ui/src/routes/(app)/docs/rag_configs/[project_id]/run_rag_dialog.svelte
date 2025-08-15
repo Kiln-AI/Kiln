@@ -10,7 +10,6 @@
 
   $: config_progress = $ragProgressStore.progress[rag_config_id] || null
   $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
-  $: rag_config = $ragProgressStore.rag_configs[rag_config_id] || null
 
   let log_container: HTMLPreElement
   $: log_messages = $ragProgressStore.logs[rag_config_id] || []

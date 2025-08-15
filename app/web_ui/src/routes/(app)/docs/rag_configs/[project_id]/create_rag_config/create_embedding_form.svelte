@@ -12,7 +12,6 @@
     EmbeddingProvider,
     ModelProviderName,
   } from "$lib/types"
-  import Warning from "$lib/ui/warning.svelte"
   $: project_id = $page.params.project_id
 
   let loading: boolean = false
