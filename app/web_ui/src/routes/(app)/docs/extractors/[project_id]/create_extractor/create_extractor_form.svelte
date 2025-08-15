@@ -91,13 +91,26 @@
     />
     <FormElement
       label="Output Format"
-      description="Which format should the extracted data be returned in?"
-      inputType="select"
+      description="The text format the extraction model will generate."
+      info_description="Markdown is a text format which includes basic formatting (headers, links, tables, etc). Plaintext will not include any formatting information."
+      inputType="fancy_select"
       id="output_format"
       bind:value={output_format}
-      select_options={[
-        ["text/markdown", "Markdown"],
-        ["text/plain", "Plain Text"],
+      fancy_select_options={[
+        {
+          options: [
+            {
+              label: "Markdown",
+              value: "text/markdown",
+              badge: "Recommended",
+            },
+
+            {
+              label: "Plain Text",
+              value: "text/plain",
+            },
+          ],
+        },
       ]}
     />
   </div>
