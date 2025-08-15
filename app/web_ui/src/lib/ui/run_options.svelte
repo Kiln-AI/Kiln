@@ -136,7 +136,7 @@
     return [
       {
         options: available_tools?.map((tool) => ({
-          value: tool.name,
+          value: tool.id,
           label: tool.name,
           description: tool.description || undefined,
         })),

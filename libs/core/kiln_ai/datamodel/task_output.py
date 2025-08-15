@@ -181,7 +181,7 @@ class DataSourceProperty(BaseModel):
     """
 
     name: str
-    type: Type[Union[str, int, float]]
+    type: Type[Union[str, int, float, dict]]
     required_for: List[DataSourceType] = []
     not_allowed_for: List[DataSourceType] = []
 
@@ -195,7 +195,7 @@ class DataSource(BaseModel):
     """
 
     type: DataSourceType
-    properties: Dict[str, str | int | float] = Field(
+    properties: Dict[str, str | int | float | dict] = Field(
         default={},
         description="Properties describing the data source. For synthetic things like model. For human, the human's name.",
     )

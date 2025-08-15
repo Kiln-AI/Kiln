@@ -27,7 +27,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import run_config_from_run_config_properties
-from kiln_ai.tools.base_tool import KilnTool
+from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 MAX_CALLS_PER_TURN = 10
@@ -57,7 +57,7 @@ class LiteLlmAdapter(BaseAdapter):
         self._api_base = config.base_url
         self._headers = config.default_headers
         self._litellm_model_id: str | None = None
-        self._cached_available_tools: list[KilnTool] | None = None
+        self._cached_available_tools: list[KilnToolInterface] | None = None
 
         # Create a RunConfig, adding the task to the RunConfigProperties
         run_config = run_config_from_run_config_properties(
@@ -591,7 +591,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         return usage
 
-    def cached_available_tools(self) -> list[KilnTool]:
+    def cached_available_tools(self) -> list[KilnToolInterface]:
         if self._cached_available_tools is None:
             self._cached_available_tools = self.available_tools()
         return self._cached_available_tools

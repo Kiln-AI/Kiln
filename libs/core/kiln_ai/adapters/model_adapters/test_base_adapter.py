@@ -6,7 +6,9 @@ from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMo
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
+from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, ToolsRunConfig
+from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.tool_id import KilnBuiltInToolId
 
 
 class MockAdapter(BaseAdapter):
@@ -252,12 +254,13 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
         "temperature": "temperature",
         "top_p": "top_p",
         "structured_output_mode": "structured_output_mode",
+        "tools_config": None,
     }
 
     missing_properties = []
     for field_name in run_config_properties_fields:
         expected_key = expected_mappings.get(field_name, field_name)
-        if expected_key not in saved_property_keys:
+        if expected_key is not None and expected_key not in saved_property_keys:
             missing_properties.append(
                 f"RunConfigProperties.{field_name} -> {expected_key}"
             )
@@ -297,12 +300,13 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
             "temperature": "temperature",
             "top_p": "top_p",
             "structured_output_mode": "structured_output_mode",
+            "tools_config": None,
         }
 
         missing_properties = []
         for field_name in run_config_properties_fields:
             expected_key = expected_mappings.get(field_name, field_name)
-            if expected_key not in saved_property_keys:
+            if expected_key is not None and expected_key not in saved_property_keys:
                 missing_properties.append(
                     f"RunConfigProperties.{field_name} -> {expected_key}"
                 )
@@ -316,6 +320,28 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
         # Restore the original fields
         RunConfigProperties.model_fields.clear()
         RunConfigProperties.model_fields.update(original_fields)
+
+
+async def test_properties_for_task_output_includes_run_config_property(adapter):
+    """Test that the new run_config property is correctly set in task output properties"""
+    # Get the properties saved by the adapter
+    saved_properties = adapter._properties_for_task_output()
+
+    # Verify that run_config property exists
+    assert "run_config" in saved_properties, (
+        "run_config property should be included in task output properties"
+    )
+
+    # Verify that run_config is a RunConfigProperties instance
+    run_config_prop = saved_properties["run_config"]
+    assert isinstance(run_config_prop, dict), (
+        "run_config should be a RunConfigProperties instance"
+    )
+
+    dumped_run_config = adapter.run_config.model_dump(exclude={"task"})
+    assert run_config_prop == dumped_run_config, (
+        "run_config should be the same as the dumped run_config"
+    )
 
 
 @pytest.mark.parametrize(
@@ -443,3 +469,108 @@ async def test_update_run_config_unknown_structured_output_mode(
             mock_default.assert_called_once_with("test_model", "openai")
         else:
             mock_default.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "tools_config,expected_tool_count,expected_tool_ids",
+    [
+        # No tools config
+        (None, 0, []),
+        # Empty tools config with None tools
+        (ToolsRunConfig(tools=[]), 0, []),
+        # Single tool
+        ([KilnBuiltInToolId.ADD_NUMBERS], 1, [KilnBuiltInToolId.ADD_NUMBERS]),
+        # Multiple tools
+        (
+            [KilnBuiltInToolId.ADD_NUMBERS, KilnBuiltInToolId.SUBTRACT_NUMBERS],
+            2,
+            [KilnBuiltInToolId.ADD_NUMBERS, KilnBuiltInToolId.SUBTRACT_NUMBERS],
+        ),
+        # All available built-in tools
+        (
+            [
+                KilnBuiltInToolId.ADD_NUMBERS,
+                KilnBuiltInToolId.SUBTRACT_NUMBERS,
+                KilnBuiltInToolId.MULTIPLY_NUMBERS,
+                KilnBuiltInToolId.DIVIDE_NUMBERS,
+            ],
+            4,
+            [
+                KilnBuiltInToolId.ADD_NUMBERS,
+                KilnBuiltInToolId.SUBTRACT_NUMBERS,
+                KilnBuiltInToolId.MULTIPLY_NUMBERS,
+                KilnBuiltInToolId.DIVIDE_NUMBERS,
+            ],
+        ),
+    ],
+)
+def test_available_tools(
+    base_task, tools_config, expected_tool_count, expected_tool_ids
+):
+    """Test that available_tools returns correct tools based on tools_config"""
+    # Create tools config if we have tool IDs
+    if tools_config is None:
+        final_tools_config = None
+    elif isinstance(tools_config, list):
+        final_tools_config = ToolsRunConfig(tools=tools_config)
+    else:
+        final_tools_config = tools_config
+
+    # Create adapter with tools config
+    adapter = MockAdapter(
+        run_config=RunConfig(
+            task=base_task,
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            tools_config=final_tools_config,
+        ),
+    )
+
+    # Get available tools
+    tools = adapter.available_tools()
+
+    # Verify tool count
+    assert len(tools) == expected_tool_count
+
+    # Verify all tools implement KilnToolInterface
+    for tool in tools:
+        assert isinstance(tool, KilnToolInterface)
+
+    # Verify tool IDs match expected
+    if expected_tool_ids:
+        actual_tool_ids = [tool.id() for tool in tools]
+        assert actual_tool_ids == expected_tool_ids
+
+
+def test_available_tools_with_invalid_tool_id(base_task):
+    """Test that available_tools raises ValueError for invalid tool ID"""
+    # Create tools config with valid tool ID
+    tools_config = ToolsRunConfig(tools=[KilnBuiltInToolId.ADD_NUMBERS])
+
+    # Create adapter
+    adapter = MockAdapter(
+        run_config=RunConfig(
+            task=base_task,
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            tools_config=tools_config,
+        ),
+    )
+
+    # Mock tool_from_id to raise ValueError for any tool ID
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.tool_from_id"
+    ) as mock_tool_from_id:
+        mock_tool_from_id.side_effect = ValueError(
+            "Tool ID test_id not found in tool registry"
+        )
+
+        # Should raise ValueError when trying to get tools
+        with pytest.raises(
+            ValueError, match="Tool ID test_id not found in tool registry"
+        ):
+            adapter.available_tools()

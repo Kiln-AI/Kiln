@@ -1493,7 +1493,7 @@ export interface components {
              * @default {}
              */
             properties: {
-                [key: string]: string | number;
+                [key: string]: string | number | Record<string, never>;
             };
         };
         /**
@@ -2574,7 +2574,7 @@ export interface components {
             temperature: number;
             /** @description The structured output mode to use for this run config. */
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
-            /** @description The tools config to use for this run config. */
+            /** @description The tools config to use for this run config, defining which tools are available to the model. */
             tools_config?: components["schemas"]["ToolsRunConfig"] | null;
         };
         /** RunSummary */

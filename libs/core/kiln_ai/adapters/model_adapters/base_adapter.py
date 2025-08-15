@@ -26,7 +26,8 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfig
-from kiln_ai.tools import KilnTool
+from kiln_ai.tools import KilnToolInterface
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 
 
@@ -299,11 +300,15 @@ class BaseAdapter(metaclass=ABCMeta):
 
         return new_task_run
 
-    def _properties_for_task_output(self) -> Dict[str, str | int | float]:
+    def _properties_for_task_output(self) -> Dict[str, str | int | float | dict]:
         props = {}
 
-        # adapter info
         props["adapter_name"] = self.adapter_name()
+
+        # Save the entire run config, excluding the task field (RunConfigProperties)
+        props["run_config"] = self.run_config.model_dump(exclude={"task"})
+
+        # Legacy properties where we save the run_config details into custom properties. These will also be saved in the run_config field.
         props["model_name"] = self.run_config.model_name
         props["model_provider"] = self.run_config.model_provider_name
         props["prompt_id"] = self.run_config.prompt_id
@@ -327,6 +332,11 @@ class BaseAdapter(metaclass=ABCMeta):
             new_run_config.structured_output_mode = structured_output_mode
             self.run_config = new_run_config
 
-    def available_tools(self) -> list[KilnTool]:
-        # TODO: implement this
-        return []
+    def available_tools(self) -> list[KilnToolInterface]:
+        tool_config = self.run_config.tools_config
+        if tool_config is None or tool_config.tools is None:
+            return []
+
+        tools = [tool_from_id(tool_id) for tool_id in tool_config.tools]
+        print(tools)
+        return tools

@@ -187,7 +187,7 @@ The topic path for this sample is:
             ),
         )
 
-        properties: dict[str, str | int | float] = {
+        properties: dict[str, str | int | float | dict] = {
             "model_name": sample.input_model_name,
             "model_provider": sample.input_provider,
             "adapter_name": "kiln_data_gen",

@@ -119,14 +119,16 @@ async def test_mock_returning_run(tmp_path):
             choices=[{"message": {"content": "mock response"}}],
         )
 
+        run_config = RunConfigProperties(
+            model_name="custom_model",
+            model_provider_name="ollama",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        )
+
         adapter = LiteLlmAdapter(
             config=LiteLlmConfig(
-                run_config_properties=RunConfigProperties(
-                    model_name="custom_model",
-                    model_provider_name="ollama",
-                    prompt_id="simple_prompt_builder",
-                    structured_output_mode="json_schema",
-                ),
+                run_config_properties=run_config,
                 base_url="http://localhost:11434",
                 additional_body_options={"api_key": "test_key"},
             ),
@@ -149,6 +151,7 @@ async def test_mock_returning_run(tmp_path):
         "structured_output_mode": "json_schema",
         "temperature": 1.0,
         "top_p": 1.0,
+        "run_config": run_config.model_dump(),
     }
 
 

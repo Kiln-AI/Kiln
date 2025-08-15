@@ -64,7 +64,7 @@
     }
 
     const model_id = run?.output?.source?.properties?.model_name
-    if (model_id) {
+    if (model_id && typeof model_id === "string") {
       properties.push({
         name: "Output Model",
         value: model_name(model_id, model_info),
@@ -145,14 +145,14 @@
     if (run?.output?.source?.properties?.temperature !== undefined) {
       properties.push({
         name: "Temperature",
-        value: run.output.source.properties.temperature,
+        value: String(run.output.source.properties.temperature),
       })
     }
 
     if (run?.output?.source?.properties?.top_p !== undefined) {
       properties.push({
         name: "Top P",
-        value: run.output.source.properties.top_p,
+        value: String(run.output.source.properties.top_p),
       })
     }
 
@@ -174,7 +174,7 @@
     if (run?.input_source?.properties?.created_by) {
       properties.push({
         name: "Created By",
-        value: run.input_source.properties.created_by,
+        value: String(run.input_source.properties.created_by),
       })
     }
 
