@@ -252,7 +252,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             # This will raise a TypeError if the dict contains non-JSON-serializable objects
             json.dumps(self.properties)
         except TypeError as e:
-            raise ValueError(f"Properties must be JSON serializable: {str(e)}")
+            raise ValueError(f"Properties must be JSON serializable: {e!s}")
         return self
 
 
