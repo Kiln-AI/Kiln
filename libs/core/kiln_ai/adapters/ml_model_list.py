@@ -1198,22 +1198,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/llama3.1",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/llama3.1:latest",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="ai/llama3.1:8B-Q4_K_M",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/llama3.1:8B-F16",
             ),
         ],
     ),
@@ -1333,22 +1318,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/mistral-nemo",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/mistral-nemo:latest",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/mistral-nemo:12B-Q4_K_M",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/mistral-nemo:12B-F16",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -1435,25 +1405,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/llama3.2",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/llama3.2:latest",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/llama3.2:3B-Q4_K_M",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/llama3.2:3B-F16",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=False,
             ),
@@ -1556,22 +1508,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/llama3.3",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/llama3.3:latest",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="ai/llama3.3:70B-Q4_K_M",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/llama3.3:70B-Q4_0",
             ),
         ],
     ),
@@ -1618,27 +1555,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/phi4",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/phi4:latest",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
                 model_id="ai/phi4:14B-Q4_K_M",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/phi4:14B-Q4_0",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                structured_output_mode=StructuredOutputMode.json_schema,
-                model_id="ai/phi4:14B-F16",
             ),
         ],
     ),
@@ -1774,23 +1691,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3:latest",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/gemma3:4B-Q4_K_M",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3:4B-F16",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3:4B-Q4_0",
             ),
         ],
     ),
@@ -1874,25 +1775,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3n",
-                supports_data_gen=False,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3n:latest",
-                supports_data_gen=False,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/gemma3n:4B-Q4_K_M",
-                supports_data_gen=False,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/gemma3n:4B-F16",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
@@ -1960,35 +1843,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwq",
-                reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwq:latest",
-                reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwq:32B-Q4_K_M",
-                reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwq:32B-Q4_0",
-                reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwq:32B-F16",
                 reasoning_capable=True,
                 parser=ModelParserID.r1_thinking,
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -2012,23 +1867,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen2.5",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen2.5:latest",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwen2.5:7B-Q4_K_M",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen2.5:7B-Q4_0",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen2.5:7B-F16",
             ),
         ],
     ),
@@ -2292,14 +2131,6 @@ built_in_models: List[KilnModel] = [
                 parser=ModelParserID.r1_thinking,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                model_id="ai/deepseek-r1-distill-llama:70B-Q4_0",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                supports_data_gen=False,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="ai/deepseek-r1-distill-llama:70B-Q4_K_M",
             ),
         ],
@@ -2382,47 +2213,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 # Best mode, but fails to often to enable without warning
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                model_id="ai/deepseek-r1-distill-llama",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                supports_structured_output=False,
-                supports_data_gen=False,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                # Best mode, but fails to often to enable without warning
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                model_id="ai/deepseek-r1-distill-llama:latest",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                supports_structured_output=False,
-                supports_data_gen=False,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                # Best mode, but fails to often to enable without warning
-                structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="ai/deepseek-r1-distill-llama:8B-Q4_K_M",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                supports_structured_output=False,
-                supports_data_gen=False,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                # Best mode, but fails to often to enable without warning
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                model_id="ai/deepseek-r1-distill-llama:8B-F16",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                supports_structured_output=False,
-                supports_data_gen=False,
-                parser=ModelParserID.r1_thinking,
-                reasoning_capable=True,
-                # Best mode, but fails to often to enable without warning
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                model_id="ai/deepseek-r1-distill-llama:8B-Q4_0",
             ),
         ],
     ),
@@ -2756,35 +2547,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen3",
-                supports_data_gen=False,
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen3:latest",
-                supports_data_gen=False,
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwen3:8B-Q4_K_M",
-                supports_data_gen=False,
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen3:8B-Q4_0",
-                supports_data_gen=False,
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen3:8B-F16",
                 supports_data_gen=False,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2908,12 +2671,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwen3:30B-A3B-Q4_K_M",
-                reasoning_capable=True,
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen3:30B-A3B-F16",
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
