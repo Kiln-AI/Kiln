@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolResult, TextContent, Tool
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
@@ -41,35 +41,45 @@ def mock_mcp_server(mock_external_tool_server):
     return MCPServer(mock_external_tool_server)
 
 
+@pytest.fixture
+def mock_tool():
+    """Create a mock Tool object for testing."""
+    return Tool(
+        name="test_tool",
+        description="A test tool for unit testing",
+        inputSchema={"type": "object", "properties": {}},
+    )
+
+
 class TestMCPServerTool:
     """Test the MCPServerTool class."""
 
-    def test_init(self, mock_mcp_server):
+    def test_init(self, mock_mcp_server, mock_tool):
         """Test MCPServerTool initialization."""
-        tool_name = "test_tool"
-        tool = MCPServerTool(mock_mcp_server, tool_name)
+        tool = MCPServerTool(mock_mcp_server, mock_tool)
 
         assert tool._server == mock_mcp_server
-        assert tool._tool_name == tool_name
+        assert tool._tool == mock_tool
+        assert tool.name() == "test_tool"
 
-    def test_run(self, mock_mcp_server):
+    def test_run(self, mock_mcp_server, mock_tool):
         """Test the run method returns expected value."""
-        tool = MCPServerTool(mock_mcp_server, "test_tool")
+        tool = MCPServerTool(mock_mcp_server, mock_tool)
         result = tool.run()
 
         assert result == "Hello, world!"
 
-    def test_run_with_kwargs(self, mock_mcp_server):
+    def test_run_with_kwargs(self, mock_mcp_server, mock_tool):
         """Test the run method ignores kwargs."""
-        tool = MCPServerTool(mock_mcp_server, "test_tool")
+        tool = MCPServerTool(mock_mcp_server, mock_tool)
         result = tool.run(param1="value1", param2="value2")
 
         assert result == "Hello, world!"
 
     @pytest.mark.asyncio
-    async def test_call_tool_success(self, mock_mcp_server):
+    async def test_call_tool_success(self, mock_mcp_server, mock_tool):
         """Test successful call_tool execution."""
-        tool = MCPServerTool(mock_mcp_server, "test_tool")
+        tool = MCPServerTool(mock_mcp_server, mock_tool)
 
         # Mock the expected return value
         mock_result = CallToolResult(content=[])
@@ -99,9 +109,9 @@ class TestMCPServerTool:
             )
 
     @pytest.mark.asyncio
-    async def test_call_tool_empty_kwargs(self, mock_mcp_server):
+    async def test_call_tool_empty_kwargs(self, mock_mcp_server, mock_tool):
         """Test call_tool works with no arguments."""
-        tool = MCPServerTool(mock_mcp_server, "test_tool")
+        tool = MCPServerTool(mock_mcp_server, mock_tool)
         mock_result = CallToolResult(content=[])
 
         with (
@@ -126,9 +136,9 @@ class TestMCPServerTool:
             assert result == mock_result
 
     @pytest.mark.asyncio
-    async def test_call_tool_session_error(self, mock_mcp_server):
+    async def test_call_tool_session_error(self, mock_mcp_server, mock_tool):
         """Test call_tool handles session errors properly."""
-        tool = MCPServerTool(mock_mcp_server, "test_tool")
+        tool = MCPServerTool(mock_mcp_server, mock_tool)
 
         with (
             patch("kiln_ai.tools.mcp_server_tool.streamablehttp_client") as mock_client,
@@ -151,6 +161,9 @@ class TestMCPServerToolIntegration:
     """Integration tests for MCPServerTool using real services."""
 
     @pytest.mark.integration
+    @pytest.mark.skip(
+        reason="Skipping integration test since it requires calling a real MCP server"
+    )
     async def test_call_tool_success(self):
         """Test successful call_tool execution."""
         external_tool_server = ExternalToolServer(
@@ -165,7 +178,7 @@ class TestMCPServerToolIntegration:
 
         # Create MCP server using Postman Echo MCP server with 'echo' tool
         mcp_server = MCPServer(external_tool_server)
-        tool = MCPServerTool(mcp_server, "echo")
+        tool = await mcp_server.get_tool("echo")
 
         test_message = "Hello, world!"
         result = await tool.call_tool(message=test_message)

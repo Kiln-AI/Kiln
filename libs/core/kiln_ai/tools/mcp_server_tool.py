@@ -1,15 +1,22 @@
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from mcp.types import CallToolResult
+from mcp.types import CallToolResult, Tool
 
+from kiln_ai.datamodel.basemodel import ID_FIELD
 from kiln_ai.tools.base_tool import KilnTool
 from kiln_ai.tools.mcp_server import MCPServer
 
 
 class MCPServerTool(KilnTool):
-    def __init__(self, server: MCPServer, tool_name: str):
+    def __init__(self, server: MCPServer, tool: Tool):
         self._server = server
-        self._tool_name = tool_name
+        self._tool = tool
+        super().__init__(
+            tool_id=str(ID_FIELD),
+            name=tool.name,
+            description=tool.description or "No description provided",
+            parameters_schema=tool.inputSchema,
+        )
 
     def run(self, **kwargs) -> str:
         return "Hello, world!"
@@ -30,9 +37,9 @@ class MCPServerTool(KilnTool):
                 # Initialize the connection
                 await session.initialize()
 
-                print(f"Calling tool: {self._tool_name} with kwargs: {kwargs}")
+                print(f"Calling tool: {self.name()} with kwargs: {kwargs}")
                 result = await session.call_tool(
-                    name=self._tool_name,
+                    name=self.name(),
                     arguments=kwargs,
                 )
                 return result

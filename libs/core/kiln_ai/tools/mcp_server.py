@@ -18,6 +18,7 @@ class MCPServer:
 
     def __init__(self, tool_server: ExternalToolServer):
         self._tool_server = tool_server
+        self._tools = None
 
         if tool_server.type != ToolServerType.remote_mcp:
             raise ValueError(
@@ -45,9 +46,14 @@ class MCPServer:
                 return self._tools
 
     async def get_tool(self, tool_name: str) -> MCPServerTool:
-        if tool_name not in [tool.name for tool in self._tools.tools]:
-            raise ValueError(f"Tool {tool_name} not found")
-
         from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
-        return MCPServerTool(self, tool_name)
+        if self._tools is None:
+            self._tools = await self.list_tools()
+
+        tool = next(
+            (tool for tool in self._tools.tools if tool.name == tool_name), None
+        )
+        if tool is None:
+            raise ValueError(f"Tool {tool_name} not found")
+        return MCPServerTool(self, tool)
