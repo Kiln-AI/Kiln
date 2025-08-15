@@ -10,7 +10,7 @@ from kiln_ai.adapters.docker_model_runner_tools import (
     docker_model_runner_base_url,
     parse_docker_model_runner_models,
 )
-from libs.core.kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
 
 def test_docker_model_runner_base_url_default():
