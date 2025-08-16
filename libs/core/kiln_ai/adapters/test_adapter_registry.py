@@ -112,7 +112,7 @@ def test_siliconflow_adapter_creation(mock_config, basic_task):
         == ModelProviderName.siliconflow_cn
     )
     assert adapter.config.default_headers == {
-        "HTTP-Referer": "https://getkiln.ai/siliconflow",
+        "HTTP-Referer": "https://kiln.tech/siliconflow",
         "X-Title": "KilnAI",
     }
 

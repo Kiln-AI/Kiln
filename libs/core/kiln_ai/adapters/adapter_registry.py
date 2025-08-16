@@ -52,7 +52,7 @@ def adapter_for_task(
                     base_url=getenv("SILICONFLOW_BASE_URL")
                     or "https://api.siliconflow.cn/v1",
                     default_headers={
-                        "HTTP-Referer": "https://getkiln.ai/siliconflow",
+                        "HTTP-Referer": "https://kiln.tech/siliconflow",
                         "X-Title": "KilnAI",
                     },
                     additional_body_options={

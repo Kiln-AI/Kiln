@@ -20,7 +20,7 @@ pip install kiln_ai
 
 ## About
 
-This package is the Kiln AI core library. There is also a separate desktop application and server package. Learn more about Kiln AI at [getkiln.ai](https://getkiln.ai) and on Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln).
+This package is the Kiln AI core library. There is also a separate desktop application and server package. Learn more about Kiln AI at [kiln.tech](https://kiln.tech) and on Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln).
 
 # Guide: Using the Kiln Python Library
 

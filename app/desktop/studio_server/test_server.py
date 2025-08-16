@@ -115,7 +115,7 @@ def test_cors_allowed_origins(client, origin):
     "origin",
     [
         "http://example.com",
-        "https://getkiln.ai",
+        "https://kiln.tech",
         "http://192.168.1.100",
         "http://localhost.com",
         "http://127.0.0.2",
