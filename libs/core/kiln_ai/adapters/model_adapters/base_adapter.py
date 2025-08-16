@@ -25,7 +25,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -50,32 +50,23 @@ class BaseAdapter(metaclass=ABCMeta):
     This abstract class provides the foundation for implementing model-specific adapters
     that can process tasks with structured or unstructured inputs/outputs. It handles
     input/output validation, prompt building, and run tracking.
-
-    Attributes:
-        prompt_builder (BasePromptBuilder): Builder for constructing prompts for the model
-        kiln_task (Task): The task configuration and metadata
-        output_schema (dict | None): JSON schema for validating structured outputs
-        input_schema (dict | None): JSON schema for validating structured inputs
     """
 
     def __init__(
         self,
-        run_config: RunConfig,
+        task: Task,
+        run_config: RunConfigProperties,
         config: AdapterConfig | None = None,
     ):
+        self.task = task
         self.run_config = run_config
         self.update_run_config_unknown_structured_output_mode()
-        self.prompt_builder = prompt_builder_from_id(
-            run_config.prompt_id, run_config.task
-        )
+        self.prompt_builder = prompt_builder_from_id(run_config.prompt_id, task)
         self._model_provider: KilnModelProvider | None = None
 
-        self.output_schema = self.task().output_json_schema
-        self.input_schema = self.task().input_json_schema
+        self.output_schema = task.output_json_schema
+        self.input_schema = task.input_json_schema
         self.base_adapter_config = config or AdapterConfig()
-
-    def task(self) -> Task:
-        return self.run_config.task
 
     def model_provider(self) -> KilnModelProvider:
         """
@@ -177,7 +168,7 @@ class BaseAdapter(metaclass=ABCMeta):
         if (
             self.base_adapter_config.allow_saving
             and Config.shared().autosave_runs
-            and self.task().path is not None
+            and self.task.path is not None
         ):
             run.save_to_file()
         else:
@@ -287,7 +278,7 @@ class BaseAdapter(metaclass=ABCMeta):
         )
 
         new_task_run = TaskRun(
-            parent=self.task(),
+            parent=self.task,
             input=input_str,
             input_source=input_source,
             output=TaskOutput(

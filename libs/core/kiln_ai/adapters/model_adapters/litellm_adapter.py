@@ -26,7 +26,6 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.task import run_config_from_run_config_properties
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -59,14 +58,9 @@ class LiteLlmAdapter(BaseAdapter):
         self._litellm_model_id: str | None = None
         self._cached_available_tools: list[KilnToolInterface] | None = None
 
-        # Create a RunConfig, adding the task to the RunConfigProperties
-        run_config = run_config_from_run_config_properties(
-            task=kiln_task,
-            run_config_properties=config.run_config_properties,
-        )
-
         super().__init__(
-            run_config=run_config,
+            task=kiln_task,
+            run_config=config.run_config_properties,
             config=base_adapter_config,
         )
 
@@ -337,7 +331,7 @@ class LiteLlmAdapter(BaseAdapter):
                 raise_exhaustive_enum_error(structured_output_mode)
 
     def json_schema_response_format(self) -> dict[str, Any]:
-        output_schema = self.task().output_schema()
+        output_schema = self.task.output_schema()
         return {
             "response_format": {
                 "type": "json_schema",
@@ -350,7 +344,7 @@ class LiteLlmAdapter(BaseAdapter):
 
     def tool_call_params(self, strict: bool) -> dict[str, Any]:
         # Add additional_properties: false to the schema (OpenAI requires this for some models)
-        output_schema = self.task().output_schema()
+        output_schema = self.task.output_schema()
         if not isinstance(output_schema, dict):
             raise ValueError(
                 "Invalid output schema for this task. Can not use tool calls."
