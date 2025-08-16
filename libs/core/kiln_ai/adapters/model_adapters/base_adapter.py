@@ -272,11 +272,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
-        # TODO: more robust way. Either kill RC, or use the helper
-        run_config_props = RunConfigProperties(
-            **self.run_config.model_dump(exclude={"task"})
-        )
-
         new_task_run = TaskRun(
             parent=self.task,
             input=input_str,
@@ -287,7 +282,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 source=DataSource(
                     type=DataSourceType.synthetic,
                     properties=self._properties_for_task_output(),
-                    run_config=run_config_props,
+                    run_config=self.run_config,
                 ),
             ),
             intermediate_outputs=run_output.intermediate_outputs,
