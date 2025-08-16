@@ -7,7 +7,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.run_config import ToolsRunConfig
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.tools.tool_id import KilnBuiltInToolId
 
@@ -37,8 +37,8 @@ def base_task():
 @pytest.fixture
 def adapter(base_task):
     return MockAdapter(
-        run_config=RunConfig(
-            task=base_task,
+        task=base_task,
+        run_config=RunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -106,8 +106,8 @@ async def test_model_provider_invalid_provider_model_name(base_task):
     # Test with missing model name
     with pytest.raises(ValueError, match="Input should be"):
         MockAdapter(
-            run_config=RunConfig(
-                task=base_task,
+            task=base_task,
+            run_config=RunConfigProperties(
                 model_name="test_model",
                 model_provider_name="invalid",
                 prompt_id="simple_prompt_builder",
@@ -119,8 +119,8 @@ async def test_model_provider_missing_model_names(base_task):
     """Test error when model or provider name is missing"""
     # Test with missing model name
     adapter = MockAdapter(
-        run_config=RunConfig(
-            task=base_task,
+        task=base_task,
+        run_config=RunConfigProperties(
             model_name="",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -417,8 +417,7 @@ async def test_update_run_config_unknown_structured_output_mode(
 ):
     """Test that unknown structured output mode is updated to the default for the model provider"""
     # Create a run config with the initial mode
-    run_config = RunConfig(
-        task=base_task,
+    run_config = RunConfigProperties(
         model_name="test_model",
         model_provider_name="openai",
         prompt_id="simple_prompt_builder",
@@ -434,7 +433,7 @@ async def test_update_run_config_unknown_structured_output_mode(
         mock_default.return_value = StructuredOutputMode.json_mode
 
         # Create the adapter
-        adapter = MockAdapter(run_config=run_config)
+        adapter = MockAdapter(task=base_task, run_config=run_config)
 
         # Verify the mode was updated correctly
         assert adapter.run_config.structured_output_mode == expected_mode
@@ -497,8 +496,8 @@ def test_available_tools(
 
     # Create adapter with tools config
     adapter = MockAdapter(
-        run_config=RunConfig(
-            task=base_task,
+        task=base_task,
+        run_config=RunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -530,8 +529,8 @@ def test_available_tools_with_invalid_tool_id(base_task):
 
     # Create adapter
     adapter = MockAdapter(
-        run_config=RunConfig(
-            task=base_task,
+        task=base_task,
+        run_config=RunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",

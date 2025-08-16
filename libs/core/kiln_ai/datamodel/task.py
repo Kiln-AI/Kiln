@@ -43,18 +43,6 @@ class TaskRequirement(BaseModel):
     type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
 
 
-class RunConfig(RunConfigProperties):
-    """
-    A configuration for running a task.
-
-    This includes everything needed to run a task, except the input. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
-
-    For example: task, model, provider, prompt, etc.
-    """
-
-    task: "Task" = Field(description="The task to run.")
-
-
 class TaskRunConfig(KilnParentedModel):
     """
     A Kiln model for persisting a run config in a Kiln Project, nested under a task.
@@ -85,15 +73,6 @@ class TaskRunConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    def run_config(self) -> RunConfig:
-        parent_task = self.parent_task()
-        if parent_task is None:
-            raise ValueError("Run config must be parented to a task")
-        return run_config_from_run_config_properties(
-            task=parent_task,
-            run_config_properties=self.run_config_properties,
-        )
-
     # Previously we didn't store structured_output_mode in the run_config_properties. Updgrade old models when loading from file.
     @model_validator(mode="before")
     def upgrade_old_entries(cls, data: dict, info: ValidationInfo) -> dict:
@@ -114,22 +93,6 @@ class TaskRunConfig(KilnParentedModel):
             )
 
         return data
-
-
-def run_config_from_run_config_properties(
-    task: "Task",
-    run_config_properties: RunConfigProperties,
-) -> RunConfig:
-    return RunConfig(
-        task=task,
-        model_name=run_config_properties.model_name,
-        model_provider_name=run_config_properties.model_provider_name,
-        prompt_id=run_config_properties.prompt_id,
-        top_p=run_config_properties.top_p,
-        temperature=run_config_properties.temperature,
-        structured_output_mode=run_config_properties.structured_output_mode,
-        tools_config=run_config_properties.tools_config,
-    )
 
 
 class Task(
