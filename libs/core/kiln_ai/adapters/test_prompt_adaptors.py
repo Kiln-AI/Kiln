@@ -142,7 +142,9 @@ async def test_mock_returning_run(tmp_path):
     assert run.id is not None
     assert run.input == "You are a mock, send me the response!"
     assert run.output.output == "mock response"
+    assert run.input_source is not None
     assert "created_by" in run.input_source.properties
+    assert run.output.source is not None
     assert run.output.source.properties == {
         "adapter_name": "kiln_openai_compatible_adapter",
         "model_name": "custom_model",
@@ -151,8 +153,10 @@ async def test_mock_returning_run(tmp_path):
         "structured_output_mode": "json_schema",
         "temperature": 1.0,
         "top_p": 1.0,
-        "run_config": run_config.model_dump(),
     }
+    assert run.output.source.run_config is not None
+    saved_run_config = run.output.source.run_config.model_dump()
+    assert saved_run_config == run_config.model_dump()
 
 
 @pytest.mark.paid

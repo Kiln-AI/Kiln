@@ -1,6 +1,6 @@
 import json
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Type, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
@@ -8,6 +8,7 @@ from typing_extensions import Self
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnBaseModel
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -181,7 +182,7 @@ class DataSourceProperty(BaseModel):
     """
 
     name: str
-    type: Type[Union[str, int, float, dict]]
+    type: Type[Union[str, int, float]]
     required_for: List[DataSourceType] = []
     not_allowed_for: List[DataSourceType] = []
 
@@ -195,9 +196,13 @@ class DataSource(BaseModel):
     """
 
     type: DataSourceType
-    properties: Dict[str, str | int | float | dict] = Field(
+    properties: Dict[str, str | int | float] = Field(
         default={},
         description="Properties describing the data source. For synthetic things like model. For human, the human's name.",
+    )
+    run_config: Optional[RunConfigProperties] = Field(
+        default=None,
+        description="The run method used to generate the data. This is used to identify the run method used to generate the data.",
     )
 
     _data_source_properties = [

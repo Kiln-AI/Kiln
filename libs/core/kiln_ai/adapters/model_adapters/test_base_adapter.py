@@ -6,7 +6,8 @@ from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMo
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.run_config import ToolsRunConfig
+from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.tools.tool_id import KilnBuiltInToolId
 
@@ -320,28 +321,6 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
         # Restore the original fields
         RunConfigProperties.model_fields.clear()
         RunConfigProperties.model_fields.update(original_fields)
-
-
-async def test_properties_for_task_output_includes_run_config_property(adapter):
-    """Test that the new run_config property is correctly set in task output properties"""
-    # Get the properties saved by the adapter
-    saved_properties = adapter._properties_for_task_output()
-
-    # Verify that run_config property exists
-    assert "run_config" in saved_properties, (
-        "run_config property should be included in task output properties"
-    )
-
-    # Verify that run_config is a RunConfigProperties instance
-    run_config_prop = saved_properties["run_config"]
-    assert isinstance(run_config_prop, dict), (
-        "run_config should be a RunConfigProperties instance"
-    )
-
-    dumped_run_config = adapter.run_config.model_dump(exclude={"task"})
-    assert run_config_prop == dumped_run_config, (
-        "run_config should be the same as the dumped run_config"
-    )
 
 
 @pytest.mark.parametrize(

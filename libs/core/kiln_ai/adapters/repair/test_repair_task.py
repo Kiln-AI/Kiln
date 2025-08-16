@@ -260,10 +260,13 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "structured_output_mode": "json_schema",
         "temperature": 1.0,
         "top_p": 1.0,
-        "run_config": run_config.model_dump(),
     }
     assert run.input_source.type == DataSourceType.human
     assert "created_by" in run.input_source.properties
+    assert run.output.source is not None
+    assert run.output.source.run_config is not None
+    saved_run_config = run.output.source.run_config.model_dump()
+    assert saved_run_config == run_config.model_dump()
 
     # Verify that the mock was called
     mock_run.assert_called_once()

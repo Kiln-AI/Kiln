@@ -25,7 +25,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -281,6 +281,11 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
+        # TODO: more robust way. Either kill RC, or use the helper
+        run_config_props = RunConfigProperties(
+            **self.run_config.model_dump(exclude={"task"})
+        )
+
         new_task_run = TaskRun(
             parent=self.task(),
             input=input_str,
@@ -291,6 +296,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 source=DataSource(
                     type=DataSourceType.synthetic,
                     properties=self._properties_for_task_output(),
+                    run_config=run_config_props,
                 ),
             ),
             intermediate_outputs=run_output.intermediate_outputs,
@@ -300,15 +306,13 @@ class BaseAdapter(metaclass=ABCMeta):
 
         return new_task_run
 
-    def _properties_for_task_output(self) -> Dict[str, str | int | float | dict]:
+    def _properties_for_task_output(self) -> Dict[str, str | int | float]:
         props = {}
 
         props["adapter_name"] = self.adapter_name()
 
-        # Save the entire run config, excluding the task field (RunConfigProperties)
-        props["run_config"] = self.run_config.model_dump(exclude={"task"})
-
-        # Legacy properties where we save the run_config details into custom properties. These will also be saved in the run_config field.
+        # Legacy properties where we save the run_config details into custom properties.
+        # These are now also be saved in the run_config field.
         props["model_name"] = self.run_config.model_name
         props["model_provider"] = self.run_config.model_provider_name
         props["prompt_id"] = self.run_config.prompt_id
