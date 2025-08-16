@@ -5,7 +5,7 @@
 #define MyAppName "Kiln"
 #define MyAppVersion "0.19.1"
 #define MyAppPublisher "Chesterfield Laboratories Inc"
-#define MyAppURL "https://getkiln.ai"
+#define MyAppURL "https://kiln.tech"
 #define MyAppExeName "Kiln.exe"
 
 [Setup]
