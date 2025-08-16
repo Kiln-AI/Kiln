@@ -8,6 +8,7 @@
     | "textarea"
     | "select"
     | "fancy_select"
+    | "multi_select"
     | "header_only"
     | "checkbox" = "input"
   export let id: string
@@ -193,8 +194,12 @@
           {/each}
         {/if}
       </select>
-    {:else if inputType === "fancy_select"}
-      <FancySelect bind:options={fancy_select_options} bind:selected={value} />
+    {:else if inputType === "fancy_select" || inputType === "multi_select"}
+      <FancySelect
+        bind:options={fancy_select_options}
+        bind:selected={value}
+        multi_select={inputType === "multi_select"}
+      />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

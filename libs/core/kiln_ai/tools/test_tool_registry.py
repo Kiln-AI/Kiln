@@ -6,7 +6,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
-from kiln_ai.tools.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.tool_id import KilnBuiltInToolId, _check_tool_id
 from kiln_ai.tools.tool_registry import tool_from_id
 
 
@@ -80,3 +80,24 @@ class TestToolRegistry:
         assert tool1 is not tool2  # Different instances
         assert type(tool1) is type(tool2)  # Same type
         assert tool1.id() == tool2.id()  # Same id
+
+    def test_check_tool_id_valid_built_in_tools(self):
+        """Test that _check_tool_id accepts valid built-in tool IDs."""
+        for tool_id in KilnBuiltInToolId:
+            result = _check_tool_id(tool_id.value)
+            assert result == tool_id.value
+
+    def test_check_tool_id_invalid_tool_id(self):
+        """Test that _check_tool_id raises ValueError for invalid tool ID."""
+        with pytest.raises(ValueError, match="Invalid tool ID: invalid_tool_id"):
+            _check_tool_id("invalid_tool_id")
+
+    def test_check_tool_id_empty_string(self):
+        """Test that _check_tool_id raises ValueError for empty string."""
+        with pytest.raises(ValueError, match="Invalid tool ID: "):
+            _check_tool_id("")
+
+    def test_check_tool_id_none_value(self):
+        """Test that _check_tool_id raises ValueError for None."""
+        with pytest.raises(ValueError, match="Invalid tool ID: None"):
+            _check_tool_id(None)  # type: ignore

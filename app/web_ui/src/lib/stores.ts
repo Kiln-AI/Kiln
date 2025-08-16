@@ -9,6 +9,7 @@ import type {
   RatingOptionResponse,
   TaskRequirement,
   ModelDetails,
+  ToolApiDescription,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
@@ -195,6 +196,60 @@ export async function load_current_task(project: Project | null) {
     })
   } finally {
     current_task.set(task)
+  }
+}
+
+// Available tools, by project ID
+export const available_tools = writable<Record<string, ToolApiDescription[]>>(
+  {},
+)
+let loading_project_tools: string[] = []
+
+export async function load_available_tools(
+  project_id: string,
+  force: boolean = false,
+) {
+  // Only allow one request per project at a time
+  if (loading_project_tools.includes(project_id)) {
+    return
+  }
+
+  // Don't load if already loaded, unless forced
+  if (get(available_tools)[project_id] && !force) {
+    return
+  }
+
+  try {
+    loading_project_tools.push(project_id)
+
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/available_tools",
+      {
+        params: {
+          path: {
+            project_id: project_id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    available_tools.set({
+      ...get(available_tools),
+      [project_id]: data,
+    })
+  } catch (error: unknown) {
+    console.error(
+      "Failed to load tools for project " +
+        project_id +
+        ": " +
+        createKilnError(error).getMessage(),
+    )
+  } finally {
+    loading_project_tools = loading_project_tools.filter(
+      (id) => id !== project_id,
+    )
   }
 }
 

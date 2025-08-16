@@ -29,7 +29,7 @@ def _check_tool_id(id: str) -> str:
     """
 
     # Build in tools
-    if id in KilnBuiltInToolId:
+    if id in KilnBuiltInToolId.__members__.values():
         return id
 
     raise ValueError(f"Invalid tool ID: {id}")

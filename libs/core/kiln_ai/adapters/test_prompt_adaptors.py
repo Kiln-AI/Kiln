@@ -119,14 +119,16 @@ async def test_mock_returning_run(tmp_path):
             choices=[{"message": {"content": "mock response"}}],
         )
 
+        run_config = RunConfigProperties(
+            model_name="custom_model",
+            model_provider_name="ollama",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        )
+
         adapter = LiteLlmAdapter(
             config=LiteLlmConfig(
-                run_config_properties=RunConfigProperties(
-                    model_name="custom_model",
-                    model_provider_name="ollama",
-                    prompt_id="simple_prompt_builder",
-                    structured_output_mode="json_schema",
-                ),
+                run_config_properties=run_config,
                 base_url="http://localhost:11434",
                 additional_body_options={"api_key": "test_key"},
             ),
@@ -140,7 +142,9 @@ async def test_mock_returning_run(tmp_path):
     assert run.id is not None
     assert run.input == "You are a mock, send me the response!"
     assert run.output.output == "mock response"
+    assert run.input_source is not None
     assert "created_by" in run.input_source.properties
+    assert run.output.source is not None
     assert run.output.source.properties == {
         "adapter_name": "kiln_openai_compatible_adapter",
         "model_name": "custom_model",
@@ -150,6 +154,9 @@ async def test_mock_returning_run(tmp_path):
         "temperature": 1.0,
         "top_p": 1.0,
     }
+    assert run.output.source.run_config is not None
+    saved_run_config = run.output.source.run_config.model_dump()
+    assert saved_run_config == run_config.model_dump()
 
 
 @pytest.mark.paid
