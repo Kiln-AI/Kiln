@@ -554,26 +554,26 @@ def test_prompt_parent_task():
             False,
             None,
         ),
-        # Test 4: Invalid case - thinking instructions with final_only
+        # Test 4: Valid case - thinking instructions with final_and_intermediate_r1_compatible
+        (
+            "Think step by step",
+            ChatStrategy.single_turn_r1_thinking,
+            False,
+            None,
+        ),
+        # Test 5: Invalid case - thinking instructions with final_only
         (
             "Think step by step",
             ChatStrategy.single_turn,
             True,
             "Thinking instructions can only be used when data_strategy is",
         ),
-        # Test 5: Invalid case - no thinking instructions with final_and_intermediate
+        # Test 6: Invalid case - no thinking instructions with final_and_intermediate
         (
             None,
             ChatStrategy.two_message_cot_legacy,
             True,
             "Thinking instructions are required when data_strategy is",
-        ),
-        # Test 6: Invalid case - thinking instructions with final_and_intermediate_r1_compatible
-        (
-            "Think step by step",
-            ChatStrategy.single_turn_r1_thinking,
-            True,
-            "Thinking instructions can only be used when data_strategy is",
         ),
         # Test 7: new COT format
         (
@@ -645,6 +645,70 @@ def test_task_run_has_thinking_training_data(intermediate_outputs, expected):
         intermediate_outputs=intermediate_outputs,
     )
     assert task_run.has_thinking_training_data() == expected
+
+
+@pytest.mark.parametrize(
+    "finetune_data_serialized",
+    [
+        json.dumps(
+            {
+                "v": 1,
+                "id": "259677640827",
+                "created_at": "2025-05-01T03:31:21.395639",
+                "created_by": "xxxx",
+                "name": "Harmonious River",
+                "description": None,
+                "structured_output_mode": "json_mode",
+                "provider": "fireworks_ai",
+                "base_model_id": "accounts/fireworks/models/deepseek-r1-distill-qwen-14b",
+                "provider_id": "accounts/xxx/supervisedFineTuningJobs/xxx",
+                "fine_tune_model_id": "accounts/xxx/models/xxx",
+                "dataset_split_id": "123456789",
+                "train_split_name": "all",
+                "validation_split_name": None,
+                "parameters": {},
+                "system_message": "task instruct\n\nYour response should respect the following requirements:\n1) must be funny\n",
+                "thinking_instructions": "think",
+                "latest_status": "completed",
+                "properties": {"endpoint_version": "v2"},
+                "data_strategy": "final_and_intermediate_r1_compatible",
+                "model_type": "finetune",
+            }
+        ),
+        json.dumps(
+            {
+                "v": 1,
+                "id": "168185977261",
+                "created_at": "2025-05-01T04:13:50.389753",
+                "created_by": "leonardmarcq",
+                "name": "Zealous Falcon",
+                "description": None,
+                "structured_output_mode": "json_mode",
+                "provider": "fireworks_ai",
+                "base_model_id": "accounts/fireworks/models/deepseek-r1-distill-qwen-14b",
+                "provider_id": "accounts/xxx/supervisedFineTuningJobs/xxx",
+                "fine_tune_model_id": "accounts/xxx/models/xxx",
+                "dataset_split_id": "123456789",
+                "train_split_name": "all",
+                "validation_split_name": None,
+                "parameters": {},
+                "system_message": "task instruct\n\nYour response should respect the following requirements:\n1) must be funny\n",
+                "thinking_instructions": None,
+                "latest_status": "running",
+                "properties": {"endpoint_version": "v2"},
+                "data_strategy": "final_and_intermediate_r1_compatible",
+                "model_type": "finetune",
+            }
+        ),
+    ],
+)
+def test_finetune_backwards_compat(finetune_data_serialized, tmp_path):
+    finetune_file = tmp_path / "finetune.kiln"
+    with open(finetune_file, "w") as file:
+        file.write(finetune_data_serialized)
+
+    # should not raise an error
+    Finetune.load_from_file(finetune_file)
 
 
 @pytest.mark.parametrize(
