@@ -35,6 +35,7 @@
   let temperature: number
   let top_p: number
   let structured_output_mode: StructuredOutputMode
+  let tools: string[] = []
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
@@ -93,6 +94,9 @@
             temperature: temperature,
             top_p: top_p,
             structured_output_mode: structured_output_mode,
+            tools_config: {
+              tools: tools,
+            },
           },
           plaintext_input: input_form.get_plaintext_input_data(),
           // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
@@ -165,14 +169,18 @@
           bind:error_message={model_dropdown_error_message}
           bind:this={model_dropdown}
         />
-        <Collapse title="Advanced Options">
-          <RunOptions
-            bind:temperature
-            bind:top_p
-            bind:structured_output_mode
-            has_structured_output={requires_structured_output}
-          />
-        </Collapse>
+        {#if $current_project?.id}
+          <Collapse title="Advanced Options">
+            <RunOptions
+              bind:tools
+              bind:temperature
+              bind:top_p
+              bind:structured_output_mode
+              has_structured_output={requires_structured_output}
+              project_id={$current_project?.id}
+            />
+          </Collapse>
+        {/if}
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}

@@ -66,7 +66,7 @@ def test_initialization(config, mock_task):
     )
 
     assert adapter.config == config
-    assert adapter.run_config.task == mock_task
+    assert adapter.task == mock_task
     assert adapter.run_config.prompt_id == "simple_prompt_builder"
     assert adapter.base_adapter_config.default_tags == ["test-tag"]
     assert adapter.run_config.model_name == config.run_config_properties.model_name
