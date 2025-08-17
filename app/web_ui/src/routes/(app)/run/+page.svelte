@@ -48,6 +48,7 @@
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
   $: input_schema = $current_task?.input_json_schema
   $: requires_structured_output = !!$current_task?.output_json_schema
+  $: requires_tools = tools.length > 0
 
   // Model defaults come from available_models store
 
@@ -166,6 +167,7 @@
         <AvailableModelsDropdown
           bind:model
           bind:requires_structured_output
+          bind:requires_tool_support={requires_tools}
           bind:error_message={model_dropdown_error_message}
           bind:this={model_dropdown}
         />

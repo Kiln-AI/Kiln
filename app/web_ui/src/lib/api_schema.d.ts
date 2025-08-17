@@ -2282,6 +2282,8 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Supports Function Calling */
+            supports_function_calling: boolean;
             /** Uncensored */
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */

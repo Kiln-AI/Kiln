@@ -42,6 +42,7 @@
   let task_run_config_top_p: number
   let task_run_config_structured_output_mode: StructuredOutputMode
   let task_run_config_tools: string[] = []
+  $: requires_tool_support = task_run_config_tools.length > 0
 
   // Update structured_output_mode when model changes
   $: update_structured_output_mode(
@@ -151,6 +152,7 @@
       bind:model_name={task_run_config_model_name}
       bind:provider_name={task_run_config_provider_name}
       bind:model={task_run_config_long_prompt_name_provider}
+      bind:requires_tool_support
     />
     <PromptTypeSelector
       bind:prompt_method={task_run_config_prompt_method}
