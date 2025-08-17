@@ -1485,7 +1485,7 @@ export interface components {
          *     Properties vary based on the source type - for synthetic sources this includes
          *     model information, for human sources this includes creator information.
          */
-        DataSource: {
+        "DataSource-Input": {
             type: components["schemas"]["DataSourceType"];
             /**
              * Properties
@@ -1493,8 +1493,30 @@ export interface components {
              * @default {}
              */
             properties: {
-                [key: string]: string | number | Record<string, never>;
+                [key: string]: string | number;
             };
+            /** @description The run method used to generate the data. This is used to identify the run method used to generate the data. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
+        };
+        /**
+         * DataSource
+         * @description Represents the origin of data, either human or synthetic, with associated properties.
+         *
+         *     Properties vary based on the source type - for synthetic sources this includes
+         *     model information, for human sources this includes creator information.
+         */
+        "DataSource-Output": {
+            type: components["schemas"]["DataSourceType"];
+            /**
+             * Properties
+             * @description Properties describing the data source. For synthetic things like model. For human, the human's name.
+             * @default {}
+             */
+            properties: {
+                [key: string]: string | number;
+            };
+            /** @description The run method used to generate the data. This is used to identify the run method used to generate the data. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
         };
         /**
          * DataSourceType
@@ -2260,6 +2282,8 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Supports Function Calling */
+            supports_function_calling: boolean;
             /** Uncensored */
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
@@ -2719,7 +2743,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource"] | null;
+            source?: components["schemas"]["DataSource-Input"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
         };
@@ -2753,7 +2777,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource"] | null;
+            source?: components["schemas"]["DataSource-Output"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /** Model Type */
@@ -2912,7 +2936,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource"] | null;
+            input_source?: components["schemas"]["DataSource-Input"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Input"];
             /**
@@ -2968,7 +2992,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource"] | null;
+            input_source?: components["schemas"]["DataSource-Output"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Output"];
             /**
