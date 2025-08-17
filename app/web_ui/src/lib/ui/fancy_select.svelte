@@ -373,7 +373,11 @@
     }
   }
 
-  function selectedLabel(selected: unknown, selected_values: unknown[]) {
+  function selectedLabel(
+    selected: unknown,
+    selected_values: unknown[],
+    options: OptionGroup[],
+  ) {
     if (multi_select && selected_values.length > 1) {
       return (
         "" +
@@ -391,13 +395,20 @@
       )
     }
 
-    if (multi_select && selected_values.length === 1) {
-      // Use the labeling system for single select if only one is selected
-      selected = selected_values[0]
+    let effective_selected = selected
+    if (multi_select) {
+      if (selected_values.length === 1) {
+        // Use the labeling system for single select if only one is selected
+        effective_selected = selected_values[0]
+      } else {
+        return empty_label
+      }
     }
 
     const flatOptions = options.flatMap((group) => group.options)
-    const selectedOption = flatOptions.find((item) => item.value === selected)
+    const selectedOption = flatOptions.find(
+      (item) => item.value === effective_selected,
+    )
     return selectedOption ? selectedOption.label : empty_label
   }
 </script>
@@ -460,7 +471,7 @@
     }}
   >
     <span class="truncate">
-      {selectedLabel(selected, selected_values)}
+      {selectedLabel(selected, selected_values, options)}
     </span>
   </div>
 
