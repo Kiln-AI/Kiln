@@ -564,7 +564,9 @@
             <li id={`option-${id}-${overallIndex}`}>
               <button
                 role="option"
-                aria-selected={focusedIndex === overallIndex}
+                aria-selected={multi_select
+                  ? selected_values.includes(item.value)
+                  : selected === item.value}
                 class="pointer-events-auto {focusedIndex === overallIndex
                   ? ' active'
                   : 'hover:bg-transparent'}"

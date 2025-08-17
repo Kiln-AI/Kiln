@@ -145,14 +145,14 @@
     if (run?.output?.source?.properties?.temperature !== undefined) {
       properties.push({
         name: "Temperature",
-        value: String(run.output.source.properties.temperature),
+        value: run.output.source.properties.temperature,
       })
     }
 
     if (run?.output?.source?.properties?.top_p !== undefined) {
       properties.push({
         name: "Top P",
-        value: String(run.output.source.properties.top_p),
+        value: run.output.source.properties.top_p,
       })
     }
 
@@ -174,7 +174,7 @@
     if (run?.input_source?.properties?.created_by) {
       properties.push({
         name: "Created By",
-        value: String(run.input_source.properties.created_by),
+        value: run.input_source.properties.created_by,
       })
     }
 
