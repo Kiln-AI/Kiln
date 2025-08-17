@@ -132,8 +132,6 @@
     run_complete = false
     clear_all()
   }
-
-  $: project_id = $current_project?.id || ""
 </script>
 
 <div class="max-w-[1400px]">
@@ -171,16 +169,18 @@
           bind:error_message={model_dropdown_error_message}
           bind:this={model_dropdown}
         />
-        <Collapse title="Advanced Options">
-          <RunOptions
-            bind:tools
-            bind:temperature
-            bind:top_p
-            bind:structured_output_mode
-            has_structured_output={requires_structured_output}
-            {project_id}
-          />
-        </Collapse>
+        {#if $current_project?.id}
+          <Collapse title="Advanced Options">
+            <RunOptions
+              bind:tools
+              bind:temperature
+              bind:top_p
+              bind:structured_output_mode
+              has_structured_output={requires_structured_output}
+              project_id={$current_project?.id}
+            />
+          </Collapse>
+        {/if}
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}
