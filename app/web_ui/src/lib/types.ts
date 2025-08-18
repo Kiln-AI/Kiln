@@ -45,5 +45,4 @@ export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
-export type Tool = components["schemas"]["Tool"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]

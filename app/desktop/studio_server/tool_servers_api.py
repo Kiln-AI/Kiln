@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
@@ -28,13 +29,41 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
 
 
+"""
+This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+"""
+
+
+class ExternalToolApiDescription(BaseModel):
+    name: str
+    description: str | None
+    inputSchema: dict[str, Any]
+
+    @classmethod
+    def tool_from_mcp_tool(cls, tool: Tool):
+        """Create an ExternalToolApiDescription from an MCP Tool object."""
+
+        return cls(
+            name=tool.name,
+            description=tool.description,
+            inputSchema=tool.inputSchema,
+        )
+
+
+"""
+This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
+"""
+
+
 class ExternalToolServerApiDescription(BaseModel):
     id: ID_TYPE
-    name: str
     type: ToolServerType
+    name: str
     description: str | None
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    available_tools: list[Tool]
+    created_at: datetime | None
+    created_by: str | None
+    properties: Dict[str, Any]
+    available_tools: list[ExternalToolApiDescription]
 
 
 class ToolApiDescription(BaseModel):
@@ -109,13 +138,18 @@ def connect_tool_servers_api(app: FastAPI):
         if tool_server.type == ToolServerType.remote_mcp:
             mcp_server = MCPServer(tool_server)
             tools_result = await mcp_server.list_tools()
-            available_tools = tools_result.tools
+            available_tools = [
+                ExternalToolApiDescription.tool_from_mcp_tool(tool)
+                for tool in tools_result.tools
+            ]
 
         return ExternalToolServerApiDescription(
             id=tool_server.id,
             name=tool_server.name,
             type=tool_server.type,
             description=tool_server.description,
+            created_at=tool_server.created_at,
+            created_by=tool_server.created_by,
             properties=tool_server.properties,
             available_tools=available_tools,
         )
