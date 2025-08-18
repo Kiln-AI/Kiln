@@ -167,13 +167,14 @@ class KilnModelProvider(BaseModel):
         name: The provider's identifier
         supports_structured_output: Whether the provider supports structured output formats
         supports_data_gen: Whether the provider supports data generation
-        supports_doc_extraction: Whether the provider is meant to support document extraction
         untested_model: Whether the model is untested (typically user added). The supports_ fields are not applicable.
         provider_finetune_id: The finetune ID for the provider, if applicable. Some providers like Fireworks load these from an API.
         structured_output_mode: The mode we should use to call the model for structured output, if it was trained with structured output.
         parser: A parser to use for the model, if applicable
         reasoning_capable: Whether the model is designed to output thinking in a structured format (eg <think></think>). If so we don't use COT across 2 calls, and ask for thinking and final response in the same call.
         tuned_chat_strategy: Used when a model is finetuned with a specific chat strategy, and it's best to use it at call time.
+        supports_doc_extraction: Whether the provider is meant to support document extraction
+        suggested_for_doc_extraction: Whether the model is suggested for document extraction
         multimodal_capable: Whether the model supports multimodal inputs (e.g. images, audio, video, PDFs, etc.)
         multimodal_mime_types: The mime types that the model supports for multimodal inputs (e.g. image/jpeg, video/mp4, application/pdf, etc.)
     """
@@ -182,7 +183,6 @@ class KilnModelProvider(BaseModel):
     model_id: str | None = None
     supports_structured_output: bool = True
     supports_data_gen: bool = True
-    supports_doc_extraction: bool = False
     suggested_for_data_gen: bool = False
     untested_model: bool = False
     provider_finetune_id: str | None = None
@@ -195,6 +195,8 @@ class KilnModelProvider(BaseModel):
     uncensored: bool = False
     suggested_for_uncensored_data_gen: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
+    supports_doc_extraction: bool = False
+    suggested_for_doc_extraction: bool = False
     multimodal_capable: bool = False
     multimodal_mime_types: List[str] | None = None
 
@@ -785,6 +787,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 reasoning_capable=True,
                 supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     # documents
@@ -815,6 +818,7 @@ built_in_models: List[KilnModel] = [
                 # reasoning_capable=True,
                 # thinking_level="medium",
                 supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     # documents
@@ -859,6 +863,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     # documents
@@ -886,6 +891,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 thinking_level="medium",
                 supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     # documents

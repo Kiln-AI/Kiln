@@ -37,11 +37,13 @@
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
   export let requires_uncensored_data_gen: boolean = false
+  export let requires_doc_extraction: boolean = false
   export let error_message: string | null = null
   export let suggested_mode:
     | "data_gen"
     | "evals"
     | "uncensored_data_gen"
+    | "doc_extraction"
     | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
@@ -50,6 +52,7 @@
     requires_data_gen,
     requires_uncensored_data_gen,
     requires_logprobs,
+    requires_doc_extraction,
     $ui_state.current_task_id,
     $recent_model_store,
     $model_info,
@@ -105,6 +108,7 @@
     requires_data_gen: boolean,
     requires_uncensored_data_gen: boolean,
     requires_logprobs: boolean,
+    requires_doc_extraction: boolean,
     current_task_id: string | null,
     recent_models: RecentModel[],
     model_data: ProviderModels | null,
@@ -170,7 +174,8 @@
           (requires_data_gen && !model.supports_data_gen) ||
           (structured_output && !model.supports_structured_output) ||
           (requires_logprobs && !model.supports_logprobs) ||
-          (requires_uncensored_data_gen && !model.uncensored)
+          (requires_uncensored_data_gen && !model.uncensored) ||
+          (requires_doc_extraction && !model.supports_doc_extraction)
         if (unsupported) {
           unsupported_models.push({
             value: id,
@@ -184,7 +189,9 @@
           (suggested_mode === "data_gen" && model.suggested_for_data_gen) ||
           (suggested_mode === "evals" && model.suggested_for_evals) ||
           (suggested_mode === "uncensored_data_gen" &&
-            model.suggested_for_uncensored_data_gen)
+            model.suggested_for_uncensored_data_gen) ||
+          (suggested_mode === "doc_extraction" &&
+            model.suggested_for_doc_extraction)
         ) {
           badge = "Recommended"
         }
@@ -257,6 +264,10 @@
   $: selected_model_suggested_evals =
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_evals || false
+
+  $: selected_model_suggested_doc_extraction =
+    available_model_details(model_name, provider_name, $available_models)
+      ?.suggested_for_doc_extraction || false
 </script>
 
 <div>
@@ -333,6 +344,20 @@
           ? "success"
           : "warning"}
       warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+    />
+  {:else if suggested_mode === "doc_extraction"}
+    <Warning
+      warning_icon={!model
+        ? "info"
+        : selected_model_suggested_doc_extraction
+          ? "check"
+          : "exclaim"}
+      warning_color={!model
+        ? "gray"
+        : selected_model_suggested_doc_extraction
+          ? "success"
+          : "warning"}
+      warning_message="For doc extraction, we recommend using a high quality multimodal model like Gemini Pro."
     />
   {/if}
 </div>

@@ -645,23 +645,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/chunker_configs/{chunker_config_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Chunker Config */
-        get: operations["get_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/create_embedding_config": {
         parameters: {
             query?: never;
@@ -688,23 +671,6 @@ export interface paths {
         };
         /** Get Embedding Configs */
         get: operations["get_embedding_configs_api_projects__project_id__embedding_configs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Embedding Config */
-        get: operations["get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3016,6 +2982,8 @@ export interface components {
             suggested_for_uncensored_data_gen: boolean;
             /** Supports Doc Extraction */
             supports_doc_extraction: boolean;
+            /** Suggested For Doc Extraction */
+            suggested_for_doc_extraction: boolean;
             /**
              * Multimodal Capable
              * @default false
@@ -3394,7 +3362,7 @@ export interface components {
             total_document_embedded_error_count: number;
             /**
              * Logs
-             * @description A list of log messages to display to the user. For example, 'Extracting documents...', 'Chunking documents...', 'Saving embeddings...'
+             * @description A list of log messages to display to the user
              */
             logs?: components["schemas"]["LogMessage"][] | null;
         };
@@ -5526,38 +5494,6 @@ export interface operations {
             };
         };
     };
-    get_chunker_config_api_projects__project_id__chunker_configs__chunker_config_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                chunker_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChunkerConfig"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     create_embedding_config_api_projects__project_id__create_embedding_config_post: {
         parameters: {
             query?: never;
@@ -5611,38 +5547,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingConfig"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                embedding_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EmbeddingConfig"];
                 };
             };
             /** @description Validation Error */

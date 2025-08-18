@@ -89,6 +89,7 @@
       description="The model to use to transform your documents into text."
       bind:model={selected_extractor_option}
       filter_models_predicate={(m) => m.supports_doc_extraction}
+      suggested_mode="doc_extraction"
     />
     <FormElement
       label="Output Format"
