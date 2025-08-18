@@ -93,7 +93,7 @@ def connect_tool_servers_api(app: FastAPI):
             None,
         )
         if not tool_server:
-            raise HTTPException(status_code=404, detail="Tool Server not found")
+            raise HTTPException(status_code=404, detail="Tool not found")
 
         # Get available tools based on server type
         available_tools = []

@@ -160,7 +160,6 @@ class TestMCPServerTool:
 class TestMCPServerToolIntegration:
     """Integration tests for MCPServerTool using real services."""
 
-    @pytest.mark.integration
     @pytest.mark.skip(
         reason="Skipping integration test since it requires calling a real MCP server"
     )
