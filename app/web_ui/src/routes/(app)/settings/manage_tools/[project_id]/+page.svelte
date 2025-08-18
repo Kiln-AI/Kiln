@@ -110,7 +110,7 @@
                 <td class="font-medium">{tool.name}</td>
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">
-                  {tool.description || "No description available"}
+                  {tool.description || "NA"}
                 </td>
               </tr>
             {/each}

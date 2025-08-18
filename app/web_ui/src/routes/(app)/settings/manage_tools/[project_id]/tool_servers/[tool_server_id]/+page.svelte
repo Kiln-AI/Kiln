@@ -6,7 +6,7 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServerApiDescription, Tool } from "$lib/types"
+  import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
@@ -112,12 +112,23 @@
     )
   }
 
-  function getAvailableTools(tool: ExternalToolServerApiDescription) {
-    const properties = tool.available_tools.map((tool: Tool) => ({
-      name: tool.name,
-      value: tool.description || "No description available",
-    }))
-    return properties
+  function formatToolArguments(inputSchema: Record<string, unknown>): string {
+    if (!inputSchema || !inputSchema.properties) {
+      return ""
+    }
+
+    const properties = inputSchema.properties as Record<string, unknown>
+    const required = (inputSchema.required as string[]) || []
+
+    return Object.entries(properties)
+      .map(([name, schema]) => {
+        const schemaObj = schema as Record<string, unknown>
+        const isRequired = required.includes(name)
+        const type = (schemaObj.type as string) || "unknown"
+        const description = (schemaObj.description as string) || ""
+        return `${name}${isRequired ? "*" : ""} (${type})${description ? `: ${description}` : ""}`
+      })
+      .join("|||") // Use a delimiter that we can split on later
   }
 </script>
 
@@ -140,22 +151,15 @@
         </button>
       </div>
     {:else if tool_server}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
-        <div class="grow flex flex-col">
+      <!-- Row 1: Properties and Connection Details side by side -->
+      <div class="flex flex-col lg:flex-row gap-8 lg:gap-16 mb-10">
+        <div class="flex-1">
           <PropertyList
             properties={getDetailsProperties(tool_server)}
             title="Properties"
           />
-          {#if getAvailableTools(tool_server).length > 0}
-            <div class="mt-8">
-              <PropertyList
-                properties={getAvailableTools(tool_server)}
-                title="Available Tools"
-              />
-            </div>
-          {/if}
         </div>
-        <div class="grow flex flex-col">
+        <div class="flex-1">
           {#if tool_server.type === "remote_mcp"}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
@@ -172,6 +176,46 @@
             {/if}
           {/if}
         </div>
+      </div>
+      <!-- Row 2: Available Tools full width -->
+      <div class="mb-10">
+        <h3 class="text-xl font-bold mb-4">Available Tools</h3>
+        {#if tool_server.available_tools.length > 0}
+          <div class="overflow-x-auto rounded-lg border">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Arguments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each tool_server.available_tools as tool}
+                  <tr>
+                    <td class="font-medium">{tool.name}</td>
+                    <td>{tool.description || "N/A"}</td>
+                    <td>
+                      {#if formatToolArguments(tool.inputSchema)}
+                        <ul class="list-disc list-inside">
+                          {#each formatToolArguments(tool.inputSchema).split("|||") as arg}
+                            <li class="text-sm">{arg}</li>
+                          {/each}
+                        </ul>
+                      {:else}
+                        <span class="text-gray-500">N/A</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <div class="text-lg mb-4 text-gray-500">
+            This server does not expose any tools
+          </div>
+        {/if}
       </div>
     {:else}
       <div
