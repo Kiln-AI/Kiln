@@ -58,52 +58,49 @@
   }
 </script>
 
-<AppPage
-  title="Search Tool (RAG)"
-  subtitle={loading ? "" : `Name: ${rag_config?.name}` || "Unknown"}
-  action_buttons={[]}
->
-  {#if loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Search Tool (RAG)"
+    subtitle={loading ? "" : `Name: ${rag_config?.name}` || "Unknown"}
+    action_buttons={[]}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-    </div>
-  {:else if !rag_config}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="text-error text-sm">RAG config not found</div>
-    </div>
-  {:else}
-    <div class="flex flex-col gap-6 max-w-4xl">
-      <!-- RAG Config Details -->
-      <div>
-        <PropertyList
-          title="Details"
-          properties={[
-            { name: "ID", value: rag_config.id || "N/A" },
-            { name: "Name", value: rag_config.name || "N/A" },
-            { name: "Description", value: rag_config.description || "N/A" },
-            { name: "Created At", value: formatDate(rag_config.created_at) },
-            { name: "Created By", value: rag_config.created_by || "N/A" },
-          ]}
-        />
+    {:else if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
+        </div>
       </div>
+    {:else if !rag_config}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="text-error text-sm">RAG config not found</div>
+      </div>
+    {:else}
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
+        <div class="grow flex flex-col gap-4">
+          <PropertyList
+            title="Details"
+            properties={[
+              { name: "ID", value: rag_config.id || "N/A" },
+              { name: "Name", value: rag_config.name || "N/A" },
+              { name: "Description", value: rag_config.description || "N/A" },
+              {
+                name: "Created At",
+                value: formatDate(rag_config.created_at),
+              },
+              { name: "Created By", value: rag_config.created_by || "N/A" },
+            ]}
+          />
+        </div>
 
-      <!-- Separator -->
-      <div class="border-t border-gray-200"></div>
-
-      <!-- RAG Steps -->
-      <div class="flex flex-col gap-6">
-        <!-- Extraction Step -->
-        <div>
+        <div class="grow flex flex-col gap-4 min-w-[400px]">
           <PropertyList
             title="Extractor"
             properties={[
@@ -135,10 +132,7 @@
               },
             ]}
           />
-        </div>
 
-        <!-- Chunking Step -->
-        <div>
           <PropertyList
             title="Chunker"
             properties={[
@@ -162,10 +156,7 @@
               },
             ]}
           />
-        </div>
 
-        <!-- Embedding Step -->
-        <div>
           <PropertyList
             title="Embedding Model"
             properties={[
@@ -188,6 +179,6 @@
           />
         </div>
       </div>
-    </div>
-  {/if}
-</AppPage>
+    {/if}
+  </AppPage>
+</div>
