@@ -71,7 +71,7 @@
   <div class="flex flex-col gap-4">
     <FormElement
       label="Chunk Size"
-      description="The number of words in each chunk."
+      description="The approximate number of words to include in each chunk."
       info_description="Smaller chunks allow for more granular search, but may not encapsulate the broader context."
       inputType="input_number"
       id="chunk_size"
@@ -101,7 +101,7 @@
   <Collapse title="Advanced Options">
     <FormElement
       label="Chunker Name"
-      description="Leave blank and we'll generate one for you."
+      description="A name to identify this chunker. Leave blank and we'll generate one for you."
       optional={true}
       inputType="input"
       id="name"

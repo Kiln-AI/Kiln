@@ -86,7 +86,7 @@
   <div class="flex flex-col gap-4">
     <AvailableModelsDropdown
       label="Extraction Model"
-      description="Select a model to use for extracting data from your documents."
+      description="The model to use to transform your documents into text."
       bind:model={selected_extractor_option}
       filter_models_predicate={(m) => m.supports_doc_extraction}
     />
@@ -175,7 +175,7 @@
     <div class="font-medium mt-6">Extractor Details</div>
     <FormElement
       label="Extractor Name"
-      description="Leave blank and we'll generate one for you using the model name and output format."
+      description="A name to identify this extractor. Leave blank and we'll generate one for you."
       optional={true}
       inputType="input"
       id="extractor_name"

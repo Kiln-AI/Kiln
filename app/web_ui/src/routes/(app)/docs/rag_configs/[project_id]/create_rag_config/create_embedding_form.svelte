@@ -149,7 +149,8 @@
     {:else}
       <FormElement
         label="Embedding Model"
-        description="Select an embedding model to use for generating embeddings."
+        description="The embedding model to use for turning your text into vectors."
+        info_description="An embedding model converts text into a vector that can be used for similarity search."
         inputType="fancy_select"
         fancy_select_options={embeddingModels}
         bind:value={selectedModel}
@@ -179,7 +180,7 @@
   <Collapse title="Advanced Options">
     <FormElement
       label="Embedding Config Name"
-      description="Leave blank and we'll generate one for you."
+      description="A name to identify this embedding config. Leave blank and we'll generate one for you."
       optional={true}
       inputType="input"
       id="name"
