@@ -6,6 +6,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createEventDispatcher } from "svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import { number_validator } from "$lib/utils/input_validators"
 
   $: project_id = $page.params.project_id
 
@@ -75,6 +76,12 @@
       inputType="input_number"
       id="chunk_size"
       bind:value={chunk_size}
+      validator={number_validator({
+        min: 1,
+        integer: false,
+        label: "Chunk Size",
+        optional: true,
+      })}
     />
     <FormElement
       label="Chunk Overlap"
@@ -83,6 +90,12 @@
       inputType="input_number"
       id="chunk_overlap"
       bind:value={chunk_overlap}
+      validator={number_validator({
+        min: 0,
+        integer: true,
+        label: "Chunk Overlap",
+        optional: true,
+      })}
     />
   </div>
   <Collapse title="Advanced Options">

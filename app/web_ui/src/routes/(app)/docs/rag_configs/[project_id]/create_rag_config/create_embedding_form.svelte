@@ -13,6 +13,7 @@
     ModelProviderName,
   } from "$lib/types"
   import Collapse from "$lib/ui/collapse.svelte"
+  import { number_validator } from "$lib/utils/input_validators"
 
   $: project_id = $page.params.project_id
 
@@ -164,6 +165,13 @@
           inputType="input_number"
           id="custom_dimensions"
           bind:value={customDimensions}
+          validator={number_validator({
+            min: 1,
+            max: selectedModel.n_dimensions || undefined,
+            integer: true,
+            label: "Custom Dimensions",
+            optional: true,
+          })}
         />
       {/if}
     {/if}

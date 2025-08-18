@@ -7,7 +7,10 @@ from typing import Annotated, Dict
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
-from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    built_in_embedding_models_from_provider,
+)
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.rag.progress import (
     RagProgress,
@@ -985,6 +988,27 @@ def connect_document_api(app: FastAPI):
         request: CreateEmbeddingConfigRequest,
     ) -> EmbeddingConfig:
         project = project_from_id(project_id)
+
+        model = built_in_embedding_models_from_provider(
+            provider_name=request.model_provider_name,
+            model_name=request.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {request.model_name} not found in {request.model_provider_name}",
+            )
+
+        if "dimensions" in request.properties:
+            if (
+                not isinstance(request.properties["dimensions"], int)
+                or request.properties["dimensions"] <= 0
+                or request.properties["dimensions"] > model.n_dimensions
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Dimensions must be a positive integer and less than the model's dimensions",
+                )
 
         embedding_config = EmbeddingConfig(
             parent=project,

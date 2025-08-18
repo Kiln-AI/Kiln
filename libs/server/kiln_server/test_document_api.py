@@ -717,6 +717,31 @@ async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
     assert response.status_code == 422, response.text
 
 
+@pytest.mark.parametrize("chunk_size,chunk_overlap", [(10, 10), (10, 20)])
+async def test_create_chunker_config_invalid_chunk_size(
+    client, mock_project, chunk_size, chunk_overlap
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Test Chunker Config",
+                "description": "Test Chunker Config description",
+                "chunker_type": "fixed_window",
+                "properties": {
+                    "chunk_size": chunk_size,
+                    "chunk_overlap": chunk_overlap,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert "Chunk overlap must be less than chunk size" in response.json()["message"]
+
+
 @pytest.mark.asyncio
 async def test_create_extractor_config_model_not_found(client, mock_project):
     project = mock_project
@@ -857,6 +882,41 @@ async def test_create_embedding_config_invalid_model_provider_name(
         )
 
     assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("model_dimensions,custom_dimensions", [(100, -1), (100, 101)])
+async def test_create_embedding_config_invalid_dimensions(
+    client, mock_project, model_dimensions, custom_dimensions
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_embedding_models_from_provider"
+        ) as mock_built_in_embedding_models_from_provider,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_built_in_embedding_models_from_provider.return_value = MagicMock()
+        mock_built_in_embedding_models_from_provider.return_value.n_dimensions = (
+            model_dimensions
+        )
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_embedding_config",
+            json={
+                "name": "Test Embedding Config",
+                "description": "Test Embedding Config description",
+                "model_provider_name": "openai",
+                "model_name": "openai_text_embedding_3_small",
+                "properties": {
+                    "dimensions": custom_dimensions,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert (
+        "Dimensions must be a positive integer and less than the model's dimensions"
+        in response.json()["message"]
+    )
 
 
 @pytest.mark.asyncio
