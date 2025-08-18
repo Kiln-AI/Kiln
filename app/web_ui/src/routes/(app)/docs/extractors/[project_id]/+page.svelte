@@ -7,7 +7,7 @@
   import { load_model_info } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
-  import EmptyIntro from "./empty_intro.svelte"
+  import EmptyExtractorsIntro from "./empty_extractors_intro.svelte"
   import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
   import TableExtractorRow from "./table_extractor_row.svelte"
 
@@ -133,7 +133,7 @@
     </div>
   {:else if extractor_configs && extractor_configs.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyIntro {project_id} />
+      <EmptyExtractorsIntro {project_id} />
     </div>
   {:else if extractor_configs}
     <div class="my-4">

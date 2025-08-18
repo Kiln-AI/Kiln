@@ -8,7 +8,7 @@
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
-  import EmptyIntro from "./empty_intro.svelte"
+  import EmptyRagConfigsIntro from "./empty_rag_configs_intro.svelte"
   import TableRagConfigRow from "./table_rag_config_row.svelte"
   import {
     load_all_rag_config_progress,
@@ -86,7 +86,7 @@
     </div>
   {:else if rag_configs && rag_configs.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyIntro {project_id} />
+      <EmptyRagConfigsIntro {project_id} />
     </div>
   {:else if rag_configs}
     <div class="my-4">
