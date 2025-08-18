@@ -2203,13 +2203,15 @@ export interface components {
             max_input_tokens: number | null;
             /** Supports Custom Dimensions */
             supports_custom_dimensions: boolean;
+            /** Suggested For Chunk Embedding */
+            suggested_for_chunk_embedding: boolean;
         };
         /**
          * EmbeddingModelName
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini-embedding-001";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */

@@ -68,7 +68,12 @@
               n_dimensions: model.n_dimensions,
               max_input_tokens: model.max_input_tokens,
               supports_custom_dimensions: model.supports_custom_dimensions,
+              suggested_for_chunk_embedding:
+                model.suggested_for_chunk_embedding,
             },
+            badge: model.suggested_for_chunk_embedding
+              ? "Recommended"
+              : undefined,
             description: `${model.n_dimensions} dimensions${model.max_input_tokens ? ` • ${model.max_input_tokens.toLocaleString()} max tokens` : ""}`,
           })),
         }))

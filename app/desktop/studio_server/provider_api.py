@@ -114,6 +114,7 @@ class EmbeddingModelDetails(BaseModel):
     n_dimensions: int
     max_input_tokens: int | None
     supports_custom_dimensions: bool
+    suggested_for_chunk_embedding: bool
 
 
 class EmbeddingProvider(BaseModel):
@@ -270,6 +271,7 @@ def connect_provider_api(app: FastAPI):
                                 n_dimensions=provider.n_dimensions,
                                 max_input_tokens=provider.max_input_tokens,
                                 supports_custom_dimensions=provider.supports_custom_dimensions,
+                                suggested_for_chunk_embedding=provider.suggested_for_chunk_embedding,
                             )
                         )
         return models
