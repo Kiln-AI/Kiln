@@ -12,6 +12,8 @@
     EmbeddingProvider,
     ModelProviderName,
   } from "$lib/types"
+  import Collapse from "$lib/ui/collapse.svelte"
+
   $: project_id = $page.params.project_id
 
   let loading: boolean = false
@@ -166,28 +168,22 @@
       {/if}
     {/if}
   </div>
-  <div class="mt-4">
-    <div class="collapse collapse-arrow bg-base-200">
-      <input type="checkbox" class="peer" />
-      <div class="collapse-title font-medium">Advanced Options</div>
-      <div class="collapse-content flex flex-col gap-4">
-        <FormElement
-          label="Embedding Config Name"
-          description="Leave blank and we'll generate one for you."
-          optional={true}
-          inputType="input"
-          id="name"
-          bind:value={name}
-        />
-        <FormElement
-          label="Description"
-          description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
-          optional={true}
-          inputType="textarea"
-          id="description"
-          bind:value={description}
-        />
-      </div>
-    </div>
-  </div>
+  <Collapse title="Advanced Options">
+    <FormElement
+      label="Embedding Config Name"
+      description="Leave blank and we'll generate one for you."
+      optional={true}
+      inputType="input"
+      id="name"
+      bind:value={name}
+    />
+    <FormElement
+      label="Description"
+      description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
+      optional={true}
+      inputType="textarea"
+      id="description"
+      bind:value={description}
+    />
+  </Collapse>
 </FormContainer>

@@ -23,6 +23,7 @@
     load_available_embedding_models,
     provider_name_from_id,
   } from "$lib/stores"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   $: project_id = $page.params.project_id
 
@@ -412,30 +413,24 @@
         </div>
 
         <!-- Advanced -->
-        <div class="mt-6">
-          <div class="collapse collapse-arrow bg-base-200">
-            <input type="checkbox" class="peer" />
-            <div class="collapse-title font-medium">Advanced Options</div>
-            <div class="collapse-content flex flex-col gap-4">
-              <FormElement
-                label="Search Tool Name"
-                description="A name to identify this tool. Leave blank and we'll generate one for you."
-                optional={true}
-                inputType="input"
-                id="rag_config_name"
-                bind:value={name}
-              />
-              <FormElement
-                label="Description"
-                description="A description of the search tool for your reference."
-                optional={true}
-                inputType="textarea"
-                id="rag_config_description"
-                bind:value={description}
-              />
-            </div>
-          </div>
-        </div>
+        <Collapse title="Advanced Options">
+          <FormElement
+            label="Search Tool Name"
+            description="A name to identify this tool. Leave blank and we'll generate one for you."
+            optional={true}
+            inputType="input"
+            id="rag_config_name"
+            bind:value={name}
+          />
+          <FormElement
+            label="Description"
+            description="A description of the search tool for your reference."
+            optional={true}
+            inputType="textarea"
+            id="rag_config_description"
+            bind:value={description}
+          />
+        </Collapse>
       </FormContainer>
     </div>
   {/if}

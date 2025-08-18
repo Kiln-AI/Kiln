@@ -7,6 +7,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createEventDispatcher } from "svelte"
   import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   $: project_id = $page.params.project_id
 
@@ -114,85 +115,79 @@
       ]}
     />
   </div>
-  <div class="mt-4">
-    <div class="collapse collapse-arrow bg-base-200">
-      <input type="checkbox" class="peer" />
-      <div class="collapse-title font-medium">Advanced Options</div>
-      <div class="collapse-content flex flex-col gap-4">
-        <div>
-          <div class="font-medium">Prompt Options</div>
-          <div class="text-sm text-gray-500 mt-1">
-            Specify the prompt which will be used to extract data from your
-            documents. Each document type has it's own prompt. Leave blank to
-            use the default.
-          </div>
-        </div>
-        <div class="flex flex-col gap-2">
-          <FormElement
-            label="Document Extraction Prompt"
-            description="A prompt used to extracting documents (e.g. PDFs, HTML, etc.)."
-            info_description="Typically something like 'Transcribe the document into markdown.' or 'Transcribe the document into plain text.'"
-            optional={true}
-            inputType="textarea"
-            id="prompt_document"
-            bind:value={prompt_document}
-            placeholder="Transcribe the document into markdown."
-          />
-        </div>
-        <div class="flex flex-col gap-2">
-          <FormElement
-            label="Image Extraction Prompt"
-            description="A prompt used to generate text descriptions of images."
-            info_description="Typically something like 'Describe the contents of the image in markdown.'"
-            optional={true}
-            inputType="textarea"
-            id="prompt_image"
-            bind:value={prompt_image}
-            placeholder="Describe the image in markdown."
-          />
-        </div>
-        <div class="flex flex-col gap-2">
-          <FormElement
-            label="Video Extraction Prompt"
-            description="A prompt used to generate text descriptions of videos."
-            info_description="Typically something like 'Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech.'"
-            optional={true}
-            inputType="textarea"
-            id="prompt_video"
-            bind:value={prompt_video}
-            placeholder="Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech."
-          />
-        </div>
-        <div class="flex flex-col gap-2">
-          <FormElement
-            label="Audio Extraction Prompt"
-            description="A prompt used to generate text descriptions of audio files."
-            info_description="Typically something like 'Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown.'"
-            optional={true}
-            inputType="textarea"
-            id="prompt_audio"
-            bind:value={prompt_audio}
-            placeholder="Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown."
-          />
-        </div>
-        <div class="font-medium mt-6">Extractor Details</div>
-        <FormElement
-          label="Extractor Name"
-          description="Leave blank and we'll generate one for you using the model name and output format."
-          optional={true}
-          inputType="input"
-          id="extractor_name"
-          bind:value={name}
-        />
-        <FormElement
-          label="Description"
-          description="A description of the extractor for you and your team. This will have no effect on the extractor's behavior."
-          optional={true}
-          inputType="textarea"
-          id="extractor_description"
-          bind:value={description}
-        />
+  <Collapse title="Advanced Options">
+    <div>
+      <div class="font-medium">Prompt Options</div>
+      <div class="text-sm text-gray-500 mt-1">
+        Specify the prompt which will be used to extract data from your
+        documents. Each document type has it's own prompt. Leave blank to use
+        the default.
       </div>
     </div>
-  </div>
+    <div class="flex flex-col gap-2">
+      <FormElement
+        label="Document Extraction Prompt"
+        description="A prompt used to extracting documents (e.g. PDFs, HTML, etc.)."
+        info_description="Typically something like 'Transcribe the document into markdown.' or 'Transcribe the document into plain text.'"
+        optional={true}
+        inputType="textarea"
+        id="prompt_document"
+        bind:value={prompt_document}
+        placeholder="Transcribe the document into markdown."
+      />
+    </div>
+    <div class="flex flex-col gap-2">
+      <FormElement
+        label="Image Extraction Prompt"
+        description="A prompt used to generate text descriptions of images."
+        info_description="Typically something like 'Describe the contents of the image in markdown.'"
+        optional={true}
+        inputType="textarea"
+        id="prompt_image"
+        bind:value={prompt_image}
+        placeholder="Describe the image in markdown."
+      />
+    </div>
+    <div class="flex flex-col gap-2">
+      <FormElement
+        label="Video Extraction Prompt"
+        description="A prompt used to generate text descriptions of videos."
+        info_description="Typically something like 'Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech.'"
+        optional={true}
+        inputType="textarea"
+        id="prompt_video"
+        bind:value={prompt_video}
+        placeholder="Describe what happens in the video in markdown. Take into account the audio as well as the visual content. Your transcription must chronologically describe the events in the video and transcribe any speech."
+      />
+    </div>
+    <div class="flex flex-col gap-2">
+      <FormElement
+        label="Audio Extraction Prompt"
+        description="A prompt used to generate text descriptions of audio files."
+        info_description="Typically something like 'Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown.'"
+        optional={true}
+        inputType="textarea"
+        id="prompt_audio"
+        bind:value={prompt_audio}
+        placeholder="Transcribe the audio into markdown. If the audio contains speech, transcribe it into markdown."
+      />
+    </div>
+    <div class="font-medium mt-6">Extractor Details</div>
+    <FormElement
+      label="Extractor Name"
+      description="Leave blank and we'll generate one for you using the model name and output format."
+      optional={true}
+      inputType="input"
+      id="extractor_name"
+      bind:value={name}
+    />
+    <FormElement
+      label="Description"
+      description="A description of the extractor for you and your team. This will have no effect on the extractor's behavior."
+      optional={true}
+      inputType="textarea"
+      id="extractor_description"
+      bind:value={description}
+    />
+  </Collapse>
 </FormContainer>
