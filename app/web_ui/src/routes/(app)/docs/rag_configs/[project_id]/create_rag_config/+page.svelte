@@ -24,6 +24,7 @@
     provider_name_from_id,
   } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
+  import { extractor_output_format } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
 
@@ -64,6 +65,10 @@
     modal_opened = null
   }
 
+  function extractor_label(extractor: ExtractorConfig) {
+    return `${get_model_friendly_name(extractor.model_name)} (${provider_name_from_id(extractor.model_provider_name)}) - ${extractor_output_format(extractor.output_format)}`
+  }
+
   // Convert configs to option groups for fancy select
   $: extractor_options = [
     {
@@ -84,7 +89,7 @@
             options: extractor_configs
               .filter((config) => !config.is_archived)
               .map((config) => ({
-                label: `${get_model_friendly_name(config.model_name)} (${provider_name_from_id(config.model_provider_name)}) - ${config.output_format}`,
+                label: extractor_label(config),
                 value: config.id,
                 description:
                   config.name +

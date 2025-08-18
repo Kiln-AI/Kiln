@@ -1,12 +1,11 @@
 <script lang="ts">
   import type { ExtractorConfig } from "$lib/types"
-  import { formatDate } from "$lib/utils/formatters"
+  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import {
     extractorProgressStore,
     formatProgressPercentage,
   } from "$lib/stores/extractor_progress_store"
   import RunExtractorControl from "./run_extractor_control.svelte"
-  import { mime_type_to_string } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
 
   export let extractor_config: ExtractorConfig
@@ -23,7 +22,7 @@
     return [
       extractor_config.name,
       model,
-      mime_type_to_string(extractor_config.output_format),
+      extractor_output_format(extractor_config.output_format),
       formatDate(extractor_config.created_at),
     ]
   }

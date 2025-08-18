@@ -6,7 +6,7 @@
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import { formatDate } from "$lib/utils/formatters"
+  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import {
     embedding_model_name,
     load_available_embedding_models,
@@ -123,7 +123,10 @@
               },
               {
                 name: "Output Format",
-                value: rag_config.extractor_config.output_format || "N/A",
+                value:
+                  extractor_output_format(
+                    rag_config.extractor_config.output_format,
+                  ) || "N/A",
               },
               {
                 name: "Details",

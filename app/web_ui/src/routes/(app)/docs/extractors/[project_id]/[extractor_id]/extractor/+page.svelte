@@ -6,7 +6,7 @@
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import { formatDate } from "$lib/utils/formatters"
+  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import Output from "../../../../../run/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
@@ -171,7 +171,9 @@
               },
               {
                 name: "Output Format",
-                value: extractor_config?.output_format || "N/A",
+                value: extractor_config?.output_format
+                  ? extractor_output_format(extractor_config.output_format)
+                  : "N/A",
               },
               {
                 name: "Created At",
