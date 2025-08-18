@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
@@ -8,6 +8,10 @@ from kiln_ai.tools.tool_id import KilnBuiltInToolId, ToolId
 from kiln_server.project_api import project_from_id
 from mcp import Tool
 from pydantic import BaseModel, Field, ValidationError
+
+"""
+This class is used to describe the external tool server under Settings -> Manage Tools UI.
+"""
 
 
 class KilnToolServerDescription(BaseModel):
@@ -24,7 +28,12 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
 
 
-class ExternalToolServerApiDescription(ExternalToolServer):
+class ExternalToolServerApiDescription(BaseModel):
+    id: ID_TYPE
+    name: str
+    type: ToolServerType
+    description: str | None
+    properties: Dict[str, Any] = Field(default_factory=dict)
     available_tools: list[Tool]
 
 
@@ -103,11 +112,11 @@ def connect_tool_servers_api(app: FastAPI):
             available_tools = tools_result.tools
 
         return ExternalToolServerApiDescription(
+            id=tool_server.id,
             name=tool_server.name,
             type=tool_server.type,
             description=tool_server.description,
             properties=tool_server.properties,
-            parent=tool_server.parent,
             available_tools=available_tools,
         )
 

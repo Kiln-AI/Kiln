@@ -42,7 +42,6 @@ class MCPServer:
                 await session.initialize()
                 # List available tools
                 self._tools = await session.list_tools()
-                print(f"Available tools: {[tool.name for tool in self._tools.tools]}")
                 return self._tools
 
     async def get_tool(self, tool_name: str) -> MCPServerTool:
