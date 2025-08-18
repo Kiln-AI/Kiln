@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
-from kiln_ai.tools.mcp_server import MCPServer
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import KilnBuiltInToolId, ToolId
 from kiln_server.project_api import project_from_id
 from mcp import Tool
@@ -136,8 +136,9 @@ def connect_tool_servers_api(app: FastAPI):
         # Get available tools based on server type
         available_tools = []
         if tool_server.type == ToolServerType.remote_mcp:
-            mcp_server = MCPServer(tool_server)
-            tools_result = await mcp_server.list_tools()
+            async with MCPSessionManager.shared().mcp_client(tool_server) as session:
+                tools_result = await session.list_tools()
+
             available_tools = [
                 ExternalToolApiDescription.tool_from_mcp_tool(tool)
                 for tool in tools_result.tools

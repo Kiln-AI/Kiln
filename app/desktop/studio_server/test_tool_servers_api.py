@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -242,19 +243,28 @@ def test_get_tool_server_success(client, test_project):
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
-        # Mock MCPServer.list_tools to return a list of tools
+        # Mock MCPSessionManager to return a list of tools
         mock_tools = [
             Tool(name="test_tool_1", description="First test tool", inputSchema={}),
             Tool(name="calculator", description="Math calculations", inputSchema={}),
         ]
         mock_result = ListToolsResult(tools=mock_tools)
 
+        # Create mock session that has list_tools method
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = mock_result
+
+        # Create proper async context manager
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPServer"
-        ) as mock_mcp_class:
-            mock_mcp_instance = AsyncMock()
-            mock_mcp_instance.list_tools.return_value = mock_result
-            mock_mcp_class.return_value = mock_mcp_instance
+            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
 
             # Now get the tool server
             response = client.get(
@@ -303,13 +313,22 @@ def test_get_tool_server_mcp_error_handling(client, test_project):
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
-        # Mock MCPServer to raise an exception
+        # Mock MCPSessionManager to raise an exception
+        # Create mock session that raises an exception
+        mock_session = AsyncMock()
+        mock_session.list_tools.side_effect = Exception("Connection failed")
+
+        # Create proper async context manager that raises exception
+        @asynccontextmanager
+        async def mock_mcp_client_error(tool_server):
+            yield mock_session
+
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPServer"
-        ) as mock_mcp_class:
-            mock_mcp_instance = AsyncMock()
-            mock_mcp_instance.list_tools.side_effect = Exception("Connection failed")
-            mock_mcp_class.return_value = mock_mcp_instance
+            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client_error
+            mock_session_manager_shared.return_value = mock_session_manager
 
             # The API should handle the exception gracefully
             # For now, let's test that it raises the exception since that's the current behavior

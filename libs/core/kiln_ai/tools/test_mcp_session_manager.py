@@ -1,13 +1,12 @@
 import pytest
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
-from kiln_ai.tools.mcp_server import MCPServer
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""
 
-    @pytest.mark.integration
     @pytest.mark.skip(
         reason="Skipping integration test since it requires calling a real MCP server"
     )
@@ -23,8 +22,13 @@ class TestMCPServerIntegration:
             },
         )
 
-        mcp_server = MCPServer(external_tool_server)
-        tools = await mcp_server.list_tools()
+        async with MCPSessionManager.shared().mcp_client(
+            external_tool_server
+        ) as session:
+            tools = await session.list_tools()
+
+        print("Test tools:", tools)
+
         assert tools is not None
         assert len(tools.tools) > 0
         assert "echo" in [tool.name for tool in tools.tools]
