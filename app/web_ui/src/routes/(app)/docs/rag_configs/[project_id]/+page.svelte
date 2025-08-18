@@ -67,69 +67,71 @@
   }
 </script>
 
-<AppPage
-  title="Search Tools (RAG)"
-  subtitle="Make knowledge from your documents searchable by your tasks."
-  no_y_padding={!!(rag_configs && rag_configs.length == 0)}
-  action_buttons={rag_configs && rag_configs.length == 0
-    ? []
-    : [
-        {
-          label: "Add Search Tool",
-          href: `/docs/rag_configs/${project_id}/create_rag_config`,
-        },
-      ]}
->
-  {#if loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if rag_configs && rag_configs.length == 0}
-    <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyRagConfigsIntro {project_id} />
-    </div>
-  {:else if rag_configs}
-    <div class="my-4">
-      <div class="overflow-x-auto rounded-lg border">
-        <table class="table">
-          <thead>
-            <tr>
-              <th class="w-1/4">Details</th>
-              <th class="w-2/4">Status</th>
-              <th class="w-1/4"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each (rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
-              <TableRagConfigRow {rag_config} {project_id} />
-            {/each}
-          </tbody>
-        </table>
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Search Tools (RAG)"
+    subtitle="Make knowledge from your documents searchable by your tasks."
+    no_y_padding={!!(rag_configs && rag_configs.length == 0)}
+    action_buttons={rag_configs && rag_configs.length == 0
+      ? []
+      : [
+          {
+            label: "Add Search Tool",
+            href: `/docs/rag_configs/${project_id}/create_rag_config`,
+          },
+        ]}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-    </div>
+    {:else if rag_configs && rag_configs.length == 0}
+      <div class="flex flex-col items-center justify-center min-h-[75vh]">
+        <EmptyRagConfigsIntro {project_id} />
+      </div>
+    {:else if rag_configs}
+      <div class="my-4">
+        <div class="overflow-x-auto rounded-lg border">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Details</th>
+                <th>Status</th>
+                <th class="max-w-[250px]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each (rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
+                <TableRagConfigRow {rag_config} {project_id} />
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-    {#if page_number > 1 || (rag_configs && rag_configs.length > page_size)}
-      <div class="flex flex-row justify-center mt-10">
-        <div class="join">
-          {#each Array.from({ length: Math.ceil(rag_configs.length / page_size) }, (_, i) => i + 1) as page}
-            <button
-              class="join-item btn {page_number == page ? 'btn-active' : ''}"
-              on:click={() => updateURL({ page: page })}
-            >
-              {page}
-            </button>
-          {/each}
+      {#if page_number > 1 || (rag_configs && rag_configs.length > page_size)}
+        <div class="flex flex-row justify-center mt-10">
+          <div class="join">
+            {#each Array.from({ length: Math.ceil(rag_configs.length / page_size) }, (_, i) => i + 1) as page}
+              <button
+                class="join-item btn {page_number == page ? 'btn-active' : ''}"
+                on:click={() => updateURL({ page: page })}
+              >
+                {page}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    {:else if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading RAG Configurations</div>
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
     {/if}
-  {:else if error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading RAG Configurations</div>
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
-      </div>
-    </div>
-  {/if}
-</AppPage>
+  </AppPage>
+</div>
