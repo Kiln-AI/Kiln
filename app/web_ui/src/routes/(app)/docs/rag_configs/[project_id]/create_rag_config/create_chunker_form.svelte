@@ -70,14 +70,16 @@
   <div class="flex flex-col gap-4">
     <FormElement
       label="Chunk Size"
-      description="The number of tokens in each chunk."
+      description="The number of words in each chunk."
+      info_description="Smaller chunks allow for more granular search, but may not encapsulate the broader context."
       inputType="input_number"
       id="chunk_size"
       bind:value={chunk_size}
     />
     <FormElement
       label="Chunk Overlap"
-      description="The number of tokens to overlap between chunks."
+      description="The number of words to overlap between chunks."
+      info_description="Without overlap, sentences that span chunk boundaries can be lost because they aren’t fully contained in any chunk."
       inputType="input_number"
       id="chunk_overlap"
       bind:value={chunk_overlap}

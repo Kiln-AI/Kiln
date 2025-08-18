@@ -146,16 +146,16 @@
               {
                 name: "Chunk Size",
                 value: rag_config.chunker_config.properties?.chunk_size
-                  ? `${String(rag_config.chunker_config.properties.chunk_size)} tokens`
+                  ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
                   : "N/A",
-                tooltip: "The number of tokens to include in each chunk",
+                tooltip: "The number of words to include in each chunk",
               },
               {
                 name: "Overlap",
                 value: rag_config.chunker_config.properties?.chunk_overlap
-                  ? `${String(rag_config.chunker_config.properties.chunk_overlap)} tokens`
+                  ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
                   : "N/A",
-                tooltip: "The number of tokens to overlap between chunks",
+                tooltip: "The number of words to overlap between chunks",
               },
             ]}
           />
