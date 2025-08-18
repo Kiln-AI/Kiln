@@ -154,8 +154,8 @@
     {:else}
       <FormElement
         label="Embedding Model"
-        description="The embedding model to use for turning your text into vectors."
-        info_description="An embedding model converts text into a vector that can be used for similarity search."
+        description="The embedding model to use to convert your text into vectors."
+        info_description="An embedding is a vector representation of text that can be used for similarity search."
         inputType="fancy_select"
         fancy_select_options={embeddingModels}
         bind:value={selectedModel}

@@ -447,10 +447,6 @@
     }
   }}
 >
-  <div class="font-light text-sm mb-4">
-    Extractors are used to convert your documents into text.
-  </div>
-
   <CreateExtractorForm
     keyboard_submit={modal_opened === "extractor"}
     on:success={async (e) => {
@@ -471,11 +467,6 @@
     }
   }}
 >
-  <div class="font-light text-sm">
-    Chunkers are used to split your documents into smaller pieces for better
-    retrieval.
-  </div>
-
   <CreateChunkerForm
     keyboard_submit={modal_opened === "chunker"}
     on:success={async (e) => {
