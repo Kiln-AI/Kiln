@@ -586,7 +586,7 @@
           >
             <div class="px-6 py-4 font-semibold text-gray-900"></div>
             {#each Array(columns) as _, i}
-              <div class="px-6 py-4 relative">
+              <div class="px-6 py-4 relative min-w-0">
                 <div class="w-full mx-auto">
                   <FancySelect
                     options={modelOptions}
