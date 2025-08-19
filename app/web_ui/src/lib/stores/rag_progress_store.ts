@@ -52,12 +52,12 @@ function createRagProgressStore() {
   })
 
   function has_errors(rag_config_id: string): boolean {
-    const state = get(ragProgressStore)
-    const progress = state.progress[rag_config_id]
+    const progress = get(ragProgressStore).progress[rag_config_id]
+    if (!progress) return false
     return (
-      progress.total_document_extracted_error_count > 0 ||
-      progress.total_document_chunked_error_count > 0 ||
-      progress.total_document_embedded_error_count > 0
+      (progress.total_document_extracted_error_count ?? 0) > 0 ||
+      (progress.total_document_chunked_error_count ?? 0) > 0 ||
+      (progress.total_document_embedded_error_count ?? 0) > 0
     )
   }
 
