@@ -229,10 +229,6 @@ function createRagProgressStore() {
         error: null,
         last_started_rag_config_id: null,
       }),
-    get_status: (ragConfigId: string): RagConfigurationStatus => {
-      const state = get(ragProgressStore)
-      return state.status[ragConfigId] || "not_started"
-    },
   }
 }
 

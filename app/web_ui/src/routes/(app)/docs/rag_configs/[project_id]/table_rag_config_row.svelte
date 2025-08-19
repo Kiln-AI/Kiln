@@ -73,7 +73,7 @@
     }
   }
 
-  $: status = ragProgressStore.get_status(rag_config.id || "")
+  $: status = $ragProgressStore.status[rag_config.id || ""]
 </script>
 
 {#if rag_progress && rag_config}
@@ -137,13 +137,17 @@
               {/if}
               <span>{status_to_badge_props(status).text}</span>
             </div>
-            <span class="text-sm text-base-content/60">{completed_pct}%</span>
+            {#if status === "running"}
+              <span class="text-sm text-base-content/60">{completed_pct}%</span>
+            {/if}
           </div>
-          <progress
-            class="progress progress-primary bg-primary/20 w-full h-2"
-            value={rag_progress.total_document_completed_count || 0}
-            max={total_docs || 100}
-          ></progress>
+          {#if status === "running"}
+            <progress
+              class="progress progress-primary bg-primary/20 w-full h-2"
+              value={rag_progress.total_document_completed_count || 0}
+              max={total_docs || 100}
+            ></progress>
+          {/if}
           {#if total_docs > 0}
             <div class="text-xs text-base-content/50 text-start">
               {rag_progress.total_document_completed_count || 0} of {total_docs}

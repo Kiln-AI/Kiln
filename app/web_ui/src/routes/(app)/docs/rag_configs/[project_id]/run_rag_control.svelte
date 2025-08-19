@@ -68,7 +68,7 @@
     return state_to_label[status]
   }
 
-  $: status = ragProgressStore.get_status(rag_config.id || "")
+  $: status = $ragProgressStore.status[rag_config_id]
 
   $: button_state = get_state_to_label(status)
 </script>
