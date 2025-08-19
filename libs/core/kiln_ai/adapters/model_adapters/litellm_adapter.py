@@ -693,6 +693,8 @@ class LiteLlmAdapter(BaseAdapter):
         message: ChatCompletionAssistantMessageParam = {
             "role": "assistant",
             "content": content,
-            "tool_calls": tool_calls_param,
         }
+        if tool_calls_param:
+            message["tool_calls"] = tool_calls_param
+
         return content, message, tool_calls

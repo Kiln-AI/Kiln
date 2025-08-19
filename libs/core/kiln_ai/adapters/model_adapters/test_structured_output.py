@@ -294,8 +294,10 @@ async def run_structured_input_task(
         assert "You are an assistant which classifies a triangle" in trace[0]["content"]
         assert trace[1]["role"] == "user"
         assert trace[2]["role"] == "assistant"
+        assert trace[2].get("tool_calls") is None
         assert trace[3]["role"] == "user"
         assert trace[4]["role"] == "assistant"
+        assert trace[4].get("tool_calls") is None
     else:
         assert len(trace) == 3
         assert trace[0]["role"] == "system"
@@ -306,6 +308,7 @@ async def run_structured_input_task(
         assert json_content["b"] == 2
         assert json_content["c"] == 2
         assert trace[2]["role"] == "assistant"
+        assert trace[2].get("tool_calls") is None
         assert "[[equilateral]]" in trace[2]["content"]
 
 
@@ -332,7 +335,6 @@ async def test_all_built_in_models_structured_input_mocked(tmp_path):
             {
                 "message": {
                     "content": "The answer is [[equilateral]]",
-                    "tool_calls": None,
                 }
             }
         ],
