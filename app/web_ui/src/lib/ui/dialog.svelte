@@ -111,11 +111,13 @@
           <button
             class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
             on:click={button.action}
+            aria-label="Close dialog"
           >
             <img
               class="h-6 w-6 mb-[1px]"
               src={button.image_path}
               alt={button.alt_text}
+              aria-hidden="true"
             />
           </button>
         {/each}
@@ -123,6 +125,7 @@
         <form method="dialog">
           <button
             class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
+            aria-label="Close dialog"
           >
             <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
             <svg
@@ -130,6 +133,8 @@
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+              focusable="false"
             >
               <g clip-path="url(#clip0_429_11083)">
                 <path
