@@ -92,7 +92,12 @@
         {#if sub_subtitle}
           {#if sub_subtitle_link}
             <p class="text-sm font-light mt-1">
-              <a href={sub_subtitle_link} class="link" target="_blank">
+              <a
+                href={sub_subtitle_link}
+                class="link"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 {sub_subtitle}
               </a>
             </p>
