@@ -143,7 +143,7 @@
           </div>
           {#if status === "running"}
             <progress
-              class="progress progress-primary bg-primary/20 w-full h-2"
+              class="progress progress-secondary bg-secondary/20 w-full h-2"
               value={rag_progress.total_document_completed_count || 0}
               max={total_docs || 100}
             ></progress>
