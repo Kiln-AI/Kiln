@@ -12,7 +12,6 @@ from typing import (
     List,
     Literal,
     Optional,
-    Required,
     TypeAlias,
     TypedDict,
     Union,
@@ -31,6 +30,7 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ContentArrayOfContentPart,
     FunctionCall,
 )
+from typing_extensions import Required
 
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
