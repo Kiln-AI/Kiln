@@ -8,6 +8,7 @@ from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -107,6 +108,10 @@ class TaskRun(KilnParentedModel):
     usage: Usage | None = Field(
         default=None,
         description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
+    )
+    trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
 
     def thinking_training_data(self) -> str | None:

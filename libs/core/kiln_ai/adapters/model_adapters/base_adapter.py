@@ -29,6 +29,7 @@ from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 @dataclass
@@ -162,7 +163,9 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         # Generate the run and output
-        run = self.generate_run(input, input_source, parsed_output, usage)
+        run = self.generate_run(
+            input, input_source, parsed_output, usage, run_output.trace
+        )
 
         # Save the run if configured to do so, and we have a path to save to
         if (
@@ -254,6 +257,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None,
         run_output: RunOutput,
         usage: Usage | None = None,
+        trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
         input_str = (
@@ -288,6 +292,7 @@ class BaseAdapter(metaclass=ABCMeta):
             intermediate_outputs=run_output.intermediate_outputs,
             tags=self.base_adapter_config.default_tags or [],
             usage=usage,
+            trace=trace,
         )
 
         return new_task_run
