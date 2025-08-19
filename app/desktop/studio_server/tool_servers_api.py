@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import KilnBuiltInToolId, ToolId
+from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 from kiln_server.project_api import project_from_id
 from mcp import Tool
 from pydantic import BaseModel, Field, ValidationError
@@ -77,29 +77,27 @@ def connect_tool_servers_api(app: FastAPI):
     async def get_available_tools(
         project_id: str,
     ) -> List[ToolApiDescription]:
-        # TODO: add a real implementation of this
-        return [
-            ToolApiDescription(
-                id=KilnBuiltInToolId.ADD_NUMBERS,
-                name="Add Numbers",
-                description="Add two numbers",
-            ),
-            ToolApiDescription(
-                id=KilnBuiltInToolId.SUBTRACT_NUMBERS,
-                name="Subtract Numbers",
-                description="Subtract two numbers",
-            ),
-            ToolApiDescription(
-                id=KilnBuiltInToolId.MULTIPLY_NUMBERS,
-                name="Multiply Numbers",
-                description="Multiply two numbers",
-            ),
-            ToolApiDescription(
-                id=KilnBuiltInToolId.DIVIDE_NUMBERS,
-                name="Divide Numbers",
-                description="Divide two numbers",
-            ),
-        ]
+        project = project_from_id(project_id)
+
+        # Get available tools from MCP servers
+        available_tools = []
+        for server in project.external_tool_servers(readonly=True):
+            # Get available tools from remote MCP servers only
+            if server.type == ToolServerType.remote_mcp:
+                async with MCPSessionManager.shared().mcp_client(server) as session:
+                    tools_result = await session.list_tools()
+                    available_tools.extend(
+                        [
+                            ToolApiDescription(
+                                id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                                name=tool.name,
+                                description=tool.description,
+                            )
+                            for tool in tools_result.tools
+                        ]
+                    )
+
+        return available_tools
 
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(

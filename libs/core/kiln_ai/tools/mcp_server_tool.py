@@ -5,6 +5,7 @@ from mcp.types import CallToolResult, TextContent, Tool
 from kiln_ai.datamodel.external_tool import ExternalToolServer
 from kiln_ai.tools.base_tool import KilnTool
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 
 
 class MCPServerTool(KilnTool):
@@ -15,7 +16,7 @@ class MCPServerTool(KilnTool):
 
         #  Some properties are not available until the tool is loaded asynchronously
         super().__init__(
-            tool_id=f"mcp::remote::{model.id}::{name}",
+            tool_id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{model.id}::{name}",
             name=name,
             description="Not Loaded",
             parameters_schema={

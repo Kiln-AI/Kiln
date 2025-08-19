@@ -352,28 +352,3 @@ def test_get_tool_server_not_found(client, test_project):
         assert response.status_code == 404
         result = response.json()
         assert result["detail"] == "Tool not found"
-
-
-def test_get_available_tools(client, test_project):
-    response = client.get(f"/api/projects/{test_project.id}/available_tools")
-
-    assert response.status_code == 200
-    result = response.json()
-
-    # Should return the 4 built-in math tools
-    assert len(result) == 4
-
-    # Check that all expected tools are present
-    tool_names = [tool["name"] for tool in result]
-    expected_names = [
-        "Add Numbers",
-        "Subtract Numbers",
-        "Multiply Numbers",
-        "Divide Numbers",
-    ]
-    assert set(tool_names) == set(expected_names)
-
-    for tool in result:
-        assert "id" in tool
-        assert "name" in tool
-        assert "description" in tool

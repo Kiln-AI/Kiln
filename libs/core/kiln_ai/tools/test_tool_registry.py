@@ -6,7 +6,11 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
-from kiln_ai.tools.tool_id import KilnBuiltInToolId, _check_tool_id
+from kiln_ai.tools.tool_id import (
+    MCP_REMOTE_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+    _check_tool_id,
+)
 from kiln_ai.tools.tool_registry import tool_from_id
 
 
@@ -101,3 +105,44 @@ class TestToolRegistry:
         """Test that _check_tool_id raises ValueError for None."""
         with pytest.raises(ValueError, match="Invalid tool ID: None"):
             _check_tool_id(None)  # type: ignore
+
+    def test_check_tool_id_valid_mcp_remote_tool_id(self):
+        """Test that _check_tool_id accepts valid MCP remote tool IDs."""
+        valid_mcp_ids = [
+            f"{MCP_REMOTE_TOOL_ID_PREFIX}server123::tool_name",
+            f"{MCP_REMOTE_TOOL_ID_PREFIX}my_server::echo",
+            f"{MCP_REMOTE_TOOL_ID_PREFIX}123456789::test_tool",
+            f"{MCP_REMOTE_TOOL_ID_PREFIX}server_with_underscores::complex_tool_name",
+        ]
+
+        for tool_id in valid_mcp_ids:
+            result = _check_tool_id(tool_id)
+            assert result == tool_id
+
+    def test_check_tool_id_invalid_mcp_remote_tool_id(self):
+        """Test that _check_tool_id rejects invalid MCP-like tool IDs."""
+        # These start with the prefix but have wrong format - get specific MCP error
+        invalid_mcp_format_ids = [
+            "mcp::remote::server",  # Missing tool name (only 3 parts instead of 4)
+            "mcp::remote::",  # Missing server and tool name (only 3 parts)
+            "mcp::remote::::tool",  # Empty server name (5 parts instead of 4)
+            "mcp::remote::server::tool::extra",  # Too many parts (5 instead of 4)
+        ]
+
+        for invalid_id in invalid_mcp_format_ids:
+            with pytest.raises(
+                ValueError, match=f"Invalid MCP remote tool ID: {invalid_id}"
+            ):
+                _check_tool_id(invalid_id)
+
+        # These don't match the prefix - get generic error
+        invalid_generic_ids = [
+            "mcp::remote:",  # Missing last colon (doesn't match full prefix)
+            "mcp:remote::server::tool",  # Wrong prefix format
+            "mcp::remote_server::tool",  # Wrong prefix format
+            "remote::server::tool",  # Missing mcp prefix
+        ]
+
+        for invalid_id in invalid_generic_ids:
+            with pytest.raises(ValueError, match=f"Invalid tool ID: {invalid_id}"):
+                _check_tool_id(invalid_id)

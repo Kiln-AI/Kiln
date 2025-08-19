@@ -13,6 +13,7 @@ from mcp.types import (
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
+from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 
 
 class TestMCPServerTool:
@@ -33,7 +34,7 @@ class TestMCPServerTool:
         tool = MCPServerTool(server, "test_tool")
 
         # Check ID pattern - uses server's generated ID, not name
-        assert tool.id().startswith("mcp::remote::")
+        assert tool.id().startswith(MCP_REMOTE_TOOL_ID_PREFIX)
         assert tool.id().endswith("::test_tool")
         assert tool.name() == "test_tool"
         assert tool.description() == "Not Loaded"
