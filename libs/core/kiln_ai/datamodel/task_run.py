@@ -1,6 +1,7 @@
 import json
 from typing import TYPE_CHECKING, Dict, List, Union
 
+from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
@@ -107,6 +108,10 @@ class TaskRun(KilnParentedModel):
     usage: Usage | None = Field(
         default=None,
         description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
+    )
+    trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
 
     def thinking_training_data(self) -> str | None:

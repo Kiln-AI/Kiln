@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 from typing import Dict
+from unittest.mock import Mock, patch
 
 import pytest
+from litellm.types.utils import ModelResponse
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -282,6 +284,20 @@ async def run_structured_input_task(
         assert "reasoning" in run.intermediate_outputs
         assert isinstance(run.intermediate_outputs["reasoning"], str)
 
+    # Check the trace
+    trace = run.trace
+    assert trace is not None
+    assert len(trace) == 3
+    assert trace[0]["role"] == "system"
+    assert "You are an assistant which classifies a triangle" in trace[0]["content"]
+    assert trace[1]["role"] == "user"
+    json_content = json.loads(trace[1]["content"])
+    assert json_content["a"] == 2
+    assert json_content["b"] == 2
+    assert json_content["c"] == 2
+    assert trace[2]["role"] == "assistant"
+    assert "[[equilateral]]" in trace[2]["content"]
+
 
 @pytest.mark.paid
 async def test_structured_input_gpt_4o_mini(tmp_path):
@@ -297,6 +313,36 @@ async def test_all_built_in_models_structured_input(
     await run_structured_input_test(
         tmp_path, model_name, provider_name, "simple_prompt_builder"
     )
+
+
+async def test_all_built_in_models_structured_input_mocked(tmp_path):
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "The answer is [[equilateral]]",
+                    "tool_calls": None,
+                }
+            }
+        ],
+    )
+
+    # Mock the Config.shared() method to return a mock config with required attributes
+    mock_config = Mock()
+    mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.user_id = "test_user"
+
+    with (
+        patch(
+            "litellm.acompletion",
+            side_effect=[mock_response],
+        ),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
+    ):
+        await run_structured_input_test(
+            tmp_path, "llama_3_1_8b", "groq", "simple_prompt_builder"
+        )
 
 
 @pytest.mark.paid

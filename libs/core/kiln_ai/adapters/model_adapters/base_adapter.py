@@ -3,6 +3,8 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+from openai.types.chat import ChatCompletionMessageParam
+
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -162,7 +164,9 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         # Generate the run and output
-        run = self.generate_run(input, input_source, parsed_output, usage)
+        run = self.generate_run(
+            input, input_source, parsed_output, usage, run_output.trace
+        )
 
         # Save the run if configured to do so, and we have a path to save to
         if (
@@ -254,6 +258,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None,
         run_output: RunOutput,
         usage: Usage | None = None,
+        trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
         input_str = (
@@ -288,6 +293,7 @@ class BaseAdapter(metaclass=ABCMeta):
             intermediate_outputs=run_output.intermediate_outputs,
             tags=self.base_adapter_config.default_tags or [],
             usage=usage,
+            trace=trace,
         )
 
         return new_task_run
