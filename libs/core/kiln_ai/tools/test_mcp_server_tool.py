@@ -295,7 +295,8 @@ class TestMCPServerTool:
 
         await tool._load_tool_properties()
 
-        assert tool._parameters_schema == {}
+        # Should be empty object for now, our JSON schema validation will fail if properties are missing
+        assert tool._parameters_schema == {"type": "object", "properties": {}}
 
     def test_toolcall_definition(self):
         """Test toolcall_definition() returns proper OpenAI format."""

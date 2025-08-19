@@ -5,8 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.project import Project
-from mcp import ListToolsResult
-from mcp.types import Tool
+from mcp.types import ListToolsResult, Tool
 
 from app.desktop.studio_server.tool_servers_api import connect_tool_servers_api
 

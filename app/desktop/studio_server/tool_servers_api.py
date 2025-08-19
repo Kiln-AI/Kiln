@@ -7,7 +7,7 @@ from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 from kiln_server.project_api import project_from_id
-from mcp import Tool
+from mcp.types import Tool
 from pydantic import BaseModel, Field, ValidationError
 
 """
@@ -37,7 +37,7 @@ This class is a wrapper of MCP's Tool object to be displayed in the UI under too
 class ExternalToolApiDescription(BaseModel):
     name: str
     description: str | None
-    inputSchema: dict[str, Any]
+    inputSchema: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def tool_from_mcp_tool(cls, tool: Tool):
@@ -46,7 +46,7 @@ class ExternalToolApiDescription(BaseModel):
         return cls(
             name=tool.name,
             description=tool.description,
-            inputSchema=tool.inputSchema,
+            inputSchema=tool.inputSchema or {},
         )
 
 

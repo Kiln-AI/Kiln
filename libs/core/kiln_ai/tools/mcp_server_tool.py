@@ -52,7 +52,10 @@ class MCPServerTool(KilnTool):
         tool = await self._get_tool(self._name)
         self._tool = tool
         self._description = tool.description or "N/A"
-        self._parameters_schema = tool.inputSchema or {}
+        self._parameters_schema = tool.inputSchema or {
+            "type": "object",
+            "properties": {},
+        }
 
     #  Get the MCP Tool from the server
     async def _get_tool(self, tool_name: str) -> Tool:
