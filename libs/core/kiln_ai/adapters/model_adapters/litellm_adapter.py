@@ -116,9 +116,10 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
-                assistant_message_from_toolcall, tool_call_messages = (
-                    self.process_tool_calls(tool_calls)
-                )
+                (
+                    assistant_message_from_toolcall,
+                    tool_call_messages,
+                ) = await self.process_tool_calls(tool_calls)
 
                 # Add tool call results to messages
                 messages.extend(tool_call_messages)
@@ -519,7 +520,7 @@ class LiteLlmAdapter(BaseAdapter):
             **self._additional_body_options,
         }
 
-        tool_calls = self.litellm_tools()
+        tool_calls = await self.litellm_tools()
         has_tools = len(tool_calls) > 0
         if has_tools:
             completion_kwargs["tools"] = tool_calls
@@ -581,13 +582,13 @@ class LiteLlmAdapter(BaseAdapter):
             self._cached_available_tools = self.available_tools()
         return self._cached_available_tools
 
-    def litellm_tools(self) -> list[Dict]:
+    async def litellm_tools(self) -> list[Dict]:
         available_tools = self.cached_available_tools()
 
         # LiteLLM takes the standard OpenAI-compatible tool call format
-        return [tool.toolcall_definition() for tool in available_tools]
+        return [await tool.toolcall_definition() for tool in available_tools]
 
-    def process_tool_calls(
+    async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None
     ) -> tuple[str | None, list[ChatCompletionToolMessageParam]]:
         if tool_calls is None:
@@ -605,14 +606,11 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Process normal tool calls (not the "task_response" tool)
             tool_name = tool_call.function.name
-            tool = next(
-                (
-                    tool
-                    for tool in self.cached_available_tools()
-                    if tool.name() == tool_name
-                ),
-                None,
-            )
+            tool = None
+            for tool_option in self.cached_available_tools():
+                if await tool_option.name() == tool_name:
+                    tool = tool_option
+                    break
             if not tool:
                 raise RuntimeError(
                     f"A tool named '{tool_name}' was invoked by a model, but was not available."
@@ -626,16 +624,15 @@ class LiteLlmAdapter(BaseAdapter):
                     f"Failed to parse arguments for tool '{tool_name}' (should be JSON): {tool_call.function.arguments}"
                 )
             try:
-                json_schema = json.dumps(
-                    tool.toolcall_definition()["function"]["parameters"]
-                )
+                tool_call_definition = await tool.toolcall_definition()
+                json_schema = json.dumps(tool_call_definition["function"]["parameters"])
                 validate_schema_with_value_error(parsed_args, json_schema)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
                 ) from e
 
-            result = tool.run(**parsed_args)
+            result = await tool.run(**parsed_args)
 
             tool_call_response_messages.append(
                 ChatCompletionToolMessageParam(

@@ -12,27 +12,27 @@ class KilnToolInterface(ABC):
     """
 
     @abstractmethod
-    def run(self, **kwargs) -> Any:
+    async def run(self, **kwargs) -> Any:
         """Execute the tool with the given parameters."""
         pass
 
     @abstractmethod
-    def toolcall_definition(self) -> Dict[str, Any]:
+    async def toolcall_definition(self) -> Dict[str, Any]:
         """Return the OpenAI-compatible tool definition for this tool."""
         pass
 
     @abstractmethod
-    def id(self) -> KilnBuiltInToolId:
+    async def id(self) -> KilnBuiltInToolId:
         """Return a unique identifier for this tool."""
         pass
 
     @abstractmethod
-    def name(self) -> str:
+    async def name(self) -> str:
         """Return the tool name (function name) of this tool."""
         pass
 
     @abstractmethod
-    def description(self) -> str:
+    async def description(self) -> str:
         """Return a description of what this tool does."""
         pass
 
@@ -56,27 +56,27 @@ class KilnTool(KilnToolInterface):
         validate_schema_dict(parameters_schema)
         self._parameters_schema = parameters_schema
 
-    def id(self) -> str:
+    async def id(self) -> str:
         return self._id
 
-    def name(self) -> str:
+    async def name(self) -> str:
         return self._name
 
-    def description(self) -> str:
+    async def description(self) -> str:
         return self._description
 
-    def toolcall_definition(self) -> Dict[str, Any]:
+    async def toolcall_definition(self) -> Dict[str, Any]:
         """Generate OpenAI-compatible tool definition."""
         return {
             "type": "function",
             "function": {
-                "name": self.name(),
-                "description": self.description(),
+                "name": await self.name(),
+                "description": await self.description(),
                 "parameters": self._parameters_schema,
             },
         }
 
     @abstractmethod
-    def run(self, **kwargs) -> str:
+    async def run(self, **kwargs) -> str:
         """Subclasses must implement the actual tool logic."""
         pass
