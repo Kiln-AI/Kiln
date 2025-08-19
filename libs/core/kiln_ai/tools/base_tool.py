@@ -45,7 +45,7 @@ class KilnTool(KilnToolInterface):
 
     def __init__(
         self,
-        tool_id: str,
+        tool_id: KilnBuiltInToolId,
         name: str,
         description: str,
         parameters_schema: Dict[str, Any],
@@ -56,7 +56,7 @@ class KilnTool(KilnToolInterface):
         validate_schema_dict(parameters_schema)
         self._parameters_schema = parameters_schema
 
-    async def id(self) -> str:
+    async def id(self) -> KilnBuiltInToolId:
         return self._id
 
     async def name(self) -> str:
