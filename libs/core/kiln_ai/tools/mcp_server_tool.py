@@ -1,45 +1,66 @@
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-from mcp.types import CallToolResult, Tool
+import asyncio
 
-from kiln_ai.datamodel.basemodel import ID_FIELD
+from mcp.types import CallToolResult, TextContent, Tool
+
+from kiln_ai.datamodel.external_tool import ExternalToolServer
 from kiln_ai.tools.base_tool import KilnTool
-from kiln_ai.tools.mcp_server import MCPServer
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
 class MCPServerTool(KilnTool):
-    def __init__(self, server: MCPServer, tool: Tool):
-        self._server = server
-        self._tool = tool
+    def __init__(self, model: ExternalToolServer, name: str):
+        self._tool_server_model = model
+        self._name = name
+        self._tool: Tool | None = None
+
+        #  Some properties are not available until the tool is loaded asynchronously
         super().__init__(
-            tool_id=str(ID_FIELD),
-            name=tool.name,
-            description=tool.description or "No description provided",
-            parameters_schema=tool.inputSchema,
+            tool_id=f"mcp::remote::{model.id}::{name}",
+            name=name,
+            description="Not Loaded",
+            parameters_schema={
+                "type": "object",
+                "properties": {},
+            },  # empty object for now, our JSON schema validation will fail if properties are missing
         )
 
     def run(self, **kwargs) -> str:
-        return "Hello, world!"
+        result = asyncio.run(self._call_tool(**kwargs))
+        if not result.content:
+            return ""
 
-    async def call_tool(self, **kwargs) -> CallToolResult:
-        server_url = self._server._tool_server.properties.get("server_url")
-        if not server_url:
-            raise ValueError("server_url is required")
+        # raise error if the first block is not a text block
+        if not isinstance(result.content[0], TextContent):
+            raise ValueError("First block must be a text block")
 
-        headers = self._server._tool_server.properties.get("headers", {})
-        async with streamablehttp_client(server_url, headers=headers) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            # Create a session using the client streams
-            async with ClientSession(read_stream, write_stream) as session:
-                # Initialize the connection
-                await session.initialize()
+        content: TextContent = result.content[0]
+        return str(content.text)
 
-                print(f"Calling tool: {self.name()} with kwargs: {kwargs}")
-                result = await session.call_tool(
-                    name=self.name(),
-                    arguments=kwargs,
-                )
-                return result
+    #  Call the MCP Tool
+    async def _call_tool(self, **kwargs) -> CallToolResult:
+        async with MCPSessionManager.shared().mcp_client(
+            self._tool_server_model
+        ) as session:
+            result = await session.call_tool(
+                name=self.name(),
+                arguments=kwargs,
+            )
+            return result
+
+    async def _load_tool_properties(self):
+        tool = await self._get_tool(self._name)
+        self._tool = tool
+        self._description = tool.description or "N/A"
+        self._parameters_schema = tool.inputSchema or {}
+
+    #  Get the MCP Tool from the server
+    async def _get_tool(self, tool_name: str) -> Tool:
+        async with MCPSessionManager.shared().mcp_client(
+            self._tool_server_model
+        ) as session:
+            tools = await session.list_tools()
+
+        tool = next((tool for tool in tools.tools if tool.name == tool_name), None)
+        if tool is None:
+            raise ValueError(f"Tool {tool_name} not found")
+        return tool
