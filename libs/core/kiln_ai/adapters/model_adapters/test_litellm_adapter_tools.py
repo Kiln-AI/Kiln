@@ -95,6 +95,28 @@ async def run_simple_task_with_tools(
             assert add_kwargs.get("b") == 2
 
             assert "4" in run.output.output
+
+            trace = run.trace
+            assert trace is not None
+            assert len(trace) == 5
+            assert trace[0]["role"] == "system"
+            assert trace[1]["role"] == "user"
+            assert trace[2]["role"] == "assistant"
+            assert trace[3]["role"] == "tool"
+            assert trace[3]["content"] == "4"
+            assert trace[3]["tool_call_id"] is not None
+            assert trace[4]["role"] == "assistant"
+            assert "[4]" in trace[4]["content"]  # type: ignore
+
+            # Deep dive on tool_calls, which we build ourselves
+            tool_calls = trace[2].get("tool_calls", None)
+            assert tool_calls is not None
+            assert len(tool_calls) == 1
+            assert tool_calls[0]["id"]  # not None or empty
+            assert tool_calls[0]["function"]["name"] == "add"
+            json_args = json.loads(tool_calls[0]["function"]["arguments"])
+            assert json_args["a"] == 2
+            assert json_args["b"] == 2
         else:
             run = await adapter.invoke(
                 "You should answer the following question: four plus six times 10"
@@ -128,6 +150,20 @@ async def run_simple_task_with_tools(
                 == "You should answer the following question: four plus six times 10"
             )
             assert "64" in run.output.output
+
+            trace = run.trace
+            assert trace is not None
+            assert len(trace) == 7
+            assert trace[0]["role"] == "system"
+            assert trace[1]["role"] == "user"
+            assert trace[2]["role"] == "assistant"
+            assert trace[3]["role"] == "tool"
+            assert trace[3]["content"] == "60"
+            assert trace[4]["role"] == "assistant"
+            assert trace[5]["role"] == "tool"
+            assert trace[5]["content"] == "64"
+            assert trace[6]["role"] == "assistant"
+            assert "[64]" in trace[6]["content"]  # type: ignore
 
         assert run.id is not None
         source_props = run.output.source.properties if run.output.source else {}
@@ -181,6 +217,74 @@ async def test_tools_all_built_in_models(tmp_path, model_name, provider_name):
     task = build_test_task(tmp_path)
     # For the test of all models run the simplified test, we're checking if it can handle any tool calls, not getting fancy with it
     await run_simple_task_with_tools(task, model_name, provider_name, simplified=True)
+
+
+async def test_tools_simplied_mocked(tmp_path):
+    task = build_test_task(tmp_path)
+
+    # Usage should add up, not just return the last one.
+    usage = LiteLlmUsage(
+        prompt_tokens=10,
+        completion_tokens=20,
+        total_tokens=30,
+        cost=0.5,
+    )
+
+    # Mock 2 responses using tool calls adding 2+2
+    # First response: requests add tool call for 2+2
+    # Second response: final answer: 4
+    # this should trigger proper asserts in the run_simple_task_with_tools function
+
+    # First response: requests add tool call
+    mock_response_1 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "tool_call_add",
+                            "type": "function",
+                            "function": {
+                                "name": "add",
+                                "arguments": '{"a": 2, "b": 2}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        usage=usage,
+    )
+
+    # Second response: final answer
+    mock_response_2 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{"message": {"content": "The answer is [4]", "tool_calls": None}}],
+        usage=usage,
+    )
+
+    # Mock the Config.shared() method to return a mock config with required attributes
+    mock_config = Mock()
+    mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.user_id = "test_user"
+
+    with (
+        patch(
+            "litellm.acompletion",
+            side_effect=[mock_response_1, mock_response_2],
+        ),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
+    ):
+        task_run = await run_simple_task_with_tools(
+            task, "gpt_4_1_mini", ModelProviderName.openai, simplified=True
+        )
+        assert task_run.usage is not None
+        assert task_run.usage.input_tokens == 20
+        assert task_run.usage.output_tokens == 40
+        assert task_run.usage.total_tokens == 60
+        assert task_run.usage.cost == 1.0
 
 
 async def test_tools_mocked(tmp_path):
@@ -753,7 +857,6 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
     assert tool_messages[0] == {
         "role": "tool",
         "tool_call_id": "call_1",
-        "name": "add",
         "content": "5",
     }
 
@@ -788,9 +891,9 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
 
     assert assistant_output is None
     assert len(tool_messages) == 2
-    assert tool_messages[0]["name"] == "add"
+    assert tool_messages[0]["tool_call_id"] == "call_1"
     assert tool_messages[0]["content"] == "5"
-    assert tool_messages[1]["name"] == "multiply"
+    assert tool_messages[1]["tool_call_id"] == "call_2"
     assert tool_messages[1]["content"] == "6"
 
 
