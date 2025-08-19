@@ -1,12 +1,16 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { RagConfigWithSubConfigs } from "$lib/types"
+  import type { ChunkerType, RagConfigWithSubConfigs } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
+  import {
+    chunker_type_format,
+    extractor_output_format,
+    formatDate,
+  } from "$lib/utils/formatters"
   import {
     embedding_model_name,
     load_available_embedding_models,
@@ -54,6 +58,20 @@
       rag_config = rag_config_data
     } finally {
       loading = false
+    }
+  }
+
+  function tooltip_for_chunker_type(chunker_type: ChunkerType): string {
+    const friendly_chunker_type = chunker_type_format(chunker_type)
+    switch (chunker_type) {
+      case "fixed_window":
+        return `The ${friendly_chunker_type} chunking algorithm splits the text into fixed-size chunks of a specified number of words, while respecting sentence boundaries.`
+      default: {
+        // trigger a type error if there is a new output format, but don't handle it
+        // in the switch
+        const exhaustiveCheck: never = chunker_type
+        return exhaustiveCheck
+      }
     }
   }
 </script>
@@ -138,7 +156,12 @@
             properties={[
               {
                 name: "Strategy",
-                value: rag_config.chunker_config.chunker_type || "N/A",
+                value:
+                  chunker_type_format(rag_config.chunker_config.chunker_type) ||
+                  "N/A",
+                tooltip: tooltip_for_chunker_type(
+                  rag_config.chunker_config.chunker_type,
+                ),
               },
               {
                 name: "Chunk Size",

@@ -51,6 +51,7 @@ export type EmbeddingModelDetails =
 export type EmbeddingProvider = components["schemas"]["EmbeddingProvider"]
 export type EmbeddingModelName = components["schemas"]["EmbeddingModelName"]
 export type ChunkerConfig = components["schemas"]["ChunkerConfig"]
+export type ChunkerType = components["schemas"]["ChunkerType"]
 export type ModelProviderName = components["schemas"]["ModelProviderName"]
 export type RagProgress = components["schemas"]["RagProgress"]
 export type RagConfigWithSubConfigs =
