@@ -108,20 +108,14 @@ async def run_simple_task_with_tools(
             assert trace[4]["role"] == "assistant"
             assert "[4]" in trace[4]["content"]  # type: ignore
 
-            # Bug in pydantic doesn't allow direct access to tool_calls since it's Iterable: https://github.com/pydantic/pydantic/issues/9541
-            # Jump through some hoops to verify the tool call is correct
-            assert run.path is not None
-            file_content = run.path.read_text()
-            json_content = json.loads(file_content)
-            json_trace = json_content.get("trace", None)
-            assert json_trace is not None
-            tool_calls = json_trace[2].get("tool_calls", None)
+            trace = run.trace
+            assert trace is not None
+            tool_calls = trace[2].get("tool_calls", None)
             assert tool_calls is not None
-            tool_list = list(tool_calls)
-            assert len(tool_list) == 1
-            assert tool_list[0]["id"] is not None
-            assert tool_list[0]["function"]["name"] == "add"
-            json_args = json.loads(tool_list[0]["function"]["arguments"])
+            assert len(tool_calls) == 1
+            assert tool_calls[0]["id"] is not None
+            assert tool_calls[0]["function"]["name"] == "add"
+            json_args = json.loads(tool_calls[0]["function"]["arguments"])
             assert json_args["a"] == 2
             assert json_args["b"] == 2
         else:

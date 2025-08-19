@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from typing import Dict
 
 from litellm.types.utils import ChoiceLogprobs
-from openai.types.chat import ChatCompletionMessageParam
+
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 @dataclass

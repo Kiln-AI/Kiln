@@ -1,7 +1,6 @@
 import json
 from typing import TYPE_CHECKING, Dict, List, Union
 
-from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
@@ -9,6 +8,7 @@ from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task

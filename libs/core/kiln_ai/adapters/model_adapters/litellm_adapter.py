@@ -12,8 +12,6 @@ from litellm.types.utils import (
 )
 from litellm.types.utils import Usage as LiteLlmUsage
 from openai.types.chat import (
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionMessageParam,
     ChatCompletionToolMessageParam,
 )
 from openai.types.chat.chat_completion_message_tool_call_param import (
@@ -36,6 +34,10 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionAssistantMessageParamWrapper,
+    ChatCompletionMessageParam,
+)
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 30
@@ -657,7 +659,7 @@ class LiteLlmAdapter(BaseAdapter):
         self, response_choice: Choices
     ) -> tuple[
         str | None,
-        ChatCompletionAssistantMessageParam,
+        ChatCompletionAssistantMessageParamWrapper,
         List[ChatCompletionMessageToolCall] | None,
     ]:
         """
@@ -690,7 +692,7 @@ class LiteLlmAdapter(BaseAdapter):
                         )
                     )
 
-        message: ChatCompletionAssistantMessageParam = {
+        message: ChatCompletionAssistantMessageParamWrapper = {
             "role": "assistant",
             "content": content,
         }

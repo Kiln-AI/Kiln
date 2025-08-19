@@ -3,8 +3,6 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-from openai.types.chat import ChatCompletionMessageParam
-
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -31,6 +29,7 @@ from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 @dataclass
