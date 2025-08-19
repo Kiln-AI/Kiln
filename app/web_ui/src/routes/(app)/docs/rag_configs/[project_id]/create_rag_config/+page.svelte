@@ -116,11 +116,23 @@
           {
             label: "Chunkers",
             options: chunker_configs.map((config) => ({
-              label: `Size: ${config.properties?.chunk_size} tokens - Overlap: ${config.properties?.chunk_overlap} tokens`,
+              // Build label only from defined properties
+              label: [
+                config.properties?.chunk_size !== null &&
+                config.properties.chunk_size !== undefined
+                  ? `Size: ${config.properties.chunk_size} words`
+                  : null,
+                config.properties?.chunk_overlap !== null &&
+                config.properties.chunk_overlap !== undefined
+                  ? `Overlap: ${config.properties.chunk_overlap} words`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" - "),
               value: config.id,
               description:
                 config.name +
-                (config.description ? " - " + config.description : ""),
+                (config.description ? ` - ${config.description}` : ""),
             })),
           },
         ]
