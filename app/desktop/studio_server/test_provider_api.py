@@ -419,6 +419,7 @@ async def test_get_available_models(app, client):
                     "task_filter": None,
                     "untested_model": False,
                     "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                 }
@@ -442,6 +443,7 @@ async def test_get_available_models(app, client):
                     "suggested_for_evals": False,
                     "uncensored": False,
                     "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                 },
@@ -465,6 +467,7 @@ async def test_get_available_models(app, client):
                     "suggested_for_evals": True,
                     "uncensored": True,
                     "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                 }
@@ -538,6 +541,7 @@ async def test_get_available_models_ollama_exception(app, client):
                     "suggested_for_evals": False,
                     "uncensored": False,
                     "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                 }
@@ -1291,6 +1295,7 @@ def test_openai_compatible_providers():
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode="json_instructions",
                             supports_doc_extraction=False,
+                            suggested_for_doc_extraction=False,
                             multimodal_capable=False,
                             multimodal_mime_types=None,
                         )
@@ -2360,6 +2365,7 @@ async def test_get_embedding_providers(app, client):
                     n_dimensions=1536,
                     max_input_tokens=8192,
                     supports_custom_dimensions=True,
+                    suggested_for_chunk_embedding=True,
                 )
             ],
         ),
@@ -2378,6 +2384,7 @@ async def test_get_embedding_providers(app, client):
                     model_id="gemini1",
                     n_dimensions=1536,
                     max_input_tokens=8192,
+                    suggested_for_chunk_embedding=True,
                 ),
             ],
         ),
@@ -2411,6 +2418,7 @@ async def test_get_embedding_providers(app, client):
                     "n_dimensions": 1536,
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": True,
+                    "suggested_for_chunk_embedding": True,
                 }
             ],
         },
@@ -2424,6 +2432,7 @@ async def test_get_embedding_providers(app, client):
                     "n_dimensions": 1536,
                     "max_input_tokens": None,
                     "supports_custom_dimensions": False,
+                    "suggested_for_chunk_embedding": False,
                 }
             ],
         },
@@ -2437,6 +2446,7 @@ async def test_get_embedding_providers(app, client):
                     "n_dimensions": 1536,
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": False,
+                    "suggested_for_chunk_embedding": True,
                 }
             ],
         },

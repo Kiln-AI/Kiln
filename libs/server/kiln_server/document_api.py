@@ -1023,6 +1023,17 @@ def connect_document_api(app: FastAPI):
                 detail=f"Model {request.model_name} not found in {request.model_provider_name}",
             )
 
+        if "dimensions" in request.properties:
+            if (
+                not isinstance(request.properties["dimensions"], int)
+                or request.properties["dimensions"] <= 0
+                or request.properties["dimensions"] > model.n_dimensions
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Dimensions must be a positive integer and less than the model's dimensions",
+                )
+
         embedding_config = EmbeddingConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),

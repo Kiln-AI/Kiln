@@ -52,12 +52,12 @@ function createRagProgressStore() {
   })
 
   function has_errors(rag_config_id: string): boolean {
-    const state = get(ragProgressStore)
-    const progress = state.progress[rag_config_id]
+    const progress = get(ragProgressStore).progress[rag_config_id]
+    if (!progress) return false
     return (
-      progress.total_document_extracted_error_count > 0 ||
-      progress.total_document_chunked_error_count > 0 ||
-      progress.total_document_embedded_error_count > 0
+      (progress.total_document_extracted_error_count ?? 0) > 0 ||
+      (progress.total_document_chunked_error_count ?? 0) > 0 ||
+      (progress.total_document_embedded_error_count ?? 0) > 0
     )
   }
 
@@ -164,6 +164,10 @@ function createRagProgressStore() {
         update((state) => ({
           ...state,
           status: { ...state.status, [rag_config_id]: "completed_with_errors" },
+          running_rag_configs: {
+            ...state.running_rag_configs,
+            [rag_config_id]: false,
+          },
           logs: {
             ...state.logs,
             [rag_config_id]: [
@@ -183,7 +187,7 @@ function createRagProgressStore() {
             title: "Processing Documents",
             body: "",
             link: `/docs/rag_configs/${project_id}`,
-            cta: "View Progress",
+            cta: "View Errors",
             progress: 100,
             step_count: null,
             current_step: null,
@@ -198,6 +202,10 @@ function createRagProgressStore() {
       update((state) => ({
         ...state,
         status: { ...state.status, [rag_config_id]: "completed_with_errors" },
+        running_rag_configs: {
+          ...state.running_rag_configs,
+          [rag_config_id]: false,
+        },
         logs: {
           ...state.logs,
           [rag_config_id]: [
@@ -209,6 +217,17 @@ function createRagProgressStore() {
           ],
         },
       }))
+      if (get(ragProgressStore).last_started_rag_config_id === rag_config_id) {
+        progress_ui_state.set({
+          title: "Processing Documents",
+          body: "",
+          link: `/docs/rag_configs/${project_id}`,
+          cta: "View Errors",
+          progress: 100,
+          step_count: null,
+          current_step: null,
+        })
+      }
     }
 
     return true
@@ -229,10 +248,6 @@ function createRagProgressStore() {
         error: null,
         last_started_rag_config_id: null,
       }),
-    get_status: (ragConfigId: string): RagConfigurationStatus => {
-      const state = get(ragProgressStore)
-      return state.status[ragConfigId] || "not_started"
-    },
   }
 }
 

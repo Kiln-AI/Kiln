@@ -23,6 +23,8 @@
     load_available_embedding_models,
     provider_name_from_id,
   } from "$lib/stores"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import { extractor_output_format } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
 
@@ -63,16 +65,18 @@
     modal_opened = null
   }
 
+  function extractor_label(extractor: ExtractorConfig) {
+    return `${get_model_friendly_name(extractor.model_name)} (${provider_name_from_id(extractor.model_provider_name)}) - ${extractor_output_format(extractor.output_format)}`
+  }
+
   // Convert configs to option groups for fancy select
   $: extractor_options = [
     {
-      label: "Actions",
       options: [
         {
-          label: "Create New Extractor",
+          label: "New Extractor Configuration",
           value: "create_new",
-          description: "Create a new extractor configuration",
-          badge: "Create",
+          badge: "New",
           badge_color: "primary",
         },
       ],
@@ -85,7 +89,7 @@
             options: extractor_configs
               .filter((config) => !config.is_archived)
               .map((config) => ({
-                label: `${get_model_friendly_name(config.model_name)} (${provider_name_from_id(config.model_provider_name)}) - ${config.output_format}`,
+                label: extractor_label(config),
                 value: config.id,
                 description:
                   config.name +
@@ -98,13 +102,11 @@
 
   $: chunker_options = [
     {
-      label: "Actions",
       options: [
         {
-          label: "Create New Chunker",
+          label: "New Chunker Configuration",
           value: "create_new",
-          description: "Create a new chunker configuration",
-          badge: "Create",
+          badge: "New",
           badge_color: "primary",
         },
       ],
@@ -114,11 +116,23 @@
           {
             label: "Chunkers",
             options: chunker_configs.map((config) => ({
-              label: `Size: ${config.properties?.chunk_size} tokens - Overlap: ${config.properties?.chunk_overlap} tokens`,
+              // Build label only from defined properties
+              label: [
+                config.properties?.chunk_size !== null &&
+                config.properties.chunk_size !== undefined
+                  ? `Size: ${config.properties.chunk_size} words`
+                  : null,
+                config.properties?.chunk_overlap !== null &&
+                config.properties.chunk_overlap !== undefined
+                  ? `Overlap: ${config.properties.chunk_overlap} words`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" - "),
               value: config.id,
               description:
                 config.name +
-                (config.description ? " - " + config.description : ""),
+                (config.description ? ` - ${config.description}` : ""),
             })),
           },
         ]
@@ -127,13 +141,11 @@
 
   $: embedding_options = [
     {
-      label: "Actions",
       options: [
         {
-          label: "Create New Embedding Model",
+          label: "New Embedding Configuration",
           value: "create_new",
-          description: "Create a new embedding configuration",
-          badge: "Create",
+          badge: "New",
           badge_color: "primary",
         },
       ],
@@ -337,8 +349,8 @@
 </script>
 
 <AppPage
-  title="Create RAG Configuration"
-  subtitle="A configuration for extracting, chunking, and embedding your documents."
+  title="Create Search Tool (RAG)"
+  subtitle="A configuration for searching your docs, including extracting, chunking and embeddings."
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -348,7 +360,7 @@
     <div class="max-w-[900px]">
       <FormContainer
         submit_visible={true}
-        submit_label="Create RAG Configuration"
+        submit_label="Create Search Tool"
         on:submit={create_rag_config}
         {error}
         gap={4}
@@ -367,7 +379,8 @@
               <FormElement
                 id="extractor_select"
                 label="Extractor"
-                description="Choose an extractor to convert your documents into text."
+                description="Extractors convert your documents into text."
+                info_description="Documents like PDFs, images and videos need to be converted into text so they can be searched and read by models."
                 fancy_select_options={extractor_options}
                 bind:value={selected_extractor_config_id}
                 inputType="fancy_select"
@@ -386,7 +399,8 @@
               <FormElement
                 id="chunker_select"
                 label="Chunker"
-                description="Choose a chunker to split your documents into smaller pieces for better retrieval."
+                description="Split your documents into smaller chunks for search."
+                info_description="Splitting long documents into smaller chunks allows search to find relevant information."
                 fancy_select_options={chunker_options}
                 bind:value={selected_chunker_config_id}
                 inputType="fancy_select"
@@ -405,7 +419,8 @@
               <FormElement
                 id="embedding_select"
                 label="Embedding Model"
-                description="Choose an embedding model to convert your document chunks into vectors for similarity search."
+                description="Embedding models convert your document chunks into vectors for similarity search."
+                info_description="Embedding models are a type of AI model which create searchable vectors from your chunks."
                 fancy_select_options={embedding_options}
                 bind:value={selected_embedding_config_id}
                 inputType="fancy_select"
@@ -415,30 +430,24 @@
         </div>
 
         <!-- Advanced -->
-        <div class="mt-6">
-          <div class="collapse collapse-arrow bg-base-200">
-            <input type="checkbox" class="peer" />
-            <div class="collapse-title font-medium">Advanced Options</div>
-            <div class="collapse-content flex flex-col gap-4">
-              <FormElement
-                label="Configuration Name"
-                description="Leave blank and we'll generate one for you."
-                optional={true}
-                inputType="input"
-                id="rag_config_name"
-                bind:value={name}
-              />
-              <FormElement
-                label="Description"
-                description="A description of the RAG configuration for you and your team. This will have no effect on the configuration's behavior."
-                optional={true}
-                inputType="textarea"
-                id="rag_config_description"
-                bind:value={description}
-              />
-            </div>
-          </div>
-        </div>
+        <Collapse title="Advanced Options">
+          <FormElement
+            label="Search Tool Name"
+            description="A name to identify this tool. Leave blank and we'll generate one for you."
+            optional={true}
+            inputType="input"
+            id="rag_config_name"
+            bind:value={name}
+          />
+          <FormElement
+            label="Description"
+            description="A description of the search tool for your reference."
+            optional={true}
+            inputType="textarea"
+            id="rag_config_description"
+            bind:value={description}
+          />
+        </Collapse>
       </FormContainer>
     </div>
   {/if}
@@ -447,6 +456,7 @@
 <Dialog
   bind:this={show_create_extractor_dialog}
   title="Create Extractor"
+  subtitle="Extractors are used to convert your documents into text."
   width="wide"
   on:close={() => {
     handle_modal_close()
@@ -455,10 +465,6 @@
     }
   }}
 >
-  <div class="font-light text-sm mb-4">
-    Extractors are used to convert your documents into text.
-  </div>
-
   <CreateExtractorForm
     keyboard_submit={modal_opened === "extractor"}
     on:success={async (e) => {
@@ -471,6 +477,7 @@
 <Dialog
   bind:this={show_create_chunker_dialog}
   title="Create Chunker"
+  subtitle="Split the text from your documents into smaller chunks for search."
   width="wide"
   on:close={() => {
     handle_modal_close()
@@ -479,11 +486,6 @@
     }
   }}
 >
-  <div class="font-light text-sm">
-    Chunkers are used to split your documents into smaller pieces for better
-    retrieval.
-  </div>
-
   <CreateChunkerForm
     keyboard_submit={modal_opened === "chunker"}
     on:success={async (e) => {
@@ -496,6 +498,7 @@
 <Dialog
   bind:this={show_create_embedding_dialog}
   title="Create Embedding Configuration"
+  subtitle="Convert text chunks into vectors for similarity search."
   width="normal"
   on:close={() => {
     handle_modal_close()
@@ -504,11 +507,6 @@
     }
   }}
 >
-  <div class="font-light text-sm mb-4">
-    Embedding models are used to convert your document chunks into vectors for
-    similarity search.
-  </div>
-
   <CreateEmbeddingForm
     keyboard_submit={modal_opened === "embedding"}
     on:success={async (e) => {

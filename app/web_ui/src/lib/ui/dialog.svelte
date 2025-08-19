@@ -5,6 +5,9 @@
   const dispatch = createEventDispatcher()
 
   export let title: string
+  export let subtitle: string | null = null
+  export let sub_subtitle: string | null = null
+  export let sub_subtitle_link: string | null = null
   export let blur_background: boolean = false
   export let width: "normal" | "wide" | "extra-wide" = "normal"
   const id: string = "dialog-" + Math.random().toString(36)
@@ -78,99 +81,132 @@
   >
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
-    <div class="flex flex-row gap-2 items-center mb-1">
-      <h3 class="grow text-lg font-medium">
-        {title}
-      </h3>
-      {#each header_buttons as button}
-        <button
-          class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
-          on:click={button.action}
-        >
-          <img
-            class="h-6 w-6 mb-[1px]"
-            src={button.image_path}
-            alt={button.alt_text}
-          />
-        </button>
-      {/each}
-      <form method="dialog">
-        <button
-          class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
-        >
-          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-          <svg
-            class="h-6 w-6"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <g clip-path="url(#clip0_429_11083)">
-              <path
-                d="M7 7.00006L17 17.0001M7 17.0001L17 7.00006"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </g>
-            <defs>
-              <clipPath id="clip0_429_11083">
-                <rect width="24" height="24" fill="white" />
-              </clipPath>
-            </defs>
-          </svg>
-        </button>
-      </form>
-    </div>
-    {#if action_running}
-      <div class="flex flex-col items-center justify-center min-h-[100px]">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
-    {:else if error}
-      <div class="text-error text-sm font-medium">
-        {error.getMessage() || "An unknown error occurred"}
-      </div>
-    {:else}
-      <slot />
-    {/if}
-
-    {#if error || (action_buttons.length > 0 && !action_running)}
-      <div class="flex flex-row gap-2 justify-end mt-6">
-        {#if error}
-          <form method="dialog">
-            <button class="btn btn-sm h-10 btn-outline min-w-24">Close</button>
-          </form>
-        {:else}
-          {#each action_buttons as button}
-            {#if button.hide}
-              <!-- do nothing -->
-            {:else if button.isCancel}
-              <form method="dialog">
-                <button class="btn btn-sm h-10 btn-outline min-w-24"
-                  >{button.label || "Cancel"}</button
-                >
-              </form>
-            {:else}
-              <button
-                class="btn btn-sm h-10 min-w-24 {button.isPrimary
-                  ? 'btn-primary'
-                  : ''}
-                  {button.isError ? 'btn-error' : ''}
-                  {button.isWarning ? 'btn-warning' : ''}"
-                disabled={button.disabled || button.loading}
-                on:click={() => perform_button_action(button)}
+    <div class="flex flex-row gap-2 items-start">
+      <div class="grow flex flex-col">
+        <h3 class="text-lg font-medium">
+          {title}
+        </h3>
+        {#if subtitle}
+          <p class="text-base font-medium mt-1">{subtitle}</p>
+        {/if}
+        {#if sub_subtitle}
+          {#if sub_subtitle_link}
+            <p class="text-sm font-light mt-1">
+              <a
+                href={sub_subtitle_link}
+                class="link"
+                target="_blank"
+                rel="noopener noreferrer"
               >
-                {#if button.loading}
-                  <div class="loading loading-spinner loading-sm"></div>
-                {/if}
-                {button.label || "Confirm"}
-              </button>
-            {/if}
-          {/each}
+                {sub_subtitle}
+              </a>
+            </p>
+          {:else}
+            <p class="text-sm font-light mt-1">{sub_subtitle}</p>
+          {/if}
         {/if}
       </div>
-    {/if}
+      <div class="flex flex-row gap-2 items-center">
+        {#each header_buttons as button}
+          <button
+            class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
+            on:click={button.action}
+            aria-label="Close dialog"
+          >
+            <img
+              class="h-6 w-6 mb-[1px]"
+              src={button.image_path}
+              alt={button.alt_text}
+              aria-hidden="true"
+            />
+          </button>
+        {/each}
+
+        <form method="dialog">
+          <button
+            class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
+            aria-label="Close dialog"
+          >
+            <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+            <svg
+              class="h-6 w-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <g clip-path="url(#clip0_429_11083)">
+                <path
+                  d="M7 7.00006L17 17.0001M7 17.0001L17 7.00006"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </g>
+              <defs>
+                <clipPath id="clip0_429_11083">
+                  <rect width="24" height="24" fill="white" />
+                </clipPath>
+              </defs>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="mt-4">
+      {#if action_running}
+        <div class="flex flex-col items-center justify-center min-h-[100px]">
+          <div class="loading loading-spinner loading-lg"></div>
+        </div>
+      {:else if error}
+        <div class="text-error text-sm font-medium">
+          {error.getMessage() || "An unknown error occurred"}
+        </div>
+      {:else}
+        <slot />
+      {/if}
+
+      {#if error || (action_buttons.length > 0 && !action_running)}
+        <div class="flex flex-row gap-2 justify-end mt-6">
+          {#if error}
+            <form method="dialog">
+              <button class="btn btn-sm h-10 btn-outline min-w-24">Close</button
+              >
+            </form>
+          {:else}
+            {#each action_buttons as button}
+              {#if button.hide}
+                <!-- do nothing -->
+              {:else if button.isCancel}
+                <form method="dialog">
+                  <button class="btn btn-sm h-10 btn-outline min-w-24"
+                    >{button.label || "Cancel"}</button
+                  >
+                </form>
+              {:else}
+                <button
+                  class="btn btn-sm h-10 min-w-24 {button.isPrimary
+                    ? 'btn-primary'
+                    : ''}
+                  {button.isError ? 'btn-error' : ''}
+                  {button.isWarning ? 'btn-warning' : ''}"
+                  disabled={button.disabled || button.loading}
+                  on:click={() => perform_button_action(button)}
+                >
+                  {#if button.loading}
+                    <div class="loading loading-spinner loading-sm"></div>
+                  {/if}
+                  {button.label || "Confirm"}
+                </button>
+              {/if}
+            {/each}
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
   <form
     method="dialog"

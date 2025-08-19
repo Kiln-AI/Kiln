@@ -1,5 +1,9 @@
 <script lang="ts">
-  import type { LogMessage, RagProgress } from "$lib/types"
+  import type {
+    LogMessage,
+    RagConfigWithSubConfigs,
+    RagProgress,
+  } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import Checkmark from "$lib/ui/checkmark.svelte"
@@ -7,10 +11,10 @@
   export let dialog: Dialog | null = null
   export let project_id: string
   export let rag_config_id: string
+  export let rag_config: RagConfigWithSubConfigs
 
   $: config_progress = $ragProgressStore.progress[rag_config_id] || null
   $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
-  $: rag_config = $ragProgressStore.rag_configs[rag_config_id] || null
 
   let log_container: HTMLPreElement
   $: log_messages = $ragProgressStore.logs[rag_config_id] || []
@@ -170,7 +174,8 @@
 </script>
 
 <Dialog
-  title={`Run RAG Configuration: ${rag_config?.name || "Unknown"}`}
+  title="Processing Status"
+  subtitle={`Name: ${rag_config.name}`}
   width="wide"
   bind:this={dialog}
   action_buttons={[
@@ -209,7 +214,7 @@
               ? 'bg-success/10 text-success'
               : completed_pct > 0
                 ? 'bg-warning/10 text-warning'
-                : 'bg-base-200 text-base-content/60'}"
+                : 'bg-base-200 text-gray-500'}"
           >
             {#if completed_pct === 100}
               <Checkmark classOverride="w-4 h-4" />
@@ -227,7 +232,7 @@
               <span class="text-xs font-medium">Ready to start</span>
             {/if}
           </div>
-          <div class="mt-2 text-xs text-base-content/60">
+          <div class="mt-2 text-xs text-gray-500">
             {config_progress?.total_document_completed_count || 0} of
             {config_progress?.total_document_count || 0} documents
           </div>
@@ -249,7 +254,7 @@
               ? 'bg-primary/10 text-primary'
               : is_running
                 ? 'bg-warning/10 text-warning'
-                : 'bg-base-200 text-base-content/50'}"
+                : 'bg-base-200 text-gray-500'}"
           >
             {#if is_step_completed(step.name, config_progress)}
               <Checkmark classOverride="w-4 h-4" />
@@ -263,7 +268,7 @@
             <div class="font-medium text-sm text-base-content">
               {step.label}
             </div>
-            <div class="text-xs text-base-content/60">
+            <div class="text-xs text-gray-500">
               {step.progress} / {progress_max} documents
             </div>
           </div>
@@ -353,7 +358,7 @@
           <div class="bg-base-200 rounded">
             <pre
               bind:this={log_container}
-              class="px-2 text-xs font-mono text-base-content/80 min-h-48 max-h-48 overflow-y-auto text-left">
+              class="px-2 text-xs font-mono text-gray-500 min-h-48 max-h-48 overflow-y-auto text-left">
               {#each log_messages as log}
                 <div
                   class="text-xs font-mono {get_log_color(
