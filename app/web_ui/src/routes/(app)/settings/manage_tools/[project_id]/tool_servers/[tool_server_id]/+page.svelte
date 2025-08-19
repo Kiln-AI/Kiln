@@ -196,9 +196,9 @@
                     <td class="font-medium">{tool.name}</td>
                     <td>{tool.description || "N/A"}</td>
                     <td>
-                      {#if formatToolArguments(tool.inputSchema)}
+                      {#if formatToolArguments(tool.inputSchema || {})}
                         <ul class="list-disc list-inside">
-                          {#each formatToolArguments(tool.inputSchema).split("|||") as arg}
+                          {#each formatToolArguments(tool.inputSchema || {}).split("|||") as arg}
                             <li class="text-sm">{arg}</li>
                           {/each}
                         </ul>

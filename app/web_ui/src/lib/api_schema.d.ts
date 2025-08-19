@@ -1915,7 +1915,7 @@ export interface components {
             /** Description */
             description: string | null;
             /** Inputschema */
-            inputSchema: Record<string, never>;
+            inputSchema?: Record<string, never>;
         };
         /**
          * ExternalToolServer
