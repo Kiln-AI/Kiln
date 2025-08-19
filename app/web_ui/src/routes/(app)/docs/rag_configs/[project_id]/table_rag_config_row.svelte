@@ -123,34 +123,50 @@
     </td>
 
     <!-- Progress Section -->
-    <td class="p-4 cursor-default align-top">
-      <div class="flex flex-col gap-3">
-        <!-- Overall Progress -->
-        <div class="flex items-center justify-between">
-          <div
-            class="badge {status_to_badge_props(status)
-              .color} badge-outline text-xs font-medium"
-          >
-            {#if status === "running"}
-              <div class="loading loading-spinner loading-xs mr-2"></div>
-            {/if}
-            <span>{status_to_badge_props(status).text}</span>
+    {#if total_docs > 0}
+      <td class="p-4 cursor-default align-top">
+        <div class="flex flex-col gap-3">
+          <!-- Overall Progress -->
+          <div class="flex items-center justify-between">
+            <div
+              class="badge {status_to_badge_props(status)
+                .color} badge-outline text-xs font-medium"
+            >
+              {#if status === "running"}
+                <div class="loading loading-spinner loading-xs mr-2"></div>
+              {/if}
+              <span>{status_to_badge_props(status).text}</span>
+            </div>
+            <span class="text-sm text-base-content/60">{completed_pct}%</span>
           </div>
-          <span class="text-sm text-base-content/60">{completed_pct}%</span>
+          <progress
+            class="progress progress-primary bg-primary/20 w-full h-2"
+            value={rag_progress.total_document_completed_count || 0}
+            max={total_docs || 100}
+          ></progress>
+          {#if total_docs > 0}
+            <div class="text-xs text-base-content/50 text-start">
+              {rag_progress.total_document_completed_count || 0} of {total_docs}
+              documents processed
+            </div>
+          {/if}
         </div>
-        <progress
-          class="progress progress-primary bg-primary/20 w-full h-2"
-          value={rag_progress.total_document_completed_count || 0}
-          max={total_docs || 100}
-        ></progress>
-        {#if total_docs > 0}
+      </td>
+    {:else}
+      <td class="p-4 cursor-default align-top">
+        <div class="flex flex-col gap-3">
           <div class="text-xs text-base-content/50 text-start">
-            {rag_progress.total_document_completed_count || 0} of {total_docs} documents
-            processed
+            <p>Looks like you don't have any documents yet.</p>
+            <p>
+              <a href={`/docs/library/${project_id}`} class="link">
+                Create documents
+              </a>
+              to get started.
+            </p>
           </div>
-        {/if}
-      </div>
-    </td>
+        </div>
+      </td>
+    {/if}
 
     <!-- Actions -->
     <td class="p-4 cursor-default align-top">
