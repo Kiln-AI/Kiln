@@ -5,7 +5,6 @@
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import type { RagConfigurationStatus } from "$lib/stores/rag_progress_store"
 
-  export let btn_size: "normal" | "mid" = "mid"
   export let project_id: string
   export let rag_config: RagConfigWithSubConfigs
 
@@ -13,98 +12,82 @@
 
   let run_rag_dialog: Dialog | null = null
 
-  function get_state_to_label(status: RagConfigurationStatus) {
-    const state_to_label: Record<
-      string,
-      {
-        label: string
-        icon: "play" | "loading" | null
-        action: () => void
-        isPrimary: boolean
-      } | null
-    > = {
-      not_started: {
-        label: "Run",
-        icon: "play",
-        isPrimary: true,
-        action: () => {
-          run_rag_dialog?.show()
-        },
-      },
-      running: {
-        label: "Running",
-        icon: "loading",
-        isPrimary: false,
-        action: () => {
-          run_rag_dialog?.show()
-        },
-      },
-      completed_with_errors: {
-        label: "View Progress",
-        icon: null,
-        isPrimary: false,
-        action: () => {
-          run_rag_dialog?.show()
-        },
-      },
-      complete: {
-        label: "View Progress",
-        icon: null,
-        isPrimary: false,
-        action: () => {
-          run_rag_dialog?.show()
-        },
-      },
-      incomplete: {
-        label: "Retry",
-        icon: "play",
-        isPrimary: true,
-        action: () => {
-          run_rag_dialog?.show()
-        },
-      },
+  function status_to_btn_props(status: RagConfigurationStatus) {
+    switch (status) {
+      case "complete": {
+        return {
+          text: "Complete",
+          color: "btn-success",
+          action: () => {
+            run_rag_dialog?.show()
+          },
+        }
+      }
+      case "incomplete": {
+        return {
+          text: "Incomplete",
+          color: "btn-warning",
+          action: () => {
+            run_rag_dialog?.show()
+          },
+        }
+      }
+      case "running": {
+        return {
+          text: "Running",
+          color: "btn-neutral",
+          action: () => {
+            run_rag_dialog?.show()
+          },
+        }
+      }
+      case "completed_with_errors": {
+        return {
+          text: "Completed with errors",
+          color: "btn-error",
+          action: () => {
+            run_rag_dialog?.show()
+          },
+        }
+      }
+      default: {
+        return {
+          text: "Run",
+          color: "btn-primary",
+          action: () => {
+            run_rag_dialog?.show()
+          },
+        }
+      }
     }
-
-    return state_to_label[status]
   }
 
   $: status = $ragProgressStore.status[rag_config_id]
 
-  $: button_state = get_state_to_label(status)
+  $: btn_props = status_to_btn_props(status)
 </script>
 
-{#if button_state}
+{#if status !== "complete"}
   <button
-    class="btn {btn_size === 'mid'
-      ? 'btn-mid'
-      : ''} whitespace-nowrap {button_state?.isPrimary ? 'btn-primary' : ''}"
+    class="btn btn-sm {btn_props.color} font-medium"
     on:click={(event) => {
       event.stopPropagation()
-      button_state?.action()
+      btn_props.action()
     }}
   >
-    {#if button_state?.icon === "loading"}
-      <div class="loading loading-spinner loading-xs"></div>
-    {:else if button_state?.icon === "play"}
-      <!-- Attribution: https://www.svgrepo.com/svg/526106/play -->
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        class="w-4 h-4"
-        ><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g
-          id="SVGRepo_tracerCarrier"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        ></g><g id="SVGRepo_iconCarrier">
-          <path
-            d="M21.4086 9.35258C23.5305 10.5065 23.5305 13.4935 21.4086 14.6474L8.59662 21.6145C6.53435 22.736 4 21.2763 4 18.9671L4 5.0329C4 2.72368 6.53435 1.26402 8.59661 2.38548L21.4086 9.35258Z"
-            fill="currentColor"
-          ></path>
-        </g></svg
-      >
+    {#if status === "running"}
+      <div class="loading loading-spinner loading-xs mr-2"></div>
     {/if}
-    {button_state?.label}
+    <span>{btn_props.text}</span>
+  </button>
+{:else}
+  <button
+    class="link"
+    on:click={() => {
+      run_rag_dialog?.show()
+    }}
+  >
+    See details
   </button>
 {/if}
 

@@ -97,7 +97,6 @@
               <tr>
                 <th>Details</th>
                 <th>Status</th>
-                <th class="max-w-[250px]"></th>
               </tr>
             </thead>
             <tbody>

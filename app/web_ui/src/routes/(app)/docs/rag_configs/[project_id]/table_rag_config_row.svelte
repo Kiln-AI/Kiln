@@ -7,10 +7,7 @@
     model_name,
     provider_name_from_id,
   } from "$lib/stores"
-  import {
-    ragProgressStore,
-    type RagConfigurationStatus,
-  } from "$lib/stores/rag_progress_store"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
 
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
@@ -27,51 +24,6 @@
             100,
         )
       : 0
-
-  function status_to_badge_props(status: RagConfigurationStatus) {
-    switch (status) {
-      case "complete": {
-        return {
-          text: "Complete",
-          color: "badge-primary",
-          bg: "bg-primary/10",
-          border: "border-primary/20",
-        }
-      }
-      case "incomplete": {
-        return {
-          text: "Incomplete",
-          color: "badge-warning",
-          bg: "bg-warning/10",
-          border: "border-warning/20",
-        }
-      }
-      case "running": {
-        return {
-          text: "Running",
-          color: "badge-success",
-          bg: "bg-success/10",
-          border: "border-success/20",
-        }
-      }
-      case "completed_with_errors": {
-        return {
-          text: "Completed with errors",
-          color: "badge-error",
-          bg: "bg-error/10",
-          border: "border-error/20",
-        }
-      }
-      default: {
-        return {
-          text: "Not Started",
-          color: "badge-neutral",
-          bg: "bg-neutral/10",
-          border: "border-neutral/20",
-        }
-      }
-    }
-  }
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 </script>
@@ -124,19 +76,10 @@
 
     <!-- Progress Section -->
     {#if total_docs > 0}
-      <td class="p-4 cursor-default align-top">
+      <td class="p-4 cursor-default align-top flex flex-row gap-4">
         <div class="flex flex-col gap-3">
           <!-- Overall Progress -->
           <div class="flex items-center justify-between">
-            <div
-              class="badge {status_to_badge_props(status)
-                .color} badge-outline text-xs font-medium"
-            >
-              {#if status === "running"}
-                <div class="loading loading-spinner loading-xs mr-2"></div>
-              {/if}
-              <span>{status_to_badge_props(status).text}</span>
-            </div>
             {#if status === "running"}
               <span class="text-sm text-gray-500">{completed_pct}%</span>
             {/if}
@@ -154,6 +97,9 @@
               documents processed
             </div>
           {/if}
+          <div class="flex flex-row justify-start">
+            <RunRagControl {rag_config} {project_id} />
+          </div>
         </div>
       </td>
     {:else}
@@ -171,10 +117,5 @@
         </div>
       </td>
     {/if}
-
-    <!-- Actions -->
-    <td class="p-4 cursor-default align-top">
-      <RunRagControl {rag_config} {project_id} />
-    </td>
   </tr>
 {/if}
