@@ -692,10 +692,15 @@ class LiteLlmAdapter(BaseAdapter):
                         )
                     )
 
+        if not content and not tool_calls_param:
+            raise ValueError(
+                "Model returned an assistant message, but no content or tool calls. This is not supported."
+            )
         message: ChatCompletionAssistantMessageParamWrapper = {
             "role": "assistant",
-            "content": content,
         }
+        if content:
+            message["content"] = content
         if tool_calls_param:
             message["tool_calls"] = tool_calls_param
 
