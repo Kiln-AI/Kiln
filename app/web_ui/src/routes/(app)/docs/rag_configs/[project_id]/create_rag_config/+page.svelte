@@ -444,6 +444,7 @@
 <Dialog
   bind:this={show_create_extractor_dialog}
   title="Create Extractor"
+  subtitle="Extractors are used to convert your documents into text."
   width="wide"
   on:close={() => {
     handle_modal_close()
@@ -464,6 +465,7 @@
 <Dialog
   bind:this={show_create_chunker_dialog}
   title="Create Chunker"
+  subtitle="Split the text from your documents into smaller chunks for search."
   width="wide"
   on:close={() => {
     handle_modal_close()
@@ -484,6 +486,7 @@
 <Dialog
   bind:this={show_create_embedding_dialog}
   title="Create Embedding Configuration"
+  subtitle="Convert text chunks into vectors for similarity search."
   width="normal"
   on:close={() => {
     handle_modal_close()
