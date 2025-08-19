@@ -12,17 +12,19 @@ from kiln_ai.tools.tool_id import KilnBuiltInToolId
 class TestAddTool:
     """Test the AddTool class."""
 
-    def test_init(self):
+    async def test_init(self):
         """Test AddTool initialization."""
         tool = AddTool()
-        assert tool.id() == KilnBuiltInToolId.ADD_NUMBERS
-        assert tool.name() == "add"
-        assert tool.description() == "Add two numbers together and return the result"
+        assert await tool.id() == KilnBuiltInToolId.ADD_NUMBERS
+        assert await tool.name() == "add"
+        assert (
+            await tool.description() == "Add two numbers together and return the result"
+        )
 
-    def test_toolcall_definition(self):
+    async def test_toolcall_definition(self):
         """Test AddTool toolcall definition structure."""
         tool = AddTool()
-        definition = tool.toolcall_definition()
+        definition = await tool.toolcall_definition()
 
         assert definition["type"] == "function"
         assert definition["function"]["name"] == "add"
@@ -45,30 +47,30 @@ class TestAddTool:
             (100, 200, "300"),
         ],
     )
-    def test_run_various_inputs(self, a, b, expected):
+    async def test_run_various_inputs(self, a, b, expected):
         """Test AddTool run method with various inputs."""
         tool = AddTool()
-        result = tool.run(a=a, b=b)
+        result = await tool.run(a=a, b=b)
         assert result == expected
 
 
 class TestSubtractTool:
     """Test the SubtractTool class."""
 
-    def test_init(self):
+    async def test_init(self):
         """Test SubtractTool initialization."""
         tool = SubtractTool()
-        assert tool.id() == KilnBuiltInToolId.SUBTRACT_NUMBERS
-        assert tool.name() == "subtract"
+        assert await tool.id() == KilnBuiltInToolId.SUBTRACT_NUMBERS
+        assert await tool.name() == "subtract"
         assert (
-            tool.description()
+            await tool.description()
             == "Subtract the second number from the first number and return the result"
         )
 
-    def test_toolcall_definition(self):
+    async def test_toolcall_definition(self):
         """Test SubtractTool toolcall definition structure."""
         tool = SubtractTool()
-        definition = tool.toolcall_definition()
+        definition = await tool.toolcall_definition()
 
         assert definition["type"] == "function"
         assert definition["function"]["name"] == "subtract"
@@ -91,29 +93,30 @@ class TestSubtractTool:
             (100, 200, "-100"),
         ],
     )
-    def test_run_various_inputs(self, a, b, expected):
+    async def test_run_various_inputs(self, a, b, expected):
         """Test SubtractTool run method with various inputs."""
         tool = SubtractTool()
-        result = tool.run(a=a, b=b)
+        result = await tool.run(a=a, b=b)
         assert result == expected
 
 
 class TestMultiplyTool:
     """Test the MultiplyTool class."""
 
-    def test_init(self):
+    async def test_init(self):
         """Test MultiplyTool initialization."""
         tool = MultiplyTool()
-        assert tool.id() == KilnBuiltInToolId.MULTIPLY_NUMBERS
-        assert tool.name() == "multiply"
+        assert await tool.id() == KilnBuiltInToolId.MULTIPLY_NUMBERS
+        assert await tool.name() == "multiply"
         assert (
-            tool.description() == "Multiply two numbers together and return the result"
+            await tool.description()
+            == "Multiply two numbers together and return the result"
         )
 
-    def test_toolcall_definition(self):
+    async def test_toolcall_definition(self):
         """Test MultiplyTool toolcall definition structure."""
         tool = MultiplyTool()
-        definition = tool.toolcall_definition()
+        definition = await tool.toolcall_definition()
 
         assert definition["type"] == "function"
         assert definition["function"]["name"] == "multiply"
@@ -136,30 +139,30 @@ class TestMultiplyTool:
             (1, 1, "1"),
         ],
     )
-    def test_run_various_inputs(self, a, b, expected):
+    async def test_run_various_inputs(self, a, b, expected):
         """Test MultiplyTool run method with various inputs."""
         tool = MultiplyTool()
-        result = tool.run(a=a, b=b)
+        result = await tool.run(a=a, b=b)
         assert result == expected
 
 
 class TestDivideTool:
     """Test the DivideTool class."""
 
-    def test_init(self):
+    async def test_init(self):
         """Test DivideTool initialization."""
         tool = DivideTool()
-        assert tool.id() == KilnBuiltInToolId.DIVIDE_NUMBERS
-        assert tool.name() == "divide"
+        assert await tool.id() == KilnBuiltInToolId.DIVIDE_NUMBERS
+        assert await tool.name() == "divide"
         assert (
-            tool.description()
+            await tool.description()
             == "Divide the first number by the second number and return the result"
         )
 
-    def test_toolcall_definition(self):
+    async def test_toolcall_definition(self):
         """Test DivideTool toolcall definition structure."""
         tool = DivideTool()
-        definition = tool.toolcall_definition()
+        definition = await tool.toolcall_definition()
 
         assert definition["type"] == "function"
         assert definition["function"]["name"] == "divide"
@@ -182,20 +185,20 @@ class TestDivideTool:
             (0, 5, "0.0"),
         ],
     )
-    def test_run_various_inputs(self, a, b, expected):
+    async def test_run_various_inputs(self, a, b, expected):
         """Test DivideTool run method with various inputs."""
         tool = DivideTool()
-        result = tool.run(a=a, b=b)
+        result = await tool.run(a=a, b=b)
         assert result == expected
 
-    def test_divide_by_zero(self):
+    async def test_divide_by_zero(self):
         """Test that division by zero raises ZeroDivisionError."""
         tool = DivideTool()
         with pytest.raises(ZeroDivisionError, match="Cannot divide by zero"):
-            tool.run(a=5, b=0)
+            await tool.run(a=5, b=0)
 
-    def test_divide_zero_by_zero(self):
+    async def test_divide_zero_by_zero(self):
         """Test that zero divided by zero raises ZeroDivisionError."""
         tool = DivideTool()
         with pytest.raises(ZeroDivisionError, match="Cannot divide by zero"):
-            tool.run(a=0, b=0)
+            await tool.run(a=0, b=0)

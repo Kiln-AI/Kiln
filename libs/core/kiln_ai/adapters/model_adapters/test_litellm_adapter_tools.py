@@ -618,10 +618,10 @@ class MockTool:
         self._raise_on_run = raise_on_run
         self._return_value = return_value
 
-    def name(self) -> str:
+    async def name(self) -> str:
         return self._name
 
-    def toolcall_definition(self) -> dict:
+    async def toolcall_definition(self) -> dict:
         return {
             "function": {
                 "parameters": {
@@ -632,7 +632,7 @@ class MockTool:
             }
         }
 
-    def run(self, **kwargs) -> str:
+    async def run(self, **kwargs) -> str:
         if self._raise_on_run:
             raise self._raise_on_run
         return self._return_value
@@ -652,7 +652,7 @@ async def test_process_tool_calls_none_input(tmp_path):
     )
     litellm_adapter = cast(LiteLlmAdapter, adapter)
 
-    assistant_output, tool_messages = litellm_adapter.process_tool_calls(None)
+    assistant_output, tool_messages = await litellm_adapter.process_tool_calls(None)
 
     assert assistant_output is None
     assert tool_messages == []
@@ -672,7 +672,7 @@ async def test_process_tool_calls_empty_list(tmp_path):
     )
     litellm_adapter = cast(LiteLlmAdapter, adapter)
 
-    assistant_output, tool_messages = litellm_adapter.process_tool_calls([])
+    assistant_output, tool_messages = await litellm_adapter.process_tool_calls([])
 
     assert assistant_output is None
     assert tool_messages == []
@@ -694,7 +694,9 @@ async def test_process_tool_calls_task_response_only(tmp_path):
 
     tool_calls = [MockToolCall("call_1", "task_response", '{"answer": "42"}')]
 
-    assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+    assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+        tool_calls
+    )  # type: ignore
 
     assert assistant_output == '{"answer": "42"}'
     assert tool_messages == []
@@ -719,7 +721,9 @@ async def test_process_tool_calls_multiple_task_response(tmp_path):
         MockToolCall("call_2", "task_response", '{"answer": "second"}'),
     ]
 
-    assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+    assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+        tool_calls
+    )  # type: ignore
 
     # Should keep the last task_response
     assert assistant_output == '{"answer": "second"}'
@@ -746,7 +750,9 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
     with patch.object(
         litellm_adapter, "cached_available_tools", return_value=[mock_tool]
     ):
-        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
 
     assert assistant_output is None
     assert len(tool_messages) == 1
@@ -784,7 +790,9 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
         "cached_available_tools",
         return_value=[mock_tool_add, mock_tool_multiply],
     ):
-        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
 
     assert assistant_output is None
     assert len(tool_messages) == 2
@@ -815,7 +823,7 @@ async def test_process_tool_calls_tool_not_found(tmp_path):
             RuntimeError,
             match="A tool named 'nonexistent_tool' was invoked by a model, but was not available",
         ):
-            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
 async def test_process_tool_calls_invalid_json_arguments(tmp_path):
@@ -841,7 +849,7 @@ async def test_process_tool_calls_invalid_json_arguments(tmp_path):
         with pytest.raises(
             RuntimeError, match="Failed to parse arguments for tool 'add'"
         ):
-            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
 async def test_process_tool_calls_empty_arguments(tmp_path):
@@ -867,7 +875,7 @@ async def test_process_tool_calls_empty_arguments(tmp_path):
         with pytest.raises(
             RuntimeError, match="Failed to parse arguments for tool 'add'"
         ):
-            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
 async def test_process_tool_calls_schema_validation_error(tmp_path):
@@ -894,7 +902,7 @@ async def test_process_tool_calls_schema_validation_error(tmp_path):
         with pytest.raises(
             RuntimeError, match="Failed to validate arguments for tool 'add'"
         ):
-            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
 async def test_process_tool_calls_tool_execution_error(tmp_path):
@@ -920,7 +928,7 @@ async def test_process_tool_calls_tool_execution_error(tmp_path):
     ):
         # This should raise the ValueError from the tool
         with pytest.raises(ValueError, match="Tool execution failed"):
-            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
 async def test_process_tool_calls_complex_result(tmp_path):
@@ -946,7 +954,9 @@ async def test_process_tool_calls_complex_result(tmp_path):
     with patch.object(
         litellm_adapter, "cached_available_tools", return_value=[mock_tool]
     ):
-        assistant_output, tool_messages = litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
 
     assert assistant_output is None
     assert len(tool_messages) == 1
@@ -980,4 +990,4 @@ async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path
             RuntimeError,
             match="task_response tool call and other tool calls were both provided",
         ):
-            litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+            await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore

@@ -482,7 +482,7 @@ async def test_update_run_config_unknown_structured_output_mode(
         ),
     ],
 )
-def test_available_tools(
+async def test_available_tools(
     base_task, tools_config, expected_tool_count, expected_tool_ids
 ):
     """Test that available_tools returns correct tools based on tools_config"""
@@ -518,7 +518,7 @@ def test_available_tools(
 
     # Verify tool IDs match expected
     if expected_tool_ids:
-        actual_tool_ids = [tool.id() for tool in tools]
+        actual_tool_ids = [await tool.id() for tool in tools]
         assert actual_tool_ids == expected_tool_ids
 
 
