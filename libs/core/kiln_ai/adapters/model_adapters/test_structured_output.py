@@ -261,6 +261,7 @@ async def run_structured_input_task(
     model_name: str,
     provider: str,
     prompt_id: PromptId,
+    verify_trace_cot: bool = False,
 ):
     response, a, run = await run_structured_input_task_no_validation(
         task, model_name, provider, prompt_id
@@ -287,16 +288,25 @@ async def run_structured_input_task(
     # Check the trace
     trace = run.trace
     assert trace is not None
-    assert len(trace) == 3
-    assert trace[0]["role"] == "system"
-    assert "You are an assistant which classifies a triangle" in trace[0]["content"]
-    assert trace[1]["role"] == "user"
-    json_content = json.loads(trace[1]["content"])
-    assert json_content["a"] == 2
-    assert json_content["b"] == 2
-    assert json_content["c"] == 2
-    assert trace[2]["role"] == "assistant"
-    assert "[[equilateral]]" in trace[2]["content"]
+    if verify_trace_cot:
+        assert len(trace) == 5
+        assert trace[0]["role"] == "system"
+        assert "You are an assistant which classifies a triangle" in trace[0]["content"]
+        assert trace[1]["role"] == "user"
+        assert trace[2]["role"] == "assistant"
+        assert trace[3]["role"] == "user"
+        assert trace[4]["role"] == "assistant"
+    else:
+        assert len(trace) == 3
+        assert trace[0]["role"] == "system"
+        assert "You are an assistant which classifies a triangle" in trace[0]["content"]
+        assert trace[1]["role"] == "user"
+        json_content = json.loads(trace[1]["content"])
+        assert json_content["a"] == 2
+        assert json_content["b"] == 2
+        assert json_content["c"] == 2
+        assert trace[2]["role"] == "assistant"
+        assert "[[equilateral]]" in trace[2]["content"]
 
 
 @pytest.mark.paid
@@ -351,8 +361,56 @@ async def test_all_built_in_models_structured_input_mocked(tmp_path):
 async def test_structured_input_cot_prompt_builder(tmp_path, model_name, provider_name):
     task = build_structured_input_test_task(tmp_path)
     await run_structured_input_task(
-        task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
+        task,
+        model_name,
+        provider_name,
+        "simple_chain_of_thought_prompt_builder",
+        verify_trace_cot=True,
     )
+
+
+async def test_structured_input_cot_prompt_builder_mocked(tmp_path):
+    task = build_structured_input_test_task(tmp_path)
+    mock_response_1 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "I'm thinking real hard... oh!",
+                }
+            }
+        ],
+    )
+    mock_response_2 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "After thinking, I've decided the answer is [[equilateral]]",
+                }
+            }
+        ],
+    )
+
+    # Mock the Config.shared() method to return a mock config with required attributes
+    mock_config = Mock()
+    mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.user_id = "test_user"
+
+    with (
+        patch(
+            "litellm.acompletion",
+            side_effect=[mock_response_1, mock_response_2],
+        ),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
+    ):
+        await run_structured_input_task(
+            task,
+            "llama_3_1_8b",
+            "groq",
+            "simple_chain_of_thought_prompt_builder",
+            verify_trace_cot=True,
+        )
 
 
 @pytest.mark.paid
