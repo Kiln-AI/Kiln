@@ -1,5 +1,9 @@
 <script lang="ts">
-  import type { LogMessage, RagProgress } from "$lib/types"
+  import type {
+    LogMessage,
+    RagConfigWithSubConfigs,
+    RagProgress,
+  } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import Checkmark from "$lib/ui/checkmark.svelte"
@@ -7,6 +11,7 @@
   export let dialog: Dialog | null = null
   export let project_id: string
   export let rag_config_id: string
+  export let rag_config: RagConfigWithSubConfigs
 
   $: config_progress = $ragProgressStore.progress[rag_config_id] || null
   $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
@@ -170,6 +175,7 @@
 
 <Dialog
   title="Processing Status"
+  subtitle={`Name: ${rag_config.name}`}
   width="wide"
   bind:this={dialog}
   action_buttons={[

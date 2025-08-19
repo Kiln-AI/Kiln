@@ -91,4 +91,9 @@
   </button>
 {/if}
 
-<RunRagDialog bind:dialog={run_rag_dialog} {rag_config_id} {project_id} />
+<RunRagDialog
+  bind:dialog={run_rag_dialog}
+  {rag_config_id}
+  {project_id}
+  {rag_config}
+/>
