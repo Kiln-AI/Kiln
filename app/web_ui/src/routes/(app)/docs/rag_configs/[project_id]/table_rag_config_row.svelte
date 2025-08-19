@@ -92,7 +92,7 @@
         </div>
 
         <!-- Description -->
-        <div class="space-y-1 text-xs text-base-content/70">
+        <div class="space-y-1 text-xs text-gray-500">
           <div>
             Extractor: {model_name(
               rag_config.extractor_config?.model_name,
@@ -115,7 +115,7 @@
               rag_config.embedding_config.model_provider_name,
             ) || "N/A"}
           </div>
-          <div class="text-xs text-base-content/50">
+          <div class="text-xs text-gray-500">
             Created {formatDate(rag_config.created_at)}
           </div>
         </div>
@@ -138,7 +138,7 @@
               <span>{status_to_badge_props(status).text}</span>
             </div>
             {#if status === "running"}
-              <span class="text-sm text-base-content/60">{completed_pct}%</span>
+              <span class="text-sm text-gray-500">{completed_pct}%</span>
             {/if}
           </div>
           {#if status === "running"}
@@ -149,7 +149,7 @@
             ></progress>
           {/if}
           {#if total_docs > 0}
-            <div class="text-xs text-base-content/50 text-start">
+            <div class="text-xs text-gray-500 text-start">
               {rag_progress.total_document_completed_count || 0} of {total_docs}
               documents processed
             </div>
@@ -159,7 +159,7 @@
     {:else}
       <td class="p-4 cursor-default align-top">
         <div class="flex flex-col gap-3">
-          <div class="text-xs text-base-content/50 text-start">
+          <div class="text-xs text-gray-500 text-start">
             <p>Looks like you don't have any documents yet.</p>
             <p>
               <a href={`/docs/library/${project_id}`} class="link">
