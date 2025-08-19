@@ -108,12 +108,11 @@ async def run_simple_task_with_tools(
             assert trace[4]["role"] == "assistant"
             assert "[4]" in trace[4]["content"]  # type: ignore
 
-            trace = run.trace
-            assert trace is not None
+            # Deep dive on tool_calls, which we build ourselves
             tool_calls = trace[2].get("tool_calls", None)
             assert tool_calls is not None
             assert len(tool_calls) == 1
-            assert tool_calls[0]["id"] is not None
+            assert tool_calls[0]["id"]  # not None or empty
             assert tool_calls[0]["function"]["name"] == "add"
             json_args = json.loads(tool_calls[0]["function"]["arguments"])
             assert json_args["a"] == 2
