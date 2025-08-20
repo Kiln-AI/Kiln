@@ -5,6 +5,7 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class MCPSessionManager:
@@ -33,7 +34,7 @@ class MCPSessionManager:
             case ToolServerType.remote_mcp:
                 pass
             case _:
-                raise RuntimeError("invalid external tool server type")
+                raise_exhaustive_enum_error(tool_server.type)
 
         # Make sure the server_url is set
         server_url = tool_server.properties.get("server_url")

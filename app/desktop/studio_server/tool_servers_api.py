@@ -6,6 +6,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, ValidationError
@@ -96,9 +97,7 @@ def connect_tool_servers_api(app: FastAPI):
                             ]
                         )
                 case _:
-                    raise RuntimeError(
-                        f"Unsupported external tool server type {server.type}"
-                    )
+                    raise_exhaustive_enum_error(server.type)
 
         return available_tools
 
@@ -148,9 +147,7 @@ def connect_tool_servers_api(app: FastAPI):
                         for tool in tools_result.tools
                     ]
             case _:
-                raise RuntimeError(
-                    f"Unsupported external tool server type {tool_server.type}"
-                )
+                raise_exhaustive_enum_error(tool_server.type)
 
         return ExternalToolServerApiDescription(
             id=tool_server.id,
