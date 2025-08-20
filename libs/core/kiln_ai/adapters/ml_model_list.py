@@ -289,6 +289,13 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
         ],
     ),
     # GPT 5 Nano
@@ -300,6 +307,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-5-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -331,6 +343,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -338,11 +351,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1",
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
             ),
         ],
     ),
