@@ -115,27 +115,49 @@
   interface Argument {
     name: string
     type: string
-    description: string
+    description: string | null
     isRequired: boolean
+  }
+
+  // Type guard functions for safe type checking
+  function isStringArray(value: unknown): value is string[] {
+    return (
+      Array.isArray(value) && value.every((item) => typeof item === "string")
+    )
+  }
+
+  function isObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+  }
+
+  function isString(value: unknown): value is string {
+    return typeof value === "string"
   }
 
   function formatToolArguments(
     inputSchema: Record<string, unknown>,
   ): Argument[] {
-    if (!inputSchema || !inputSchema.properties) {
+    if (!isObject(inputSchema) || !isObject(inputSchema.properties)) {
       return []
     }
 
-    const properties = inputSchema.properties as Record<string, unknown>
-    const required = (inputSchema.required as string[]) || []
+    const properties = inputSchema.properties
+    const required = isStringArray(inputSchema.required)
+      ? inputSchema.required
+      : []
 
     const args: Argument[] = []
 
     for (const [name, schema] of Object.entries(properties)) {
-      const schemaObj = schema as Record<string, unknown>
+      if (!isObject(schema)) {
+        continue
+      }
+
       const isRequired = required.includes(name)
-      const type = (schemaObj.type as string) || "Unknown"
-      const description = (schemaObj.description as string) || ""
+      const type = isString(schema.type) ? schema.type : "Unknown"
+      const description = isString(schema.description)
+        ? schema.description
+        : null
       args.push({ name, type, description, isRequired })
     }
     return args
