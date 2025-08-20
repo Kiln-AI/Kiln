@@ -53,9 +53,7 @@ class TestMCPServerTool:
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
         result_content = [TextContent(type="text", text="Success result")]
-        call_result = CallToolResult(
-            content=cast(list[ContentBlock], result_content), isError=False
-        )
+        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
@@ -110,9 +108,7 @@ class TestMCPServerTool:
         result_content = [
             ImageContent(type="image", data="base64data", mimeType="image/png")
         ]
-        call_result = CallToolResult(
-            content=cast(list[ContentBlock], result_content), isError=False
-        )
+        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
@@ -165,9 +161,7 @@ class TestMCPServerTool:
             TextContent(type="text", text="First block"),
             TextContent(type="text", text="Second block"),
         ]
-        call_result = CallToolResult(
-            content=cast(list[ContentBlock], result_content), isError=False
-        )
+        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
@@ -193,9 +187,7 @@ class TestMCPServerTool:
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
         result_content = [TextContent(type="text", text="Async result")]
-        call_result = CallToolResult(
-            content=cast(list[ContentBlock], result_content), isError=False
-        )
+        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(

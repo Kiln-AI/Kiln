@@ -10,9 +10,9 @@ from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 
 
 class MCPServerTool(KilnToolInterface):
-    def __init__(self, model: ExternalToolServer, name: str):
-        self._tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{model.id}::{name}"
-        self._tool_server_model = model
+    def __init__(self, data_model: ExternalToolServer, name: str):
+        self._tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{data_model.id}::{name}"
+        self._tool_server_model = data_model
         self._name = name
         self._tool: MCPTool | None = None
 
