@@ -54,7 +54,10 @@ exclude = []
 # F401 is unused imports
 # RUF is ruff rules. In particular 012+008 are mutable defaults (important)
 # FAST is FastAPI related linting
-extend-select = ["I","F401","RUF","FAST"]
+extend-select = ["I","F401","RUF","FAST","TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api."typing.cast"]
+msg = "Avoid using typing.cast; prefer safer alternatives."
 
 [tool.pytest.ini_options]
  addopts="-n auto"
