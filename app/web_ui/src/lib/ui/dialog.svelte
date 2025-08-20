@@ -87,11 +87,11 @@
           {title}
         </h3>
         {#if subtitle}
-          <p class="text-base font-medium mt-1">{subtitle}</p>
+          <p class="text-base">{subtitle}</p>
         {/if}
         {#if sub_subtitle}
           {#if sub_subtitle_link}
-            <p class="text-sm font-light mt-1">
+            <p class="text-sm font-light">
               <a
                 href={sub_subtitle_link}
                 class="link"
@@ -102,7 +102,7 @@
               </a>
             </p>
           {:else}
-            <p class="text-sm font-light mt-1">{sub_subtitle}</p>
+            <p class="text-sm font-light">{sub_subtitle}</p>
           {/if}
         {/if}
       </div>
