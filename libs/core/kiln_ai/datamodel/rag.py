@@ -9,7 +9,9 @@ if TYPE_CHECKING:
 
 
 class RagConfig(KilnParentedModel):
-    name: FilenameString
+    name: FilenameString = Field(
+        description="A name to identify this RAG configuration for your own reference.",
+    )
 
     description: str | None = Field(
         default=None,
