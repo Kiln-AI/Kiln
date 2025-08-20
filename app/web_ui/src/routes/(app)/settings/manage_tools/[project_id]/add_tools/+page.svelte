@@ -4,22 +4,21 @@
 
   let sections = [
     {
-      category: "Current Workspace",
+      category: "Sample Tools",
       items: [
         // TODO: Add more custom tool servers, pre-filled in.
         {
-          name: "Edit Current Task",
-          description:
-            "Modify your current task's prompt, requirements, and configuration settings.",
-          button_text: "Edit Task",
-          href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+          name: "Firecrawl",
+          description: "Add Firecrawl to your project to search the web.",
+          button_text: "Connect",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/firecrawl`,
         },
         {
-          name: "Edit Current Project",
+          name: "Demo Math Tool",
           description:
-            "Update your current project's name, description, and settings.",
-          button_text: "Edit Project",
-          href: "/settings/edit_project/" + $ui_state.current_project_id,
+            "Add built-in math tool to add/subtract/multiply/divide numbers.",
+          button_text: "Connect",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/math`,
         },
       ],
     },
