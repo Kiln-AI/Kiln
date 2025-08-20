@@ -2,7 +2,7 @@
 
 ---
 
-# This guide as moved to [our docs](https://docs.kiln.tech/docs/collaboration). This page may be out of date.
+# This guide has moved to [our docs](https://docs.kiln.tech/docs/collaboration)
 
 We suggest reading the [latest version](https://docs.kiln.tech/docs/collaboration).
 
