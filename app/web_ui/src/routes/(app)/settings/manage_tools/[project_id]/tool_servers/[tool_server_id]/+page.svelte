@@ -6,13 +6,13 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServer } from "$lib/types"
+  import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
 
-  let tool_server: ExternalToolServer | null = null
+  let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -50,7 +50,7 @@
         throw fetch_error
       }
 
-      tool_server = data as ExternalToolServer
+      tool_server = data as ExternalToolServerApiDescription
     } catch (err) {
       error = createKilnError(err)
     } finally {
@@ -62,7 +62,7 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function getDetailsProperties(tool: ExternalToolServer) {
+  function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
       { name: "ID", value: tool.id || "Unknown" },
       { name: "Name", value: tool.name || "Unknown" },
@@ -89,7 +89,7 @@
     return properties
   }
 
-  function getConnectionProperties(tool: ExternalToolServer) {
+  function getConnectionProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
       { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
@@ -103,13 +103,64 @@
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalToolServer) {
+  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
     return Object.entries(tool.properties["headers"] || {}).map(
       ([key, value]) => ({
         name: key,
         value: String(value || "N/A"),
       }),
     )
+  }
+
+  interface Argument {
+    name: string
+    type: string
+    description: string | null
+    isRequired: boolean
+  }
+
+  // Type guard functions for safe type checking
+  function isStringArray(value: unknown): value is string[] {
+    return (
+      Array.isArray(value) && value.every((item) => typeof item === "string")
+    )
+  }
+
+  function isObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+  }
+
+  function isString(value: unknown): value is string {
+    return typeof value === "string"
+  }
+
+  function formatToolArguments(
+    inputSchema: Record<string, unknown>,
+  ): Argument[] {
+    if (!isObject(inputSchema) || !isObject(inputSchema.properties)) {
+      return []
+    }
+
+    const properties = inputSchema.properties
+    const required = isStringArray(inputSchema.required)
+      ? inputSchema.required
+      : []
+
+    const args: Argument[] = []
+
+    for (const [name, schema] of Object.entries(properties)) {
+      if (!isObject(schema)) {
+        continue
+      }
+
+      const isRequired = required.includes(name)
+      const type = isString(schema.type) ? schema.type : "Unknown"
+      const description = isString(schema.description)
+        ? schema.description
+        : null
+      args.push({ name, type, description, isRequired })
+    }
+    return args
   }
 </script>
 
@@ -132,14 +183,15 @@
         </button>
       </div>
     {:else if tool_server}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
-        <div class="grow flex flex-col">
+      <!-- Row 1: Properties and Connection Details side by side -->
+      <div class="flex flex-col lg:flex-row gap-8 lg:gap-16 mb-10">
+        <div class="flex-1">
           <PropertyList
             properties={getDetailsProperties(tool_server)}
             title="Properties"
           />
         </div>
-        <div class="grow flex flex-col">
+        <div class="flex-1">
           {#if tool_server.type === "remote_mcp"}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
@@ -156,6 +208,66 @@
             {/if}
           {/if}
         </div>
+      </div>
+      <!-- Row 2: Available Tools full width -->
+      <div class="mb-10">
+        <h3 class="text-xl font-bold mb-4">Available Tools</h3>
+        {#if tool_server.available_tools.length > 0}
+          <div class="overflow-x-auto rounded-lg border">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Arguments</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each tool_server.available_tools as tool}
+                  {@const formatted_args = formatToolArguments(
+                    tool.inputSchema || {},
+                  )}
+                  <tr>
+                    <td class="font-medium">{tool.name}</td>
+                    <td>{tool.description || "None"}</td>
+                    <td>
+                      {#if formatted_args.length > 0}
+                        <div class="divide-y divide-y-[0.5px]">
+                          {#each formatted_args as arg}
+                            <div class="py-2">
+                              <div class="flex flex-row gap-3 items-center">
+                                <span class="font-mono">{arg.name}</span>
+                                <span class="font-mono font-light text-gray-500"
+                                  >{arg.type}
+                                </span>
+                                {#if !arg.isRequired}
+                                  <span class="badge badge-sm badge-outline"
+                                    >Optional</span
+                                  >
+                                {/if}
+                              </div>
+                              {#if arg.description}
+                                <div class="text-gray-500 text-sm mt-1">
+                                  {arg.description}
+                                </div>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {:else}
+                        <span class="text-gray-500">None</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else}
+          <div class="text-lg mb-4 text-gray-500">
+            This server does not expose any tools
+          </div>
+        {/if}
       </div>
     {:else}
       <div

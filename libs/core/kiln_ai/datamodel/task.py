@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Dict, List, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
-from kiln_ai.datamodel import Finetune
 from kiln_ai.datamodel.basemodel import (
     ID_FIELD,
     ID_TYPE,
@@ -18,6 +17,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit
 from kiln_ai.datamodel.eval import Eval
+from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.json_schema import JsonObjectSchema, schema_from_json_str
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.run_config import RunConfigProperties
