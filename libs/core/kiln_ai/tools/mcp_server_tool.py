@@ -28,15 +28,22 @@ class MCPServerTool(KilnTool):
 
     def run(self, **kwargs) -> str:
         result = asyncio.run(self._call_tool(**kwargs))
+
+        if result.isError:
+            raise ValueError(f"Tool {self.name()} returned an error: {result.content}")
+
         if not result.content:
-            return ""
+            raise ValueError("Tool returned no content")
 
         # raise error if the first block is not a text block
         if not isinstance(result.content[0], TextContent):
             raise ValueError("First block must be a text block")
 
-        content: TextContent = result.content[0]
-        return str(content.text)
+        # raise error if there is more than one content block
+        if len(result.content) > 1:
+            raise ValueError("Tool returned multiple content blocks, expected one")
+
+        return result.content[0].text
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:

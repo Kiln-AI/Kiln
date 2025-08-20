@@ -50,7 +50,9 @@ class TestMCPServerTool:
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
         result_content = [TextContent(type="text", text="Success result")]
-        call_result = CallToolResult(content=cast(list[ContentBlock], result_content))
+        call_result = CallToolResult(
+            content=cast(list[ContentBlock], result_content), isError=False
+        )
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
@@ -72,11 +74,13 @@ class TestMCPServerTool:
 
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     def test_run_empty_content(self, mock_session_manager):
-        """Test run() with empty content."""
+        """Test run() with empty content raises ValueError."""
         mock_session = AsyncMock()
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
-        call_result = CallToolResult(content=cast(list[ContentBlock], []))
+        call_result = CallToolResult(
+            content=cast(list[ContentBlock], []), isError=False
+        )
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
@@ -89,9 +93,8 @@ class TestMCPServerTool:
         )
         tool = MCPServerTool(server, "test_tool")
 
-        result = tool.run()
-
-        assert result == ""
+        with pytest.raises(ValueError, match="Tool returned no content"):
+            tool.run()
 
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     def test_run_non_text_content_error(self, mock_session_manager):
@@ -102,7 +105,9 @@ class TestMCPServerTool:
         result_content = [
             ImageContent(type="image", data="base64data", mimeType="image/png")
         ]
-        call_result = CallToolResult(content=cast(list[ContentBlock], result_content))
+        call_result = CallToolResult(
+            content=cast(list[ContentBlock], result_content), isError=False
+        )
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
@@ -118,6 +123,61 @@ class TestMCPServerTool:
         with pytest.raises(ValueError, match="First block must be a text block"):
             tool.run()
 
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    def test_run_error_result(self, mock_session_manager):
+        """Test run() raises error when tool returns isError=True."""
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+
+        result_content = [TextContent(type="text", text="Error occurred")]
+        call_result = CallToolResult(
+            content=cast(list[ContentBlock], result_content), isError=True
+        )
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        with pytest.raises(ValueError, match="Tool test_tool returned an error"):
+            tool.run()
+
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    def test_run_multiple_content_blocks_error(self, mock_session_manager):
+        """Test run() raises error when tool returns multiple content blocks."""
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+
+        result_content = [
+            TextContent(type="text", text="First block"),
+            TextContent(type="text", text="Second block"),
+        ]
+        call_result = CallToolResult(
+            content=cast(list[ContentBlock], result_content), isError=False
+        )
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        with pytest.raises(
+            ValueError, match="Tool returned multiple content blocks, expected one"
+        ):
+            tool.run()
+
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     async def test_call_tool_success(self, mock_session_manager):
@@ -126,7 +186,9 @@ class TestMCPServerTool:
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
         result_content = [TextContent(type="text", text="Async result")]
-        call_result = CallToolResult(content=cast(list[ContentBlock], result_content))
+        call_result = CallToolResult(
+            content=cast(list[ContentBlock], result_content), isError=False
+        )
         mock_session.call_tool.return_value = call_result
 
         server = ExternalToolServer(
