@@ -567,14 +567,14 @@ def mock_math_tools():
     return [AddTool(), SubtractTool(), MultiplyTool(), DivideTool()]
 
 
-def test_litellm_tools_returns_openai_format_with_tools(
+async def test_litellm_tools_returns_openai_format_with_tools(
     config, mock_task, mock_math_tools
 ):
     """Test litellm_tools returns OpenAI formatted tool list when available_tools has tools"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
-        tools = adapter.litellm_tools()
+        tools = await adapter.litellm_tools()
 
     # Should return 4 tools
     assert len(tools) == 4
@@ -596,12 +596,12 @@ def test_litellm_tools_returns_openai_format_with_tools(
     assert "divide" in tool_names
 
 
-def test_litellm_tools_returns_empty_list_without_tools(config, mock_task):
+async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task):
     """Test litellm_tools returns empty list when available_tools has no tools"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with patch.object(adapter, "available_tools", return_value=[]):
-        tools = adapter.litellm_tools()
+        tools = await adapter.litellm_tools()
 
     assert tools == []
 

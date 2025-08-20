@@ -22,7 +22,7 @@ class ConcreteTestTool(KilnTool):
 class TestKilnTool:
     """Test the KilnTool base class."""
 
-    def test_init_with_valid_schema(self):
+    async def test_init_with_valid_schema(self):
         """Test KilnTool initialization with valid parameters schema."""
         schema = {
             "type": "object",
@@ -39,12 +39,12 @@ class TestKilnTool:
             parameters_schema=schema,
         )
 
-        assert tool.id() == "test_tool_id"
-        assert tool.name() == "test_tool"
-        assert tool.description() == "A test tool"
+        assert await tool.id() == "test_tool_id"
+        assert await tool.name() == "test_tool"
+        assert await tool.description() == "A test tool"
         assert tool._parameters_schema == schema
 
-    def test_init_with_invalid_schema_missing_type(self):
+    async def test_init_with_invalid_schema_missing_type(self):
         """Test KilnTool initialization fails with schema missing type."""
         invalid_schema = {"properties": {"param1": {"type": "string"}}}
 
@@ -86,7 +86,7 @@ class TestKilnTool:
                 parameters_schema=invalid_schema,
             )
 
-    def test_toolcall_definition(self):
+    async def test_toolcall_definition(self):
         """Test that toolcall_definition returns correct OpenAI-compatible format."""
         schema = {
             "type": "object",
@@ -104,7 +104,7 @@ class TestKilnTool:
             parameters_schema=schema,
         )
 
-        definition = tool.toolcall_definition()
+        definition = await tool.toolcall_definition()
 
         expected = {
             "type": "function",
@@ -168,7 +168,7 @@ class TestValidationEdgeCases:
 
         assert tool._parameters_schema == schema
 
-    def test_complex_nested_schema(self):
+    async def test_complex_nested_schema(self):
         """Test complex nested schema validation."""
         schema = {
             "type": "object",
@@ -195,5 +195,5 @@ class TestValidationEdgeCases:
 
         assert tool._parameters_schema == schema
 
-        definition = tool.toolcall_definition()
+        definition = await tool.toolcall_definition()
         assert definition["function"]["parameters"] == schema
