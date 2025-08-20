@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-from kiln_ai.datamodel.external_tool import ExternalToolServer
+from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 
 
 class MCPSessionManager:
@@ -29,8 +29,11 @@ class MCPSessionManager:
         None,
     ]:
         # Only support remote MCP servers for now
-        if tool_server.type != "remote_mcp":
-            raise RuntimeError("invalid external tool server type")
+        match tool_server.type:
+            case ToolServerType.remote_mcp:
+                pass
+            case _:
+                raise RuntimeError("invalid external tool server type")
 
         # Make sure the server_url is set
         server_url = tool_server.properties.get("server_url")

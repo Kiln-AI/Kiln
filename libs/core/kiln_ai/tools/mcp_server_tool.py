@@ -1,6 +1,7 @@
 import asyncio
 
-from mcp.types import CallToolResult, TextContent, Tool
+from mcp.types import CallToolResult, TextContent
+from mcp.types import Tool as MCPTool
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer
 from kiln_ai.tools.base_tool import KilnTool
@@ -12,7 +13,7 @@ class MCPServerTool(KilnTool):
     def __init__(self, model: ExternalToolServer, name: str):
         self._tool_server_model = model
         self._name = name
-        self._tool: Tool | None = None
+        self._tool: MCPTool | None = None
 
         #  Some properties are not available until the tool is loaded asynchronously
         super().__init__(
@@ -58,7 +59,7 @@ class MCPServerTool(KilnTool):
         }
 
     #  Get the MCP Tool from the server
-    async def _get_tool(self, tool_name: str) -> Tool:
+    async def _get_tool(self, tool_name: str) -> MCPTool:
         async with MCPSessionManager.shared().mcp_client(
             self._tool_server_model
         ) as session:

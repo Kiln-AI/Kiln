@@ -81,18 +81,23 @@ def connect_tool_servers_api(app: FastAPI):
         available_tools = []
         for server in project.external_tool_servers(readonly=True):
             # Get available tools from remote MCP servers only
-            if server.type == ToolServerType.remote_mcp:
-                async with MCPSessionManager.shared().mcp_client(server) as session:
-                    tools_result = await session.list_tools()
-                    available_tools.extend(
-                        [
-                            ToolApiDescription(
-                                id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
-                                name=tool.name,
-                                description=tool.description,
-                            )
-                            for tool in tools_result.tools
-                        ]
+            match server.type:
+                case ToolServerType.remote_mcp:
+                    async with MCPSessionManager.shared().mcp_client(server) as session:
+                        tools_result = await session.list_tools()
+                        available_tools.extend(
+                            [
+                                ToolApiDescription(
+                                    id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                                    name=tool.name,
+                                    description=tool.description,
+                                )
+                                for tool in tools_result.tools
+                            ]
+                        )
+                case _:
+                    raise RuntimeError(
+                        f"Unsupported external tool server type {server.type}"
                     )
 
         return available_tools
@@ -131,14 +136,21 @@ def connect_tool_servers_api(app: FastAPI):
 
         # Get available tools based on server type
         available_tools = []
-        if tool_server.type == ToolServerType.remote_mcp:
-            async with MCPSessionManager.shared().mcp_client(tool_server) as session:
-                tools_result = await session.list_tools()
+        match tool_server.type:
+            case ToolServerType.remote_mcp:
+                async with MCPSessionManager.shared().mcp_client(
+                    tool_server
+                ) as session:
+                    tools_result = await session.list_tools()
 
-            available_tools = [
-                ExternalToolApiDescription.tool_from_mcp_tool(tool)
-                for tool in tools_result.tools
-            ]
+                    available_tools = [
+                        ExternalToolApiDescription.tool_from_mcp_tool(tool)
+                        for tool in tools_result.tools
+                    ]
+            case _:
+                raise RuntimeError(
+                    f"Unsupported external tool server type {tool_server.type}"
+                )
 
         return ExternalToolServerApiDescription(
             id=tool_server.id,
