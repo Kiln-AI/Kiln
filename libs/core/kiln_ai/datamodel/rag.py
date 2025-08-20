@@ -2,14 +2,14 @@ from typing import TYPE_CHECKING, Union
 
 from pydantic import Field
 
-from kiln_ai.datamodel.basemodel import ID_TYPE, NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
 
 
 class RagConfig(KilnParentedModel):
-    name: str = NAME_FIELD
+    name: FilenameString
 
     description: str | None = Field(
         default=None,

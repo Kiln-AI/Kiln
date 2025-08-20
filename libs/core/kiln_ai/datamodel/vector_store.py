@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Union
 
 from pydantic import BaseModel, Field, model_validator
 
-from kiln_ai.datamodel.basemodel import NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -59,7 +59,9 @@ class QdrantConfigProperties(BaseModel):
 
 
 class VectorStoreConfig(KilnParentedModel):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="A name for your own reference to identify the vector store config.",
+    )
     store_type: VectorStoreType = Field(
         description="The type of vector store to use.",
     )

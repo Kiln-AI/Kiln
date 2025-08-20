@@ -5,10 +5,12 @@ from typing import Dict, List
 
 from pydantic import BaseModel
 
+from kiln_ai.adapters.docker_model_runner_tools import (
+    get_docker_model_runner_connection,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
@@ -28,6 +30,15 @@ async def provider_enabled(provider_name: ModelProviderName) -> bool:
     if provider_name == ModelProviderName.ollama:
         try:
             conn = await get_ollama_connection()
+            return conn is not None and (
+                len(conn.supported_models) > 0 or len(conn.untested_models) > 0
+            )
+        except Exception:
+            return False
+
+    if provider_name == ModelProviderName.docker_model_runner:
+        try:
+            conn = await get_docker_model_runner_connection()
             return conn is not None and (
                 len(conn.supported_models) > 0 or len(conn.untested_models) > 0
             )
@@ -72,30 +83,24 @@ def builtin_model_from(
     name: str, provider_name: str | None = None
 ) -> KilnModelProvider | None:
     """
-    Gets a model and provider from the built-in list of models.
+    Gets a model provider from the built-in list of models.
 
     Args:
         name: The name of the model to get
         provider_name: Optional specific provider to use (defaults to first available)
 
     Returns:
-        A tuple of (provider, model)
-
-    Raises:
-        ValueError: If the model or provider is not found, or if the provider is misconfigured
+        A KilnModelProvider, or None if not found
     """
-    if name not in ModelName.__members__:
+    # Select the model from built_in_models using the name
+    model = next(filter(lambda m: m.name == name, built_in_models), None)
+    if model is None:
         return None
 
-    # Select the model from built_in_models using the name
-    model = next(filter(lambda m: m.name == name, built_in_models))
-    if model is None:
-        raise ValueError(f"Model {name} not found")
-
-    # If a provider is provided, select the provider from the model's provider_config
+    # If a provider is provided, select the appropriate provider. Otherwise, use the first available.
     provider: KilnModelProvider | None = None
     if model.providers is None or len(model.providers) == 0:
-        raise ValueError(f"Model {name} has no providers")
+        return None
     elif provider_name is None:
         provider = model.providers[0]
     else:
@@ -337,6 +342,12 @@ def provider_name_from_id(id: str) -> str:
                 return "Google Vertex AI"
             case ModelProviderName.together_ai:
                 return "Together AI"
+            case ModelProviderName.siliconflow_cn:
+                return "SiliconFlow"
+            case ModelProviderName.cerebras:
+                return "Cerebras"
+            case ModelProviderName.docker_model_runner:
+                return "Docker Model Runner"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -395,6 +406,14 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         required_config_keys=["together_api_key"],
         message="Attempted to use Together without an API key set. \nGet your API key from https://together.ai/settings/keys",
     ),
+    ModelProviderName.siliconflow_cn: ModelProviderWarning(
+        required_config_keys=["siliconflow_cn_api_key"],
+        message="Attempted to use SiliconFlow without an API key set. \nGet your API key from https://cloud.siliconflow.cn/account/ak",
+    ),
+    ModelProviderName.cerebras: ModelProviderWarning(
+        required_config_keys=["cerebras_api_key"],
+        message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
+    ),
 }
 
 
@@ -422,11 +441,23 @@ def lite_llm_core_config_for_provider(
                     os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
                 ),
                 default_headers={
-                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "HTTP-Referer": "https://kiln.tech/openrouter",
                     "X-Title": "KilnAI",
                 },
                 additional_body_options={
                     "api_key": Config.shared().open_router_api_key,
+                },
+            )
+        case ModelProviderName.siliconflow_cn:
+            return LiteLlmCoreConfig(
+                base_url=os.getenv("SILICONFLOW_BASE_URL")
+                or "https://api.siliconflow.cn/v1",
+                default_headers={
+                    "HTTP-Referer": "https://kiln.tech/siliconflow",
+                    "X-Title": "KilnAI",
+                },
+                additional_body_options={
+                    "api_key": Config.shared().siliconflow_cn_api_key,
                 },
             )
         case ModelProviderName.openai:
@@ -462,6 +493,19 @@ def lite_llm_core_config_for_provider(
                 additional_body_options={
                     # LiteLLM errors without an api_key, even though Ollama doesn't support one
                     "api_key": "NA",
+                },
+            )
+        case ModelProviderName.docker_model_runner:
+            docker_base_url = (
+                Config.shared().docker_model_runner_base_url
+                or "http://localhost:12434/engines/llama.cpp"
+            )
+            return LiteLlmCoreConfig(
+                # Docker Model Runner uses OpenAI-compatible API at /v1 endpoint
+                base_url=docker_base_url + "/v1",
+                additional_body_options={
+                    # LiteLLM errors without an api_key, even though Docker Model Runner doesn't require one.
+                    "api_key": "DMR",
                 },
             )
         case ModelProviderName.fireworks_ai:
@@ -507,6 +551,12 @@ def lite_llm_core_config_for_provider(
             return LiteLlmCoreConfig(
                 additional_body_options={
                     "api_key": Config.shared().huggingface_api_key,
+                },
+            )
+        case ModelProviderName.cerebras:
+            return LiteLlmCoreConfig(
+                additional_body_options={
+                    "api_key": Config.shared().cerebras_api_key,
                 },
             )
         case ModelProviderName.openai_compatible:

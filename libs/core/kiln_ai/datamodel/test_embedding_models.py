@@ -90,15 +90,6 @@ class TestEmbeddingConfig:
         )
         assert config.name == "valid-name_123"
 
-        # Test invalid name (contains special characters)
-        with pytest.raises(ValueError):
-            EmbeddingConfig(
-                name="invalid@name",
-                model_provider_name="openai",
-                model_name="openai_text_embedding_3_small",
-                properties={"dimensions": 1536},
-            )
-
         # Test empty name
         with pytest.raises(ValueError):
             EmbeddingConfig(

@@ -1,13 +1,24 @@
 import io
 import logging
 import sys
-
-import pystray
+from typing import Any, Type
 
 logger = logging.getLogger(__name__)
 
 
-class KilnTray(pystray.Icon):
+# pystray runs unsafe code on import (crashes if not UI, such as in CI)
+try:
+    import pystray
+
+    IconBase: Type[Any] = pystray.Icon
+    MenuItemBase: Type[Any] = pystray.MenuItem
+except Exception:
+    # For CI, we should mock KilnTray in tests
+    IconBase = object
+    MenuItemBase = object
+
+
+class KilnTray(IconBase):  # type: ignore - our dynamic type trips up pyright
     # Special handling for Mac to support dark/light mode and retina icons
     # lots of type ignores because we're accessing private attributes of pystray
     def _assert_image(self):
@@ -40,3 +51,7 @@ class KilnTray(pystray.Icon):
             # Continue, this shouldn't be fatal
             logger.error("Mac Tray Error", exc_info=True)
         self._status_item.button().setImage_(self._icon_image)  # type: ignore
+
+
+class KilnMenuItem(MenuItemBase):  # type: ignore - our dynamic type trips up pyright
+    pass

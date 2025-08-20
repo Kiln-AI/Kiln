@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from kiln_ai.adapters.adapter_registry import litellm_core_provider_config
+from kiln_ai.adapters.docker_model_runner_tools import DockerModelRunnerConnection
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     ModelName,
@@ -197,6 +198,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.ollama, "Ollama"),
         (ModelProviderName.openai, "OpenAI"),
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
+        (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -419,6 +421,17 @@ async def test_builtin_model_from_invalid_provider(mock_config):
 
 
 @pytest.mark.asyncio
+async def test_builtin_model_future_proof():
+    """Test handling of a model that doesn't exist yet but could be added over the air"""
+    with patch("kiln_ai.adapters.provider_tools.built_in_models") as mock_models:
+        mock_models.__iter__.return_value = []
+
+        # should not find it, but should not raise an error
+        result = builtin_model_from("gpt_99")
+        assert result is None
+
+
+@pytest.mark.asyncio
 async def test_builtin_model_from_model_no_providers():
     """Test handling of a model with no providers"""
     with patch("kiln_ai.adapters.provider_tools.built_in_models") as mock_models:
@@ -431,10 +444,8 @@ async def test_builtin_model_from_model_no_providers():
         )
         mock_models.__iter__.return_value = [mock_model]
 
-        with pytest.raises(ValueError) as exc_info:
-            await builtin_model_from(ModelName.phi_3_5)
-
-        assert str(exc_info.value) == f"Model {ModelName.phi_3_5} has no providers"
+        result = builtin_model_from(ModelName.phi_3_5)
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -459,7 +470,7 @@ def test_finetune_provider_model_success(mock_project, mock_task, mock_finetune)
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_finetune_provider_model_success_final_and_intermediate(
@@ -474,7 +485,7 @@ def test_finetune_provider_model_success_final_and_intermediate(
     assert provider.model_id == "ft:gpt-3.5-turbo:custom:model-123"
     assert provider.structured_output_mode == StructuredOutputMode.json_schema
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_finetune_provider_model_success_r1_compatible(
@@ -588,7 +599,7 @@ def test_finetune_provider_model_structured_mode(
     assert provider.model_id == "fireworks-model-123"
     assert provider.structured_output_mode == expected_mode
     assert provider.reasoning_capable is False
-    assert provider.parser == None
+    assert provider.parser is None
 
 
 def test_openai_compatible_provider_config(mock_shared_config):
@@ -962,7 +973,7 @@ def mock_config_for_lite_llm_core_config():
                     "api_key": "test-openrouter-key",
                 },
                 default_headers={
-                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "HTTP-Referer": "https://kiln.tech/openrouter",
                     "X-Title": "KilnAI",
                 },
             ),
@@ -1112,3 +1123,57 @@ def test_lite_llm_core_config_for_provider_ollama_default_url(
     config = lite_llm_core_config_for_provider(ModelProviderName.ollama)
     assert config is not None
     assert config.base_url == "http://localhost:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_provider_enabled_docker_model_runner_success():
+    """Test provider_enabled for Docker Model Runner with successful connection"""
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_docker_model_runner_connection",
+        new_callable=AsyncMock,
+    ) as mock_get_docker:
+        # Mock successful Docker Model Runner connection with models
+        mock_get_docker.return_value = DockerModelRunnerConnection(
+            message="Connected",
+            supported_models=["llama-3.2-3b-instruct"],
+            untested_models=[],
+        )
+
+        result = await provider_enabled(ModelProviderName.docker_model_runner)
+        assert result is True
+
+
+@pytest.mark.asyncio
+async def test_provider_enabled_docker_model_runner_no_models():
+    """Test provider_enabled for Docker Model Runner with no models"""
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_docker_model_runner_connection",
+        new_callable=AsyncMock,
+    ) as mock_get_docker:
+        # Mock Docker Model Runner connection but with no models
+        mock_get_docker.return_value = DockerModelRunnerConnection(
+            message="Connected but no models", supported_models=[], untested_models=[]
+        )
+
+        result = await provider_enabled(ModelProviderName.docker_model_runner)
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_provider_enabled_docker_model_runner_connection_error():
+    """Test provider_enabled for Docker Model Runner with connection error"""
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_docker_model_runner_connection",
+        new_callable=AsyncMock,
+    ) as mock_get_docker:
+        # Mock Docker Model Runner connection failure
+        mock_get_docker.side_effect = Exception("Connection failed")
+
+        result = await provider_enabled(ModelProviderName.docker_model_runner)
+        assert result is False
+
+
+def test_provider_name_from_id_docker_model_runner():
+    """Test provider_name_from_id for Docker Model Runner"""
+    result = provider_name_from_id(ModelProviderName.docker_model_runner)
+    assert result == "Docker Model Runner"

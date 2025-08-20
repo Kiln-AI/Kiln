@@ -42,7 +42,7 @@ jobs:
           files-folder: ${{ github.workspace }}/app/desktop/build/dist
           files-folder-recurse: true
           files-folder-filter: exe
-          # TODO: consider signing dlls as well. But for testing, we don't want to use all our quota.
+          # We should consider signing dlls as well, but for testing we don't want to use all our quota.
           # files-folder-filter: exe,dll
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com

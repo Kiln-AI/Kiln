@@ -6,14 +6,8 @@ import pytest
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.ml_model_list import (
-    built_in_models,
-)
-from kiln_ai.adapters.model_adapters.base_adapter import (
-    BaseAdapter,
-    RunOutput,
-    Usage,
-)
+from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput, Usage
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
@@ -180,8 +174,14 @@ async def run_structured_output_test(tmp_path: Path, model_name: str, provider: 
     # Check reasoning models
     assert a._model_provider is not None
     if a._model_provider.reasoning_capable:
-        assert "reasoning" in run.intermediate_outputs
-        assert isinstance(run.intermediate_outputs["reasoning"], str)
+        # some providers have reasoning_capable models that do not return the reasoning
+        # for structured output responses (they provide it only for non-structured output)
+        if a._model_provider.reasoning_optional_for_structured_output:
+            # models may be updated to include the reasoning in the future
+            assert "reasoning" not in run.intermediate_outputs
+        else:
+            assert "reasoning" in run.intermediate_outputs
+            assert isinstance(run.intermediate_outputs["reasoning"], str)
 
 
 def build_structured_input_test_task(tmp_path: Path):

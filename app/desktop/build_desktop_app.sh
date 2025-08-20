@@ -19,19 +19,25 @@ fi
 # Building the bootloader ourselves helps not be falsely detected as malware by antivirus software on windows.
 # We clone pyinstaller, build the bootloader, and install it into the pyproject desktop pyproject.
 if [[ $* == *--build-bootloader* ]]; then
-  echo "Building pyinstaller inlucding bootloader"
-
+  echo "Building pyinstaller including bootloader"
   mkdir -p desktop/build/bootloader
   cd desktop/build/bootloader
+
+  echo "Downloading pyinstaller"
   curl -L https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v6.11.1.tar.gz -o pyinstaller.tar.gz
   tar -xzf pyinstaller.tar.gz
+  # Remove the old pyinstaller if it exists
+  rm -rf pyinstaller
   mv pyinstaller-6.11.1 pyinstaller
   cd pyinstaller/bootloader
+
+  echo "Building bootloader"
   python ./waf all
 
   # install the pyinstaller we just built into the desktop pyproject
+  echo "Adding pyinstaller to desktop pyproject"
   cd $APP_DIR/desktop
-  uv add build/bootloader/pyinstaller
+  uv pip install build/bootloader/pyinstaller
 
   # return to the /app directory of the project
   cd $APP_DIR
@@ -62,7 +68,7 @@ else
 fi
 
 # Builds the desktop app
-# TODO: use a spec instead of long winded command line
+# We should use a spec instead of a long-winded command line
 pyinstaller $(printf %s "$PLATFORM_OPTS")  \
   --add-data "./taskbar.png:." --add-data "../../web_ui/build:./web_ui/build" \
   --noconfirm --distpath=./desktop/build/dist --workpath=./desktop/build/work \

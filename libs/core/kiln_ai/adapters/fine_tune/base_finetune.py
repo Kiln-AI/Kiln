@@ -16,6 +16,7 @@ class FineTuneStatus(BaseModel):
 
     status: FineTuneStatusType
     message: str | None = None
+    error_details: str | None = None
 
 
 class FineTuneParameter(BaseModel):

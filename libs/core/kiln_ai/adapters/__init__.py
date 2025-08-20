@@ -31,15 +31,15 @@ from . import (
 )
 
 __all__ = [
-    "chunkers",
-    "model_adapters",
     "chat",
+    "chunkers",
     "data_gen",
-    "fine_tune",
-    "ml_model_list",
-    "ml_embedding_model_list",
-    "prompt_builders",
-    "repair",
     "eval",
     "extractors",
+    "fine_tune",
+    "ml_embedding_model_list",
+    "ml_model_list",
+    "model_adapters",
+    "prompt_builders",
+    "repair",
 ]

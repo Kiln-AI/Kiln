@@ -14,7 +14,7 @@ from pydantic import (
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_FIELD,
+    FilenameString,
     KilnAttachmentModel,
     KilnParentedModel,
     KilnParentModel,
@@ -61,7 +61,9 @@ class ChunkerType(str, Enum):
 
 
 class ChunkerConfig(KilnParentedModel):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="A name to identify the chunker config.",
+    )
     description: str | None = Field(
         default=None, description="The description of the chunker config"
     )

@@ -205,7 +205,7 @@ def mock_project(tmp_path):
 @pytest.fixture
 def mock_extractor_config_factory(mock_project):
     def _create_mock_extractor_config():
-        name = f"Test Extractor Config {str(uuid.uuid4())}"
+        name = f"Test Extractor Config {uuid.uuid4()!s}"
         extractor_config = ExtractorConfig(
             name=name,
             description="Test description",
@@ -229,7 +229,7 @@ def mock_extractor_config_factory(mock_project):
 @pytest.fixture
 def mock_attachment_factory(tmp_path):
     def _create_mock_attachment():
-        filename = f"test_{str(uuid.uuid4())}.txt"
+        filename = f"test_{uuid.uuid4()!s}.txt"
         with open(tmp_path / filename, "w") as f:
             f.write("test")
         return KilnAttachmentModel.from_file(tmp_path / filename)
@@ -240,10 +240,10 @@ def mock_attachment_factory(tmp_path):
 @pytest.fixture
 def mock_document_factory(mock_project, mock_attachment_factory):
     def _create_mock_document():
-        name = f"Test Document {str(uuid.uuid4())}"
+        name = f"Test Document {uuid.uuid4()!s}"
         document = Document(
             name=name,
-            description=f"Test description {str(uuid.uuid4())}",
+            description=f"Test description {uuid.uuid4()!s}",
             kind=Kind.DOCUMENT,
             original_file=FileInfo(
                 filename=f"test_{name}.txt",

@@ -466,10 +466,8 @@ def system_message_from_request(
     task: Task, custom_system_message: str | None, system_message_generator: str | None
 ) -> str:
     system_message = custom_system_message
-    if (
-        not system_message
-        or len(system_message) == 0
-        and system_message_generator is not None
+    if not system_message or (
+        len(system_message) == 0 and system_message_generator is not None
     ):
         if system_message_generator is None:
             raise HTTPException(
@@ -484,7 +482,7 @@ def system_message_from_request(
         except Exception as e:
             raise HTTPException(
                 status_code=400,
-                detail=f"Error generating system message using generator: {system_message_generator}. Source error: {str(e)}",
+                detail=f"Error generating system message using generator: {system_message_generator}. Source error: {e!s}",
             )
     if system_message is None or len(system_message) == 0:
         raise HTTPException(

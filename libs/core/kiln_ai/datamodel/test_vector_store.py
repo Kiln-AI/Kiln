@@ -159,9 +159,6 @@ class TestVectorStoreConfig:
         [
             "",
             "a" * 121,  # Too long
-            "invalid@name",
-            "invalid#name",
-            "invalid$name",
         ],
     )
     def test_vector_store_config_invalid_names(self, name):
