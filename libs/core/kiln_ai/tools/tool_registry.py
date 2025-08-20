@@ -39,7 +39,7 @@ def tool_from_id(tool_id: str, project_id: str) -> KilnToolInterface:
         # Get the tool server ID and tool name from the ID
         tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
         # Import here to avoid circular import
-        from kiln_ai.datamodel.registry import project_from_id
+        from kiln_ai.utils.project_utils import project_from_id
 
         project = project_from_id(project_id)
         if project is None:
