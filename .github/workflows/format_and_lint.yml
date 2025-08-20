@@ -17,17 +17,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "^1.22"
 
-      - name: Download go misspell
-        run: go install github.com/client9/misspell/cmd/misspell@latest
+      - name: Download misspell tool
+        run: |
+          wget https://github.com/client9/misspell/releases/download/v0.3.4/misspell_0.3.4_linux_64bit.tar.gz
+          tar -xzf misspell_0.3.4_linux_64bit.tar.gz
+          chmod +x misspell
+
       - name: Run misspell
-        run: misspell -error .
+        run: ./misspell -error .
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
 
       - name: Set up Python
         run: uv python install
@@ -37,7 +40,8 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          uvx ruff check --select I .
+          uvx ruff check
+
       - name: Format with ruff
         run: |
           uvx ruff format --check .

@@ -1,3 +1,5 @@
+from collections import Counter
+
 import pytest
 
 from kiln_ai.adapters.ml_model_list import (
@@ -392,3 +394,50 @@ def test_no_empty_multimodal_mime_types():
             # a model that supports doc extraction is necessarily multimodal
             if provider.supports_doc_extraction:
                 assert provider.multimodal_capable
+
+
+def test_no_reasoning_for_structured_output():
+    """Test that no reasoning is returned for structured output"""
+    # get all models
+    for model in built_in_models:
+        for provider in model.providers:
+            if provider.reasoning_optional_for_structured_output is not None:
+                assert provider.reasoning_capable, (
+                    f"{model.name} {provider.name} has reasoning_optional_for_structured_output but is not reasoning capable. This field should only be defined for models that are reasoning capable."
+                )
+
+
+def test_unique_providers_per_model():
+    """Test that each model can only have one entry per provider"""
+    for model in built_in_models:
+        provider_names = [provider.name for provider in model.providers]
+        unique_provider_names = set(provider_names)
+
+        if len(provider_names) != len(unique_provider_names):
+            # Find which providers have duplicates
+            provider_counts = Counter(provider_names)
+            duplicates = {
+                name: count for name, count in provider_counts.items() if count > 1
+            }
+
+            # Show details about duplicates
+            duplicate_details = []
+            for provider_name, count in duplicates.items():
+                duplicate_providers = [
+                    p for p in model.providers if p.name == provider_name
+                ]
+                model_ids = [p.model_id for p in duplicate_providers]
+                duplicate_details.append(
+                    f"{provider_name} (appears {count} times with model_ids: {model_ids})"
+                )
+
+            assert False, (
+                f"Model {model.name} has duplicate providers:\n"
+                f"Expected: 1 entry per provider\n"
+                f"Found: {len(provider_names)} total entries, {len(unique_provider_names)} unique providers\n"
+                f"Duplicates: {', '.join(duplicate_details)}\n"
+                f"This suggests either:\n"
+                f"1. A bug where the same provider is accidentally duplicated, or\n"
+                f"2. Intentional design where the same provider offers different model variants\n"
+                f"If this is intentional, the test should be updated to allow multiple entries per provider."
+            )
