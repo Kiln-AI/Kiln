@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel.project import Project
 from mcp.types import ListToolsResult, Tool
 
-from app.desktop.studio_server.tool_servers_api import connect_tool_servers_api
+from app.desktop.studio_server.tool_api import connect_tool_servers_api
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def test_create_tool_server_success(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -70,7 +70,7 @@ def test_create_tool_server_no_headers(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -94,7 +94,7 @@ def test_create_tool_server_empty_headers(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -118,7 +118,7 @@ def test_create_tool_server_missing_server_url(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -139,7 +139,7 @@ def test_create_tool_server_missing_name(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -160,7 +160,7 @@ def test_create_tool_server_no_description(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -176,7 +176,7 @@ def test_create_tool_server_no_description(client, test_project):
 
 def test_get_available_tool_servers_empty(client, test_project):
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -197,7 +197,7 @@ def test_get_available_tool_servers_with_tool_server(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -229,7 +229,7 @@ def test_get_tool_server_success(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -259,7 +259,7 @@ def test_get_tool_server_success(client, test_project):
             yield mock_session
 
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared:
             mock_session_manager = AsyncMock()
             mock_session_manager.mcp_client = mock_mcp_client
@@ -299,7 +299,7 @@ def test_get_tool_server_mcp_error_handling(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -323,7 +323,7 @@ def test_get_tool_server_mcp_error_handling(client, test_project):
             yield mock_session
 
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared:
             mock_session_manager = AsyncMock()
             mock_session_manager.mcp_client = mock_mcp_client_error
@@ -339,7 +339,7 @@ def test_get_tool_server_mcp_error_handling(client, test_project):
 
 def test_get_tool_server_not_found(client, test_project):
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -356,7 +356,7 @@ def test_get_tool_server_not_found(client, test_project):
 def test_get_available_tools_empty(client, test_project):
     """Test get_available_tools with no tool servers returns empty list"""
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -378,7 +378,7 @@ def test_get_available_tools_success(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -409,7 +409,7 @@ def test_get_available_tools_success(client, test_project):
             yield mock_session
 
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared:
             mock_session_manager = AsyncMock()
             mock_session_manager.mcp_client = mock_mcp_client
@@ -460,7 +460,7 @@ def test_get_available_tools_multiple_servers(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -504,7 +504,7 @@ def test_get_available_tools_multiple_servers(client, test_project):
             yield mock_session
 
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared:
             mock_session_manager = AsyncMock()
             mock_session_manager.mcp_client = mock_mcp_client
@@ -541,7 +541,7 @@ def test_get_available_tools_mcp_error_handling(client, test_project):
     }
 
     with patch(
-        "app.desktop.studio_server.tool_servers_api.project_from_id"
+        "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
@@ -561,7 +561,7 @@ def test_get_available_tools_mcp_error_handling(client, test_project):
             yield mock_session
 
         with patch(
-            "app.desktop.studio_server.tool_servers_api.MCPSessionManager.shared"
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared:
             mock_session_manager = AsyncMock()
             mock_session_manager.mcp_client = mock_mcp_client_error
