@@ -7,15 +7,15 @@ from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 from kiln_server.project_api import project_from_id
-from mcp.types import Tool
+from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, ValidationError
-
-"""
-This class is used to describe the external tool server under Settings -> Manage Tools UI.
-"""
 
 
 class KilnToolServerDescription(BaseModel):
+    """
+    This class is used to describe the external tool server under Settings -> Manage Tools UI.
+    """
+
     name: str
     id: ID_TYPE
     type: ToolServerType
@@ -29,18 +29,17 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
 
 
-"""
-This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
-"""
-
-
 class ExternalToolApiDescription(BaseModel):
+    """
+    This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+    """
+
     name: str
     description: str | None
     inputSchema: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
-    def tool_from_mcp_tool(cls, tool: Tool):
+    def tool_from_mcp_tool(cls, tool: MCPTool):
         """Create an ExternalToolApiDescription from an MCP Tool object."""
 
         return cls(
@@ -50,12 +49,11 @@ class ExternalToolApiDescription(BaseModel):
         )
 
 
-"""
-This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
-"""
-
-
 class ExternalToolServerApiDescription(BaseModel):
+    """
+    This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
+    """
+
     id: ID_TYPE
     type: ToolServerType
     name: str

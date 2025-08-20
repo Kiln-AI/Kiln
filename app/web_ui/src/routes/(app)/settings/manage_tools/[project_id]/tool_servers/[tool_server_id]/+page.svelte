@@ -112,23 +112,33 @@
     )
   }
 
-  function formatToolArguments(inputSchema: Record<string, unknown>): string {
+  interface Argument {
+    name: string
+    type: string
+    description: string
+    isRequired: boolean
+  }
+
+  function formatToolArguments(
+    inputSchema: Record<string, unknown>,
+  ): Argument[] {
     if (!inputSchema || !inputSchema.properties) {
-      return ""
+      return []
     }
 
     const properties = inputSchema.properties as Record<string, unknown>
     const required = (inputSchema.required as string[]) || []
 
-    return Object.entries(properties)
-      .map(([name, schema]) => {
-        const schemaObj = schema as Record<string, unknown>
-        const isRequired = required.includes(name)
-        const type = (schemaObj.type as string) || "unknown"
-        const description = (schemaObj.description as string) || ""
-        return `${name}${isRequired ? "*" : ""} (${type})${description ? `: ${description}` : ""}`
-      })
-      .join("|||") // Use a delimiter that we can split on later
+    const args: Argument[] = []
+
+    for (const [name, schema] of Object.entries(properties)) {
+      const schemaObj = schema as Record<string, unknown>
+      const isRequired = required.includes(name)
+      const type = (schemaObj.type as string) || "Unknown"
+      const description = (schemaObj.description as string) || ""
+      args.push({ name, type, description, isRequired })
+    }
+    return args
   }
 </script>
 
@@ -194,16 +204,24 @@
                 {#each tool_server.available_tools as tool}
                   <tr>
                     <td class="font-medium">{tool.name}</td>
-                    <td>{tool.description || "N/A"}</td>
-                    <td>
-                      {#if formatToolArguments(tool.inputSchema || {})}
-                        <ul class="list-disc list-inside">
-                          {#each formatToolArguments(tool.inputSchema || {}).split("|||") as arg}
-                            <li class="text-sm">{arg}</li>
+                    <td>{tool.description || "None"}</td>
+                    <td class="font-mono">
+                      {#if formatToolArguments(tool.inputSchema || {}).length > 0}
+                        <div class="flex flex-col gap-3">
+                          {#each formatToolArguments(tool.inputSchema || {}) as arg}
+                            <div class="flex items-center flex-wrap">
+                              {#if !arg.isRequired}
+                                <span class="badge badge-ghost">Optional</span>
+                              {/if}
+                              <span>{arg.name}</span>
+                              <span class="font-light text-gray-500"
+                                >[{arg.type}] {arg.description}</span
+                              >
+                            </div>
                           {/each}
-                        </ul>
+                        </div>
                       {:else}
-                        <span class="text-gray-500">N/A</span>
+                        <span class="text-gray-500">None</span>
                       {/if}
                     </td>
                   </tr>
