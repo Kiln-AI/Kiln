@@ -202,21 +202,33 @@
               </thead>
               <tbody>
                 {#each tool_server.available_tools as tool}
+                  {@const formatted_args = formatToolArguments(
+                    tool.inputSchema || {},
+                  )}
                   <tr>
                     <td class="font-medium">{tool.name}</td>
                     <td>{tool.description || "None"}</td>
-                    <td class="font-mono">
-                      {#if formatToolArguments(tool.inputSchema || {}).length > 0}
-                        <div class="flex flex-col gap-3">
-                          {#each formatToolArguments(tool.inputSchema || {}) as arg}
-                            <div class="flex items-center flex-wrap">
-                              {#if !arg.isRequired}
-                                <span class="badge badge-ghost">Optional</span>
+                    <td>
+                      {#if formatted_args.length > 0}
+                        <div class="divide-y divide-y-[0.5px]">
+                          {#each formatted_args as arg}
+                            <div class="py-2">
+                              <div class="flex flex-row gap-3 items-center">
+                                <span class="font-mono">{arg.name}</span>
+                                <span class="font-mono font-light text-gray-500"
+                                  >{arg.type}
+                                </span>
+                                {#if !arg.isRequired}
+                                  <span class="badge badge-sm badge-outline"
+                                    >Optional</span
+                                  >
+                                {/if}
+                              </div>
+                              {#if arg.description}
+                                <div class="text-gray-500 text-sm mt-1">
+                                  {arg.description}
+                                </div>
                               {/if}
-                              <span>{arg.name}</span>
-                              <span class="font-light text-gray-500"
-                                >[{arg.type}] {arg.description}</span
-                              >
                             </div>
                           {/each}
                         </div>
