@@ -15,6 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "diff-cover>=9.6.0",
     "isort>=5.13.2",
     "pyright==1.1.376",
     "pytest-asyncio>=0.24.0",
@@ -22,6 +23,7 @@ dev = [
     "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
     "ruff>=0.9.0",
+    "watchfiles>=1.1.0",
 ]
 
 
@@ -46,8 +48,14 @@ reportMissingTypeArgument = true
 
 
 [tool.ruff]
-exclude = [
-]
+exclude = []
+
+[tool.ruff.lint]
+# I is import sorting
+# F401 is unused imports
+# RUF is ruff rules. In particular 012+008 are mutable defaults (important)
+# FAST is FastAPI related linting
+extend-select = ["I","F401","RUF","FAST"]
 
 [tool.pytest.ini_options]
  addopts="-n auto"

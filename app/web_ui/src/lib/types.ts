@@ -19,6 +19,8 @@ export type FinetuneProvider = components["schemas"]["FinetuneProvider"]
 export type FineTuneParameter = components["schemas"]["FineTuneParameter"]
 export type FinetuneWithStatus = components["schemas"]["FinetuneWithStatus"]
 export type OllamaConnection = components["schemas"]["OllamaConnection"]
+export type DockerModelRunnerConnection =
+  components["schemas"]["DockerModelRunnerConnection"]
 export type RunSummary = components["schemas"]["RunSummary"]
 export type PromptResponse = components["schemas"]["PromptResponse"]
 export type ChatStrategy = components["schemas"]["ChatStrategy"]

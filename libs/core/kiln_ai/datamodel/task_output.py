@@ -307,7 +307,7 @@ class TaskOutput(KilnBaseModel):
         if task.output_json_schema is not None:
             try:
                 output_parsed = json.loads(self.output)
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 raise ValueError("Output is not a valid JSON object")
 
             validate_schema_with_value_error(

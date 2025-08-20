@@ -57,6 +57,14 @@ To confirm everything works locally, run:
 uv run ./checks.sh
 ```
 
+4. Setup pre-commit hook.
+
+In your base Kiln directory, run the following command to setup a pre-commit hook which will run the Kiln checks locally before each commit.
+
+```bash
+cp utils/pre-commit-hook .git/hooks/pre-commit
+```
+
 ## Optional Setup
 
 ### IDE Extensions
@@ -71,6 +79,12 @@ We suggest the following extensions for VSCode/Cursor. With them, you'll get com
 - Svelte for VS Code
 - Vitest
 - ESLint
+
+### HooksMCP
+
+We have a [hooks_mcp.yaml](./hooks_mcp.yaml) file, which defines how coding agents can interact with our developer tools (formatting, linting, etc).
+
+To use it, [setup HooksMCP](https://github.com/scosman/hooks_mcp?tab=readme-ov-file#running-hooksmcp) for your agents.
 
 ### llms.txt
 

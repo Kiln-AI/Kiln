@@ -6,6 +6,7 @@ const provider_image_map: Record<ModelProviderName | "wandb", string> = {
   anthropic: "/images/anthropic.svg",
   groq: "/images/groq.svg",
   ollama: "/images/ollama.svg",
+  docker_model_runner: "/images/docker.svg",
   gemini_api: "/images/gemini.svg",
   vertex: "/images/google_logo.svg",
   amazon_bedrock: "/images/aws.svg",
@@ -17,6 +18,8 @@ const provider_image_map: Record<ModelProviderName | "wandb", string> = {
   kiln_fine_tune: "/images/logo.svg",
   kiln_custom_registry: "/images/logo.svg",
   wandb: "/images/wandb.svg",
+  siliconflow_cn: "/images/siliconflow.svg",
+  cerebras: "/images/cerebras.svg",
 }
 
 export function get_provider_image(provider_name: string) {

@@ -2,7 +2,9 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 
+import httpx
 import litellm
+import openai
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -18,6 +20,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelName,
     ModelProviderName,
+    StructuredOutputMode,
     built_in_models,
 )
 from kiln_ai.utils.config import Config
@@ -32,12 +35,14 @@ from app.desktop.studio_server.provider_api import (
     connect_anthropic,
     connect_azure_openai,
     connect_bedrock,
+    connect_docker_model_runner,
     connect_gemini,
     connect_groq,
     connect_huggingface,
     connect_ollama,
     connect_openrouter,
     connect_provider_api,
+    connect_siliconflow,
     connect_together,
     connect_vertex,
     connect_wandb,
@@ -61,10 +66,27 @@ def client(app):
     return TestClient(app)
 
 
-def test_connect_api_key_invalid_payload(client):
+@pytest.mark.parametrize(
+    "provider",
+    [
+        "openai",
+        "groq",
+        "openrouter",
+        "fireworks_ai",
+        "amazon_bedrock",
+        "anthropic",
+        "gemini_api",
+        "azure_openai",
+        "huggingface",
+        "vertex",
+        "together_ai",
+        "siliconflow_cn",
+    ],
+)
+def test_connect_api_key_invalid_payload(client, provider):
     response = client.post(
         "/api/provider/connect_api_key",
-        json={"provider": "openai", "key_data": "invalid"},
+        json={"provider": provider, "key_data": "invalid"},
     )
     assert response.status_code == 400
     assert response.json() == {"message": "Invalid key_data or provider"}
@@ -89,6 +111,18 @@ def test_connect_api_key_openai_success(mock_connect_openai, client):
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to OpenAI"}
     mock_connect_openai.assert_called_once_with("test_key")
+
+
+@patch("app.desktop.studio_server.provider_api.connect_siliconflow")
+def test_connect_api_key_siliconflow_success(mock_connect_siliconflow, client):
+    mock_connect_siliconflow.return_value = {"message": "Connected to Siliconflow"}
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "siliconflow_cn", "key_data": {"API Key": "test_key"}},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to Siliconflow"}
+    mock_connect_siliconflow.assert_called_once_with("test_key")
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")
@@ -316,6 +350,443 @@ async def test_connect_bedrock_unknown_error(mock_litellm_acompletion, mock_envi
         await connect_bedrock(
             {"Access Key": "test_access_key", "Secret Key": "test_secret_key"}
         )
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_invalid_url():
+    """Test connect_docker_model_runner with invalid URL format"""
+    with pytest.raises(HTTPException) as exc_info:
+        await connect_docker_model_runner("invalid-url")
+
+    assert exc_info.value.status_code == 400
+    assert "Invalid Docker Model Runner URL" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_connection_failure():
+    """Test connect_docker_model_runner when connection fails"""
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.return_value = None
+
+        with pytest.raises(HTTPException) as exc_info:
+            await connect_docker_model_runner("http://localhost:12434")
+
+        assert exc_info.value.status_code == 417
+        assert "Failed to connect" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_api_error():
+    """Test connect_docker_model_runner with API errors"""
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.side_effect = openai.APIConnectionError(request=Mock())
+
+        with pytest.raises(HTTPException) as exc_info:
+            await connect_docker_model_runner("http://localhost:12434")
+
+        assert exc_info.value.status_code == 500
+        assert "Failed to connect to Docker Model Runner" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_http_error():
+    """Test connect_docker_model_runner with HTTP errors"""
+    import httpx
+
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.side_effect = httpx.RequestError("Connection error")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await connect_docker_model_runner("http://localhost:12434")
+
+        assert exc_info.value.status_code == 500
+        assert "Failed to connect to Docker Model Runner" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_preserves_http_exception():
+    """Test connect_docker_model_runner preserves HTTPException from earlier raises"""
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        # First raise HTTPException for invalid URL, then it should be preserved
+        original_exception = HTTPException(status_code=400, detail="Invalid URL")
+        mock_get_connection.side_effect = original_exception
+
+        with pytest.raises(HTTPException) as exc_info:
+            await connect_docker_model_runner("http://localhost:12434")
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.detail == "Invalid URL"
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_saves_custom_url():
+    """Test connect_docker_model_runner saves custom URL on success"""
+    from app.desktop.studio_server.provider_api import DockerModelRunnerConnection
+
+    mock_connection = DockerModelRunnerConnection(
+        message="Connected", supported_models=["model1"], untested_models=[]
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+        ) as mock_get_connection,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_get_connection.return_value = mock_connection
+        mock_config_instance = MagicMock()
+        mock_config_instance.docker_model_runner_base_url = (
+            "http://localhost:12434/engines/llama.cpp"
+        )
+        mock_config.return_value = mock_config_instance
+
+        custom_url = "http://custom:8080/engines/llama.cpp"
+        result = await connect_docker_model_runner(custom_url)
+
+        assert result == mock_connection
+        mock_config_instance.save_setting.assert_called_once_with(
+            "docker_model_runner_base_url", custom_url
+        )
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_does_not_save_same_url():
+    """Test connect_docker_model_runner doesn't save URL if it's the same as current"""
+    from app.desktop.studio_server.provider_api import DockerModelRunnerConnection
+
+    mock_connection = DockerModelRunnerConnection(
+        message="Connected", supported_models=["model1"], untested_models=[]
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+        ) as mock_get_connection,
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_get_connection.return_value = mock_connection
+        mock_config_instance = MagicMock()
+        same_url = "http://localhost:12434/engines/llama.cpp"
+        mock_config_instance.docker_model_runner_base_url = same_url
+        mock_config.return_value = mock_config_instance
+
+        result = await connect_docker_model_runner(same_url)
+
+        assert result == mock_connection
+        mock_config_instance.save_setting.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_api_endpoint(client):
+    """Test the /api/provider/docker_model_runner/connect endpoint"""
+    from app.desktop.studio_server.provider_api import DockerModelRunnerConnection
+
+    mock_connection = DockerModelRunnerConnection(
+        message="Connected", supported_models=["model1"], untested_models=[]
+    )
+
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_docker_model_runner"
+    ) as mock_connect:
+        mock_connect.return_value = mock_connection
+
+        response = client.get("/api/provider/docker_model_runner/connect")
+
+        assert response.status_code == 200
+        mock_connect.assert_called_once_with(None)
+
+
+@pytest.mark.asyncio
+async def test_connect_docker_model_runner_api_endpoint_with_custom_url(client):
+    """Test the /api/provider/docker_model_runner/connect endpoint with custom URL"""
+    from app.desktop.studio_server.provider_api import DockerModelRunnerConnection
+
+    mock_connection = DockerModelRunnerConnection(
+        message="Connected", supported_models=["model1"], untested_models=[]
+    )
+
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_docker_model_runner"
+    ) as mock_connect:
+        mock_connect.return_value = mock_connection
+
+        custom_url = "http://custom:8080/engines/llama.cpp"
+        response = client.get(
+            "/api/provider/docker_model_runner/connect",
+            params={"docker_model_runner_custom_url": custom_url},
+        )
+
+        assert response.status_code == 200
+        mock_connect.assert_called_once_with(custom_url)
+
+
+@pytest.mark.asyncio
+async def test_available_docker_model_runner_models_success():
+    """Test available_docker_model_runner_models with successful connection"""
+    from app.desktop.studio_server.provider_api import (
+        DockerModelRunnerConnection,
+        available_docker_model_runner_models,
+    )
+
+    # Create mock connection
+    mock_connection = DockerModelRunnerConnection(
+        message="Connected",
+        supported_models=["supported1", "supported2"],
+        untested_models=["custom-model"],
+    )
+
+    # Create test models that match Docker Model Runner IDs
+    test_models = [
+        KilnModel(
+            name="supported1",
+            friendly_name="Supported 1",
+            family="llama",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.docker_model_runner,
+                    model_id="supported1",
+                    supports_structured_output=True,
+                    structured_output_mode=StructuredOutputMode.json_schema,
+                )
+            ],
+        ),
+        KilnModel(
+            name="supported2",
+            friendly_name="Supported 2",
+            family="mistral",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.docker_model_runner,
+                    model_id="supported2",
+                    supports_structured_output=False,
+                    structured_output_mode=StructuredOutputMode.json_schema,
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+        ) as mock_get_connection,
+        patch("app.desktop.studio_server.provider_api.built_in_models", test_models),
+    ):
+        mock_get_connection.return_value = mock_connection
+
+        result = await available_docker_model_runner_models()
+
+        assert result is not None
+        assert result.provider_name == "Docker Model Runner"
+        assert result.provider_id == ModelProviderName.docker_model_runner
+        assert len(result.models) == 3  # 2 supported + 1 untested
+
+        # Check first supported model
+        assert result.models[0].id == "supported1"
+        assert result.models[0].name == "Supported 1"
+        assert result.models[0].supports_structured_output is True
+        assert (
+            result.models[0].structured_output_mode == StructuredOutputMode.json_schema
+        )
+        assert result.models[0].untested_model is False
+
+        # Check second supported model
+        assert result.models[1].id == "supported2"
+        assert result.models[1].name == "Supported 2"
+        assert result.models[1].supports_structured_output is False
+        assert (
+            result.models[1].structured_output_mode == StructuredOutputMode.json_schema
+        )
+        assert result.models[1].untested_model is False
+
+        # Check untested model
+        assert result.models[2].id == "custom-model"
+        assert result.models[2].name == "custom-model"
+        assert result.models[2].supports_structured_output is True
+        assert (
+            result.models[2].structured_output_mode == StructuredOutputMode.json_schema
+        )
+        assert result.models[2].untested_model is True
+
+
+@pytest.mark.asyncio
+async def test_available_docker_model_runner_models_no_connection():
+    """Test available_docker_model_runner_models when connection fails"""
+    from app.desktop.studio_server.provider_api import (
+        available_docker_model_runner_models,
+    )
+
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.return_value = None
+
+        result = await available_docker_model_runner_models()
+
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_available_docker_model_runner_models_no_models():
+    """Test available_docker_model_runner_models when no models are available"""
+    from app.desktop.studio_server.provider_api import (
+        DockerModelRunnerConnection,
+        available_docker_model_runner_models,
+    )
+
+    # Create mock connection with no models
+    mock_connection = DockerModelRunnerConnection(
+        message="Connected", supported_models=[], untested_models=[]
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+        ) as mock_get_connection,
+        patch("app.desktop.studio_server.provider_api.built_in_models", []),
+    ):
+        mock_get_connection.return_value = mock_connection
+
+        result = await available_docker_model_runner_models()
+
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_available_docker_model_runner_models_api_error():
+    """Test available_docker_model_runner_models with API errors"""
+    from app.desktop.studio_server.provider_api import (
+        available_docker_model_runner_models,
+    )
+
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.side_effect = openai.APIConnectionError(request=Mock())
+
+        result = await available_docker_model_runner_models()
+
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_available_docker_model_runner_models_http_error():
+    """Test available_docker_model_runner_models with HTTP errors"""
+    from app.desktop.studio_server.provider_api import (
+        available_docker_model_runner_models,
+    )
+
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.side_effect = httpx.RequestError("Connection error")
+
+        result = await available_docker_model_runner_models()
+
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_available_docker_model_runner_models_http_exception():
+    """Test available_docker_model_runner_models with HTTPException"""
+    from app.desktop.studio_server.provider_api import (
+        available_docker_model_runner_models,
+    )
+
+    with patch(
+        "app.desktop.studio_server.provider_api.get_docker_model_runner_connection"
+    ) as mock_get_connection:
+        mock_get_connection.side_effect = HTTPException(
+            status_code=500, detail="Server error"
+        )
+
+        result = await available_docker_model_runner_models()
+
+        assert result is None
+
+
+def test_models_from_docker_model_runner_id():
+    """Test models_from_docker_model_runner_id function"""
+    from app.desktop.studio_server.provider_api import (
+        models_from_docker_model_runner_id,
+    )
+
+    # Create test models
+    test_models = [
+        KilnModel(
+            name="supported1",
+            friendly_name="Supported 1",
+            family="llama",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.docker_model_runner,
+                    model_id="supported1",
+                    supports_structured_output=True,
+                )
+            ],
+        ),
+        KilnModel(
+            name="supported2",
+            friendly_name="Supported 2",
+            family="mistral",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.docker_model_runner,
+                    model_id="supported2",
+                    supports_structured_output=False,
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="gpt-4",
+                    supports_structured_output=True,
+                ),
+            ],
+        ),
+        KilnModel(
+            name="openai_only_model",
+            friendly_name="OpenAI Only Model",
+            family="gpt",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="gpt-3.5-turbo",
+                    supports_structured_output=True,
+                )
+            ],
+        ),
+    ]
+
+    with patch("app.desktop.studio_server.provider_api.built_in_models", test_models):
+        # Test matching Docker Model Runner ID
+        results = models_from_docker_model_runner_id("supported1")
+        assert len(results) == 1
+        model, provider = results[0]
+        assert model.name == "supported1"
+        assert provider.name == ModelProviderName.docker_model_runner
+        assert provider.model_id == "supported1"
+
+        # Test matching Docker Model Runner ID with multiple providers
+        results = models_from_docker_model_runner_id("supported2")
+        assert len(results) == 1
+        model, provider = results[0]
+        assert model.name == "supported2"
+        assert provider.name == ModelProviderName.docker_model_runner
+        assert provider.model_id == "supported2"
+
+        # Test non-matching ID
+        results = models_from_docker_model_runner_id("non-existent-model")
+        assert len(results) == 0
+
+        # Test model without Docker Model Runner provider
+        results = models_from_docker_model_runner_id("gpt-3.5-turbo")
+        assert len(results) == 0
 
 
 @pytest.mark.asyncio
@@ -1260,10 +1731,6 @@ def test_openai_compatible_providers():
             "api_key": "test_key",
         }
     ]
-    mock_models = [
-        {"id": "model1", "name": "Model 1"},
-        {"id": "model2", "name": "Model 2"},
-    ]
 
     with (
         patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
@@ -1423,6 +1890,7 @@ def mock_config_all_providers():
     mock_config.fireworks_account_id = "test_key"
     mock_config.bedrock_access_key = "test_key"
     mock_config.bedrock_secret_key = "test_key"
+    mock_config.siliconflow_cn_api_key = "test_key"
     return mock_config
 
 
@@ -1442,6 +1910,24 @@ async def test_disconnect_api_key_openai(client, mock_config_all_providers):
 
         # Check it didn't unset the other providers
         assert mock_config_all_providers.groq_api_key is not None
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_siliconflow(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "siliconflow_cn"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.siliconflow_cn_api_key is None
+
+        # Check it didn't unset the other providers
+        assert mock_config_all_providers.open_ai_api_key is not None
 
 
 @pytest.mark.asyncio
@@ -1894,7 +2380,7 @@ async def test_connect_huggingface_success(mock_config_shared, mock_requests_get
             "Content-Type": "application/json",
         },
     )
-    mock_config.huggingface_api_key = "test_api_key"
+    assert mock_config.huggingface_api_key == "test_api_key"
     assert result.status_code == 200
     assert json.loads(result.body)["message"] == "Connected to Huggingface"
 
@@ -1985,7 +2471,7 @@ async def test_connect_huggingface_non_401_response(
         },
     )
     # Even with a 404, we should save the key as the function considers any non-401 as valid auth
-    mock_config.huggingface_api_key = "test_api_key"
+    assert mock_config.huggingface_api_key == "test_api_key"
     assert result.status_code == 200
     assert json.loads(result.body)["message"] == "Connected to Huggingface"
 
@@ -2073,7 +2559,7 @@ async def test_connect_together_success(mock_config_shared, mock_requests_get):
             "Content-Type": "application/json",
         },
     )
-    mock_config.together_api_key = "test_api_key"
+    assert mock_config.together_api_key == "test_api_key"
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Together.ai"}'
 
@@ -2148,9 +2634,105 @@ async def test_connect_together_non_401_response(mock_config_shared, mock_reques
     # Assert
     mock_requests_get.assert_called_once()
     # Even with a 500 error, if it's not 401, we consider the key valid
-    mock_config.together_api_key = "test_api_key"
+    assert mock_config.together_api_key == "test_api_key"
     assert result.status_code == 200
     assert result.body == b'{"message":"Connected to Together.ai"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_success(mock_config_shared, mock_requests_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"models": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_siliconflow("test_api_key")
+
+    mock_requests_get.assert_called_once_with(
+        "https://api.siliconflow.cn/v1/models",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    assert mock_config.siliconflow_cn_api_key == "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to SiliconFlow"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_invalid_api_key(
+    mock_config_shared, mock_requests_get
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = '{"error": "Unauthorized"}'
+    mock_requests_get.return_value = mock_response
+
+    result = await connect_siliconflow("invalid_api_key")
+
+    mock_requests_get.assert_called_once_with(
+        "https://api.siliconflow.cn/v1/models",
+        headers={
+            "Authorization": "Bearer invalid_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to SiliconFlow. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    result = await connect_siliconflow("test_api_key")
+
+    mock_requests_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to SiliconFlow. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_siliconflow_non_200_response(
+    mock_config_shared, mock_requests_get
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_requests_get.return_value = mock_response
+
+    result = await connect_siliconflow("test_api_key")
+
+    mock_requests_get.assert_called_once()
+    # Should NOT save key on non-200
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to SiliconFlow. Error: [500] Internal Server Error"}'
+    )
 
 
 @pytest.mark.asyncio

@@ -16,6 +16,7 @@ from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
     lite_llm_core_config_for_provider,
 )
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
@@ -38,6 +39,10 @@ def mock_config():
         mock.shared.return_value.azure_openai_api_key = "test-azure-openai-key"
         mock.shared.return_value.azure_openai_endpoint = (
             "https://test-azure-openai-endpoint.com/v1"
+        )
+        mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
+        mock.shared.return_value.docker_model_runner_base_url = (
+            "http://localhost:12434/engines/llama.cpp"
         )
         yield mock
 
@@ -104,7 +109,7 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
             additional_body_options={"api_key": "test-openrouter-key"},
             base_url="https://openrouter.ai/api/v1",
             default_headers={
-                "HTTP-Referer": "https://getkiln.ai/openrouter",
+                "HTTP-Referer": "https://kiln.tech/openrouter",
                 "X-Title": "KilnAI",
             },
         )
@@ -135,7 +140,7 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
         }
         assert adapter.config.base_url == "https://openrouter.ai/api/v1"
         assert adapter.config.default_headers == {
-            "HTTP-Referer": "https://getkiln.ai/openrouter",
+            "HTTP-Referer": "https://kiln.tech/openrouter",
             "X-Title": "KilnAI",
         }
         assert (
@@ -143,7 +148,34 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
             == ModelProviderName.openrouter
         )
     assert adapter.config.default_headers == {
-        "HTTP-Referer": "https://getkiln.ai/openrouter",
+        "HTTP-Referer": "https://kiln.tech/openrouter",
+        "X-Title": "KilnAI",
+    }
+
+
+def test_siliconflow_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+            model_provider_name=ModelProviderName.siliconflow_cn,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert (
+        adapter.config.run_config_properties.model_name
+        == "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+    )
+    assert adapter.config.additional_body_options == {"api_key": "test-siliconflow-key"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.siliconflow_cn
+    )
+    assert adapter.config.default_headers == {
+        "HTTP-Referer": "https://kiln.tech/siliconflow",
         "X-Title": "KilnAI",
     }
 
@@ -179,7 +211,7 @@ def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
     assert adapter.run_config.model_name == "test-model"
 
 
-# TODO should run for all cases
+# We should run for all cases
 def test_custom_prompt_builder(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
@@ -194,7 +226,7 @@ def test_custom_prompt_builder(mock_config, basic_task):
     assert adapter.run_config.prompt_id == "simple_chain_of_thought_prompt_builder"
 
 
-# TODO should run for all cases
+# We should run for all cases
 def test_tags_passed_through(mock_config, basic_task):
     tags = ["test-tag-1", "test-tag-2"]
     adapter = adapter_for_task(
@@ -453,7 +485,7 @@ def create_config_declarative(
                 base_url=getenv("OPENROUTER_BASE_URL")
                 or "https://openrouter.ai/api/v1",
                 default_headers={
-                    "HTTP-Referer": "https://getkiln.ai/openrouter",
+                    "HTTP-Referer": "https://kiln.tech/openrouter",
                     "X-Title": "KilnAI",
                 },
                 additional_body_options={
@@ -725,3 +757,78 @@ def test_lite_llm_core_config_for_provider_virtual_providers(
                     structured_output_mode="json_schema",
                 ),
             )
+
+
+def test_docker_model_runner_adapter_creation(mock_config, basic_task):
+    """Test Docker Model Runner adapter creation with default and custom base URL."""
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_2_3b",
+            model_provider_name=ModelProviderName.docker_model_runner,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "llama_3_2_3b"
+    assert adapter.config.additional_body_options == {"api_key": "DMR"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.docker_model_runner
+    )
+    assert adapter.config.base_url == "http://localhost:12434/engines/llama.cpp/v1"
+    assert adapter.config.default_headers is None
+
+
+def test_docker_model_runner_adapter_creation_with_custom_url(mock_config, basic_task):
+    """Test Docker Model Runner adapter creation with custom base URL."""
+    mock_config.shared.return_value.docker_model_runner_base_url = (
+        "http://custom:8080/engines/llama.cpp"
+    )
+
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_2_3b",
+            model_provider_name=ModelProviderName.docker_model_runner,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "llama_3_2_3b"
+    assert adapter.config.additional_body_options == {"api_key": "DMR"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.docker_model_runner
+    )
+    assert adapter.config.base_url == "http://custom:8080/engines/llama.cpp/v1"
+    assert adapter.config.default_headers is None
+
+
+def test_docker_model_runner_adapter_creation_with_none_url(mock_config, basic_task):
+    """Test Docker Model Runner adapter creation when config URL is None."""
+    mock_config.shared.return_value.docker_model_runner_base_url = None
+
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=RunConfigProperties(
+            model_name="llama_3_2_3b",
+            model_provider_name=ModelProviderName.docker_model_runner,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "llama_3_2_3b"
+    assert adapter.config.additional_body_options == {"api_key": "DMR"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.docker_model_runner
+    )
+    assert adapter.config.base_url == "http://localhost:12434/engines/llama.cpp/v1"
+    assert adapter.config.default_headers is None

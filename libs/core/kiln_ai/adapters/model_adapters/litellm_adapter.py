@@ -182,6 +182,9 @@ class LiteLlmAdapter(BaseAdapter):
                 if provider_name == ModelProviderName.ollama:
                     # Ollama added json_schema to all models: https://ollama.com/blog/structured-outputs
                     return self.json_schema_response_format()
+                elif provider_name == ModelProviderName.docker_model_runner:
+                    # Docker Model Runner uses OpenAI-compatible API with JSON schema support
+                    return self.json_schema_response_format()
                 else:
                     # Default to function calling -- it's older than the other modes. Higher compatibility.
                     # Strict isn't widely supported yet, so we don't use it by default unless it's OpenAI.
@@ -236,7 +239,7 @@ class LiteLlmAdapter(BaseAdapter):
         }
 
     def build_extra_body(self, provider: KilnModelProvider) -> dict[str, Any]:
-        # TODO P1: Don't love having this logic here. But it's a usability improvement
+        # Don't love having this logic here. But it's worth the usability improvement
         # so better to keep it than exclude it. Should figure out how I want to isolate
         # this sort of logic so it's config driven and can be overridden
 
@@ -250,6 +253,11 @@ class LiteLlmAdapter(BaseAdapter):
             # https://openrouter.ai/docs/use-cases/reasoning-tokens
             extra_body["reasoning"] = {
                 "exclude": False,
+            }
+
+        if provider.gemini_reasoning_enabled:
+            extra_body["reasoning"] = {
+                "enabled": True,
             }
 
         if provider.name == ModelProviderName.openrouter:
@@ -280,6 +288,10 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.openrouter_skip_required_parameters:
             # Oddball case, R1 14/8/1.5B fail with this param, even though they support thinking params.
             provider_options["require_parameters"] = False
+
+        # Siliconflow uses a bool flag for thinking, for some models
+        if provider.siliconflow_enable_thinking is not None:
+            extra_body["enable_thinking"] = provider.siliconflow_enable_thinking
 
         if len(provider_options) > 0:
             extra_body["provider"] = provider_options

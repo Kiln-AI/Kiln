@@ -215,9 +215,7 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">
-          Error Loading Available Models and Datasets
-        </div>
+        <div class="font-medium">Error Loading Fine Tune</div>
         <div class="text-error text-sm">
           {finetune_error?.getMessage() || "An unknown error occurred"}
         </div>
@@ -289,6 +287,12 @@
               <div class="flex items-center">Status Message</div>
               <div class="flex items-center text-gray-500">
                 {finetune.status.message}
+                {#if finetune.status.error_details}
+                  <InfoTooltip
+                    tooltip_text={"Error message: " +
+                      finetune.status.error_details}
+                  />
+                {/if}
               </div>
             {/if}
 

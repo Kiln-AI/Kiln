@@ -29,7 +29,7 @@ def test_valid_saved_prompt_id():
 
 def test_valid_fine_tune_prompt_id():
     """Test that valid fine-tune prompt IDs are accepted"""
-    valid_id = "fine_tune_prompt::ft_123456"
+    valid_id = "fine_tune_prompt::project_123::task_456::ft_123456"
     model = ModelTester(prompt_id=valid_id)
     assert model.prompt_id == valid_id
 
@@ -53,6 +53,10 @@ def test_invalid_saved_prompt_id_format(invalid_id):
     [
         ("fine_tune_prompt::", "Invalid fine-tune prompt ID: fine_tune_prompt::"),
         ("fine_tune_prompt", "Invalid prompt ID: fine_tune_prompt"),
+        (
+            "fine_tune_prompt::ft_123456",
+            "Invalid fine-tune prompt ID: fine_tune_prompt::ft_123456",
+        ),
     ],
 )
 def test_invalid_fine_tune_prompt_id_format(invalid_id, expected_error):
