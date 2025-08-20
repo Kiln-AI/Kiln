@@ -1,7 +1,7 @@
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
-from kiln_ai.datamodel.external_tool import ExternalToolServer
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import Task
 
 

@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error

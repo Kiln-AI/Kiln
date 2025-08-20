@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 

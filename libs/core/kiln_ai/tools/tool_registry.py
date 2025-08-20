@@ -1,4 +1,4 @@
-from kiln_ai.datamodel.external_tool import ExternalToolServer
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
