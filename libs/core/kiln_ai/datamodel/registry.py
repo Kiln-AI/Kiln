@@ -1,4 +1,4 @@
-from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
 
 
