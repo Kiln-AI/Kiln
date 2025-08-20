@@ -1,183 +1,95 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
-  import FormList from "$lib/utils/form_list.svelte"
-  import { client } from "$lib/api_client"
-  import { page } from "$app/stores"
-  import { goto } from "$app/navigation"
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { ui_state } from "$lib/stores"
 
-  // Form fields
-  let name = ""
-  let server_url = ""
-  let description = ""
-
-  // Headers as array of key/value pairs
-  interface HeaderPair {
-    key: string
-    value: string
-  }
-
-  let headers: HeaderPair[] = []
-
-  // Form state
-  let error: KilnError | null = null
-  let submitting = false
-
-  function buildHeadersObject(): Record<string, string> {
-    const headersObj: Record<string, string> = {}
-
-    for (const header of headers) {
-      if (header.key.trim() && header.value.trim()) {
-        headersObj[header.key.trim()] = header.value.trim()
-      }
-    }
-
-    return headersObj
-  }
-
-  async function connect_remote_mcp() {
-    try {
-      error = null
-      submitting = true
-
-      // Validate required fields
-      if (!name.trim()) {
-        throw new Error("Name is required")
-      }
-      if (!server_url.trim()) {
-        throw new Error("Server URL is required")
-      }
-      if (headers.length > 0) {
-        for (const header of headers) {
-          if (!header.key.trim()) {
-            throw new Error("Header name is required")
-          }
-          if (!header.value.trim()) {
-            throw new Error("Header value is required")
-          }
-        }
-      }
-
-      const headersObj = buildHeadersObject()
-
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/connect_remote_mcp",
+  let sections = [
+    {
+      category: "Current Workspace",
+      items: [
+        // TODO: Add more custom tool servers, pre-filled in.
         {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-            },
-          },
-          body: {
-            name: name.trim(),
-            server_url: server_url.trim(),
-            headers: headersObj,
-            description: description.trim() || null,
-          },
+          name: "Edit Current Task",
+          description:
+            "Modify your current task's prompt, requirements, and configuration settings.",
+          button_text: "Edit Task",
+          href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
         },
-      )
-
-      if (api_error) {
-        throw api_error
-      }
-
-      if (data?.id) {
-        // Navigate to the tools page for the created tool
-        goto(
-          `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,
-        )
-      }
-    } catch (e) {
-      error = createKilnError(e)
-    } finally {
-      submitting = false
-    }
-  }
+        {
+          name: "Edit Current Project",
+          description:
+            "Update your current project's name, description, and settings.",
+          button_text: "Edit Project",
+          href: "/settings/edit_project/" + $ui_state.current_project_id,
+        },
+      ],
+    },
+    {
+      category: "Custom Tools",
+      items: [
+        {
+          name: "Remote MCP Servers",
+          description:
+            "Connect to remote MCP servers such as Firecrawl to add tools to your project.",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
+          button_text: "Connect",
+        },
+        // TODO: Add more custom tool servers
+        {
+          name: "Local MCP Servers",
+          description: "Add or remove local MCP servers to your project.",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/local_mcp`,
+          button_text: "Connect",
+        },
+        {
+          name: "RAG Servers",
+          description: "Add or remove RAG servers to your project.",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/rag`,
+          button_text: "Connect",
+        },
+      ],
+    },
+  ]
 </script>
 
-<AppPage
-  title="Connect Remote MCP Server"
-  sub_subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
-        tools to your project."
->
-  <div class="max-w-2xl">
-    <FormContainer
-      submit_label="Connect"
-      on:submit={connect_remote_mcp}
-      bind:error
-      bind:submitting
-    >
-      <FormElement
-        label="Name"
-        id="name"
-        description="A name to identify this MCP server."
-        bind:value={name}
-        max_length={120}
-      />
-
-      <FormElement
-        label="Description"
-        inputType="textarea"
-        id="mcp_description"
-        description="A description of this MCP server for your reference."
-        optional={true}
-        bind:value={description}
-      />
-
-      <FormElement
-        label="Server URL"
-        id="mcp_server_url"
-        description="The URL of the remote MCP server."
-        placeholder="https://example.com/mcp"
-        bind:value={server_url}
-      />
-
-      <!-- Headers section -->
-      <FormElement
-        inputType="header_only"
-        label="Headers"
-        id="headers_section"
-        description="If the documentation for the server you're adding requires custom headers, enter them here."
-        info_description="These are usually not needed. Some MCP servers require custom headers, such as the 'Authorization' headers. Refer to the documentation for the server you're adding to see if they require headers."
-        value=""
-      />
-
-      <FormList
-        content={headers}
-        content_label="Header"
-        start_with_one={false}
-        empty_description="No Headers"
-        empty_content={{
-          key: "",
-          value: "",
-        }}
-        let:item_index
-      >
-        <div class="flex gap-2">
-          <div class="flex-1">
-            <FormElement
-              label="Header Name"
-              id="header_name_{item_index}"
-              info_description="The HTTP header name, such as 'Authorization'"
-              placeholder="Header name"
-              light_label={true}
-              bind:value={headers[item_index].key}
-            />
-          </div>
-          <div class="flex-1">
-            <FormElement
-              label="Value"
-              id="header_value_{item_index}"
-              info_description="The header value, such as 'Bearer your-token-here'"
-              placeholder="Value"
-              light_label={true}
-              bind:value={headers[item_index].value}
-            />
-          </div>
+<AppPage title="Add Tools">
+  <div class="max-w-4xl mt-12 space-y-12">
+    {#each sections as section}
+      <div class="space-y-6">
+        <!-- Category Header -->
+        <div class="pb-3 border-b border-gray-200">
+          <h2 class="text-lg font-medium text-gray-900">{section.category}</h2>
         </div>
-      </FormList>
-    </FormContainer>
+
+        <!-- Category Items -->
+        <div class="space-y-1">
+          {#each section.items as item}
+            {#if item.href}
+              <a
+                href={item.href}
+                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer"
+              >
+                <div class="flex-1 min-w-0">
+                  <h3 class="text-base font-medium text-gray-900 mb-1">
+                    {item.name}
+                  </h3>
+                  <p class="text-sm font-light text-gray-500 leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+
+                <div class="flex-shrink-0 ml-6">
+                  <div
+                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
+                    style="min-width: 12rem;"
+                  >
+                    {item.button_text}
+                  </div>
+                </div>
+              </a>
+            {/if}
+          {/each}
+        </div>
+      </div>
+    {/each}
   </div>
 </AppPage>

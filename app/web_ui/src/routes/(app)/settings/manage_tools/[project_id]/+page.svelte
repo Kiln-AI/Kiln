@@ -69,7 +69,7 @@
       ? []
       : [
           {
-            label: "Connect MCP Server",
+            label: "Add Tools",
             href: `/settings/manage_tools/${project_id}/add_tools`,
           },
         ]}
