@@ -332,5 +332,13 @@ class BaseAdapter(metaclass=ABCMeta):
         if tool_config is None or tool_config.tools is None:
             return []
 
-        tools = [tool_from_id(tool_id) for tool_id in tool_config.tools]
+        project = self.task.parent_project()
+        if project is None:
+            raise ValueError("Task must have a parent project to resolve tools")
+
+        project_id = project.id
+        if project_id is None:
+            raise ValueError("Project must have an ID to resolve tools")
+
+        tools = [tool_from_id(tool_id, project_id) for tool_id in tool_config.tools]
         return tools

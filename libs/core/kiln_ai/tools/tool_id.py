@@ -39,12 +39,23 @@ def _check_tool_id(id: str) -> str:
 
     # MCP remote tools must have format: mcp::remote::<server_id>::<tool_name>
     if id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
-        # Check server_id and tool_name are not empty and there are exactly 4 parts
-        parts = id.split("::")
-        if len(parts) != 4 or not parts[2] or not parts[3]:
+        server_id, tool_name = mcp_server_and_tool_name_from_id(id)
+        if not server_id or not tool_name:
             raise ValueError(
                 f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
             )
         return id
 
     raise ValueError(f"Invalid tool ID: {id}")
+
+
+def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
+    """
+    Get the tool server ID and tool name from the ID.
+    """
+    parts = id.split("::")
+    if len(parts) != 4:
+        raise ValueError(
+            f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
+        )
+    return parts[2], parts[3]  # server_id, tool_name

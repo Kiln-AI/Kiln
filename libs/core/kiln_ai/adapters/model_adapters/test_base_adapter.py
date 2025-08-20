@@ -6,6 +6,7 @@ from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMo
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import ToolsRunConfig
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools.base_tool import KilnToolInterface
@@ -30,8 +31,14 @@ def mock_provider():
 
 
 @pytest.fixture
-def base_task():
-    return Task(name="test_task", instruction="test_instruction")
+def base_project():
+    return Project(name="test_project", description="test project description")
+
+
+@pytest.fixture
+def base_task(base_project):
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+    return task
 
 
 @pytest.fixture
@@ -101,12 +108,15 @@ async def test_model_provider_loads_and_caches(adapter, mock_provider):
         mock_loader.assert_not_called()
 
 
-async def test_model_provider_invalid_provider_model_name(base_task):
+async def test_model_provider_invalid_provider_model_name(base_project):
     """Test error when model or provider name is missing"""
+    # Create a task with a parent project
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
     # Test with missing model name
     with pytest.raises(ValueError, match="Input should be"):
         MockAdapter(
-            task=base_task,
+            task=task,
             run_config=RunConfigProperties(
                 model_name="test_model",
                 model_provider_name="invalid",
@@ -115,11 +125,14 @@ async def test_model_provider_invalid_provider_model_name(base_task):
         )
 
 
-async def test_model_provider_missing_model_names(base_task):
+async def test_model_provider_missing_model_names(base_project):
     """Test error when model or provider name is missing"""
+    # Create a task with a parent project
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
     # Test with missing model name
     adapter = MockAdapter(
-        task=base_task,
+        task=task,
         run_config=RunConfigProperties(
             model_name="",
             model_provider_name="openai",
@@ -413,9 +426,12 @@ def test_build_chat_formatter(
     ],
 )
 async def test_update_run_config_unknown_structured_output_mode(
-    base_task, initial_mode, expected_mode
+    base_project, initial_mode, expected_mode
 ):
     """Test that unknown structured output mode is updated to the default for the model provider"""
+    # Create a task with a parent project
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
     # Create a run config with the initial mode
     run_config = RunConfigProperties(
         model_name="test_model",
@@ -433,7 +449,7 @@ async def test_update_run_config_unknown_structured_output_mode(
         mock_default.return_value = StructuredOutputMode.json_mode
 
         # Create the adapter
-        adapter = MockAdapter(task=base_task, run_config=run_config)
+        adapter = MockAdapter(task=task, run_config=run_config)
 
         # Verify the mode was updated correctly
         assert adapter.run_config.structured_output_mode == expected_mode
@@ -483,9 +499,12 @@ async def test_update_run_config_unknown_structured_output_mode(
     ],
 )
 async def test_available_tools(
-    base_task, tools_config, expected_tool_count, expected_tool_ids
+    base_project, tools_config, expected_tool_count, expected_tool_ids
 ):
     """Test that available_tools returns correct tools based on tools_config"""
+    # Create a task with a parent project
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
     # Create tools config if we have tool IDs
     if tools_config is None:
         final_tools_config = None
@@ -496,7 +515,7 @@ async def test_available_tools(
 
     # Create adapter with tools config
     adapter = MockAdapter(
-        task=base_task,
+        task=task,
         run_config=RunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
@@ -522,14 +541,17 @@ async def test_available_tools(
         assert actual_tool_ids == expected_tool_ids
 
 
-def test_available_tools_with_invalid_tool_id(base_task):
+def test_available_tools_with_invalid_tool_id(base_project):
     """Test that available_tools raises ValueError for invalid tool ID"""
+    # Create a task with a parent project
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
     # Create tools config with valid tool ID
     tools_config = ToolsRunConfig(tools=[KilnBuiltInToolId.ADD_NUMBERS])
 
     # Create adapter
     adapter = MockAdapter(
-        task=base_task,
+        task=task,
         run_config=RunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
