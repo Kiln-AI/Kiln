@@ -1,36 +1,50 @@
-import asyncio
+from typing import Any, Dict
 
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
 from kiln_ai.datamodel.external_tool import ExternalToolServer
-from kiln_ai.tools.base_tool import KilnTool
+from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
+from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 
 
-class MCPServerTool(KilnTool):
+class MCPServerTool(KilnToolInterface):
     def __init__(self, model: ExternalToolServer, name: str):
+        self._tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{model.id}::{name}"
         self._tool_server_model = model
         self._name = name
         self._tool: MCPTool | None = None
 
-        #  Some properties are not available until the tool is loaded asynchronously
-        super().__init__(
-            tool_id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{model.id}::{name}",
-            name=name,
-            description="Not Loaded",
-            parameters_schema={
-                "type": "object",
-                "properties": {},
-            },  # empty object for now, our JSON schema validation will fail if properties are missing
-        )
+    async def id(self) -> ToolId:
+        return self._tool_id
 
-    def run(self, **kwargs) -> str:
-        result = asyncio.run(self._call_tool(**kwargs))
+    async def name(self) -> str:
+        return self._name
+
+    async def description(self) -> str:
+        await self._load_tool_properties()
+        return self._description
+
+    async def toolcall_definition(self) -> Dict[str, Any]:
+        """Generate OpenAI-compatible tool definition."""
+        await self._load_tool_properties()
+        return {
+            "type": "function",
+            "function": {
+                "name": await self.name(),
+                "description": await self.description(),
+                "parameters": self._parameters_schema,
+            },
+        }
+
+    async def run(self, **kwargs) -> Any:
+        result = await self._call_tool(**kwargs)
 
         if result.isError:
-            raise ValueError(f"Tool {self.name()} returned an error: {result.content}")
+            raise ValueError(
+                f"Tool {await self.name()} returned an error: {result.content}"
+            )
 
         if not result.content:
             raise ValueError("Tool returned no content")
@@ -51,12 +65,15 @@ class MCPServerTool(KilnTool):
             self._tool_server_model
         ) as session:
             result = await session.call_tool(
-                name=self.name(),
+                name=await self.name(),
                 arguments=kwargs,
             )
             return result
 
     async def _load_tool_properties(self):
+        if self._tool is not None:
+            return
+
         tool = await self._get_tool(self._name)
         self._tool = tool
         self._description = tool.description or "N/A"

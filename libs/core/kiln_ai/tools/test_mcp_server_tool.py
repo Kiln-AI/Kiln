@@ -19,7 +19,8 @@ from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 class TestMCPServerTool:
     """Unit tests for MCPServerTool."""
 
-    def test_constructor(self):
+    @pytest.mark.asyncio
+    async def test_constructor(self):
         """Test MCPServerTool initialization."""
         server = ExternalToolServer(
             name="test_server",
@@ -34,16 +35,18 @@ class TestMCPServerTool:
         tool = MCPServerTool(server, "test_tool")
 
         # Check ID pattern - uses server's generated ID, not name
-        assert tool.id().startswith(MCP_REMOTE_TOOL_ID_PREFIX)
-        assert tool.id().endswith("::test_tool")
-        assert tool.name() == "test_tool"
-        assert tool.description() == "Not Loaded"
-        assert tool._parameters_schema == {"type": "object", "properties": {}}
+        tool_id = await tool.id()
+        assert tool_id.startswith(MCP_REMOTE_TOOL_ID_PREFIX)
+        assert tool_id.endswith("::test_tool")
+        assert await tool.name() == "test_tool"
+        # Note: description() now loads properties, so we can't test "Not Loaded" state
+        # Instead we verify that _tool is initially None before properties are loaded
         assert tool._tool_server_model == server
         assert tool._tool is None
 
+    @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    def test_run_success(self, mock_session_manager):
+    async def test_run_success(self, mock_session_manager):
         """Test successful run() execution."""
         # Setup mocks
         mock_session = AsyncMock()
@@ -65,15 +68,16 @@ class TestMCPServerTool:
         )
         tool = MCPServerTool(server, "test_tool")
 
-        result = tool.run(param1="value1", param2="value2")
+        result = await tool.run(param1="value1", param2="value2")
 
         assert result == "Success result"
         mock_session.call_tool.assert_called_once_with(
             name="test_tool", arguments={"param1": "value1", "param2": "value2"}
         )
 
+    @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    def test_run_empty_content(self, mock_session_manager):
+    async def test_run_empty_content(self, mock_session_manager):
         """Test run() with empty content raises ValueError."""
         mock_session = AsyncMock()
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
@@ -94,10 +98,11 @@ class TestMCPServerTool:
         tool = MCPServerTool(server, "test_tool")
 
         with pytest.raises(ValueError, match="Tool returned no content"):
-            tool.run()
+            await tool.run()
 
+    @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    def test_run_non_text_content_error(self, mock_session_manager):
+    async def test_run_non_text_content_error(self, mock_session_manager):
         """Test run() raises error when first content is not TextContent."""
         mock_session = AsyncMock()
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
@@ -121,10 +126,11 @@ class TestMCPServerTool:
         tool = MCPServerTool(server, "test_tool")
 
         with pytest.raises(ValueError, match="First block must be a text block"):
-            tool.run()
+            await tool.run()
 
+    @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    def test_run_error_result(self, mock_session_manager):
+    async def test_run_error_result(self, mock_session_manager):
         """Test run() raises error when tool returns isError=True."""
         mock_session = AsyncMock()
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
@@ -146,10 +152,11 @@ class TestMCPServerTool:
         tool = MCPServerTool(server, "test_tool")
 
         with pytest.raises(ValueError, match="Tool test_tool returned an error"):
-            tool.run()
+            await tool.run()
 
+    @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    def test_run_multiple_content_blocks_error(self, mock_session_manager):
+    async def test_run_multiple_content_blocks_error(self, mock_session_manager):
         """Test run() raises error when tool returns multiple content blocks."""
         mock_session = AsyncMock()
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
@@ -176,7 +183,7 @@ class TestMCPServerTool:
         with pytest.raises(
             ValueError, match="Tool returned multiple content blocks, expected one"
         ):
-            tool.run()
+            await tool.run()
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
@@ -292,15 +299,12 @@ class TestMCPServerTool:
         )
         tool = MCPServerTool(server, "test_tool")
 
-        # Verify initial state
-        assert tool.description() == "Not Loaded"
-        assert tool._parameters_schema == {"type": "object", "properties": {}}
+        # Verify initial state - _tool is None before loading
         assert tool._tool is None
 
-        await tool._load_tool_properties()
-
-        # Verify updated state
-        assert tool.description() == "Loaded tool description"
+        # After loading properties, verify state
+        description = await tool.description()
+        assert description == "Loaded tool description"
         assert tool._parameters_schema == {
             "type": "object",
             "properties": {"param": {"type": "string"}},
@@ -331,7 +335,7 @@ class TestMCPServerTool:
 
         await tool._load_tool_properties()
 
-        assert tool.description() == "N/A"
+        assert await tool.description() == "N/A"
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
@@ -360,7 +364,8 @@ class TestMCPServerTool:
         # Should be empty object for now, our JSON schema validation will fail if properties are missing
         assert tool._parameters_schema == {"type": "object", "properties": {}}
 
-    def test_toolcall_definition(self):
+    @pytest.mark.asyncio
+    async def test_toolcall_definition(self):
         """Test toolcall_definition() returns proper OpenAI format."""
         server = ExternalToolServer(
             name="test_server",
@@ -381,8 +386,14 @@ class TestMCPServerTool:
             },
             "required": ["param1"],
         }
+        # Mark tool as loaded to avoid triggering _load_tool_properties()
+        from mcp.types import Tool as MCPTool
 
-        definition = tool.toolcall_definition()
+        tool._tool = MCPTool(
+            name="test_tool", description="Test tool description", inputSchema={}
+        )
+
+        definition = await tool.toolcall_definition()
 
         expected = {
             "type": "function",

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
-from kiln_ai.tools.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.tool_id import KilnBuiltInToolId, ToolId
 
 
 class KilnToolInterface(ABC):
@@ -22,7 +22,7 @@ class KilnToolInterface(ABC):
         pass
 
     @abstractmethod
-    async def id(self) -> KilnBuiltInToolId:
+    async def id(self) -> ToolId:
         """Return a unique identifier for this tool."""
         pass
 
