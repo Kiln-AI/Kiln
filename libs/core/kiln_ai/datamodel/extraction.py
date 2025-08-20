@@ -16,7 +16,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_FIELD,
+    FilenameString,
     KilnAttachmentModel,
     KilnParentedModel,
     KilnParentModel,
@@ -127,7 +127,9 @@ class Extraction(
 
 
 class ExtractorConfig(KilnParentedModel):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="A name to identify the extractor config.",
+    )
     is_archived: bool = Field(
         default=False,
         description="Whether the extractor config is archived. Archived extractor configs are not shown in the UI and are not available for use.",
@@ -273,7 +275,9 @@ class FileInfo(BaseModel):
 class Document(
     KilnParentedModel, KilnParentModel, parent_of={"extractions": Extraction}
 ):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="A name to identify the document.",
+    )
 
     description: str = Field(description="A description for the file")
 

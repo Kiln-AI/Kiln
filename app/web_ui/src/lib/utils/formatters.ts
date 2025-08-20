@@ -2,6 +2,7 @@ import {
   type ChunkerType,
   type EvalConfigType,
   type OutputFormat,
+  type StructuredOutputMode,
 } from "$lib/types"
 
 export function formatDate(dateString: string | undefined): string {
@@ -165,4 +166,40 @@ export function capitalize(str: string | undefined | null): string {
     return ""
   }
   return str.charAt(0).toUpperCase() + str.slice(1)
+}
+/**
+ * Converts StructuredOutputMode to a human-readable string.
+ * This function uses exhaustive case checking - if you add a new case to StructuredOutputMode,
+ * TypeScript will force you to handle it here.
+ */
+export function structuredOutputModeToString(
+  mode: StructuredOutputMode,
+): string | undefined {
+  switch (mode) {
+    case "default":
+      return "Default (Legacy)"
+    case "json_schema":
+      return "JSON Schema"
+    case "function_calling_weak":
+      return "Weak Function Calling"
+    case "function_calling":
+      return "Function Calling"
+    case "json_mode":
+      return "JSON Mode"
+    case "json_instructions":
+      return "JSON Instructions"
+    case "json_instruction_and_object":
+      return "JSON Instructions + Mode"
+    case "json_custom_instructions":
+      return "None"
+    case "unknown":
+      return "Unknown"
+    default: {
+      // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+      // and don't handle it above, TypeScript will error here
+      const exhaustiveCheck: never = mode
+      console.warn(`Unhandled StructuredOutputMode: ${exhaustiveCheck}`)
+      return undefined
+    }
+  }
 }

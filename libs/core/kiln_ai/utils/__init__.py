@@ -8,7 +8,7 @@ from . import config, formatting
 from .lock import asyncio_mutex
 
 __all__ = [
+    "asyncio_mutex",
     "config",
     "formatting",
-    "asyncio_mutex",
 ]

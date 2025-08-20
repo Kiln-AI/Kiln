@@ -485,18 +485,17 @@ async def test_run_job_success_task_run_eval(
     )
 
     # Mock the evaluator
-    mock_result_run = TaskRun(
-        input="test input",
-        input_source=data_source,
-        output=TaskOutput(output="evaluated output"),
-        intermediate_outputs={"intermediate_output": "intermediate output"},
-    )
     mock_scores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
         async def run_task_and_eval(self, input_text):
             return (
-                mock_result_run,
+                TaskRun(
+                    input="test input",
+                    input_source=data_source,
+                    output=TaskOutput(output="evaluated output"),
+                    intermediate_outputs={"intermediate_output": "intermediate output"},
+                ),
                 mock_scores,
                 {"intermediate_output": "intermediate output"},
             )
@@ -546,11 +545,6 @@ async def test_run_job_success_eval_config_eval(
     )
 
     # Mock the evaluator
-    mock_result_run = TaskRun(
-        input="test input",
-        input_source=data_source,
-        output=TaskOutput(output="evaluated output"),
-    )
     mock_scores: EvalScores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):

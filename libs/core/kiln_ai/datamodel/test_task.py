@@ -323,3 +323,8 @@ def test_run_config_upgrade_old_entries():
     assert parsed.name == "test name"
     assert parsed.created_by == "scosman"
     assert parsed.run_config_properties.structured_output_mode == "unknown"
+
+
+def test_task_name_unicode_name():
+    task = Task(name="你好", instruction="Do something")
+    assert task.name == "你好"

@@ -849,6 +849,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provider/docker_model_runner/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connect Docker Model Runner Api */
+        get: operations["connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider/openai_compatible": {
         parameters: {
             query?: never;
@@ -1485,6 +1502,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/select_kiln_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Select Kiln File */
+        get: operations["select_kiln_file_api_select_kiln_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1493,7 +1527,7 @@ export interface components {
         ApiPrompt: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the prompt.
              */
             name: string;
             /**
@@ -1541,7 +1575,7 @@ export interface components {
         BasePrompt: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the prompt.
              */
             name: string;
             /**
@@ -2049,7 +2083,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the dataset split.
              */
             name: string;
             /**
@@ -2086,7 +2120,7 @@ export interface components {
         DatasetSplitDefinition: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the dataset split definition.
              */
             name: string;
             /**
@@ -2106,6 +2140,17 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DockerModelRunnerConnection */
+        DockerModelRunnerConnection: {
+            /** Message */
+            message: string;
+            /** Version */
+            version?: string | null;
+            /** Supported Models */
+            supported_models: string[];
+            /** Untested Models */
+            untested_models?: string[];
+        };
         /** Document */
         Document: {
             /**
@@ -2126,7 +2171,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description A name to identify the document.
              */
             name: string;
             /**
@@ -2241,7 +2286,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the eval.
              */
             name: string;
             /**
@@ -2318,7 +2363,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the eval config.
              */
             name: string;
             /**
@@ -2563,7 +2608,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description A name to identify the extractor config.
              */
             name: string;
             /**
@@ -2677,6 +2722,8 @@ export interface components {
             status: components["schemas"]["FineTuneStatusType"];
             /** Message */
             message?: string | null;
+            /** Error Details */
+            error_details?: string | null;
         };
         /**
          * FineTuneStatusType
@@ -2709,7 +2756,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the fine-tune.
              */
             name: string;
             /**
@@ -2932,6 +2979,11 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** KilnFileResponse */
+        KilnFileResponse: {
+            /** File Path */
+            file_path: string | null;
+        };
         /**
          * Kind
          * @enum {string}
@@ -3008,13 +3060,13 @@ export interface components {
          *     Where models have instruct and raw versions, instruct is default and raw is specified.
          * @enum {string}
          */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_no_thinking" | "kimi_k2";
+        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_5" | "gpt_5_chat" | "gpt_5_mini" | "gpt_5_nano" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_oss_20b" | "gpt_oss_120b" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_0p27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_0528_distill_qwen3_8b" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b_2507" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_2507_no_thinking" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b_2507" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_2507_no_thinking" | "qwen_3_235b_a22b_no_thinking" | "qwen_long_l1_32b" | "kimi_k2" | "kimi_dev_72b" | "glm_4_5" | "glm_4_5_air" | "glm_4_1v_9b_thinking" | "glm_z1_32b_0414" | "glm_z1_9b_0414" | "ernie_4_5_300b_a47b" | "hunyuan_a13b" | "hunyuan_a13b_no_thinking" | "minimax_m1_80k" | "pangu_pro_moe_72b_a16b";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -3086,7 +3138,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the project.
              */
             name: string;
             /**
@@ -3121,7 +3173,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the project.
              */
             name: string;
             /**
@@ -3139,7 +3191,7 @@ export interface components {
         Prompt: {
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the prompt.
              */
             name: string;
             /**
@@ -3542,7 +3594,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the task.
              */
             name: string;
             /**
@@ -3752,7 +3804,7 @@ export interface components {
             id?: string | null;
             /**
              * Name
-             * @description A name for this entity
+             * @description The name of the task requirement.
              */
             name: string;
             /** Description */
@@ -3906,7 +3958,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name for this entity.
+             * @description The name of the task run config.
              */
             name: string;
             /**
@@ -5840,6 +5892,37 @@ export interface operations {
             };
         };
     };
+    connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get: {
+        parameters: {
+            query?: {
+                docker_model_runner_custom_url?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DockerModelRunnerConnection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     save_openai_compatible_providers_api_provider_openai_compatible_post: {
         parameters: {
             query: {
@@ -7294,6 +7377,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_kiln_file_api_select_kiln_file_get: {
+        parameters: {
+            query?: {
+                title?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnFileResponse"];
                 };
             };
             /** @description Validation Error */

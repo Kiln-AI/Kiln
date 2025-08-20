@@ -25,7 +25,7 @@ from kiln_ai.adapters.rag.rag_runners import (
 )
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_REGEX,
+    FilenameString,
     KilnAttachmentModel,
     string_to_valid_name,
 )
@@ -131,7 +131,7 @@ def run_all_extractors_and_rag_workflows_no_wait(
     """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
     Needed to make mocking easier in tests.
     """
-    asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))
+    asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))  # noqa: RUF006
 
 
 async def run_rag_workflow_runner_with_status(
@@ -210,11 +210,8 @@ class RagConfigWithSubConfigs(BaseModel):
 
 
 class CreateRagConfigRequest(BaseModel):
-    name: str | None = Field(
-        description="Choose a name for your RAG workflow.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
@@ -233,11 +230,8 @@ class CreateRagConfigRequest(BaseModel):
 
 
 class CreateChunkerConfigRequest(BaseModel):
-    name: str | None = Field(
+    name: FilenameString | None = Field(
         description="A name for this entity.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
@@ -253,11 +247,8 @@ class CreateChunkerConfigRequest(BaseModel):
 
 
 class CreateEmbeddingConfigRequest(BaseModel):
-    name: str | None = Field(
+    name: FilenameString | None = Field(
         description="A name for this entity.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
@@ -276,14 +267,8 @@ class CreateEmbeddingConfigRequest(BaseModel):
 
 
 class CreateExtractorConfigRequest(BaseModel):
-    # FIXME: should use the centralized field for name, but the openapi codegen
-    # does not infer correctly that the field is optional when using the centralized
-    # field for name
-    name: str | None = Field(
+    name: FilenameString | None = Field(
         description="A name for this entity.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
@@ -334,14 +319,8 @@ class CreateExtractorConfigRequest(BaseModel):
 
 
 class PatchExtractorConfigRequest(BaseModel):
-    # FIXME: should use the centralized field for name, but the openapi codegen
-    # does not infer correctly that the field is optional when using the centralized
-    # field for name
-    name: str | None = Field(
+    name: FilenameString | None = Field(
         description="A name for this entity.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
         default=None,
     )
     description: str | None = Field(
@@ -477,7 +456,7 @@ def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
         project_id: str,
-        file: UploadFile = File(...),
+        file: Annotated[UploadFile, File(...)],
         name: Annotated[str, Form()] = "",
         description: Annotated[str, Form()] = "",
     ) -> Document:

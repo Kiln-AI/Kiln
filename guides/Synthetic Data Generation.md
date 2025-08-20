@@ -12,7 +12,7 @@ We suggest reading the [latest version](https://docs.getkiln.ai/docs/synthetic-d
 ## Original Content
 
 
-[Kiln](https://getkiln.ai) can generate synthetic data for your tasks. 
+[Kiln](https://kiln.tech) can generate synthetic data for your tasks. 
 
 
 ## Video Walkthrough

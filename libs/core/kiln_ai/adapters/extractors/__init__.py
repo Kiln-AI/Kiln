@@ -9,10 +9,10 @@ from . import base_extractor, extractor_runner, litellm_extractor, registry
 from .base_extractor import ExtractionInput, ExtractionOutput
 
 __all__ = [
+    "ExtractionInput",
+    "ExtractionOutput",
     "base_extractor",
     "extractor_runner",
     "litellm_extractor",
     "registry",
-    "ExtractionInput",
-    "ExtractionOutput",
 ]

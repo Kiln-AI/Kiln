@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, List, Union
 
 from pydantic import BaseModel, Field, model_validator
 
-from kiln_ai.datamodel.basemodel import ID_TYPE, NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
 if TYPE_CHECKING:
@@ -11,7 +11,9 @@ if TYPE_CHECKING:
 
 
 class EmbeddingConfig(KilnParentedModel):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="A name to identify the embedding config.",
+    )
     description: str | None = Field(
         default=None,
         description="A description for your reference, not shared with embedding models.",

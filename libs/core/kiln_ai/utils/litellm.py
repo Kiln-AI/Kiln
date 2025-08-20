@@ -46,6 +46,10 @@ def get_litellm_provider_info(
             # We don't let litellm use the Ollama API and muck with our requests. We use Ollama's OpenAI compatible API.
             # This is because we're setting detailed features like response_format=json_schema and want lower level control.
             is_custom = True
+        case ModelProviderName.docker_model_runner:
+            # Docker Model Runner uses OpenAI-compatible API, similar to Ollama
+            # We want direct control over the requests for features like response_format=json_schema
+            is_custom = True
         case ModelProviderName.gemini_api:
             litellm_provider_name = "gemini"
         case ModelProviderName.fireworks_ai:
@@ -60,6 +64,10 @@ def get_litellm_provider_info(
             litellm_provider_name = "vertex_ai"
         case ModelProviderName.together_ai:
             litellm_provider_name = "together_ai"
+        case ModelProviderName.cerebras:
+            litellm_provider_name = "cerebras"
+        case ModelProviderName.siliconflow_cn:
+            is_custom = True
         case ModelProviderName.openai_compatible:
             is_custom = True
         case ModelProviderName.kiln_custom_registry:
