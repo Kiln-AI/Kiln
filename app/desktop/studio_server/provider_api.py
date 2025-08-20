@@ -1173,6 +1173,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_doc_extraction=docker_provider.supports_doc_extraction,
+                            suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                         )
@@ -1191,6 +1192,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
                     supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
                 )

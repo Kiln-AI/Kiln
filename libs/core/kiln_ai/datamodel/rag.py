@@ -1,10 +1,12 @@
 from pydantic import Field
 
-from kiln_ai.datamodel.basemodel import ID_TYPE, NAME_FIELD, KilnParentedModel
+from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 
 
 class RagConfig(KilnParentedModel):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(
+        description="A name to identify this RAG configuration for your own reference.",
+    )
 
     description: str | None = Field(
         default=None,
