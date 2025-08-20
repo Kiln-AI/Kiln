@@ -2,9 +2,9 @@
 
 ---
 
-# This guide as moved to [our docs](https://docs.getkiln.ai/docs/collaboration). This page may be out of date.
+# This guide as moved to [our docs](https://docs.kiln.tech/docs/collaboration). This page may be out of date.
 
-We suggest reading the [latest version](https://docs.getkiln.ai/docs/collaboration).
+We suggest reading the [latest version](https://docs.kiln.tech/docs/collaboration).
 
 ---
 

@@ -389,7 +389,7 @@
     title="Eval: {evaluator?.name || ''}"
     subtitle="Follow these steps to find the best way to evaluate and run your task"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     action_buttons={[
       {
         label: "Edit",

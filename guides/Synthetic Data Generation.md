@@ -3,9 +3,9 @@
 
 ---
 
-# This guide as moved to [our docs](https://docs.getkiln.ai/docs/synthetic-data-generation). This page may be out of date.
+# This guide as moved to [our docs](https://docs.kiln.tech/docs/synthetic-data-generation). This page may be out of date.
 
-We suggest reading the [latest version](https://docs.getkiln.ai/docs/synthetic-data-generation).
+We suggest reading the [latest version](https://docs.kiln.tech/docs/synthetic-data-generation).
 
 ---
 

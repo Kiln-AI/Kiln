@@ -212,7 +212,7 @@
         <div>
           If you want to add more data to your eval,
           <a
-            href="https://docs.getkiln.ai/docs/evaluations#create-your-eval-datasets"
+            href="https://docs.kiln.tech/docs/evaluations#create-your-eval-datasets"
             target="_blank"
             class="link">read the docs</a
           > for instructions.

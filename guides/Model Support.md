@@ -3,9 +3,9 @@
 
 ---
 
-# This guide as moved to [our docs](https://docs.getkiln.ai/docs/models-and-ai-providers). This page may be out of date.
+# This guide as moved to [our docs](https://docs.kiln.tech/docs/models-and-ai-providers). This page may be out of date.
 
-We suggest reading the [latest version](https://docs.getkiln.ai/docs/models-and-ai-providers).
+We suggest reading the [latest version](https://docs.kiln.tech/docs/models-and-ai-providers).
 
 ---
 

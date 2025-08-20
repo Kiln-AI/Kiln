@@ -128,7 +128,7 @@
       ],
       api_key_fields: ["API Key", "Endpoint URL"],
       api_key_warning:
-        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#azure-openai-api",
+        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.kiln.tech/docs/models-and-ai-providers#azure-openai-api",
     },
     {
       name: "Hugging Face",
@@ -159,7 +159,7 @@
       ],
       api_key_fields: ["Project ID", "Project Location"],
       api_key_warning:
-        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#google-vertex-ai",
+        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.kiln.tech/docs/models-and-ai-providers#google-vertex-ai",
     },
     {
       name: "Together.ai",

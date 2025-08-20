@@ -312,7 +312,7 @@
     title="Add a Judge"
     subtitle="A judge evaluates task outputs with a model, evaluation prompt, and algorithm."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

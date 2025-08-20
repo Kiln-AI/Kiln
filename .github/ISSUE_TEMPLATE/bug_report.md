@@ -11,9 +11,9 @@ Insert a clear and concise description of what the bug is.
 
 **Checks**
 
-- [ ] I've read the [troubleshooting guide](https://docs.getkiln.ai/docs/troubleshooting-and-logs)
+- [ ] I've read the [troubleshooting guide](https://docs.kiln.tech/docs/troubleshooting-and-logs)
 - [ ] I've tried to reproduce the problem using another model, and confirmed it's not an issue specific to the model I've chosen.
-- [ ] I've searched [the docs](https://docs.getkiln.ai) for a solution
+- [ ] I've searched [the docs](https://docs.kiln.tech) for a solution
 - [ ] I've searched for existing Github issues/discussions
 
 **To Reproduce**
