@@ -72,7 +72,7 @@ At the core of the process is the concept of **heat exchange**. Heat naturally f
 
 ### Latent Heat of Fusion
 
-However, it’s not just about the ice warming up. The real magic happens because of **latent heat**—specifically, the heat of fusion. When ice melts, it doesn’t instantly become the same temperature as the liquid around it. Instead, it absorbs a significant amount of energy just to change from a solid to a liquid, without its temperature rising. This phase change requires approximately 334 joules per gram of ice, all taken from the drink, which cools as a result."""
+However, it's not just about the ice warming up. The real magic happens because of **latent heat**—specifically, the heat of fusion. When ice melts, it doesn't instantly become the same temperature as the liquid around it. Instead, it absorbs a significant amount of energy just to change from a solid to a liquid, without its temperature rising. This phase change requires approximately 334 joules per gram of ice, all taken from the drink, which cools as a result."""
 
     output = await chunker.chunk(text_to_chunk)
     assert len(output.chunks) == expected_chunks, (
@@ -99,7 +99,7 @@ async def test_fixed_window_chunker_concrete_chunker_zh(
 火山爆发可能会造成许多危害，常伴有地震，影响范围不仅在火山爆发附近。其中一个危险是火山灰可能对飞机构成威胁，特别是那些喷气发动机，其中灰尘颗粒可以在高温下熔化; 熔化的颗粒随后粘附到涡轮机叶片并改变它们的形状，从而中断涡轮发动机的操作。大型爆发可能会影响气温，火山灰和硫酸液滴遮挡太阳辐射并冷却地球的低层大气（或对流层）; 然而，它们也吸收地球辐射的热量，从而使高层大气（或平流层）变暖。 历史上，火山冬天造成了灾难性的饥荒。
 
 虽然火山喷发会对人类造成危害，但同时它也带来一些好处。例如：可以促进宝石的形成；扩大陆地的面积（夏威夷群岛就是由火山喷发而形成的）；作为观光旅游考察景点，推动旅游业，如日本的富士山。[2] 专门研究火山活动的学科称为火山学[3]。
-"""
+"""  # noqa: RUF001
 
     output = await chunker.chunk(text_to_chunk)
     assert len(output.chunks) == expected_chunks, (

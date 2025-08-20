@@ -192,7 +192,7 @@ def mock_file_factory(
                 raise ValueError(f"No test file found for mime type: {mime_type}")
 
         # copy the file to the tmp path to avoid test contamination of the original file
-        path_copy = tmp_path / f"{str(uuid.uuid4())}.{filename.suffix}"
+        path_copy = tmp_path / f"{uuid.uuid4()!s}.{filename.suffix}"
         shutil.copy(filename, path_copy)
 
         return path_copy

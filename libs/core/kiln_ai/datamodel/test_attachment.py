@@ -347,7 +347,7 @@ def test_create_from_data(test_base_kiln_file, mock_file_factory):
 
 
 def test_attachment_file_does_not_exist(test_base_kiln_file):
-    not_found_file = Path(f"/not/found/{str(uuid.uuid4())}.txt")
+    not_found_file = Path(f"/not/found/{uuid.uuid4()!s}.txt")
 
     # should raise when we assign a file that does not exist
     with pytest.raises(ValueError):

@@ -15,7 +15,7 @@ from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_REGEX,
+    FilenameString,
     KilnAttachmentModel,
     string_to_valid_name,
 )
@@ -108,14 +108,8 @@ class ExtractionSummary(BaseModel):
 
 
 class CreateExtractorConfigRequest(BaseModel):
-    # FIXME: should use the centralized field for name, but the openapi codegen
-    # does not infer correctly that the field is optional when using the centralized
-    # field for name
-    name: str | None = Field(
+    name: FilenameString | None = Field(
         description="A name for this entity.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
         default_factory=generate_memorable_name,
     )
     description: str | None = Field(
@@ -166,14 +160,8 @@ class CreateExtractorConfigRequest(BaseModel):
 
 
 class PatchExtractorConfigRequest(BaseModel):
-    # FIXME: should use the centralized field for name, but the openapi codegen
-    # does not infer correctly that the field is optional when using the centralized
-    # field for name
-    name: str | None = Field(
+    name: FilenameString | None = Field(
         description="A name for this entity.",
-        min_length=1,
-        max_length=120,
-        pattern=NAME_REGEX,
         default=None,
     )
     description: str | None = Field(
@@ -220,7 +208,7 @@ def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
         project_id: str,
-        file: UploadFile = File(...),
+        file: Annotated[UploadFile, File(...)],
         name: Annotated[str, Form()] = "",
         description: Annotated[str, Form()] = "",
     ) -> Document:
