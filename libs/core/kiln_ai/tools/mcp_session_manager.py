@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 

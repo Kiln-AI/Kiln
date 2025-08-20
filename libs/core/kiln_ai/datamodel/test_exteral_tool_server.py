@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.external_tool import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 
 
 def test_external_tool_creation():

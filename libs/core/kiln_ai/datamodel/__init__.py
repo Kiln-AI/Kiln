@@ -22,7 +22,7 @@ from kiln_ai.datamodel.dataset_split import (
     DatasetSplit,
     DatasetSplitDefinition,
 )
-from kiln_ai.datamodel.external_tool import ExternalToolServer
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.finetune import (
     Finetune,
 )

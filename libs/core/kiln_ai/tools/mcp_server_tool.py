@@ -3,7 +3,7 @@ from typing import Any, Dict
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
-from kiln_ai.datamodel.external_tool import ExternalToolServer
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
