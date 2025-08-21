@@ -29,26 +29,6 @@
 
   const sampleMcpServers: McpServer[] = [
     {
-      name: "Firecrawl",
-      description: "Add Firecrawl to your project to search the web.",
-      server_url: "https://firecrawl.com",
-      headers: [], // Firecrawl uses https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/sse
-      button_text: "Connect",
-    },
-    {
-      name: "Perplexity",
-      description: "Add Perplexity to your project to search the web.",
-      server_url: "https://api.perplexity.ai",
-      headers: [
-        {
-          key: "Authorization",
-          value: "",
-          placeholder: null,
-        },
-      ],
-      button_text: "Connect",
-    },
-    {
       name: "GitHub",
       description:
         "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
@@ -57,7 +37,7 @@
         {
           key: "Authorization",
           value: "",
-          placeholder: "Bearer <Github Personal Access Token (PAT)>",
+          placeholder: "Bearer {GITHUB_PERSONAL_ACCESS_TOKEN}",
         },
       ],
       button_text: "Connect",
@@ -80,15 +60,6 @@
           ...tool,
           on_click: () => connectRemoteMcp(tool),
         })),
-        {
-          name: "Demo Math Tool",
-          description:
-            "Add built-in math tool to add/subtract/multiply/divide numbers.",
-          button_text: "Connect",
-          on_click: () => {
-            // TODO: Register math tool
-          },
-        },
       ],
     },
     {
@@ -97,34 +68,12 @@
         {
           name: "Remote MCP Servers",
           description:
-            "Connect to remote MCP servers such as Firecrawl to add tools to your project.",
+            "Connect to remote MCP servers to add tools to your project.",
           href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
           button_text: "Connect",
           on_click: () => {
             goto(
               `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
-            )
-          },
-        },
-        // TODO: Add more custom tool servers
-        {
-          name: "Local MCP Servers",
-          description: "Add or remove local MCP servers to your project.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/local_mcp`,
-            )
-          },
-        },
-        {
-          name: "RAG Servers",
-          description: "Add or remove RAG servers to your project.",
-          button_text: "Connect",
-          // TODO: Add RAG
-          on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/rag`,
             )
           },
         },
