@@ -13,7 +13,7 @@
     title="Prompts"
     subtitle={`Prompts for the task "${$current_task?.name}"`}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.getkiln.ai/docs/prompts"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     action_buttons={[
       {
         label: "Create Prompt",

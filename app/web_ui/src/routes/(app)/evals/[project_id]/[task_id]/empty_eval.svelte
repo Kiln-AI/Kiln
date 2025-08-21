@@ -64,7 +64,7 @@
       Create an Evaluator
     </a>
     <a
-      href="https://docs.getkiln.ai/docs/evaluations"
+      href="https://docs.kiln.tech/docs/evaluations"
       class="btn"
       target="_blank"
     >

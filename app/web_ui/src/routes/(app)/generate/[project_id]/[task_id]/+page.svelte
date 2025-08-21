@@ -511,7 +511,7 @@
         : []),
       {
         label: "Docs & Guide",
-        href: "https://docs.getkiln.ai/docs/synthetic-data-generation",
+        href: "https://docs.kiln.tech/docs/synthetic-data-generation",
       },
     ]}
   >

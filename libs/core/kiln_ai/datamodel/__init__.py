@@ -3,7 +3,7 @@ See our docs for details about our datamodel classes and hierarchy:
 
 Developer docs: https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html
 
-User docs: https://docs.getkiln.ai/developers/kiln-datamodel
+User docs: https://docs.kiln.tech/developers/kiln-datamodel
 """
 
 # This component uses "flat" imports so we don't have too much internal structure exposed in the API.
