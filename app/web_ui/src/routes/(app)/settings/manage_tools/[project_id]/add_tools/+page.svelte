@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation"
   import AppPage from "../../../../app_page.svelte"
   import { ui_state } from "$lib/stores"
 
@@ -11,14 +12,44 @@
           name: "Firecrawl",
           description: "Add Firecrawl to your project to search the web.",
           button_text: "Connect",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/firecrawl`,
+          on_click: () => {
+            goto(
+              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
+              { state: { server_url: "https://firecrawl.com" } },
+            )
+          },
+        },
+        {
+          name: "Perplexity",
+          description: "Add Perplexity to your project to search the web.",
+          button_text: "Connect",
+          on_click: () => {
+            goto(
+              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
+              { state: { server_url: "https://api.perplexity.ai" } },
+            )
+          },
+        },
+        {
+          name: "GitHub",
+          description:
+            "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
+          button_text: "Connect",
+          on_click: () => {
+            goto(
+              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
+              { state: { server_url: "https://api.github.com" } },
+            )
+          },
         },
         {
           name: "Demo Math Tool",
           description:
             "Add built-in math tool to add/subtract/multiply/divide numbers.",
           button_text: "Connect",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/math`,
+          on_click: () => {
+            // TODO: Register math tool
+          },
         },
       ],
     },
@@ -31,19 +62,33 @@
             "Connect to remote MCP servers such as Firecrawl to add tools to your project.",
           href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
           button_text: "Connect",
+          on_click: () => {
+            goto(
+              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
+            )
+          },
         },
         // TODO: Add more custom tool servers
         {
           name: "Local MCP Servers",
           description: "Add or remove local MCP servers to your project.",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/local_mcp`,
           button_text: "Connect",
+          on_click: () => {
+            goto(
+              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/local_mcp`,
+            )
+          },
         },
         {
           name: "RAG Servers",
           description: "Add or remove RAG servers to your project.",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/rag`,
           button_text: "Connect",
+          // TODO: Add RAG
+          on_click: () => {
+            goto(
+              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/rag`,
+            )
+          },
         },
       ],
     },
@@ -62,10 +107,10 @@
         <!-- Category Items -->
         <div class="space-y-1">
           {#each section.items as item}
-            {#if item.href}
-              <a
-                href={item.href}
-                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer"
+            {#if item.on_click}
+              <button
+                on:click={item.on_click}
+                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
               >
                 <div class="flex-1 min-w-0">
                   <h3 class="text-base font-medium text-gray-900 mb-1">
@@ -84,7 +129,7 @@
                     {item.button_text}
                   </div>
                 </div>
-              </a>
+              </button>
             {/if}
           {/each}
         </div>
