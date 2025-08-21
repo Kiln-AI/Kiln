@@ -18,7 +18,7 @@ This repo is a monorepo containing all of the source code, in the following stru
 - Very high code quality
 - Strongly typed
 - Well tested
-- Very intuitive UI. Accessible to to the inexperienced, but powerful for the experienced.
+- Very intuitive UI. Accessible to the inexperienced, but powerful for the experienced.
 - Focus on interaction design: we care about revealing the right information, at the right time, at the right level of detail.
 - Focus on visual design: we want a modern, functional, attractive UI. Think Apple not Google.
 
@@ -40,7 +40,7 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 ### General Agent Guidance
 
 - Don't include comments in code explaining changes, explain changes in chat instead.
-- Before wrapping up a task, run appriopiate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
+- Before completing up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
 
 ### Final
 
