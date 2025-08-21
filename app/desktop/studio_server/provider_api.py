@@ -140,6 +140,7 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
     supports_doc_extraction: bool
@@ -245,6 +246,7 @@ def connect_provider_api(app: FastAPI):
                                 supports_data_gen=provider.supports_data_gen,
                                 suggested_for_data_gen=provider.suggested_for_data_gen,
                                 supports_logprobs=provider.supports_logprobs,
+                                supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
@@ -1097,6 +1099,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            supports_function_calling=ollama_provider.supports_function_calling,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
@@ -1120,6 +1123,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     supports_structured_output=False,
                     supports_data_gen=False,
                     supports_logprobs=False,
+                    supports_function_calling=False,
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
@@ -1174,6 +1178,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_doc_extraction=docker_provider.supports_doc_extraction,
                             suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
+                            supports_function_calling=docker_provider.supports_function_calling,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                         )
@@ -1193,6 +1198,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
+                    supports_function_calling=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
                 )
@@ -1269,6 +1275,7 @@ def custom_models() -> AvailableModels | None:
                     supports_structured_output=False,
                     supports_data_gen=False,
                     supports_logprobs=False,
+                    supports_function_calling=False,
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
@@ -1307,8 +1314,9 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             id=f"{project.id}::{task.id}::{fine_tune.id}",
                             name=fine_tune.name
                             + f" ({provider_name_from_id(fine_tune.provider)})",
-                            # YMMV, but we'll assume all fine tuned models support structured output and data gen
+                            # YMMV, but we'll assume all fine tuned models support structured output, data gen, and tools as they may have been trained with them
                             supports_structured_output=True,
+                            supports_function_calling=True,
                             supports_data_gen=True,
                             supports_logprobs=False,
                             task_filter=[str(task.id)],
@@ -1431,6 +1439,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         supports_structured_output=False,
                         supports_data_gen=False,
                         supports_logprobs=False,
+                        supports_function_calling=False,
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,

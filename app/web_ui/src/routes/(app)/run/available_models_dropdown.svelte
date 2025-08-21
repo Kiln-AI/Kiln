@@ -38,6 +38,7 @@
   export let requires_logprobs: boolean = false
   export let requires_uncensored_data_gen: boolean = false
   export let requires_doc_extraction: boolean = false
+  export let requires_tool_support: boolean = false
   export let error_message: string | null = null
   export let suggested_mode:
     | "data_gen"
@@ -53,6 +54,7 @@
     requires_uncensored_data_gen,
     requires_logprobs,
     requires_doc_extraction,
+    requires_tool_support,
     $ui_state.current_task_id,
     $recent_model_store,
     $model_info,
@@ -109,6 +111,7 @@
     requires_uncensored_data_gen: boolean,
     requires_logprobs: boolean,
     requires_doc_extraction: boolean,
+    requires_tool_support: boolean,
     current_task_id: string | null,
     recent_models: RecentModel[],
     model_data: ProviderModels | null,
@@ -175,7 +178,8 @@
           (structured_output && !model.supports_structured_output) ||
           (requires_logprobs && !model.supports_logprobs) ||
           (requires_uncensored_data_gen && !model.uncensored) ||
-          (requires_doc_extraction && !model.supports_doc_extraction)
+          (requires_doc_extraction && !model.supports_doc_extraction) ||
+          (requires_tool_support && !model.supports_function_calling)
         if (unsupported) {
           unsupported_models.push({
             value: id,
@@ -221,6 +225,8 @@
       if (requires_uncensored_data_gen) {
         not_recommended_label =
           "Not Recommended - Uncensored Data Gen Not Supported"
+      } else if (requires_tool_support) {
+        not_recommended_label = "Not Recommended - Tool Calling Not Supported"
       } else if (requires_data_gen) {
         not_recommended_label = "Not Recommended - Data Gen Not Supported"
       } else if (requires_structured_output) {
@@ -292,6 +298,8 @@
       <Warning
         warning_message="The current data gen template works best with uncensored models like Grok. This model may refuse to generate data for sensitive topics."
       />
+    {:else if requires_tool_support}
+      <Warning warning_message="This model does not support tool calling." />
     {:else if requires_data_gen}
       <Warning
         warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."

@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 import litellm
 import pytest
+from litellm.types.utils import ChoiceLogprobs
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -10,6 +11,12 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.tools.built_in_tools.math_tools import (
+    AddTool,
+    DivideTool,
+    MultiplyTool,
+    SubtractTool,
+)
 
 
 @pytest.fixture
@@ -59,7 +66,7 @@ def test_initialization(config, mock_task):
     )
 
     assert adapter.config == config
-    assert adapter.run_config.task == mock_task
+    assert adapter.task == mock_task
     assert adapter.run_config.prompt_id == "simple_prompt_builder"
     assert adapter.base_adapter_config.default_tags == ["test-tag"]
     assert adapter.run_config.model_name == config.run_config_properties.model_name
@@ -552,6 +559,404 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+@pytest.fixture
+def mock_math_tools():
+    """Create a list of 4 math tools for testing"""
+    return [AddTool(), SubtractTool(), MultiplyTool(), DivideTool()]
+
+
+async def test_litellm_tools_returns_openai_format_with_tools(
+    config, mock_task, mock_math_tools
+):
+    """Test litellm_tools returns OpenAI formatted tool list when available_tools has tools"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with patch.object(adapter, "available_tools", return_value=mock_math_tools):
+        tools = await adapter.litellm_tools()
+
+    # Should return 4 tools
+    assert len(tools) == 4
+
+    # Each tool should have the OpenAI format
+    for tool in tools:
+        assert "type" in tool
+        assert tool["type"] == "function"
+        assert "function" in tool
+        assert "name" in tool["function"]
+        assert "description" in tool["function"]
+        assert "parameters" in tool["function"]
+
+    # Verify specific tools are present
+    tool_names = [tool["function"]["name"] for tool in tools]
+    assert "add" in tool_names
+    assert "subtract" in tool_names
+    assert "multiply" in tool_names
+    assert "divide" in tool_names
+
+
+async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task):
+    """Test litellm_tools returns empty list when available_tools has no tools"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    with patch.object(adapter, "available_tools", return_value=[]):
+        tools = await adapter.litellm_tools()
+
+    assert tools == []
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_includes_tools(
+    config, mock_task, mock_math_tools
+):
+    """Test build_completion_kwargs includes tools when available_tools has tools"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    # Should include tools
+    assert "tools" in kwargs
+    assert len(kwargs["tools"]) == 4
+    assert "tool_choice" in kwargs
+    assert kwargs["tool_choice"] == "auto"
+
+    # Verify tools are properly formatted
+    for tool in kwargs["tools"]:
+        assert "type" in tool
+        assert tool["type"] == "function"
+        assert "function" in tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "structured_output_mode, expected_error_message",
+    [
+        (
+            StructuredOutputMode.function_calling,
+            "Function calling/tools can't be used as the JSON response format if you're also using tools",
+        ),
+        (
+            StructuredOutputMode.function_calling_weak,
+            "Function calling/tools can't be used as the JSON response format if you're also using tools",
+        ),
+        (
+            StructuredOutputMode.json_instructions,
+            None,
+        ),
+        (
+            StructuredOutputMode.json_schema,
+            None,
+        ),
+    ],
+)
+async def test_build_completion_kwargs_raises_error_with_tools_conflict(
+    config, mock_task, mock_math_tools, structured_output_mode, expected_error_message
+):
+    """Test build_completion_kwargs raises error when structured output mode conflicts with available tools"""
+    config.run_config_properties.structured_output_mode = structured_output_mode
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        if expected_error_message is not None:
+            with pytest.raises(
+                ValueError,
+                match=expected_error_message,
+            ):
+                await adapter.build_completion_kwargs(mock_provider, messages, None)
+        else:
+            # should not raise an error
+            await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+
+class TestExtractAndValidateLogprobs:
+    """Test cases for the _extract_and_validate_logprobs helper method"""
+
+    @pytest.fixture
+    def adapter_with_logprobs_required(self, config, mock_task):
+        """Create an adapter with logprobs required"""
+        base_config = AdapterConfig(top_logprobs=5)
+        return LiteLlmAdapter(
+            config=config, kiln_task=mock_task, base_adapter_config=base_config
+        )
+
+    @pytest.fixture
+    def adapter_without_logprobs_required(self, config, mock_task):
+        """Create an adapter without logprobs required"""
+        base_config = AdapterConfig(top_logprobs=None)
+        return LiteLlmAdapter(
+            config=config, kiln_task=mock_task, base_adapter_config=base_config
+        )
+
+    def test_extract_logprobs_with_valid_logprobs(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when final_choice has valid logprobs"""
+        # Create a mock final_choice with valid logprobs
+        mock_choice = Mock()
+        mock_logprobs = Mock(spec=ChoiceLogprobs)
+        mock_choice.logprobs = mock_logprobs
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result == mock_logprobs
+
+    def test_extract_logprobs_with_none_choice(self, adapter_without_logprobs_required):
+        """Test extracting logprobs when final_choice is None"""
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(None)
+
+        assert result is None
+
+    def test_extract_logprobs_without_logprobs_attribute(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when final_choice has no logprobs attribute"""
+        mock_choice = Mock()
+        # Don't add logprobs attribute
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    def test_extract_logprobs_with_non_choicelogprobs_type(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when logprobs is not a ChoiceLogprobs instance"""
+        mock_choice = Mock()
+        mock_choice.logprobs = {"not": "a ChoiceLogprobs object"}
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    def test_extract_logprobs_with_none_logprobs(
+        self, adapter_without_logprobs_required
+    ):
+        """Test extracting logprobs when logprobs attribute is None"""
+        mock_choice = Mock()
+        mock_choice.logprobs = None
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    def test_validate_logprobs_required_but_missing_raises_error(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that missing logprobs raises error when required"""
+        mock_choice = Mock()
+        # Don't add logprobs or make it None
+        mock_choice.logprobs = None
+
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter_with_logprobs_required._extract_and_validate_logprobs(mock_choice)
+
+    def test_validate_logprobs_required_but_none_choice_raises_error(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that None choice raises error when logprobs are required"""
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter_with_logprobs_required._extract_and_validate_logprobs(None)
+
+    def test_validate_logprobs_required_but_wrong_type_raises_error(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that wrong logprobs type raises error when required"""
+        mock_choice = Mock()
+        mock_choice.logprobs = {"not": "a ChoiceLogprobs object"}
+
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter_with_logprobs_required._extract_and_validate_logprobs(mock_choice)
+
+    def test_validate_logprobs_required_and_present_succeeds(
+        self, adapter_with_logprobs_required
+    ):
+        """Test that valid logprobs are returned when required and present"""
+        mock_choice = Mock()
+        mock_logprobs = Mock(spec=ChoiceLogprobs)
+        mock_choice.logprobs = mock_logprobs
+
+        result = adapter_with_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result == mock_logprobs
+
+    def test_validate_logprobs_not_required_missing_ok(
+        self, adapter_without_logprobs_required
+    ):
+        """Test that missing logprobs is OK when not required"""
+        mock_choice = Mock()
+        mock_choice.logprobs = None
+
+        result = adapter_without_logprobs_required._extract_and_validate_logprobs(
+            mock_choice
+        )
+
+        assert result is None
+
+    @pytest.mark.parametrize("top_logprobs_value", [0, 1, 5, 10])
+    def test_validate_logprobs_various_top_logprobs_values(
+        self, config, mock_task, top_logprobs_value
+    ):
+        """Test validation with various top_logprobs values"""
+        base_config = AdapterConfig(top_logprobs=top_logprobs_value)
+        adapter = LiteLlmAdapter(
+            config=config, kiln_task=mock_task, base_adapter_config=base_config
+        )
+
+        mock_choice = Mock()
+        mock_choice.logprobs = None
+
+        with pytest.raises(
+            RuntimeError, match="Logprobs were required, but no logprobs were returned"
+        ):
+            adapter._extract_and_validate_logprobs(mock_choice)
+
+
+class TestExtractReasoningToIntermediateOutputs:
+    def test_extract_reasoning_with_valid_content(self, config, mock_task):
+        """Test extracting reasoning content when present and valid"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        # Create mock choice with reasoning content
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = "This is my reasoning"
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert intermediate_outputs["reasoning"] == "This is my reasoning"
+
+    def test_extract_reasoning_with_whitespace_content(self, config, mock_task):
+        """Test extracting reasoning content with whitespace that gets stripped"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = (
+            "  \n  This is my reasoning with whitespace  \n  "
+        )
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert (
+            intermediate_outputs["reasoning"] == "This is my reasoning with whitespace"
+        )
+
+    def test_extract_reasoning_with_empty_content(self, config, mock_task):
+        """Test that empty reasoning content is not added to intermediate outputs"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = "   "  # Only whitespace
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_none_content(self, config, mock_task):
+        """Test that None reasoning content is not added to intermediate outputs"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.reasoning_content = None
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_no_reasoning_attribute(self, config, mock_task):
+        """Test that missing reasoning_content attribute is handled gracefully"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock()
+        mock_message = Mock(spec=[])  # Empty spec, no attributes
+        mock_choice.message = mock_message
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_no_message_attribute(self, config, mock_task):
+        """Test that missing message attribute is handled gracefully"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        mock_choice = Mock(spec=[])  # Empty spec, no attributes
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(
+            mock_choice, intermediate_outputs
+        )
+
+        assert "reasoning" not in intermediate_outputs
+
+    def test_extract_reasoning_with_none_choice(self, config, mock_task):
+        """Test that None choice is handled gracefully"""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        intermediate_outputs = {}
+
+        adapter._extract_reasoning_to_intermediate_outputs(None, intermediate_outputs)
+
+        assert "reasoning" not in intermediate_outputs
 
 
 @pytest.mark.parametrize(

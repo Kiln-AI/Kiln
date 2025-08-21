@@ -10,6 +10,7 @@ dependencies = [
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
+    "mcp[cli]>=1.10.1",
 ]
 
 [dependency-groups]

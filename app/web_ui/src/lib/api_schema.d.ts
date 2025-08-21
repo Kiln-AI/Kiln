@@ -1519,6 +1519,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/available_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Tools */
+        get: operations["get_available_tools_api_projects__project_id__available_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/available_tool_servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Tool Servers */
+        get: operations["get_available_tool_servers_api_projects__project_id__available_tool_servers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tool Server */
+        get: operations["get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/connect_remote_mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect Remote Mcp */
+        post: operations["connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1556,6 +1624,11 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+        };
+        /** Audio */
+        Audio: {
+            /** Id */
+            id: string;
         };
         /** AvailableModels */
         AvailableModels: {
@@ -1653,6 +1726,171 @@ export interface components {
             filename: string;
             /** Imported Count */
             imported_count: number;
+        };
+        /**
+         * ChatCompletionAssistantMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         *     https://github.com/pydantic/pydantic/issues/9541
+         */
+        "ChatCompletionAssistantMessageParamWrapper-Input": {
+            /**
+             * Role
+             * @constant
+             */
+            role: "assistant";
+            audio?: components["schemas"]["Audio"] | null;
+            /** Content */
+            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            function_call?: components["schemas"]["FunctionCall"] | null;
+            /** Name */
+            name?: string;
+            /** Refusal */
+            refusal?: string | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+        };
+        /**
+         * ChatCompletionAssistantMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         *     https://github.com/pydantic/pydantic/issues/9541
+         */
+        "ChatCompletionAssistantMessageParamWrapper-Output": {
+            /**
+             * Role
+             * @constant
+             */
+            role: "assistant";
+            audio?: components["schemas"]["Audio"] | null;
+            /** Content */
+            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            function_call?: components["schemas"]["FunctionCall"] | null;
+            /** Name */
+            name?: string;
+            /** Refusal */
+            refusal?: string | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+        };
+        /** ChatCompletionContentPartImageParam */
+        ChatCompletionContentPartImageParam: {
+            image_url: components["schemas"]["ImageURL"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "image_url";
+        };
+        /** ChatCompletionContentPartInputAudioParam */
+        ChatCompletionContentPartInputAudioParam: {
+            input_audio: components["schemas"]["InputAudio"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "input_audio";
+        };
+        /** ChatCompletionContentPartRefusalParam */
+        ChatCompletionContentPartRefusalParam: {
+            /** Refusal */
+            refusal: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "refusal";
+        };
+        /** ChatCompletionContentPartTextParam */
+        ChatCompletionContentPartTextParam: {
+            /** Text */
+            text: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "text";
+        };
+        /** ChatCompletionDeveloperMessageParam */
+        ChatCompletionDeveloperMessageParam: {
+            /** Content */
+            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            /**
+             * Role
+             * @constant
+             */
+            role: "developer";
+            /** Name */
+            name?: string;
+        };
+        /** ChatCompletionFunctionMessageParam */
+        ChatCompletionFunctionMessageParam: {
+            /** Content */
+            content: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @constant
+             */
+            role: "function";
+        };
+        /** ChatCompletionMessageToolCallParam */
+        ChatCompletionMessageToolCallParam: {
+            /** Id */
+            id: string;
+            function: components["schemas"]["Function"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "function";
+        };
+        /** ChatCompletionSystemMessageParam */
+        ChatCompletionSystemMessageParam: {
+            /** Content */
+            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            /**
+             * Role
+             * @constant
+             */
+            role: "system";
+            /** Name */
+            name?: string;
+        };
+        /** ChatCompletionToolMessageParam */
+        ChatCompletionToolMessageParam: {
+            /** Content */
+            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            /**
+             * Role
+             * @constant
+             */
+            role: "tool";
+            /** Tool Call Id */
+            tool_call_id: string;
+        };
+        /** ChatCompletionUserMessageParam */
+        "ChatCompletionUserMessageParam-Input": {
+            /** Content */
+            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
+            /**
+             * Role
+             * @constant
+             */
+            role: "user";
+            /** Name */
+            name?: string;
+        };
+        /** ChatCompletionUserMessageParam */
+        "ChatCompletionUserMessageParam-Output": {
+            /** Content */
+            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
+            /**
+             * Role
+             * @constant
+             */
+            role: "user";
+            /** Name */
+            name?: string;
         };
         /**
          * ChatStrategy
@@ -2036,7 +2274,7 @@ export interface components {
          *     Properties vary based on the source type - for synthetic sources this includes
          *     model information, for human sources this includes creator information.
          */
-        DataSource: {
+        "DataSource-Input": {
             type: components["schemas"]["DataSourceType"];
             /**
              * Properties
@@ -2046,6 +2284,28 @@ export interface components {
             properties: {
                 [key: string]: string | number;
             };
+            /** @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic). */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
+        };
+        /**
+         * DataSource
+         * @description Represents the origin of data, either human or synthetic, with associated properties.
+         *
+         *     Properties vary based on the source type - for synthetic sources this includes
+         *     model information, for human sources this includes creator information.
+         */
+        "DataSource-Output": {
+            type: components["schemas"]["DataSourceType"];
+            /**
+             * Properties
+             * @description Properties describing the data source. For synthetic things like model. For human, the human's name.
+             * @default {}
+             */
+            properties: {
+                [key: string]: string | number;
+            };
+            /** @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic). */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
         };
         /**
          * DataSourceType
@@ -2563,6 +2823,97 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        /**
+         * ExternalToolApiDescription
+         * @description This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+         */
+        ExternalToolApiDescription: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Inputschema */
+            inputSchema?: Record<string, never>;
+        };
+        /**
+         * ExternalToolServer
+         * @description Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
+         *
+         *     This model stores the necessary configuration to connect to and authenticate with
+         *     external MCP servers that provide tools for LLM interactions.
+         */
+        ExternalToolServer: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the external tool.
+             */
+            name: string;
+            /** @description The type of external tool server. Remote tools are hosted on a remote server */
+            type: components["schemas"]["ToolServerType"];
+            /**
+             * Description
+             * @description A description of the external tool for you and your team. Will not be used in prompts/training/validation.
+             */
+            description?: string | null;
+            /**
+             * Properties
+             * @description Configuration properties specific to the tool type.
+             * @default {}
+             */
+            properties: Record<string, never>;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * ExternalToolServerApiDescription
+         * @description This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
+         */
+        ExternalToolServerApiDescription: {
+            /** Id */
+            id: string | null;
+            type: components["schemas"]["ToolServerType"];
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Created By */
+            created_by: string | null;
+            /** Properties */
+            properties: Record<string, never>;
+            /** Available Tools */
+            available_tools: components["schemas"]["ExternalToolApiDescription"][];
+        };
+        /** ExternalToolServerCreationRequest */
+        ExternalToolServerCreationRequest: {
+            /** Name */
+            name: string;
+            /** Server Url */
+            server_url: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /** Description */
+            description?: string | null;
+        };
         /** ExtractionProgress */
         ExtractionProgress: {
             /** Document Count Total */
@@ -2674,6 +3025,24 @@ export interface components {
          * @enum {string}
          */
         ExtractorType: "litellm";
+        /** File */
+        File: {
+            file: components["schemas"]["FileFile"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "file";
+        };
+        /** FileFile */
+        FileFile: {
+            /** File Data */
+            file_data?: string;
+            /** File Id */
+            file_id?: string;
+            /** Filename */
+            filename?: string;
+        };
         /** FileInfo */
         FileInfo: {
             /**
@@ -2903,6 +3272,20 @@ export interface components {
             finetune: components["schemas"]["Finetune"];
             status: components["schemas"]["FineTuneStatus"];
         };
+        /** Function */
+        Function: {
+            /** Arguments */
+            arguments: string;
+            /** Name */
+            name: string;
+        };
+        /** FunctionCall */
+        FunctionCall: {
+            /** Arguments */
+            arguments: string;
+            /** Name */
+            name: string;
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -2915,6 +3298,26 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImageURL */
+        ImageURL: {
+            /** Url */
+            url: string;
+            /**
+             * Detail
+             * @enum {string}
+             */
+            detail?: "auto" | "low" | "high";
+        };
+        /** InputAudio */
+        InputAudio: {
+            /** Data */
+            data: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "wav" | "mp3";
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -2985,6 +3388,19 @@ export interface components {
             file_path: string | null;
         };
         /**
+         * KilnToolServerDescription
+         * @description This class is used to describe the external tool server under Settings -> Manage Tools UI.
+         */
+        KilnToolServerDescription: {
+            /** Name */
+            name: string;
+            /** Id */
+            id: string | null;
+            type: components["schemas"]["ToolServerType"];
+            /** Description */
+            description: string | null;
+        };
+        /**
          * Kind
          * @enum {string}
          */
@@ -3030,6 +3446,8 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Supports Function Calling */
+            supports_function_calling: boolean;
             /** Uncensored */
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
@@ -3317,7 +3735,10 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-            /** Name */
+            /**
+             * Name
+             * @description A name to identify this RAG configuration for your own reference.
+             */
             name: string;
             /**
              * Description
@@ -3513,6 +3934,8 @@ export interface components {
             temperature: number;
             /** @description The structured output mode to use for this run config. */
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
+            /** @description The tools config to use for this run config, defining which tools are available to the model. */
+            tools_config?: components["schemas"]["ToolsRunConfig"] | null;
         };
         /** RunSummary */
         RunSummary: {
@@ -3656,7 +4079,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource"] | null;
+            source?: components["schemas"]["DataSource-Input"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
         };
@@ -3690,7 +4113,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource"] | null;
+            source?: components["schemas"]["DataSource-Output"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /** Model Type */
@@ -3849,7 +4272,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource"] | null;
+            input_source?: components["schemas"]["DataSource-Input"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Input"];
             /**
@@ -3874,6 +4297,11 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Trace
+             * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
+             */
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParam"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * TaskRun
@@ -3905,7 +4333,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource"] | null;
+            input_source?: components["schemas"]["DataSource-Output"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Output"];
             /**
@@ -3930,6 +4358,11 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Trace
+             * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
+             */
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParam"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -3974,6 +4407,32 @@ export interface components {
             prompt?: components["schemas"]["BasePrompt"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** ToolApiDescription */
+        ToolApiDescription: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+        };
+        /**
+         * ToolServerType
+         * @description Enumeration of supported external tool server types.
+         * @enum {string}
+         */
+        ToolServerType: "remote_mcp";
+        /**
+         * ToolsRunConfig
+         * @description A config describing which tools are available to a task.
+         */
+        ToolsRunConfig: {
+            /**
+             * Tools
+             * @description The IDs of the tools available to the task.
+             */
+            tools: string[];
         };
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
@@ -7410,6 +7869,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KilnFileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_available_tools_api_projects__project_id__available_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolApiDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_available_tool_servers_api_projects__project_id__available_tool_servers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnToolServerDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServerApiDescription"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
                 };
             };
             /** @description Validation Error */

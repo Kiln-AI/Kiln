@@ -3,6 +3,7 @@ from pydantic import Field
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
@@ -19,6 +20,7 @@ class Project(
         "embedding_configs": EmbeddingConfig,
         "rag_configs": RagConfig,
         "vector_store_configs": VectorStoreConfig,
+        "external_tool_servers": ExternalToolServer,
     },
 ):
     """
@@ -55,3 +57,6 @@ class Project(
 
     def rag_configs(self, readonly: bool = False) -> list[RagConfig]:
         return super().rag_configs(readonly=readonly)  # type: ignore
+
+    def external_tool_servers(self, readonly: bool = False) -> list[ExternalToolServer]:
+        return super().external_tool_servers(readonly=readonly)  # type: ignore

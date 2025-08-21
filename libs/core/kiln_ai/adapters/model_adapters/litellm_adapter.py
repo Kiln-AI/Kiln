@@ -1,9 +1,20 @@
+import json
 import logging
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
 
 import litellm
-from litellm.types.utils import ChoiceLogprobs, Choices, ModelResponse
+from litellm.types.utils import (
+    ChatCompletionMessageToolCall,
+    ChoiceLogprobs,
+    Choices,
+    ModelResponse,
+)
 from litellm.types.utils import Usage as LiteLlmUsage
+from openai.types.chat import ChatCompletionToolMessageParam
+from openai.types.chat.chat_completion_message_tool_call_param import (
+    ChatCompletionMessageToolCallParam,
+)
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.ml_model_list import (
@@ -18,11 +29,28 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
-from kiln_ai.datamodel.task import run_config_from_run_config_properties
+from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionAssistantMessageParamWrapper,
+    ChatCompletionMessageParam,
+)
+
+MAX_CALLS_PER_TURN = 10
+MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ModelTurnResult:
+    assistant_message: str
+    all_messages: list[ChatCompletionMessageParam]
+    model_response: ModelResponse | None
+    model_choice: Choices | None
+    usage: Usage
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -37,117 +65,217 @@ class LiteLlmAdapter(BaseAdapter):
         self._api_base = config.base_url
         self._headers = config.default_headers
         self._litellm_model_id: str | None = None
-
-        # Create a RunConfig, adding the task to the RunConfigProperties
-        run_config = run_config_from_run_config_properties(
-            task=kiln_task,
-            run_config_properties=config.run_config_properties,
-        )
+        self._cached_available_tools: list[KilnToolInterface] | None = None
 
         super().__init__(
-            run_config=run_config,
+            task=kiln_task,
+            run_config=config.run_config_properties,
             config=base_adapter_config,
         )
 
+    async def _run_model_turn(
+        self,
+        provider: KilnModelProvider,
+        prior_messages: list[ChatCompletionMessageParam],
+        top_logprobs: int | None,
+        skip_response_format: bool,
+    ) -> ModelTurnResult:
+        """
+        Call the model for a single top level turn: from user message to agent message.
+
+        It may make handle iterations of tool calls between the user/agent message if needed.
+        """
+
+        usage = Usage()
+        messages = list(prior_messages)
+        tool_calls_count = 0
+
+        while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
+            # Build completion kwargs for tool calls
+            completion_kwargs = await self.build_completion_kwargs(
+                provider,
+                messages,
+                top_logprobs,
+                skip_response_format,
+            )
+
+            # Make the completion call
+            model_response, response_choice = await self.acompletion_checking_response(
+                **completion_kwargs
+            )
+
+            # count the usage
+            usage += self.usage_from_response(model_response)
+
+            # Extract content and tool_calls safely
+            content, assistant_message, tool_calls = self.extract_assistant_response(
+                response_choice
+            )
+            messages.append(assistant_message)
+
+            # Process tool calls if any
+            if tool_calls and len(tool_calls) > 0:
+                (
+                    assistant_message_from_toolcall,
+                    tool_call_messages,
+                ) = await self.process_tool_calls(tool_calls)
+
+                # Add tool call results to messages
+                messages.extend(tool_call_messages)
+
+                # If task_response tool was called, we're done
+                if assistant_message_from_toolcall is not None:
+                    return ModelTurnResult(
+                        assistant_message=assistant_message_from_toolcall,
+                        all_messages=messages,
+                        model_response=model_response,
+                        model_choice=response_choice,
+                        usage=usage,
+                    )
+
+                # If there were tool calls, increment counter and continue
+                if tool_call_messages:
+                    tool_calls_count += 1
+                    continue
+
+            # If no tool calls, return the content as final output
+            if content:
+                return ModelTurnResult(
+                    assistant_message=content,
+                    all_messages=messages,
+                    model_response=model_response,
+                    model_choice=response_choice,
+                    usage=usage,
+                )
+
+            # If we get here with no content and no tool calls, break
+            raise RuntimeError(
+                "Model returned neither content nor tool calls. It must return at least one of these."
+            )
+
+        raise RuntimeError(
+            f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
+        )
+
     async def _run(self, input: Dict | str) -> tuple[RunOutput, Usage | None]:
+        usage = Usage()
+
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
         chat_formatter = self.build_chat_formatter(input)
+        messages: list[ChatCompletionMessageParam] = []
 
-        prior_output = None
-        prior_message = None
-        response = None
+        prior_output: str | None = None
+        final_choice: Choices | None = None
         turns = 0
+
         while True:
             turns += 1
-            if turns > 10:
+            if turns > MAX_CALLS_PER_TURN:
                 raise RuntimeError(
-                    "Too many turns. Stopping iteration to avoid using too many tokens."
+                    f"Too many turns ({turns}). Stopping iteration to avoid using too many tokens."
                 )
 
             turn = chat_formatter.next_turn(prior_output)
             if turn is None:
+                # No next turn, we're done
                 break
 
+            # Add messages from the turn to chat history
+            for message in turn.messages:
+                if message.content is None:
+                    raise ValueError("Empty message content isn't allowed")
+                # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
+                messages.append({"role": message.role, "content": message.content})  # type: ignore
+
             skip_response_format = not turn.final_call
-            all_messages = chat_formatter.message_dicts()
-            completion_kwargs = await self.build_completion_kwargs(
+            turn_result = await self._run_model_turn(
                 provider,
-                all_messages,
+                messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
             )
-            response = await litellm.acompletion(**completion_kwargs)
-            if (
-                not isinstance(response, ModelResponse)
-                or not response.choices
-                or len(response.choices) == 0
-                or not isinstance(response.choices[0], Choices)
-            ):
-                raise RuntimeError(
-                    f"Expected ModelResponse with Choices, got {type(response)}."
-                )
-            prior_message = response.choices[0].message
-            prior_output = prior_message.content
 
-            # Fallback: Use args of first tool call to task_response if it exists
-            if (
-                not prior_output
-                and hasattr(prior_message, "tool_calls")
-                and prior_message.tool_calls
-            ):
-                tool_call = next(
-                    (
-                        tool_call
-                        for tool_call in prior_message.tool_calls
-                        if tool_call.function.name == "task_response"
-                    ),
-                    None,
-                )
-                if tool_call:
-                    prior_output = tool_call.function.arguments
+            usage += turn_result.usage
+
+            prior_output = turn_result.assistant_message
+            messages = turn_result.all_messages
+            final_choice = turn_result.model_choice
 
             if not prior_output:
-                raise RuntimeError("No output returned from model")
+                raise RuntimeError("No assistant message/output returned from model")
 
-        if response is None or prior_message is None:
-            raise RuntimeError("No response returned from model")
+        logprobs = self._extract_and_validate_logprobs(final_choice)
 
+        # Save COT/reasoning if it exists. May be a message, or may be parsed by LiteLLM (or openrouter, or anyone upstream)
         intermediate_outputs = chat_formatter.intermediate_outputs()
-
-        logprobs = (
-            response.choices[0].logprobs
-            if hasattr(response.choices[0], "logprobs")
-            and isinstance(response.choices[0].logprobs, ChoiceLogprobs)
-            else None
+        self._extract_reasoning_to_intermediate_outputs(
+            final_choice, intermediate_outputs
         )
 
-        # Check logprobs worked, if requested
+        if not isinstance(prior_output, str):
+            raise RuntimeError(f"assistant message is not a string: {prior_output}")
+
+        output = RunOutput(
+            output=prior_output,
+            intermediate_outputs=intermediate_outputs,
+            output_logprobs=logprobs,
+            trace=messages,
+        )
+
+        return output, usage
+
+    def _extract_and_validate_logprobs(
+        self, final_choice: Choices | None
+    ) -> ChoiceLogprobs | None:
+        """
+        Extract logprobs from the final choice and validate they exist if required.
+        """
+        logprobs = None
+        if (
+            final_choice is not None
+            and hasattr(final_choice, "logprobs")
+            and isinstance(final_choice.logprobs, ChoiceLogprobs)
+        ):
+            logprobs = final_choice.logprobs
+
+        # Check logprobs worked, if required
         if self.base_adapter_config.top_logprobs is not None and logprobs is None:
             raise RuntimeError("Logprobs were required, but no logprobs were returned.")
 
-        # Save reasoning if it exists and was parsed by LiteLLM (or openrouter, or anyone upstream)
+        return logprobs
+
+    def _extract_reasoning_to_intermediate_outputs(
+        self, final_choice: Choices | None, intermediate_outputs: Dict[str, Any]
+    ) -> None:
+        """Extract reasoning content from model choice and add to intermediate outputs if present."""
         if (
-            prior_message is not None
-            and hasattr(prior_message, "reasoning_content")
-            and prior_message.reasoning_content
-            and len(prior_message.reasoning_content.strip()) > 0
+            final_choice is not None
+            and hasattr(final_choice, "message")
+            and hasattr(final_choice.message, "reasoning_content")
         ):
-            intermediate_outputs["reasoning"] = prior_message.reasoning_content.strip()
+            reasoning_content = final_choice.message.reasoning_content
+            if reasoning_content is not None:
+                stripped_reasoning_content = reasoning_content.strip()
+                if len(stripped_reasoning_content) > 0:
+                    intermediate_outputs["reasoning"] = stripped_reasoning_content
 
-        # the string content of the response
-        response_content = prior_output
-
-        if not isinstance(response_content, str):
-            raise RuntimeError(f"response is not a string: {response_content}")
-
-        return RunOutput(
-            output=response_content,
-            intermediate_outputs=intermediate_outputs,
-            output_logprobs=logprobs,
-        ), self.usage_from_response(response)
+    async def acompletion_checking_response(
+        self, **kwargs
+    ) -> Tuple[ModelResponse, Choices]:
+        response = await litellm.acompletion(**kwargs)
+        if (
+            not isinstance(response, ModelResponse)
+            or not response.choices
+            or len(response.choices) == 0
+            or not isinstance(response.choices[0], Choices)
+        ):
+            raise RuntimeError(
+                f"Expected ModelResponse with Choices, got {type(response)}."
+            )
+        return response, response.choices[0]
 
     def adapter_name(self) -> str:
         return "kiln_openai_compatible_adapter"
@@ -197,7 +325,7 @@ class LiteLlmAdapter(BaseAdapter):
                 raise_exhaustive_enum_error(structured_output_mode)
 
     def json_schema_response_format(self) -> dict[str, Any]:
-        output_schema = self.task().output_schema()
+        output_schema = self.task.output_schema()
         return {
             "response_format": {
                 "type": "json_schema",
@@ -210,7 +338,7 @@ class LiteLlmAdapter(BaseAdapter):
 
     def tool_call_params(self, strict: bool) -> dict[str, Any]:
         # Add additional_properties: false to the schema (OpenAI requires this for some models)
-        output_schema = self.task().output_schema()
+        output_schema = self.task.output_schema()
         if not isinstance(output_schema, dict):
             raise ValueError(
                 "Invalid output schema for this task. Can not use tool calls."
@@ -316,7 +444,7 @@ class LiteLlmAdapter(BaseAdapter):
     async def build_completion_kwargs(
         self,
         provider: KilnModelProvider,
-        messages: list[dict[str, Any]],
+        messages: list[ChatCompletionMessageParam],
         top_logprobs: int | None,
         skip_response_format: bool = False,
     ) -> dict[str, Any]:
@@ -339,9 +467,23 @@ class LiteLlmAdapter(BaseAdapter):
             **self._additional_body_options,
         }
 
+        tool_calls = await self.litellm_tools()
+        has_tools = len(tool_calls) > 0
+        if has_tools:
+            completion_kwargs["tools"] = tool_calls
+            completion_kwargs["tool_choice"] = "auto"
+
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
             response_format_options = await self.response_format_options()
+
+            # TODO: maybe reconsider this. Model should be able to choose between a final answer or a tool call on any turn. But good models have json_schea, so do we need to support both? If we do, merge them, and consider auto vs forced when merging (only forced for final, auto for merged).
+            # Check for a conflict between tools and response format using tools
+            if has_tools and "tools" in response_format_options:
+                raise ValueError(
+                    "Function calling/tools can't be used as the JSON response format if you're also using tools. Please select a different structured output mode."
+                )
+
             completion_kwargs.update(response_format_options)
 
         if top_logprobs is not None:
@@ -350,7 +492,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         return completion_kwargs
 
-    def usage_from_response(self, response: ModelResponse) -> Usage | None:
+    def usage_from_response(self, response: ModelResponse) -> Usage:
         litellm_usage = response.get("usage", None)
 
         # LiteLLM isn't consistent in how it returns the cost.
@@ -358,10 +500,10 @@ class LiteLlmAdapter(BaseAdapter):
         if cost is None and litellm_usage:
             cost = litellm_usage.get("cost", None)
 
-        if not litellm_usage and not cost:
-            return None
-
         usage = Usage()
+
+        if not litellm_usage and not cost:
+            return usage
 
         if litellm_usage and isinstance(litellm_usage, LiteLlmUsage):
             usage.input_tokens = litellm_usage.get("prompt_tokens", None)
@@ -381,3 +523,129 @@ class LiteLlmAdapter(BaseAdapter):
             )
 
         return usage
+
+    def cached_available_tools(self) -> list[KilnToolInterface]:
+        if self._cached_available_tools is None:
+            self._cached_available_tools = self.available_tools()
+        return self._cached_available_tools
+
+    async def litellm_tools(self) -> list[Dict]:
+        available_tools = self.cached_available_tools()
+
+        # LiteLLM takes the standard OpenAI-compatible tool call format
+        return [await tool.toolcall_definition() for tool in available_tools]
+
+    async def process_tool_calls(
+        self, tool_calls: list[ChatCompletionMessageToolCall] | None
+    ) -> tuple[str | None, list[ChatCompletionToolMessageParam]]:
+        if tool_calls is None:
+            return None, []
+
+        assistant_output_from_toolcall: str | None = None
+        tool_call_response_messages: list[ChatCompletionToolMessageParam] = []
+
+        for tool_call in tool_calls:
+            # Kiln "task_response" tool is used for returning structured output via tool calls.
+            # Load the output from the tool call. Also
+            if tool_call.function.name == "task_response":
+                assistant_output_from_toolcall = tool_call.function.arguments
+                continue
+
+            # Process normal tool calls (not the "task_response" tool)
+            tool_name = tool_call.function.name
+            tool = None
+            for tool_option in self.cached_available_tools():
+                if await tool_option.name() == tool_name:
+                    tool = tool_option
+                    break
+            if not tool:
+                raise RuntimeError(
+                    f"A tool named '{tool_name}' was invoked by a model, but was not available."
+                )
+
+            # Parse the arguments and validate them against the tool's schema
+            try:
+                parsed_args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                raise RuntimeError(
+                    f"Failed to parse arguments for tool '{tool_name}' (should be JSON): {tool_call.function.arguments}"
+                )
+            try:
+                tool_call_definition = await tool.toolcall_definition()
+                json_schema = json.dumps(tool_call_definition["function"]["parameters"])
+                validate_schema_with_value_error(parsed_args, json_schema)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
+                ) from e
+
+            result = await tool.run(**parsed_args)
+
+            tool_call_response_messages.append(
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=tool_call.id,
+                    content=result,
+                )
+            )
+
+        if (
+            assistant_output_from_toolcall is not None
+            and len(tool_call_response_messages) > 0
+        ):
+            raise RuntimeError(
+                "Model asked for impossible combination: task_response tool call and other tool calls were both provided in the same turn. This is not supported as it means the model asked us to both return task_response results (ending the turn) and run new tools calls to send back to the model. If the model makes this mistake often, try a difference structured data model like JSON schema, where this is impossible."
+            )
+
+        return assistant_output_from_toolcall, tool_call_response_messages
+
+    def extract_assistant_response(
+        self, response_choice: Choices
+    ) -> tuple[
+        str | None,
+        ChatCompletionAssistantMessageParamWrapper,
+        List[ChatCompletionMessageToolCall] | None,
+    ]:
+        """
+        Extract the message from the model with type safety and validation.
+        """
+        content: str | None = None
+        tool_calls: List[ChatCompletionMessageToolCall] | None = None
+        tool_calls_param: List[ChatCompletionMessageToolCallParam] = []
+        if hasattr(response_choice, "message"):
+            if hasattr(response_choice.message, "content"):
+                content = response_choice.message.content
+            if hasattr(response_choice.message, "tool_calls"):
+                tool_calls = response_choice.message.tool_calls
+
+                # ChatCompletionMessageToolCallParam != ChatCompletionMessageToolCall, obviously
+                for tool_call in tool_calls or []:
+                    # Optional in the SDK for streaming responses, but should never be None by now
+                    if tool_call.function.name is None:
+                        raise ValueError(
+                            "The model requested a tool call, without providing a function name (required)."
+                        )
+                    tool_calls_param.append(
+                        ChatCompletionMessageToolCallParam(
+                            id=tool_call.id,
+                            type="function",
+                            function={
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments,
+                            },
+                        )
+                    )
+
+        if not content and not tool_calls_param:
+            raise ValueError(
+                "Model returned an assistant message, but no content or tool calls. This is not supported."
+            )
+        message: ChatCompletionAssistantMessageParamWrapper = {
+            "role": "assistant",
+        }
+        if content:
+            message["content"] = content
+        if tool_calls_param:
+            message["tool_calls"] = tool_calls_param
+
+        return content, message, tool_calls

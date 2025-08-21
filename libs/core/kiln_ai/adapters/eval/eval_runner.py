@@ -173,7 +173,9 @@ class EvalRunner:
             # Create the evaluator for this eval config/run config pair
             evaluator = eval_adapter_from_type(job.eval_config.config_type)(
                 job.eval_config,
-                job.task_run_config.run_config() if job.task_run_config else None,
+                job.task_run_config.run_config_properties
+                if job.task_run_config
+                else None,
             )
             if not isinstance(evaluator, BaseEval):
                 raise ValueError("Not able to create evaluator from eval config")

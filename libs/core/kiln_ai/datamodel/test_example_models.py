@@ -797,3 +797,178 @@ def test_usage_model_in_task_run(valid_task_run):
     assert task_run.usage.output_tokens == 50
     assert task_run.usage.total_tokens == 150
     assert task_run.usage.cost == 0.002
+
+
+@pytest.mark.parametrize(
+    "usage1_data,usage2_data,expected_data",
+    [
+        # None + None = None
+        (
+            {
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": None,
+                "cost": None,
+            },
+            {
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": None,
+                "cost": None,
+            },
+            {
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": None,
+                "cost": None,
+            },
+        ),
+        # None + value = value
+        (
+            {
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": None,
+                "cost": None,
+            },
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+        ),
+        # value + None = value
+        (
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+            {
+                "input_tokens": None,
+                "output_tokens": None,
+                "total_tokens": None,
+                "cost": None,
+            },
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+        ),
+        # value1 + value2 = value1 + value2
+        (
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+            {
+                "input_tokens": 200,
+                "output_tokens": 75,
+                "total_tokens": 275,
+                "cost": 0.010,
+            },
+            {
+                "input_tokens": 300,
+                "output_tokens": 125,
+                "total_tokens": 425,
+                "cost": 0.015,
+            },
+        ),
+        # Mixed scenarios
+        (
+            {
+                "input_tokens": 100,
+                "output_tokens": None,
+                "total_tokens": 150,
+                "cost": None,
+            },
+            {
+                "input_tokens": None,
+                "output_tokens": 75,
+                "total_tokens": None,
+                "cost": 0.010,
+            },
+            {
+                "input_tokens": 100,
+                "output_tokens": 75,
+                "total_tokens": 150,
+                "cost": 0.010,
+            },
+        ),
+        # Edge case: zeros
+        (
+            {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost": 0.0},
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "cost": 0.005,
+            },
+        ),
+    ],
+)
+def test_usage_addition(usage1_data, usage2_data, expected_data):
+    """Test Usage addition with various combinations of None and numeric values."""
+    usage1 = Usage(**usage1_data)
+    usage2 = Usage(**usage2_data)
+    result = usage1 + usage2
+
+    assert result.input_tokens == expected_data["input_tokens"]
+    assert result.output_tokens == expected_data["output_tokens"]
+    assert result.total_tokens == expected_data["total_tokens"]
+    assert result.cost == expected_data["cost"]
+
+
+def test_usage_addition_type_error():
+    """Test that adding Usage to non-Usage raises TypeError."""
+    usage = Usage(input_tokens=100, output_tokens=50, total_tokens=150, cost=0.005)
+
+    with pytest.raises(TypeError, match="Cannot add Usage with"):
+        usage + "not_a_usage"  # type: ignore
+
+    with pytest.raises(TypeError, match="Cannot add Usage with"):
+        usage + 42  # type: ignore
+
+    with pytest.raises(TypeError, match="Cannot add Usage with"):
+        usage + {"input_tokens": 100}  # type: ignore
+
+
+def test_usage_addition_immutability():
+    """Test that addition creates new Usage objects and doesn't mutate originals."""
+    usage1 = Usage(input_tokens=100, output_tokens=50, total_tokens=150, cost=0.005)
+    usage2 = Usage(input_tokens=200, output_tokens=75, total_tokens=275, cost=0.010)
+
+    original_usage1_data = usage1.model_dump()
+    original_usage2_data = usage2.model_dump()
+
+    result = usage1 + usage2
+
+    # Original objects should be unchanged
+    assert usage1.model_dump() == original_usage1_data
+    assert usage2.model_dump() == original_usage2_data
+
+    # Result should be a new object
+    assert result is not usage1
+    assert result is not usage2
+    assert result.input_tokens == 300
+    assert result.output_tokens == 125
+    assert result.total_tokens == 425
+    assert result.cost == 0.015

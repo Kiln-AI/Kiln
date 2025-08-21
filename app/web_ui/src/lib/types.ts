@@ -59,3 +59,10 @@ export type RagProgress = components["schemas"]["RagProgress"]
 export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
 export type LogMessage = components["schemas"]["LogMessage"]
+export type KilnToolServerDescription =
+  components["schemas"]["KilnToolServerDescription"]
+export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
+export type ExternalToolServerApiDescription =
+  components["schemas"]["ExternalToolServerApiDescription"]
+export type ToolServerType = components["schemas"]["ToolServerType"]
+export type ToolApiDescription = components["schemas"]["ToolApiDescription"]

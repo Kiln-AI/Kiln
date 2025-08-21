@@ -6,6 +6,7 @@
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
+  export let multi_select: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -63,8 +64,15 @@
     naturalDropdownHeight = null // Reset cached height when dropdown closes
   }
 
+  // Used for multi select, where we want a typed array of values
+  let selected_values: unknown[] = []
+
   onMount(() => {
     mounted = true
+    if (multi_select && Array.isArray(selected)) {
+      // Allow the caller to initialize the selected values
+      selected_values = selected
+    }
   })
 
   onDestroy(() => {
@@ -76,7 +84,19 @@
 
   // Select a prompt
   function selectOption(option: unknown) {
-    selected = option
+    if (multi_select) {
+      // Deselect if already selected, select if not
+      if (selected_values.includes(option)) {
+        selected_values = selected_values.filter((value) => value !== option)
+      } else {
+        selected_values.push(option)
+      }
+      // Update selected, which is what we expose outside the component
+      selected = selected_values
+    } else {
+      selected = option
+    }
+
     // Delay hiding the dropdown to ensure the click event is fully processed
     setTimeout(() => {
       listVisible = false
@@ -352,6 +372,45 @@
       document.removeEventListener("keydown", handleKeyInput)
     }
   }
+
+  function selectedLabel(
+    selected: unknown,
+    selected_values: unknown[],
+    options: OptionGroup[],
+  ) {
+    if (multi_select && selected_values.length > 1) {
+      return (
+        "" +
+        selected_values.length +
+        " Selected: " +
+        selected_values
+          .map((value) => {
+            const flatOptions = options.flatMap((group) => group.options)
+            const selectedOption = flatOptions.find(
+              (item) => item.value === value,
+            )
+            return selectedOption ? selectedOption.label : empty_label
+          })
+          .join(", ")
+      )
+    }
+
+    let effective_selected = selected
+    if (multi_select) {
+      if (selected_values.length === 1) {
+        // Use the labeling system for single select if only one is selected
+        effective_selected = selected_values[0]
+      } else {
+        return empty_label
+      }
+    }
+
+    const flatOptions = options.flatMap((group) => group.options)
+    const selectedOption = flatOptions.find(
+      (item) => item.value === effective_selected,
+    )
+    return selectedOption ? selectedOption.label : empty_label
+  }
 </script>
 
 <div class="dropdown w-full relative">
@@ -412,13 +471,7 @@
     }}
   >
     <span class="truncate">
-      {(() => {
-        const flatOptions = options.flatMap((group) => group.options)
-        const selectedOption = flatOptions.find(
-          (item) => item.value === selected,
-        )
-        return selectedOption ? selectedOption.label : empty_label
-      })()}
+      {selectedLabel(selected, selected_values, options)}
     </span>
   </div>
 
@@ -511,9 +564,10 @@
             <li id={`option-${id}-${overallIndex}`}>
               <button
                 role="option"
-                aria-selected={focusedIndex === overallIndex}
-                class="flex flex-col text-left gap-[1px] pointer-events-auto {focusedIndex ===
-                overallIndex
+                aria-selected={multi_select
+                  ? selected_values.includes(item.value)
+                  : selected === item.value}
+                class="pointer-events-auto {focusedIndex === overallIndex
                   ? ' active'
                   : 'hover:bg-transparent'}"
                 on:mousedown={(event) => {
@@ -524,25 +578,39 @@
                   focusedIndex = overallIndex
                 }}
               >
-                <div class="w-full flex flex-row gap-2 items-center">
-                  <div class="flex-grow">
-                    {item.label}
-                  </div>
-                  {#if item.badge}
-                    <div
-                      class="badge badge-sm px-2 {item.badge_color === 'primary'
-                        ? 'badge-primary'
-                        : 'badge-ghost'}"
-                    >
-                      {item.badge}
-                    </div>
+                <div class="flex flex-row gap-3 items-center">
+                  {#if multi_select}
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm no-animation"
+                      checked={selected_values.includes(item.value)}
+                    />
                   {/if}
-                </div>
-                {#if item.description}
-                  <div class="text-xs font-medium text-base-content/40 w-full">
-                    {item.description}
+                  <div class="flex-grow flex flex-col text-left gap-[1px]">
+                    <div class="w-full flex flex-row gap-2 items-center">
+                      <div class="flex-grow">
+                        {item.label}
+                      </div>
+                      {#if item.badge}
+                        <div
+                          class="badge badge-sm px-2 {item.badge_color ===
+                          'primary'
+                            ? 'badge-primary'
+                            : 'badge-ghost'}"
+                        >
+                          {item.badge}
+                        </div>
+                      {/if}
+                    </div>
+                    {#if item.description}
+                      <div
+                        class="text-xs font-medium text-base-content/40 w-full"
+                      >
+                        {item.description}
+                      </div>
+                    {/if}
                   </div>
-                {/if}
+                </div>
               </button>
             </li>
           {/each}
