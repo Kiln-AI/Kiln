@@ -88,9 +88,9 @@
     <div class="space-y-2">
       <div>
         <p>
-          Add each row from a CSV to your dataset. The CSV must have a header
-          row (<a
-            href="https://docs.getkiln.ai/docs/organizing-datasets"
+          Upload a CSV to add each row to your dataset. The CSV must have a
+          header row (<a
+            href="https://docs.kiln.tech/docs/organizing-datasets"
             target="_blank"
             class="link">see docs</a
           >). The following columns are supported:

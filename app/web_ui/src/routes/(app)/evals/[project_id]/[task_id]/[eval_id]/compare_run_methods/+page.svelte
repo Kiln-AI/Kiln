@@ -410,7 +410,7 @@
   title="Compare Run Methods"
   subtitle="Find the best method of running your task."
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-run-method"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
   action_buttons={[
     {
       label: "Compare Judges",
