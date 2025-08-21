@@ -519,22 +519,37 @@ def test_get_available_tools_multiple_servers(client, test_project):
             assert response.status_code == 200
             set_result = response.json()
             assert len(set_result) == 2
-            first_set = set_result[0]
-            assert first_set["set_name"] == "MCP Server: mcp_server_1"
-            assert len(first_set["tools"]) == 2  # 2 from server1
-            second_set = set_result[1]
-            assert second_set["set_name"] == "MCP Server: mcp_server_2"
-            assert len(second_set["tools"]) == 1  # 1 from server2
-            for tool in first_set["tools"]:
+
+            # Find sets by name instead of assuming order
+            server1_set = next(
+                (s for s in set_result if s["set_name"] == "MCP Server: mcp_server_1"),
+                None,
+            )
+            server2_set = next(
+                (s for s in set_result if s["set_name"] == "MCP Server: mcp_server_2"),
+                None,
+            )
+
+            assert server1_set is not None, (
+                "Could not find MCP Server: mcp_server_1 in results"
+            )
+            assert server2_set is not None, (
+                "Could not find MCP Server: mcp_server_2 in results"
+            )
+
+            assert len(server1_set["tools"]) == 2  # 2 from server1
+            assert len(server2_set["tools"]) == 1  # 1 from server2
+
+            for tool in server1_set["tools"]:
                 assert tool["id"].startswith(f"mcp::remote::{server1_id}::")
-            for tool in second_set["tools"]:
+            for tool in server2_set["tools"]:
                 assert tool["id"].startswith(f"mcp::remote::{server2_id}::")
 
             # Verify tools from both servers are present
-            tool_names = [tool["name"] for tool in first_set["tools"]]
+            tool_names = [tool["name"] for tool in server1_set["tools"]]
             assert "tool_a" in tool_names
             assert "tool_b" in tool_names
-            tool_names = [tool["name"] for tool in second_set["tools"]]
+            tool_names = [tool["name"] for tool in server2_set["tools"]]
             assert "tool_x" in tool_names
 
 
