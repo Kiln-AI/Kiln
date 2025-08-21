@@ -5,7 +5,8 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
+from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, KilnBuiltInToolId, ToolId
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
@@ -71,22 +72,29 @@ class ToolApiDescription(BaseModel):
     description: str | None
 
 
+class ToolSetApiDescription(BaseModel):
+    set_name: str
+    tools: list[ToolApiDescription]
+
+
 def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/available_tools")
     async def get_available_tools(
         project_id: str,
-    ) -> List[ToolApiDescription]:
+    ) -> List[ToolSetApiDescription]:
         project = project_from_id(project_id)
 
+        tool_sets = []
+
         # Get available tools from MCP servers
-        available_tools = []
         for server in project.external_tool_servers(readonly=True):
             # Get available tools from remote MCP servers only
+            available_mcp_tools = []
             match server.type:
                 case ToolServerType.remote_mcp:
                     async with MCPSessionManager.shared().mcp_client(server) as session:
                         tools_result = await session.list_tools()
-                        available_tools.extend(
+                        available_mcp_tools.extend(
                             [
                                 ToolApiDescription(
                                     id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
@@ -99,7 +107,45 @@ def connect_tool_servers_api(app: FastAPI):
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
-        return available_tools
+            if available_mcp_tools:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        set_name="MCP Server: " + server.name,
+                        tools=available_mcp_tools,
+                    )
+                )
+
+        # Add demo tools if enabled
+        if Config.shared().enable_demo_tools:
+            tool_sets.append(
+                ToolSetApiDescription(
+                    set_name="Kiln Demo Tools",
+                    tools=[
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.ADD_NUMBERS.value}",
+                            name="Addition",
+                            description="Add two numbers together",
+                        ),
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.SUBTRACT_NUMBERS.value}",
+                            name="Subtraction",
+                            description="Subtract two numbers",
+                        ),
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.MULTIPLY_NUMBERS.value}",
+                            name="Multiplication",
+                            description="Multiply two numbers",
+                        ),
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.DIVIDE_NUMBERS.value}",
+                            name="Division",
+                            description="Divide two numbers",
+                        ),
+                    ],
+                )
+            )
+
+        return tool_sets
 
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(
