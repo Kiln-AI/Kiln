@@ -17,6 +17,7 @@
   interface HeaderPair {
     key: string
     value: string
+    placeholder: string | null
   }
 
   let headers: HeaderPair[] = []
@@ -182,7 +183,7 @@
         let:item_index
       >
         <div class="flex gap-2">
-          <div class="flex-1">
+          <div class="flex-1 max-w-[200px]">
             <FormElement
               label="Header Name"
               id="header_name_{item_index}"
@@ -197,7 +198,7 @@
               label="Value"
               id="header_value_{item_index}"
               info_description="The header value, such as 'Bearer your-token-here'"
-              placeholder="Value"
+              placeholder={headers[item_index].placeholder || "Value"}
               light_label={true}
               bind:value={headers[item_index].value}
             />

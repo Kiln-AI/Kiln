@@ -8,7 +8,7 @@
     name: string
     description: string
     server_url: string
-    headers: { key: string; value: string }[]
+    headers: { key: string; value: string; placeholder: string | null }[]
     button_text: string
   }
 
@@ -32,14 +32,20 @@
       name: "Firecrawl",
       description: "Add Firecrawl to your project to search the web.",
       server_url: "https://firecrawl.com",
-      headers: [{ key: "Authorization", value: "" }],
+      headers: [], // Firecrawl uses https://mcp.firecrawl.dev/{FIRECRAWL_API_KEY}/sse
       button_text: "Connect",
     },
     {
       name: "Perplexity",
       description: "Add Perplexity to your project to search the web.",
       server_url: "https://api.perplexity.ai",
-      headers: [{ key: "Authorization", value: "" }],
+      headers: [
+        {
+          key: "Authorization",
+          value: "",
+          placeholder: null,
+        },
+      ],
       button_text: "Connect",
     },
     {
@@ -47,7 +53,13 @@
       description:
         "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
       server_url: "https://api.githubcopilot.com/mcp/",
-      headers: [{ key: "Authorization", value: "" }],
+      headers: [
+        {
+          key: "Authorization",
+          value: "",
+          placeholder: "Bearer <Github Personal Access Token (PAT)>",
+        },
+      ],
       button_text: "Connect",
     },
     {
