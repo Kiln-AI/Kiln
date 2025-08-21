@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
+from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, RAG_TOOL_ID_PREFIX, ToolId
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
@@ -98,6 +98,15 @@ def connect_tool_servers_api(app: FastAPI):
                         )
                 case _:
                     raise_exhaustive_enum_error(server.type)
+
+        for rag_config in project.rag_configs(readonly=True):
+            available_tools.append(
+                ToolApiDescription(
+                    id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
+                    name=f"RAG: {rag_config.name}",
+                    description=rag_config.description,
+                )
+            )
 
         return available_tools
 

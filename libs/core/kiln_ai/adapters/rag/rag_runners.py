@@ -523,6 +523,9 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 self.vector_store_config,
             )
 
+            # delete the collection if it exists
+            await vector_store.destroy_collection(self.rag_config)
+
             print("======================")
             print("Creating vector store collection")
             # create index from scratch

@@ -9,8 +9,10 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.tools.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     mcp_server_and_tool_name_from_id,
+    rag_config_id_from_id,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -36,11 +38,10 @@ def tool_from_id(tool_id: str, project_id: str) -> KilnToolInterface:
 
     # Check MCP Server Tools
     if tool_id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
-        # Get the tool server ID and tool name from the ID
-        tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
-        # Import here to avoid circular import
         from kiln_ai.utils.project_utils import project_from_id
 
+        # Get the tool server ID and tool name from the ID
+        tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
         project = project_from_id(project_id)
         if project is None:
             raise ValueError(f"Project not found: {project_id}")
@@ -51,5 +52,20 @@ def tool_from_id(tool_id: str, project_id: str) -> KilnToolInterface:
             raise ValueError(f"External tool server not found: {tool_server_id}")
 
         return MCPServerTool(server, tool_name)
+    elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
+        from kiln_ai.datamodel.rag import RagConfig
+        from kiln_ai.tools.rag_tools import RagTool
+        from kiln_ai.utils.project_utils import project_from_id
+
+        rag_config_id = rag_config_id_from_id(tool_id)
+        project = project_from_id(project_id)
+        if project is None:
+            raise ValueError(f"Project not found: {project_id}")
+        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+        if rag_config is None:
+            raise ValueError(
+                f"RAG config not found: {rag_config_id} in project {project_id} for tool {tool_id}"
+            )
+        return RagTool(tool_id, rag_config)
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")
