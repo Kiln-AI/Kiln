@@ -45,8 +45,7 @@ from kiln_ai.datamodel.extraction import (
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import (
-    QdrantVectorIndexMetric,
-    QdrantVectorIndexType,
+    LanceDBTableSchemaVersion,
     VectorStoreConfig,
     VectorStoreType,
 )
@@ -1069,10 +1068,10 @@ def connect_document_api(app: FastAPI):
         vector_store_config = VectorStoreConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
-            store_type=VectorStoreType.QDRANT,
+            store_type=VectorStoreType.LANCE_DB,
             properties={
-                "vector_index_type": QdrantVectorIndexType.BRUTEFORCE,
-                "distance": QdrantVectorIndexMetric.COSINE,
+                "table_schema_version": LanceDBTableSchemaVersion.V1.value,
+                "vector_index_type": "bruteforce",
             },
         )
         vector_store_config.save_to_file()
