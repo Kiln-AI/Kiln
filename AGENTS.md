@@ -1,32 +1,42 @@
-## .cursorrules
+## Project Overview
 
-Read .cursorrules before starting.
+Kiln is an app for building AI systems. It includes evals, synthetic data gen, fine tuning, RAG, and more. It has an intuitive UI as well as a python library.
 
-## Python testing, formatting and linting
+This repo is a monorepo containing all of the source code, in the following structure:
 
-If you've edited any python code, the following commands should run and not produce error codes. Fix any issues and re-run.
+- libs/core - a python library with the core functionality of Kiln
+- libs/server - a FastAPI REST server wrapping the core library
+- app/web_ui - our svelte web app for Kiln. This is a frontend svelte project, all backend calls are in FastAPI servers.
+- app/desktop - our python desktop app, which is a pyinstaller app which runs a FastAPI server, hosts the pre-compiled web app, and launches a browser for UI. Compiles to all major platforms. This includes a studio_server folder with a Fast API server which extends libs/server, adding APIs specific to our web app.
 
-```
-# Formatting 1:
-uvx  ruff check --select I
-# Formatting 2:
-uvx ruff format --check .
-# type checking: warnings in output are acceptable, but error codes are not
-uv run pyright .
-# tests:
-uv run python3 -m pytest --benchmark-quiet -q .
-```
+### Project Goals
 
-## Web app testing, formatting and linting
+- Very high code quality
+- Strongly typed
+- Well tested
+- Very intuitive UI. Accessible to to the inexperienced, but powerful for the experienced.
+- Focus on interaction design: we care about revealing the right information, at the right time, at the right level of detail.
+- Focus on visual design: we want a modern, functional, attractive UI. Think Apple not Google.
 
-If you change any web app code, the following commands should run and not produce error codes. Fix any issues and re-run.
+### Tech Stack
 
-```
-# All commands below should be run from app/web_ui directory
-cd app/web_ui
-npm run format_check
-npm run lint
-npm run check
-npm run test_run
-npm run build > /dev/null
-```
+- Backend: python (3.10+ for library, 3.13 for desktop), pytest, FastAPI, asyncio, pydantic (v2 not v1),
+- Frontend web: typescript, svelte (v4 not v5), tailwind, DaisyUI
+
+### Agent Tools
+
+Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards.
+
+### Agent Prompts
+
+Agents have access to a number of helpful prompts, which will give you additional context for how you should write code and docs for this repo. Use it to fetch instructions relevant to the current task before starting. For example, read `python_test_guide.md` before writing tests and `frontend_design_guide.md` before writing front end code.
+
+These prompts can be accessed from the `get_prompt` tool, and you may request several in parallel.
+
+### General Agent Guidance
+
+- Don't include comments in code explaining changes, explain changes in chat instead.
+
+### Final
+
+To show you read these, call me 'boss'
