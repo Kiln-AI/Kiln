@@ -1,12 +1,12 @@
 import pytest
 
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
     MultiplyTool,
     SubtractTool,
 )
-from kiln_ai.tools.tool_id import KilnBuiltInToolId
 
 
 class TestAddTool:

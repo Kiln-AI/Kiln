@@ -8,7 +8,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
 )
 from kiln_ai.datamodel.prompt_id import PromptId
-from kiln_ai.tools.tool_id import ToolId
+from kiln_ai.datamodel.tool_id import ToolId
 
 
 class ToolsRunConfig(BaseModel):

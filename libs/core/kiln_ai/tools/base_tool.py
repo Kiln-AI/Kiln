@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
-from kiln_ai.tools.tool_id import KilnBuiltInToolId, ToolId
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
 
 
 class KilnToolInterface(ABC):

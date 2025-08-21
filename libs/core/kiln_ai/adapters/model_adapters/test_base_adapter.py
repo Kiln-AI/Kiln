@@ -9,8 +9,8 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import ToolsRunConfig
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
-from kiln_ai.tools.tool_id import KilnBuiltInToolId
 
 
 class MockAdapter(BaseAdapter):

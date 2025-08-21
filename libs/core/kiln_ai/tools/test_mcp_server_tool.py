@@ -12,8 +12,8 @@ from mcp.types import (
 )
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 
 
 class TestMCPServerTool:
