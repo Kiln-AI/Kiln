@@ -101,8 +101,8 @@
         <div class="text-error text-sm">RAG config not found</div>
       </div>
     {:else}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
-        <div class="grow flex flex-col gap-4">
+      <div class="flex flex-col md:flex-row gap-8 xl:gap-16 mb-10">
+        <div class="grow flex flex-col">
           <PropertyList
             title="Details"
             properties={[
@@ -118,7 +118,7 @@
           />
         </div>
 
-        <div class="grow flex flex-col gap-4 min-w-[400px]">
+        <div class="grow flex flex-col gap-8 min-w-[320px]">
           <PropertyList
             title="Extractor"
             properties={[
