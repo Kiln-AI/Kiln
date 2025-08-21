@@ -39,7 +39,7 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
         project = task.parent_project() if task is not None else None
         if project is None:
             raise ValueError(
-                "Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
             )
 
         # Get the tool server ID and tool name from the ID

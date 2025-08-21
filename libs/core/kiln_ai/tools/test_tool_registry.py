@@ -1,5 +1,10 @@
+from unittest.mock import Mock
+
 import pytest
 
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
@@ -12,6 +17,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
+from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.tools.tool_registry import tool_from_id
 
 
@@ -20,7 +26,7 @@ class TestToolRegistry:
 
     async def test_tool_from_id_add_numbers(self):
         """Test that ADD_NUMBERS tool ID returns AddTool instance."""
-        tool = tool_from_id(KilnBuiltInToolId.ADD_NUMBERS, "test-project")
+        tool = tool_from_id(KilnBuiltInToolId.ADD_NUMBERS)
 
         assert isinstance(tool, AddTool)
         assert await tool.id() == KilnBuiltInToolId.ADD_NUMBERS
@@ -29,7 +35,7 @@ class TestToolRegistry:
 
     async def test_tool_from_id_subtract_numbers(self):
         """Test that SUBTRACT_NUMBERS tool ID returns SubtractTool instance."""
-        tool = tool_from_id(KilnBuiltInToolId.SUBTRACT_NUMBERS, "test-project")
+        tool = tool_from_id(KilnBuiltInToolId.SUBTRACT_NUMBERS)
 
         assert isinstance(tool, SubtractTool)
         assert await tool.id() == KilnBuiltInToolId.SUBTRACT_NUMBERS
@@ -37,7 +43,7 @@ class TestToolRegistry:
 
     async def test_tool_from_id_multiply_numbers(self):
         """Test that MULTIPLY_NUMBERS tool ID returns MultiplyTool instance."""
-        tool = tool_from_id(KilnBuiltInToolId.MULTIPLY_NUMBERS, "test-project")
+        tool = tool_from_id(KilnBuiltInToolId.MULTIPLY_NUMBERS)
 
         assert isinstance(tool, MultiplyTool)
         assert await tool.id() == KilnBuiltInToolId.MULTIPLY_NUMBERS
@@ -45,7 +51,7 @@ class TestToolRegistry:
 
     async def test_tool_from_id_divide_numbers(self):
         """Test that DIVIDE_NUMBERS tool ID returns DivideTool instance."""
-        tool = tool_from_id(KilnBuiltInToolId.DIVIDE_NUMBERS, "test-project")
+        tool = tool_from_id(KilnBuiltInToolId.DIVIDE_NUMBERS)
 
         assert isinstance(tool, DivideTool)
         assert await tool.id() == KilnBuiltInToolId.DIVIDE_NUMBERS
@@ -53,7 +59,7 @@ class TestToolRegistry:
 
     async def test_tool_from_id_with_string_values(self):
         """Test that tool_from_id works with string values of enum members."""
-        tool = tool_from_id("kiln_tool::add_numbers", "test-project")
+        tool = tool_from_id("kiln_tool::add_numbers")
 
         assert isinstance(tool, AddTool)
         assert await tool.id() == KilnBuiltInToolId.ADD_NUMBERS
@@ -63,24 +69,24 @@ class TestToolRegistry:
         with pytest.raises(
             ValueError, match="Tool ID invalid_tool_id not found in tool registry"
         ):
-            tool_from_id("invalid_tool_id", "test-project")
+            tool_from_id("invalid_tool_id")
 
     def test_tool_from_id_empty_string(self):
         """Test that empty string tool ID raises ValueError."""
         with pytest.raises(ValueError, match="Tool ID  not found in tool registry"):
-            tool_from_id("", "test-project")
+            tool_from_id("")
 
     def test_all_built_in_tools_are_registered(self):
         """Test that all KilnBuiltInToolId enum members are handled by the registry."""
         for tool_id in KilnBuiltInToolId:
             # This should not raise an exception
-            tool = tool_from_id(tool_id.value, "test-project")
+            tool = tool_from_id(tool_id.value)
             assert tool is not None
 
     async def test_registry_returns_new_instances(self):
         """Test that registry returns new instances each time (not singletons)."""
-        tool1 = tool_from_id(KilnBuiltInToolId.ADD_NUMBERS, "test-project")
-        tool2 = tool_from_id(KilnBuiltInToolId.ADD_NUMBERS, "test-project")
+        tool1 = tool_from_id(KilnBuiltInToolId.ADD_NUMBERS)
+        tool2 = tool_from_id(KilnBuiltInToolId.ADD_NUMBERS)
 
         assert tool1 is not tool2  # Different instances
         assert type(tool1) is type(tool2)  # Same type
@@ -225,3 +231,75 @@ class TestToolRegistry:
         server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
         assert server_id == expected_server
         assert tool_name == expected_tool
+
+    def test_tool_from_id_mcp_missing_task_raises_error(self):
+        """Test that MCP tool ID with missing task raises ValueError."""
+        mcp_tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}test_server::test_tool"
+
+        with pytest.raises(
+            ValueError,
+            match="Unable to resolve tool from id.*Requires a parent project/task",
+        ):
+            tool_from_id(mcp_tool_id, task=None)
+
+    def test_tool_from_id_mcp_functional_case(self):
+        """Test that MCP tool ID with valid task and project returns MCPServerTool."""
+        # Create mock external tool server
+        mock_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test MCP server",
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
+        )
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        mcp_tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::test_tool"
+
+        tool = tool_from_id(mcp_tool_id, task=mock_task)
+
+        assert isinstance(tool, MCPServerTool)
+        # Verify the tool was created with the correct server and tool name
+        assert tool._tool_server_model == mock_server
+        assert tool._name == "test_tool"
+
+    def test_tool_from_id_mcp_no_server_found_raises_error(self):
+        """Test that MCP tool ID with server not found raises ValueError."""
+        # Create mock external tool server with different ID
+        mock_server = ExternalToolServer(
+            name="different_server",
+            type=ToolServerType.remote_mcp,
+            description="Different MCP server",
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
+        )
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        # Use a tool ID with a server that doesn't exist in the project
+        mcp_tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}nonexistent_server::test_tool"
+
+        with pytest.raises(
+            ValueError,
+            match="External tool server not found: nonexistent_server in project ID test_project_id",
+        ):
+            tool_from_id(mcp_tool_id, task=mock_task)
