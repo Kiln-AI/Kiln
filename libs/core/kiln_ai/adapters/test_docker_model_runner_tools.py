@@ -1,4 +1,3 @@
-from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -34,15 +33,12 @@ def test_docker_model_runner_base_url_from_config():
 def test_parse_docker_model_runner_models_with_supported_models():
     """Test parsing Docker Model Runner models response with supported models."""
     # Create mock OpenAI Model objects
-    mock_models = cast(
-        list[openai.types.Model],
-        [
-            Mock(id="ai/llama3.2:3B-Q4_K_M"),
-            Mock(id="ai/qwen3:8B-Q4_K_M"),
-            Mock(id="ai/gemma3n:4B-Q4_K_M"),
-            Mock(id="unsupported-model"),
-        ],
-    )
+    mock_models = [
+        Mock(id="ai/llama3.2:3B-Q4_K_M"),
+        Mock(id="ai/qwen3:8B-Q4_K_M"),
+        Mock(id="ai/gemma3n:4B-Q4_K_M"),
+        Mock(id="unsupported-model"),
+    ]
 
     with patch(
         "kiln_ai.adapters.docker_model_runner_tools.built_in_models"
@@ -55,7 +51,7 @@ def test_parse_docker_model_runner_models_with_supported_models():
         mock_model.providers = [mock_provider]
         mock_built_in_models.__iter__ = Mock(return_value=iter([mock_model]))
 
-        result = parse_docker_model_runner_models(mock_models)
+        result = parse_docker_model_runner_models(mock_models)  # type: ignore
 
         assert result is not None
         assert result.message == "Docker Model Runner connected"

@@ -416,7 +416,7 @@
   title="Compare Judges"
   subtitle="Find the judge that best matches human preferences"
   sub_subtitle="Read the docs"
-  sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
   action_buttons={eval_configs?.length
     ? [
         {
@@ -778,7 +778,7 @@
     <div class="font-bold text-xl mt-6">Detailed Instructions</div>
     <div>
       <a
-        href="https://docs.getkiln.ai/docs/evaluations#finding-the-ideal-eval-method"
+        href="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
         target="_blank"
         class="link">Read the docs</a
       > for more information, a detailed walkthrough, and technical details about

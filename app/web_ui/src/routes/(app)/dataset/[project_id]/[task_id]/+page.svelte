@@ -481,7 +481,7 @@
 <AppPage
   title="Dataset"
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.getkiln.ai/docs/organizing-datasets"
+  sub_subtitle_link="https://docs.kiln.tech/docs/organizing-datasets"
   no_y_padding
   action_buttons={[
     {

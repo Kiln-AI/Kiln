@@ -10,11 +10,11 @@
 </h3>
 
 <p align="center">
-  <a href="https://docs.getkiln.ai/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •
-  <a href="https://docs.getkiln.ai/docs/synthetic-data-generation"><strong>Synthetic Data Generation</strong></a> • 
-  <a href="https://docs.getkiln.ai/docs/evaluations"><strong>Evals</strong></a> • 
-  <a href="https://docs.getkiln.ai/docs/collaboration"><strong>Collaboration</strong></a> • 
-  <a href="https://docs.getkiln.ai"><strong>Docs</strong></a>
+  <a href="https://docs.kiln.tech/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •
+  <a href="https://docs.kiln.tech/docs/synthetic-data-generation"><strong>Synthetic Data Generation</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/evaluations"><strong>Evals</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/collaboration"><strong>Collaboration</strong></a> • 
+  <a href="https://docs.kiln.tech"><strong>Docs</strong></a>
 </p>
 
 |         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -26,7 +26,7 @@
 | Apps    | [![MacOS](https://img.shields.io/badge/MacOS-black?logo=apple)](https://kiln.tech/download) [![Windows](https://img.shields.io/badge/Windows-0067b8.svg?logo=data:image/svg%2bxml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyBmaWxsPSIjZmZmIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2Ljc0MiAxNi43NDJ2MTQuMjUzaDE0LjI1M3YtMTQuMjUzek0xLjAwNCAxNi43NDJ2MTQuMjUzaDE0LjI1NnYtMTQuMjUzek0xNi43NDIgMS4wMDR2MTQuMjU2aDE0LjI1M3YtMTQuMjU2ek0xLjAwNCAxLjAwNHYxNC4yNTZoMTQuMjU2di0xNC4yNTZ6Ij48L3BhdGg+Cjwvc3ZnPg==)](https://kiln.tech/download) [![Linux](https://img.shields.io/badge/Linux-444444?logo=linux&logoColor=ffffff)](https://kiln.tech/download) ![Github Downsloads](https://img.shields.io/github/downloads/kiln-ai/kiln/total)                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Connect | [![Discord](https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white)](https://kiln.tech/discord) [![Newsletter](https://img.shields.io/badge/Newsletter-subscribe-blue?logo=mailboxdotorg&logoColor=white)](https://kiln.tech/blog)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="220" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.getkiln.ai/getting-started/quickstart)
+[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="220" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
 
 ## Key Features
 
@@ -61,29 +61,29 @@ The Kiln desktop app is completely free. Available on MacOS, Windows and Linux.
 
 ## Docs & Guides
 
-Kiln is quite intuitive, so we suggest launching the desktop app and diving in. However if you have any questions or want to learn more, our [docs are here to help](https://docs.getkiln.ai).
+Kiln is quite intuitive, so we suggest launching the desktop app and diving in. However if you have any questions or want to learn more, our [docs are here to help](https://docs.kiln.tech).
 
 ### Video Guides
 
-- [Fine Tuning LLM Models](https://docs.getkiln.ai/docs/fine-tuning-guide)
-- [Guide: Train a Reasoning Model](https://docs.getkiln.ai/docs/guide-train-a-reasoning-model)
-- [LLM Evaluators](https://docs.getkiln.ai/docs/evaluators)
+- [Fine Tuning LLM Models](https://docs.kiln.tech/docs/fine-tuning-guide)
+- [Guide: Train a Reasoning Model](https://docs.kiln.tech/docs/guide-train-a-reasoning-model)
+- [LLM Evaluators](https://docs.kiln.tech/docs/evaluators)
 
 ### All Docs
 
-- [Quick Start](https://docs.getkiln.ai/getting-started/quickstart)
-- [How to use any AI model or provider in Kiln](https://docs.getkiln.ai/docs/models-and-ai-providers)
-- [Reasoning & Chain of Thought](https://docs.getkiln.ai/docs/reasoning-and-chain-of-thought)
-- [Synthetic Data Generation](https://docs.getkiln.ai/docs/synthetic-data-generation)
-- [Collaborating with Kiln](https://docs.getkiln.ai/docs/collaboration)
-- [Rating and Labeling Data](https://docs.getkiln.ai/docs/reviewing-and-rating)
-- [Prompt Styles](https://docs.getkiln.ai/docs/prompts)
-- [Structure Data / JSON](https://docs.getkiln.ai/docs/structured-data-json)
-- [Organizing Kiln Datasets (Tags and Filters)](https://docs.getkiln.ai/docs/organizing-datasets)
-- [Our Data Model](https://docs.getkiln.ai/docs/kiln-datamodel)
-- [Repairing Responses](https://docs.getkiln.ai/docs/repairing-responses)
-- [Keyboard Shortcuts](https://docs.getkiln.ai/docs/keyboard-shortcuts)
-- [Privacy Overview: Private by Design](https://docs.getkiln.ai/docs/privacy)
+- [Quick Start](https://docs.kiln.tech/getting-started/quickstart)
+- [How to use any AI model or provider in Kiln](https://docs.kiln.tech/docs/models-and-ai-providers)
+- [Reasoning & Chain of Thought](https://docs.kiln.tech/docs/reasoning-and-chain-of-thought)
+- [Synthetic Data Generation](https://docs.kiln.tech/docs/synthetic-data-generation)
+- [Collaborating with Kiln](https://docs.kiln.tech/docs/collaboration)
+- [Rating and Labeling Data](https://docs.kiln.tech/docs/reviewing-and-rating)
+- [Prompt Styles](https://docs.kiln.tech/docs/prompts)
+- [Structure Data / JSON](https://docs.kiln.tech/docs/structured-data-json)
+- [Organizing Kiln Datasets (Tags and Filters)](https://docs.kiln.tech/docs/organizing-datasets)
+- [Our Data Model](https://docs.kiln.tech/docs/kiln-datamodel)
+- [Repairing Responses](https://docs.kiln.tech/docs/repairing-responses)
+- [Keyboard Shortcuts](https://docs.kiln.tech/docs/keyboard-shortcuts)
+- [Privacy Overview: Private by Design](https://docs.kiln.tech/docs/privacy)
 
 For developers, see our [Kiln Python Library Docs](https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html). These include how to load datasets into Kiln, or using Kiln datasets in your own code-base/notebooks.
 

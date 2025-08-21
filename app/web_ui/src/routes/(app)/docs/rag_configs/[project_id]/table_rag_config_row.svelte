@@ -32,11 +32,11 @@
   <tr class={row_hovered ? "hover" : ""}>
     <!-- Step Info Card -->
     <td class="align-top p-4 h-full">
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-2">
         <!-- Header -->
         <div class="flex items-center justify-between">
           <a
-            class="font-semibold text-lg text-base-content cursor-pointer link"
+            class="font-medium text-base-content cursor-pointer link"
             href={`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`}
           >
             {rag_config.name}
