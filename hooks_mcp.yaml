@@ -77,8 +77,8 @@ actions:
     run_path: "app/web_ui/src/lib/"
 
 prompts:
-  - name: "project_overview.md"
-    description: "Overview of the project, including the purpose, architecture, and key components"
+  - name: "AGENTS.md"
+    description: "Overview of the project for agents, including the purpose, architecture, and key components"
     prompt-file: "AGENTS.md"
 
   - name: "python_test_guide.md"
