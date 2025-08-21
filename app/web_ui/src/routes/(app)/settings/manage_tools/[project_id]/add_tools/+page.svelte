@@ -3,45 +3,71 @@
   import AppPage from "../../../../app_page.svelte"
   import { ui_state } from "$lib/stores"
 
+  // Type definition for MCP tool items
+  interface McpServer {
+    name: string
+    description: string
+    server_url: string
+    headers: { key: string; value: string }[]
+    button_text: string
+  }
+
+  // Helper function to navigate to remote MCP page with pre-filled data
+  function connectRemoteMcp(item: McpServer) {
+    goto(
+      `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
+      {
+        state: {
+          name: item.name,
+          description: item.description,
+          server_url: item.server_url,
+          headers: item.headers,
+        },
+      },
+    )
+  }
+
+  const sampleMcpServers: McpServer[] = [
+    {
+      name: "Firecrawl",
+      description: "Add Firecrawl to your project to search the web.",
+      server_url: "https://firecrawl.com",
+      headers: [{ key: "Authorization", value: "" }],
+      button_text: "Connect",
+    },
+    {
+      name: "Perplexity",
+      description: "Add Perplexity to your project to search the web.",
+      server_url: "https://api.perplexity.ai",
+      headers: [{ key: "Authorization", value: "" }],
+      button_text: "Connect",
+    },
+    {
+      name: "GitHub",
+      description:
+        "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
+      server_url: "https://api.githubcopilot.com/mcp/",
+      headers: [{ key: "Authorization", value: "" }],
+      button_text: "Connect",
+    },
+    {
+      name: "Postman Echo",
+      description: "Simple MCP Server to test MCP tool connections.",
+      server_url: "https://postman-echo-mcp.fly.dev/",
+      headers: [],
+      button_text: "Connect",
+    },
+  ]
+
   let sections = [
     {
       category: "Sample Tools",
       items: [
         // TODO: Add more custom tool servers, pre-filled in.
-        {
-          name: "Firecrawl",
-          description: "Add Firecrawl to your project to search the web.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
-              { state: { server_url: "https://firecrawl.com" } },
-            )
-          },
-        },
-        {
-          name: "Perplexity",
-          description: "Add Perplexity to your project to search the web.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
-              { state: { server_url: "https://api.perplexity.ai" } },
-            )
-          },
-        },
-        {
-          name: "GitHub",
-          description:
-            "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
-              { state: { server_url: "https://api.github.com" } },
-            )
-          },
-        },
+        ...sampleMcpServers.map((tool) => ({
+          ...tool,
+          on_click: () => connectRemoteMcp(tool),
+        })),
         {
           name: "Demo Math Tool",
           description:

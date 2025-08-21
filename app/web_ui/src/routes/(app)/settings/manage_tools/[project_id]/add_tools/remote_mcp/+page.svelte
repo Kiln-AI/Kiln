@@ -25,6 +25,32 @@
   let error: KilnError | null = null
   let submitting = false
 
+  // Populate fields from parent page state if provided (only if fields are empty)
+  $: if ($page.state) {
+    const state = $page.state as {
+      name?: string
+      description?: string
+      server_url?: string
+      headers?: HeaderPair[]
+    }
+
+    if (state.name && !name) {
+      name = state.name
+    }
+
+    if (state.description && !description) {
+      description = state.description
+    }
+
+    if (state.server_url && !server_url) {
+      server_url = state.server_url
+    }
+
+    if (state.headers && headers.length === 0) {
+      headers = [...state.headers]
+    }
+  }
+
   function buildHeadersObject(): Record<string, string> {
     const headersObj: Record<string, string> = {}
 
