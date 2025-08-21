@@ -14,5 +14,5 @@ alwaysApply: true
 - To run backend / Python tests, run `uv run python3 -m pytest . -s -v` or a variant of it to run individual tests
 - To run web tests `cd app/web_ui` then `npm run test_run` (not `npm run test` which won't return)
 - Don't include comments in code explaining changes, explain changes in chat instead.
-- If a python API's interface changes (or a new one is added), generate new bindings by running `cd app/web_ui/src/lib/ && ./generate.sh`
+- If a python API's interface changes (or a new one is added), generate new bindings by running `cd app/web_ui/src/lib/ && ./generate_schema.sh`
 - Our web UI component framework is DaisyUI v4 (based on tailwind). Be sure to use v4 docs and features, not v5
