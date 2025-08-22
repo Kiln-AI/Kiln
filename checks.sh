@@ -42,8 +42,15 @@ else
     echo "Skipping Web UI: no files changed"
 fi
 
-echo "${headerStart}Checking Types${headerEnd}"
-pyright .
 
-echo "${headerStart}Running Python Tests${headerEnd}"
-python3 -m pytest --benchmark-quiet -q .
+# Check if python files were changed, and run tests/typecheck if so
+if echo "$changed_files" | grep -q "\.py$"; then
+    echo "${headerStart}Checking Python Types${headerEnd}"
+    pyright .
+
+    echo "${headerStart}Running Python Tests${headerEnd}"
+    python3 -m pytest --benchmark-quiet -q .
+else
+    echo "${headerStart}Python Checks${headerEnd}"
+    echo "Skipping Python tests/typecheck: no .py files changed"
+fi
