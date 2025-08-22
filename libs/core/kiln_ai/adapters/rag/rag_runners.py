@@ -5,11 +5,11 @@ from enum import Enum
 from typing import AsyncGenerator, Generic, Tuple, TypeVar
 
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
-from kiln_ai.adapters.chunkers.registry import chunker_adapter_from_type
+from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
-from kiln_ai.adapters.embedding.registry import embedding_adapter_from_type
+from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
-from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.rag.progress import (
     LogMessage,
     RagProgress,
