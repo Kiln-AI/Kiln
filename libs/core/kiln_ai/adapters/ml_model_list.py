@@ -120,6 +120,7 @@ class ModelName(str, Enum):
     qwen_2p5_14b = "qwen_2p5_14b"
     qwen_2p5_72b = "qwen_2p5_72b"
     qwq_32b = "qwq_32b"
+    deepseek_3_1 = "deepseek_3_1"
     deepseek_3 = "deepseek_3"
     deepseek_r1 = "deepseek_r1"
     deepseek_r1_0528 = "deepseek_r1_0528"
@@ -2015,6 +2016,26 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
+            ),
+        ],
+    ),
+    # DeepSeek 3.1
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_3_1,
+        friendly_name="DeepSeek 3.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-chat-v3.1",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v3p1",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
             ),
         ],
     ),
