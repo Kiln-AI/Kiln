@@ -14,10 +14,11 @@
 
   function status_to_btn_props(status: RagConfigurationStatus) {
     switch (status) {
+      // the complete state will be hidden
       case "complete": {
         return {
           text: "Complete",
-          color: "btn-success",
+          color: "btn-success btn-outline px-4",
           action: () => {
             run_rag_dialog?.show()
           },
@@ -25,8 +26,8 @@
       }
       case "incomplete": {
         return {
-          text: "Incomplete",
-          color: "btn-warning",
+          text: "Retry",
+          color: "btn-primary btn-outline px-4",
           action: () => {
             run_rag_dialog?.show()
           },
@@ -34,8 +35,8 @@
       }
       case "running": {
         return {
-          text: "Running",
-          color: "btn-neutral",
+          text: "View Progress",
+          color: "btn-neutral btn-outline px-4",
           action: () => {
             run_rag_dialog?.show()
           },
@@ -43,8 +44,8 @@
       }
       case "completed_with_errors": {
         return {
-          text: "Completed with errors",
-          color: "btn-error",
+          text: "View Errors",
+          color: "btn-error btn-outline px-4",
           action: () => {
             run_rag_dialog?.show()
           },

@@ -273,15 +273,20 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     return "complete"
   }
 
+  const max_step_completion = Math.max(
+    progress.total_document_extracted_count,
+    progress.total_document_chunked_count,
+    progress.total_document_embedded_count,
+  )
+  if (max_step_completion === 0) {
+    return "not_started"
+  }
+
   const min_step_completion = Math.min(
     progress.total_document_extracted_count,
     progress.total_document_chunked_count,
     progress.total_document_embedded_count,
   )
-  if (min_step_completion === 0) {
-    return "not_started"
-  }
-
   if (min_step_completion < progress.total_document_count) {
     return "incomplete"
   }

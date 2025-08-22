@@ -7,7 +7,10 @@
     model_name,
     provider_name_from_id,
   } from "$lib/stores"
-  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import {
+    ragProgressStore,
+    type RagConfigurationStatus,
+  } from "$lib/stores/rag_progress_store"
 
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
@@ -26,6 +29,43 @@
       : 0
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
+
+  function status_to_badge_props(status: RagConfigurationStatus) {
+    switch (status) {
+      case "complete": {
+        return {
+          text: "Complete",
+          className: "badge badge-sm badge-outline badge-success",
+        }
+      }
+      case "incomplete": {
+        return {
+          text: "Incomplete",
+          className: "badge badge-sm badge-outline badge-warning",
+        }
+      }
+      case "running": {
+        return {
+          text: "Running",
+          className: "badge badge-sm badge-outline badge-secondary",
+        }
+      }
+      case "completed_with_errors": {
+        return {
+          text: "Completed with errors",
+          className: "badge badge-sm badge-outline badge-error",
+        }
+      }
+      default: {
+        return {
+          text: "Not Started",
+          className: "badge badge-sm badge-outline badge-secondary",
+        }
+      }
+    }
+  }
+
+  $: status_badge_props = status_to_badge_props(status)
 </script>
 
 {#if rag_progress && rag_config}
@@ -78,13 +118,14 @@
     {#if total_docs > 0}
       <td class="p-4 cursor-default align-top flex flex-row gap-4">
         <div class="flex flex-col gap-3">
-          <!-- Overall Progress -->
-          <div class="flex items-center justify-between">
-            {#if status === "running"}
-              <span class="text-sm text-gray-500">{completed_pct}%</span>
-            {/if}
+          <div class={status_badge_props?.className}>
+            {status_badge_props?.text}
           </div>
+          <!-- Overall Progress -->
           {#if status === "running"}
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-500">{completed_pct}%</span>
+            </div>
             <progress
               class="progress progress-secondary bg-secondary/20 w-full h-2"
               value={rag_progress.total_document_completed_count || 0}
