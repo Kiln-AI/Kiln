@@ -24,15 +24,6 @@
           },
         }
       }
-      case "incomplete": {
-        return {
-          text: "Retry",
-          color: "btn-primary btn-outline px-4",
-          action: () => {
-            run_rag_dialog?.show()
-          },
-        }
-      }
       case "running": {
         return {
           text: "View Progress",

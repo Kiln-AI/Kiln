@@ -59,7 +59,7 @@
       }
       case "completed_with_errors": {
         return {
-          text: "Completed with errors",
+          text: "Complete with Errors",
           error: true,
         }
       }
@@ -153,8 +153,13 @@
           {:else if total_docs > 0}
             <!-- Document count for non-running states -->
             <div class="text-gray-500">
-              {rag_progress.total_document_completed_count || 0} of {total_docs}
-              documents processed
+              {#if rag_progress.total_document_completed_count < total_docs}
+                {rag_progress.total_document_completed_count || 0} of {total_docs}
+                documents
+              {:else}
+                {rag_progress.total_document_completed_count || 0}
+                documents
+              {/if}
             </div>
           {/if}
         </div>
