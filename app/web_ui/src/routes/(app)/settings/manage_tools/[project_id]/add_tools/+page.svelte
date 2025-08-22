@@ -43,6 +43,25 @@
       button_text: "Connect",
     },
     {
+      name: "Twelve Data",
+      description:
+        "Integrates with Twelve Data API to provide real-time quotes, historical OHLCV price data, and instrument metadata for stocks, forex pairs, and cryptocurrencies across global markets.",
+      server_url: "https://mcp.twelvedata.com/mcp/",
+      headers: [
+        {
+          key: "Authorization",
+          value: "",
+          placeholder: "apikey {TWELVE_DATA_API_KEY}",
+        },
+        {
+          key: "X-OpenAPI-Key",
+          value: "",
+          placeholder: "YOUR_OPENAI_API_KEY",
+        },
+      ],
+      button_text: "Connect",
+    },
+    {
       name: "Postman Echo",
       description: "Simple MCP Server to test MCP tool connections.",
       server_url: "https://postman-echo-mcp.fly.dev/",
