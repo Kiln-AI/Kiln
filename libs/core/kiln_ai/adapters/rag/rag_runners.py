@@ -27,7 +27,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
-from kiln_ai.utils.lock import asyncio_mutex
+from kiln_ai.utils.lock import async_lock_manager
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
@@ -229,7 +229,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with asyncio_mutex(self.lock_key):
+        async with async_lock_manager.acquire(self.lock_key):
             jobs = await self.collect_jobs()
             extractor = extractor_adapter_from_type(
                 self.extractor_config.extractor_type,
@@ -306,7 +306,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with asyncio_mutex(self.lock_key):
+        async with async_lock_manager.acquire(self.lock_key):
             jobs = await self.collect_jobs()
             chunker = chunker_adapter_from_type(
                 self.chunker_config.chunker_type,
@@ -393,7 +393,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with asyncio_mutex(self.lock_key):
+        async with async_lock_manager.acquire(self.lock_key):
             jobs = await self.collect_jobs()
             embedding_adapter = embedding_adapter_from_type(
                 self.embedding_config,
@@ -534,7 +534,7 @@ class RagWorkflowRunner:
     async def run(
         self, stages_to_run: list[RagWorkflowStepNames] | None = None
     ) -> AsyncGenerator[RagProgress, None]:
-        async with asyncio_mutex(self.lock_key):
+        async with async_lock_manager.acquire(self.lock_key):
             yield self.initial_progress
 
             for step in self.step_runners:
