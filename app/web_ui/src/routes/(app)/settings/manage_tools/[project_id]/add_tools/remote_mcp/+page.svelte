@@ -76,13 +76,35 @@
       if (!server_url.trim()) {
         throw new Error("Server URL is required")
       }
+
+      // Enforce absolute http(s) URLs only
+      try {
+        const u = new URL(server_url.trim())
+        if (u.protocol !== "https:" && u.protocol !== "http:") {
+          throw new Error("Server URL must start with http:// or https://")
+        }
+      } catch {
+        throw new Error("Server URL is not a valid URL")
+      }
+
       if (headers.length > 0) {
         for (const header of headers) {
-          if (!header.key.trim()) {
+          const key = header.key.trim()
+          const value = header.value.trim()
+          if (!key) {
             throw new Error("Header name is required")
           }
-          if (!header.value.trim()) {
+          if (!value) {
             throw new Error("Header value is required")
+          }
+
+          // Reject invalid header names and CR/LF in names/values
+          const tokenRe = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+          if (!tokenRe.test(key)) {
+            throw new Error(`Invalid header name: "${key}"`)
+          }
+          if (/\r|\n/.test(key) || /\r|\n/.test(value)) {
+            throw new Error("Header names/values must not contain CR or LF")
           }
         }
       }
