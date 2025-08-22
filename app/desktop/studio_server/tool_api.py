@@ -92,18 +92,24 @@ def connect_tool_servers_api(app: FastAPI):
             available_mcp_tools = []
             match server.type:
                 case ToolServerType.remote_mcp:
-                    async with MCPSessionManager.shared().mcp_client(server) as session:
-                        tools_result = await session.list_tools()
-                        available_mcp_tools.extend(
-                            [
-                                ToolApiDescription(
-                                    id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
-                                    name=tool.name,
-                                    description=tool.description,
-                                )
-                                for tool in tools_result.tools
-                            ]
-                        )
+                    try:
+                        async with MCPSessionManager.shared().mcp_client(
+                            server
+                        ) as session:
+                            tools_result = await session.list_tools()
+                            available_mcp_tools.extend(
+                                [
+                                    ToolApiDescription(
+                                        id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                                        name=tool.name,
+                                        description=tool.description,
+                                    )
+                                    for tool in tools_result.tools
+                                ]
+                            )
+                    except Exception:
+                        # Skip the tool when we can't connect to the server
+                        continue
                 case _:
                     raise_exhaustive_enum_error(server.type)
 

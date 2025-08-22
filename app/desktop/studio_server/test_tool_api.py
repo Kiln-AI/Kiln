@@ -590,10 +590,15 @@ def test_get_available_tools_mcp_error_handling(client, test_project):
             mock_session_manager.mcp_client = mock_mcp_client_error
             mock_session_manager_shared.return_value = mock_session_manager
 
-            # The API should propagate the exception (current behavior)
-            # In a real implementation, you might want to handle this more gracefully
-            with pytest.raises(Exception, match="MCP connection failed"):
-                client.get(f"/api/projects/{test_project.id}/available_tools")
+            # The API should handle the exception gracefully and return an empty list
+            # The failing server should be skipped and not appear in the results
+            response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+            assert response.status_code == 200
+            result = response.json()
+
+            # Should return an empty list since the MCP server failed
+            assert len(result) == 0
 
 
 def test_get_available_tools_demo_tools_enabled(client, test_project):
