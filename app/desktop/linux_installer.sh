@@ -211,10 +211,16 @@ EOF
 
 # Install or upgrade Kiln
 install_kiln() {
-    # Create temporary directory in user's home (more reliable than /tmp)
-    TEMP_DIR=$(mktemp -d "$HOME/.kiln_install_tmp.XXXXXX")
+    # Use a unique download directory instead of mktemp (some systems have mktemp issues)
+    RANDOM_SUFFIX=$(date +%s)_$$_$RANDOM
+    TEMP_DIR="$HOME/.kiln_installer_tmp_$RANDOM_SUFFIX"
+    
+    # Remove any existing directory with this name and create fresh
+    rm -rf "$TEMP_DIR"
+    mkdir -p "$TEMP_DIR"
+    
     if [ ! -d "$TEMP_DIR" ] || [ ! -w "$TEMP_DIR" ]; then
-        print_error "Failed to create writable temporary directory: $TEMP_DIR"
+        print_error "Failed to create download directory: $TEMP_DIR"
         exit 1
     fi
     
@@ -303,6 +309,8 @@ trap 'cleanup_and_exit $?' EXIT
 main() {
     echo "Kiln Linux Installer"
     echo "===================="
+    echo ""
+    echo "Debug: whoami=$(whoami), HOME=$HOME, PWD=$PWD"
     echo ""
     
     check_platform
