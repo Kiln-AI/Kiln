@@ -53,7 +53,7 @@
       default: {
         return {
           text: "Run",
-          color: "btn-primary",
+          color: "btn-primary btn-outline px-4",
           action: () => {
             run_rag_dialog?.show()
           },
@@ -82,12 +82,12 @@
   </button>
 {:else}
   <button
-    class="link"
+    class="link text-sm text-gray-500"
     on:click={() => {
       run_rag_dialog?.show()
     }}
   >
-    See details
+    Details
   </button>
 {/if}
 
