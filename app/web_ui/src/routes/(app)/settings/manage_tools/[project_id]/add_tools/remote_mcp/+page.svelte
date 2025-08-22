@@ -126,7 +126,7 @@
 
 <AppPage
   title="Connect Remote MCP Server"
-  sub_subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
+  subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
         tools to your project."
 >
   <div class="max-w-2xl">
