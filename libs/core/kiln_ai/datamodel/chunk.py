@@ -151,10 +151,8 @@ class ChunkedDocument(
                     await anyio.Path(full_path).read_text(encoding="utf-8")
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to read chunk content for {full_path}: {e}",
-                    exc_info=True,
-                )
-                raise ValueError(f"Failed to read chunk content: {e}")
+                raise ValueError(
+                    f"Failed to read chunk content for {full_path}: {e}"
+                ) from e
 
         return chunks_text
