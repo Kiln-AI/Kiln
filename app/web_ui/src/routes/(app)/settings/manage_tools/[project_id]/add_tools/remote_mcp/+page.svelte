@@ -104,12 +104,32 @@
             throw new Error(`Invalid header name: "${key}"`)
           }
           if (/\r|\n/.test(key) || /\r|\n/.test(value)) {
-            throw new Error("Header names/values must not contain CR or LF")
+            throw new Error(
+              "Header names/values must not contain invalid characters",
+            )
           }
         }
       }
 
       const headersObj = buildHeadersObject()
+
+      //  Make a request to the server and make sure it's valid
+      try {
+        const response = await fetch(server_url.trim(), {
+          headers: headersObj,
+        })
+        if (!response.ok) {
+          throw new Error(
+            `Server returned error status: ${response.status} ${response.statusText}`,
+          )
+        }
+      } catch (e) {
+        // Log custom error message
+        const error = e as Error
+        throw new Error(
+          `${error.message}. Unable to connect to the server. Please check the URL, headers and ensure the server is accessible`,
+        )
+      }
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/connect_remote_mcp",
