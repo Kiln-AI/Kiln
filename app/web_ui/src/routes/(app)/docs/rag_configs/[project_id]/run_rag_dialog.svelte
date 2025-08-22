@@ -175,7 +175,7 @@
 
 <Dialog
   title="Processing Status"
-  subtitle={`Name: ${rag_config.name}`}
+  subtitle={`Search Tool: ${rag_config.name}`}
   width="wide"
   bind:this={dialog}
   action_buttons={[
