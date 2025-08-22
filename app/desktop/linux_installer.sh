@@ -212,7 +212,7 @@ EOF
 # Install or upgrade Kiln
 install_kiln() {
     # Make a temporary directory. In home as some systems have permission issues with /tmp. We'll clean it up later.
-    TEMP_DIR="$HOME/kiln_installer_tmp.XXXXXX"
+    TEMP_DIR=$(mktemp -d "$HOME/kiln_installer_tmp.XXXXXX")
     
     # Remove any existing directory with this name and create fresh
     rm -rf "$TEMP_DIR"
