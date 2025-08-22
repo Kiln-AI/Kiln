@@ -46,3 +46,5 @@ export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
+export type ToolSetApiDescription =
+  components["schemas"]["ToolSetApiDescription"]

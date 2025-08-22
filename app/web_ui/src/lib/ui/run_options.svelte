@@ -5,7 +5,7 @@
   import { structuredOutputModeToString } from "$lib/utils/formatters"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-  import type { ToolApiDescription } from "$lib/types"
+  import type { ToolSetApiDescription } from "$lib/types"
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0
@@ -131,17 +131,21 @@
   ]
 
   function get_tool_options(
-    available_tools: ToolApiDescription[],
+    available_tools: ToolSetApiDescription[],
   ): OptionGroup[] {
-    return [
-      {
-        options: available_tools?.map((tool) => ({
+    let option_groups: OptionGroup[] = []
+
+    available_tools?.forEach((tool_set) => {
+      option_groups.push({
+        label: tool_set.set_name,
+        options: tool_set.tools.map((tool) => ({
           value: tool.id,
           label: tool.name,
           description: tool.description || undefined,
         })),
-      },
-    ]
+      })
+    })
+    return option_groups
   }
 </script>
 

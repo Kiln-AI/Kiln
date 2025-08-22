@@ -419,7 +419,10 @@ def test_get_available_tools_success(client, test_project):
             response = client.get(f"/api/projects/{test_project.id}/available_tools")
 
             assert response.status_code == 200
-            result = response.json()
+            set_result = response.json()
+            assert len(set_result) == 1
+            assert set_result[0]["set_name"] == "MCP Server: test_available_tools"
+            result = set_result[0]["tools"]
             assert len(result) == 3
 
             # Verify tool details
@@ -514,20 +517,40 @@ def test_get_available_tools_multiple_servers(client, test_project):
             response = client.get(f"/api/projects/{test_project.id}/available_tools")
 
             assert response.status_code == 200
-            result = response.json()
-            assert len(result) == 3  # 2 from server1 + 1 from server2
+            set_result = response.json()
+            assert len(set_result) == 2
+
+            # Find sets by name instead of assuming order
+            server1_set = next(
+                (s for s in set_result if s["set_name"] == "MCP Server: mcp_server_1"),
+                None,
+            )
+            server2_set = next(
+                (s for s in set_result if s["set_name"] == "MCP Server: mcp_server_2"),
+                None,
+            )
+
+            assert server1_set is not None, (
+                "Could not find MCP Server: mcp_server_1 in results"
+            )
+            assert server2_set is not None, (
+                "Could not find MCP Server: mcp_server_2 in results"
+            )
+
+            assert len(server1_set["tools"]) == 2  # 2 from server1
+            assert len(server2_set["tools"]) == 1  # 1 from server2
+
+            for tool in server1_set["tools"]:
+                assert tool["id"].startswith(f"mcp::remote::{server1_id}::")
+            for tool in server2_set["tools"]:
+                assert tool["id"].startswith(f"mcp::remote::{server2_id}::")
 
             # Verify tools from both servers are present
-            tool_names = [tool["name"] for tool in result]
+            tool_names = [tool["name"] for tool in server1_set["tools"]]
             assert "tool_a" in tool_names
             assert "tool_b" in tool_names
+            tool_names = [tool["name"] for tool in server2_set["tools"]]
             assert "tool_x" in tool_names
-
-            # Verify tool IDs contain correct server IDs
-            server1_tools = [t for t in result if server1_id in t["id"]]
-            server2_tools = [t for t in result if server2_id in t["id"]]
-            assert len(server1_tools) == 2
-            assert len(server2_tools) == 1
 
 
 def test_get_available_tools_mcp_error_handling(client, test_project):
@@ -571,3 +594,80 @@ def test_get_available_tools_mcp_error_handling(client, test_project):
             # In a real implementation, you might want to handle this more gracefully
             with pytest.raises(Exception, match="MCP connection failed"):
                 client.get(f"/api/projects/{test_project.id}/available_tools")
+
+
+def test_get_available_tools_demo_tools_enabled(client, test_project):
+    """Test get_available_tools includes demo tools when enabled"""
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Mock config to enable demo tools
+        mock_config_instance = AsyncMock()
+        mock_config_instance.enable_demo_tools = True
+        mock_config.return_value = mock_config_instance
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Should have one tool set for demo tools
+        assert len(result) == 1
+        demo_set = result[0]
+        assert demo_set["set_name"] == "Kiln Demo Tools"
+        assert len(demo_set["tools"]) == 4
+
+        # Verify all demo tools are present with correct IDs and names
+        tool_names = [tool["name"] for tool in demo_set["tools"]]
+        tool_ids = [tool["id"] for tool in demo_set["tools"]]
+
+        assert "Addition" in tool_names
+        assert "Subtraction" in tool_names
+        assert "Multiplication" in tool_names
+        assert "Division" in tool_names
+
+        assert "kiln_tool::add_numbers" in tool_ids
+        assert "kiln_tool::subtract_numbers" in tool_ids
+        assert "kiln_tool::multiply_numbers" in tool_ids
+        assert "kiln_tool::divide_numbers" in tool_ids
+
+        # Verify descriptions
+        for tool in demo_set["tools"]:
+            assert tool["description"] is not None
+            if tool["name"] == "Addition":
+                assert tool["description"] == "Add two numbers together"
+            elif tool["name"] == "Subtraction":
+                assert tool["description"] == "Subtract two numbers"
+            elif tool["name"] == "Multiplication":
+                assert tool["description"] == "Multiply two numbers"
+            elif tool["name"] == "Division":
+                assert tool["description"] == "Divide two numbers"
+
+
+def test_get_available_tools_demo_tools_disabled(client, test_project):
+    """Test get_available_tools excludes demo tools when disabled"""
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Mock config to disable demo tools (default behavior)
+        mock_config_instance = AsyncMock()
+        mock_config_instance.enable_demo_tools = False
+        mock_config.return_value = mock_config_instance
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Should have no tool sets when demo tools are disabled and no MCP servers
+        assert len(result) == 0

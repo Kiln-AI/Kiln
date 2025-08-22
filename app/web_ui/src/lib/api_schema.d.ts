@@ -1179,6 +1179,11 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
+        /** Audio */
+        Audio: {
+            /** Id */
+            id: string;
+        };
         /** AvailableModels */
         AvailableModels: {
             /** Provider Name */
@@ -1248,6 +1253,171 @@ export interface components {
             filename: string;
             /** Imported Count */
             imported_count: number;
+        };
+        /**
+         * ChatCompletionAssistantMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         *     https://github.com/pydantic/pydantic/issues/9541
+         */
+        "ChatCompletionAssistantMessageParamWrapper-Input": {
+            /**
+             * Role
+             * @constant
+             */
+            role: "assistant";
+            audio?: components["schemas"]["Audio"] | null;
+            /** Content */
+            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            function_call?: components["schemas"]["FunctionCall"] | null;
+            /** Name */
+            name?: string;
+            /** Refusal */
+            refusal?: string | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+        };
+        /**
+         * ChatCompletionAssistantMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         *     https://github.com/pydantic/pydantic/issues/9541
+         */
+        "ChatCompletionAssistantMessageParamWrapper-Output": {
+            /**
+             * Role
+             * @constant
+             */
+            role: "assistant";
+            audio?: components["schemas"]["Audio"] | null;
+            /** Content */
+            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            function_call?: components["schemas"]["FunctionCall"] | null;
+            /** Name */
+            name?: string;
+            /** Refusal */
+            refusal?: string | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+        };
+        /** ChatCompletionContentPartImageParam */
+        ChatCompletionContentPartImageParam: {
+            image_url: components["schemas"]["ImageURL"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "image_url";
+        };
+        /** ChatCompletionContentPartInputAudioParam */
+        ChatCompletionContentPartInputAudioParam: {
+            input_audio: components["schemas"]["InputAudio"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "input_audio";
+        };
+        /** ChatCompletionContentPartRefusalParam */
+        ChatCompletionContentPartRefusalParam: {
+            /** Refusal */
+            refusal: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "refusal";
+        };
+        /** ChatCompletionContentPartTextParam */
+        ChatCompletionContentPartTextParam: {
+            /** Text */
+            text: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "text";
+        };
+        /** ChatCompletionDeveloperMessageParam */
+        ChatCompletionDeveloperMessageParam: {
+            /** Content */
+            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            /**
+             * Role
+             * @constant
+             */
+            role: "developer";
+            /** Name */
+            name?: string;
+        };
+        /** ChatCompletionFunctionMessageParam */
+        ChatCompletionFunctionMessageParam: {
+            /** Content */
+            content: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @constant
+             */
+            role: "function";
+        };
+        /** ChatCompletionMessageToolCallParam */
+        ChatCompletionMessageToolCallParam: {
+            /** Id */
+            id: string;
+            function: components["schemas"]["Function"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "function";
+        };
+        /** ChatCompletionSystemMessageParam */
+        ChatCompletionSystemMessageParam: {
+            /** Content */
+            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            /**
+             * Role
+             * @constant
+             */
+            role: "system";
+            /** Name */
+            name?: string;
+        };
+        /** ChatCompletionToolMessageParam */
+        ChatCompletionToolMessageParam: {
+            /** Content */
+            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            /**
+             * Role
+             * @constant
+             */
+            role: "tool";
+            /** Tool Call Id */
+            tool_call_id: string;
+        };
+        /** ChatCompletionUserMessageParam */
+        "ChatCompletionUserMessageParam-Input": {
+            /** Content */
+            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
+            /**
+             * Role
+             * @constant
+             */
+            role: "user";
+            /** Name */
+            name?: string;
+        };
+        /** ChatCompletionUserMessageParam */
+        "ChatCompletionUserMessageParam-Output": {
+            /** Content */
+            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
+            /**
+             * Role
+             * @constant
+             */
+            role: "user";
+            /** Name */
+            name?: string;
         };
         /**
          * ChatStrategy
@@ -1908,7 +2078,10 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
-        /** ExternalToolApiDescription */
+        /**
+         * ExternalToolApiDescription
+         * @description This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+         */
         ExternalToolApiDescription: {
             /** Name */
             name: string;
@@ -1962,7 +2135,10 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** ExternalToolServerApiDescription */
+        /**
+         * ExternalToolServerApiDescription
+         * @description This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
+         */
         ExternalToolServerApiDescription: {
             /** Id */
             id: string | null;
@@ -1992,6 +2168,24 @@ export interface components {
             };
             /** Description */
             description?: string | null;
+        };
+        /** File */
+        File: {
+            file: components["schemas"]["FileFile"];
+            /**
+             * Type
+             * @constant
+             */
+            type: "file";
+        };
+        /** FileFile */
+        FileFile: {
+            /** File Data */
+            file_data?: string;
+            /** File Id */
+            file_id?: string;
+            /** Filename */
+            filename?: string;
         };
         /**
          * FineTuneParameter
@@ -2202,10 +2396,44 @@ export interface components {
             finetune: components["schemas"]["Finetune"];
             status: components["schemas"]["FineTuneStatus"];
         };
+        /** Function */
+        Function: {
+            /** Arguments */
+            arguments: string;
+            /** Name */
+            name: string;
+        };
+        /** FunctionCall */
+        FunctionCall: {
+            /** Arguments */
+            arguments: string;
+            /** Name */
+            name: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImageURL */
+        ImageURL: {
+            /** Url */
+            url: string;
+            /**
+             * Detail
+             * @enum {string}
+             */
+            detail?: "auto" | "low" | "high";
+        };
+        /** InputAudio */
+        InputAudio: {
+            /** Data */
+            data: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "wav" | "mp3";
         };
         /**
          * KilnBaseModel
@@ -2272,7 +2500,10 @@ export interface components {
             /** File Path */
             file_path: string | null;
         };
-        /** KilnToolServerDescription */
+        /**
+         * KilnToolServerDescription
+         * @description This class is used to describe the external tool server under Settings -> Manage Tools UI.
+         */
         KilnToolServerDescription: {
             /** Name */
             name: string;
@@ -2988,6 +3219,11 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Trace
+             * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
+             */
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParam"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * TaskRun
@@ -3044,6 +3280,11 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Trace
+             * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
+             */
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParam"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -3104,6 +3345,13 @@ export interface components {
          * @enum {string}
          */
         ToolServerType: "remote_mcp";
+        /** ToolSetApiDescription */
+        ToolSetApiDescription: {
+            /** Set Name */
+            set_name: string;
+            /** Tools */
+            tools: components["schemas"]["ToolApiDescription"][];
+        };
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -5612,7 +5860,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolApiDescription"][];
+                    "application/json": components["schemas"]["ToolSetApiDescription"][];
                 };
             };
             /** @description Validation Error */
