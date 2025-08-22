@@ -67,7 +67,7 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<div class="max-w-[900px]">
   <AppPage
     title="Search Tools (RAG)"
     subtitle="Enable tasks to search your documents for knowledge."
@@ -92,11 +92,11 @@
     {:else if rag_configs}
       <div class="my-4">
         <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
+          <table class="table table-fixed">
             <thead>
               <tr>
-                <th>Details</th>
-                <th>Status</th>
+                <th class="w-auto">Details</th>
+                <th class="w-[400px]">Status</th>
               </tr>
             </thead>
             <tbody>

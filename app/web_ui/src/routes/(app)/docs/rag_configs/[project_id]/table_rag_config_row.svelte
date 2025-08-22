@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RagConfigWithSubConfigs } from "$lib/types"
+  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import RunRagControl from "./run_rag_control.svelte"
   import {
@@ -30,42 +30,48 @@
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 
-  function status_to_badge_props(status: RagConfigurationStatus) {
+  function status_to_badge_props(
+    status: RagConfigurationStatus,
+    rag_progress: RagProgress,
+  ) {
     switch (status) {
       case "complete": {
         return {
           text: "Complete",
-          className: "badge badge-sm badge-outline badge-success",
         }
       }
       case "incomplete": {
+        if (rag_progress.total_document_completed_count === 0) {
+          return {
+            text: "Not Started",
+          }
+        }
         return {
           text: "Incomplete",
-          className: "badge badge-sm badge-outline badge-warning",
+          warning: true,
         }
       }
       case "running": {
         return {
           text: "Running",
-          className: "badge badge-sm badge-outline badge-secondary",
+          running: true,
         }
       }
       case "completed_with_errors": {
         return {
           text: "Completed with errors",
-          className: "badge badge-sm badge-outline badge-error",
+          error: true,
         }
       }
       default: {
         return {
           text: "Not Started",
-          className: "badge badge-sm badge-outline badge-secondary",
         }
       }
     }
   }
 
-  $: status_badge_props = status_to_badge_props(status)
+  $: status_badge_props = status_to_badge_props(status, rag_progress)
 </script>
 
 {#if rag_progress && rag_config}
@@ -116,31 +122,41 @@
 
     <!-- Progress Section -->
     {#if total_docs > 0}
-      <td class="p-4 cursor-default align-top flex flex-row gap-4">
-        <div class="flex flex-col gap-3">
-          <div class={status_badge_props?.className}>
-            {status_badge_props?.text}
-          </div>
-          <!-- Overall Progress -->
-          {#if status === "running"}
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-500">{completed_pct}%</span>
+      <td class="p-4 cursor-default align-top">
+        <div class="flex flex-col gap-2 w-full max-w-[360px]">
+          <!-- Status and Action Row -->
+          <div class="flex items-center justify-between gap-4">
+            <div
+              class={`badge badge-outline px-3 py-1 ${status_badge_props?.warning ? "badge-warning" : ""} ${status_badge_props?.running ? "badge-success" : ""} ${status_badge_props?.error ? "badge-error" : ""}`}
+            >
+              {status_badge_props?.text}
             </div>
-            <progress
-              class="progress progress-secondary bg-secondary/20 w-full h-2"
-              value={rag_progress.total_document_completed_count || 0}
-              max={total_docs || 100}
-            ></progress>
-          {/if}
-          {#if total_docs > 0}
-            <div class="text-xs text-gray-500 text-start">
+            <RunRagControl {rag_config} {project_id} />
+          </div>
+
+          <!-- Progress Bar (only when running) -->
+          {#if status === "running"}
+            <div class="flex flex-col gap-2 pt-2">
+              <div class="flex items-center justify-between">
+                <span class="text-gray-500">{completed_pct}% Complete</span>
+                <span class="text-gray-500">
+                  {rag_progress.total_document_completed_count || 0} of {total_docs}
+                  documents
+                </span>
+              </div>
+              <progress
+                class="progress progress-primary bg-base-200 w-full h-2"
+                value={rag_progress.total_document_completed_count || 0}
+                max={total_docs || 100}
+              ></progress>
+            </div>
+          {:else if total_docs > 0}
+            <!-- Document count for non-running states -->
+            <div class="text-gray-500">
               {rag_progress.total_document_completed_count || 0} of {total_docs}
               documents processed
             </div>
           {/if}
-          <div class="flex flex-row justify-start">
-            <RunRagControl {rag_config} {project_id} />
-          </div>
         </div>
       </td>
     {:else}
