@@ -10,7 +10,9 @@
 <div
   class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
 >
-  <Checkmark classOverride="size-10 text-success mb-2" />
+  <div class="w-4 h-4 text-success mb-2">
+    <Checkmark />
+  </div>
   <div class="font-medium mb-2">{title}</div>
   <div class="max-w-96 text-center font-light">
     {subtitle}

@@ -217,7 +217,9 @@
                 : 'bg-base-200 text-gray-500'}"
           >
             {#if completed_pct === 100}
-              <Checkmark classOverride="w-4 h-4" />
+              <div class="w-4 h-4">
+                <Checkmark />
+              </div>
               <span class="text-xs font-medium">Complete</span>
             {:else if is_running}
               <div class="bg-current rounded-full loading loading-sm"></div>
@@ -257,7 +259,9 @@
                 : 'bg-base-200 text-gray-500'}"
           >
             {#if is_step_completed(step.name, config_progress)}
-              <Checkmark classOverride="w-4 h-4" />
+              <div class="w-4 h-4">
+                <Checkmark />
+              </div>
             {:else if is_running}
               <div class="bg-current rounded-full loading loading-sm"></div>
             {:else}
