@@ -125,15 +125,43 @@ get_install_dir() {
     KILN_PATH="$INSTALL_DIR/kiln"
 }
 
+# Download and install Kiln icon
+install_icon() {
+    local icon_dir="$HOME/.local/share/icons"
+    local icon_file="$icon_dir/kiln.png"
+    local icon_url="https://github.com/Kiln-AI/Kiln/raw/main/app/desktop/win_icon.png"
+    
+    # Create icon directory
+    if ! mkdir -p "$icon_dir" 2>/dev/null; then
+        return 1
+    fi
+    
+    # Download icon (silently, don't fail installation if this fails)
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$icon_file" "$icon_url" 2>/dev/null && return 0
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$icon_file" "$icon_url" 2>/dev/null && return 0
+    fi
+    
+    return 1
+}
+
 # Create desktop entry for GUI access
 create_desktop_entry() {
     local desktop_dir="$HOME/.local/share/applications"
     local desktop_file="$desktop_dir/kiln.desktop"
+    local icon_name="application-x-executable"  # fallback icon
     
     # Only create desktop entry if we can write to the directory
     if ! mkdir -p "$desktop_dir" 2>/dev/null; then
         print_warning "Could not create applications directory. Skipping desktop entry."
         return 0
+    fi
+    
+    # Try to install the Kiln icon
+    if install_icon; then
+        icon_name="kiln"  # Use our custom icon
+        print_info "Downloaded Kiln icon"
     fi
     
     # Create the desktop entry file
@@ -144,7 +172,7 @@ Type=Application
 Name=Kiln
 Comment=Kiln AI Development Environment
 Exec=$KILN_PATH
-Icon=application-x-executable
+Icon=$icon_name
 Terminal=false
 Categories=Development;IDE;
 StartupWMClass=Kiln
