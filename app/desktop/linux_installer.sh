@@ -211,9 +211,8 @@ EOF
 
 # Install or upgrade Kiln
 install_kiln() {
-    # Use a unique download directory instead of mktemp (some systems have mktemp issues)
-    RANDOM_SUFFIX=$(date +%s)_$$_$RANDOM
-    TEMP_DIR="$HOME/.kiln_installer_tmp_$RANDOM_SUFFIX"
+    # Make a temporary directory. In home as some systems have permission issues with /tmp. We'll clean it up later.
+    TEMP_DIR="$HOME/kiln_installer_tmp.XXXXXX"
     
     # Remove any existing directory with this name and create fresh
     rm -rf "$TEMP_DIR"
