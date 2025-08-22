@@ -152,11 +152,6 @@ install_icon() {
     local temp_dir="$1"
     local icon_url="https://github.com/Kiln-AI/Kiln/raw/main/app/desktop/linux_icon.png"
     
-    # Create icon directory
-    if ! mkdir -p "$icon_dir" 2>/dev/null; then
-        return 1
-    fi
-    
     # Download icon (silently, don't fail installation if this fails)
     local downloaded=false
     if command -v curl >/dev/null 2>&1; then
