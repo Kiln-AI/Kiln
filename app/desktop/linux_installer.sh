@@ -309,8 +309,6 @@ main() {
     echo "Kiln Linux Installer"
     echo "===================="
     echo ""
-    echo "Debug: whoami=$(whoami), HOME=$HOME, PWD=$PWD"
-    echo ""
     
     check_platform
     detect_architecture
