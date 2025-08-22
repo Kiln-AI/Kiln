@@ -67,20 +67,24 @@ detect_architecture() {
 
 # Check for required tools
 check_dependencies() {
-    local missing_tools=()
+    local missing_tools=""
     
     # Check for download tool
     if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
-        missing_tools+=("curl or wget")
+        missing_tools="curl or wget"
     fi
     
     # Check for unzip
     if ! command -v unzip >/dev/null 2>&1; then
-        missing_tools+=("unzip")
+        if [ -n "$missing_tools" ]; then
+            missing_tools="$missing_tools, unzip"
+        else
+            missing_tools="unzip"
+        fi
     fi
     
-    if [ ${#missing_tools[@]} -ne 0 ]; then
-        print_error "Missing required tools: ${missing_tools[*]}"
+    if [ -n "$missing_tools" ]; then
+        print_error "Missing required tools: $missing_tools"
         echo "Please install the missing tools and try again."
         echo "On Ubuntu/Debian: sudo apt update && sudo apt install curl unzip"
         echo "On CentOS/RHEL: sudo yum install curl unzip"
@@ -95,17 +99,35 @@ download_file() {
     local output="$2"
     
     print_info "Downloading Kiln for Linux ($ARCH_DISPLAY)..."
+    print_info "Download URL: $url"
+    print_info "Target file: $PWD/$output"
+    
+    # Check if we can write to current directory
+    if ! touch "$output" 2>/dev/null; then
+        print_error "Cannot write to current directory: $PWD"
+        print_error "Please ensure you have write permissions or try running with appropriate privileges."
+        exit 1
+    fi
+    rm -f "$output"  # Remove the test file
     
     if command -v curl >/dev/null 2>&1; then
         if ! curl -fsSL -o "$output" "$url"; then
             print_error "Failed to download Kiln. Please check your internet connection."
+            print_error "You can try downloading manually from: $url"
             exit 1
         fi
     elif command -v wget >/dev/null 2>&1; then
         if ! wget -q -O "$output" "$url"; then
             print_error "Failed to download Kiln. Please check your internet connection."
+            print_error "You can try downloading manually from: $url"
             exit 1
         fi
+    fi
+    
+    # Verify the file was created and has content
+    if [ ! -f "$output" ] || [ ! -s "$output" ]; then
+        print_error "Download completed but file is missing or empty: $output"
+        exit 1
     fi
 }
 
@@ -189,8 +211,13 @@ EOF
 
 # Install or upgrade Kiln
 install_kiln() {
-    # Create temporary directory
-    TEMP_DIR=$(mktemp -d)
+    # Create temporary directory in user's home (more reliable than /tmp)
+    TEMP_DIR=$(mktemp -d "$HOME/.kiln_install_tmp.XXXXXX")
+    if [ ! -d "$TEMP_DIR" ] || [ ! -w "$TEMP_DIR" ]; then
+        print_error "Failed to create writable temporary directory: $TEMP_DIR"
+        exit 1
+    fi
+    
     cd "$TEMP_DIR"
     
     # Download the zip file
@@ -266,7 +293,7 @@ cleanup_and_exit() {
     if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
         rm -rf "$TEMP_DIR"
     fi
-    exit $exit_code
+    exit "$exit_code"
 }
 
 # Trap to ensure cleanup on script exit
