@@ -18,9 +18,9 @@ class RagConfig(KilnParentedModel):
     )
 
     chunker_config_id: ID_TYPE = Field(
-        description="The ID of the chunker config that was used to chunk the documents.",
+        description="The ID of the chunker config used to chunk the documents.",
     )
 
     embedding_config_id: ID_TYPE = Field(
-        description="The ID of the embedding config that was used to embed the documents.",
+        description="The ID of the embedding config used to embed the documents.",
     )

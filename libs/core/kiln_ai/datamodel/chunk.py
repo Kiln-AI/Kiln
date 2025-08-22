@@ -123,7 +123,7 @@ class ChunkedDocument(
     KilnParentedModel, KilnParentModel, parent_of={"chunk_embeddings": ChunkEmbeddings}
 ):
     chunker_config_id: ID_TYPE = Field(
-        description="The ID of the chunker config that was used to chunk the document.",
+        description="The ID of the chunker config used to chunk the document.",
     )
     chunks: List[Chunk] = Field(description="The chunks of the document.")
 
