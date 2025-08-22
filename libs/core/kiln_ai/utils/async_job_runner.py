@@ -135,7 +135,8 @@ class AsyncJobRunner(Generic[T]):
             try:
                 await self.notify_job_start(job)
                 result = await run_job_fn(job)
-                await self.notify_success(job)
+                if result:
+                    await self.notify_success(job)
             except Exception as e:
                 logger.error("Job failed to complete", exc_info=True)
                 await self.notify_error(job, e)
