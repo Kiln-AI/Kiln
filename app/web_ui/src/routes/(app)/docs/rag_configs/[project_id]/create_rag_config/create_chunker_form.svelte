@@ -78,7 +78,7 @@
       bind:value={chunk_size}
       validator={number_validator({
         min: 1,
-        integer: false,
+        integer: true,
         label: "Chunk Size",
         optional: true,
       })}
