@@ -130,23 +130,33 @@ create_desktop_entry() {
     local desktop_dir="$HOME/.local/share/applications"
     local desktop_file="$desktop_dir/kiln.desktop"
     
-    mkdir -p "$desktop_dir"
+    # Only create desktop entry if we can write to the directory
+    if ! mkdir -p "$desktop_dir" 2>/dev/null; then
+        print_warning "Could not create applications directory. Skipping desktop entry."
+        return 0
+    fi
     
-    cat > "$desktop_file" << EOF
+    # Create the desktop entry file
+    if cat > "$desktop_file" << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Kiln
 Comment=Kiln AI Development Environment
 Exec=$KILN_PATH
-Icon=kiln
+Icon=application-x-executable
 Terminal=false
 Categories=Development;IDE;
 StartupWMClass=Kiln
 EOF
-    
-    chmod +x "$desktop_file"
-    print_info "Created desktop entry for Kiln"
+    then
+        chmod +x "$desktop_file" 2>/dev/null || true
+        print_info "Created desktop entry for Kiln"
+        return 0
+    else
+        print_warning "Could not create desktop entry. Kiln installed but may not appear in application menu."
+        return 0
+    fi
 }
 
 # Install or upgrade Kiln
@@ -184,7 +194,7 @@ install_kiln() {
     cp "Kiln" "$KILN_PATH"
     chmod +x "$KILN_PATH"
     
-    # Create desktop entry
+    # Create desktop entry (non-fatal if it fails)
     create_desktop_entry
     
     # Clean up temporary files
@@ -201,7 +211,11 @@ install_kiln() {
     echo ""
     print_info "Installation details:"
     echo "  • Executable: $KILN_PATH"
-    echo "  • Desktop entry created for GUI access"
+    if [ -f "$HOME/.local/share/applications/kiln.desktop" ]; then
+        echo "  • Desktop entry created for GUI access"
+    else
+        echo "  • Desktop entry creation skipped (non-fatal)"
+    fi
     
     if [ "$INSTALL_TYPE" = "user" ]; then
         echo ""
