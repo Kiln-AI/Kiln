@@ -14,7 +14,7 @@ class RagConfig(KilnParentedModel):
     )
 
     extractor_config_id: ID_TYPE = Field(
-        description="The ID of the extractor config that was used to extract the documents.",
+        description="The ID of the extractor config used to extract the documents.",
     )
 
     chunker_config_id: ID_TYPE = Field(
