@@ -77,6 +77,28 @@ class ToolSetApiDescription(BaseModel):
     tools: list[ToolApiDescription]
 
 
+async def available_remote_mcp_tools(
+    server: ExternalToolServer,
+) -> list[ToolApiDescription]:
+    """
+    Get the available tools from a remote MCP server. If the server is not reachable, return an empty list.
+    """
+    try:
+        async with MCPSessionManager.shared().mcp_client(server) as session:
+            tools_result = await session.list_tools()
+            return [
+                ToolApiDescription(
+                    id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                    name=tool.name,
+                    description=tool.description,
+                )
+                for tool in tools_result.tools
+            ]
+    except Exception:
+        # Skip the tool when we can't connect to the server
+        return []
+
+
 def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/available_tools")
     async def get_available_tools(
@@ -86,30 +108,12 @@ def connect_tool_servers_api(app: FastAPI):
 
         tool_sets = []
 
-        # Get available tools from MCP servers
+        # Get available tools from remote MCP servers only
         for server in project.external_tool_servers(readonly=True):
-            # Get available tools from remote MCP servers only
             available_mcp_tools = []
             match server.type:
                 case ToolServerType.remote_mcp:
-                    try:
-                        async with MCPSessionManager.shared().mcp_client(
-                            server
-                        ) as session:
-                            tools_result = await session.list_tools()
-                            available_mcp_tools.extend(
-                                [
-                                    ToolApiDescription(
-                                        id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
-                                        name=tool.name,
-                                        description=tool.description,
-                                    )
-                                    for tool in tools_result.tools
-                                ]
-                            )
-                    except Exception:
-                        # Skip the tool when we can't connect to the server
-                        continue
+                    available_mcp_tools = await available_remote_mcp_tools(server)
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
