@@ -807,26 +807,25 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude 3.5 Sonnet
+    # Claude Sonnet 4
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_3_5_sonnet,
-        friendly_name="Claude 3.5 Sonnet",
+        name=ModelName.claude_sonnet_4,
+        friendly_name="Claude 4 Sonnet",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-sonnet-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                model_id="anthropic/claude-3.5-sonnet",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
-                model_id="claude-3-5-sonnet-20241022",
+                model_id="claude-sonnet-4-20250514",
                 structured_output_mode=StructuredOutputMode.function_calling,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.vertex,
-                model_id="claude-3-5-sonnet",
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
@@ -871,25 +870,26 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude Sonnet 4
+    # Claude 3.5 Sonnet
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_sonnet_4,
-        friendly_name="Claude Sonnet 4",
+        name=ModelName.claude_3_5_sonnet,
+        friendly_name="Claude 3.5 Sonnet",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="anthropic/claude-sonnet-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
+                model_id="anthropic/claude-3.5-sonnet",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
-                model_id="claude-sonnet-4-20250514",
+                model_id="claude-3-5-sonnet-20241022",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="claude-3-5-sonnet",
+                structured_output_mode=StructuredOutputMode.function_calling_weak,
             ),
         ],
     ),
