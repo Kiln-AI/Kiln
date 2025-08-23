@@ -15,6 +15,7 @@ from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.litellm import get_litellm_provider_info
+from kiln_ai.utils.pdf_utils import split_pdf_into_pages
 
 MIME_TYPES_SUPPORTED = {
     Kind.DOCUMENT: [
@@ -114,6 +115,45 @@ class LitellmExtractor(BaseExtractor):
 
         self.litellm_core_config = litellm_core_config
 
+    async def _extract_from_pdf_pages(self, pdf_path: Path, prompt: str) -> str:
+        combined_content = []
+
+        with split_pdf_into_pages(pdf_path) as page_paths:
+            # we extract from each page individually and then combine the results
+            # this ensures the model stays focused on the current page and does not
+            # start summarizing the later pages
+            for i, page_path in enumerate(page_paths):
+                page_input = ExtractionInput(
+                    path=str(page_path), mime_type="application/pdf"
+                )
+                completion_kwargs = self._build_completion_kwargs(prompt, page_input)
+                response = await litellm.acompletion(**completion_kwargs)
+
+                if (
+                    not isinstance(response, ModelResponse)
+                    or not response.choices
+                    or len(response.choices) == 0
+                    or not isinstance(response.choices[0], Choices)
+                ):
+                    raise RuntimeError(
+                        f"Expected ModelResponse with Choices for page {i + 1}, got {type(response)}."
+                    )
+
+                if response.choices[0].message.content is None:
+                    raise ValueError(
+                        f"No text returned from LiteLLM when extracting page {i + 1}"
+                    )
+
+                content = response.choices[0].message.content
+                if not content:
+                    raise ValueError(
+                        f"No text returned from extraction model when extracting page {i + 1} for {pdf_path}"
+                    )
+
+                combined_content.append(content)
+
+        return "\n\n".join(combined_content)
+
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
             if mime_type in mime_types:
@@ -161,6 +201,17 @@ class LitellmExtractor(BaseExtractor):
         prompt = self.prompt_for_kind.get(kind)
         if prompt is None:
             raise ValueError(f"No prompt found for kind: {kind}")
+
+        # special handling for PDFs - process each page individually
+        if extraction_input.mime_type == "application/pdf":
+            content = await self._extract_from_pdf_pages(
+                Path(extraction_input.path), prompt
+            )
+            return ExtractionOutput(
+                is_passthrough=False,
+                content=content,
+                content_format=self.extractor_config.output_format,
+            )
 
         completion_kwargs = self._build_completion_kwargs(prompt, extraction_input)
 
