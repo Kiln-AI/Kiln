@@ -27,6 +27,7 @@ dependencies = [
     "openai>=1.53.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",
+    "pypdf>=6.0.0",
     "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
     "pyyaml>=6.0.2",
