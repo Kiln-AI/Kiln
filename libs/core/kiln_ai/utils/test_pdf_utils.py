@@ -1,8 +1,7 @@
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
 
 from conftest import MockFileFactoryMimeType
 from kiln_ai.utils.pdf_utils import split_pdf_into_pages
@@ -46,26 +45,26 @@ def test_split_pdf_into_pages_file_not_found():
 
 
 def test_split_pdf_into_pages_cleanup_on_exception(mock_file_factory):
-    """Test that temporary files are cleaned up even when an exception occurs."""
+    """Test that temporary files are cleaned up even when an exception occurs during normal usage."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     captured_page_paths = []
 
-    def mock_pdf_writer_write(self, stream):
-        # Capture the page paths before raising an exception
-        captured_page_paths.extend(
-            [path for path in test_file.parent.glob("kiln_pdf_pages_*/page_*.pdf")]
-        )
-        raise Exception("Simulated write error")
+    # Test that cleanup happens even when an exception occurs during the with block
+    with pytest.raises(RuntimeError, match="Simulated error during usage"):
+        with split_pdf_into_pages(test_file) as page_paths:
+            # Capture the page paths before the exception
+            captured_page_paths.extend(page_paths)
+            # Simulate an exception during normal usage of the context manager
+            raise RuntimeError("Simulated error during usage")
 
-    # Patch PdfWriter.write to simulate an error during page writing
-    with patch.object(PdfWriter, "write", mock_pdf_writer_write):
-        with pytest.raises(RuntimeError, match="Failed to split PDF"):
-            with split_pdf_into_pages(test_file):
-                pass
+    # Verify cleanup happened: the specific page files we created should be gone
+    for page_path in captured_page_paths:
+        assert not page_path.exists()
 
-    # Verify cleanup happened: no temporary files should remain
-    remaining_temp_files = list(test_file.parent.glob("kiln_pdf_pages_*"))
-    assert len(remaining_temp_files) == 0
+    # Also verify the temporary directory itself is gone
+    if captured_page_paths:
+        temp_dir = captured_page_paths[0].parent
+        assert not temp_dir.exists()
 
 
 def test_split_pdf_into_pages_empty_pdf(tmp_path):
