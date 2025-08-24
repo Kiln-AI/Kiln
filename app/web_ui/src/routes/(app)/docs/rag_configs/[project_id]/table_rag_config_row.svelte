@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RagConfigWithSubConfigs, RagProgress } from "$lib/types"
+  import type { RagConfigWithSubConfigs } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import RunRagControl from "./run_rag_control.svelte"
   import {
@@ -30,10 +30,7 @@
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 
-  function status_to_badge_props(
-    status: RagConfigurationStatus,
-    rag_progress: RagProgress,
-  ) {
+  function status_to_badge_props(status: RagConfigurationStatus) {
     switch (status) {
       case "complete": {
         return {
@@ -41,11 +38,6 @@
         }
       }
       case "incomplete": {
-        if (rag_progress.total_document_completed_count === 0) {
-          return {
-            text: "Not Started",
-          }
-        }
         return {
           text: "Incomplete",
           warning: true,
@@ -71,7 +63,7 @@
     }
   }
 
-  $: status_badge_props = status_to_badge_props(status, rag_progress)
+  $: status_badge_props = status_to_badge_props(status)
 </script>
 
 {#if rag_progress && rag_config}
