@@ -24,6 +24,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
@@ -107,6 +108,22 @@ def mock_embedding_config(mock_project):
     )
     embedding_config.save_to_file()
     return embedding_config
+
+
+@pytest.fixture
+def mock_vector_store_config(mock_project, tmp_path):
+    vector_store_config = VectorStoreConfig(
+        id="kiln:vector_store:lancedb",
+        parent=mock_project,
+        name="Test Vector Store",
+        store_type=VectorStoreType.LANCE_DB,
+        properties={
+            "table_schema_version": "1",
+            "vector_index_type": "bruteforce",
+        },
+    )
+    vector_store_config.save_to_file()
+    return vector_store_config
 
 
 @pytest.fixture
@@ -1028,6 +1045,7 @@ async def test_get_rag_configs_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     # create a rag config
     rag_configs = [
@@ -1038,6 +1056,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1046,6 +1065,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1054,6 +1074,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
     ]
 
@@ -1097,6 +1118,7 @@ async def test_get_rag_config_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1105,6 +1127,7 @@ async def test_get_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
     )
     rag_config.save_to_file()
 
@@ -1180,6 +1203,7 @@ async def test_run_rag_config_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     # Create a rag config
     rag_config = RagConfig(
@@ -1189,6 +1213,7 @@ async def test_run_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
     )
     rag_config.save_to_file()
 
@@ -1248,6 +1273,7 @@ async def test_run_rag_config_missing_configs(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     # Create a rag config with missing configs
     rag_config = RagConfig(
@@ -1257,6 +1283,7 @@ async def test_run_rag_config_missing_configs(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
     )
     rag_config.save_to_file()
 
@@ -1286,6 +1313,7 @@ async def test_get_rag_config_progress_specific_configs(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     # Create rag configs
     rag_configs = [
@@ -1296,6 +1324,7 @@ async def test_get_rag_config_progress_specific_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1304,6 +1333,7 @@ async def test_get_rag_config_progress_specific_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
     ]
 
@@ -1367,6 +1397,7 @@ async def test_get_rag_config_progress_all_configs(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     # Create rag configs
     rag_configs = [
@@ -1377,6 +1408,7 @@ async def test_get_rag_config_progress_all_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1385,6 +1417,7 @@ async def test_get_rag_config_progress_all_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
         ),
     ]
 
@@ -1474,6 +1507,7 @@ async def test_get_rag_config_progress_invalid_config_id(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     # Create a valid rag config
     rag_config = RagConfig(
@@ -1483,6 +1517,7 @@ async def test_get_rag_config_progress_invalid_config_id(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
     )
     rag_config.save_to_file()
 

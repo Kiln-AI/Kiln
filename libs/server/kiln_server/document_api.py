@@ -20,6 +20,7 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagChunkingStepRunner,
     RagEmbeddingStepRunner,
     RagExtractionStepRunner,
+    RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
 )
@@ -43,6 +44,11 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import (
+    LanceDBTableSchemaVersion,
+    VectorStoreConfig,
+    VectorStoreType,
+)
 from kiln_ai.utils import async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -421,6 +427,15 @@ def build_rag_workflow_runner(
             detail="Embedding config not found",
         )
 
+    vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+        str(rag_config.vector_store_config_id), project.path
+    )
+    if vector_store_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vector store config not found",
+        )
+
     runner = RagWorkflowRunner(
         project,
         RagWorkflowRunnerConfiguration(
@@ -446,6 +461,14 @@ def build_rag_workflow_runner(
                     chunker_config,
                     embedding_config,
                     concurrency=50,
+                ),
+                RagIndexingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    embedding_config,
+                    vector_store_config,
+                    rag_config,
                 ),
             ],
         ),
@@ -1043,6 +1066,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Embedding config {request.embedding_config_id} not found",
             )
 
+        # TODO: get vector store config params from the request
+        vector_store_config = VectorStoreConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            store_type=VectorStoreType.LANCE_DB,
+            properties={
+                "table_schema_version": LanceDBTableSchemaVersion.V1.value,
+                "vector_index_type": "bruteforce",
+            },
+        )
+        vector_store_config.save_to_file()
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1050,6 +1085,7 @@ def connect_document_api(app: FastAPI):
             extractor_config_id=extractor_config.id,
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
+            vector_store_config_id=vector_store_config.id,
         )
         rag_config.save_to_file()
 

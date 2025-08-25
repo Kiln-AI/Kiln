@@ -3342,6 +3342,11 @@ export interface components {
              * @description The ID of the embedding config used to embed the documents.
              */
             embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The ID of the vector store config that was used to store the documents.
+             */
+            vector_store_config_id: string | null;
             /** Model Type */
             readonly model_type: string;
         };
