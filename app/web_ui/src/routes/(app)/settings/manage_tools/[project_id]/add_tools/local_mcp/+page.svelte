@@ -3,24 +3,22 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
-  import { client } from "$lib/api_client"
   import { page } from "$app/stores"
-  import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
-  // Form fields
-  let name = ""
-  let server_url = ""
-  let description = ""
-
-  // Headers as array of key/value pairs
-  interface HeaderPair {
+  // Environment Variables as array of key/value pairs
+  interface EnvVarPair {
     key: string
     value: string
     placeholder: string | null
   }
 
-  let headers: HeaderPair[] = []
+  // Form fields
+  let name = ""
+  let command = ""
+  let args: string[] = []
+  let env_vars: EnvVarPair[] = []
+  let description = ""
 
   // Form state
   let error: KilnError | null = null
@@ -31,8 +29,6 @@
     const state = $page.state as {
       name?: string
       description?: string
-      server_url?: string
-      headers?: HeaderPair[]
     }
 
     if (state.name && !name) {
@@ -42,26 +38,6 @@
     if (state.description && !description) {
       description = state.description
     }
-
-    if (state.server_url && !server_url) {
-      server_url = state.server_url
-    }
-
-    if (state.headers && headers.length === 0) {
-      headers = [...state.headers]
-    }
-  }
-
-  function buildHeadersObject(): Record<string, string> {
-    const headersObj: Record<string, string> = {}
-
-    for (const header of headers) {
-      if (header.key.trim() && header.value.trim()) {
-        headersObj[header.key.trim()] = header.value.trim()
-      }
-    }
-
-    return headersObj
   }
 
   async function connect_local_mcp() {
@@ -73,91 +49,11 @@
       if (!name.trim()) {
         throw new Error("Name is required")
       }
-      if (!server_url.trim()) {
-        throw new Error("Server URL is required")
+      if (!command.trim()) {
+        throw new Error("Command is required")
       }
 
-      // Enforce absolute http(s) URLs only
-      try {
-        const u = new URL(server_url.trim())
-        if (u.protocol !== "https:" && u.protocol !== "http:") {
-          throw new Error("Server URL must start with http:// or https://")
-        }
-      } catch {
-        throw new Error("Server URL is not a valid URL")
-      }
-
-      if (headers.length > 0) {
-        for (const header of headers) {
-          const key = header.key.trim()
-          const value = header.value.trim()
-          if (!key) {
-            throw new Error("Header name is required")
-          }
-          if (!value) {
-            throw new Error("Header value is required")
-          }
-
-          // Reject invalid header names and CR/LF in names/values
-          const tokenRe = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
-          if (!tokenRe.test(key)) {
-            throw new Error(`Invalid header name: "${key}"`)
-          }
-          if (/\r|\n/.test(key) || /\r|\n/.test(value)) {
-            throw new Error(
-              "Header names/values must not contain invalid characters",
-            )
-          }
-        }
-      }
-
-      const headersObj = buildHeadersObject()
-
-      //  Make a request to the server and make sure it's valid
-      try {
-        const response = await fetch(server_url.trim(), {
-          headers: headersObj,
-        })
-        if (!response.ok) {
-          throw new Error(
-            `Server returned error status: ${response.status} ${response.statusText}`,
-          )
-        }
-      } catch (e) {
-        // Log custom error message
-        const error = e as Error
-        throw new Error(
-          `${error.message}. Unable to connect to the server. Please check the URL, headers and ensure the server is accessible`,
-        )
-      }
-
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/connect_remote_mcp",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-            },
-          },
-          body: {
-            name: name.trim(),
-            server_url: server_url.trim(),
-            headers: headersObj,
-            description: description.trim() || null,
-          },
-        },
-      )
-
-      if (api_error) {
-        throw api_error
-      }
-
-      if (data?.id) {
-        // Navigate to the tools page for the created tool
-        goto(
-          `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,
-        )
-      }
+      // TODO: Implement MCP server connection
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -196,28 +92,36 @@
       />
 
       <FormElement
-        label="Server URL"
-        id="mcp_server_url"
-        description="The URL of the remote MCP server."
-        placeholder="https://example.com/mcp"
-        bind:value={server_url}
+        label="Command"
+        id="command"
+        description="The command to run the MCP server."
+        placeholder="uv, python, npx etc."
+        bind:value={command}
       />
 
-      <!-- Headers section -->
+      <FormElement
+        label="Arguments"
+        id="args"
+        description="The arguments to pass to the MCP server. Each argument should be space separated."
+        placeholder="run server fastmcp_quickstart stdio"
+        bind:value={args}
+      />
+
+      <!-- Environment Variables section -->
       <FormElement
         inputType="header_only"
-        label="Headers"
-        id="headers_section"
-        description="If the documentation for the server you're adding requires custom headers, enter them here."
-        info_description="These are usually not needed. Some MCP servers require custom headers, such as the 'Authorization' headers. Refer to the documentation for the server you're adding to see if they require headers."
+        label="Environment Variables"
+        id="env_vars_section"
+        description="If the documentation for the server you're adding requires custom environment variables, enter them here."
+        info_description="These are usually not needed. Some MCP servers require custom environment varaibles, such as the API Key. Refer to the documentation for the server you're adding to see if they require environment variables."
         value=""
       />
 
       <FormList
-        content={headers}
-        content_label="Header"
+        content={env_vars}
+        content_label="Environment Variable"
         start_with_one={false}
-        empty_description="No Headers"
+        empty_description="No Environment Variables"
         empty_content={{
           key: "",
           value: "",
@@ -227,22 +131,22 @@
         <div class="flex gap-2">
           <div class="flex-1 max-w-[200px]">
             <FormElement
-              label="Header Name"
-              id="header_name_{item_index}"
-              info_description="The HTTP header name, such as 'Authorization'"
-              placeholder="Header name"
+              label="Environment Variable Name"
+              id="env_var_name_{item_index}"
+              info_description="The name of the environment variable, such as 'API_KEY'"
+              placeholder="Name"
               light_label={true}
-              bind:value={headers[item_index].key}
+              bind:value={env_vars[item_index].key}
             />
           </div>
           <div class="flex-1">
             <FormElement
               label="Value"
-              id="header_value_{item_index}"
-              info_description="The header value, such as 'Bearer your-token-here'"
-              placeholder={headers[item_index].placeholder || "Value"}
+              id="env_var_value_{item_index}"
+              info_description="The value of the environment variable, such as 'your-api-key-here'"
+              placeholder="Value"
               light_label={true}
-              bind:value={headers[item_index].value}
+              bind:value={env_vars[item_index].value}
             />
           </div>
         </div>
