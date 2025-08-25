@@ -3747,17 +3747,17 @@ export interface components {
             description?: string | null;
             /**
              * Extractor Config Id
-             * @description The ID of the extractor config that was used to extract the documents.
+             * @description The ID of the extractor config used to extract the documents.
              */
             extractor_config_id: string | null;
             /**
              * Chunker Config Id
-             * @description The ID of the chunker config that was used to chunk the documents.
+             * @description The ID of the chunker config used to chunk the documents.
              */
             chunker_config_id: string | null;
             /**
              * Embedding Config Id
-             * @description The ID of the embedding config that was used to embed the documents.
+             * @description The ID of the embedding config used to embed the documents.
              */
             embedding_config_id: string | null;
             /**

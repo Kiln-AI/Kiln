@@ -14,8 +14,7 @@
     },
     {
       name: "Search Tools (RAG)",
-      description:
-        "Make knowledge from your documents searchable by your tasks.",
+      description: "Enable tasks to search your documents for knowledge.",
       button_text: "Manage Search Tools",
       href: `/docs/rag_configs/${project_id}`,
       img: "/images/card-search.svg",

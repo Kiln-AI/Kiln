@@ -399,7 +399,7 @@
               <FormElement
                 id="chunker_select"
                 label="Chunker"
-                description="Split your documents into smaller chunks for search."
+                description="Split document text into smaller chunks for search."
                 info_description="Splitting long documents into smaller chunks allows search to find relevant information."
                 fancy_select_options={chunker_options}
                 bind:value={selected_chunker_config_id}
@@ -419,7 +419,7 @@
               <FormElement
                 id="embedding_select"
                 label="Embedding Model"
-                description="Embedding models convert your document chunks into vectors for similarity search."
+                description="Embedding models convert document chunks into vectors for similarity search."
                 info_description="Embedding models are a type of AI model which create searchable vectors from your chunks."
                 fancy_select_options={embedding_options}
                 bind:value={selected_embedding_config_id}
@@ -455,8 +455,8 @@
 
 <Dialog
   bind:this={show_create_extractor_dialog}
-  title="Create Extractor"
-  subtitle="Extractors are used to convert your documents into text."
+  title="Extractor Configuration"
+  subtitle="Extractors convert your documents into text."
   width="wide"
   on:close={() => {
     handle_modal_close()
@@ -476,8 +476,8 @@
 
 <Dialog
   bind:this={show_create_chunker_dialog}
-  title="Create Chunker"
-  subtitle="Split the text from your documents into smaller chunks for search."
+  title="Chunker Configuration"
+  subtitle="Split document text into smaller chunks for search."
   width="wide"
   on:close={() => {
     handle_modal_close()
@@ -497,7 +497,7 @@
 
 <Dialog
   bind:this={show_create_embedding_dialog}
-  title="Create Embedding Configuration"
+  title="Embedding Configuration"
   subtitle="Convert text chunks into vectors for similarity search."
   width="normal"
   on:close={() => {

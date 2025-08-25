@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Set
 
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
-from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
     Document,

@@ -79,7 +79,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Search Tool (RAG)"
-    subtitle={loading ? "" : `Name: ${rag_config?.name}` || "Unknown"}
+    subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
     action_buttons={[]}
   >
     {#if loading}
@@ -168,14 +168,16 @@
                 value: rag_config.chunker_config.properties?.chunk_size
                   ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
                   : "N/A",
-                tooltip: "The number of words to include in each chunk",
+                tooltip:
+                  "The approximate number of words to include in each chunk",
               },
               {
                 name: "Overlap",
                 value: rag_config.chunker_config.properties?.chunk_overlap
                   ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
                   : "N/A",
-                tooltip: "The number of words to overlap between chunks",
+                tooltip:
+                  "The approximate number of words to overlap between chunks",
               },
             ]}
           />
