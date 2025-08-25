@@ -305,10 +305,10 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
 
 export const formatProgressPercentage = (progress: RagProgress): string => {
   if (progress.total_document_count === 0) {
-    return "0.0%"
+    return "0%"
   }
 
-  return `${((progress.total_document_completed_count / progress.total_document_count) * 100).toFixed(1)}%`
+  return `${((progress.total_document_completed_count / progress.total_document_count) * 100).toFixed(0)}%`
 }
 
 export async function load_all_rag_config_progress(projectId: string) {
