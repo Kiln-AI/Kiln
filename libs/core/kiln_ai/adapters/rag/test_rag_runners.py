@@ -806,7 +806,7 @@ class TestRagWorkflowRunner:
 
     @pytest.mark.asyncio
     async def test_run_yields_initial_progress_and_step_progress(self, workflow_runner):
-        with patch("kiln_ai.adapters.rag.rag_runners.asyncio_mutex"):
+        with patch("kiln_ai.utils.lock.async_lock_manager"):
             progress_values = []
             async for progress in workflow_runner.run():
                 progress_values.append(progress)
@@ -828,7 +828,7 @@ class TestRagWorkflowRunner:
         chunking_runner.run.return_value = mock_chunking_run()
         workflow_runner.step_runners.append(chunking_runner)
 
-        with patch("kiln_ai.adapters.rag.rag_runners.asyncio_mutex"):
+        with patch("kiln_ai.utils.lock.async_lock_manager"):
             progress_values = []
             # Only run extracting stage
             async for progress in workflow_runner.run(
@@ -929,7 +929,7 @@ class TestRagWorkflowIntegration:
             patch(
                 "kiln_ai.adapters.rag.rag_runners.AsyncJobRunner"
             ) as mock_job_runner_class,
-            patch("kiln_ai.adapters.rag.rag_runners.asyncio_mutex"),
+            patch("kiln_ai.utils.lock.async_lock_manager"),
         ):
             # Setup mock extractor
             mock_extractor = MagicMock(spec=BaseExtractor)

@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.embedding.litellm_embedding_adapter import LitellmEmbeddingAdapter
-from kiln_ai.adapters.embedding.registry import embedding_adapter_from_type
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -33,7 +33,9 @@ def test_embedding_adapter_from_type(mock_provider_configs):
     assert adapter.embedding_config.model_provider_name == ModelProviderName.gemini_api
 
 
-@patch("kiln_ai.adapters.embedding.registry.lite_llm_core_config_for_provider")
+@patch(
+    "kiln_ai.adapters.embedding.embedding_registry.lite_llm_core_config_for_provider"
+)
 def test_embedding_adapter_from_type_uses_litellm_core_config(
     mock_get_litellm_core_config,
 ):
@@ -70,7 +72,9 @@ def test_embedding_adapter_from_type_invalid_provider():
     )
 
     # Mock the ModelProviderName constructor to simulate an invalid provider
-    with patch("kiln_ai.adapters.embedding.registry.ModelProviderName") as mock_enum:
+    with patch(
+        "kiln_ai.adapters.embedding.embedding_registry.ModelProviderName"
+    ) as mock_enum:
         mock_enum.side_effect = ValueError("Invalid provider")
 
         with pytest.raises(
@@ -83,7 +87,7 @@ def test_embedding_adapter_from_type_invalid_provider():
 def test_embedding_adapter_from_type_no_config_found(mock_provider_configs):
     """Test that missing provider configuration raises an error."""
     with patch(
-        "kiln_ai.adapters.embedding.registry.lite_llm_core_config_for_provider"
+        "kiln_ai.adapters.embedding.embedding_registry.lite_llm_core_config_for_provider"
     ) as mock_lite_llm_core_config_for_provider:
         mock_lite_llm_core_config_for_provider.return_value = None
 

@@ -52,7 +52,7 @@ class Embedding(BaseModel):
 
 class ChunkEmbeddings(KilnParentedModel):
     embedding_config_id: ID_TYPE = Field(
-        description="The ID of the embedding config that was used to generate the embeddings.",
+        description="The ID of the embedding config used to generate the embeddings.",
     )
     embeddings: List[Embedding] = Field(
         description="The embeddings of the chunks. The embedding at index i corresponds to the chunk at index i in the parent chunked document."

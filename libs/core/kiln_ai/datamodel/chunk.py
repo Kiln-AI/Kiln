@@ -123,7 +123,7 @@ class ChunkedDocument(
     KilnParentedModel, KilnParentModel, parent_of={"chunk_embeddings": ChunkEmbeddings}
 ):
     chunker_config_id: ID_TYPE = Field(
-        description="The ID of the chunker config that was used to chunk the document.",
+        description="The ID of the chunker config used to chunk the document.",
     )
     chunks: List[Chunk] = Field(description="The chunks of the document.")
 
@@ -151,10 +151,8 @@ class ChunkedDocument(
                     await anyio.Path(full_path).read_text(encoding="utf-8")
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to read chunk content for {full_path}: {e}",
-                    exc_info=True,
-                )
-                raise ValueError(f"Failed to read chunk content: {e}")
+                raise ValueError(
+                    f"Failed to read chunk content for {full_path}: {e}"
+                ) from e
 
         return chunks_text

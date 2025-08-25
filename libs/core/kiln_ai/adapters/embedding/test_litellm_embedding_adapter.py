@@ -112,7 +112,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Verify litellm.aembedding was called with completion_kwargs
@@ -142,7 +144,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Verify only the set options are passed
@@ -170,7 +174,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Verify no completion_kwargs are passed
@@ -197,13 +203,70 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
         assert len(result.embeddings) == 2
         assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
         assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
         assert result.usage == mock_response.usage
+
+    async def test_generate_embeddings_for_batch_success(self, mock_litellm_adapter):
+        """Test successful embedding generation for a single batch."""
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]},
+            {"object": "embedding", "index": 1, "embedding": [0.4, 0.5, 0.6]},
+        ]
+        mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
+            result = await mock_litellm_adapter._generate_embeddings_for_batch(
+                ["text1", "text2"]
+            )
+
+        assert len(result.embeddings) == 2
+        assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
+        assert result.embeddings[1].vector == [0.4, 0.5, 0.6]
+        assert result.usage == mock_response.usage
+
+    async def test_generate_embeddings_for_batch_with_completion_kwargs(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
+        """Test that completion_kwargs are properly passed to litellm.aembedding in batch method."""
+        # Set up litellm_core_config with additional options
+        mock_litellm_core_config.additional_body_options = {"custom_param": "value"}
+        mock_litellm_core_config.base_url = "https://custom-api.example.com"
+        mock_litellm_core_config.default_headers = {
+            "Authorization": "Bearer custom-token"
+        }
+
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
+
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
+            await adapter._generate_embeddings_for_batch(["test text"])
+
+        # Verify litellm.aembedding was called with completion_kwargs
+        call_args = mock_aembedding.call_args
+        assert call_args[1]["custom_param"] == "value"
+        assert call_args[1]["base_url"] == "https://custom-api.example.com"
+        assert call_args[1]["default_headers"] == {
+            "Authorization": "Bearer custom-token"
+        }
 
     async def test_generate_embeddings_with_dimensions(
         self, mock_embedding_config, mock_litellm_core_config
@@ -220,7 +283,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             result = await adapter._generate_embeddings(["test text"])
 
         # Verify litellm.aembedding was called with correct parameters
@@ -235,11 +300,16 @@ class TestLitellmEmbeddingAdapter:
         assert result.usage == mock_response.usage
 
     async def test_generate_embeddings_batch_size_exceeded(self, mock_litellm_adapter):
-        """Test that embedding fails when batch size is exceeded."""
+        """Test that embedding fails when batch size is exceeded in individual batch."""
+        # This test now tests the _generate_embeddings_for_batch method directly
+        # since the main _generate_embeddings method now handles batching automatically
         large_text_list = ["text"] * (MAX_BATCH_SIZE + 1)
 
-        with pytest.raises(ValueError, match="Text is too long"):
-            await mock_litellm_adapter._generate_embeddings(large_text_list)
+        with pytest.raises(
+            ValueError,
+            match=f"Too many input texts, max batch size is {MAX_BATCH_SIZE}, got {MAX_BATCH_SIZE + 1}",
+        ):
+            await mock_litellm_adapter._generate_embeddings_for_batch(large_text_list)
 
     async def test_generate_embeddings_response_length_mismatch(
         self, mock_litellm_adapter
@@ -250,7 +320,9 @@ class TestLitellmEmbeddingAdapter:
             {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
         ]  # Only one embedding
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             with pytest.raises(
                 RuntimeError,
                 match="Expected the number of embeddings in the response to be 2, got 1.",
@@ -259,7 +331,11 @@ class TestLitellmEmbeddingAdapter:
 
     async def test_generate_embeddings_litellm_exception(self, mock_litellm_adapter):
         """Test that litellm exceptions are properly raised."""
-        with patch("litellm.aembedding", side_effect=Exception("litellm error")):
+        with patch(
+            "litellm.aembedding",
+            new_callable=AsyncMock,
+            side_effect=Exception("litellm error"),
+        ):
             with pytest.raises(Exception, match="litellm error"):
                 await mock_litellm_adapter._generate_embeddings(["test text"])
 
@@ -273,7 +349,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=15, total_tokens=15)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings(
                 ["text1", "text2", "text3"]
             )
@@ -292,7 +370,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             result = await mock_litellm_adapter._generate_embeddings(["single text"])
 
         # The call should not include dimensions since the fixture has empty properties
@@ -318,11 +398,191 @@ class TestLitellmEmbeddingAdapter:
 
         large_text_list = ["text"] * MAX_BATCH_SIZE
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings(large_text_list)
 
         assert len(result.embeddings) == MAX_BATCH_SIZE
         assert result.usage == mock_response.usage
+
+    async def test_generate_embeddings_multiple_batches(self, mock_litellm_adapter):
+        """Test that embedding properly handles multiple batches."""
+        # Create a list that will require multiple batches
+        total_texts = MAX_BATCH_SIZE * 2 + 50  # 2 full batches + 50 more
+        text_list = [f"text_{i}" for i in range(total_texts)]
+
+        # Mock responses for each batch
+        batch1_response = AsyncMock(spec=EmbeddingResponse)
+        batch1_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.1, 0.2, 0.3]}
+            for i in range(MAX_BATCH_SIZE)
+        ]
+        batch1_response.usage = Usage(prompt_tokens=100, total_tokens=100)
+
+        batch2_response = AsyncMock(spec=EmbeddingResponse)
+        batch2_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.4, 0.5, 0.6]}
+            for i in range(MAX_BATCH_SIZE)
+        ]
+        batch2_response.usage = Usage(prompt_tokens=100, total_tokens=100)
+
+        batch3_response = AsyncMock(spec=EmbeddingResponse)
+        batch3_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.7, 0.8, 0.9]}
+            for i in range(50)
+        ]
+        batch3_response.usage = Usage(prompt_tokens=50, total_tokens=50)
+
+        # Mock litellm.aembedding to return different responses based on input size
+        async def mock_aembedding(*args, **kwargs):
+            input_size = len(kwargs.get("input", []))
+            if input_size == MAX_BATCH_SIZE:
+                if len(mock_aembedding.call_count) == 0:
+                    mock_aembedding.call_count.append(1)
+                    return batch1_response
+                else:
+                    mock_aembedding.call_count.append(1)
+                    return batch2_response
+            else:
+                return batch3_response
+
+        mock_aembedding.call_count = []
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, side_effect=mock_aembedding
+        ):
+            result = await mock_litellm_adapter._generate_embeddings(text_list)
+
+        # Should have all embeddings combined
+        assert len(result.embeddings) == total_texts
+
+        # Should have combined usage from all batches
+        assert result.usage is not None
+        assert result.usage.prompt_tokens == 250  # 100 + 100 + 50
+        assert result.usage.total_tokens == 250  # 100 + 100 + 50
+
+        # Verify embeddings are in the right order
+        assert result.embeddings[0].vector == [0.1, 0.2, 0.3]  # First batch
+        assert result.embeddings[MAX_BATCH_SIZE].vector == [
+            0.4,
+            0.5,
+            0.6,
+        ]  # Second batch
+        assert result.embeddings[MAX_BATCH_SIZE * 2].vector == [
+            0.7,
+            0.8,
+            0.9,
+        ]  # Third batch
+
+    async def test_generate_embeddings_batching_edge_cases(self, mock_litellm_adapter):
+        """Test batching edge cases like empty lists and single items."""
+        # Test empty list
+        result = await mock_litellm_adapter._generate_embeddings([])
+        assert result.embeddings == []
+        assert result.usage is not None
+        assert result.usage.prompt_tokens == 0
+        assert result.usage.total_tokens == 0
+
+        # Test single item (should still go through batching logic)
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch("litellm.aembedding", return_value=mock_response):
+            result = await mock_litellm_adapter._generate_embeddings(["single text"])
+
+        assert len(result.embeddings) == 1
+        assert result.embeddings[0].vector == [0.1, 0.2, 0.3]
+        assert result.usage == mock_response.usage
+
+    async def test_generate_embeddings_batching_with_mixed_usage(
+        self, mock_litellm_adapter
+    ):
+        """Test batching when some responses have usage and others don't."""
+        # Create a list that will require multiple batches
+        text_list = ["text"] * (MAX_BATCH_SIZE + 10)
+
+        # First batch with usage
+        batch1_response = AsyncMock(spec=EmbeddingResponse)
+        batch1_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.1, 0.2, 0.3]}
+            for i in range(MAX_BATCH_SIZE)
+        ]
+        batch1_response.usage = Usage(prompt_tokens=100, total_tokens=100)
+
+        # Second batch without usage
+        batch2_response = AsyncMock(spec=EmbeddingResponse)
+        batch2_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.4, 0.5, 0.6]}
+            for i in range(10)
+        ]
+        batch2_response.usage = None
+
+        # Mock litellm.aembedding to return different responses based on input size
+        async def mock_aembedding(*args, **kwargs):
+            input_size = len(kwargs.get("input", []))
+            if input_size == MAX_BATCH_SIZE:
+                return batch1_response
+            else:
+                return batch2_response
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, side_effect=mock_aembedding
+        ):
+            result = await mock_litellm_adapter._generate_embeddings(text_list)
+
+        # Should have all embeddings combined
+        assert len(result.embeddings) == MAX_BATCH_SIZE + 10
+
+        # Should have None usage since one batch has None usage
+        assert result.usage is None
+
+    async def test_generate_embeddings_batching_with_all_usage(
+        self, mock_litellm_adapter
+    ):
+        """Test batching when all responses have usage information."""
+        # Create a list that will require multiple batches
+        text_list = ["text"] * (MAX_BATCH_SIZE + 10)
+
+        # First batch with usage
+        batch1_response = AsyncMock(spec=EmbeddingResponse)
+        batch1_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.1, 0.2, 0.3]}
+            for i in range(MAX_BATCH_SIZE)
+        ]
+        batch1_response.usage = Usage(prompt_tokens=100, total_tokens=100)
+
+        # Second batch with usage
+        batch2_response = AsyncMock(spec=EmbeddingResponse)
+        batch2_response.data = [
+            {"object": "embedding", "index": i, "embedding": [0.4, 0.5, 0.6]}
+            for i in range(10)
+        ]
+        batch2_response.usage = Usage(prompt_tokens=50, total_tokens=50)
+
+        # Mock litellm.aembedding to return different responses based on input size
+        async def mock_aembedding(*args, **kwargs):
+            input_size = len(kwargs.get("input", []))
+            if input_size == MAX_BATCH_SIZE:
+                return batch1_response
+            else:
+                return batch2_response
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, side_effect=mock_aembedding
+        ):
+            result = await mock_litellm_adapter._generate_embeddings(text_list)
+
+        # Should have all embeddings combined
+        assert len(result.embeddings) == MAX_BATCH_SIZE + 10
+
+        # Should have combined usage since all batches have usage
+        assert result.usage is not None
+        assert result.usage.prompt_tokens == 150  # 100 + 50
+        assert result.usage.total_tokens == 150  # 100 + 50
 
     def test_embedding_config_inheritance(
         self, mock_embedding_config, mock_litellm_core_config
@@ -341,7 +601,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter.generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
@@ -365,10 +627,13 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         ]
         mock_response.usage = None
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await adapter._generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
+        # With the new logic, if any response has None usage, the result has None usage
         assert result.usage is None
 
     async def test_generate_embeddings_with_empty_embedding_vector(
@@ -382,7 +647,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         mock_response.data = [{"object": "embedding", "index": 0, "embedding": []}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await adapter._generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
@@ -406,7 +673,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await adapter._generate_embeddings(["text1", "text2"])
 
         # Both embeddings should be present and match the order in response.data
@@ -434,7 +703,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Only dimensions should be passed to litellm

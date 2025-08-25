@@ -273,15 +273,20 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     return "complete"
   }
 
+  const max_step_completion = Math.max(
+    progress.total_document_extracted_count,
+    progress.total_document_chunked_count,
+    progress.total_document_embedded_count,
+  )
+  if (max_step_completion === 0) {
+    return "not_started"
+  }
+
   const min_step_completion = Math.min(
     progress.total_document_extracted_count,
     progress.total_document_chunked_count,
     progress.total_document_embedded_count,
   )
-  if (min_step_completion === 0) {
-    return "not_started"
-  }
-
   if (min_step_completion < progress.total_document_count) {
     return "incomplete"
   }
@@ -300,10 +305,10 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
 
 export const formatProgressPercentage = (progress: RagProgress): string => {
   if (progress.total_document_count === 0) {
-    return "0.0%"
+    return "0%"
   }
 
-  return `${((progress.total_document_completed_count / progress.total_document_count) * 100).toFixed(1)}%`
+  return `${((progress.total_document_completed_count / progress.total_document_count) * 100).toFixed(0)}%`
 }
 
 export async function load_all_rag_config_progress(projectId: string) {

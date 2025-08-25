@@ -161,25 +161,6 @@
         bind:value={selectedModel}
         id="embedding_model"
       />
-
-      {#if selectedModel && selectedModel.supports_custom_dimensions}
-        <FormElement
-          label="Custom Dimensions"
-          description="This model supports custom dimensions. Leave blank to use the default."
-          info_description="This controls the size of the vector embedding which is generated. Leave blank for the default unless you understand how to tune this."
-          optional={true}
-          inputType="input_number"
-          id="custom_dimensions"
-          bind:value={customDimensions}
-          validator={number_validator({
-            min: 1,
-            max: selectedModel.n_dimensions || undefined,
-            integer: true,
-            label: "Custom Dimensions",
-            optional: true,
-          })}
-        />
-      {/if}
     {/if}
   </div>
   <Collapse title="Advanced Options">
@@ -199,5 +180,24 @@
       id="description"
       bind:value={description}
     />
+
+    {#if selectedModel && selectedModel.supports_custom_dimensions}
+      <FormElement
+        label="Custom Embedding Dimensions"
+        description="Leave blank to use the default, or set a custom embedding size."
+        info_description="This controls the size of the vector embedding which is generated. Leave blank for the default unless you understand how to tune this."
+        optional={true}
+        inputType="input_number"
+        id="custom_dimensions"
+        bind:value={customDimensions}
+        validator={number_validator({
+          min: 1,
+          max: selectedModel.n_dimensions || undefined,
+          integer: true,
+          label: "Custom Dimensions",
+          optional: true,
+        })}
+      />
+    {/if}
   </Collapse>
 </FormContainer>
