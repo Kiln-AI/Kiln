@@ -12,7 +12,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutpu
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, StructuredOutputMode
+from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {
@@ -89,7 +89,7 @@ class GEval(BaseEval):
     }
     """
 
-    def __init__(self, eval_config: EvalConfig, run_config: RunConfig | None):
+    def __init__(self, eval_config: EvalConfig, run_config: RunConfigProperties | None):
         if (
             eval_config.config_type != EvalConfigType.g_eval
             and eval_config.config_type != EvalConfigType.llm_as_judge

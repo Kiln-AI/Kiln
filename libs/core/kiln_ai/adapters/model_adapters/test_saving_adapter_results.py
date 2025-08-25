@@ -13,7 +13,7 @@ from kiln_ai.datamodel import (
     Task,
     Usage,
 )
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -41,8 +41,8 @@ def test_task(tmp_path):
 @pytest.fixture
 def adapter(test_task):
     return MockAdapter(
-        run_config=RunConfig(
-            task=test_task,
+        task=test_task,
+        run_config=RunConfigProperties(
             model_name="phi_3_5",
             model_provider_name="ollama",
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -240,8 +240,8 @@ async def test_autosave_true(test_task, adapter):
 def test_properties_for_task_output_custom_values(test_task):
     """Test that _properties_for_task_output includes custom temperature, top_p, and structured_output_mode"""
     adapter = MockAdapter(
-        run_config=RunConfig(
-            task=test_task,
+        task=test_task,
+        run_config=RunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",

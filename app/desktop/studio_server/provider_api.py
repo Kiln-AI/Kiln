@@ -13,6 +13,10 @@ from kiln_ai.adapters.docker_model_runner_tools import (
     DockerModelRunnerConnection,
     get_docker_model_runner_connection,
 )
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    built_in_embedding_models,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -136,8 +140,13 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
+    supports_doc_extraction: bool
+    suggested_for_doc_extraction: bool
+    multimodal_capable: bool = Field(default=False)
+    multimodal_mime_types: List[str] | None = Field(default=None)
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
@@ -151,6 +160,21 @@ class AvailableModels(BaseModel):
     models: List[ModelDetails]
 
 
+class EmbeddingModelDetails(BaseModel):
+    id: str
+    name: str
+    n_dimensions: int
+    max_input_tokens: int | None
+    supports_custom_dimensions: bool
+    suggested_for_chunk_embedding: bool
+
+
+class EmbeddingProvider(BaseModel):
+    provider_name: str
+    provider_id: str
+    models: List[EmbeddingModelDetails]
+
+
 class ProviderModel(BaseModel):
     id: str
     name: str
@@ -158,6 +182,10 @@ class ProviderModel(BaseModel):
 
 class ProviderModels(BaseModel):
     models: Dict[ModelName, ProviderModel]
+
+
+class ProviderEmbeddingModels(BaseModel):
+    models: Dict[EmbeddingModelName, ProviderModel]
 
 
 def connect_provider_api(app: FastAPI):
@@ -201,6 +229,15 @@ def connect_provider_api(app: FastAPI):
                         (m for m in models if m.provider_id == provider.name), None
                     )
                     if available_models:
+                        # no need to couple the frontend to our backend mimetypes enum
+                        mime_types_as_str = (
+                            [
+                                str(mime_type)
+                                for mime_type in provider.multimodal_mime_types
+                            ]
+                            if provider.multimodal_mime_types
+                            else None
+                        )
                         available_models.models.append(
                             ModelDetails(
                                 id=model.name,
@@ -209,10 +246,15 @@ def connect_provider_api(app: FastAPI):
                                 supports_data_gen=provider.supports_data_gen,
                                 suggested_for_data_gen=provider.suggested_for_data_gen,
                                 supports_logprobs=provider.supports_logprobs,
+                                supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
+                                supports_doc_extraction=provider.supports_doc_extraction,
+                                suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
+                                multimodal_capable=provider.multimodal_capable,
+                                multimodal_mime_types=mime_types_as_str,
                             )
                         )
 
@@ -240,6 +282,56 @@ def connect_provider_api(app: FastAPI):
         openai_compatible = openai_compatible_providers()
         models.extend(openai_compatible)
 
+        return models
+
+    @app.get("/api/providers/embedding_models")
+    async def get_providers_embedding_models() -> ProviderEmbeddingModels:
+        models = {}
+        for model in built_in_embedding_models:
+            models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
+        return ProviderEmbeddingModels(models=models)
+
+    # returns map, of provider name to list of model names
+    @app.get("/api/available_embedding_models")
+    async def get_available_embedding_models() -> List[EmbeddingProvider]:
+        # Providers with just keys can return all their models if keys are set
+        key_providers: List[str] = []
+
+        for provider, provider_warning in provider_warnings.items():
+            has_keys = True
+            for required_key in provider_warning.required_config_keys:
+                if Config.shared().get_value(required_key) is None:
+                    has_keys = False
+                    break
+            if has_keys:
+                key_providers.append(provider)
+
+        models: List[EmbeddingProvider] = [
+            EmbeddingProvider(
+                provider_name=provider_name_from_id(provider),
+                provider_id=provider,
+                models=[],
+            )
+            for provider in key_providers
+        ]
+
+        for model in built_in_embedding_models:
+            for provider in model.providers:
+                if provider.name in key_providers:
+                    available_models = next(
+                        (m for m in models if m.provider_id == provider.name), None
+                    )
+                    if available_models:
+                        available_models.models.append(
+                            EmbeddingModelDetails(
+                                id=model.name,
+                                name=model.friendly_name,
+                                n_dimensions=provider.n_dimensions,
+                                max_input_tokens=provider.max_input_tokens,
+                                supports_custom_dimensions=provider.supports_custom_dimensions,
+                                suggested_for_chunk_embedding=provider.suggested_for_chunk_embedding,
+                            )
+                        )
         return models
 
     @app.get("/api/provider/ollama/connect")
@@ -1007,10 +1099,20 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            supports_function_calling=ollama_provider.supports_function_calling,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_doc_extraction=ollama_provider.supports_doc_extraction,
+                            suggested_for_doc_extraction=ollama_provider.suggested_for_doc_extraction,
+                            multimodal_capable=ollama_provider.multimodal_capable,
+                            multimodal_mime_types=[
+                                str(mime_type)
+                                for mime_type in ollama_provider.multimodal_mime_types
+                            ]
+                            if ollama_provider.multimodal_mime_types
+                            else None,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -1021,6 +1123,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     supports_structured_output=False,
                     supports_data_gen=False,
                     supports_logprobs=False,
+                    supports_function_calling=False,
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
@@ -1028,6 +1131,10 @@ async def available_ollama_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
+                    multimodal_capable=False,
+                    multimodal_mime_types=None,
                 )
             )
 
@@ -1069,6 +1176,9 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             suggested_for_evals=docker_provider.suggested_for_evals,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
+                            supports_doc_extraction=docker_provider.supports_doc_extraction,
+                            suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
+                            supports_function_calling=docker_provider.supports_function_calling,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                         )
@@ -1086,6 +1196,9 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     suggested_for_evals=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
+                    supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
+                    supports_function_calling=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
                 )
@@ -1162,6 +1275,7 @@ def custom_models() -> AvailableModels | None:
                     supports_structured_output=False,
                     supports_data_gen=False,
                     supports_logprobs=False,
+                    supports_function_calling=False,
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
@@ -1169,6 +1283,10 @@ def custom_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
                     structured_output_mode=StructuredOutputMode.json_instructions,
+                    supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
+                    multimodal_capable=False,
+                    multimodal_mime_types=None,
                 )
             )
         except Exception:
@@ -1196,8 +1314,9 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             id=f"{project.id}::{task.id}::{fine_tune.id}",
                             name=fine_tune.name
                             + f" ({provider_name_from_id(fine_tune.provider)})",
-                            # YMMV, but we'll assume all fine tuned models support structured output and data gen
+                            # YMMV, but we'll assume all fine tuned models support structured output, data gen, and tools as they may have been trained with them
                             supports_structured_output=True,
+                            supports_function_calling=True,
                             supports_data_gen=True,
                             supports_logprobs=False,
                             task_filter=[str(task.id)],
@@ -1215,6 +1334,10 @@ def all_fine_tuned_models() -> AvailableModels | None:
                                 and isinstance(fine_tune_mode, StructuredOutputMode)
                                 else StructuredOutputMode.json_instructions
                             ),
+                            supports_doc_extraction=False,
+                            suggested_for_doc_extraction=False,
+                            multimodal_capable=False,
+                            multimodal_mime_types=None,
                         )
                     )
 
@@ -1316,6 +1439,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         supports_structured_output=False,
                         supports_data_gen=False,
                         supports_logprobs=False,
+                        supports_function_calling=False,
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
@@ -1323,6 +1447,10 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
                         structured_output_mode=StructuredOutputMode.json_instructions,
+                        supports_doc_extraction=False,
+                        suggested_for_doc_extraction=False,
+                        multimodal_capable=False,
+                        multimodal_mime_types=None,
                     )
                 )
 

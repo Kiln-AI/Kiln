@@ -27,6 +27,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
+  import { isMacOS } from "$lib/utils/platform"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -64,7 +65,7 @@
     }
 
     const model_id = run?.output?.source?.properties?.model_name
-    if (model_id) {
+    if (model_id && typeof model_id === "string") {
       properties.push({
         name: "Output Model",
         value: model_name(model_id, model_info),
@@ -248,13 +249,6 @@
     load_run()
   }
 
-  function isMac(): boolean {
-    return (
-      typeof window !== "undefined" &&
-      navigator.platform.toUpperCase().indexOf("MAC") >= 0
-    )
-  }
-
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -262,7 +256,7 @@
       buttons.push({
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
-        shortcut: isMac() ? "Backspace" : "Delete",
+        shortcut: isMacOS() ? "Backspace" : "Delete",
       })
     }
     if (list_page.length > 1) {

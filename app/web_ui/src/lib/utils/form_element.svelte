@@ -5,9 +5,11 @@
 
   export let inputType:
     | "input"
+    | "input_number"
     | "textarea"
     | "select"
     | "fancy_select"
+    | "multi_select"
     | "header_only"
     | "checkbox" = "input"
   export let id: string
@@ -161,6 +163,21 @@
         data-op-ignore="true"
         {disabled}
       />
+    {:else if inputType === "input_number"}
+      <input
+        type="number"
+        placeholder={error_message || placeholder || label}
+        {id}
+        class="input text-base input-bordered w-full font-base {error_message ||
+        inline_error
+          ? 'input-error'
+          : ''}"
+        bind:value
+        on:input={run_validator}
+        autocomplete="off"
+        data-op-ignore="true"
+        {disabled}
+      />
     {:else if inputType === "select"}
       <select
         {id}
@@ -193,8 +210,12 @@
           {/each}
         {/if}
       </select>
-    {:else if inputType === "fancy_select"}
-      <FancySelect bind:options={fancy_select_options} bind:selected={value} />
+    {:else if inputType === "fancy_select" || inputType === "multi_select"}
+      <FancySelect
+        bind:options={fancy_select_options}
+        bind:selected={value}
+        multi_select={inputType === "multi_select"}
+      />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

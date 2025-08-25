@@ -3,14 +3,19 @@ from unittest.mock import Mock, patch
 import pytest
 
 from kiln_ai.datamodel import Project
-from kiln_ai.datamodel.registry import all_projects, project_from_id
+from kiln_ai.datamodel.registry import all_projects
+from kiln_ai.utils.project_utils import project_from_id
 
 
 @pytest.fixture
 def mock_config():
-    with patch("kiln_ai.datamodel.registry.Config") as mock:
+    with (
+        patch("kiln_ai.datamodel.registry.Config") as mock_registry,
+        patch("kiln_ai.utils.project_utils.Config") as mock_utils,
+    ):
         config_instance = Mock()
-        mock.shared.return_value = config_instance
+        mock_registry.shared.return_value = config_instance
+        mock_utils.shared.return_value = config_instance
         yield config_instance
 
 

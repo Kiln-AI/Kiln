@@ -46,12 +46,14 @@ def test_chat_formatter_final_and_intermediate():
     )
 
     first = formatter.next_turn()
+    assert first is not None
     assert [m.__dict__ for m in first.messages] == expected[:3]
     assert not first.final_call
     assert formatter.intermediate_outputs() == {}
 
     second = formatter.next_turn("thinking output")
-    assert [m.__dict__ for m in second.messages] == expected[3:5]
+    assert second is not None
+    assert [m.__dict__ for m in second.messages] == expected[4:5]
     assert second.final_call
     assert formatter.intermediate_outputs() == {"chain_of_thought": "thinking output"}
 
@@ -78,12 +80,14 @@ def test_chat_formatter_two_message_cot():
     )
 
     first = formatter.next_turn()
+    assert first is not None
     assert [m.__dict__ for m in first.messages] == expected[:2]
     assert not first.final_call
     assert formatter.intermediate_outputs() == {}
 
     second = formatter.next_turn("thinking output")
-    assert [m.__dict__ for m in second.messages] == expected[2:4]
+    assert second is not None
+    assert [m.__dict__ for m in second.messages] == expected[3:4]
     assert second.final_call
     assert formatter.intermediate_outputs() == {"chain_of_thought": "thinking output"}
 

@@ -9,6 +9,12 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    KilnEmbeddingModel,
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
@@ -823,6 +829,7 @@ async def test_get_available_models(app, client):
                     suggested_for_evals=True,
                     uncensored=True,
                     suggested_for_uncensored_data_gen=True,
+                    supports_function_calling=False,
                 ),
                 KilnModelProvider(
                     name=ModelProviderName.ollama,
@@ -877,12 +884,17 @@ async def test_get_available_models(app, client):
                     "supports_data_gen": True,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
+                    "supports_function_calling": True,
                     "uncensored": False,
                     "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
                     "structured_output_mode": "json_schema",
                     "task_filter": None,
                     "untested_model": False,
+                    "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
+                    "multimodal_capable": False,
+                    "multimodal_mime_types": None,
                 }
             ],
         },
@@ -897,13 +909,18 @@ async def test_get_available_models(app, client):
                     "supports_data_gen": True,
                     "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
+                    "supports_function_calling": True,
                     "structured_output_mode": "json_schema",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
                     "uncensored": False,
-                }
+                    "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
+                    "multimodal_capable": False,
+                    "multimodal_mime_types": None,
+                },
             ],
         },
         {
@@ -917,12 +934,17 @@ async def test_get_available_models(app, client):
                     "supports_data_gen": False,
                     "suggested_for_uncensored_data_gen": True,
                     "supports_logprobs": False,
+                    "supports_function_calling": False,
                     "structured_output_mode": "json_instructions",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": True,
                     "uncensored": True,
+                    "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
+                    "multimodal_capable": False,
+                    "multimodal_mime_types": None,
                 }
             ],
         },
@@ -987,12 +1009,17 @@ async def test_get_available_models_ollama_exception(app, client):
                     "supports_data_gen": True,
                     "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
+                    "supports_function_calling": True,
                     "structured_output_mode": "default",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,
                     "suggested_for_evals": False,
                     "uncensored": False,
+                    "supports_doc_extraction": False,
+                    "suggested_for_doc_extraction": False,
+                    "multimodal_capable": False,
+                    "multimodal_mime_types": None,
                 }
             ],
         },
@@ -1733,12 +1760,17 @@ def test_openai_compatible_providers():
                             supports_structured_output=False,
                             supports_data_gen=False,
                             supports_logprobs=False,
+                            supports_function_calling=False,
                             untested_model=True,
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
                             structured_output_mode="json_instructions",
+                            supports_doc_extraction=False,
+                            suggested_for_doc_extraction=False,
+                            multimodal_capable=False,
+                            multimodal_mime_types=None,
                         )
                     ],
                 ),
@@ -2893,3 +2925,144 @@ async def test_connect_wandb_request_exception(mock_config_shared, mock_requests
         not hasattr(mock_config, "wandb_api_key")
         or mock_config.wandb_api_key != "test-api-key"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_embedding_providers(app, client):
+    # Mock Config.shared()
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    # Mock provider_warnings
+    mock_provider_warnings = {
+        ModelProviderName.openai: MagicMock(required_config_keys=["key1"]),
+        ModelProviderName.amazon_bedrock: MagicMock(required_config_keys=["key2"]),
+        ModelProviderName.gemini_api: MagicMock(required_config_keys=["key3"]),
+    }
+
+    # Mock built_in_models
+    mock_built_in_embedding_models = [
+        KilnEmbeddingModel(
+            name="model1",
+            friendly_name="Model 1",
+            family="",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="oai1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=True,
+                    suggested_for_chunk_embedding=True,
+                )
+            ],
+        ),
+        KilnEmbeddingModel(
+            name="model2",
+            friendly_name="Model 2",
+            family="",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.amazon_bedrock,
+                    model_id="bedrock1",
+                    n_dimensions=1536,
+                ),
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.gemini_api,
+                    model_id="gemini1",
+                    n_dimensions=1536,
+                    max_input_tokens=8192,
+                    suggested_for_chunk_embedding=True,
+                ),
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_embedding_models",
+            mock_built_in_embedding_models,
+        ),
+    ):
+        response = client.get("/api/available_embedding_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "openai",
+            "provider_name": "OpenAI",
+            "models": [
+                {
+                    "id": "model1",
+                    "name": "Model 1",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": True,
+                    "suggested_for_chunk_embedding": True,
+                }
+            ],
+        },
+        {
+            "provider_id": "amazon_bedrock",
+            "provider_name": "Amazon Bedrock",
+            "models": [
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": None,
+                    "supports_custom_dimensions": False,
+                    "suggested_for_chunk_embedding": False,
+                }
+            ],
+        },
+        {
+            "provider_id": "gemini_api",
+            "provider_name": "Gemini API",
+            "models": [
+                {
+                    "id": "model2",
+                    "name": "Model 2",
+                    "n_dimensions": 1536,
+                    "max_input_tokens": 8192,
+                    "supports_custom_dimensions": False,
+                    "suggested_for_chunk_embedding": True,
+                }
+            ],
+        },
+    ]
+
+
+def test_get_providers_embedding_models(client):
+    response = client.get("/api/providers/embedding_models")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "models" in data
+
+    # Check if all built-in embedding models are present in the response
+    for model in built_in_embedding_models:
+        assert model.name in data["models"]
+        assert data["models"][model.name]["id"] == model.name
+        assert data["models"][model.name]["name"] == model.friendly_name
+
+    # Check if the number of models in the response matches the number of built-in embedding models
+    assert len(data["models"]) == len(built_in_embedding_models)
+
+    if EmbeddingModelName.openai_text_embedding_3_small in data["models"]:
+        assert (
+            data["models"][EmbeddingModelName.openai_text_embedding_3_small]["id"]
+            == EmbeddingModelName.openai_text_embedding_3_small
+        )
+        assert (
+            data["models"][EmbeddingModelName.openai_text_embedding_3_small]["name"]
+            == "text-embedding-3-small"
+        )

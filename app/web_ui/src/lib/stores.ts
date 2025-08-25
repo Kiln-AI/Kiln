@@ -9,6 +9,9 @@ import type {
   RatingOptionResponse,
   TaskRequirement,
   ModelDetails,
+  EmbeddingProvider,
+  EmbeddingModelDetails,
+  ToolApiDescription,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
@@ -198,6 +201,60 @@ export async function load_current_task(project: Project | null) {
   }
 }
 
+// Available tools, by project ID
+export const available_tools = writable<Record<string, ToolApiDescription[]>>(
+  {},
+)
+let loading_project_tools: string[] = []
+
+export async function load_available_tools(
+  project_id: string,
+  force: boolean = false,
+) {
+  // Only allow one request per project at a time
+  if (loading_project_tools.includes(project_id)) {
+    return
+  }
+
+  // Don't load if already loaded, unless forced
+  if (get(available_tools)[project_id] && !force) {
+    return
+  }
+
+  try {
+    loading_project_tools.push(project_id)
+
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/available_tools",
+      {
+        params: {
+          path: {
+            project_id: project_id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    available_tools.set({
+      ...get(available_tools),
+      [project_id]: data,
+    })
+  } catch (error: unknown) {
+    console.error(
+      "Failed to load tools for project " +
+        project_id +
+        ": " +
+        createKilnError(error).getMessage(),
+    )
+  } finally {
+    loading_project_tools = loading_project_tools.filter(
+      (id) => id !== project_id,
+    )
+  }
+}
+
 // Available models for each provider
 export const available_models = writable<AvailableModels[]>([])
 let available_models_loaded: "not_loaded" | "loading" | "loaded" = "not_loaded"
@@ -222,6 +279,33 @@ export async function load_available_models() {
     console.error(createKilnError(error).getMessage())
     available_models.set([])
     available_models_loaded = "not_loaded"
+  }
+}
+
+// Available embedding models for each provider
+export const available_embedding_models = writable<EmbeddingProvider[]>([])
+let available_embedding_models_loaded: "not_loaded" | "loading" | "loaded" =
+  "not_loaded"
+
+export async function load_available_embedding_models() {
+  try {
+    if (
+      available_embedding_models_loaded === "loading" ||
+      available_embedding_models_loaded === "loaded"
+    ) {
+      return
+    }
+    available_embedding_models_loaded = "loading"
+    const { data, error } = await client.GET("/api/available_embedding_models")
+    if (error) {
+      throw error
+    }
+    available_embedding_models.set(data)
+    available_embedding_models_loaded = "loaded"
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    available_embedding_models.set([])
+    available_embedding_models_loaded = "not_loaded"
   }
 }
 
@@ -298,6 +382,27 @@ export function get_model_info(
   return null
 }
 
+export function get_embedding_model_info(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): EmbeddingModelDetails | null {
+  if (!model_id) {
+    return null
+  }
+
+  for (const provider of get(available_embedding_models)) {
+    if (provider.provider_id === provider_id) {
+      const models = provider.models || []
+      for (const model of models) {
+        if (model.id === model_id) {
+          return model
+        }
+      }
+    }
+  }
+  return null
+}
+
 export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
@@ -307,6 +412,20 @@ export function model_name(
   }
 
   const model = get_model_info(model_id, provider_models)
+  if (model?.name) {
+    return model.name
+  }
+  return "Model ID: " + model_id
+}
+
+export function embedding_model_name(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): string {
+  if (!model_id) {
+    return "Unknown"
+  }
+  const model = get_embedding_model_info(model_id, provider_id)
   if (model?.name) {
     return model.name
   }
@@ -453,4 +572,12 @@ export function rating_options_for_sample(
       return option.show_for_tags.some((tag: string) => tags.includes(tag))
     })
     .map((option) => option.requirement)
+}
+
+export function get_model_friendly_name(model_id: string): string {
+  const model = get_model_info(model_id, get(model_info))
+  if (model?.name) {
+    return model.name
+  }
+  return model_id
 }

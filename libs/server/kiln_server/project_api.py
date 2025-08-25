@@ -4,8 +4,8 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import Project
-from kiln_ai.datamodel.registry import project_from_id as project_from_id_core
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
 
 
 def default_project_path():
