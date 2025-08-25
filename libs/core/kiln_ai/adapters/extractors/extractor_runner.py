@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Set
 
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
-from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
     Document,
@@ -60,8 +60,12 @@ class ExtractorRunner:
     async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
         jobs = self.collect_jobs()
 
-        runner = AsyncJobRunner(concurrency=concurrency)
-        async for progress in runner.run(jobs, self.run_job):
+        runner = AsyncJobRunner(
+            concurrency=concurrency,
+            jobs=jobs,
+            run_job_fn=self.run_job,
+        )
+        async for progress in runner.run():
             yield progress
 
     async def run_job(self, job: ExtractorJob) -> bool:

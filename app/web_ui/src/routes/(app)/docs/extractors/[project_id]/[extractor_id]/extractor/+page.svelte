@@ -6,7 +6,7 @@
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import { formatDate } from "$lib/utils/formatters"
+  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import Output from "../../../../../run/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
@@ -24,7 +24,7 @@
   async function get_extractor_config() {
     try {
       loading = true
-      const { error: create_extractor_error, data } = await client.GET(
+      const { error: get_extractor_error, data } = await client.GET(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
         {
           params: {
@@ -36,8 +36,8 @@
         },
       )
 
-      if (create_extractor_error) {
-        error = createKilnError(create_extractor_error)
+      if (get_extractor_error) {
+        error = createKilnError(get_extractor_error)
         return
       }
 
@@ -171,7 +171,9 @@
               },
               {
                 name: "Output Format",
-                value: extractor_config?.output_format || "N/A",
+                value: extractor_config?.output_format
+                  ? extractor_output_format(extractor_config.output_format)
+                  : "N/A",
               },
               {
                 name: "Created At",

@@ -8,7 +8,7 @@
   import { page } from "$app/stores"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
-  import EmptyIntro from "./empty_intro.svelte"
+  import EmptyDocsLibraryIntro from "./empty_docs_library_intro.svelte"
   import FileIcon from "../../fileicon.svelte"
   import {
     formatDate,
@@ -491,7 +491,7 @@
     </div>
   {:else if documents && documents.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyIntro action={() => upload_file_dialog?.show()} />
+      <EmptyDocsLibraryIntro action={() => upload_file_dialog?.show()} />
     </div>
   {:else if documents}
     <div class="mb-4">

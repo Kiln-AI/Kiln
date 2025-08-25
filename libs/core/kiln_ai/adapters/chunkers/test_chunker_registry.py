@@ -1,7 +1,7 @@
 import pytest
 
+from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.chunkers.fixed_window_chunker import FixedWindowChunker
-from kiln_ai.adapters.chunkers.registry import chunker_adapter_from_type
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 
 

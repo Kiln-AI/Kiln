@@ -181,8 +181,8 @@ export const formatProgressPercentage = (
   progress: UiExtractionProgress,
 ): string => {
   if (progress.total === 0) {
-    return "0.0%"
+    return "0%"
   }
 
-  return `${((progress.success / progress.total) * 100).toFixed(1)}%`
+  return `${((progress.success / progress.total) * 100).toFixed(0)}%`
 }

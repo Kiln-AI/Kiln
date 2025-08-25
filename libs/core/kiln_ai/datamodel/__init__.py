@@ -11,7 +11,15 @@ User docs: https://docs.kiln.tech/developers/kiln-datamodel
 
 from __future__ import annotations
 
-from kiln_ai.datamodel import chunk, dataset_split, eval, extraction, strict_mode
+from kiln_ai.datamodel import (
+    chunk,
+    dataset_split,
+    embedding,
+    eval,
+    extraction,
+    rag,
+    strict_mode,
+)
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     Priority,
@@ -48,8 +56,6 @@ __all__ = [
     "FineTuneStatusType",
     "Finetune",
     "Priority",
-    "Priority",
-    "Project",
     "Project",
     "Prompt",
     "PromptGenerators",
@@ -57,23 +63,18 @@ __all__ = [
     "RequirementRating",
     "StructuredOutputMode",
     "Task",
-    "Task",
-    "TaskOutput",
     "TaskOutput",
     "TaskOutputRating",
     "TaskOutputRatingType",
     "TaskRequirement",
-    "TaskRequirement",
-    "TaskRun",
     "TaskRun",
     "Usage",
     "chunk",
     "dataset_split",
-    "dataset_split",
-    "eval",
+    "embedding",
     "eval",
     "extraction",
     "prompt_generator_values",
-    "strict_mode",
+    "rag",
     "strict_mode",
 ]

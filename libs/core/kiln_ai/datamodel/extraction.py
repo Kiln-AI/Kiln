@@ -95,7 +95,7 @@ class Extraction(
         description="The source of the extraction.",
     )
     extractor_config_id: ID_TYPE = Field(
-        description="The ID of the extractor config that was used to extract the data.",
+        description="The ID of the extractor config used to extract the data.",
     )
     output: KilnAttachmentModel = Field(
         description="The extraction output.",

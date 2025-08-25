@@ -28,6 +28,7 @@ class EmbeddingModelName(str, Enum):
     openai_text_embedding_3_small = "openai_text_embedding_3_small"
     openai_text_embedding_3_large = "openai_text_embedding_3_large"
     gemini_text_embedding_004 = "gemini_text_embedding_004"
+    gemini_embedding_001 = "gemini-embedding-001"
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -49,6 +50,11 @@ class KilnEmbeddingModelProvider(BaseModel):
     supports_custom_dimensions: bool = Field(
         default=False,
         description="Whether the model supports setting a custom output dimension. If true, the user can set the output dimension in the UI.",
+    )
+
+    suggested_for_chunk_embedding: bool = Field(
+        default=False,
+        description="Whether the model is particularly good for chunk embedding.",
     )
 
 
@@ -89,6 +95,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=3072,
                 max_input_tokens=8192,
                 supports_custom_dimensions=True,
+                suggested_for_chunk_embedding=True,
             ),
         ],
     ),
@@ -102,6 +109,21 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 model_id="text-embedding-004",
                 n_dimensions=768,
                 max_input_tokens=2048,
+            ),
+        ],
+    ),
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.gemini,
+        name=EmbeddingModelName.gemini_embedding_001,
+        friendly_name="gemini-embedding-001",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-embedding-001",
+                n_dimensions=3072,
+                max_input_tokens=2048,
+                supports_custom_dimensions=True,
+                suggested_for_chunk_embedding=True,
             ),
         ],
     ),

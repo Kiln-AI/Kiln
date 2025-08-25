@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.litellm_extractor import LitellmExtractor
-from kiln_ai.adapters.extractors.registry import extractor_adapter_from_type
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType
@@ -44,7 +44,9 @@ def test_extractor_adapter_from_type(mock_provider_configs):
     assert extractor.extractor_config.model_provider_name == "gemini_api"
 
 
-@patch("kiln_ai.adapters.extractors.registry.lite_llm_core_config_for_provider")
+@patch(
+    "kiln_ai.adapters.extractors.extractor_registry.lite_llm_core_config_for_provider"
+)
 def test_extractor_adapter_from_type_uses_litellm_core_config(
     mock_get_litellm_core_config,
 ):
@@ -156,7 +158,7 @@ def test_extractor_adapter_from_type_different_providers(
 
 def test_extractor_adapter_from_type_no_config_found(mock_provider_configs):
     with patch(
-        "kiln_ai.adapters.extractors.registry.lite_llm_core_config_for_provider"
+        "kiln_ai.adapters.extractors.extractor_registry.lite_llm_core_config_for_provider"
     ) as mock_lite_llm_core_config_for_provider:
         mock_lite_llm_core_config_for_provider.return_value = None
         with pytest.raises(

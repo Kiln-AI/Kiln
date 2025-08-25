@@ -1,5 +1,5 @@
 from functools import cached_property
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import litellm
 from litellm.types.utils import EmbeddingResponse
@@ -14,10 +14,15 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
 )
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
 
-MAX_BATCH_SIZE = 2048
+# litellm enforces a limit, documented here:
+# https://docs.litellm.ai/docs/embedding/supported_embedding
+# but some providers impose lower limits that LiteLLM does not know about
+# for example, Gemini currently has a limit of 100 inputs per request
+MAX_BATCH_SIZE = 100
 
 
 class EmbeddingOptions(BaseModel):
@@ -82,18 +87,75 @@ def validate_map_to_embeddings(
 
 
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
-    def __init__(self, embedding_config: EmbeddingConfig):
+    def __init__(
+        self, embedding_config: EmbeddingConfig, litellm_core_config: LiteLlmCoreConfig
+    ):
         super().__init__(embedding_config)
 
+        self.litellm_core_config = litellm_core_config
+
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
-        # documented on litellm: https://docs.litellm.ai/docs/embedding/supported_embedding
+        # batch the requests
+        batches: List[List[str]] = []
+        for i in range(0, len(input_texts), MAX_BATCH_SIZE):
+            batches.append(input_texts[i : i + MAX_BATCH_SIZE])
+
+        # generate embeddings for each batch
+        results: List[EmbeddingResult] = []
+        for batch in batches:
+            batch_response = await self._generate_embeddings_for_batch(batch)
+            results.append(batch_response)
+
+        # merge the results
+        combined_embeddings: List[Embedding] = []
+        combined_usage = None
+
+        # we prefer returning None overall usage if any of the results is missing usage
+        # better than returning a misleading usage
+        all_have_usage = all(result.usage is not None for result in results)
+        if all_have_usage:
+            combined_usage = litellm.Usage(
+                prompt_tokens=0, total_tokens=0, completion_tokens=0
+            )
+            for result in results:
+                if result.usage is not None:
+                    combined_usage.prompt_tokens += result.usage.prompt_tokens
+                    combined_usage.total_tokens += result.usage.total_tokens
+                    combined_usage.completion_tokens += result.usage.completion_tokens
+
+        for result in results:
+            combined_embeddings.extend(result.embeddings)
+
+        return EmbeddingResult(
+            embeddings=combined_embeddings,
+            usage=combined_usage,
+        )
+
+    async def _generate_embeddings_for_batch(
+        self, input_texts: List[str]
+    ) -> EmbeddingResult:
         if len(input_texts) > MAX_BATCH_SIZE:
-            raise ValueError("Text is too long")
+            raise ValueError(
+                f"Too many input texts, max batch size is {MAX_BATCH_SIZE}, got {len(input_texts)}"
+            )
+
+        completion_kwargs: Dict[str, Any] = {}
+        if self.litellm_core_config.additional_body_options:
+            completion_kwargs.update(self.litellm_core_config.additional_body_options)
+
+        if self.litellm_core_config.base_url:
+            completion_kwargs["base_url"] = self.litellm_core_config.base_url
+
+        if self.litellm_core_config.default_headers:
+            completion_kwargs["default_headers"] = (
+                self.litellm_core_config.default_headers
+            )
 
         response = await litellm.aembedding(
             model=self.litellm_model_id,
             input=input_texts,
             **self.build_options().model_dump(exclude_none=True),
+            **completion_kwargs,
         )
 
         validated_embeddings = validate_map_to_embeddings(

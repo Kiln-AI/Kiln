@@ -174,18 +174,36 @@ async def test_load_remote_models_success(
     sample_models = [mock_model]
     sample_embedding_models = [mock_embedding_model]
 
-    def fake_fetch(url):
-        return KilnRemoteConfig(
-            model_list=sample_models,
-            embedding_model_list=sample_embedding_models,
-        )
+    # Save original state to restore later
+    original_models = built_in_models.copy()
+    original_embedding = built_in_embedding_models.copy()
 
-    monkeypatch.setattr("kiln_ai.adapters.remote_config.load_from_url", fake_fetch)
+    try:
+        # Mock the load_from_url function to return our test data
+        def mock_load_from_url(url):
+            return KilnRemoteConfig(
+                model_list=sample_models,
+                embedding_model_list=sample_embedding_models,
+            )
 
-    load_remote_models("http://example.com/models.json")
-    await asyncio.sleep(0.01)
-    assert built_in_models == sample_models
-    assert built_in_embedding_models == sample_embedding_models
+        # Mock the function call
+        with patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ):
+            # Call the function
+            load_remote_models("http://example.com/models.json")
+
+            # Wait for the thread to complete
+            await asyncio.sleep(0.1)
+
+            # Verify the global state was modified as expected
+            assert built_in_models == sample_models
+            assert built_in_embedding_models == sample_embedding_models
+    finally:
+        # Restore original state to prevent test pollution
+        built_in_models[:] = original_models
+        built_in_embedding_models[:] = original_embedding
 
 
 @pytest.mark.asyncio
