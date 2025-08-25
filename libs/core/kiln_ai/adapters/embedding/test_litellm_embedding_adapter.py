@@ -112,7 +112,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Verify litellm.aembedding was called with completion_kwargs
@@ -142,7 +144,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Verify only the set options are passed
@@ -170,7 +174,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Verify no completion_kwargs are passed
@@ -197,7 +203,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
         assert len(result.embeddings) == 2
@@ -214,7 +222,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings_for_batch(
                 ["text1", "text2"]
             )
@@ -245,7 +255,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings_for_batch(["test text"])
 
         # Verify litellm.aembedding was called with completion_kwargs
@@ -271,7 +283,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             result = await adapter._generate_embeddings(["test text"])
 
         # Verify litellm.aembedding was called with correct parameters
@@ -306,7 +320,9 @@ class TestLitellmEmbeddingAdapter:
             {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
         ]  # Only one embedding
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             with pytest.raises(
                 RuntimeError,
                 match="Expected the number of embeddings in the response to be 2, got 1.",
@@ -315,7 +331,11 @@ class TestLitellmEmbeddingAdapter:
 
     async def test_generate_embeddings_litellm_exception(self, mock_litellm_adapter):
         """Test that litellm exceptions are properly raised."""
-        with patch("litellm.aembedding", side_effect=Exception("litellm error")):
+        with patch(
+            "litellm.aembedding",
+            new_callable=AsyncMock,
+            side_effect=Exception("litellm error"),
+        ):
             with pytest.raises(Exception, match="litellm error"):
                 await mock_litellm_adapter._generate_embeddings(["test text"])
 
@@ -329,7 +349,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=15, total_tokens=15)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings(
                 ["text1", "text2", "text3"]
             )
@@ -348,7 +370,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             result = await mock_litellm_adapter._generate_embeddings(["single text"])
 
         # The call should not include dimensions since the fixture has empty properties
@@ -374,7 +398,9 @@ class TestLitellmEmbeddingAdapter:
 
         large_text_list = ["text"] * MAX_BATCH_SIZE
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter._generate_embeddings(large_text_list)
 
         assert len(result.embeddings) == MAX_BATCH_SIZE
@@ -409,7 +435,7 @@ class TestLitellmEmbeddingAdapter:
         batch3_response.usage = Usage(prompt_tokens=50, total_tokens=50)
 
         # Mock litellm.aembedding to return different responses based on input size
-        def mock_aembedding(*args, **kwargs):
+        async def mock_aembedding(*args, **kwargs):
             input_size = len(kwargs.get("input", []))
             if input_size == MAX_BATCH_SIZE:
                 if len(mock_aembedding.call_count) == 0:
@@ -423,7 +449,9 @@ class TestLitellmEmbeddingAdapter:
 
         mock_aembedding.call_count = []
 
-        with patch("litellm.aembedding", side_effect=mock_aembedding):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, side_effect=mock_aembedding
+        ):
             result = await mock_litellm_adapter._generate_embeddings(text_list)
 
         # Should have all embeddings combined
@@ -494,14 +522,16 @@ class TestLitellmEmbeddingAdapter:
         batch2_response.usage = None
 
         # Mock litellm.aembedding to return different responses based on input size
-        def mock_aembedding(*args, **kwargs):
+        async def mock_aembedding(*args, **kwargs):
             input_size = len(kwargs.get("input", []))
             if input_size == MAX_BATCH_SIZE:
                 return batch1_response
             else:
                 return batch2_response
 
-        with patch("litellm.aembedding", side_effect=mock_aembedding):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, side_effect=mock_aembedding
+        ):
             result = await mock_litellm_adapter._generate_embeddings(text_list)
 
         # Should have all embeddings combined
@@ -534,14 +564,16 @@ class TestLitellmEmbeddingAdapter:
         batch2_response.usage = Usage(prompt_tokens=50, total_tokens=50)
 
         # Mock litellm.aembedding to return different responses based on input size
-        def mock_aembedding(*args, **kwargs):
+        async def mock_aembedding(*args, **kwargs):
             input_size = len(kwargs.get("input", []))
             if input_size == MAX_BATCH_SIZE:
                 return batch1_response
             else:
                 return batch2_response
 
-        with patch("litellm.aembedding", side_effect=mock_aembedding):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, side_effect=mock_aembedding
+        ):
             result = await mock_litellm_adapter._generate_embeddings(text_list)
 
         # Should have all embeddings combined
@@ -569,7 +601,9 @@ class TestLitellmEmbeddingAdapter:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await mock_litellm_adapter.generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
@@ -593,7 +627,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         ]
         mock_response.usage = None
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await adapter._generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
@@ -611,7 +647,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         mock_response.data = [{"object": "embedding", "index": 0, "embedding": []}]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await adapter._generate_embeddings(["test text"])
 
         assert len(result.embeddings) == 1
@@ -635,7 +673,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         ]
         mock_response.usage = Usage(prompt_tokens=10, total_tokens=10)
 
-        with patch("litellm.aembedding", return_value=mock_response):
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ):
             result = await adapter._generate_embeddings(["text1", "text2"])
 
         # Both embeddings should be present and match the order in response.data
@@ -663,7 +703,9 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         ]
         mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
 
-        with patch("litellm.aembedding", return_value=mock_response) as mock_aembedding:
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
             await adapter._generate_embeddings(["test text"])
 
         # Only dimensions should be passed to litellm
