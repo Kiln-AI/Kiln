@@ -29,6 +29,7 @@
   let run_complete = false
 
   let input_form: RunInputForm
+  let output_section: HTMLElement
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
@@ -38,6 +39,7 @@
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
+
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
 
@@ -60,6 +62,29 @@
     structured_output_mode =
       available_model_details(model_name, provider, available_models)
         ?.structured_output_mode || "default"
+  }
+
+  // Check if an element is visible in the viewport
+  function isElementVisible(element: HTMLElement): boolean {
+    const rect = element.getBoundingClientRect()
+    return (
+      rect.top >= 0 &&
+      rect.left >= 0 &&
+      rect.bottom <=
+        (window.innerHeight || document.documentElement.clientHeight) &&
+      rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+    )
+  }
+
+  // Smooth scroll to output section if it's not visible
+  function scrollToOutputIfNeeded() {
+    if (output_section && !isElementVisible(output_section)) {
+      output_section.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+        inline: "nearest",
+      })
+    }
   }
 
   async function run_task() {
@@ -109,6 +134,12 @@
         prompt_method: prompt_method,
       })
       response = data
+
+      // Scroll to output section if it's not visible after a short delay
+      // to allow the DOM to update with the new response
+      setTimeout(() => {
+        scrollToOutputIfNeeded()
+      }, 100)
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -176,7 +207,11 @@
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}
-      <div class="mt-10 xl:mt-24">
+      <div
+        class="mt-10 xl:mt-24"
+        bind:this={output_section}
+        id="output-section"
+      >
         <Run
           initial_run={response}
           task={$current_task}
