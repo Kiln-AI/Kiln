@@ -23,7 +23,7 @@ if command -v misspell >/dev/null 2>&1; then
     echo "No misspellings found"
 else
     echo "\033[31mWarning: misspell command not found. Skipping misspelling check.\033[0m"
-    echo "\033[31mTo install: go install github.com/client9/misspell/cmd/misspell@latest\033[0m"
+    echo "\033[31mTo install follow the instructions at https://github.com/golangci/misspell \033[0m"
 fi
 
 echo "${headerStart}Web UI: format, lint, check${headerEnd}"
