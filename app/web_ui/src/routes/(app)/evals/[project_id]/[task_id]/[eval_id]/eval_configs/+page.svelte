@@ -672,7 +672,7 @@
                         {:else if score_type === "norm_mae"}
                           {scores.mean_normalized_absolute_error.toFixed(3)}
                         {:else if score_type === "spearman"}
-                          {#if scores.spearman_correlation}
+                          {#if scores.spearman_correlation != null}
                             {scores.spearman_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
@@ -681,7 +681,7 @@
                             />
                           {/if}
                         {:else if score_type === "pearson"}
-                          {#if scores.pearson_correlation}
+                          {#if scores.pearson_correlation != null}
                             {scores.pearson_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
@@ -690,7 +690,7 @@
                             />
                           {/if}
                         {:else if score_type === "kendalltau"}
-                          {#if scores.kendalltau_correlation}
+                          {#if scores.kendalltau_correlation != null}
                             {scores.kendalltau_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
