@@ -75,12 +75,7 @@
         )))
   )
 
-  // Update sorting when score_type or score_summary changes
-  $: if (eval_configs && score_summary && evaluator) {
-    sortEvalConfigs()
-  }
-
-  // Sort eval_configs whenever score_type changes
+  // Sort eval_configs whenever score_type or score_summary changes
   $: if (score_type && eval_configs && score_summary && evaluator) {
     sortEvalConfigs()
   }
@@ -212,6 +207,15 @@
         throw error
       }
       evaluator = data
+      // Override default score_type to "mse" when eval rating type is pass_fail or pass_fail_critical
+      // We have different scores to compare human preference to LLM-as-Judge in evals. Kendall Tau (the current default) is a great score for comparing ranked data, but kinda lousy for pass/fail data
+      const hasPassFailRating = evaluator.output_scores.some(
+        (score) =>
+          score.type === "pass_fail" || score.type === "pass_fail_critical",
+      )
+      if (hasPassFailRating) {
+        score_type = "mse"
+      }
     } catch (error) {
       eval_error = createKilnError(error)
     } finally {
