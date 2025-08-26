@@ -79,10 +79,15 @@
   // Smooth scroll to output section if it's not visible
   function scrollToOutputIfNeeded() {
     if (output_section && !isElementVisible(output_section)) {
-      output_section.scrollIntoView({
+      // Calculate the target scroll position with padding
+      const rect = output_section.getBoundingClientRect()
+      const currentScrollTop =
+        window.pageYOffset || document.documentElement.scrollTop
+      const targetScrollTop = currentScrollTop + rect.top - 32 // 32px padding above
+
+      window.scrollTo({
+        top: targetScrollTop,
         behavior: "smooth",
-        block: "start",
-        inline: "nearest",
       })
     }
   }
@@ -207,11 +212,7 @@
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}
-      <div
-        class="mt-10 xl:mt-24"
-        bind:this={output_section}
-        id="output-section"
-      >
+      <div class="mt-8 xl:mt-12" bind:this={output_section} id="output-section">
         <Run
           initial_run={response}
           task={$current_task}
