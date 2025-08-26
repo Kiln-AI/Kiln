@@ -64,26 +64,32 @@
         ?.structured_output_mode || "default"
   }
 
-  // Check if an element is visible in the viewport
+  // Check if the Output section headers are visible in the viewport
+  // We only care about the top portion being visible (headers + some buffer)
   function isElementVisible(element: HTMLElement): boolean {
     const rect = element.getBoundingClientRect()
-    return (
-      rect.top >= 0 &&
-      rect.left >= 0 &&
-      rect.bottom <=
-        (window.innerHeight || document.documentElement.clientHeight) &&
-      rect.right <= (window.innerWidth || document.documentElement.clientWidth)
-    )
+    const viewportHeight =
+      window.innerHeight || document.documentElement.clientHeight
+
+    // Check if the top of the element is visible and there's enough buffer
+    // We want to see the headers (roughly 100px from top) plus some buffer
+    return rect.top >= 0 && rect.top <= viewportHeight - 100
   }
 
   // Smooth scroll to output section if it's not visible
   function scrollToOutputIfNeeded() {
     if (output_section && !isElementVisible(output_section)) {
-      // Calculate the target scroll position with padding
+      // Calculate the target scroll position to show just the headers + buffer
       const rect = output_section.getBoundingClientRect()
       const currentScrollTop =
         window.pageYOffset || document.documentElement.scrollTop
-      const targetScrollTop = currentScrollTop + rect.top - 32 // 32px padding above
+      const viewportHeight =
+        window.innerHeight || document.documentElement.clientHeight
+
+      // Position the Output section so that 100px of it is visible from the top
+      // This shows the headers and some buffer, but not the entire section
+      const targetScrollTop =
+        currentScrollTop + rect.top - (viewportHeight - 100)
 
       window.scrollTo({
         top: targetScrollTop,
