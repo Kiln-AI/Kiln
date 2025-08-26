@@ -99,6 +99,31 @@ async def available_remote_mcp_tools(
         return []
 
 
+async def validate_tool_server(tool_server: ExternalToolServer):
+    """
+    Validate the tool server by checking if the server is reachable.
+    """
+    #  Validate the tool server
+    if not tool_server.name:
+        raise ValueError("Name is required")
+    if not tool_server.type:
+        raise ValueError("Type is required")
+
+    match tool_server.type:
+        case ToolServerType.remote_mcp:
+            #  Validate the server is reachable, this will also validate the server URL and headers
+            try:
+                async with MCPSessionManager.shared().mcp_client(
+                    tool_server
+                ) as session:
+                    #  Use list tools to validate the server is reachable
+                    await session.list_tools()
+            except Exception:
+                raise ValueError("Failed to connect to the server")
+        case _:
+            raise_exhaustive_enum_error(tool_server.type)
+
+
 def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/available_tools")
     async def get_available_tools(
@@ -237,6 +262,9 @@ def connect_tool_servers_api(app: FastAPI):
                 parent=project,
             )
 
+            #  Validate the tool server
+            await validate_tool_server(tool)
+
             # Save the tool to file
             tool.save_to_file()
 
@@ -245,4 +273,9 @@ def connect_tool_servers_api(app: FastAPI):
             raise HTTPException(
                 status_code=422,
                 detail=f"Validation error: {str(e)}",
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=422,
+                detail=str(e),
             )

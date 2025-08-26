@@ -11,7 +11,22 @@ from mcp.types import ListToolsResult, Tool
 from app.desktop.studio_server.tool_api import (
     available_remote_mcp_tools,
     connect_tool_servers_api,
+    validate_tool_server,
 )
+
+
+def mock_successful_mcp_validation():
+    """Helper function to mock successful MCP server validation"""
+    mock_session = AsyncMock()
+    mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+    @asynccontextmanager
+    async def mock_mcp_client(tool_server):
+        yield mock_session
+
+    return patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ), mock_mcp_client
 
 
 @pytest.fixture
@@ -36,6 +51,30 @@ def test_project(tmp_path):
     return project
 
 
+@pytest.fixture
+def mock_mcp_validation():
+    """Fixture that provides a context manager for mocking MCP validation during tool creation"""
+
+    @asynccontextmanager
+    async def _mock_validation():
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+            yield
+
+    return _mock_validation
+
+
 def test_create_tool_server_success(client, test_project):
     tool_data = {
         "name": "test_mcp_tool",
@@ -49,20 +88,183 @@ def test_create_tool_server_success(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
+        mock_patch, mock_mcp_client = mock_successful_mcp_validation()
+        with mock_patch as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "test_mcp_tool"
+            assert result["type"] == "remote_mcp"
+            assert result["description"] == "A test MCP tool"
+            assert result["properties"]["server_url"] == "https://example.com/mcp"
+            assert (
+                result["properties"]["headers"]["Authorization"] == "Bearer test-token"
+            )
+            assert "id" in result
+            assert "created_at" in result
+
+
+def test_create_tool_server_validation_success(client, test_project):
+    """Test successful tool server creation with MCP validation"""
+    tool_data = {
+        "name": "validated_tool",
+        "server_url": "https://example.com/mcp",
+        "headers": {"Authorization": "Bearer token"},
+        "description": "A validated MCP tool",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(
+            tools=[Tool(name="test_tool", description="Test tool", inputSchema={})]
+        )
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "validated_tool"
+            assert result["type"] == "remote_mcp"
+            # Verify that validation was called by checking that list_tools was called
+            mock_session.list_tools.assert_called()
+
+
+def test_create_tool_server_validation_connection_failed(client, test_project):
+    """Test tool server creation fails when MCP server is unreachable"""
+    tool_data = {
+        "name": "failing_tool",
+        "server_url": "https://unreachable.example.com/mcp",
+        "headers": {},
+        "description": "Tool that will fail validation",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Mock MCP validation failure
+        @asynccontextmanager
+        async def mock_mcp_client_error(tool_server):
+            raise Exception("Connection failed")
+            yield  # This line will never be reached but is needed for the async generator
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client_error
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 422
+            error_data = response.json()
+            # Error could be in "detail" or "message" field depending on FastAPI's error handling
+            error_message = error_data.get("detail", "") or error_data.get(
+                "message", ""
+            )
+            assert "Failed to connect to the server" in error_message
+
+
+def test_create_tool_server_validation_list_tools_failed(client, test_project):
+    """Test tool server creation fails when MCP list_tools fails"""
+    tool_data = {
+        "name": "list_tools_failing",
+        "server_url": "https://example.com/mcp",
+        "headers": {},
+        "description": "Tool where list_tools fails",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Mock MCP session where list_tools fails
+        mock_session = AsyncMock()
+        mock_session.list_tools.side_effect = Exception("list_tools failed")
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 422
+            error_data = response.json()
+            # Error could be in "detail" or "message" field depending on FastAPI's error handling
+            error_message = error_data.get("detail", "") or error_data.get(
+                "message", ""
+            )
+            assert "Failed to connect to the server" in error_message
+
+
+def test_create_tool_server_validation_empty_name(client, test_project):
+    """Test tool server creation fails when name is empty"""
+    tool_data = {
+        "name": "",  # Empty name should fail validation
+        "server_url": "https://example.com/mcp",
+        "headers": {},
+        "description": "Tool with empty name",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
         response = client.post(
             f"/api/projects/{test_project.id}/connect_remote_mcp",
             json=tool_data,
         )
 
-        assert response.status_code == 200
-        result = response.json()
-        assert result["name"] == "test_mcp_tool"
-        assert result["type"] == "remote_mcp"
-        assert result["description"] == "A test MCP tool"
-        assert result["properties"]["server_url"] == "https://example.com/mcp"
-        assert result["properties"]["headers"]["Authorization"] == "Bearer test-token"
-        assert "id" in result
-        assert "created_at" in result
+        assert response.status_code == 422
+        error_data = response.json()
+        # Error could be in "detail" or "message" field depending on FastAPI's error handling
+        error_message = error_data.get("detail", "") or error_data.get("message", "")
+        # Pydantic validates empty strings and reports minimum length error
+        assert "too short" in error_message or "Name is required" in error_message
 
 
 def test_create_tool_server_no_headers(client, test_project):
@@ -78,18 +280,35 @@ def test_create_tool_server_no_headers(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
 
-        assert response.status_code == 200  # Empty headers are allowed
-        result = response.json()
-        assert result["name"] == "test_tool"
-        assert result["properties"]["headers"] == {}
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200  # Empty headers are allowed
+            result = response.json()
+            assert result["name"] == "test_tool"
+            assert result["properties"]["headers"] == {}
 
 
-def test_create_tool_server_empty_headers(client, test_project):
+async def test_create_tool_server_empty_headers(
+    client, test_project, mock_mcp_validation
+):
     tool_data = {
         "name": "test_tool",
         "server_url": "https://example.com/api",
@@ -102,15 +321,16 @@ def test_create_tool_server_empty_headers(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        async with mock_mcp_validation():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
-        assert response.status_code == 200  # Empty headers are allowed
-        result = response.json()
-        assert result["name"] == "test_tool"
-        assert result["properties"]["headers"] == {}
+            assert response.status_code == 200  # Empty headers are allowed
+            result = response.json()
+            assert result["name"] == "test_tool"
+            assert result["properties"]["headers"] == {}
 
 
 def test_create_tool_server_missing_server_url(client, test_project):
@@ -155,7 +375,9 @@ def test_create_tool_server_missing_name(client, test_project):
         assert response.status_code == 422  # Validation error
 
 
-def test_create_tool_server_no_description(client, test_project):
+async def test_create_tool_server_no_description(
+    client, test_project, mock_mcp_validation
+):
     tool_data = {
         "name": "test_tool",
         "server_url": "https://example.com/api",
@@ -168,14 +390,15 @@ def test_create_tool_server_no_description(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        async with mock_mcp_validation():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
-        assert response.status_code == 200
-        result = response.json()
-        assert result["description"] is None
+            assert response.status_code == 200
+            result = response.json()
+            assert result["description"] is None
 
 
 def test_get_available_tool_servers_empty(client, test_project):
@@ -205,11 +428,26 @@ def test_get_available_tool_servers_with_tool_server(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
         created_tool = create_response.json()
 
         # Then get the list of tool servers
@@ -237,12 +475,29 @@ def test_get_tool_server_success(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create the tool
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            # Create the tool
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
@@ -307,12 +562,29 @@ def test_get_tool_server_mcp_error_handling(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create the tool
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            # Create the tool
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
@@ -386,12 +658,29 @@ def test_get_available_tools_success(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create the tool server
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            # Create the tool server
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
         created_tool = create_response.json()
         server_id = created_tool["id"]
 
@@ -471,20 +760,37 @@ def test_get_available_tools_multiple_servers(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create both tool servers
-        response1 = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data_1,
-        )
-        assert response1.status_code == 200
-        server1_id = response1.json()["id"]
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
 
-        response2 = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data_2,
-        )
-        assert response2.status_code == 200
-        server2_id = response2.json()["id"]
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            # Create both tool servers
+            response1 = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data_1,
+            )
+            assert response1.status_code == 200
+            server1_id = response1.json()["id"]
+
+            response2 = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data_2,
+            )
+            assert response2.status_code == 200
+            server2_id = response2.json()["id"]
 
         # Mock tools for both servers
         mock_tools_1 = [
@@ -572,12 +878,29 @@ def test_get_available_tools_mcp_error_handling(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create the tool server
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            # Create the tool server
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
 
         # Mock MCPSessionManager to raise an exception
         mock_session = AsyncMock()
@@ -682,7 +1005,9 @@ def test_get_available_tools_demo_tools_disabled(client, test_project):
         assert len(result) == 0
 
 
-def test_create_tool_server_whitespace_handling(client, test_project):
+async def test_create_tool_server_whitespace_handling(
+    client, test_project, mock_mcp_validation
+):
     """Test that whitespace is properly handled from inputs"""
     tool_data = {
         "name": "test_tool",  # Frontend trims whitespace before sending
@@ -696,10 +1021,11 @@ def test_create_tool_server_whitespace_handling(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        async with mock_mcp_validation():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -709,7 +1035,9 @@ def test_create_tool_server_whitespace_handling(client, test_project):
         assert result["description"] == "A test tool"
 
 
-def test_create_tool_server_complex_headers(client, test_project):
+async def test_create_tool_server_complex_headers(
+    client, test_project, mock_mcp_validation
+):
     """Test creation with complex header configurations"""
     tool_data = {
         "name": "complex_headers_tool",
@@ -729,10 +1057,11 @@ def test_create_tool_server_complex_headers(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        async with mock_mcp_validation():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -757,10 +1086,25 @@ def test_create_tool_server_valid_special_characters_in_name(client, test_projec
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -781,10 +1125,25 @@ def test_create_tool_server_https_url(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -808,10 +1167,25 @@ def test_create_tool_server_http_url(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -833,10 +1207,25 @@ def test_create_tool_server_long_description(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -857,10 +1246,25 @@ def test_create_tool_server_unicode_characters(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -886,10 +1290,25 @@ def test_create_tool_server_header_value_with_special_characters(client, test_pr
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -914,12 +1333,29 @@ def test_create_tool_server_update_workflow(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            # Create
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
@@ -981,14 +1417,29 @@ def test_create_tool_server_concurrent_creation(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        created_tools = []
-        for tool_data in tool_servers:
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert response.status_code == 200
-            created_tools.append(response.json())
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            created_tools = []
+            for tool_data in tool_servers:
+                response = client.post(
+                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    json=tool_data,
+                )
+                assert response.status_code == 200
+                created_tools.append(response.json())
 
         # Verify all tools were created with unique IDs
         tool_ids = [tool["id"] for tool in created_tools]
@@ -1022,24 +1473,39 @@ def test_create_tool_server_duplicate_names_allowed(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Create first tool
-        response1 = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert response1.status_code == 200
-        tool1 = response1.json()
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
 
-        # Create second tool with same name but different URL
-        tool_data["server_url"] = "https://example2.com/api"
-        tool_data["description"] = "Second tool with this name"
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
 
-        response2 = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert response2.status_code == 200
-        tool2 = response2.json()
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            # Create first tool
+            response1 = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert response1.status_code == 200
+            tool1 = response1.json()
+
+            # Create second tool with same name but different URL
+            tool_data["server_url"] = "https://example2.com/api"
+            tool_data["description"] = "Second tool with this name"
+
+            response2 = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert response2.status_code == 200
+            tool2 = response2.json()
 
         # Verify they have different IDs
         assert tool1["id"] != tool2["id"]
@@ -1069,10 +1535,25 @@ def test_create_tool_server_max_length_name(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -1158,10 +1639,25 @@ def test_create_tool_server_url_with_query_params(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -1185,10 +1681,25 @@ def test_create_tool_server_empty_string_description(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # Mock successful MCP validation
+        mock_session = AsyncMock()
+        mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client(tool_server):
+            yield mock_session
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.mcp_client = mock_mcp_client
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
         assert response.status_code == 200
         result = response.json()
@@ -1211,11 +1722,28 @@ def test_get_tool_server_with_many_tools(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        create_response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-        assert create_response.status_code == 200
+        # Mock successful MCP validation for creation
+        mock_session_create = AsyncMock()
+        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
+
+        @asynccontextmanager
+        async def mock_mcp_client_create(tool_server):
+            yield mock_session_create
+
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared_create:
+            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create.mcp_client = mock_mcp_client_create
+            mock_session_manager_shared_create.return_value = (
+                mock_session_manager_create
+            )
+
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
@@ -1334,6 +1862,7 @@ async def test_available_remote_mcp_tools_connection_error():
     @asynccontextmanager
     async def mock_mcp_client_error(tool_server):
         raise Exception("Connection failed")
+        yield  # This line will never be reached but is needed for the async generator
 
     # Mock MCPSessionManager to raise an exception
     with patch(
@@ -1423,3 +1952,229 @@ async def test_available_remote_mcp_tools_empty_tools():
 
         # Verify empty list is returned
         assert result == []
+
+
+# Unit tests for validate_tool_server function
+@pytest.mark.asyncio
+async def test_validate_tool_server_success():
+    """Test validate_tool_server succeeds when MCP server is reachable"""
+    # Create a valid ExternalToolServer
+    tool_server = ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.remote_mcp,
+        description="Test MCP server",
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+        },
+    )
+
+    # Mock successful MCP validation
+    mock_session = AsyncMock()
+    mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+    @asynccontextmanager
+    async def mock_mcp_client(tool_server):
+        yield mock_session
+
+    with patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ) as mock_session_manager_shared:
+        mock_session_manager = AsyncMock()
+        mock_session_manager.mcp_client = mock_mcp_client
+        mock_session_manager_shared.return_value = mock_session_manager
+
+        # Should not raise any exception
+        await validate_tool_server(tool_server)
+
+        # Verify that list_tools was called to validate the connection
+        mock_session.list_tools.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_connection_failed():
+    """Test validate_tool_server raises error when MCP connection fails"""
+    tool_server = ExternalToolServer(
+        name="failing_server",
+        type=ToolServerType.remote_mcp,
+        description="Failing MCP server",
+        properties={"server_url": "https://failing.example.com/mcp", "headers": {}},
+    )
+
+    # Mock MCP connection failure
+    @asynccontextmanager
+    async def mock_mcp_client_error(tool_server):
+        raise Exception("Connection failed")
+        yield  # This line will never be reached but is needed for the async generator
+
+    with patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ) as mock_session_manager_shared:
+        mock_session_manager = AsyncMock()
+        mock_session_manager.mcp_client = mock_mcp_client_error
+        mock_session_manager_shared.return_value = mock_session_manager
+
+        # Should raise ValueError with specific message
+        with pytest.raises(ValueError, match="Failed to connect to the server"):
+            await validate_tool_server(tool_server)
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_list_tools_failed():
+    """Test validate_tool_server raises error when list_tools fails"""
+    tool_server = ExternalToolServer(
+        name="list_tools_failing",
+        type=ToolServerType.remote_mcp,
+        description="MCP server with list_tools error",
+        properties={"server_url": "https://example.com/mcp", "headers": {}},
+    )
+
+    # Mock successful connection but list_tools fails
+    mock_session = AsyncMock()
+    mock_session.list_tools.side_effect = Exception("list_tools failed")
+
+    @asynccontextmanager
+    async def mock_mcp_client(tool_server):
+        yield mock_session
+
+    with patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ) as mock_session_manager_shared:
+        mock_session_manager = AsyncMock()
+        mock_session_manager.mcp_client = mock_mcp_client
+        mock_session_manager_shared.return_value = mock_session_manager
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="Failed to connect to the server"):
+            await validate_tool_server(tool_server)
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_pydantic_prevents_empty_name():
+    """Test that Pydantic prevents creation of tool servers with empty names"""
+    # This test demonstrates that Pydantic validation prevents empty names
+    # which means our validation function doesn't need to handle this case
+    with pytest.raises(Exception):  # Pydantic validation error
+        ExternalToolServer(
+            name="",  # Empty name
+            type=ToolServerType.remote_mcp,
+            description="Tool with empty name",
+            properties={"server_url": "https://example.com/mcp", "headers": {}},
+        )
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_mcp_with_minimal_properties():
+    """Test validate_tool_server works with minimal required properties"""
+    tool_server = ExternalToolServer(
+        name="minimal_server",
+        type=ToolServerType.remote_mcp,
+        description=None,  # Optional field
+        properties={
+            "server_url": "https://minimal.example.com/mcp",
+            "headers": {},  # Empty headers are allowed
+        },
+    )
+
+    # Mock successful MCP validation
+    mock_session = AsyncMock()
+    mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+    @asynccontextmanager
+    async def mock_mcp_client(tool_server):
+        yield mock_session
+
+    with patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ) as mock_session_manager_shared:
+        mock_session_manager = AsyncMock()
+        mock_session_manager.mcp_client = mock_mcp_client
+        mock_session_manager_shared.return_value = mock_session_manager
+
+        # Should succeed with minimal properties
+        await validate_tool_server(tool_server)
+
+        # Verify validation was called
+        mock_session.list_tools.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_with_headers():
+    """Test validate_tool_server works correctly with custom headers"""
+    tool_server = ExternalToolServer(
+        name="server_with_headers",
+        type=ToolServerType.remote_mcp,
+        description="MCP server with custom headers",
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {
+                "Authorization": "Bearer custom-token",
+                "X-API-Key": "secret-key",
+                "Content-Type": "application/json",
+            },
+        },
+    )
+
+    # Mock successful MCP validation
+    mock_session = AsyncMock()
+    mock_session.list_tools.return_value = ListToolsResult(
+        tools=[Tool(name="test_tool", description="Test tool", inputSchema={})]
+    )
+
+    @asynccontextmanager
+    async def mock_mcp_client(received_tool_server):
+        # Verify the correct tool server with headers is passed
+        assert (
+            received_tool_server.properties["headers"]["Authorization"]
+            == "Bearer custom-token"
+        )
+        assert received_tool_server.properties["headers"]["X-API-Key"] == "secret-key"
+        yield mock_session
+
+    with patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ) as mock_session_manager_shared:
+        mock_session_manager = AsyncMock()
+        mock_session_manager.mcp_client = mock_mcp_client
+        mock_session_manager_shared.return_value = mock_session_manager
+
+        # Should succeed
+        await validate_tool_server(tool_server)
+
+        # Verify validation was called
+        mock_session.list_tools.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_empty_headers():
+    """Test validate_tool_server works correctly with empty headers"""
+    tool_server = ExternalToolServer(
+        name="server_no_headers",
+        type=ToolServerType.remote_mcp,
+        description="MCP server with no headers",
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {},  # Empty headers
+        },
+    )
+
+    # Mock successful MCP validation
+    mock_session = AsyncMock()
+    mock_session.list_tools.return_value = ListToolsResult(tools=[])
+
+    @asynccontextmanager
+    async def mock_mcp_client(tool_server):
+        yield mock_session
+
+    with patch(
+        "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+    ) as mock_session_manager_shared:
+        mock_session_manager = AsyncMock()
+        mock_session_manager.mcp_client = mock_mcp_client
+        mock_session_manager_shared.return_value = mock_session_manager
+
+        # Should succeed even with empty headers
+        await validate_tool_server(tool_server)
+
+        # Verify validation was called
+        mock_session.list_tools.assert_called_once()

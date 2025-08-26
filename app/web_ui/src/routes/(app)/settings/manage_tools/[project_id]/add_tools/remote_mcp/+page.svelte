@@ -69,14 +69,6 @@
       error = null
       submitting = true
 
-      // Validate required fields
-      if (!name.trim()) {
-        throw new Error("Name is required")
-      }
-      if (!server_url.trim()) {
-        throw new Error("Server URL is required")
-      }
-
       // Enforce absolute http(s) URLs only
       try {
         const u = new URL(server_url.trim())
@@ -112,24 +104,6 @@
       }
 
       const headersObj = buildHeadersObject()
-
-      //  Make a request to the server and make sure it's valid
-      try {
-        const response = await fetch(server_url.trim(), {
-          headers: headersObj,
-        })
-        if (!response.ok) {
-          throw new Error(
-            `Server returned error status: ${response.status} ${response.statusText}`,
-          )
-        }
-      } catch (e) {
-        // Log custom error message
-        const error = e as Error
-        throw new Error(
-          `${error.message}. Unable to connect to the server. Please check the URL, headers and ensure the server is accessible`,
-        )
-      }
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/connect_remote_mcp",
@@ -209,7 +183,7 @@
         label="Headers"
         id="headers_section"
         description="If the documentation for the server you're adding requires custom headers, enter them here."
-        info_description="These are usually not needed. Some MCP servers require custom headers, such as the 'Authorization' headers. Refer to the documentation for the server you're adding to see if they require headers."
+        info_description="Some MCP servers require custom headers, such as the 'Authorization' headers. Refer to the documentation for the server you're adding to see if they require headers."
         value=""
       />
 

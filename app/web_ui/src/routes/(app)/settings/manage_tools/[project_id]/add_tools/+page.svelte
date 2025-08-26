@@ -36,8 +36,8 @@
       headers: [
         {
           key: "Authorization",
-          value: "",
-          placeholder: "Bearer {GITHUB_PERSONAL_ACCESS_TOKEN}",
+          value: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
+          placeholder: "",
         },
       ],
       button_text: "Connect",
@@ -50,13 +50,13 @@
       headers: [
         {
           key: "Authorization",
-          value: "",
-          placeholder: "apikey {TWELVE_DATA_API_KEY}",
+          value: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
+          placeholder: "",
         },
         {
           key: "X-OpenAPI-Key",
-          value: "",
-          placeholder: "YOUR_OPENAI_API_KEY",
+          value: "REPLACE_WITH_YOUR_OPENAI_API_KEY",
+          placeholder: "",
         },
       ],
       button_text: "Connect",
