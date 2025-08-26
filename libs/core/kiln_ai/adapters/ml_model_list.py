@@ -275,6 +275,13 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
         ],
     ),
     # GPT 5 Mini
