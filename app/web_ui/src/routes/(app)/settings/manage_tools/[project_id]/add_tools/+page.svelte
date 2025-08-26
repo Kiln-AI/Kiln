@@ -1,7 +1,9 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
   import AppPage from "../../../../app_page.svelte"
-  import { ui_state } from "$lib/stores"
+  import { page } from "$app/stores"
+
+  $: project_id = $page.params.project_id
 
   // Type definition for MCP tool items
   interface McpServer {
@@ -14,17 +16,14 @@
 
   // Helper function to navigate to remote MCP page with pre-filled data
   function connectRemoteMcp(item: McpServer) {
-    goto(
-      `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
-      {
-        state: {
-          name: item.name,
-          description: item.description,
-          server_url: item.server_url,
-          headers: item.headers,
-        },
+    goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`, {
+      state: {
+        name: item.name,
+        description: item.description,
+        server_url: item.server_url,
+        headers: item.headers,
       },
-    )
+    })
   }
 
   const sampleMcpServers: McpServer[] = [
@@ -88,12 +87,9 @@
           name: "Remote MCP Servers",
           description:
             "Connect to remote MCP servers to add tools to your project.",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
           button_text: "Connect",
           on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/remote_mcp`,
-            )
+            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
           },
         },
       ],

@@ -7,6 +7,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { onMount } from "svelte"
 
   // Form fields
   let name = ""
@@ -27,30 +28,23 @@
   let submitting = false
 
   // Populate fields from parent page state if provided (only if fields are empty)
-  $: if ($page.state) {
-    const state = $page.state as {
-      name?: string
-      description?: string
-      server_url?: string
-      headers?: HeaderPair[]
+  onMount(() => {
+    if ($page.state) {
+      const state = $page.state || {}
+      if ("name" in state && typeof state["name"] === "string") {
+        name = state.name
+      }
+      if ("description" in state && typeof state["description"] === "string") {
+        description = state.description
+      }
+      if ("server_url" in state && typeof state["server_url"] === "string") {
+        server_url = state.server_url
+      }
+      if ("headers" in state && Array.isArray(state.headers)) {
+        headers = [...state.headers]
+      }
     }
-
-    if (state.name && !name) {
-      name = state.name
-    }
-
-    if (state.description && !description) {
-      description = state.description
-    }
-
-    if (state.server_url && !server_url) {
-      server_url = state.server_url
-    }
-
-    if (state.headers && headers.length === 0) {
-      headers = [...state.headers]
-    }
-  }
+  })
 
   function buildHeadersObject(): Record<string, string> {
     const headersObj: Record<string, string> = {}
