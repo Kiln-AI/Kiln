@@ -9,12 +9,10 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, KilnBuiltInToolId, ToolId
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.dataset_import import format_validation_error
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, ValidationError, model_validator
-from pydantic_core import InitErrorDetails
+from pydantic import BaseModel, Field, model_validator
 
 
 class KilnToolServerDescription(BaseModel):
@@ -170,16 +168,10 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
                     # Use list tools to validate the server is reachable
                     await session.list_tools()
             except Exception:
-                raise ValidationError.from_exception_data(
-                    "ValidationError",
-                    [
-                        InitErrorDetails(
-                            type="value_error",
-                            loc=("server url",),
-                            input=None,
-                            ctx={"error": "Failed to connect to the server"},
-                        )
-                    ],
+                # Return a 422 error to the client
+                raise HTTPException(
+                    status_code=422,
+                    detail="Failed to connect to the server. Make sure the server is reachable, url and headers are correct.",
                 )
         case _:
             raise_exhaustive_enum_error(tool_server.type)
@@ -306,15 +298,17 @@ def connect_tool_servers_api(app: FastAPI):
     async def connect_remote_mcp(
         project_id: str, tool_data: ExternalToolServerCreationRequest
     ) -> ExternalToolServer:
+        from pydantic import ValidationError
+
         project = project_from_id(project_id)
 
-        try:
-            # Create the ExternalToolServer with required fields
-            properties = {
-                "server_url": tool_data.server_url,
-                "headers": tool_data.headers,
-            }
+        # Create the ExternalToolServer with required fields
+        properties = {
+            "server_url": tool_data.server_url,
+            "headers": tool_data.headers,
+        }
 
+        try:
             tool = ExternalToolServer(
                 name=tool_data.name,
                 type=ToolServerType.remote_mcp,  # Default to remote MCP type
@@ -322,16 +316,14 @@ def connect_tool_servers_api(app: FastAPI):
                 properties=properties,
                 parent=project,
             )
-
-            # Validate the tool server connectivity
-            await validate_tool_server_connectivity(tool)
-
-            # Save the tool to file
-            tool.save_to_file()
-
-            return tool
         except ValidationError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=format_validation_error(e),
-            )
+            # Convert pydantic validation error to HTTP 422
+            raise HTTPException(status_code=422, detail=str(e))
+
+        # Validate the tool server connectivity
+        await validate_tool_server_connectivity(tool)
+
+        # Save the tool to file
+        tool.save_to_file()
+
+        return tool

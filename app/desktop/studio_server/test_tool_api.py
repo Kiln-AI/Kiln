@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
@@ -259,10 +259,12 @@ def test_create_tool_server_validation_empty_name(client, test_project):
 
         assert response.status_code == 422
         error_data = response.json()
-        # Error could be in "detail" or "message" field depending on FastAPI's error handling
-        error_message = error_data.get("detail", "") or error_data.get("message", "")
-        # Pydantic validates empty strings and reports minimum length error
-        assert "too short" in error_message or "Name is required" in error_message
+        # The validation now happens when creating ExternalToolServer model
+        # FastAPI will return a 422 with the pydantic validation error details
+        assert "detail" in error_data
+        # Check that the error mentions name length or requirement
+        error_str = str(error_data)
+        assert "too short" in error_str or "Name is required" in error_str
 
 
 async def test_create_tool_server_no_headers(client, test_project):
@@ -1376,11 +1378,11 @@ def test_create_tool_server_name_too_long_validation(client, test_project):
 
         assert response.status_code == 422  # Validation error
         error_data = response.json()
-        # The error response structure varies, check for the message in various fields
-        error_message = error_data.get("message", "") or error_data.get("detail", "")
-        if isinstance(error_message, list):
-            error_message = str(error_message)
-        assert "too long" in error_message or "120" in error_message
+        # The validation now happens when creating ExternalToolServer model
+        # FastAPI will return a 422 with the pydantic validation error details
+        assert "detail" in error_data
+        error_str = str(error_data)
+        assert "too long" in error_str or "120" in error_str
 
 
 def test_create_tool_server_invalid_name_characters(client, test_project):
@@ -1407,15 +1409,14 @@ def test_create_tool_server_invalid_name_characters(client, test_project):
 
             assert response.status_code == 422  # Validation error
             error_data = response.json()
-            # The error response structure varies, check for the message in various fields
-            error_message = error_data.get("message", "") or error_data.get(
-                "detail", ""
-            )
-            if isinstance(error_message, list):
-                error_message = str(error_message)
+            # The validation now happens when creating ExternalToolServer model
+            # FastAPI will return a 422 with the pydantic validation error details
+            assert "detail" in error_data
+            error_str = str(error_data)
             assert (
-                "invalid" in error_message.lower()
-                or "forbidden" in error_message.lower()
+                "invalid" in error_str.lower()
+                or "forbidden" in error_str.lower()
+                or "cannot contain" in error_str.lower()
             )
 
 
@@ -1706,7 +1707,6 @@ async def test_validate_tool_server_connectivity_success():
 @pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_connection_failed():
     """Test validate_tool_server_connectivity raises error when MCP connection fails"""
-    from pydantic import ValidationError
 
     tool_server = ExternalToolServer(
         name="failing_server",
@@ -1716,18 +1716,17 @@ async def test_validate_tool_server_connectivity_connection_failed():
     )
 
     async with mock_mcp_connection_error():
-        # Should raise ValidationError with specific message
-        with pytest.raises(ValidationError) as exc_info:
+        # Should raise HTTPException with specific message
+        with pytest.raises(HTTPException) as exc_info:
             await validate_tool_server_connectivity(tool_server)
 
-        error_str = str(exc_info.value)
-        assert "Failed to connect to the server" in error_str
+        assert exc_info.value.status_code == 422
+        assert "Failed to connect to the server" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_list_tools_failed():
     """Test validate_tool_server_connectivity raises error when list_tools fails"""
-    from pydantic import ValidationError
 
     tool_server = ExternalToolServer(
         name="list_tools_failing",
@@ -1737,12 +1736,12 @@ async def test_validate_tool_server_connectivity_list_tools_failed():
     )
 
     async with mock_mcp_list_tools_error():
-        # Should raise ValidationError
-        with pytest.raises(ValidationError) as exc_info:
+        # Should raise HTTPException
+        with pytest.raises(HTTPException) as exc_info:
             await validate_tool_server_connectivity(tool_server)
 
-        error_str = str(exc_info.value)
-        assert "Failed to connect to the server" in error_str
+        assert exc_info.value.status_code == 422
+        assert "Failed to connect to the server" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -1821,7 +1820,6 @@ async def test_validate_tool_server_connectivity_empty_headers():
 # Tests for new validation logic
 def test_external_tool_server_creation_request_invalid_url_scheme():
     """Test ExternalToolServerCreationRequest rejects URLs with invalid schemes"""
-    from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
         ExternalToolServerCreationRequest(
@@ -1838,7 +1836,6 @@ def test_external_tool_server_creation_request_invalid_url_scheme():
 
 def test_external_tool_server_creation_request_invalid_url_format():
     """Test ExternalToolServerCreationRequest rejects malformed URLs"""
-    from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
         ExternalToolServerCreationRequest(
@@ -1854,7 +1851,6 @@ def test_external_tool_server_creation_request_invalid_url_format():
 
 def test_external_tool_server_creation_request_invalid_header_name():
     """Test ExternalToolServerCreationRequest rejects invalid header names"""
-    from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
         ExternalToolServerCreationRequest(
@@ -1872,7 +1868,6 @@ def test_external_tool_server_creation_request_invalid_header_name():
 
 def test_external_tool_server_creation_request_header_with_cr_lf():
     """Test ExternalToolServerCreationRequest rejects headers with CR/LF characters"""
-    from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
         ExternalToolServerCreationRequest(
@@ -1890,7 +1885,6 @@ def test_external_tool_server_creation_request_header_with_cr_lf():
 
 def test_external_tool_server_creation_request_empty_header_name():
     """Test ExternalToolServerCreationRequest rejects empty header names"""
-    from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
         ExternalToolServerCreationRequest(
@@ -1908,7 +1902,6 @@ def test_external_tool_server_creation_request_empty_header_name():
 
 def test_external_tool_server_creation_request_empty_header_value():
     """Test ExternalToolServerCreationRequest rejects empty header values"""
-    from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
         ExternalToolServerCreationRequest(
