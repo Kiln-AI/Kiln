@@ -23,13 +23,14 @@
   import RunOptions from "$lib/ui/run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import posthog from "posthog-js"
+  import { tick } from "svelte"
 
   let error: KilnError | null = null
   let submitting = false
   let run_complete = false
 
   let input_form: RunInputForm
-  let output_section: HTMLElement
+  let output_section: HTMLElement | null = null
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
@@ -66,7 +67,7 @@
 
   // Check if the Output section headers are visible in the viewport
   // We only care about the top portion being visible (headers + some buffer)
-  function isElementVisible(element: HTMLElement): boolean {
+  function isElementPartiallyVisible(element: HTMLElement): boolean {
     const rect = element.getBoundingClientRect()
     const viewportHeight =
       window.innerHeight || document.documentElement.clientHeight
@@ -78,7 +79,7 @@
 
   // Smooth scroll to output section if it's not visible
   function scrollToOutputIfNeeded() {
-    if (output_section && !isElementVisible(output_section)) {
+    if (output_section && !isElementPartiallyVisible(output_section)) {
       // Calculate the target scroll position to show just the headers + buffer
       const rect = output_section.getBoundingClientRect()
       const currentScrollTop =
@@ -145,16 +146,12 @@
         prompt_method: prompt_method,
       })
       response = data
-
-      // Scroll to output section if it's not visible after a short delay
-      // to allow the DOM to update with the new response
-      setTimeout(() => {
-        scrollToOutputIfNeeded()
-      }, 100)
     } catch (e) {
       error = createKilnError(e)
     } finally {
       submitting = false
+      await tick() // ensure {#if !submitting && response} has rendered
+      if (response) scrollToOutputIfNeeded()
     }
   }
 
