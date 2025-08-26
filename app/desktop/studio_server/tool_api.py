@@ -1,5 +1,7 @@
+import re
 from datetime import datetime
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
@@ -7,10 +9,12 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, KilnBuiltInToolId, ToolId
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.dataset_import import format_validation_error
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic_core import InitErrorDetails
 
 
 class KilnToolServerDescription(BaseModel):
@@ -29,6 +33,58 @@ class ExternalToolServerCreationRequest(BaseModel):
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
     description: str | None = None
+
+    @model_validator(mode="after")
+    def validate_server_details(self):
+        """Validate server URL and headers format."""
+        # Validate server URL
+        server_url = self.server_url
+        if not server_url:
+            raise ValueError("Server URL is required")
+
+        # Enforce absolute http(s) URLs only
+        parsed_url = urlparse(server_url.strip())
+        if not parsed_url.scheme:
+            raise ValueError("Server URL must start with http:// or https://")
+        if not parsed_url.netloc:
+            raise ValueError("Server URL is not a valid URL")
+
+        if parsed_url.scheme not in ("http", "https"):
+            raise ValueError("Server URL must start with http:// or https://")
+
+        # Update server_url to stripped version
+        self.server_url = server_url.strip()
+
+        # Validate headers
+        if isinstance(self.headers, dict):
+            validated_headers = {}
+            for key, value in self.headers.items():
+                # Convert to string and strip
+                key_str = key.strip() if isinstance(key, str) else str(key).strip()
+                value_str = (
+                    value.strip() if isinstance(value, str) else str(value).strip()
+                )
+
+                if not key_str:
+                    raise ValueError("Header name is required")
+                if not value_str:
+                    raise ValueError("Header value is required")
+
+                # Reject invalid header names and CR/LF in names/values
+                token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+                if not token_re.match(key_str):
+                    raise ValueError(f'Invalid header name: "{key_str}"')
+                if re.search(r"\r|\n", key_str) or re.search(r"\r|\n", value_str):
+                    raise ValueError(
+                        "Header names/values must not contain invalid characters"
+                    )
+
+                validated_headers[key_str] = value_str
+
+            # Update headers to validated version
+            self.headers = validated_headers
+
+        return self
 
 
 class ExternalToolApiDescription(BaseModel):
@@ -99,27 +155,32 @@ async def available_remote_mcp_tools(
         return []
 
 
-async def validate_tool_server(tool_server: ExternalToolServer):
+async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     """
-    Validate the tool server by checking if the server is reachable.
+    Validate that the tool server is reachable by attempting to connect.
+    Basic field validation is now handled by Pydantic validators in ExternalToolServerCreationRequest.
     """
-    #  Validate the tool server
-    if not tool_server.name:
-        raise ValueError("Name is required")
-    if not tool_server.type:
-        raise ValueError("Type is required")
-
     match tool_server.type:
         case ToolServerType.remote_mcp:
-            #  Validate the server is reachable, this will also validate the server URL and headers
+            # Validate the server is reachable
             try:
                 async with MCPSessionManager.shared().mcp_client(
                     tool_server
                 ) as session:
-                    #  Use list tools to validate the server is reachable
+                    # Use list tools to validate the server is reachable
                     await session.list_tools()
             except Exception:
-                raise ValueError("Failed to connect to the server")
+                raise ValidationError.from_exception_data(
+                    "ValidationError",
+                    [
+                        InitErrorDetails(
+                            type="value_error",
+                            loc=("server url",),
+                            input=None,
+                            ctx={"error": "Failed to connect to the server"},
+                        )
+                    ],
+                )
         case _:
             raise_exhaustive_enum_error(tool_server.type)
 
@@ -262,8 +323,8 @@ def connect_tool_servers_api(app: FastAPI):
                 parent=project,
             )
 
-            #  Validate the tool server
-            await validate_tool_server(tool)
+            # Validate the tool server connectivity
+            await validate_tool_server_connectivity(tool)
 
             # Save the tool to file
             tool.save_to_file()
@@ -272,10 +333,5 @@ def connect_tool_servers_api(app: FastAPI):
         except ValidationError as e:
             raise HTTPException(
                 status_code=422,
-                detail=f"Validation error: {str(e)}",
-            )
-        except ValueError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=str(e),
+                detail=format_validation_error(e),
             )

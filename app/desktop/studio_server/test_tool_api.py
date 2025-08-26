@@ -6,12 +6,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
+from kiln_ai.utils.dataset_import import format_validation_error
 from mcp.types import ListToolsResult, Tool
+from pydantic import ValidationError
 
 from app.desktop.studio_server.tool_api import (
+    ExternalToolServerCreationRequest,
     available_remote_mcp_tools,
     connect_tool_servers_api,
-    validate_tool_server,
+    validate_tool_server_connectivity,
 )
 
 
@@ -1680,10 +1683,10 @@ async def test_available_remote_mcp_tools_empty_tools():
         assert result == []
 
 
-# Unit tests for validate_tool_server function
+# Unit tests for validate_tool_server_connectivity function
 @pytest.mark.asyncio
-async def test_validate_tool_server_success():
-    """Test validate_tool_server succeeds when MCP server is reachable"""
+async def test_validate_tool_server_connectivity_success():
+    """Test validate_tool_server_connectivity succeeds when MCP server is reachable"""
     # Create a valid ExternalToolServer
     tool_server = ExternalToolServer(
         name="test_server",
@@ -1697,12 +1700,14 @@ async def test_validate_tool_server_success():
 
     async with mock_mcp_success():
         # Should not raise any exception
-        await validate_tool_server(tool_server)
+        await validate_tool_server_connectivity(tool_server)
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_connection_failed():
-    """Test validate_tool_server raises error when MCP connection fails"""
+async def test_validate_tool_server_connectivity_connection_failed():
+    """Test validate_tool_server_connectivity raises error when MCP connection fails"""
+    from pydantic import ValidationError
+
     tool_server = ExternalToolServer(
         name="failing_server",
         type=ToolServerType.remote_mcp,
@@ -1711,14 +1716,19 @@ async def test_validate_tool_server_connection_failed():
     )
 
     async with mock_mcp_connection_error():
-        # Should raise ValueError with specific message
-        with pytest.raises(ValueError, match="Failed to connect to the server"):
-            await validate_tool_server(tool_server)
+        # Should raise ValidationError with specific message
+        with pytest.raises(ValidationError) as exc_info:
+            await validate_tool_server_connectivity(tool_server)
+
+        error_str = str(exc_info.value)
+        assert "Failed to connect to the server" in error_str
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_list_tools_failed():
-    """Test validate_tool_server raises error when list_tools fails"""
+async def test_validate_tool_server_connectivity_list_tools_failed():
+    """Test validate_tool_server_connectivity raises error when list_tools fails"""
+    from pydantic import ValidationError
+
     tool_server = ExternalToolServer(
         name="list_tools_failing",
         type=ToolServerType.remote_mcp,
@@ -1727,13 +1737,16 @@ async def test_validate_tool_server_list_tools_failed():
     )
 
     async with mock_mcp_list_tools_error():
-        # Should raise ValueError
-        with pytest.raises(ValueError, match="Failed to connect to the server"):
-            await validate_tool_server(tool_server)
+        # Should raise ValidationError
+        with pytest.raises(ValidationError) as exc_info:
+            await validate_tool_server_connectivity(tool_server)
+
+        error_str = str(exc_info.value)
+        assert "Failed to connect to the server" in error_str
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_pydantic_prevents_empty_name():
+async def test_validate_tool_server_connectivity_pydantic_prevents_empty_name():
     """Test that Pydantic prevents creation of tool servers with empty names"""
     # This test demonstrates that Pydantic validation prevents empty names
     # which means our validation function doesn't need to handle this case
@@ -1747,8 +1760,8 @@ async def test_validate_tool_server_pydantic_prevents_empty_name():
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_mcp_with_minimal_properties():
-    """Test validate_tool_server works with minimal required properties"""
+async def test_validate_tool_server_connectivity_mcp_with_minimal_properties():
+    """Test validate_tool_server_connectivity works with minimal required properties"""
     tool_server = ExternalToolServer(
         name="minimal_server",
         type=ToolServerType.remote_mcp,
@@ -1761,12 +1774,12 @@ async def test_validate_tool_server_mcp_with_minimal_properties():
 
     async with mock_mcp_success():
         # Should succeed with minimal properties
-        await validate_tool_server(tool_server)
+        await validate_tool_server_connectivity(tool_server)
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_with_headers():
-    """Test validate_tool_server works correctly with custom headers"""
+async def test_validate_tool_server_connectivity_with_headers():
+    """Test validate_tool_server_connectivity works correctly with custom headers"""
     tool_server = ExternalToolServer(
         name="server_with_headers",
         type=ToolServerType.remote_mcp,
@@ -1784,12 +1797,12 @@ async def test_validate_tool_server_with_headers():
     tools = [Tool(name="test_tool", description="Test tool", inputSchema={})]
     async with mock_mcp_success(tools=tools):
         # Should succeed
-        await validate_tool_server(tool_server)
+        await validate_tool_server_connectivity(tool_server)
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_empty_headers():
-    """Test validate_tool_server works correctly with empty headers"""
+async def test_validate_tool_server_connectivity_empty_headers():
+    """Test validate_tool_server_connectivity works correctly with empty headers"""
     tool_server = ExternalToolServer(
         name="server_no_headers",
         type=ToolServerType.remote_mcp,
@@ -1802,4 +1815,472 @@ async def test_validate_tool_server_empty_headers():
 
     async with mock_mcp_success():
         # Should succeed even with empty headers
-        await validate_tool_server(tool_server)
+        await validate_tool_server_connectivity(tool_server)
+
+
+# Tests for new validation logic
+def test_external_tool_server_creation_request_invalid_url_scheme():
+    """Test ExternalToolServerCreationRequest rejects URLs with invalid schemes"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="invalid_scheme_server",
+            server_url="ftp://example.com/mcp",  # Invalid scheme
+            headers={},
+            description="Server with invalid URL scheme",
+        )
+
+    # Verify the error message is about the URL scheme
+    error_str = str(exc_info.value)
+    assert "Server URL must start with http:// or https://" in error_str
+
+
+def test_external_tool_server_creation_request_invalid_url_format():
+    """Test ExternalToolServerCreationRequest rejects malformed URLs"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="invalid_url_server",
+            server_url="https://",  # Invalid URL format - scheme without netloc
+            headers={},
+            description="Server with malformed URL",
+        )
+
+    error_str = str(exc_info.value)
+    assert "Server URL is not a valid URL" in error_str
+
+
+def test_external_tool_server_creation_request_invalid_header_name():
+    """Test ExternalToolServerCreationRequest rejects invalid header names"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="invalid_header_server",
+            server_url="https://example.com/mcp",
+            headers={
+                "invalid@header": "value",  # Invalid character in header name
+            },
+            description="Server with invalid header name",
+        )
+
+    error_str = str(exc_info.value)
+    assert 'Invalid header name: "invalid@header"' in error_str
+
+
+def test_external_tool_server_creation_request_header_with_cr_lf():
+    """Test ExternalToolServerCreationRequest rejects headers with CR/LF characters"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="crlf_header_server",
+            server_url="https://example.com/mcp",
+            headers={
+                "Authorization": "Bearer token\r\nX-Injected: evil",  # CR/LF injection
+            },
+            description="Server with CR/LF in headers",
+        )
+
+    error_str = str(exc_info.value)
+    assert "Header names/values must not contain invalid characters" in error_str
+
+
+def test_external_tool_server_creation_request_empty_header_name():
+    """Test ExternalToolServerCreationRequest rejects empty header names"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="empty_header_name_server",
+            server_url="https://example.com/mcp",
+            headers={
+                "": "some_value",  # Empty header name
+            },
+            description="Server with empty header name",
+        )
+
+    error_str = str(exc_info.value)
+    assert "Header name is required" in error_str
+
+
+def test_external_tool_server_creation_request_empty_header_value():
+    """Test ExternalToolServerCreationRequest rejects empty header values"""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="empty_header_value_server",
+            server_url="https://example.com/mcp",
+            headers={
+                "Authorization": "",  # Empty header value
+            },
+            description="Server with empty header value",
+        )
+
+    error_str = str(exc_info.value)
+    assert "Header value is required" in error_str
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_connectivity_valid_complex_headers():
+    """Test validate_tool_server_connectivity accepts valid complex headers"""
+    tool_server = ExternalToolServer(
+        name="complex_headers_server",
+        type=ToolServerType.remote_mcp,
+        description="Server with valid complex headers",
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {
+                "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9",
+                "X-API-Key": "key_with-dashes_and.dots",
+                "Content-Type": "application/json",
+                "User-Agent": "Kiln-AI/1.0",
+                "X-Custom-123": "value_with_123",
+            },
+        },
+    )
+
+    async with mock_mcp_success():
+        # Should succeed with valid complex headers
+        await validate_tool_server_connectivity(tool_server)
+
+
+def test_external_tool_server_creation_request_invalid_url_simple_string():
+    """Test ExternalToolServerCreationRequest rejects simple string URLs like 'asdf'"""
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="invalid_simple_url_server",
+            server_url="asdf",  # Simple invalid URL like the user's case
+            headers={},
+            description="Server with simple invalid URL",
+        )
+
+    # Verify the error can be formatted properly and contains expected message
+    formatted_error = format_validation_error(exc_info.value)
+    assert "Server URL must start with http:// or https://" in formatted_error
+
+
+# Comprehensive tests for ExternalToolServerCreationRequest validation
+def test_external_tool_server_creation_request_valid_minimal():
+    """Test ExternalToolServerCreationRequest with minimal valid data"""
+    request = ExternalToolServerCreationRequest(
+        name="Test Server",
+        server_url="https://example.com",
+    )
+
+    assert request.name == "Test Server"
+    assert request.server_url == "https://example.com"
+    assert request.headers == {}
+    assert request.description is None
+
+
+def test_external_tool_server_creation_request_valid_complete():
+    """Test ExternalToolServerCreationRequest with all valid fields"""
+    headers = {"Authorization": "Bearer token123", "X-Custom": "value"}
+
+    request = ExternalToolServerCreationRequest(
+        name="Complete Server",
+        server_url="https://api.example.com/mcp",
+        headers=headers,
+        description="A complete server configuration",
+    )
+
+    assert request.name == "Complete Server"
+    assert request.server_url == "https://api.example.com/mcp"
+    assert request.headers == headers
+    assert request.description == "A complete server configuration"
+
+
+def test_external_tool_server_creation_request_url_normalization():
+    """Test that server URLs are properly stripped of whitespace"""
+    request = ExternalToolServerCreationRequest(
+        name="Normalized Server",
+        server_url="  https://example.com/mcp  ",  # Extra whitespace
+    )
+
+    assert request.server_url == "https://example.com/mcp"
+
+
+def test_external_tool_server_creation_request_header_normalization():
+    """Test that headers are properly stripped and normalized"""
+    request = ExternalToolServerCreationRequest(
+        name="Header Server",
+        server_url="https://example.com",
+        headers={
+            "  Authorization  ": "  Bearer token123  ",  # Extra whitespace
+            "X-Custom": "value",
+        },
+    )
+
+    expected_headers = {
+        "Authorization": "Bearer token123",
+        "X-Custom": "value",
+    }
+    assert request.headers == expected_headers
+
+
+def test_external_tool_server_creation_request_http_scheme():
+    """Test that HTTP scheme is also valid"""
+    request = ExternalToolServerCreationRequest(
+        name="HTTP Server",
+        server_url="http://localhost:8080/mcp",
+    )
+
+    assert request.server_url == "http://localhost:8080/mcp"
+
+
+def test_external_tool_server_creation_request_complex_valid_headers():
+    """Test with complex but valid header names and values"""
+
+    # Valid complex headers
+    request = ExternalToolServerCreationRequest(
+        name="Complex Headers Server",
+        server_url="https://example.com",
+        headers={
+            "X-API-Key": "sk-1234567890abcdef",
+            "Accept": "application/json",
+            "User-Agent": "Kiln/1.0",
+            "X-Rate-Limit": "1000",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+    )
+
+    assert len(request.headers) == 5
+    assert request.headers["X-API-Key"] == "sk-1234567890abcdef"
+
+
+def test_external_tool_server_creation_request_empty_url():
+    """Test that empty server URL is rejected"""
+
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Empty URL Server",
+            server_url="",
+        )
+
+    error_str = str(exc_info.value)
+    assert "Server URL is required" in error_str
+
+
+def test_external_tool_server_creation_request_url_without_netloc():
+    """Test various malformed URLs"""
+
+    invalid_urls = [
+        "https://",
+        "http://",
+        "https:///path",
+        "http:///path",
+    ]
+
+    for invalid_url in invalid_urls:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Invalid URL Server",
+                server_url=invalid_url,
+            )
+
+        error_str = str(exc_info.value)
+        assert "Server URL is not a valid URL" in error_str
+
+
+def test_external_tool_server_creation_request_invalid_schemes():
+    """Test various invalid URL schemes"""
+
+    invalid_schemes = [
+        "ftp://example.com",
+        "ssh://user@example.com",
+        "tcp://example.com:1234",
+    ]
+
+    for invalid_url in invalid_schemes:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Invalid Scheme Server",
+                server_url=invalid_url,
+            )
+
+        error_str = str(exc_info.value)
+        assert "Server URL must start with http:// or https://" in error_str
+
+    # Test specific cases that might have different error messages
+    special_cases = [
+        ("file:///path/to/file", "Server URL is not a valid URL"),
+        ("mailto:user@example.com", "Server URL is not a valid URL"),
+    ]
+
+    for invalid_url, expected_error in special_cases:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Invalid Scheme Server",
+                server_url=invalid_url,
+            )
+
+        error_str = str(exc_info.value)
+        assert expected_error in error_str
+
+
+def test_external_tool_server_creation_request_invalid_header_characters():
+    """Test various invalid header name characters"""
+
+    invalid_headers = [
+        {"invalid header": "value"},  # Space in name
+        {"invalid@header": "value"},  # @ symbol
+        {"invalid(header)": "value"},  # Parentheses
+        {"invalid[header]": "value"},  # Brackets
+        {"invalid{header}": "value"},  # Braces
+        {"invalid<header>": "value"},  # Angle brackets
+        {"invalid/header": "value"},  # Forward slash
+        {"invalid\\header": "value"},  # Backslash
+        {"invalid:header": "value"},  # Colon
+        {"invalid;header": "value"},  # Semicolon
+        {"invalid=header": "value"},  # Equals
+        {"invalid?header": "value"},  # Question mark
+        {"invalid,header": "value"},  # Comma
+    ]
+
+    for headers in invalid_headers:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Invalid Header Server",
+                server_url="https://example.com",
+                headers=headers,
+            )
+
+        error_str = str(exc_info.value)
+        assert "Invalid header name" in error_str
+
+
+def test_external_tool_server_creation_request_header_injection():
+    """Test prevention of header injection attacks"""
+
+    # Test header value injection
+    value_injection_attempts = [
+        {"Authorization": "Bearer token\r\nX-Injected: evil"},
+        {"Authorization": "Bearer token\nX-Injected: evil"},
+    ]
+
+    for headers in value_injection_attempts:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Injection Server",
+                server_url="https://example.com",
+                headers=headers,
+            )
+
+        error_str = str(exc_info.value)
+        assert "Header names/values must not contain invalid characters" in error_str
+
+    # Test header name injection (these will fail with invalid header name error)
+    name_injection_attempts = [
+        {"X-Header\r\nX-Injected": "value"},
+        {"X-Header\nX-Injected": "value"},
+    ]
+
+    for headers in name_injection_attempts:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Injection Server",
+                server_url="https://example.com",
+                headers=headers,
+            )
+
+        error_str = str(exc_info.value)
+        # Header names with CR/LF will be caught by the invalid header name regex
+        assert (
+            "Invalid header name" in error_str
+            or "Header names/values must not contain invalid characters" in error_str
+        )
+
+
+def test_external_tool_server_creation_request_non_string_headers():
+    """Test that non-string header keys and values are rejected by Pydantic"""
+
+    # Non-string header keys should be rejected
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Non-String Headers Server",
+            server_url="https://example.com",
+            headers={
+                123: "value",  # Non-string key  # type: ignore
+            },
+        )
+
+    error_str = str(exc_info.value)
+    assert "Input should be a valid string" in error_str
+
+    # Non-string header values should be rejected
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Non-String Headers Server",
+            server_url="https://example.com",
+            headers={
+                "key": 456,  # Non-string value  # type: ignore
+            },
+        )
+
+    error_str = str(exc_info.value)
+    assert "Input should be a valid string" in error_str
+
+
+def test_external_tool_server_creation_request_whitespace_only_headers():
+    """Test that whitespace-only header names/values are rejected"""
+
+    whitespace_cases = [
+        {"   ": "value"},  # Whitespace-only name
+        {"name": "   "},  # Whitespace-only value
+        {"\t\n": "value"},  # Tab/newline only name
+        {"name": "\t\n"},  # Tab/newline only value
+    ]
+
+    for headers in whitespace_cases:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Whitespace Server",
+                server_url="https://example.com",
+                headers=headers,
+            )
+
+        error_str = str(exc_info.value)
+        assert (
+            "Header name is required" in error_str
+            or "Header value is required" in error_str
+        )
+
+
+def test_external_tool_server_creation_request_model_validator_integration():
+    """Test that the model validator works correctly with combined URL and header validation"""
+
+    # Test successful validation with model validator normalization
+    request = ExternalToolServerCreationRequest(
+        name="Integration Test Server",
+        server_url="  https://api.example.com/mcp  ",  # Should be stripped
+        headers={
+            "  Authorization  ": "  Bearer token123  ",  # Should be stripped
+            "X-Custom-Header": "custom-value",
+        },
+        description="Integration test for model validator",
+    )
+
+    # Verify normalization occurred
+    assert request.server_url == "https://api.example.com/mcp"
+    assert request.headers["Authorization"] == "Bearer token123"
+    assert "  Authorization  " not in request.headers
+    assert request.headers["X-Custom-Header"] == "custom-value"
+
+    # Test that both URL and header validation work together
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Bad Integration Server",
+            server_url="ftp://invalid.com",  # Invalid scheme
+            headers={
+                "invalid@header": "value",  # Invalid header name
+            },
+        )
+
+    error_str = str(exc_info.value)
+    # Should catch the URL error first since it's checked before headers
+    assert "Server URL must start with http:// or https://" in error_str
