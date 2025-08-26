@@ -53,6 +53,8 @@ from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
 
+background_tasks: set[asyncio.Task] = set()
+
 
 async def run_extractor_runner_with_status(
     extractor_runner: ExtractorRunner,
@@ -141,7 +143,13 @@ def run_all_extractors_and_rag_workflows_no_wait(
     """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
     Needed to make mocking easier in tests.
     """
-    asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))  # noqa: RUF006
+    # dangling async tasks with no reference can be garbage collected at any time (even while running)
+    # so we need to add a reference to the task (here in the background_tasks set) to prevent it
+    # from being garbage collected
+    # https://docs.astral.sh/ruff/rules/asyncio-dangling-task/
+    task = asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 
 async def run_rag_workflow_runner_with_status(
