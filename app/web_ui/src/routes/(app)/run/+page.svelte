@@ -74,7 +74,9 @@
 
     // Check if the top of the element is visible and there's enough buffer
     // We want to see the headers (roughly 100px from top) plus some buffer
-    return rect.top >= 0 && rect.top <= viewportHeight - 100
+    // If the element is smaller than 100px, just check if it's fully visible
+    const bufferSize = Math.min(100, rect.height)
+    return rect.top >= 0 && rect.top <= viewportHeight - bufferSize
   }
 
   // Smooth scroll to output section if it's not visible
@@ -87,10 +89,12 @@
       const viewportHeight =
         window.innerHeight || document.documentElement.clientHeight
 
-      // Position the Output section so that 100px of it is visible from the top
+      // Position the Output section so that 200px of it is visible from the top
       // This shows the headers and some buffer, but not the entire section
+      // If the element is smaller than 200px, show the entire element
+      const visibleHeight = Math.min(200, rect.height)
       const targetScrollTop =
-        currentScrollTop + rect.top - (viewportHeight - 100)
+        currentScrollTop + rect.top - (viewportHeight - visibleHeight)
 
       window.scrollTo({
         top: targetScrollTop,
