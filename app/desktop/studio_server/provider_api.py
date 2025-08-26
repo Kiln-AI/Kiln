@@ -16,7 +16,6 @@ from kiln_ai.adapters.docker_model_runner_tools import (
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
@@ -157,7 +156,7 @@ class ProviderModel(BaseModel):
 
 
 class ProviderModels(BaseModel):
-    models: Dict[ModelName, ProviderModel]
+    models: Dict[str, ProviderModel]
 
 
 def connect_provider_api(app: FastAPI):
