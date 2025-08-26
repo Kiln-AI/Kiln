@@ -43,7 +43,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.utils import async_lock_manager
+from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -90,7 +90,7 @@ async def run_all_extractors_and_rag_workflows(
 
         async def run_extractor(extractor_config=extractor_config):
             try:
-                async with async_lock_manager.acquire(
+                async with shared_async_lock_manager.acquire(
                     f"docs:extract:{extractor_config.id}",
                     timeout=0.5,
                 ):
@@ -637,7 +637,9 @@ def connect_document_api(app: FastAPI):
     ) -> StreamingResponse:
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
-        async with async_lock_manager.acquire(f"docs:extract:{extractor_config_id}"):
+        async with shared_async_lock_manager.acquire(
+            f"docs:extract:{extractor_config_id}"
+        ):
             project = project_from_id(project_id)
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 extractor_config_id, project.path

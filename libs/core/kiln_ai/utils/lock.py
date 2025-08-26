@@ -97,4 +97,4 @@ class AsyncLockManager:
 
 
 # callers should use this global instance instead of creating their own
-async_lock_manager = AsyncLockManager()
+shared_async_lock_manager = AsyncLockManager()
