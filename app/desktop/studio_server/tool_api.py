@@ -306,7 +306,7 @@ def connect_tool_servers_api(app: FastAPI):
             "headers": tool_data.headers,
         }
 
-        tool = ExternalToolServer(
+        tool_server = ExternalToolServer(
             name=tool_data.name,
             type=ToolServerType.remote_mcp,  # Default to remote MCP type
             description=tool_data.description,
@@ -315,9 +315,9 @@ def connect_tool_servers_api(app: FastAPI):
         )
 
         # Validate the tool server connectivity
-        await validate_tool_server_connectivity(tool)
+        await validate_tool_server_connectivity(tool_server)
 
         # Save the tool to file
-        tool.save_to_file()
+        tool_server.save_to_file()
 
-        return tool
+        return tool_server
