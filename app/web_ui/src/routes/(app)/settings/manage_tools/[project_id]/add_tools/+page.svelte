@@ -98,9 +98,7 @@
             "Connect to local MCP servers to add tools to your project.",
           button_text: "Connect",
           on_click: () => {
-            goto(
-              `/settings/manage_tools/${$ui_state?.current_project_id}/add_tools/local_mcp`,
-            )
+            goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`)
           },
         },
       ],
