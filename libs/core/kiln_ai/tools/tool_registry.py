@@ -8,6 +8,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.tools.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     mcp_server_and_tool_name_from_id,
@@ -35,7 +36,7 @@ def tool_from_id(tool_id: str, project_id: str) -> KilnToolInterface:
                 raise_exhaustive_enum_error(typed_tool_id)
 
     # Check MCP Server Tools
-    if tool_id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
+    if tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)):
         # Get the tool server ID and tool name from the ID
         tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
         # Import here to avoid circular import
