@@ -173,20 +173,46 @@ class TestToolRegistry:
 
     def test_mcp_server_and_tool_name_from_id_invalid_inputs(self):
         """Test that mcp_server_and_tool_name_from_id raises ValueError for invalid MCP tool IDs."""
-        invalid_inputs = [
+        # Test remote MCP format errors
+        remote_invalid_inputs = [
             "mcp::remote::server",  # Only 3 parts instead of 4
             "mcp::remote::",  # Only 3 parts, missing server and tool
             "mcp::remote::server::tool::extra",  # 5 parts instead of 4
+        ]
+
+        for invalid_id in remote_invalid_inputs:
+            with pytest.raises(
+                ValueError,
+                match=r"Invalid MCP remote tool ID:.*Expected format.*mcp::remote::<server_id>::<tool_name>",
+            ):
+                mcp_server_and_tool_name_from_id(invalid_id)
+
+        # Test local MCP format errors
+        local_invalid_inputs = [
+            "mcp::local::server",  # Only 3 parts instead of 4
+            "mcp::local::",  # Only 3 parts, missing server and tool
+            "mcp::local::server::tool::extra",  # 5 parts instead of 4
+        ]
+
+        for invalid_id in local_invalid_inputs:
+            with pytest.raises(
+                ValueError,
+                match=r"Invalid MCP local tool ID:.*Expected format.*mcp::local::<server_id>::<tool_name>",
+            ):
+                mcp_server_and_tool_name_from_id(invalid_id)
+
+        # Test generic MCP format errors (no valid prefix)
+        generic_invalid_inputs = [
             "invalid::format::here",  # 3 parts, wrong prefix
             "",  # Empty string
             "single_part",  # No separators
             "two::parts",  # Only 2 parts
         ]
 
-        for invalid_id in invalid_inputs:
+        for invalid_id in generic_invalid_inputs:
             with pytest.raises(
                 ValueError,
-                match=r"Invalid MCP remote tool ID:.*Expected format.*mcp::remote::<server_id>::<tool_name>",
+                match=r"Invalid MCP tool ID:.*Expected format.*mcp::\(remote\|local\)::<server_id>::<tool_name>",
             ):
                 mcp_server_and_tool_name_from_id(invalid_id)
 

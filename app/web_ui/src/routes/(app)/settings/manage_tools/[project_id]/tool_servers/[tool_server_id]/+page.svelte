@@ -94,17 +94,52 @@
       { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
 
-    if (tool.properties["server_url"]) {
-      properties.push({
-        name: "Server URL",
-        value: tool.properties["server_url"],
-      })
+    switch (tool.type) {
+      case "remote_mcp":
+        if (tool.properties["server_url"]) {
+          properties.push({
+            name: "Server URL",
+            value: tool.properties["server_url"],
+          })
+        }
+        break
+      case "local_mcp": {
+        if (tool.properties["command"]) {
+          properties.push({
+            name: "Command",
+            value: tool.properties["command"],
+          })
+        }
+        const args = tool.properties["args"]
+        if (args && isStringArray(args)) {
+          properties.push({
+            name: "Arguments",
+            value: (args as string[]).join(" ") || "None",
+          })
+        }
+        break
+      }
+      default: {
+        // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+        // and don't handle it above, TypeScript will error here
+        const exhaustiveCheck: never = tool.type
+        console.warn(`Unhandled toolType: ${exhaustiveCheck}`)
+        break
+      }
     }
 
     return properties
   }
   function getHeadersProperties(tool: ExternalToolServerApiDescription) {
     return Object.entries(tool.properties["headers"] || {}).map(
+      ([key, value]) => ({
+        name: key,
+        value: String(value || "N/A"),
+      }),
+    )
+  }
+  function getEnvVarsProperties(tool: ExternalToolServerApiDescription) {
+    return Object.entries(tool.properties["env_vars"] || {}).map(
       ([key, value]) => ({
         name: key,
         value: String(value || "N/A"),
@@ -192,20 +227,25 @@
           />
         </div>
         <div class="flex-1">
-          {#if tool_server.type === "remote_mcp"}
-            <PropertyList
-              properties={getConnectionProperties(tool_server)}
-              title="Connection Details"
-            />
-            {#if getHeadersProperties(tool_server).length > 0}
-              <!-- Manually add a gap between the connection details and the headers -->
-              <div class="mt-8">
-                <PropertyList
-                  properties={getHeadersProperties(tool_server)}
-                  title="Headers"
-                />
-              </div>
-            {/if}
+          <PropertyList
+            properties={getConnectionProperties(tool_server)}
+            title="Connection Details"
+          />
+          {#if tool_server.type === "remote_mcp" && getHeadersProperties(tool_server).length > 0}
+            <!-- Manually add a gap between the connection details and the headers -->
+            <div class="mt-8">
+              <PropertyList
+                properties={getHeadersProperties(tool_server)}
+                title="Headers"
+              />
+            </div>
+          {:else if tool_server.type === "local_mcp" && getEnvVarsProperties(tool_server).length > 0}
+            <div class="mt-8">
+              <PropertyList
+                properties={getEnvVarsProperties(tool_server)}
+                title="Environment Variables"
+              />
+            </div>
           {/if}
         </div>
       </div>

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.desktop.studio_server.tool_api import (
     ExternalToolServerCreationRequest,
-    available_remote_mcp_tools,
+    available_mcp_tools,
     connect_tool_servers_api,
     validate_tool_server_connectivity,
 )
@@ -1458,8 +1458,8 @@ def test_get_tool_server_with_many_tools(client, test_project):
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_success():
-    """Test available_remote_mcp_tools successfully retrieves tools from MCP server"""
+async def test_available_mcp_tools_remote_success():
+    """Test available_mcp_tools successfully retrieves tools from remote MCP server"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1481,7 +1481,7 @@ async def test_available_remote_mcp_tools_success():
 
     async with mock_mcp_success(tools=mock_tools):
         # Call the function
-        result = await available_remote_mcp_tools(server)
+        result = await available_mcp_tools(server)
 
         # Verify the result
         assert len(result) == 3
@@ -1506,8 +1506,8 @@ async def test_available_remote_mcp_tools_success():
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_connection_error():
-    """Test available_remote_mcp_tools throws exception on connection errors"""
+async def test_available_mcp_tools_connection_error():
+    """Test available_mcp_tools throws exception on connection errors"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1520,12 +1520,12 @@ async def test_available_remote_mcp_tools_connection_error():
     async with mock_mcp_connection_error():
         # Call the function - should throw exception on error
         with pytest.raises(Exception, match="Connection failed"):
-            await available_remote_mcp_tools(server)
+            await available_mcp_tools(server)
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_list_tools_error():
-    """Test available_remote_mcp_tools throws exception on list_tools errors"""
+async def test_available_mcp_tools_list_tools_error():
+    """Test available_mcp_tools throws exception on list_tools errors"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1538,12 +1538,12 @@ async def test_available_remote_mcp_tools_list_tools_error():
     async with mock_mcp_list_tools_error():
         # Call the function - should throw exception on error
         with pytest.raises(Exception, match="list_tools failed"):
-            await available_remote_mcp_tools(server)
+            await available_mcp_tools(server)
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_empty_tools():
-    """Test available_remote_mcp_tools handles empty tools list"""
+async def test_available_mcp_tools_empty_tools():
+    """Test available_mcp_tools handles empty tools list"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1555,10 +1555,54 @@ async def test_available_remote_mcp_tools_empty_tools():
 
     async with mock_mcp_success():  # Empty tools by default
         # Call the function
-        result = await available_remote_mcp_tools(server)
+        result = await available_mcp_tools(server)
 
         # Verify empty list is returned
         assert result == []
+
+
+@pytest.mark.asyncio
+async def test_available_mcp_tools_local_success():
+    """Test available_mcp_tools successfully retrieves tools from local MCP server"""
+
+    # Create a mock ExternalToolServer for local MCP
+    server = ExternalToolServer(
+        name="local_test_server",
+        type=ToolServerType.local_mcp,
+        description="Test local MCP server",
+        properties={
+            "command": "python",
+            "args": ["-m", "test_mcp_server"],
+            "env_vars": {},
+        },
+    )
+
+    # Mock tools that the MCP server should return
+    mock_tools = [
+        Tool(name="local_echo", description="Local echo tool", inputSchema={}),
+        Tool(name="local_calc", description="Local calculator", inputSchema={}),
+    ]
+
+    async with mock_mcp_success(tools=mock_tools):
+        # Call the function
+        result = await available_mcp_tools(server)
+
+        # Verify the result
+        assert len(result) == 2
+
+        # Check tool details
+        tool_names = [tool.name for tool in result]
+        assert "local_echo" in tool_names
+        assert "local_calc" in tool_names
+
+        # Check tool IDs are properly formatted with local prefix
+        for tool in result:
+            assert tool.id.startswith(f"mcp::local::{server.id}::")
+            assert tool.name in ["local_echo", "local_calc"]
+
+        # Check descriptions
+        echo_tool = next(t for t in result if t.name == "local_echo")
+        assert echo_tool.description == "Local echo tool"
 
 
 # Unit tests for validate_tool_server_connectivity function

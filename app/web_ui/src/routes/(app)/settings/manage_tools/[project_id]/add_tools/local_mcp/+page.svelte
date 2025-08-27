@@ -5,18 +5,19 @@
   import FormList from "$lib/utils/form_list.svelte"
   import { page } from "$app/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { client } from "$lib/api_client"
+  import { goto } from "$app/navigation"
 
   // Environment Variables as array of key/value pairs
   interface EnvVarPair {
     key: string
     value: string
-    placeholder: string | null
   }
 
   // Form fields
   let name = ""
   let command = ""
-  let args: string[] = []
+  let args: ""
   let env_vars: EnvVarPair[] = []
   let description = ""
 
@@ -40,20 +41,51 @@
     }
   }
 
+  function buildEnvVarsObject(): Record<string, string> {
+    const envVarsObj: Record<string, string> = {}
+
+    for (const envVar of env_vars) {
+      if (envVar.key.trim() && envVar.value.trim()) {
+        envVarsObj[envVar.key.trim()] = envVar.value.trim()
+      }
+    }
+
+    return envVarsObj
+  }
+
   async function connect_local_mcp() {
     try {
       error = null
       submitting = true
 
-      // Validate required fields
-      if (!name.trim()) {
-        throw new Error("Name is required")
-      }
-      if (!command.trim()) {
-        throw new Error("Command is required")
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/connect_local_mcp",
+        {
+          params: {
+            path: {
+              project_id: $page.params.project_id,
+            },
+          },
+          body: {
+            name: name.trim(),
+            description: description.trim() || null,
+            command: command.trim(),
+            args: args.trim().split(" "), // Split args into array of strings
+            env_vars: buildEnvVarsObject(),
+          },
+        },
+      )
+
+      if (api_error) {
+        throw api_error
       }
 
-      // TODO: Implement MCP server connection
+      if (data?.id) {
+        // Navigate to the tools page for the created tool
+        goto(
+          `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,
+        )
+      }
     } catch (e) {
       error = createKilnError(e)
     } finally {

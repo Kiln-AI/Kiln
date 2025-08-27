@@ -7,7 +7,12 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, KilnBuiltInToolId, ToolId
+from kiln_ai.tools.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
+    MCP_REMOTE_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+    ToolId,
+)
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
@@ -151,17 +156,26 @@ class ToolSetApiDescription(BaseModel):
     tools: list[ToolApiDescription]
 
 
-async def available_remote_mcp_tools(
+async def available_mcp_tools(
     server: ExternalToolServer,
 ) -> list[ToolApiDescription]:
     """
-    Get the available tools from a remote MCP server
+    Get the available tools from an MCP server (remote or local)
     """
+    # Determine the prefix based on server type
+    match server.type:
+        case ToolServerType.remote_mcp:
+            prefix = MCP_REMOTE_TOOL_ID_PREFIX
+        case ToolServerType.local_mcp:
+            prefix = MCP_LOCAL_TOOL_ID_PREFIX
+        case _:
+            raise_exhaustive_enum_error(server.type)
+
     async with MCPSessionManager.shared().mcp_client(server) as session:
         tools_result = await session.list_tools()
         return [
             ToolApiDescription(
-                id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                id=f"{prefix}{server.id}::{tool.name}",
                 name=tool.name,
                 description=tool.description,
             )
@@ -220,27 +234,24 @@ def connect_tool_servers_api(app: FastAPI):
 
         tool_sets = []
 
-        # Get available tools from remote MCP servers only
+        # Get available tools from MCP servers
         for server in project.external_tool_servers(readonly=True):
-            available_mcp_tools = []
+            server_tools = []
             match server.type:
-                case ToolServerType.remote_mcp:
+                case ToolServerType.remote_mcp | ToolServerType.local_mcp:
                     try:
-                        available_mcp_tools = await available_remote_mcp_tools(server)
+                        server_tools = await available_mcp_tools(server)
                     except Exception:
                         # Skip the tool when we can't connect to the server
                         continue
-                case ToolServerType.local_mcp:
-                    # TODO: Implement this
-                    pass
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
-            if available_mcp_tools:
+            if server_tools:
                 tool_sets.append(
                     ToolSetApiDescription(
                         set_name="MCP Server: " + server.name,
-                        tools=available_mcp_tools,
+                        tools=server_tools,
                     )
                 )
 
@@ -311,7 +322,7 @@ def connect_tool_servers_api(app: FastAPI):
         # Get available tools based on server type
         available_tools = []
         match tool_server.type:
-            case ToolServerType.remote_mcp:
+            case ToolServerType.remote_mcp | ToolServerType.local_mcp:
                 async with MCPSessionManager.shared().mcp_client(
                     tool_server
                 ) as session:
@@ -321,9 +332,6 @@ def connect_tool_servers_api(app: FastAPI):
                         ExternalToolApiDescription.tool_from_mcp_tool(tool)
                         for tool in tools_result.tools
                     ]
-            case ToolServerType.local_mcp:
-                # TODO: Implement this
-                pass
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 
