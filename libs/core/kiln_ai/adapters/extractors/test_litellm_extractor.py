@@ -2,15 +2,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from litellm import Message
 from litellm.types.utils import Choices, ModelResponse
 
 from conftest import MockFileFactoryMimeType
-from kiln_ai.adapters.extractors.base_extractor import (
-    ExtractionInput,
-    ExtractionOutput,
-    OutputFormat,
-)
+from kiln_ai.adapters.extractors.base_extractor import ExtractionInput, OutputFormat
 from kiln_ai.adapters.extractors.encoding import to_base64_url
 from kiln_ai.adapters.extractors.litellm_extractor import (
     ExtractorConfig,
@@ -36,7 +31,7 @@ def mock_litellm_extractor():
         ExtractorConfig(
             name="mock",
             extractor_type=ExtractorType.LITELLM,
-            model_name="model-name",
+            model_name="gpt_4o",
             model_provider_name="openai",
             properties={
                 "prompt_document": PROMPTS_FOR_KIND["document"],
@@ -98,60 +93,224 @@ def test_get_kind_from_mime_type_unsupported(mock_litellm_extractor):
 
 
 async def test_extract_success(mock_file_factory, mock_litellm_extractor):
-    test_pdf_file = mock_file_factory(MockFileFactoryMimeType.PDF)
-    test_pdf_file_bytes = Path(test_pdf_file).read_bytes()
-
-    # we expect the base64 URL to be passed on to litellm
+    """Test successful extraction."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    test_pdf_file_bytes = Path(test_file).read_bytes()
     base64_url = to_base64_url("application/pdf", test_pdf_file_bytes)
 
-    # Mock the litellm response structure
-    mock_message = AsyncMock(spec=Message)
-    mock_message.content = "extracted content"
-    mock_choice = AsyncMock(spec=Choices)
-    mock_choice.message = mock_message
     mock_response = AsyncMock(spec=ModelResponse)
+    mock_choice = AsyncMock(spec=Choices)
+    mock_message = AsyncMock()
+    mock_message.content = "Extracted content from PDF"
+    mock_choice.message = mock_message
     mock_response.choices = [mock_choice]
 
-    with (
-        patch("pathlib.Path.read_bytes", return_value=test_pdf_file_bytes),
-        patch("litellm.acompletion", return_value=mock_response) as mock_acompletion,
-        patch(
-            "kiln_ai.adapters.extractors.litellm_extractor.LitellmExtractor.litellm_model_slug",
-            return_value="provider-name/model-name",
-        ),
-    ):
-        # test the extract method
+    with patch("litellm.acompletion", return_value=mock_response) as mock_acompletion:
         result = await mock_litellm_extractor.extract(
-            extraction_input=ExtractionInput(
-                path=str(test_pdf_file),
+            ExtractionInput(
+                path=str(test_file),
                 mime_type="application/pdf",
             )
         )
 
-        assert result == ExtractionOutput(
-            is_passthrough=False,
-            content="extracted content",
-            content_format=OutputFormat.MARKDOWN,
-        )
+    # Verify the completion was called with the correct arguments
+    call_args = mock_acompletion.call_args
+    assert call_args[1]["model"] == "openai/gpt-4o"
+    assert call_args[1]["base_url"] == "https://test.com"
+    assert call_args[1]["api_key"] == "test-key"
+    # default_headers is not included when it's empty (falsy)
+    assert "default_headers" not in call_args[1]
 
-        # check that litellm.acompletion was called with the correct arguments
-        mock_acompletion.assert_awaited_once()
+    # Verify the messages structure
+    messages = call_args[1]["messages"]
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert len(messages[0]["content"]) == 2
+    assert messages[0]["content"][0]["type"] == "text"
+    assert messages[0]["content"][0]["text"] == "prompt for documents"
+    assert messages[0]["content"][1]["type"] == "file"
+    assert messages[0]["content"][1]["file"]["file_data"] == base64_url
 
-        # Verify the call arguments
-        call_args = mock_acompletion.call_args
-        assert call_args[1]["model"] == "provider-name/model-name"
-        assert call_args[1]["messages"][0]["role"] == "user"
-        assert call_args[1]["messages"][0]["content"][0]["type"] == "text"
-        assert (
-            call_args[1]["messages"][0]["content"][0]["text"]
-            == PROMPTS_FOR_KIND["document"]
-        )
+    assert result.content == "Extracted content from PDF"
+    assert result.is_passthrough is False
 
-        # check that the file was read correctly
-        assert call_args[1]["messages"][0]["content"][1]["type"] == "file"
-        assert (
-            call_args[1]["messages"][0]["content"][1]["file"]["file_data"] == base64_url
-        )
+
+def test_build_completion_kwargs_with_all_options(mock_file_factory):
+    """Test that _build_completion_kwargs properly includes all litellm_core_config options."""
+    litellm_core_config = LiteLlmCoreConfig(
+        base_url="https://custom-api.example.com",
+        additional_body_options={"custom_param": "value", "timeout": "30"},
+        default_headers={"Authorization": "Bearer custom-token"},
+    )
+
+    extractor = LitellmExtractor(
+        ExtractorConfig(
+            name="test",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="gpt_4o",
+            model_provider_name="openai",
+            properties={
+                "prompt_document": "prompt for documents",
+                "prompt_image": "prompt for images",
+                "prompt_video": "prompt for videos",
+                "prompt_audio": "prompt for audio",
+            },
+        ),
+        litellm_core_config=litellm_core_config,
+    )
+
+    extraction_input = ExtractionInput(
+        path=str(mock_file_factory(MockFileFactoryMimeType.PDF)),
+        mime_type="application/pdf",
+    )
+
+    completion_kwargs = extractor._build_completion_kwargs(
+        "test prompt", extraction_input
+    )
+
+    # Verify all completion kwargs are included
+    assert completion_kwargs["base_url"] == "https://custom-api.example.com"
+    assert completion_kwargs["custom_param"] == "value"
+    assert completion_kwargs["timeout"] == "30"
+    assert completion_kwargs["default_headers"] == {
+        "Authorization": "Bearer custom-token"
+    }
+
+    # Verify basic structure is maintained
+    assert "model" in completion_kwargs
+    assert "messages" in completion_kwargs
+
+
+def test_build_completion_kwargs_with_partial_options(mock_file_factory):
+    """Test that _build_completion_kwargs works when only some options are set."""
+    litellm_core_config = LiteLlmCoreConfig(
+        base_url=None,
+        additional_body_options={"timeout": "30"},
+        default_headers=None,
+    )
+
+    extractor = LitellmExtractor(
+        ExtractorConfig(
+            name="test",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="gpt_4o",
+            model_provider_name="openai",
+            properties={
+                "prompt_document": "prompt for documents",
+                "prompt_image": "prompt for images",
+                "prompt_video": "prompt for videos",
+                "prompt_audio": "prompt for audio",
+            },
+        ),
+        litellm_core_config=litellm_core_config,
+    )
+
+    extraction_input = ExtractionInput(
+        path=str(mock_file_factory(MockFileFactoryMimeType.PDF)),
+        mime_type="application/pdf",
+    )
+
+    completion_kwargs = extractor._build_completion_kwargs(
+        "test prompt", extraction_input
+    )
+
+    # Verify only the set options are included
+    assert completion_kwargs["timeout"] == "30"
+    assert "base_url" not in completion_kwargs
+    assert "default_headers" not in completion_kwargs
+
+    # Verify basic structure is maintained
+    assert "model" in completion_kwargs
+    assert "messages" in completion_kwargs
+
+
+def test_build_completion_kwargs_with_empty_options(mock_file_factory):
+    """Test that _build_completion_kwargs works when all options are None/empty."""
+    litellm_core_config = LiteLlmCoreConfig(
+        base_url=None,
+        additional_body_options=None,
+        default_headers=None,
+    )
+
+    extractor = LitellmExtractor(
+        ExtractorConfig(
+            name="test",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="gpt_4o",
+            model_provider_name="openai",
+            properties={
+                "prompt_document": "prompt for documents",
+                "prompt_image": "prompt for images",
+                "prompt_video": "prompt for videos",
+                "prompt_audio": "prompt for audio",
+            },
+        ),
+        litellm_core_config=litellm_core_config,
+    )
+
+    extraction_input = ExtractionInput(
+        path=str(mock_file_factory(MockFileFactoryMimeType.PDF)),
+        mime_type="application/pdf",
+    )
+
+    completion_kwargs = extractor._build_completion_kwargs(
+        "test prompt", extraction_input
+    )
+
+    # Verify no completion kwargs are included
+    assert "base_url" not in completion_kwargs
+    assert "default_headers" not in completion_kwargs
+
+    # Verify basic structure is maintained
+    assert "model" in completion_kwargs
+    assert "messages" in completion_kwargs
+
+
+def test_build_completion_kwargs_messages_structure(mock_file_factory):
+    """Test that the messages structure in completion_kwargs is correct."""
+    litellm_core_config = LiteLlmCoreConfig()
+
+    extractor = LitellmExtractor(
+        ExtractorConfig(
+            name="test",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="gpt_4o",
+            model_provider_name="openai",
+            properties={
+                "prompt_document": "prompt for documents",
+                "prompt_image": "prompt for images",
+                "prompt_video": "prompt for videos",
+                "prompt_audio": "prompt for audio",
+            },
+        ),
+        litellm_core_config=litellm_core_config,
+    )
+
+    extraction_input = ExtractionInput(
+        path=str(mock_file_factory(MockFileFactoryMimeType.PDF)),
+        mime_type="application/pdf",
+    )
+
+    completion_kwargs = extractor._build_completion_kwargs(
+        "test prompt", extraction_input
+    )
+
+    # Verify messages structure
+    messages = completion_kwargs["messages"]
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+
+    content = messages[0]["content"]
+    assert len(content) == 2
+
+    # First content item should be text
+    assert content[0]["type"] == "text"
+    assert content[0]["text"] == "test prompt"
+
+    # Second content item should be file
+    assert content[1]["type"] == "file"
+    assert "file" in content[1]
+    assert "file_data" in content[1]["file"]
 
 
 async def test_extract_failure_from_litellm(mock_file_factory, mock_litellm_extractor):

@@ -1,4 +1,9 @@
-import { type EvalConfigType, type StructuredOutputMode } from "$lib/types"
+import {
+  type ChunkerType,
+  type EvalConfigType,
+  type OutputFormat,
+  type StructuredOutputMode,
+} from "$lib/types"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
@@ -125,6 +130,34 @@ export function mime_type_to_string(mime_type: string): string {
     return `Audio (${mime_type.split("/")[1]})`
   } else {
     return mime_type
+  }
+}
+
+export function extractor_output_format(output_format: OutputFormat): string {
+  switch (output_format) {
+    case "text/plain":
+      return "Text"
+    case "text/markdown":
+      return "Markdown"
+    default: {
+      // trigger a type error if there is a new output format, but don't handle it
+      // in the switch
+      const exhaustiveCheck: never = output_format
+      return exhaustiveCheck
+    }
+  }
+}
+
+export function chunker_type_format(chunker_type: ChunkerType): string {
+  switch (chunker_type) {
+    case "fixed_window":
+      return "Fixed Window"
+    default: {
+      // trigger a type error if there is a new chunker type, but don't handle it
+      // in the switch
+      const exhaustiveCheck: never = chunker_type
+      return exhaustiveCheck
+    }
   }
 }
 

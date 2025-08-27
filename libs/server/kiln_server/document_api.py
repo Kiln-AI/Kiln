@@ -2,24 +2,36 @@ import asyncio
 import datetime
 import json
 import logging
-import os
-import subprocess
-import sys
-from collections import defaultdict
-from pathlib import Path
 from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    built_in_embedding_models_from_provider,
+)
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
+from kiln_ai.adapters.rag.progress import (
+    RagProgress,
+    compute_current_progress_for_rag_configs,
+)
+from kiln_ai.adapters.rag.rag_runners import (
+    RagChunkingStepRunner,
+    RagEmbeddingStepRunner,
+    RagExtractionStepRunner,
+    RagWorkflowRunner,
+    RagWorkflowRunnerConfiguration,
+)
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     FilenameString,
     KilnAttachmentModel,
     string_to_valid_name,
 )
+from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -29,6 +41,10 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
     get_kind_from_mime_type,
 )
+from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.utils import shared_async_lock_manager
+from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -37,21 +53,9 @@ from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
 
-# keep track of locks by extractor config ID to prevent concurrent runs of the same extractor config
-# maps from extractor config ID -> lock
-run_extractor_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+background_tasks: set[asyncio.Task] = set()
 
 
-def open_folder(path: str | Path) -> None:
-    if sys.platform.startswith("darwin"):
-        subprocess.run(["open", path], check=True)
-    elif sys.platform.startswith("win"):
-        os.startfile(path)  # type: ignore[attr-defined]
-    else:
-        subprocess.run(["xdg-open", path], check=True)
-
-
-# TODO: extract out into common utils
 async def run_extractor_runner_with_status(
     extractor_runner: ExtractorRunner,
 ) -> StreamingResponse:
@@ -75,12 +79,117 @@ async def run_extractor_runner_with_status(
     )
 
 
+async def run_all_extractors_and_rag_workflows(
+    project: Project,
+    document: Document,
+):
+    # extractors are a step in the RAG workflow, so we run them first otherwise we would have the
+    # RAG workflows try to run the same extractors at the same time
+    extractor_tasks: list[asyncio.Task] = []
+    for extractor_config in [
+        ec for ec in project.extractor_configs(readonly=True) if not ec.is_archived
+    ]:
+
+        async def run_extractor(extractor_config=extractor_config):
+            try:
+                async with shared_async_lock_manager.acquire(
+                    f"docs:extract:{extractor_config.id}",
+                    timeout=0.5,
+                ):
+                    extractor_runner = ExtractorRunner(
+                        extractor_configs=[extractor_config],
+                        documents=[document],
+                    )
+                    async for progress in extractor_runner.run():
+                        pass
+            except asyncio.TimeoutError:
+                # this lock may be held by a concurrent rag run that uses this extractor
+                # in which case we will skip the processing here, and user may need to
+                # manually Run the rag config; relatively rare
+                logger.info(f"Extractor {extractor_config.id} is locked, skipping")
+
+        extractor_tasks.append(asyncio.create_task(run_extractor()))
+
+    if extractor_tasks:
+        results = await asyncio.gather(*extractor_tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error running extractor: {result}")
+
+    rag_tasks: list[asyncio.Task] = []
+    for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
+
+        async def run_rag(rag_config=rag_config):
+            # no need to lock here, each rag runner gets a lock when it starts running
+            rag_runner = build_rag_workflow_runner(project, str(rag_config.id))
+            async for progress in rag_runner.run():
+                pass
+
+        rag_tasks.append(asyncio.create_task(run_rag()))
+
+    if rag_tasks:
+        results = await asyncio.gather(*rag_tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error running RAG workflow: {result}")
+
+    return None
+
+
+def run_all_extractors_and_rag_workflows_no_wait(
+    project: Project,
+    document: Document,
+) -> None:
+    """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
+    Needed to make mocking easier in tests.
+    """
+    # dangling async tasks with no reference can be garbage collected at any time (even while running)
+    # so we need to add a reference to the task (here in the background_tasks set) to prevent it
+    # from being garbage collected
+    # https://docs.astral.sh/ruff/rules/asyncio-dangling-task/
+    task = asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
+
+async def run_rag_workflow_runner_with_status(
+    runner: RagWorkflowRunner,
+) -> StreamingResponse:
+    async def event_generator():
+        async for progress in runner.run():
+            logs = []
+            for log in progress.logs or []:
+                logs.append(
+                    {
+                        "message": log.message,
+                        "level": log.level,
+                    }
+                )
+
+            data = {
+                "total_document_completed_count": progress.total_document_completed_count,
+                "total_document_count": progress.total_document_count,
+                "total_document_extracted_count": progress.total_document_extracted_count,
+                "total_document_chunked_count": progress.total_document_chunked_count,
+                "total_document_embedded_count": progress.total_document_embedded_count,
+                "total_document_extracted_error_count": progress.total_document_extracted_error_count,
+                "total_document_chunked_error_count": progress.total_document_chunked_error_count,
+                "total_document_embedded_error_count": progress.total_document_embedded_error_count,
+                "logs": logs,
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+
+        # Send the final complete message the app expects, and uses to stop listening
+        yield "data: complete\n\n"
+
+    return StreamingResponse(
+        content=event_generator(),
+        media_type="text/event-stream",
+    )
+
+
 class OpenFileResponse(BaseModel):
     path: str
-
-
-class DiscoverServeFileResponse(BaseModel):
-    url: str
 
 
 class ExtractionProgress(BaseModel):
@@ -105,6 +214,74 @@ class ExtractionSummary(BaseModel):
     source: str
     output_content: str
     extractor: ExtractorSummary
+
+
+class RagConfigWithSubConfigs(BaseModel):
+    id: ID_TYPE
+    name: str
+    description: str | None
+    created_at: datetime.datetime
+    created_by: str
+    extractor_config: ExtractorConfig
+    chunker_config: ChunkerConfig
+    embedding_config: EmbeddingConfig
+
+
+class CreateRagConfigRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="A description for your own reference.",
+        default=None,
+    )
+    extractor_config_id: ID_TYPE = Field(
+        description="The extractor config to use for the RAG workflow",
+    )
+    chunker_config_id: ID_TYPE = Field(
+        description="The chunker config to use for the RAG workflow.",
+    )
+    embedding_config_id: ID_TYPE = Field(
+        description="The embedding config to use for the RAG workflow.",
+    )
+
+
+class CreateChunkerConfigRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the chunker config",
+        default=None,
+    )
+    chunker_type: ChunkerType = Field(
+        description="The type of the chunker",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
+
+
+class CreateEmbeddingConfigRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the embedding config",
+        default=None,
+    )
+    model_provider_name: ModelProviderName = Field(
+        description="The provider of the embedding model",
+    )
+    model_name: EmbeddingModelName = Field(
+        description="The name of the embedding model",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
 
 
 class CreateExtractorConfigRequest(BaseModel):
@@ -204,6 +381,95 @@ def build_extraction_summary(
     )
 
 
+class GetRagConfigProgressRequest(BaseModel):
+    rag_config_ids: list[str] | None = Field(
+        description="The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned",
+        default=None,
+    )
+
+
+def build_rag_workflow_runner(
+    project: Project,
+    rag_config_id: str,
+) -> RagWorkflowRunner:
+    rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+    if rag_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="RAG config not found",
+        )
+
+    # should not happen, but id is optional in the datamodel
+    if (
+        rag_config.extractor_config_id is None
+        or rag_config.chunker_config_id is None
+        or rag_config.embedding_config_id is None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="RAG config is missing required configs",
+        )
+
+    extractor_config = ExtractorConfig.from_id_and_parent_path(
+        rag_config.extractor_config_id, project.path
+    )
+    if extractor_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Extractor config not found",
+        )
+
+    chunker_config = ChunkerConfig.from_id_and_parent_path(
+        rag_config.chunker_config_id, project.path
+    )
+    if chunker_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Chunker config not found",
+        )
+
+    embedding_config = EmbeddingConfig.from_id_and_parent_path(
+        rag_config.embedding_config_id, project.path
+    )
+    if embedding_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Embedding config not found",
+        )
+
+    runner = RagWorkflowRunner(
+        project,
+        RagWorkflowRunnerConfiguration(
+            rag_config=rag_config,
+            extractor_config=extractor_config,
+            chunker_config=chunker_config,
+            embedding_config=embedding_config,
+            step_runners=[
+                RagExtractionStepRunner(
+                    project,
+                    extractor_config,
+                    concurrency=50,
+                ),
+                RagChunkingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    concurrency=50,
+                ),
+                RagEmbeddingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    embedding_config,
+                    concurrency=50,
+                ),
+            ],
+        ),
+    )
+
+    return runner
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents")
     async def create_document(
@@ -253,15 +519,9 @@ def connect_document_api(app: FastAPI):
         )
         document.save_to_file()
 
-        for extractor_config in [
-            ec for ec in project.extractor_configs(readonly=True) if not ec.is_archived
-        ]:
-            extractor_runner = ExtractorRunner(
-                extractor_configs=[extractor_config],
-                documents=[document],
-            )
-            async for progress in extractor_runner.run():
-                pass
+        # we don't want the client to wait for these to complete - worst case the jobs fail and
+        # will try again on the next document creation or when the user runs them manually
+        run_all_extractors_and_rag_workflows_no_wait(project, document)
 
         return document
 
@@ -383,7 +643,11 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         extractor_config_id: str,
     ) -> StreamingResponse:
-        async with run_extractor_locks[extractor_config_id]:
+        # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
+        # having duplicate extractions
+        async with shared_async_lock_manager.acquire(
+            f"docs:extract:{extractor_config_id}"
+        ):
             project = project_from_id(project_id)
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 extractor_config_id, project.path
@@ -526,7 +790,7 @@ def connect_document_api(app: FastAPI):
                 detail="Document path not found",
             )
 
-        open_folder(document.path.parent)
+        open_folder(document.path)
 
         return OpenFileResponse(path=str(document.path.parent))
 
@@ -691,3 +955,260 @@ def connect_document_api(app: FastAPI):
         extractor_config.save_to_file()
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
+
+    @app.post("/api/projects/{project_id}/create_chunker_config")
+    async def create_chunker_config(
+        project_id: str,
+        request: CreateChunkerConfigRequest,
+    ) -> ChunkerConfig:
+        project = project_from_id(project_id)
+
+        chunker_config = ChunkerConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            chunker_type=request.chunker_type,
+            properties=request.properties,
+        )
+        chunker_config.save_to_file()
+
+        return chunker_config
+
+    @app.get("/api/projects/{project_id}/chunker_configs")
+    async def get_chunker_configs(
+        project_id: str,
+    ) -> list[ChunkerConfig]:
+        project = project_from_id(project_id)
+        return project.chunker_configs(readonly=True)
+
+    @app.post("/api/projects/{project_id}/create_embedding_config")
+    async def create_embedding_config(
+        project_id: str,
+        request: CreateEmbeddingConfigRequest,
+    ) -> EmbeddingConfig:
+        project = project_from_id(project_id)
+
+        model = built_in_embedding_models_from_provider(
+            provider_name=request.model_provider_name,
+            model_name=request.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {request.model_name} not found in {request.model_provider_name}",
+            )
+
+        if "dimensions" in request.properties:
+            if (
+                not isinstance(request.properties["dimensions"], int)
+                or request.properties["dimensions"] <= 0
+                or request.properties["dimensions"] > model.n_dimensions
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Dimensions must be a positive integer and less than the model's dimensions",
+                )
+
+        embedding_config = EmbeddingConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            model_provider_name=request.model_provider_name,
+            model_name=request.model_name,
+            properties=request.properties,
+        )
+        embedding_config.save_to_file()
+
+        return embedding_config
+
+    @app.get("/api/projects/{project_id}/embedding_configs")
+    async def get_embedding_configs(
+        project_id: str,
+    ) -> list[EmbeddingConfig]:
+        project = project_from_id(project_id)
+        return project.embedding_configs(readonly=True)
+
+    @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
+    async def create_rag_config(
+        project_id: str,
+        request: CreateRagConfigRequest,
+    ) -> RagConfig:
+        project = project_from_id(project_id)
+
+        # check that the extractor, chunker, and embedding configs exist
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            str(request.extractor_config_id), project.path
+        )
+        if not extractor_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extractor config {request.extractor_config_id} not found",
+            )
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            str(request.chunker_config_id), project.path
+        )
+        if not chunker_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chunker config {request.chunker_config_id} not found",
+            )
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            str(request.embedding_config_id), project.path
+        )
+        if not embedding_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding config {request.embedding_config_id} not found",
+            )
+
+        rag_config = RagConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            extractor_config_id=extractor_config.id,
+            chunker_config_id=chunker_config.id,
+            embedding_config_id=embedding_config.id,
+        )
+        rag_config.save_to_file()
+
+        return rag_config
+
+    @app.get("/api/projects/{project_id}/rag_configs")
+    async def get_rag_configs(
+        project_id: str,
+    ) -> list[RagConfigWithSubConfigs]:
+        project = project_from_id(project_id)
+
+        rag_configs: list[RagConfigWithSubConfigs] = []
+        for rag_config in project.rag_configs(readonly=True):
+            extractor_config = ExtractorConfig.from_id_and_parent_path(
+                str(rag_config.extractor_config_id), project.path
+            )
+            if not extractor_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Extractor config {rag_config.extractor_config_id} not found",
+                )
+
+            chunker_config = ChunkerConfig.from_id_and_parent_path(
+                str(rag_config.chunker_config_id), project.path
+            )
+            if not chunker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Chunker config {rag_config.chunker_config_id} not found",
+                )
+
+            embedding_config = EmbeddingConfig.from_id_and_parent_path(
+                str(rag_config.embedding_config_id), project.path
+            )
+            if not embedding_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Embedding config {rag_config.embedding_config_id} not found",
+                )
+
+            rag_configs.append(
+                RagConfigWithSubConfigs(
+                    id=rag_config.id,
+                    name=rag_config.name,
+                    description=rag_config.description,
+                    created_at=rag_config.created_at,
+                    created_by=rag_config.created_by,
+                    extractor_config=extractor_config,
+                    chunker_config=chunker_config,
+                    embedding_config=embedding_config,
+                )
+            )
+
+        return rag_configs
+
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    async def get_rag_config(
+        project_id: str,
+        rag_config_id: str,
+    ) -> RagConfigWithSubConfigs:
+        project = project_from_id(project_id)
+        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+        if rag_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="RAG config not found",
+            )
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            str(rag_config.extractor_config_id), project.path
+        )
+        if not extractor_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extractor config {rag_config.extractor_config_id} not found",
+            )
+
+        chunker_config = ChunkerConfig.from_id_and_parent_path(
+            str(rag_config.chunker_config_id), project.path
+        )
+        if not chunker_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chunker config {rag_config.chunker_config_id} not found",
+            )
+
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            str(rag_config.embedding_config_id), project.path
+        )
+        if not embedding_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding config {rag_config.embedding_config_id} not found",
+            )
+
+        return RagConfigWithSubConfigs(
+            id=rag_config.id,
+            name=rag_config.name,
+            description=rag_config.description,
+            created_at=rag_config.created_at,
+            created_by=rag_config.created_by,
+            extractor_config=extractor_config,
+            chunker_config=chunker_config,
+            embedding_config=embedding_config,
+        )
+
+    # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
+    async def run_rag_config(
+        project_id: str,
+        rag_config_id: str,
+    ) -> StreamingResponse:
+        project = project_from_id(project_id)
+        runner = build_rag_workflow_runner(project, rag_config_id)
+
+        # the workflow runner handles locking
+        return await run_rag_workflow_runner_with_status(runner)
+
+    @app.post("/api/projects/{project_id}/rag_configs/progress")
+    async def get_rag_config_progress(
+        project_id: str,
+        request: GetRagConfigProgressRequest,
+    ) -> Dict[str, RagProgress]:
+        project = project_from_id(project_id)
+        rag_configs: list[RagConfig] = []
+
+        if request.rag_config_ids:
+            for rag_config_id in request.rag_config_ids:
+                rag_config = RagConfig.from_id_and_parent_path(
+                    rag_config_id, project.path
+                )
+                if rag_config is None:
+                    continue
+                rag_configs.append(rag_config)
+
+            if not rag_configs:
+                return {}
+        else:
+            rag_configs = project.rag_configs(readonly=True)
+
+        progress_map: Dict[str, RagProgress] = compute_current_progress_for_rag_configs(
+            project, rag_configs
+        )
+        return progress_map
