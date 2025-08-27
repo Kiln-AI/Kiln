@@ -135,7 +135,7 @@ class TestMCPServerIntegration:
     @pytest.mark.skip(
         reason="Skipping integration test since it requires calling a real MCP server"
     )
-    async def test_list_tools_with_real_mcp_server(self):
+    async def test_list_tools_with_real_remote_mcp_server(self):
         """Test list_tools with a real MCP server if available."""
         external_tool_server = ExternalToolServer(
             name="postman_echo",
@@ -157,3 +157,30 @@ class TestMCPServerIntegration:
         assert tools is not None
         assert len(tools.tools) > 0
         assert "echo" in [tool.name for tool in tools.tools]
+
+    @pytest.mark.skip(
+        reason="Skipping integration test since it requires calling a real MCP server"
+    )
+    async def test_list_tools_with_real_local_mcp_server(self):
+        """Test list_tools with a real local MCP server if available."""
+        external_tool_server = ExternalToolServer(
+            name="Firecrawl",
+            type=ToolServerType.local_mcp,
+            description="Firecrawl MCP Server for testing",
+            properties={
+                "command": "npx",
+                "args": ["-y", "firecrawl-mcp"],
+                "env_vars": {"FIRECRAWL_API_KEY": "REPLACE_WITH_YOUR_API_KEY"},
+            },
+        )
+
+        async with MCPSessionManager.shared().mcp_client(
+            external_tool_server
+        ) as session:
+            tools = await session.list_tools()
+
+        print("Test tools:", tools)
+
+        assert tools is not None
+        assert len(tools.tools) > 0
+        assert "firecrawl_scrape" in [tool.name for tool in tools.tools]
