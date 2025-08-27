@@ -41,6 +41,8 @@
   let task_run_config_temperature: number
   let task_run_config_top_p: number
   let task_run_config_structured_output_mode: StructuredOutputMode
+  let task_run_config_tools: string[] = []
+  $: requires_tool_support = task_run_config_tools.length > 0
 
   // Update structured_output_mode when model changes
   $: update_structured_output_mode(
@@ -91,6 +93,9 @@
               temperature: task_run_config_temperature,
               top_p: task_run_config_top_p,
               structured_output_mode: task_run_config_structured_output_mode,
+              tools_config: {
+                tools: task_run_config_tools,
+              },
             },
           },
         },
@@ -147,6 +152,7 @@
       bind:model_name={task_run_config_model_name}
       bind:provider_name={task_run_config_provider_name}
       bind:model={task_run_config_long_prompt_name_provider}
+      bind:requires_tool_support
     />
     <PromptTypeSelector
       bind:prompt_method={task_run_config_prompt_method}
@@ -154,10 +160,12 @@
     />
     <Collapse title="Advanced Options">
       <RunOptions
+        bind:tools={task_run_config_tools}
         bind:temperature={task_run_config_temperature}
         bind:top_p={task_run_config_top_p}
         bind:structured_output_mode={task_run_config_structured_output_mode}
         has_structured_output={!!$current_task?.output_json_schema}
+        {project_id}
       />
     </Collapse>
     {#if add_task_config_error}

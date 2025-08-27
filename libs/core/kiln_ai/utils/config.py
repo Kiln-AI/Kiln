@@ -261,6 +261,14 @@ class Config:
                 yaml.dump(current_settings, f)
             self._settings = current_settings
 
+    def local_data_dir(self) -> Path:
+        """
+        Get the path to the local data directory.
+
+        This is the directory where we store local data such as index files, etc.
+        """
+        return Path(os.path.join(self.settings_dir(), "kiln_data"))
+
 
 def _get_user_id():
     try:

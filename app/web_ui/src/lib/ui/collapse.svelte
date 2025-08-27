@@ -16,7 +16,7 @@
   >
     {title}
   </div>
-  <div class="collapse-content flex flex-col gap-4">
+  <div class="collapse-content flex flex-col gap-4" style="min-width: 0">
     <slot />
   </div>
 </div>

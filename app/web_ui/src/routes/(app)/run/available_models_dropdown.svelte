@@ -14,7 +14,11 @@
     type RecentModel,
     recent_model_store,
   } from "$lib/stores/recent_model_store"
-  import type { AvailableModels, ProviderModels } from "$lib/types"
+  import type {
+    AvailableModels,
+    ModelDetails,
+    ProviderModels,
+  } from "$lib/types"
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -24,15 +28,23 @@
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
 
   export let model: string = $ui_state.selected_model
+  export let label: string = "Model"
+  export let description: string | undefined = undefined
+  // filter out all the models that do not match the predicate
+  export let filter_models_predicate: (model: ModelDetails) => boolean = (_) =>
+    true
   export let requires_structured_output: boolean = false
   export let requires_data_gen: boolean = false
   export let requires_logprobs: boolean = false
   export let requires_uncensored_data_gen: boolean = false
+  export let requires_doc_extraction: boolean = false
+  export let requires_tool_support: boolean = false
   export let error_message: string | null = null
   export let suggested_mode:
     | "data_gen"
     | "evals"
     | "uncensored_data_gen"
+    | "doc_extraction"
     | null = null
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
@@ -41,6 +53,8 @@
     requires_data_gen,
     requires_uncensored_data_gen,
     requires_logprobs,
+    requires_doc_extraction,
+    requires_tool_support,
     $ui_state.current_task_id,
     $recent_model_store,
     $model_info,
@@ -96,6 +110,8 @@
     requires_data_gen: boolean,
     requires_uncensored_data_gen: boolean,
     requires_logprobs: boolean,
+    requires_doc_extraction: boolean,
+    requires_tool_support: boolean,
     current_task_id: string | null,
     recent_models: RecentModel[],
     model_data: ProviderModels | null,
@@ -105,18 +121,26 @@
     untested_models = []
 
     // Recent models section
-    if (recent_models.length > 0) {
-      let recent_model_list: Option[] = []
-      for (const recent_model of recent_models) {
-        recent_model_list.push({
-          value: recent_model.model_provider + "/" + recent_model.model_id,
-          label:
-            model_name_from_id(recent_model.model_id, model_data) +
-            " (" +
-            provider_name_from_id(recent_model.model_provider) +
-            ")",
-        })
+    let recent_model_list: Option[] = []
+    for (const recent_model of recent_models) {
+      const model_details = available_model_details(
+        recent_model.model_id,
+        recent_model.model_provider,
+        providers,
+      )
+      if (!model_details || !filter_models_predicate(model_details)) {
+        continue
       }
+      recent_model_list.push({
+        value: recent_model.model_provider + "/" + recent_model.model_id,
+        label:
+          model_name_from_id(recent_model.model_id, model_data) +
+          " (" +
+          provider_name_from_id(recent_model.model_provider) +
+          ")",
+      })
+    }
+    if (recent_model_list.length > 0) {
       options.push({
         label: "Recent Models",
         options: recent_model_list,
@@ -126,6 +150,9 @@
     for (const provider of providers) {
       let model_list: Option[] = []
       for (const model of provider.models) {
+        if (!filter_models_predicate(model)) {
+          continue
+        }
         // Exclude models that are not available for the current task
         if (
           model &&
@@ -150,7 +177,9 @@
           (requires_data_gen && !model.supports_data_gen) ||
           (structured_output && !model.supports_structured_output) ||
           (requires_logprobs && !model.supports_logprobs) ||
-          (requires_uncensored_data_gen && !model.uncensored)
+          (requires_uncensored_data_gen && !model.uncensored) ||
+          (requires_doc_extraction && !model.supports_doc_extraction) ||
+          (requires_tool_support && !model.supports_function_calling)
         if (unsupported) {
           unsupported_models.push({
             value: id,
@@ -164,7 +193,9 @@
           (suggested_mode === "data_gen" && model.suggested_for_data_gen) ||
           (suggested_mode === "evals" && model.suggested_for_evals) ||
           (suggested_mode === "uncensored_data_gen" &&
-            model.suggested_for_uncensored_data_gen)
+            model.suggested_for_uncensored_data_gen) ||
+          (suggested_mode === "doc_extraction" &&
+            model.suggested_for_doc_extraction)
         ) {
           badge = "Recommended"
         }
@@ -194,6 +225,8 @@
       if (requires_uncensored_data_gen) {
         not_recommended_label =
           "Not Recommended - Uncensored Data Gen Not Supported"
+      } else if (requires_tool_support) {
+        not_recommended_label = "Not Recommended - Tool Calling Not Supported"
       } else if (requires_data_gen) {
         not_recommended_label = "Not Recommended - Data Gen Not Supported"
       } else if (requires_structured_output) {
@@ -237,11 +270,16 @@
   $: selected_model_suggested_evals =
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_evals || false
+
+  $: selected_model_suggested_doc_extraction =
+    available_model_details(model_name, provider_name, $available_models)
+      ?.suggested_for_doc_extraction || false
 </script>
 
 <div>
   <FormElement
-    label="Model"
+    {label}
+    {description}
     bind:value={model}
     id="model"
     inputType="fancy_select"
@@ -260,6 +298,8 @@
       <Warning
         warning_message="The current data gen template works best with uncensored models like Grok. This model may refuse to generate data for sensitive topics."
       />
+    {:else if requires_tool_support}
+      <Warning warning_message="This model does not support tool calling." />
     {:else if requires_data_gen}
       <Warning
         warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."
@@ -312,6 +352,20 @@
           ? "success"
           : "warning"}
       warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+    />
+  {:else if suggested_mode === "doc_extraction"}
+    <Warning
+      warning_icon={!model
+        ? "info"
+        : selected_model_suggested_doc_extraction
+          ? "check"
+          : "exclaim"}
+      warning_color={!model
+        ? "gray"
+        : selected_model_suggested_doc_extraction
+          ? "success"
+          : "warning"}
+      warning_message="For doc extraction, we recommend using a high quality multimodal model like Gemini Pro."
     />
   {/if}
 </div>

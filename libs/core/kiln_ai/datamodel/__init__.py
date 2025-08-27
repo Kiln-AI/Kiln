@@ -11,20 +11,24 @@ User docs: https://docs.kiln.tech/developers/kiln-datamodel
 
 from __future__ import annotations
 
-from kiln_ai.datamodel import dataset_split, eval, strict_mode
+from kiln_ai.datamodel import (
+    chunk,
+    dataset_split,
+    embedding,
+    eval,
+    extraction,
+    rag,
+    strict_mode,
+)
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     Priority,
     StructuredOutputMode,
     TaskOutputRatingType,
 )
-from kiln_ai.datamodel.dataset_split import (
-    DatasetSplit,
-    DatasetSplitDefinition,
-)
-from kiln_ai.datamodel.finetune import (
-    Finetune,
-)
+from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
+from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -41,10 +45,7 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import (
-    TaskRun,
-    Usage,
-)
+from kiln_ai.datamodel.task_run import TaskRun, Usage
 
 __all__ = [
     "BasePrompt",
@@ -53,6 +54,7 @@ __all__ = [
     "DataSourceType",
     "DatasetSplit",
     "DatasetSplitDefinition",
+    "ExternalToolServer",
     "FineTuneStatusType",
     "Finetune",
     "Priority",
@@ -67,11 +69,14 @@ __all__ = [
     "TaskOutputRating",
     "TaskOutputRatingType",
     "TaskRequirement",
-    "TaskRequirement",
     "TaskRun",
     "Usage",
+    "chunk",
     "dataset_split",
+    "embedding",
     "eval",
+    "extraction",
     "prompt_generator_values",
+    "rag",
     "strict_mode",
 ]

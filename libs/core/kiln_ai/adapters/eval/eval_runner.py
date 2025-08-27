@@ -160,8 +160,12 @@ class EvalRunner:
         """
         jobs = self.collect_tasks()
 
-        runner = AsyncJobRunner(concurrency=concurrency)
-        async for progress in runner.run(jobs, self.run_job):
+        runner = AsyncJobRunner(
+            concurrency=concurrency,
+            jobs=jobs,
+            run_job_fn=self.run_job,
+        )
+        async for progress in runner.run():
             yield progress
 
     async def run_job(self, job: EvalJob) -> bool:
@@ -169,7 +173,9 @@ class EvalRunner:
             # Create the evaluator for this eval config/run config pair
             evaluator = eval_adapter_from_type(job.eval_config.config_type)(
                 job.eval_config,
-                job.task_run_config.run_config() if job.task_run_config else None,
+                job.task_run_config.run_config_properties
+                if job.task_run_config
+                else None,
             )
             if not isinstance(evaluator, BaseEval):
                 raise ValueError("Not able to create evaluator from eval config")

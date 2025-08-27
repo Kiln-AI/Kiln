@@ -25,8 +25,11 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.tools import KilnToolInterface
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 @dataclass
@@ -48,32 +51,23 @@ class BaseAdapter(metaclass=ABCMeta):
     This abstract class provides the foundation for implementing model-specific adapters
     that can process tasks with structured or unstructured inputs/outputs. It handles
     input/output validation, prompt building, and run tracking.
-
-    Attributes:
-        prompt_builder (BasePromptBuilder): Builder for constructing prompts for the model
-        kiln_task (Task): The task configuration and metadata
-        output_schema (dict | None): JSON schema for validating structured outputs
-        input_schema (dict | None): JSON schema for validating structured inputs
     """
 
     def __init__(
         self,
-        run_config: RunConfig,
+        task: Task,
+        run_config: RunConfigProperties,
         config: AdapterConfig | None = None,
     ):
+        self.task = task
         self.run_config = run_config
         self.update_run_config_unknown_structured_output_mode()
-        self.prompt_builder = prompt_builder_from_id(
-            run_config.prompt_id, run_config.task
-        )
+        self.prompt_builder = prompt_builder_from_id(run_config.prompt_id, task)
         self._model_provider: KilnModelProvider | None = None
 
-        self.output_schema = self.task().output_json_schema
-        self.input_schema = self.task().input_json_schema
+        self.output_schema = task.output_json_schema
+        self.input_schema = task.input_json_schema
         self.base_adapter_config = config or AdapterConfig()
-
-    def task(self) -> Task:
-        return self.run_config.task
 
     def model_provider(self) -> KilnModelProvider:
         """
@@ -169,13 +163,15 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         # Generate the run and output
-        run = self.generate_run(input, input_source, parsed_output, usage)
+        run = self.generate_run(
+            input, input_source, parsed_output, usage, run_output.trace
+        )
 
         # Save the run if configured to do so, and we have a path to save to
         if (
             self.base_adapter_config.allow_saving
             and Config.shared().autosave_runs
-            and self.task().path is not None
+            and self.task.path is not None
         ):
             run.save_to_file()
         else:
@@ -261,6 +257,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None,
         run_output: RunOutput,
         usage: Usage | None = None,
+        trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
         # Convert input and output to JSON strings if they are dictionaries
         input_str = (
@@ -280,7 +277,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         new_task_run = TaskRun(
-            parent=self.task(),
+            parent=self.task,
             input=input_str,
             input_source=input_source,
             output=TaskOutput(
@@ -289,11 +286,13 @@ class BaseAdapter(metaclass=ABCMeta):
                 source=DataSource(
                     type=DataSourceType.synthetic,
                     properties=self._properties_for_task_output(),
+                    run_config=self.run_config,
                 ),
             ),
             intermediate_outputs=run_output.intermediate_outputs,
             tags=self.base_adapter_config.default_tags or [],
             usage=usage,
+            trace=trace,
         )
 
         return new_task_run
@@ -301,8 +300,10 @@ class BaseAdapter(metaclass=ABCMeta):
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:
         props = {}
 
-        # adapter info
         props["adapter_name"] = self.adapter_name()
+
+        # Legacy properties where we save the run_config details into custom properties.
+        # These are now also be saved in the run_config field.
         props["model_name"] = self.run_config.model_name
         props["model_provider"] = self.run_config.model_provider_name
         props["prompt_id"] = self.run_config.prompt_id
@@ -325,3 +326,19 @@ class BaseAdapter(metaclass=ABCMeta):
             )
             new_run_config.structured_output_mode = structured_output_mode
             self.run_config = new_run_config
+
+    def available_tools(self) -> list[KilnToolInterface]:
+        tool_config = self.run_config.tools_config
+        if tool_config is None or tool_config.tools is None:
+            return []
+
+        project = self.task.parent_project()
+        if project is None:
+            raise ValueError("Task must have a parent project to resolve tools")
+
+        project_id = project.id
+        if project_id is None:
+            raise ValueError("Project must have an ID to resolve tools")
+
+        tools = [tool_from_id(tool_id, project_id) for tool_id in tool_config.tools]
+        return tools
