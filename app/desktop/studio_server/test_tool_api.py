@@ -613,7 +613,7 @@ async def test_get_available_tools_success(client, test_project):
             assert weather_tool["description"] is None
 
 
-def test_get_available_tools_multiple_servers(client, test_project):
+async def test_get_available_tools_multiple_servers(client, test_project):
     """Test get_available_tools with multiple tool servers"""
     # Create first tool server
     tool_data_1 = {
@@ -636,24 +636,8 @@ def test_get_available_tools_multiple_servers(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation for creation
-        mock_session_create = AsyncMock()
-        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client_create(tool_server):
-            yield mock_session_create
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared_create:
-            mock_session_manager_create = AsyncMock()
-            mock_session_manager_create.mcp_client = mock_mcp_client_create
-            mock_session_manager_shared_create.return_value = (
-                mock_session_manager_create
-            )
-
-            # Create both tool servers
+        # Create both tool servers
+        async with mock_mcp_success():
             response1 = client.post(
                 f"/api/projects/{test_project.id}/connect_remote_mcp",
                 json=tool_data_1,
@@ -1025,7 +1009,7 @@ async def test_create_tool_server_long_description(client, test_project):
         assert result["description"] == long_description
 
 
-def test_create_tool_server_unicode_characters(client, test_project):
+async def test_create_tool_server_unicode_characters(client, test_project):
     """Test creation with Unicode characters in name and description"""
     tool_data = {
         "name": "测试工具",
@@ -1039,33 +1023,21 @@ def test_create_tool_server_unicode_characters(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
+        async with mock_mcp_success():
             response = client.post(
                 f"/api/projects/{test_project.id}/connect_remote_mcp",
                 json=tool_data,
             )
 
-        assert response.status_code == 200
-        result = response.json()
-        assert result["name"] == "测试工具"
-        assert "émojis 🚀" in result["description"]
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "测试工具"
+            assert "émojis 🚀" in result["description"]
 
 
-def test_create_tool_server_header_value_with_special_characters(client, test_project):
+async def test_create_tool_server_header_value_with_special_characters(
+    client, test_project
+):
     """Test creation with header values containing special characters"""
     tool_data = {
         "name": "special_header_tool",
@@ -1083,35 +1055,24 @@ def test_create_tool_server_header_value_with_special_characters(client, test_pr
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
+        async with mock_mcp_success():
             response = client.post(
                 f"/api/projects/{test_project.id}/connect_remote_mcp",
                 json=tool_data,
             )
 
-        assert response.status_code == 200
-        result = response.json()
-        headers = result["properties"]["headers"]
-        assert headers["Authorization"] == "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9"
-        assert headers["X-API-Key"] == "key_with-dashes_and.dots"
-        assert headers["X-User-Agent"] == "Mozilla/5.0 (compatible; Kiln/1.0)"
+            assert response.status_code == 200
+            result = response.json()
+            headers = result["properties"]["headers"]
+            assert (
+                headers["Authorization"]
+                == "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9"
+            )
+            assert headers["X-API-Key"] == "key_with-dashes_and.dots"
+            assert headers["X-User-Agent"] == "Mozilla/5.0 (compatible; Kiln/1.0)"
 
 
-def test_create_tool_server_update_workflow(client, test_project):
+async def test_create_tool_server_update_workflow(client, test_project):
     """Test the complete workflow of creating, listing, and retrieving a tool server"""
     # Step 1: Create a tool server
     tool_data = {
@@ -1126,29 +1087,14 @@ def test_create_tool_server_update_workflow(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation for creation
-        mock_session_create = AsyncMock()
-        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client_create(tool_server):
-            yield mock_session_create
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared_create:
-            mock_session_manager_create = AsyncMock()
-            mock_session_manager_create.mcp_client = mock_mcp_client_create
-            mock_session_manager_shared_create.return_value = (
-                mock_session_manager_create
-            )
-
-            # Create
+        # Step 1: Create the tool server
+        async with mock_mcp_success():
             create_response = client.post(
                 f"/api/projects/{test_project.id}/connect_remote_mcp",
                 json=tool_data,
             )
             assert create_response.status_code == 200
+
         created_tool = create_response.json()
         tool_server_id = created_tool["id"]
 
@@ -1162,26 +1108,12 @@ def test_create_tool_server_update_workflow(client, test_project):
         assert tool_servers[0]["id"] == tool_server_id
         assert tool_servers[0]["name"] == "workflow_test_tool"
 
-        # Step 3: Mock MCP server response for detailed view
+        # Step 3 & 4: Get detailed view with mock tools
         mock_tools = [
             Tool(name="workflow_tool", description="Workflow tool", inputSchema={}),
         ]
-        mock_result = ListToolsResult(tools=mock_tools)
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = mock_result
 
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
-            # Step 4: Get detailed view
+        async with mock_mcp_success(tools=mock_tools):
             detail_response = client.get(
                 f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
             )
@@ -1193,7 +1125,7 @@ def test_create_tool_server_update_workflow(client, test_project):
             assert detailed_tool["available_tools"][0]["name"] == "workflow_tool"
 
 
-def test_create_tool_server_concurrent_creation(client, test_project):
+async def test_create_tool_server_concurrent_creation(client, test_project):
     """Test creating multiple tool servers concurrently"""
     tool_servers = [
         {
@@ -1210,21 +1142,7 @@ def test_create_tool_server_concurrent_creation(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
+        async with mock_mcp_success():
             created_tools = []
             for tool_data in tool_servers:
                 response = client.post(
@@ -1234,9 +1152,9 @@ def test_create_tool_server_concurrent_creation(client, test_project):
                 assert response.status_code == 200
                 created_tools.append(response.json())
 
-        # Verify all tools were created with unique IDs
-        tool_ids = [tool["id"] for tool in created_tools]
-        assert len(set(tool_ids)) == 3  # All IDs should be unique
+            # Verify all tools were created with unique IDs
+            tool_ids = [tool["id"] for tool in created_tools]
+            assert len(set(tool_ids)) == 3  # All IDs should be unique
 
         # Verify they all appear in the list
         list_response = client.get(
@@ -1252,7 +1170,7 @@ def test_create_tool_server_concurrent_creation(client, test_project):
         assert server_names == expected_names
 
 
-def test_create_tool_server_duplicate_names_allowed(client, test_project):
+async def test_create_tool_server_duplicate_names_allowed(client, test_project):
     """Test that creating tool servers with duplicate names is allowed"""
     tool_data = {
         "name": "duplicate_name_tool",
@@ -1266,21 +1184,7 @@ def test_create_tool_server_duplicate_names_allowed(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
+        async with mock_mcp_success():
             # Create first tool
             response1 = client.post(
                 f"/api/projects/{test_project.id}/connect_remote_mcp",
@@ -1300,8 +1204,8 @@ def test_create_tool_server_duplicate_names_allowed(client, test_project):
             assert response2.status_code == 200
             tool2 = response2.json()
 
-        # Verify they have different IDs
-        assert tool1["id"] != tool2["id"]
+            # Verify they have different IDs
+            assert tool1["id"] != tool2["id"]
         assert tool1["name"] == tool2["name"] == "duplicate_name_tool"
 
         # Verify both appear in list
@@ -1313,7 +1217,7 @@ def test_create_tool_server_duplicate_names_allowed(client, test_project):
         assert len(tool_servers) == 2
 
 
-def test_create_tool_server_max_length_name(client, test_project):
+async def test_create_tool_server_max_length_name(client, test_project):
     """Test creation with maximum allowed name length (120 characters)"""
     max_length_name = "a" * 120  # 120 character name (the max allowed)
     tool_data = {
@@ -1328,29 +1232,15 @@ def test_create_tool_server_max_length_name(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
+        async with mock_mcp_success():
             response = client.post(
                 f"/api/projects/{test_project.id}/connect_remote_mcp",
                 json=tool_data,
             )
 
-        assert response.status_code == 200
-        result = response.json()
-        assert result["name"] == max_length_name
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == max_length_name
 
 
 def test_create_tool_server_name_too_long_validation(client, test_project):
