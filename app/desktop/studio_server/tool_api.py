@@ -135,7 +135,7 @@ async def available_remote_mcp_tools(
     server: ExternalToolServer,
 ) -> list[ToolApiDescription]:
     """
-    Get the available tools from a remote MCP server. If the server is not reachable, return an empty list.
+    Get the available tools from a remote MCP server
     """
     async with MCPSessionManager.shared().mcp_client(server) as session:
         tools_result = await session.list_tools()
@@ -163,11 +163,16 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
                 ) as session:
                     # Use list tools to validate the server is reachable
                     await session.list_tools()
-            except Exception:
-                # Return a 422 error to the client
+            except ConnectionError:
                 raise HTTPException(
                     status_code=422,
-                    detail="Failed to connect to the server. Make sure the server is reachable, url and headers are correct.",
+                    detail="Unable to connect to the server. Please check that the server is running and accessible.",
+                )
+            except Exception as e:
+                # For any other error, include the original message
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Failed to connect to the server: {str(e)}",
                 )
         case _:
             raise_exhaustive_enum_error(tool_server.type)
