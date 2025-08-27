@@ -252,18 +252,15 @@ def test_create_tool_server_validation_empty_name(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # ValidationError should be raised during ExternalToolServer creation
+        with pytest.raises(ValidationError) as exc_info:
+            client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
-        assert response.status_code == 422
-        error_data = response.json()
-        # The validation now happens when creating ExternalToolServer model
-        # FastAPI will return a 422 with the pydantic validation error details
-        assert "detail" in error_data
         # Check that the error mentions name length or requirement
-        error_str = str(error_data)
+        error_str = str(exc_info.value)
         assert "too short" in error_str or "Name is required" in error_str
 
 
@@ -1371,17 +1368,14 @@ def test_create_tool_server_name_too_long_validation(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
+        # ValidationError should be raised during ExternalToolServer creation
+        with pytest.raises(ValidationError) as exc_info:
+            client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
 
-        assert response.status_code == 422  # Validation error
-        error_data = response.json()
-        # The validation now happens when creating ExternalToolServer model
-        # FastAPI will return a 422 with the pydantic validation error details
-        assert "detail" in error_data
-        error_str = str(error_data)
+        error_str = str(exc_info.value)
         assert "too long" in error_str or "120" in error_str
 
 
@@ -1402,17 +1396,14 @@ def test_create_tool_server_invalid_name_characters(client, test_project):
         ) as mock_project_from_id:
             mock_project_from_id.return_value = test_project
 
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
+            # ValidationError should be raised during ExternalToolServer creation
+            with pytest.raises(ValidationError) as exc_info:
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    json=tool_data,
+                )
 
-            assert response.status_code == 422  # Validation error
-            error_data = response.json()
-            # The validation now happens when creating ExternalToolServer model
-            # FastAPI will return a 422 with the pydantic validation error details
-            assert "detail" in error_data
-            error_str = str(error_data)
+            error_str = str(exc_info.value)
             assert (
                 "invalid" in error_str.lower()
                 or "forbidden" in error_str.lower()

@@ -298,8 +298,6 @@ def connect_tool_servers_api(app: FastAPI):
     async def connect_remote_mcp(
         project_id: str, tool_data: ExternalToolServerCreationRequest
     ) -> ExternalToolServer:
-        from pydantic import ValidationError
-
         project = project_from_id(project_id)
 
         # Create the ExternalToolServer with required fields
@@ -308,17 +306,13 @@ def connect_tool_servers_api(app: FastAPI):
             "headers": tool_data.headers,
         }
 
-        try:
-            tool = ExternalToolServer(
-                name=tool_data.name,
-                type=ToolServerType.remote_mcp,  # Default to remote MCP type
-                description=tool_data.description,
-                properties=properties,
-                parent=project,
-            )
-        except ValidationError as e:
-            # Convert pydantic validation error to HTTP 422
-            raise HTTPException(status_code=422, detail=str(e))
+        tool = ExternalToolServer(
+            name=tool_data.name,
+            type=ToolServerType.remote_mcp,  # Default to remote MCP type
+            description=tool_data.description,
+            properties=properties,
+            parent=project,
+        )
 
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(tool)
