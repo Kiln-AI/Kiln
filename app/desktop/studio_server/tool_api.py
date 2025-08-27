@@ -28,9 +28,9 @@ class KilnToolServerDescription(BaseModel):
 
 class ExternalToolServerCreationRequest(BaseModel):
     name: str
+    description: str | None = None
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
-    description: str | None = None
 
     @model_validator(mode="after")
     def validate_server_details(self):
@@ -81,6 +81,26 @@ class ExternalToolServerCreationRequest(BaseModel):
 
             # Update headers to validated version
             self.headers = validated_headers
+
+        return self
+
+
+class LocalToolServerCreationRequest(BaseModel):
+    name: str
+    description: str | None = None
+    command: str
+    args: List[str]
+    env_vars: Dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_command(self):
+        """Validate command format."""
+        if not self.command:
+            raise ValueError("Command is required")
+
+        # Validate args
+        if not self.args:
+            raise ValueError("Args are required")
 
         return self
 
@@ -323,6 +343,35 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server = ExternalToolServer(
             name=tool_data.name,
             type=ToolServerType.remote_mcp,  # Default to remote MCP type
+            description=tool_data.description,
+            properties=properties,
+            parent=project,
+        )
+
+        # Validate the tool server connectivity
+        await validate_tool_server_connectivity(tool_server)
+
+        # Save the tool to file
+        tool_server.save_to_file()
+
+        return tool_server
+
+    @app.post("/api/projects/{project_id}/connect_local_mcp")
+    async def connect_local_mcp(
+        project_id: str, tool_data: LocalToolServerCreationRequest
+    ) -> ExternalToolServer:
+        project = project_from_id(project_id)
+
+        # Create the ExternalToolServer with required fields
+        properties = {
+            "command": tool_data.command,
+            "args": tool_data.args,
+            "env_vars": tool_data.env_vars,
+        }
+
+        tool_server = ExternalToolServer(
+            name=tool_data.name,
+            type=ToolServerType.local_mcp,
             description=tool_data.description,
             properties=properties,
             parent=project,

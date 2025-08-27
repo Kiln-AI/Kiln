@@ -1141,6 +1141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/connect_local_mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect Local Mcp */
+        post: operations["connect_local_mcp_api_projects__project_id__connect_local_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2160,14 +2177,14 @@ export interface components {
         ExternalToolServerCreationRequest: {
             /** Name */
             name: string;
+            /** Description */
+            description?: string | null;
             /** Server Url */
             server_url: string;
             /** Headers */
             headers?: {
                 [key: string]: string;
             };
-            /** Description */
-            description?: string | null;
         };
         /** File */
         File: {
@@ -2512,6 +2529,21 @@ export interface components {
             type: components["schemas"]["ToolServerType"];
             /** Description */
             description: string | null;
+        };
+        /** LocalToolServerCreationRequest */
+        LocalToolServerCreationRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Command */
+            command: string;
+            /** Args */
+            args: string[];
+            /** Env Vars */
+            env_vars?: {
+                [key: string]: string;
+            };
         };
         /** MeanUsage */
         MeanUsage: {
@@ -3344,7 +3376,7 @@ export interface components {
          * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
-        ToolServerType: "remote_mcp";
+        ToolServerType: "remote_mcp" | "local_mcp";
         /** ToolSetApiDescription */
         ToolSetApiDescription: {
             /** Set Name */
@@ -5949,6 +5981,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExternalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_local_mcp_api_projects__project_id__connect_local_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalToolServerCreationRequest"];
             };
         };
         responses: {
