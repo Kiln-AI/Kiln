@@ -128,6 +128,153 @@ class TestMCPSessionManager:
         # Verify streamablehttp_client was called with empty headers dict
         mock_client.assert_called_once_with("http://example.com/mcp", headers={})
 
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_session_creation(self, mock_client):
+        """Test successful local MCP session creation with mocked client."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+        )
+
+        # Create a valid local tool server
+        tool_server = ExternalToolServer(
+            name="test_local_server",
+            type=ToolServerType.local_mcp,
+            description="Test local server",
+            properties={
+                "command": "python",
+                "args": ["-m", "my_mcp_server"],
+                "env_vars": {"API_KEY": "test123"},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                # Verify session is returned
+                assert session is mock_session_instance
+
+                # Verify initialize was called
+                mock_session_instance.initialize.assert_called_once()
+
+        # Verify stdio_client was called with correct parameters
+        call_args = mock_client.call_args[0][0]  # Get the StdioServerParameters
+        assert call_args.command == "python"
+        assert call_args.args == ["-m", "my_mcp_server"]
+        assert call_args.env == {"API_KEY": "test123"}
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_session_with_defaults(self, mock_client):
+        """Test local MCP session creation with default env_vars."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+        )
+
+        # Create a tool server without env_vars (should default to {})
+        tool_server = ExternalToolServer(
+            name="test_local_server_defaults",
+            type=ToolServerType.local_mcp,
+            description="Test local server with defaults",
+            properties={
+                "command": "node",
+                "args": ["server.js"],
+                # No env_vars provided
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify stdio_client was called with empty env_vars
+        call_args = mock_client.call_args[0][0]
+        assert call_args.env == {}
+
+    async def test_local_mcp_missing_command_error(self):
+        """Test that missing command raises ValueError for local MCP."""
+        tool_server = ExternalToolServer(
+            name="missing_command_server",
+            type=ToolServerType.local_mcp,
+            description="Server missing command",
+            properties={
+                # No command provided
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="command is required"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    async def test_local_mcp_missing_args_error(self):
+        """Test that missing args raises ValueError for local MCP."""
+        tool_server = ExternalToolServer(
+            name="missing_args_server",
+            type=ToolServerType.local_mcp,
+            description="Server missing args",
+            properties={
+                "command": "python",
+                # No args provided
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="argument is required"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    async def test_local_mcp_empty_args_error(self):
+        """Test that empty args list raises ValueError for local MCP."""
+        tool_server = ExternalToolServer(
+            name="empty_args_server",
+            type=ToolServerType.local_mcp,
+            description="Server with empty args",
+            properties={
+                "command": "python",
+                "args": [],  # Empty args list
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="argument is required"):
+            async with manager.mcp_client(tool_server):
+                pass
+
 
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""

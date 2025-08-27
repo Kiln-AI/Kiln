@@ -31,45 +31,67 @@ class MCPSessionManager:
         ClientSession,
         None,
     ]:
-        # Only support remote MCP servers for now
         match tool_server.type:
             case ToolServerType.remote_mcp:
-                # Make sure the server_url is set
-                server_url = tool_server.properties.get("server_url")
-                if not server_url:
-                    raise ValueError("server_url is required")
-
-                headers = tool_server.properties.get("headers", {})
-
-                async with streamablehttp_client(server_url, headers=headers) as (
-                    read_stream,
-                    write_stream,
-                    _,
-                ):
-                    # Create a session using the client streams
-                    async with ClientSession(read_stream, write_stream) as session:
-                        await session.initialize()
-                        yield session
+                async with self._create_remote_mcp_session(tool_server) as session:
+                    yield session
             case ToolServerType.local_mcp:
-                command = tool_server.properties.get("command")
-                if not command:
-                    raise ValueError("command is required")
-
-                args = tool_server.properties.get("args", [])
-                if not args:
-                    raise ValueError("argument is required")
-
-                env_vars = tool_server.properties.get("env_vars", {})
-
-                server_params = StdioServerParameters(
-                    command=command,
-                    args=args,
-                    env=env_vars,
-                )
-
-                async with stdio_client(server_params) as (read, write):
-                    async with ClientSession(read, write) as session:
-                        await session.initialize()
-                        yield session
+                async with self._create_local_mcp_session(tool_server) as session:
+                    yield session
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
+
+    @asynccontextmanager
+    async def _create_remote_mcp_session(
+        self,
+        tool_server: ExternalToolServer,
+    ) -> AsyncGenerator[ClientSession, None]:
+        """
+        Create a session for a remote MCP server.
+        """
+        # Make sure the server_url is set
+        server_url = tool_server.properties.get("server_url")
+        if not server_url:
+            raise ValueError("server_url is required")
+
+        headers = tool_server.properties.get("headers", {})
+
+        async with streamablehttp_client(server_url, headers=headers) as (
+            read_stream,
+            write_stream,
+            _,
+        ):
+            # Create a session using the client streams
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                yield session
+
+    @asynccontextmanager
+    async def _create_local_mcp_session(
+        self,
+        tool_server: ExternalToolServer,
+    ) -> AsyncGenerator[ClientSession, None]:
+        """
+        Create a session for a local MCP server.
+        """
+        command = tool_server.properties.get("command")
+        if not command:
+            raise ValueError("command is required")
+
+        args = tool_server.properties.get("args", [])
+        if not args:
+            raise ValueError("argument is required")
+
+        env_vars = tool_server.properties.get("env_vars", {})
+
+        # Set the server parameters
+        server_params = StdioServerParameters(
+            command=command,
+            args=args,
+            env=env_vars,
+        )
+
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                yield session
