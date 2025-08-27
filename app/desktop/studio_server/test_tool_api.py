@@ -1507,7 +1507,7 @@ async def test_available_remote_mcp_tools_success():
 
 @pytest.mark.asyncio
 async def test_available_remote_mcp_tools_connection_error():
-    """Test available_remote_mcp_tools handles connection errors gracefully"""
+    """Test available_remote_mcp_tools throws exception on connection errors"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1518,16 +1518,14 @@ async def test_available_remote_mcp_tools_connection_error():
     )
 
     async with mock_mcp_connection_error():
-        # Call the function - should return empty list on error
-        result = await available_remote_mcp_tools(server)
-
-        # Verify empty list is returned
-        assert result == []
+        # Call the function - should throw exception on error
+        with pytest.raises(Exception, match="Connection failed"):
+            await available_remote_mcp_tools(server)
 
 
 @pytest.mark.asyncio
 async def test_available_remote_mcp_tools_list_tools_error():
-    """Test available_remote_mcp_tools handles list_tools errors gracefully"""
+    """Test available_remote_mcp_tools throws exception on list_tools errors"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1538,11 +1536,9 @@ async def test_available_remote_mcp_tools_list_tools_error():
     )
 
     async with mock_mcp_list_tools_error():
-        # Call the function - should return empty list on error
-        result = await available_remote_mcp_tools(server)
-
-        # Verify empty list is returned
-        assert result == []
+        # Call the function - should throw exception on error
+        with pytest.raises(Exception, match="list_tools failed"):
+            await available_remote_mcp_tools(server)
 
 
 @pytest.mark.asyncio

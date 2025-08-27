@@ -137,20 +137,16 @@ async def available_remote_mcp_tools(
     """
     Get the available tools from a remote MCP server. If the server is not reachable, return an empty list.
     """
-    try:
-        async with MCPSessionManager.shared().mcp_client(server) as session:
-            tools_result = await session.list_tools()
-            return [
-                ToolApiDescription(
-                    id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
-                    name=tool.name,
-                    description=tool.description,
-                )
-                for tool in tools_result.tools
-            ]
-    except Exception:
-        # Skip the tool when we can't connect to the server
-        return []
+    async with MCPSessionManager.shared().mcp_client(server) as session:
+        tools_result = await session.list_tools()
+        return [
+            ToolApiDescription(
+                id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                name=tool.name,
+                description=tool.description,
+            )
+            for tool in tools_result.tools
+        ]
 
 
 async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
@@ -191,7 +187,11 @@ def connect_tool_servers_api(app: FastAPI):
             available_mcp_tools = []
             match server.type:
                 case ToolServerType.remote_mcp:
-                    available_mcp_tools = await available_remote_mcp_tools(server)
+                    try:
+                        available_mcp_tools = await available_remote_mcp_tools(server)
+                    except Exception:
+                        # Skip the tool when we can't connect to the server
+                        continue
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
