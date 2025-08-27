@@ -2,6 +2,8 @@
   import { goto } from "$app/navigation"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
+  import SettingsItem from "$lib/ui/settings_item.svelte"
 
   $: project_id = $page.params.project_id
 
@@ -110,38 +112,16 @@
   <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
       <div class="space-y-6">
-        <!-- Category Header -->
-        <div class="pb-3 border-b border-gray-200">
-          <h2 class="text-lg font-medium text-gray-900">{section.category}</h2>
-        </div>
+        <SettingsHeader title={section.category} />
 
-        <!-- Category Items -->
         <div class="space-y-1">
           {#each section.items as item}
-            {#if item.on_click}
-              <button
-                on:click={item.on_click}
-                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
-              >
-                <div class="flex-1 min-w-0">
-                  <h3 class="text-base font-medium text-gray-900 mb-1">
-                    {item.name}
-                  </h3>
-                  <p class="text-sm font-light text-gray-500 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div class="flex-shrink-0 ml-6">
-                  <div
-                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
-                    style="min-width: 12rem;"
-                  >
-                    {item.button_text}
-                  </div>
-                </div>
-              </button>
-            {/if}
+            <SettingsItem
+              name={item.name}
+              description={item.description}
+              button_text={item.button_text}
+              on_click={item.on_click}
+            />
           {/each}
         </div>
       </div>
