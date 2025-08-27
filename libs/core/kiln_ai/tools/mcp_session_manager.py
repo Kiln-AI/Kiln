@@ -33,6 +33,9 @@ class MCPSessionManager:
         match tool_server.type:
             case ToolServerType.remote_mcp:
                 pass
+            case ToolServerType.local_mcp:
+                # TODO: Implement this
+                pass
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 

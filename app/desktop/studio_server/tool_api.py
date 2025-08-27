@@ -174,6 +174,9 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
                     status_code=422,
                     detail=f"Failed to connect to the server: {str(e)}",
                 )
+        case ToolServerType.local_mcp:
+            # TODO: Implement this
+            pass
         case _:
             raise_exhaustive_enum_error(tool_server.type)
 
@@ -197,6 +200,9 @@ def connect_tool_servers_api(app: FastAPI):
                     except Exception:
                         # Skip the tool when we can't connect to the server
                         continue
+                case ToolServerType.local_mcp:
+                    # TODO: Implement this
+                    pass
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
@@ -285,6 +291,9 @@ def connect_tool_servers_api(app: FastAPI):
                         ExternalToolApiDescription.tool_from_mcp_tool(tool)
                         for tool in tools_result.tools
                     ]
+            case ToolServerType.local_mcp:
+                # TODO: Implement this
+                pass
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 

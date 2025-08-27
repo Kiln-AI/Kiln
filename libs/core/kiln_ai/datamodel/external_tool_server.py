@@ -16,6 +16,7 @@ class ToolServerType(str, Enum):
     """
 
     remote_mcp = "remote_mcp"
+    local_mcp = "local_mcp"
 
 
 class ExternalToolServer(KilnParentedModel):
@@ -61,6 +62,9 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "headers must be a dictionary for external tools of type remote_mcp"
                     )
+            case ToolServerType.local_mcp:
+                # TODO: Implement this
+                pass
             case _:
                 # Type checking will catch missing cases
                 raise_exhaustive_enum_error(self.type)
