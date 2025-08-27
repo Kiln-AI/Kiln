@@ -167,7 +167,9 @@
 
     // The URL params can specify a specific setup for the data gen.
     const reason_param = $page.url.searchParams.get("reason")
-    if (reason_param === "training" || reason_param === "eval") {
+    // Map "fine_tune" (user facing string) to "training" (pre-existing internal value)
+    const gen_type = reason_param === "fine_tune" ? "training" : reason_param
+    if (gen_type === "training" || gen_type === "eval") {
       // These are optional, only gen_type is required.
       const eval_id: string | null = $page.url.searchParams.get("eval_id")
       const template_id: string | null =
@@ -178,11 +180,11 @@
       const has_saved_state = $saved_state.gen_type !== null
       if (!has_saved_state) {
         // Case 1: No saved state: setup the URL state
-        setup(reason_param, template_id, eval_id, project_id, task_id, splits)
+        setup(gen_type, template_id, eval_id, project_id, task_id, splits)
         return
       } else {
         if (
-          $saved_state.gen_type === reason_param &&
+          $saved_state.gen_type === gen_type &&
           $saved_state.template_id === template_id &&
           $saved_state.eval_id === eval_id
         ) {
