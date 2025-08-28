@@ -143,6 +143,7 @@
         description="The arguments to pass to the MCP server. Each argument should be space separated."
         placeholder="run server fastmcp_quickstart stdio"
         optional={true}
+        inputType="textarea"
         bind:value={args}
       />
 
@@ -170,7 +171,7 @@
         <div class="flex gap-2">
           <div class="flex-1 max-w-[200px]">
             <FormElement
-              label="Environment Variable Name"
+              label="Name"
               id="env_var_name_{item_index}"
               info_description="The name of the environment variable, such as 'API_KEY'"
               placeholder="Name"

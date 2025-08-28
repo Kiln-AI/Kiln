@@ -185,7 +185,7 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     Basic field validation is now handled by Pydantic validators in CreationRequest.
     """
     match tool_server.type:
-        case ToolServerType.remote_mcp:
+        case ToolServerType.remote_mcp | ToolServerType.local_mcp:
             # Validate the server is reachable
             try:
                 async with MCPSessionManager.shared().mcp_client(
@@ -198,19 +198,6 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
                     status_code=422,
                     detail="Unable to connect to the server. Please check that the server is running and accessible.",
                 )
-            except Exception as e:
-                # For any other error, include the original message
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Failed to connect to the server: {str(e)}",
-                )
-        case ToolServerType.local_mcp:
-            try:
-                async with MCPSessionManager.shared().mcp_client(
-                    tool_server
-                ) as session:
-                    # Use list tools to validate the server is reachable
-                    await session.list_tools()
             except Exception as e:
                 # For any other error, include the original message
                 raise HTTPException(

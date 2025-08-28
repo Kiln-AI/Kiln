@@ -102,7 +102,7 @@
         {
           key: "FIRECRAWL_API_KEY",
           value: "",
-          placeholder: "REPLACE_WITH_FIRECRAWL_API_KEY",
+          placeholder: "FIRECRAWL_API_KEY",
         },
       ],
       button_text: "Connect",
@@ -115,7 +115,7 @@
       args: [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "REPLACE_WITH_OTHER_ALLOWED_DIRECTORIES",
+        "<Other Allowed Directories e.g. /Users/username/Desktop>",
       ],
       env_vars: [],
       button_text: "Connect",
