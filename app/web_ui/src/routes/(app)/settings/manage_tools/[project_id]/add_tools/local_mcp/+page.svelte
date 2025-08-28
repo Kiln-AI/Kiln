@@ -151,7 +151,7 @@
         label="Environment Variables"
         id="env_vars_section"
         description="If the documentation for the server you're adding requires custom environment variables, enter them here."
-        info_description="These are usually not needed. Some MCP servers require custom environment varaibles, such as the API Key. Refer to the documentation for the server you're adding to see if they require environment variables."
+        info_description="These are usually not needed. Some MCP servers require custom environment variables, such as the API Key. Refer to the documentation for the server you're adding to see if they require environment variables."
         value=""
       />
 

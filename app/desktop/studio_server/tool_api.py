@@ -186,7 +186,7 @@ async def available_mcp_tools(
 async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     """
     Validate that the tool server is reachable by attempting to connect.
-    Basic field validation is now handled by Pydantic validators in ExternalToolServerCreationRequest.
+    Basic field validation is now handled by Pydantic validators in CreationRequest.
     """
     match tool_server.type:
         case ToolServerType.remote_mcp:
