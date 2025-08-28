@@ -2,8 +2,7 @@
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
   import { client } from "$lib/api_client"
-  import SettingsHeader from "$lib/ui/settings_header.svelte"
-  import SettingsItem from "$lib/ui/settings_item.svelte"
+  import SettingsSection from "$lib/ui/settings_section.svelte"
 
   async function view_logs() {
     try {
@@ -124,22 +123,7 @@
 <AppPage title="Settings">
   <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
-      <div class="space-y-6">
-        <SettingsHeader title={section.category} />
-
-        <div class="space-y-1">
-          {#each section.items as item}
-            <SettingsItem
-              name={item.name}
-              description={item.description}
-              button_text={item.button_text}
-              href={item.href}
-              on_click={item.on_click}
-              is_external={item.is_external || false}
-            />
-          {/each}
-        </div>
-      </div>
+      <SettingsSection title={section.category} items={section.items} />
     {/each}
   </div>
 </AppPage>

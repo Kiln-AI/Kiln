@@ -2,8 +2,7 @@
   import { goto } from "$app/navigation"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import SettingsHeader from "$lib/ui/settings_header.svelte"
-  import SettingsItem from "$lib/ui/settings_item.svelte"
+  import SettingsSection from "$lib/ui/settings_section.svelte"
 
   $: project_id = $page.params.project_id
 
@@ -121,64 +120,47 @@
       button_text: "Connect",
     },
   ]
+</script>
 
-  let sections = [
-    {
-      category: "Sample Tools",
-      items: [
-        ...sampleRemoteMcpServers.map((tool) => ({
-          ...tool,
-          on_click: () => connectRemoteMcp(tool),
+<AppPage title="Add Tools">
+  <div class="max-w-4xl mt-12 space-y-12">
+    <SettingsSection
+      title="Sample Tools"
+      items={[
+        ...sampleRemoteMcpServers.map((item) => ({
+          name: item.name,
+          description: item.description,
+          button_text: item.button_text,
+          on_click: () => connectRemoteMcp(item),
         })),
-        ...sampleLocalMcpServers.map((tool) => ({
-          ...tool,
-          on_click: () => connectLocalMcp(tool),
+        ...sampleLocalMcpServers.map((item) => ({
+          name: item.name,
+          description: item.description,
+          button_text: item.button_text,
+          on_click: () => connectLocalMcp(item),
         })),
-      ],
-    },
-    {
-      category: "Custom Tools",
-      items: [
+      ]}
+    />
+    <SettingsSection
+      title="Custom Tools"
+      items={[
         {
           name: "Remote MCP Servers",
           description:
             "Connect to remote MCP servers to add tools to your project.",
           button_text: "Connect",
-          on_click: () => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
-          },
+          on_click: () =>
+            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`),
         },
         {
           name: "Local MCP Servers",
           description:
             "Connect to local MCP servers to add tools to your project.",
           button_text: "Connect",
-          on_click: () => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`)
-          },
+          on_click: () =>
+            goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`),
         },
-      ],
-    },
-  ]
-</script>
-
-<AppPage title="Add Tools">
-  <div class="max-w-4xl mt-12 space-y-12">
-    {#each sections as section}
-      <div class="space-y-6">
-        <SettingsHeader title={section.category} />
-
-        <div class="space-y-1">
-          {#each section.items as item}
-            <SettingsItem
-              name={item.name}
-              description={item.description}
-              button_text={item.button_text}
-              on_click={item.on_click}
-            />
-          {/each}
-        </div>
-      </div>
-    {/each}
+      ]}
+    />
   </div>
 </AppPage>
