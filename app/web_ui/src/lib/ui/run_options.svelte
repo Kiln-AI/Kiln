@@ -23,10 +23,12 @@
 
   let tools_store_loaded_task_id: string | null = null
   async function load_tools(project_id: string, task_id: string) {
+    // Load available tools
     if (project_id) {
       load_available_tools(project_id)
     }
 
+    // load selected tools for this task from tools_store
     if (task_id !== tools_store_loaded_task_id) {
       await tools_store_initialized
       tools = $tools_store.selected_tool_ids_by_task_id[task_id] || []
@@ -46,6 +48,38 @@
       },
     }))
   }
+
+  // filter out tools that are not in the available tools (server offline, tool removed, etc)
+  function filter_unavailable_tools(
+    available_tools: ToolSetApiDescription[] | undefined,
+    current_tools: string[],
+  ) {
+    if (
+      !available_tools ||
+      !project_id ||
+      !tools_store_loaded_task_id ||
+      !current_tools ||
+      current_tools.length === 0
+    ) {
+      return
+    }
+
+    const available_tool_ids = new Set(
+      available_tools.flatMap((tool_set) =>
+        tool_set.tools.map((tool) => tool.id),
+      ),
+    )
+
+    const unavailable_tools = tools.filter(
+      (tool_id) => !available_tool_ids.has(tool_id),
+    )
+
+    if (unavailable_tools.length > 0) {
+      console.warn("Removing unavailable tools:", unavailable_tools)
+      tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
+    }
+  }
+  $: filter_unavailable_tools($available_tools[project_id], tools)
 
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
