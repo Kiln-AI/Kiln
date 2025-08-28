@@ -107,6 +107,19 @@
       ],
       button_text: "Connect",
     },
+    {
+      name: "Filesystem",
+      description:
+        "Read, write, and manipulate local files through a controlled API.",
+      command: "npx",
+      args: [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "REPLACE_WITH_OTHER_ALLOWED_DIRECTORIES",
+      ],
+      env_vars: [],
+      button_text: "Connect",
+    },
   ]
 
   let sections = [
