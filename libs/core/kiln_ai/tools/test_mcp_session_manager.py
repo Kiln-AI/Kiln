@@ -270,6 +270,52 @@ class TestMCPSessionManager:
                 },
             )
 
+    async def test_local_mcp_session_empty_command_runtime_error(self):
+        """Test that empty command string raises ValueError during session creation."""
+        # Create a valid tool server first
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        # Manually modify the properties after creation to bypass pydantic validation
+        tool_server.properties["command"] = ""
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="command is required"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    async def test_local_mcp_session_empty_args_runtime_error(self):
+        """Test that empty args list raises ValueError during session creation."""
+        # Create a valid tool server first
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        # Manually modify the properties after creation to bypass pydantic validation
+        tool_server.properties["args"] = []
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="argument is required"):
+            async with manager.mcp_client(tool_server):
+                pass
+
 
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""
