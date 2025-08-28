@@ -563,20 +563,21 @@ def test_local_mcp_invalid_args_type():
 
 
 def test_local_mcp_empty_args():
-    """Test that empty args list raises ValidationError for local MCP."""
-    with pytest.raises(
-        ValidationError,
-        match="args is required for external tools of type 'local_mcp'",
-    ):
-        ExternalToolServer(
-            name="empty_args_tool",
-            type=ToolServerType.local_mcp,
-            properties={
-                "command": "python",
-                "args": [],  # Empty list should be rejected
-                "env_vars": {},
-            },
-        )
+    """Test that empty args list is now allowed for local MCP (arguments no longer required)."""
+    # Should not raise any exception - empty args are now allowed
+    tool_server = ExternalToolServer(
+        name="empty_args_tool",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "python",
+            "args": [],  # Empty list should now be allowed
+            "env_vars": {},
+        },
+    )
+
+    assert tool_server.name == "empty_args_tool"
+    assert tool_server.type == ToolServerType.local_mcp
+    assert tool_server.properties["args"] == []
 
 
 def test_local_mcp_invalid_env_vars_type():

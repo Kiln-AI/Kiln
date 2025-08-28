@@ -2264,17 +2264,17 @@ def test_local_tool_server_creation_request_missing_command():
 
 
 def test_local_tool_server_creation_request_empty_args():
-    """Test LocalToolServerCreationRequest rejects empty args list"""
+    """Test LocalToolServerCreationRequest accepts empty args list (arguments no longer required)"""
 
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Empty Args Server",
-            command="python",
-            args=[],  # Empty args should fail validation
-        )
+    request = LocalToolServerCreationRequest(
+        name="Empty Args Server",
+        command="python",
+        args=[],  # Empty args should now be allowed
+    )
 
-    error_str = str(exc_info.value)
-    assert "Args are required" in error_str
+    assert request.name == "Empty Args Server"
+    assert request.command == "python"
+    assert request.args == []
 
 
 def test_local_tool_server_creation_request_missing_args():
@@ -2557,12 +2557,12 @@ def test_create_local_tool_server_empty_command(client, test_project):
         assert "command" in str(error_data).lower()
 
 
-def test_create_local_tool_server_empty_args(client, test_project):
-    """Test local tool server creation fails when args are empty"""
+async def test_create_local_tool_server_empty_args(client, test_project):
+    """Test local tool server creation succeeds when args are empty (arguments no longer required)"""
     tool_data = {
         "name": "empty_args_tool",
         "command": "python",
-        "args": [],  # Empty args
+        "args": [],  # Empty args should now be allowed
         "description": "Tool with empty args",
     }
 
@@ -2571,15 +2571,16 @@ def test_create_local_tool_server_empty_args(client, test_project):
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
 
-        assert response.status_code == 422  # Validation error from Pydantic
-        error_data = response.json()
-        # The validation error should mention args
-        assert "args" in str(error_data).lower()
+            assert response.status_code == 200  # Should succeed now
+            result = response.json()
+            assert result["name"] == "empty_args_tool"
+            assert result["properties"]["args"] == []
 
 
 async def test_create_local_tool_server_no_description(client, test_project):

@@ -103,10 +103,6 @@ class LocalToolServerCreationRequest(BaseModel):
         if not self.command:
             raise ValueError("Command is required")
 
-        # Validate args
-        if not self.args:
-            raise ValueError("Args are required")
-
         return self
 
 

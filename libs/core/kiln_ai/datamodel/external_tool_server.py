@@ -78,10 +78,6 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "args must be a list for external tools of type 'local_mcp'"
                     )
-                if not args:
-                    raise ValueError(
-                        "args is required for external tools of type 'local_mcp'"
-                    )
 
                 env_vars = self.properties.get("env_vars", {})
                 if not isinstance(env_vars, dict):

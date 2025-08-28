@@ -253,22 +253,23 @@ class TestMCPSessionManager:
                 },
             )
 
-    async def test_local_mcp_empty_args_error(self):
-        """Test that empty args list raises ValueError for local MCP."""
-        with pytest.raises(
-            ValidationError,
-            match="args is required for external tools of type 'local_mcp'",
-        ):
-            ExternalToolServer(
-                name="empty_args_server",
-                type=ToolServerType.local_mcp,
-                description="Server with empty args",
-                properties={
-                    "command": "python",
-                    "args": [],  # Empty args list
-                    "env_vars": {},
-                },
-            )
+    async def test_local_mcp_empty_args_allowed(self):
+        """Test that empty args list is now allowed for local MCP (arguments no longer required)."""
+        # Should not raise any exception - empty args are now allowed
+        tool_server = ExternalToolServer(
+            name="empty_args_server",
+            type=ToolServerType.local_mcp,
+            description="Server with empty args",
+            properties={
+                "command": "python",
+                "args": [],  # Empty args list should now be allowed
+                "env_vars": {},
+            },
+        )
+
+        assert tool_server.name == "empty_args_server"
+        assert tool_server.type == ToolServerType.local_mcp
+        assert tool_server.properties["args"] == []
 
     async def test_local_mcp_session_empty_command_runtime_error(self):
         """Test that empty command string raises ValueError during session creation."""

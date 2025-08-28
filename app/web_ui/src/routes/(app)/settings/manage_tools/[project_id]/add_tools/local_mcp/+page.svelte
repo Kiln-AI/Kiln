@@ -142,6 +142,7 @@
         id="args"
         description="The arguments to pass to the MCP server. Each argument should be space separated."
         placeholder="run server fastmcp_quickstart stdio"
+        optional={true}
         bind:value={args}
       />
 
