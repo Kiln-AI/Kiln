@@ -151,6 +151,11 @@ class Config:
                 env_var="CEREBRAS_API_KEY",
                 sensitive=True,
             ),
+            "enable_demo_tools": ConfigProperty(
+                bool,
+                env_var="ENABLE_DEMO_TOOLS",
+                default=False,
+            ),
         }
         self._lock = threading.Lock()
         self._settings = self.load_settings()

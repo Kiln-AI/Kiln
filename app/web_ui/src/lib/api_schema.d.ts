@@ -4423,6 +4423,13 @@ export interface components {
          * @enum {string}
          */
         ToolServerType: "remote_mcp";
+        /** ToolSetApiDescription */
+        ToolSetApiDescription: {
+            /** Set Name */
+            set_name: string;
+            /** Tools */
+            tools: components["schemas"]["ToolApiDescription"][];
+        };
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -7899,7 +7906,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ToolApiDescription"][];
+                    "application/json": components["schemas"]["ToolSetApiDescription"][];
                 };
             };
             /** @description Validation Error */

@@ -1,15 +1,23 @@
+import re
 from datetime import datetime
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, RAG_TOOL_ID_PREFIX, ToolId
+from kiln_ai.tools.tool_id import (
+    MCP_REMOTE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+    ToolId,
+)
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, model_validator
 
 
 class KilnToolServerDescription(BaseModel):
@@ -28,6 +36,58 @@ class ExternalToolServerCreationRequest(BaseModel):
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
     description: str | None = None
+
+    @model_validator(mode="after")
+    def validate_server_details(self):
+        """Validate server URL and headers format."""
+        # Validate server URL
+        server_url = self.server_url
+        if not server_url:
+            raise ValueError("Server URL is required")
+
+        # Enforce absolute http(s) URLs only
+        parsed_url = urlparse(server_url.strip())
+        if not parsed_url.scheme:
+            raise ValueError("Server URL must start with http:// or https://")
+        if not parsed_url.netloc:
+            raise ValueError("Server URL is not a valid URL")
+
+        if parsed_url.scheme not in ("http", "https"):
+            raise ValueError("Server URL must start with http:// or https://")
+
+        # Update server_url to stripped version
+        self.server_url = server_url.strip()
+
+        # Validate headers
+        if isinstance(self.headers, dict):
+            validated_headers = {}
+            for key, value in self.headers.items():
+                # Convert to string and strip
+                key_str = key.strip() if isinstance(key, str) else str(key).strip()
+                value_str = (
+                    value.strip() if isinstance(value, str) else str(value).strip()
+                )
+
+                if not key_str:
+                    raise ValueError("Header name is required")
+                if not value_str:
+                    raise ValueError("Header value is required")
+
+                # Reject invalid header names and CR/LF in names/values
+                token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+                if not token_re.match(key_str):
+                    raise ValueError(f'Invalid header name: "{key_str}"')
+                if re.search(r"\r|\n", key_str) or re.search(r"\r|\n", value_str):
+                    raise ValueError(
+                        "Header names/values must not contain invalid characters"
+                    )
+
+                validated_headers[key_str] = value_str
+
+            # Update headers to validated version
+            self.headers = validated_headers
+
+        return self
 
 
 class ExternalToolApiDescription(BaseModel):
@@ -71,44 +131,133 @@ class ToolApiDescription(BaseModel):
     description: str | None
 
 
+class ToolSetApiDescription(BaseModel):
+    set_name: str
+    tools: list[ToolApiDescription]
+
+
+async def available_remote_mcp_tools(
+    server: ExternalToolServer,
+) -> list[ToolApiDescription]:
+    """
+    Get the available tools from a remote MCP server
+    """
+    async with MCPSessionManager.shared().mcp_client(server) as session:
+        tools_result = await session.list_tools()
+        return [
+            ToolApiDescription(
+                id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                name=tool.name,
+                description=tool.description,
+            )
+            for tool in tools_result.tools
+        ]
+
+
+async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
+    """
+    Validate that the tool server is reachable by attempting to connect.
+    Basic field validation is now handled by Pydantic validators in ExternalToolServerCreationRequest.
+    """
+    match tool_server.type:
+        case ToolServerType.remote_mcp:
+            # Validate the server is reachable
+            try:
+                async with MCPSessionManager.shared().mcp_client(
+                    tool_server
+                ) as session:
+                    # Use list tools to validate the server is reachable
+                    await session.list_tools()
+            except ConnectionError:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Unable to connect to the server. Please check that the server is running and accessible.",
+                )
+            except Exception as e:
+                # For any other error, include the original message
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Failed to connect to the server: {e!s}",
+                )
+        case _:
+            raise_exhaustive_enum_error(tool_server.type)
+
+
 def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/available_tools")
     async def get_available_tools(
         project_id: str,
-    ) -> List[ToolApiDescription]:
+    ) -> List[ToolSetApiDescription]:
         project = project_from_id(project_id)
 
-        # Get available tools from MCP servers
-        available_tools = []
+        tool_sets = []
+
+        # Get available tools from remote MCP servers only
         for server in project.external_tool_servers(readonly=True):
-            # Get available tools from remote MCP servers only
+            available_mcp_tools = []
             match server.type:
                 case ToolServerType.remote_mcp:
-                    async with MCPSessionManager.shared().mcp_client(server) as session:
-                        tools_result = await session.list_tools()
-                        available_tools.extend(
-                            [
-                                ToolApiDescription(
-                                    id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
-                                    name=tool.name,
-                                    description=tool.description,
-                                )
-                                for tool in tools_result.tools
-                            ]
-                        )
+                    try:
+                        available_mcp_tools = await available_remote_mcp_tools(server)
+                    except Exception:
+                        # Skip the tool when we can't connect to the server
+                        continue
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
-        for rag_config in project.rag_configs(readonly=True):
-            available_tools.append(
-                ToolApiDescription(
-                    id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
-                    name=f"RAG: {rag_config.name}",
-                    description=rag_config.description,
+            if available_mcp_tools:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        set_name="MCP Server: " + server.name,
+                        tools=available_mcp_tools,
+                    )
+                )
+
+            tool_sets.append(
+                ToolSetApiDescription(
+                    set_name="RAG",
+                    tools=[
+                        ToolApiDescription(
+                            id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
+                            name=f"RAG: {rag_config.name}",
+                            description=rag_config.description,
+                        )
+                        for rag_config in project.rag_configs(readonly=True)
+                    ],
                 )
             )
 
-        return available_tools
+        # Add demo tools if enabled
+        if Config.shared().enable_demo_tools:
+            tool_sets.append(
+                ToolSetApiDescription(
+                    set_name="Kiln Demo Tools",
+                    tools=[
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.ADD_NUMBERS.value}",
+                            name="Addition",
+                            description="Add two numbers together",
+                        ),
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.SUBTRACT_NUMBERS.value}",
+                            name="Subtraction",
+                            description="Subtract two numbers",
+                        ),
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.MULTIPLY_NUMBERS.value}",
+                            name="Multiplication",
+                            description="Multiply two numbers",
+                        ),
+                        ToolApiDescription(
+                            id=f"{KilnBuiltInToolId.DIVIDE_NUMBERS.value}",
+                            name="Division",
+                            description="Divide two numbers",
+                        ),
+                    ],
+                )
+            )
+
+        return tool_sets
 
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(
@@ -175,27 +324,24 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        try:
-            # Create the ExternalToolServer with required fields
-            properties = {
-                "server_url": tool_data.server_url,
-                "headers": tool_data.headers,
-            }
+        # Create the ExternalToolServer with required fields
+        properties = {
+            "server_url": tool_data.server_url,
+            "headers": tool_data.headers,
+        }
 
-            tool = ExternalToolServer(
-                name=tool_data.name,
-                type=ToolServerType.remote_mcp,  # Default to remote MCP type
-                description=tool_data.description,
-                properties=properties,
-                parent=project,
-            )
+        tool_server = ExternalToolServer(
+            name=tool_data.name,
+            type=ToolServerType.remote_mcp,  # Default to remote MCP type
+            description=tool_data.description,
+            properties=properties,
+            parent=project,
+        )
 
-            # Save the tool to file
-            tool.save_to_file()
+        # Validate the tool server connectivity
+        await validate_tool_server_connectivity(tool_server)
 
-            return tool
-        except ValidationError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Validation error: {e!s}",
-            )
+        # Save the tool to file
+        tool_server.save_to_file()
+
+        return tool_server

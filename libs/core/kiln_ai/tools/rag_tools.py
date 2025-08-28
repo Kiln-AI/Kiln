@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from pydantic import BaseModel
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
-from kiln_ai.adapters.embedding.registry import embedding_adapter_from_type
+from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     SimilarityMetric,

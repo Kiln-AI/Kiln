@@ -11,7 +11,7 @@ import type {
   ModelDetails,
   EmbeddingProvider,
   EmbeddingModelDetails,
-  ToolApiDescription,
+  ToolSetApiDescription,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
@@ -202,9 +202,9 @@ export async function load_current_task(project: Project | null) {
 }
 
 // Available tools, by project ID
-export const available_tools = writable<Record<string, ToolApiDescription[]>>(
-  {},
-)
+export const available_tools = writable<
+  Record<string, ToolSetApiDescription[]>
+>({})
 let loading_project_tools: string[] = []
 
 export async function load_available_tools(
