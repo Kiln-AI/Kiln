@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
@@ -220,60 +221,54 @@ class TestMCPSessionManager:
 
     async def test_local_mcp_missing_command_error(self):
         """Test that missing command raises ValueError for local MCP."""
-        tool_server = ExternalToolServer(
-            name="missing_command_server",
-            type=ToolServerType.local_mcp,
-            description="Server missing command",
-            properties={
-                # No command provided
-                "args": ["arg1"],
-                "env_vars": {},
-            },
-        )
-
-        manager = MCPSessionManager.shared()
-
-        with pytest.raises(ValueError, match="command is required"):
-            async with manager.mcp_client(tool_server):
-                pass
+        with pytest.raises(
+            ValidationError,
+            match="command must be a string for external tools of type 'local_mcp'",
+        ):
+            ExternalToolServer(
+                name="missing_command_server",
+                type=ToolServerType.local_mcp,
+                description="Server missing command",
+                properties={
+                    # No command provided
+                    "args": ["arg1"],
+                    "env_vars": {},
+                },
+            )
 
     async def test_local_mcp_missing_args_error(self):
         """Test that missing args raises ValueError for local MCP."""
-        tool_server = ExternalToolServer(
-            name="missing_args_server",
-            type=ToolServerType.local_mcp,
-            description="Server missing args",
-            properties={
-                "command": "python",
-                # No args provided
-                "env_vars": {},
-            },
-        )
-
-        manager = MCPSessionManager.shared()
-
-        with pytest.raises(ValueError, match="argument is required"):
-            async with manager.mcp_client(tool_server):
-                pass
+        with pytest.raises(
+            ValidationError,
+            match="args must be a list for external tools of type 'local_mcp'",
+        ):
+            ExternalToolServer(
+                name="missing_args_server",
+                type=ToolServerType.local_mcp,
+                description="Server missing args",
+                properties={
+                    "command": "python",
+                    # No args provided
+                    "env_vars": {},
+                },
+            )
 
     async def test_local_mcp_empty_args_error(self):
         """Test that empty args list raises ValueError for local MCP."""
-        tool_server = ExternalToolServer(
-            name="empty_args_server",
-            type=ToolServerType.local_mcp,
-            description="Server with empty args",
-            properties={
-                "command": "python",
-                "args": [],  # Empty args list
-                "env_vars": {},
-            },
-        )
-
-        manager = MCPSessionManager.shared()
-
-        with pytest.raises(ValueError, match="argument is required"):
-            async with manager.mcp_client(tool_server):
-                pass
+        with pytest.raises(
+            ValidationError,
+            match="args is required for external tools of type 'local_mcp'",
+        ):
+            ExternalToolServer(
+                name="empty_args_server",
+                type=ToolServerType.local_mcp,
+                description="Server with empty args",
+                properties={
+                    "command": "python",
+                    "args": [],  # Empty args list
+                    "env_vars": {},
+                },
+            )
 
 
 class TestMCPServerIntegration:

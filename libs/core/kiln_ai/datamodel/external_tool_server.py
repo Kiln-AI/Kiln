@@ -48,11 +48,11 @@ class ExternalToolServer(KilnParentedModel):
                 server_url = self.properties.get("server_url", None)
                 if not isinstance(server_url, str):
                     raise ValueError(
-                        "server_url must be a string for external tools of type remote_mcp"
+                        "server_url must be a string for external tools of type 'remote_mcp'"
                     )
                 if not server_url:
                     raise ValueError(
-                        "server_url is required for external tools of type remote_mcp"
+                        "server_url is required for external tools of type 'remote_mcp'"
                     )
 
                 headers = self.properties.get("headers", None)
@@ -60,11 +60,38 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError("headers must be set when type is 'remote_mcp'")
                 if not isinstance(headers, dict):
                     raise ValueError(
-                        "headers must be a dictionary for external tools of type remote_mcp"
+                        "headers must be a dictionary for external tools of type 'remote_mcp'"
                     )
             case ToolServerType.local_mcp:
-                # TODO: Implement this
-                pass
+                command = self.properties.get("command", None)
+                if not isinstance(command, str):
+                    raise ValueError(
+                        "command must be a string for external tools of type 'local_mcp'"
+                    )
+                if not command:
+                    raise ValueError(
+                        "command is required for external tools of type 'local_mcp'"
+                    )
+
+                args = self.properties.get("args", None)
+                if not isinstance(args, list):
+                    raise ValueError(
+                        "args must be a list for external tools of type 'local_mcp'"
+                    )
+                if not args:
+                    raise ValueError(
+                        "args is required for external tools of type 'local_mcp'"
+                    )
+
+                env_vars = self.properties.get("env_vars", {})
+                if not isinstance(env_vars, dict):
+                    raise ValueError(
+                        "env_vars must be a dictionary for external tools of type 'local_mcp'"
+                    )
+                # Set the default value if not provided
+                if "env_vars" not in self.properties:
+                    self.properties["env_vars"] = {}
+
             case _:
                 # Type checking will catch missing cases
                 raise_exhaustive_enum_error(self.type)

@@ -126,9 +126,9 @@ class TestToolRegistry:
             name="local_server",
             type=ToolServerType.local_mcp,
             properties={
-                "command": ["python", "server.py"],
-                "args": ["--port", "8080"],
-                "env": {},
+                "command": "python",
+                "args": ["server.py", "--port", "8080"],
+                "env_vars": {},
             },
         )
         mock_from_id_and_parent_path.return_value = mock_server

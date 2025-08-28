@@ -41,7 +41,7 @@
         server_url = state.server_url
       }
       if ("headers" in state && Array.isArray(state.headers)) {
-        headers = state.headers
+        headers = [...state.headers]
       }
     }
   })

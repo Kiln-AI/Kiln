@@ -43,7 +43,7 @@
       args = state.args.join(" ")
     }
     if ("env_vars" in state && Array.isArray(state["env_vars"])) {
-      env_vars = state.env_vars
+      env_vars = [...state.env_vars]
     }
   })
 
