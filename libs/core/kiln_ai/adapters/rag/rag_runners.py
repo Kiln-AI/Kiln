@@ -499,7 +499,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 yield jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with async_lock_manager.acquire(self.lock_key):
+        async with shared_async_lock_manager.acquire(self.lock_key):
             vector_dimensions: int | None = None
 
             # infer dimensionality - we peek into the first record to get the vector dimensions
