@@ -6,13 +6,13 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
-from kiln_ai.tools.tool_id import (
-    MCP_LOCAL_TOOL_ID_PREFIX,
+from kiln_ai.datamodel.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
 )
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id

@@ -1,7 +1,7 @@
 from typing import Union
 
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool
-from kiln_ai.tools.tool_id import KilnBuiltInToolId
 
 
 class AddTool(KilnTool):
