@@ -7,17 +7,19 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
+  import { onMount } from "svelte"
 
   // Environment Variables as array of key/value pairs
   interface EnvVarPair {
     key: string
     value: string
+    placeholder: string | null
   }
 
   // Form fields
   let name = ""
   let command = ""
-  let args: ""
+  let args = ""
   let env_vars: EnvVarPair[] = []
   let description = ""
 
@@ -26,20 +28,24 @@
   let submitting = false
 
   // Populate fields from parent page state if provided (only if fields are empty)
-  $: if ($page.state) {
-    const state = $page.state as {
-      name?: string
-      description?: string
-    }
-
-    if (state.name && !name) {
+  onMount(() => {
+    const state = $page.state || {}
+    if ("name" in state && typeof state["name"] === "string") {
       name = state.name
     }
-
-    if (state.description && !description) {
+    if ("description" in state && typeof state["description"] === "string") {
       description = state.description
     }
-  }
+    if ("command" in state && typeof state["command"] === "string") {
+      command = state.command
+    }
+    if ("args" in state && Array.isArray(state["args"])) {
+      args = state.args.join(" ")
+    }
+    if ("env_vars" in state && Array.isArray(state["env_vars"])) {
+      env_vars = state.env_vars
+    }
+  })
 
   function buildEnvVarsObject(): Record<string, string> {
     const envVarsObj: Record<string, string> = {}
@@ -176,7 +182,7 @@
               label="Value"
               id="env_var_value_{item_index}"
               info_description="The value of the environment variable, such as 'your-api-key-here'"
-              placeholder="Value"
+              placeholder={env_vars[item_index].placeholder || "Value"}
               light_label={true}
               bind:value={env_vars[item_index].value}
             />

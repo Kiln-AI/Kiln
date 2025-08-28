@@ -7,8 +7,7 @@
 
   $: project_id = $page.params.project_id
 
-  // Type definition for MCP tool items
-  interface McpServer {
+  interface RemoteMcpServer {
     name: string
     description: string
     server_url: string
@@ -16,8 +15,17 @@
     button_text: string
   }
 
+  interface LocalMcpServer {
+    name: string
+    description: string
+    command: string
+    args: string[]
+    env_vars: { key: string; value: string; placeholder: string | null }[]
+    button_text: string
+  }
+
   // Helper function to navigate to remote MCP page with pre-filled data
-  function connectRemoteMcp(item: McpServer) {
+  function connectRemoteMcp(item: RemoteMcpServer) {
     goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`, {
       state: {
         name: item.name,
@@ -28,7 +36,19 @@
     })
   }
 
-  const sampleMcpServers: McpServer[] = [
+  function connectLocalMcp(item: LocalMcpServer) {
+    goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`, {
+      state: {
+        name: item.name,
+        description: item.description,
+        command: item.command,
+        args: item.args,
+        env_vars: item.env_vars,
+      },
+    })
+  }
+
+  const sampleRemoteMcpServers: RemoteMcpServer[] = [
     {
       name: "GitHub",
       description:
@@ -71,14 +91,35 @@
     },
   ]
 
+  const sampleLocalMcpServers: LocalMcpServer[] = [
+    {
+      name: "Firecrawl",
+      description:
+        "Firecrawl is a tool that allows you to crawl websites and extract data.",
+      command: "npx",
+      args: ["-y", "firecrawl-mcp"],
+      env_vars: [
+        {
+          key: "FIRECRAWL_API_KEY",
+          value: "",
+          placeholder: "REPLACE_WITH_FIRECRAWL_API_KEY",
+        },
+      ],
+      button_text: "Connect",
+    },
+  ]
+
   let sections = [
     {
       category: "Sample Tools",
       items: [
-        // TODO: Add more custom tool servers, pre-filled in.
-        ...sampleMcpServers.map((tool) => ({
+        ...sampleRemoteMcpServers.map((tool) => ({
           ...tool,
           on_click: () => connectRemoteMcp(tool),
+        })),
+        ...sampleLocalMcpServers.map((tool) => ({
+          ...tool,
+          on_click: () => connectLocalMcp(tool),
         })),
       ],
     },
