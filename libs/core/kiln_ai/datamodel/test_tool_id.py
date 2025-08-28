@@ -2,6 +2,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from kiln_ai.datamodel.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
@@ -48,6 +49,17 @@ class TestCheckToolId:
             result = _check_tool_id(tool_id)
             assert result == tool_id
 
+    def test_valid_mcp_local_tools(self):
+        """Test validation of valid MCP local tools."""
+        valid_ids = [
+            "mcp::local::server1::tool1",
+            "mcp::local::my_server::my_tool",
+            "mcp::local::test::function_name",
+        ]
+        for tool_id in valid_ids:
+            result = _check_tool_id(tool_id)
+            assert result == tool_id
+
     def test_invalid_empty_or_none(self):
         """Test validation fails for empty or None values."""
         with pytest.raises(ValueError, match="Invalid tool ID"):
@@ -71,8 +83,8 @@ class TestCheckToolId:
 
     def test_invalid_mcp_format(self):
         """Test validation fails for invalid MCP tool formats."""
-        # These IDs start with the MCP prefix but have invalid formats
-        mcp_format_invalid_ids = [
+        # These IDs start with the MCP remote prefix but have invalid formats
+        mcp_remote_invalid_ids = [
             "mcp::remote::",  # Missing server and tool
             "mcp::remote::server",  # Missing tool
             "mcp::remote::server::",  # Empty tool name
@@ -80,8 +92,21 @@ class TestCheckToolId:
             "mcp::remote::server::tool::extra",  # Too many parts
         ]
 
-        for invalid_id in mcp_format_invalid_ids:
+        for invalid_id in mcp_remote_invalid_ids:
             with pytest.raises(ValueError, match="Invalid MCP remote tool ID"):
+                _check_tool_id(invalid_id)
+
+        # These IDs start with the MCP local prefix but have invalid formats
+        mcp_local_invalid_ids = [
+            "mcp::local::",  # Missing server and tool
+            "mcp::local::server",  # Missing tool
+            "mcp::local::server::",  # Empty tool name
+            "mcp::local::::tool",  # Empty server name
+            "mcp::local::server::tool::extra",  # Too many parts
+        ]
+
+        for invalid_id in mcp_local_invalid_ids:
+            with pytest.raises(ValueError, match="Invalid MCP local tool ID"):
                 _check_tool_id(invalid_id)
 
         # This ID doesn't start with MCP prefix so gets generic error
@@ -95,9 +120,14 @@ class TestMcpServerAndToolNameFromId:
     def test_valid_mcp_ids(self):
         """Test parsing valid MCP tool IDs."""
         test_cases = [
+            # Remote MCP tools
             ("mcp::remote::server1::tool1", ("server1", "tool1")),
             ("mcp::remote::my_server::my_tool", ("my_server", "my_tool")),
             ("mcp::remote::test::function_name", ("test", "function_name")),
+            # Local MCP tools
+            ("mcp::local::server1::tool1", ("server1", "tool1")),
+            ("mcp::local::my_server::my_tool", ("my_server", "my_tool")),
+            ("mcp::local::test::function_name", ("test", "function_name")),
         ]
 
         for tool_id, expected in test_cases:
@@ -106,17 +136,37 @@ class TestMcpServerAndToolNameFromId:
 
     def test_invalid_mcp_ids(self):
         """Test parsing fails for invalid MCP tool IDs."""
-        invalid_ids = [
+        # Test remote MCP tool ID errors
+        remote_invalid_ids = [
             "mcp::remote::",  # Only 3 parts
             "mcp::remote::server",  # Only 3 parts
             "mcp::remote::server::tool::extra",  # 5 parts
+        ]
+
+        for invalid_id in remote_invalid_ids:
+            with pytest.raises(ValueError, match="Invalid MCP remote tool ID"):
+                mcp_server_and_tool_name_from_id(invalid_id)
+
+        # Test local MCP tool ID errors
+        local_invalid_ids = [
+            "mcp::local::",  # Only 3 parts
+            "mcp::local::server",  # Only 3 parts
+            "mcp::local::server::tool::extra",  # 5 parts
+        ]
+
+        for invalid_id in local_invalid_ids:
+            with pytest.raises(ValueError, match="Invalid MCP local tool ID"):
+                mcp_server_and_tool_name_from_id(invalid_id)
+
+        # Test generic MCP tool ID errors (not remote or local)
+        generic_invalid_ids = [
             "not_mcp_format",  # Only 1 part
             "single_part",  # Only 1 part
             "",  # Empty string
         ]
 
-        for invalid_id in invalid_ids:
-            with pytest.raises(ValueError, match="Invalid MCP remote tool ID"):
+        for invalid_id in generic_invalid_ids:
+            with pytest.raises(ValueError, match="Invalid MCP tool ID"):
                 mcp_server_and_tool_name_from_id(invalid_id)
 
     def test_mcp_ids_with_wrong_prefix_still_parse(self):
@@ -139,10 +189,14 @@ class TestToolIdPydanticType:
             assert model.tool_id == tool_id.value
 
     def test_valid_mcp_tools(self):
-        """Test ToolId validates MCP remote tools."""
+        """Test ToolId validates MCP remote and local tools."""
         valid_ids = [
+            # Remote MCP tools
             "mcp::remote::server1::tool1",
             "mcp::remote::my_server::my_tool",
+            # Local MCP tools
+            "mcp::local::server1::tool1",
+            "mcp::local::my_server::my_tool",
         ]
 
         for tool_id in valid_ids:
@@ -156,6 +210,8 @@ class TestToolIdPydanticType:
             "unknown_tool",
             "mcp::remote::",
             "mcp::remote::server",
+            "mcp::local::",
+            "mcp::local::server",
         ]
 
         for invalid_id in invalid_ids:
@@ -177,3 +233,7 @@ class TestConstants:
     def test_mcp_remote_tool_id_prefix(self):
         """Test the MCP remote tool ID prefix constant."""
         assert MCP_REMOTE_TOOL_ID_PREFIX == "mcp::remote::"
+
+    def test_mcp_local_tool_id_prefix(self):
+        """Test the MCP local tool ID prefix constant."""
+        assert MCP_LOCAL_TOOL_ID_PREFIX == "mcp::local::"

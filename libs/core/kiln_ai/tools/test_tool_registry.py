@@ -1,8 +1,17 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import Mock
 
 import pytest
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
+    MCP_REMOTE_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+    _check_tool_id,
+    mcp_server_and_tool_name_from_id,
+)
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -68,17 +77,9 @@ class TestToolRegistry:
         with pytest.raises(ValueError, match="Tool ID  not found in tool registry"):
             tool_from_id("")
 
-    @patch("kiln_ai.utils.project_utils.project_from_id")
-    @patch("kiln_ai.tools.tool_registry.ExternalToolServer.from_id_and_parent_path")
-    def test_tool_from_id_mcp_remote_tool_success(
-        self, mock_from_id_and_parent_path, mock_project_from_id
-    ):
+    def test_tool_from_id_mcp_remote_tool_success(self):
         """Test that tool_from_id works with MCP remote tool IDs."""
-        # Setup mocks
-        mock_project = MagicMock()
-        mock_project.path = "/fake/project/path"
-        mock_project_from_id.return_value = mock_project
-
+        # Create mock external tool server
         mock_server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
@@ -87,34 +88,28 @@ class TestToolRegistry:
                 "headers": {},
             },
         )
-        mock_from_id_and_parent_path.return_value = mock_server
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
 
         # Test with remote MCP tool ID
-        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}test_server::echo"
-        tool = tool_from_id(tool_id, "test-project")
+        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::echo"
+        tool = tool_from_id(tool_id, task=mock_task)
 
         # Verify the tool is MCPServerTool
         assert isinstance(tool, MCPServerTool)
         assert tool._tool_server_model == mock_server
         assert tool._name == "echo"
 
-        # Verify mocks were called correctly
-        mock_project_from_id.assert_called_once_with("test-project")
-        mock_from_id_and_parent_path.assert_called_once_with(
-            "test_server", "/fake/project/path"
-        )
-
-    @patch("kiln_ai.utils.project_utils.project_from_id")
-    @patch("kiln_ai.tools.tool_registry.ExternalToolServer.from_id_and_parent_path")
-    def test_tool_from_id_mcp_local_tool_success(
-        self, mock_from_id_and_parent_path, mock_project_from_id
-    ):
+    def test_tool_from_id_mcp_local_tool_success(self):
         """Test that tool_from_id works with MCP local tool IDs."""
-        # Setup mocks
-        mock_project = MagicMock()
-        mock_project.path = "/fake/project/path"
-        mock_project_from_id.return_value = mock_project
-
+        # Create mock external tool server
         mock_server = ExternalToolServer(
             name="local_server",
             type=ToolServerType.local_mcp,
@@ -124,49 +119,56 @@ class TestToolRegistry:
                 "env_vars": {},
             },
         )
-        mock_from_id_and_parent_path.return_value = mock_server
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
 
         # Test with local MCP tool ID
-        tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}local_server::calculate"
-        tool = tool_from_id(tool_id, "test-project")
+        tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}{mock_server.id}::calculate"
+        tool = tool_from_id(tool_id, task=mock_task)
 
         # Verify the tool is MCPServerTool
         assert isinstance(tool, MCPServerTool)
         assert tool._tool_server_model == mock_server
         assert tool._name == "calculate"
 
-        # Verify mocks were called correctly
-        mock_project_from_id.assert_called_once_with("test-project")
-        mock_from_id_and_parent_path.assert_called_once_with(
-            "local_server", "/fake/project/path"
+    def test_tool_from_id_mcp_tool_project_not_found(self):
+        """Test that tool_from_id raises ValueError when task is not provided."""
+        tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}test_server::test_tool"
+        with pytest.raises(
+            ValueError,
+            match="Unable to resolve tool from id.*Requires a parent project/task",
+        ):
+            tool_from_id(tool_id, task=None)
+
+    def test_tool_from_id_mcp_tool_server_not_found(self):
+        """Test that tool_from_id raises ValueError when tool server is not found."""
+        # Create mock external tool server with different ID
+        mock_server = ExternalToolServer(
+            name="different_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
         )
 
-    @patch("kiln_ai.utils.project_utils.project_from_id")
-    def test_tool_from_id_mcp_tool_project_not_found(self, mock_project_from_id):
-        """Test that tool_from_id raises ValueError when project is not found."""
-        mock_project_from_id.return_value = None
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
 
-        tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}test_server::test_tool"
-        with pytest.raises(ValueError, match="Project not found: test-project"):
-            tool_from_id(tool_id, "test-project")
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
 
-        mock_project_from_id.assert_called_once_with("test-project")
-
-    @patch("kiln_ai.utils.project_utils.project_from_id")
-    @patch("kiln_ai.tools.tool_registry.ExternalToolServer.from_id_and_parent_path")
-    def test_tool_from_id_mcp_tool_server_not_found(
-        self, mock_from_id_and_parent_path, mock_project_from_id
-    ):
-        """Test that tool_from_id raises ValueError when tool server is not found."""
-        # Setup project mock
-        mock_project = MagicMock()
-        mock_project.path = "/fake/project/path"
-        mock_project_from_id.return_value = mock_project
-
-        # Server not found
-        mock_from_id_and_parent_path.return_value = None
-
-        # Test with both remote and local tool IDs
+        # Test with both remote and local tool IDs that reference nonexistent servers
         test_cases = [
             f"{MCP_REMOTE_TOOL_ID_PREFIX}missing_server::test_tool",
             f"{MCP_LOCAL_TOOL_ID_PREFIX}missing_server::test_tool",
@@ -174,13 +176,10 @@ class TestToolRegistry:
 
         for tool_id in test_cases:
             with pytest.raises(
-                ValueError, match="External tool server not found: missing_server"
+                ValueError,
+                match="External tool server not found: missing_server in project ID test_project_id",
             ):
-                tool_from_id(tool_id, "test-project")
-
-        # Verify mocks were called correctly
-        assert mock_project_from_id.call_count == len(test_cases)
-        assert mock_from_id_and_parent_path.call_count == len(test_cases)
+                tool_from_id(tool_id, task=mock_task)
 
     def test_all_built_in_tools_are_registered(self):
         """Test that all KilnBuiltInToolId enum members are handled by the registry."""

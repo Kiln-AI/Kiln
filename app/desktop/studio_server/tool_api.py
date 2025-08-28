@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.tool_id import (
-    MCP_LOCAL_TOOL_ID_PREFIX
+    MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
