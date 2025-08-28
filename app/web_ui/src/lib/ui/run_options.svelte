@@ -6,26 +6,46 @@
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
   import type { ToolSetApiDescription } from "$lib/types"
+  import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0
   export let top_p: number = 1.0
   export let structured_output_mode: StructuredOutputMode = "default"
   export let has_structured_output: boolean = false
-  export let tools: string[] = []
   export let project_id: string
+  export let task_id: string
+  export let tools: string[] = []
 
   onMount(async () => {
-    load_tools(project_id)
+    await load_tools(project_id, task_id)
   })
 
-  function load_tools(project_id: string) {
+  let tools_store_loaded_task_id: string | null = null
+  async function load_tools(project_id: string, task_id: string) {
     if (project_id) {
       load_available_tools(project_id)
     }
+
+    if (task_id !== tools_store_loaded_task_id) {
+      await tools_store_initialized
+      tools = $tools_store.selected_tool_ids_by_task_id[task_id] || []
+      tools_store_loaded_task_id = task_id
+    }
   }
-  // Update if project_id changes
-  $: load_tools(project_id)
+  // Load tools if project_id or task_id changes
+  $: load_tools(project_id, task_id)
+
+  // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
+  $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
+    tools_store.update((state) => ({
+      ...state,
+      selected_tool_ids_by_task_id: {
+        ...state.selected_tool_ids_by_task_id,
+        [task_id]: tools,
+      },
+    }))
+  }
 
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
