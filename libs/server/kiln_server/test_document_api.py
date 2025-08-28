@@ -1228,7 +1228,7 @@ async def test_run_rag_config_success(
         patch(
             "kiln_server.document_api.run_rag_workflow_runner_with_status"
         ) as mock_run_runner,
-        patch("kiln_ai.utils.lock.async_lock_manager") as mock_lock_manager,
+        patch("kiln_ai.utils.lock.shared_async_lock_manager") as mock_lock_manager,
     ):
         mock_project_from_id.return_value = mock_project
         mock_build_runner.return_value = mock_runner

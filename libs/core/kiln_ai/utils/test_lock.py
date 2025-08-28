@@ -1,6 +1,6 @@
 import asyncio
 
-from .lock import AsyncLockManager, async_lock_manager
+from .lock import AsyncLockManager, shared_async_lock_manager
 
 
 async def test_same_key_returns_same_lock():
@@ -98,11 +98,11 @@ async def test_multiple_holders_cleanup():
 
 
 async def test_global_instance():
-    """Test that the global async_lock_manager instance works correctly."""
+    """Test that the global shared_async_lock_manager instance works correctly."""
     results = []
 
     async def worker(worker_id: int):
-        async with async_lock_manager.acquire("global_test"):
+        async with shared_async_lock_manager.acquire("global_test"):
             results.append(f"worker_{worker_id}_start")
             await asyncio.sleep(0.05)
             results.append(f"worker_{worker_id}_end")

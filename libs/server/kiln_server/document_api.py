@@ -49,7 +49,7 @@ from kiln_ai.datamodel.vector_store import (
     VectorStoreConfig,
     VectorStoreType,
 )
-from kiln_ai.utils import async_lock_manager
+from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -58,6 +58,8 @@ from pydantic import BaseModel, Field, model_validator
 from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
+
+background_tasks: set[asyncio.Task] = set()
 
 
 async def run_extractor_runner_with_status(
@@ -95,15 +97,22 @@ async def run_all_extractors_and_rag_workflows(
     ]:
 
         async def run_extractor(extractor_config=extractor_config):
-            async with async_lock_manager.acquire(
-                f"docs:extract:{extractor_config.id}"
-            ):
-                extractor_runner = ExtractorRunner(
-                    extractor_configs=[extractor_config],
-                    documents=[document],
-                )
-                async for progress in extractor_runner.run():
-                    pass
+            try:
+                async with shared_async_lock_manager.acquire(
+                    f"docs:extract:{extractor_config.id}",
+                    timeout=0.5,
+                ):
+                    extractor_runner = ExtractorRunner(
+                        extractor_configs=[extractor_config],
+                        documents=[document],
+                    )
+                    async for progress in extractor_runner.run():
+                        pass
+            except asyncio.TimeoutError:
+                # this lock may be held by a concurrent rag run that uses this extractor
+                # in which case we will skip the processing here, and user may need to
+                # manually Run the rag config; relatively rare
+                logger.info(f"Extractor {extractor_config.id} is locked, skipping")
 
         extractor_tasks.append(asyncio.create_task(run_extractor()))
 
@@ -117,6 +126,7 @@ async def run_all_extractors_and_rag_workflows(
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
 
         async def run_rag(rag_config=rag_config):
+            # no need to lock here, each rag runner gets a lock when it starts running
             rag_runner = build_rag_workflow_runner(project, str(rag_config.id))
             async for progress in rag_runner.run():
                 pass
@@ -139,7 +149,13 @@ def run_all_extractors_and_rag_workflows_no_wait(
     """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
     Needed to make mocking easier in tests.
     """
-    asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))  # noqa: RUF006
+    # dangling async tasks with no reference can be garbage collected at any time (even while running)
+    # so we need to add a reference to the task (here in the background_tasks set) to prevent it
+    # from being garbage collected
+    # https://docs.astral.sh/ruff/rules/asyncio-dangling-task/
+    task = asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
 
 
 async def run_rag_workflow_runner_with_status(
@@ -652,7 +668,9 @@ def connect_document_api(app: FastAPI):
     ) -> StreamingResponse:
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
-        async with async_lock_manager.acquire(f"docs:extract:{extractor_config_id}"):
+        async with shared_async_lock_manager.acquire(
+            f"docs:extract:{extractor_config_id}"
+        ):
             project = project_from_id(project_id)
             extractor_config = ExtractorConfig.from_id_and_parent_path(
                 extractor_config_id, project.path
@@ -1198,11 +1216,11 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         rag_config_id: str,
     ) -> StreamingResponse:
-        # prevent concurrent runs of the same rag config that would result in duplicates
-        async with async_lock_manager.acquire(f"rag:run:{rag_config_id}"):
-            project = project_from_id(project_id)
-            runner = build_rag_workflow_runner(project, rag_config_id)
-            return await run_rag_workflow_runner_with_status(runner)
+        project = project_from_id(project_id)
+        runner = build_rag_workflow_runner(project, rag_config_id)
+
+        # the workflow runner handles locking
+        return await run_rag_workflow_runner_with_status(runner)
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(
