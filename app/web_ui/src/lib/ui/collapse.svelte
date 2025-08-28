@@ -1,6 +1,7 @@
 <script lang="ts">
   export let title: string
   export let small: boolean = true
+  export let badge: string | null = null
 </script>
 
 <div
@@ -14,6 +15,11 @@
       ? 'text-sm'
       : ''} min-h-[24px]"
   >
+    {#if badge}
+      <span class="badge badge-outline mr-2 px-1 text-xs min-w-[20px]"
+        >{badge}</span
+      >
+    {/if}
     {title}
   </div>
   <div class="collapse-content flex flex-col gap-4" style="min-width: 0">

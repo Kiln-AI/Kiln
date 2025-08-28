@@ -103,6 +103,11 @@
     }, 0)
   }
 
+  // Make it reactive, when selected changes, update the selected_values
+  $: if (multi_select && selected instanceof Array) {
+    selected_values = selected
+  }
+
   // Function to check if menu is scrollable
   function checkIfScrollable() {
     if (menuElement) {

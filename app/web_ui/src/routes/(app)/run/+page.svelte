@@ -172,7 +172,10 @@
           bind:this={model_dropdown}
         />
         {#if $current_project?.id}
-          <Collapse title="Advanced Options">
+          <Collapse
+            title="Advanced Options"
+            badge={tools.length > 0 ? "" + tools.length : null}
+          >
             <RunOptions
               bind:tools
               bind:temperature
@@ -180,6 +183,7 @@
               bind:structured_output_mode
               has_structured_output={requires_structured_output}
               project_id={$current_project?.id}
+              task_id={$current_task?.id || ""}
             />
           </Collapse>
         {/if}
