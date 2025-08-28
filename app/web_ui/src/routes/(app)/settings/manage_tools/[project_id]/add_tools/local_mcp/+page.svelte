@@ -8,6 +8,7 @@
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
   import { onMount } from "svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   // Environment Variables as array of key/value pairs
   interface EnvVarPair {
@@ -22,7 +23,7 @@
   let args = ""
   let env_vars: EnvVarPair[] = []
   let description = ""
-
+  let installation_instruction = ""
   // Form state
   let error: KilnError | null = null
   let submitting = false
@@ -44,6 +45,12 @@
     }
     if ("env_vars" in state && Array.isArray(state["env_vars"])) {
       env_vars = [...state.env_vars]
+    }
+    if (
+      "installation_instruction" in state &&
+      typeof state["installation_instruction"] === "string"
+    ) {
+      installation_instruction = state.installation_instruction
     }
   })
 
@@ -105,6 +112,16 @@
   subtitle="Connect to a local Model Context Protocol (MCP) server to add external
         tools to your project."
 >
+  {#if installation_instruction}
+    <div class="mb-6">
+      <Warning
+        warning_color="warning"
+        warning_icon="info"
+        large_icon={true}
+        warning_message={installation_instruction}
+      />
+    </div>
+  {/if}
   <div class="max-w-2xl">
     <FormContainer
       submit_label="Connect"
@@ -134,14 +151,16 @@
         id="command"
         description="The command to run the MCP server."
         placeholder="uv, python, npx etc."
+        info_description="The program used to start the MCP server (e.g. 'npx', 'python', 'uv', 'npm')."
         bind:value={command}
       />
 
       <FormElement
         label="Arguments"
         id="args"
-        description="The arguments to pass to the MCP server. Each argument should be space separated."
+        description="A list of arguments to pass to the MCP server."
         placeholder="run server fastmcp_quickstart stdio"
+        info_description="Extra instructions after the command that control what or how it runs (e.g. 'firecrawl-mcp -y stdio', 'myserver.py stdio', 'run my-mcp-server --port 8080')."
         optional={true}
         inputType="textarea"
         bind:value={args}

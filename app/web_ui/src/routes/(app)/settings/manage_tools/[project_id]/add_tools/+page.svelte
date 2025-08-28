@@ -21,6 +21,7 @@
     args: string[]
     env_vars: { key: string; value: string; placeholder: string | null }[]
     button_text: string
+    installation_instruction: string
   }
 
   // Helper function to navigate to remote MCP page with pre-filled data
@@ -43,6 +44,7 @@
         command: item.command,
         args: item.args,
         env_vars: item.env_vars,
+        installation_instruction: item.installation_instruction,
       },
     })
   }
@@ -105,6 +107,8 @@
         },
       ],
       button_text: "Connect",
+      installation_instruction:
+        "To install Firecrawl, run 'npm install -g firecrawl-mcp'",
     },
     {
       name: "Filesystem",
@@ -118,6 +122,7 @@
       ],
       env_vars: [],
       button_text: "Connect",
+      installation_instruction: "",
     },
   ]
 </script>
