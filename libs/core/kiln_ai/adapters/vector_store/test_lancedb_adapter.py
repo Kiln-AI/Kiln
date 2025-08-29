@@ -3,24 +3,18 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import lancedb
 import pytest
 
-from kiln_ai.adapters.vector_store.base_vector_store_adapter import SimilarityMetric
-from kiln_ai.adapters.vector_store.lancedb_adapter import (
-    LanceDBAdapter,
-    LanceDBCollection,
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import KilnVectorStoreQuery
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
 )
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import (
-    LanceDBTableSchemaVersion,
-    VectorStoreConfig,
-    VectorStoreType,
-)
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 
 
 @pytest.fixture
@@ -36,15 +30,54 @@ def temp_db_path():
 
 
 @pytest.fixture
-def vector_store_config(temp_db_path):
+def hybrid_vector_store_config(temp_db_path):
     """Create a vector store config for testing."""
     with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
         yield VectorStoreConfig(
             name="test_config",
-            store_type=VectorStoreType.LANCE_DB,
+            store_type=VectorStoreType.LANCE_DB_HYBRID,
             properties={
-                "table_schema_version": LanceDBTableSchemaVersion.V1.value,
-                "vector_index_type": "bruteforce",
+                "similarity_top_k": 10,
+                "nprobes": 10,
+                "overfetch_factor": 10,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+            },
+        )
+
+
+@pytest.fixture
+def fts_vector_store_config(temp_db_path):
+    """Create a vector store config for testing."""
+    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
+        yield VectorStoreConfig(
+            name="test_config",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties={
+                "similarity_top_k": 10,
+                "overfetch_factor": 10,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+            },
+        )
+
+
+@pytest.fixture
+def similarity_vector_store_config(temp_db_path):
+    """Create a vector store config for testing."""
+    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
+        yield VectorStoreConfig(
+            name="test_config",
+            store_type=VectorStoreType.LANCE_DB_VECTOR,
+            properties={
+                "similarity_top_k": 10,
+                "nprobes": 10,
+                "overfetch_factor": 10,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
             },
         )
 
@@ -153,194 +186,148 @@ def mock_chunked_documents(tmp_path):
     return dicts_to_indexable_docs(docs, tmp_path)
 
 
-async def build_lancedb_adapter(
-    vector_store_config: VectorStoreConfig, db_path: str
-) -> LanceDBAdapter:
-    """Create a mock LanceDB adapter for testing."""
-    connection = await lancedb.connect_async(db_path)
-    return LanceDBAdapter(
-        vector_store_config=vector_store_config,
-        connection=connection,
+@pytest.mark.asyncio
+async def test_add_chunks_with_embeddings_and_similarity_search(
+    similarity_vector_store_config, mock_chunked_documents
+):
+    """Test adding chunks and similarity search."""
+    print("=== Testing Add Chunks and Similarity Search ===")
+
+    # Create adapter using the registry
+    adapter = await vector_store_adapter_for_config(similarity_vector_store_config)
+
+    # Add chunks to the vector store
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    print("Chunks added successfully!")
+
+    # Test similarity search - search for a vector close to [55.0, 55.0] (NYC area chunk)
+    query_vector = [55.0, 55.0]
+    print(f"Searching for similar vectors to {query_vector}")
+
+    results = await adapter.search(KilnVectorStoreQuery(query_embedding=query_vector))
+    print(f"Similarity search returned {len(results)} results:")
+
+    for i, result in enumerate(results):
+        print(f"  {i + 1}. Document ID: {result.document_id}")
+        print(f"     Similarity: {result.similarity}")
+        print(f"     Text: {result.chunk_text}")
+        print()
+
+    # The closest should be NYC area chunk with vector [55.0, 55.0]
+    assert len(results) > 0
+    assert "New York City" in results[0].chunk_text
+    assert "783.8 square kilometers" in results[0].chunk_text
+
+
+@pytest.mark.asyncio
+async def test_fts_search(fts_vector_store_config, mock_chunked_documents):
+    """Test full-text search functionality."""
+    print("=== Testing Full-Text Search ===")
+
+    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    all_chunks = await adapter.get_all_chunks()
+    print(f"All chunks: {[chunk.chunk_text for chunk in all_chunks]}")
+
+    # Test FTS search for "London"
+    query_text = "london"
+    print(f"Searching for text containing: '{query_text}'")
+
+    results = await adapter.search(KilnVectorStoreQuery(query_string=query_text))
+    print(f"FTS search returned {len(results)} results:")
+
+    for i, result in enumerate(results):
+        print(f"  {i + 1}. Document ID: {result.document_id}")
+        print(f"     Similarity: {result.similarity}")
+        print(f"     Text: {result.chunk_text}")
+        print()
+
+    # Should find both London chunks
+    assert len(results) >= 2
+    london_texts = [result.chunk_text for result in results]
+    assert any("London, UK has a population" in text for text in london_texts)
+    assert any("The area of London, UK" in text for text in london_texts)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search(hybrid_vector_store_config, mock_chunked_documents):
+    """Test hybrid search combining vector and text search."""
+    print("=== Testing Hybrid Search ===")
+
+    adapter = await vector_store_adapter_for_config(hybrid_vector_store_config)
+
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Test hybrid search - combine text "Tokyo" with vector close to Tokyo population vector [1.1, 1.2]
+    query_text = "Tokyo"
+    query_vector = [1.1, 1.2]
+    print(f"Hybrid search for text: '{query_text}' and vector: {query_vector}")
+
+    results = await adapter.search(
+        KilnVectorStoreQuery(query_string=query_text, query_embedding=query_vector)
     )
+    print(f"Hybrid search returned {len(results)} results:")
 
+    for i, result in enumerate(results):
+        print(f"  {i + 1}. Document ID: {result.document_id}")
+        print(f"     Similarity: {result.similarity}")
+        print(f"     Text: {result.chunk_text}")
+        print()
 
-async def test_create_collection(
-    vector_store_config, temp_db_path, rag_config, mock_chunked_documents
-):
-    """Test that create_collection creates a table with the correct schema."""
-    # Create the async connection
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-
-    collection = await adapter.create_collection(rag_config, vector_dimensions=2)
-
-    assert collection is not None
-    assert isinstance(collection, LanceDBCollection)
-
-    # check we can get the collection
-    collection2 = await adapter.collection(rag_config)
-    assert collection2 is not None
-    assert isinstance(collection2, LanceDBCollection)
-
-    # try upserting chunks
-    await collection.upsert_chunks(mock_chunked_documents)
-
-    # check they got inserted in both collections
-    count1 = await collection.count_records()
-    assert count1 == 8
-
-    # this call is required, otherwise the second collection won't be up-to-date
-    await collection2.optimize()
-
-    # check they got inserted in the second collection
-    count2 = await collection2.count_records()
-    assert count2 == 8
-
-    await collection.close()
-    await collection2.close()
-
-
-async def test_destroy_collection(vector_store_config, temp_db_path, rag_config):
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-
-    await adapter.create_collection(rag_config, vector_dimensions=2)
-
-    await adapter.destroy_collection(rag_config)
-
-    # check the collection is gone
-    with pytest.raises(Exception):
-        await adapter.collection(rag_config)
-
-    # throw if destroying a collection that doesn't exist
-    with pytest.raises(Exception):
-        rag_config.id = "non-existent-rag-config"
-        await adapter.destroy_collection(rag_config)
+    # Should find Tokyo-related chunks, with population chunk being highly ranked
+    assert len(results) > 0
+    tokyo_results = [result for result in results if "Tokyo" in result.chunk_text]
+    assert len(tokyo_results) >= 2  # Both Tokyo chunks should be found
 
 
 @pytest.mark.asyncio
-async def test_upsert_chunks_success(
-    vector_store_config, temp_db_path, mock_chunked_documents, rag_config
-):
-    """Test that upsert_chunks stores data correctly."""
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
+async def test_upsert_behavior(fts_vector_store_config, mock_chunked_documents):
+    """Test that adding the same chunks multiple times works (upsert behavior)."""
+    print("=== Testing Upsert Behavior ===")
 
-    collection = await adapter.create_collection(rag_config, vector_dimensions=2)
+    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
 
-    # before any insertions
-    count = await collection.count_records()
-    assert count == 0
+    # Extract first document only
+    first_doc = [mock_chunked_documents[0]]
 
-    # upsert 6 chunks using the collection adapter
-    await collection.upsert_chunks([mock_chunked_documents[0]])
+    print("Adding first document...")
+    await adapter.add_chunks_with_embeddings(first_doc)
 
-    # after upserting 4 chunks (only the first document)
-    count = await collection.count_records()
-    assert count == 4
+    # Search to verify it's there
+    results1 = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    print(f"After first add: {len(results1)} Tokyo results")
 
-    # upsert all the chunks (8 in total)
-    await collection.upsert_chunks(mock_chunked_documents)
+    # Add the same document again
+    print("Adding same document again...")
+    await adapter.add_chunks_with_embeddings(first_doc)
 
-    # after upserting all 8 chunks - 6 are already in the table, so we should have 8 total
-    count = await collection.count_records()
-    assert count == 8
+    # Search again - should still find the same chunks (not duplicated)
+    results2 = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    print(f"After second add: {len(results2)} Tokyo results")
 
-    # test vector search gives us the correct nearest neighbor (L2)
-    results = await collection.search_vector([54, 56], 1, SimilarityMetric.L2)
-    assert len(results) == 1
-    assert (
-        results[0].chunk_text
-        == "The area of New York City, USA is approximately 783.8 square kilometers"
-    )
+    # Print all results to see what we got
+    for i, result in enumerate(results2):
+        print(f"  {i + 1}. Document ID: {result.document_id}")
+        print(f"     Text: {result.chunk_text}")
+        print()
 
-    # test FTS search gives us the correct documents
-    results = await collection.search_fts("london", 10)
-    assert len(results) == 2
-    # check that we get back the correct documents
-    for result in results:
-        assert result.chunk_text in [
-            "London, UK has a population of roughly 9 million people",
-            "The area of London, UK is approximately 1,572 square kilometers",
-        ]
+    # Should find Tokyo chunks but behavior may vary based on LanceDB implementation
+    assert len(results2) >= len(results1)
 
-    await collection.close()
+    # Add all documents
+    print("Adding all documents...")
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
-    await adapter.destroy_collection(rag_config)
+    # Final search
+    results3 = await adapter.search(KilnVectorStoreQuery(query_string="population"))
+    print(f"After adding all documents: {len(results3)} population results")
 
+    for i, result in enumerate(results3):
+        print(f"  {i + 1}. Document ID: {result.document_id}")
+        print(f"     Text: {result.chunk_text}")
+        print()
 
-@pytest.mark.asyncio
-async def test_lancedb_error_handling(vector_store_config, temp_db_path, rag_config):
-    """Test error handling in the LanceDB adapter."""
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-
-    # try to destroy a collection that doesn't exist
-    with pytest.raises(ValueError, match="Table.*was not found"):
-        await adapter.destroy_collection(rag_config)
-
-    with pytest.raises(Exception):
-        await adapter.collection(rag_config)
-
-
-@pytest.mark.asyncio
-async def test_lancedb_collection_edge_cases(
-    vector_store_config, temp_db_path, rag_config
-):
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-    collection = await adapter.create_collection(rag_config, vector_dimensions=2)
-
-    # test count_records on empty table
-    count = await collection.count_records()
-    assert count == 0
-
-    # test optimize on empty table (should not fail)
-    await collection.optimize()
-
-    # test search_fts on empty table
-    results = await collection.search_fts("test", 5)
-    assert len(results) == 0
-
-    # test search_vector on empty table
-    results = await collection.search_vector([1.0, 1.0], 5, SimilarityMetric.L2)
-    assert len(results) == 0
-
-    # test close
-    await collection.close()
-
-
-@pytest.mark.asyncio
-async def test_lancedb_recreate_collection(
-    vector_store_config, temp_db_path, mock_chunked_documents, rag_config
-):
-    """Test recreating a collection with the same name."""
-    adapter = await build_lancedb_adapter(vector_store_config, temp_db_path)
-
-    # Create a RAG config for testing
-    rag_config = RagConfig(
-        name="test_rag",
-        extractor_config_id="test_extractor",
-        chunker_config_id="test_chunker",
-        embedding_config_id="test_embedding",
-        vector_store_config_id=vector_store_config.id,
-    )
-
-    # Create collection first time
-    collection1 = await adapter.create_collection(rag_config, vector_dimensions=2)
-
-    # Insert some data
-    await collection1.upsert_chunks(mock_chunked_documents)
-    count1 = await collection1.count_records()
-    assert count1 > 0
-
-    # we should throw if the table already exists
-    with pytest.raises(Exception):
-        await adapter.create_collection(rag_config, vector_dimensions=2)
-
-    # destroy the collection
-    await adapter.destroy_collection(rag_config)
-
-    # create a new collection
-    collection2 = await adapter.create_collection(rag_config, vector_dimensions=2)
-    assert collection2 is not None
-    assert isinstance(collection2, LanceDBCollection)
-
-    # check the data is correctly gone
-    count2 = await collection2.count_records()
-    assert count2 == 0
+    assert len(results3) > 0

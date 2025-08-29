@@ -116,10 +116,13 @@ def mock_vector_store_config(mock_project, tmp_path):
         id="kiln:vector_store:lancedb",
         parent=mock_project,
         name="Test Vector Store",
-        store_type=VectorStoreType.LANCE_DB,
+        store_type=VectorStoreType.LANCE_DB_FTS,
         properties={
-            "table_schema_version": "1",
-            "vector_index_type": "bruteforce",
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
         },
     )
     vector_store_config.save_to_file()

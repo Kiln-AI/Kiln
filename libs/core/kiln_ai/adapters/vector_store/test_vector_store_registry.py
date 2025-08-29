@@ -1,0 +1,148 @@
+import os
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import VectorStoreConfig
+from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    build_lancedb_vector_store,
+    vector_store_adapter_for_config,
+)
+from kiln_ai.datamodel.vector_store import VectorStoreType
+
+
+@pytest.fixture
+def temp_db_path():
+    """Create a temporary database path for testing."""
+    db_path = tempfile.mkdtemp(suffix=".lancedb")
+    yield db_path
+    # Cleanup
+    if os.path.exists(db_path):
+        import shutil
+
+        shutil.rmtree(db_path)
+
+
+@pytest.fixture
+def vector_store_config(temp_db_path):
+    """Create a vector store config for testing."""
+    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
+        config = VectorStoreConfig(
+            name="test_config",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties={
+                "similarity_top_k": 10,
+                "overfetch_factor": 20,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+            },
+        )
+        # Set an ID for the config since build_lancedb_vector_store requires it
+        config.id = "test_config_id"
+        yield config
+
+
+class TestBuildLanceDBVectorStore:
+    """Test the build_lancedb_vector_store function."""
+
+    def test_build_lancedb_vector_store_success(self, vector_store_config):
+        """Test successful creation of LanceDBVectorStore."""
+        with patch("kiln_ai.utils.config.Config.shared") as mock_config:
+            mock_config.return_value.local_data_dir.return_value = Path("/tmp/test")
+
+            vector_store = build_lancedb_vector_store(
+                vector_store_config, mode="overwrite"
+            )
+
+            assert vector_store is not None
+            mock_config.assert_called_once()
+            mock_config.return_value.local_data_dir.assert_called_once()
+
+    def test_build_lancedb_vector_store_no_id(self):
+        """Test error handling when vector store config has no ID."""
+        config = VectorStoreConfig(
+            name="test_config",
+            store_type=VectorStoreType.LANCE_DB_HYBRID,
+            properties={
+                "similarity_top_k": 10,
+                "overfetch_factor": 20,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+                "nprobes": 5,
+            },
+        )
+        # Explicitly set ID to None to test the error case
+        config.id = None
+
+        with pytest.raises(ValueError, match="Vector store config ID is required"):
+            build_lancedb_vector_store(config, mode="overwrite")
+
+
+class TestVectorStoreAdapterForConfig:
+    """Test the vector_store_adapter_for_config function."""
+
+    @pytest.mark.asyncio
+    async def test_vector_store_adapter_for_config_lance_db(self, vector_store_config):
+        """Test creating LanceDB adapter for LANCE_DB store type."""
+        with patch(
+            "kiln_ai.adapters.vector_store.vector_store_registry.build_lancedb_vector_store"
+        ) as mock_build:
+            mock_vector_store = MagicMock()
+            mock_build.return_value = mock_vector_store
+
+            adapter = await vector_store_adapter_for_config(vector_store_config)
+
+            assert isinstance(adapter, LanceDBAdapter)
+            assert adapter.vector_store_config == vector_store_config
+            assert adapter.lancedb_vector_store == mock_vector_store
+            mock_build.assert_called_once_with(vector_store_config, mode="overwrite")
+
+    @pytest.mark.asyncio
+    async def test_vector_store_adapter_for_config_unsupported_type(self):
+        """Test error handling for unsupported vector store types."""
+        # Create a mock config with an invalid store type
+        unsupported_config = MagicMock()
+        unsupported_config.store_type = "INVALID_TYPE"
+        unsupported_config.name = "unsupported"
+
+        with pytest.raises(ValueError, match="Unhandled enum value"):
+            await vector_store_adapter_for_config(unsupported_config)
+
+    @pytest.mark.asyncio
+    async def test_vector_store_adapter_for_config_calls_build_lancedb_vector_store(
+        self, vector_store_config
+    ):
+        """Test that build_lancedb_vector_store is called when creating LanceDB adapter."""
+        with patch(
+            "kiln_ai.adapters.vector_store.vector_store_registry.build_lancedb_vector_store"
+        ) as mock_build:
+            mock_vector_store = MagicMock()
+            mock_build.return_value = mock_vector_store
+
+            await vector_store_adapter_for_config(vector_store_config)
+
+            mock_build.assert_called_once_with(vector_store_config, mode="overwrite")
+
+    @pytest.mark.asyncio
+    async def test_vector_store_adapter_for_config_passes_config_to_adapter(
+        self, vector_store_config
+    ):
+        """Test that the adapter receives the correct vector store config."""
+        with patch(
+            "kiln_ai.adapters.vector_store.vector_store_registry.build_lancedb_vector_store"
+        ) as mock_build:
+            mock_vector_store = MagicMock()
+            mock_build.return_value = mock_vector_store
+
+            adapter = await vector_store_adapter_for_config(vector_store_config)
+
+            assert adapter.vector_store_config == vector_store_config
+            assert adapter.vector_store_config.name == "test_config"
+            assert (
+                adapter.vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS
+            )

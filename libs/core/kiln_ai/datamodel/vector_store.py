@@ -4,36 +4,48 @@ from typing import TYPE_CHECKING, Union
 from pydantic import BaseModel, Field, model_validator
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.validation import (
+    validate_return_dict_prop,
+    validate_return_dict_prop_optional,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
 
 
 class VectorStoreType(str, Enum):
-    LANCE_DB = "lancedb"
+    LANCE_DB_FTS = "lancedb_fts"
+    LANCE_DB_HYBRID = "lancedb_hybrid"
+    LANCE_DB_VECTOR = "lancedb_vector"
 
 
-class LanceDBTableSchemaVersion(str, Enum):
-    V1 = "1"
+class LanceDBQueryType(str, Enum):
+    FTS = "fts"
+    HYBRID = "hybrid"
+    VECTOR = "vector"
 
 
-class LanceDBVectorIndexType(str, Enum):
-    BRUTEFORCE = "bruteforce"
-
-
-class QdrantVectorIndexType(str, Enum):
-    BRUTEFORCE = "bruteforce"
-
-
-class LanceDBVectorIndexMetric(str, Enum):
-    DOT = "dot"
-    COSINE = "cosine"
-    L2 = "l2"
-
-
-class LanceDBConfigProperties(BaseModel):
-    table_schema_version: LanceDBTableSchemaVersion
-    vector_index_type: LanceDBVectorIndexType
+class LanceDBConfigBaseProperties(BaseModel):
+    similarity_top_k: int = Field(
+        description="The number of results to return from the vector store.",
+    )
+    overfetch_factor: int = Field(
+        description="The overfetch factor to use for the vector search.",
+    )
+    vector_column_name: str = Field(
+        description="The name of the vector column in the vector store.",
+    )
+    text_key: str = Field(
+        description="The name of the text column in the vector store.",
+    )
+    doc_id_key: str = Field(
+        description="The name of the document id column in the vector store.",
+    )
+    nprobes: int | None = Field(
+        description="The number of probes to use for the vector search.",
+        default=None,
+    )
 
 
 class VectorStoreConfig(KilnParentedModel):
@@ -43,48 +55,53 @@ class VectorStoreConfig(KilnParentedModel):
     store_type: VectorStoreType = Field(
         description="The type of vector store to use.",
     )
-    properties: dict[str, str | int] = Field(
+    properties: dict[str, str | int | float] = Field(
         description="The properties of the vector store config, specific to the selected store_type.",
     )
 
     @model_validator(mode="after")
     def validate_properties(self):
         match self.store_type:
-            case VectorStoreType.LANCE_DB:
-                return self.validate_lance_db_properties()
+            case VectorStoreType.LANCE_DB_FTS:
+                return self.validate_lancedb_properties(LanceDBQueryType.FTS)
+            case VectorStoreType.LANCE_DB_HYBRID:
+                return self.validate_lancedb_properties(LanceDBQueryType.HYBRID)
+            case VectorStoreType.LANCE_DB_VECTOR:
+                return self.validate_lancedb_properties(LanceDBQueryType.VECTOR)
             case _:
-                raise ValueError("Invalid vector store type")
+                raise_exhaustive_enum_error(self.store_type)
 
-    def validate_lance_db_properties(self):
-        if "table_schema_version" not in self.properties or self.properties[
-            "table_schema_version"
-        ] not in [v.value for v in LanceDBTableSchemaVersion]:
-            raise ValueError("LanceDB table schema version not found in properties")
-        if "vector_index_type" not in self.properties or self.properties[
-            "vector_index_type"
-        ] not in [v.value for v in LanceDBVectorIndexType]:
-            raise ValueError("LanceDB vector index type not found in properties")
+    def validate_lancedb_properties(self, query_type: LanceDBQueryType):
+        validate_return_dict_prop(self.properties, "similarity_top_k", int)
+        validate_return_dict_prop(self.properties, "overfetch_factor", int)
+        validate_return_dict_prop(self.properties, "vector_column_name", str)
+        validate_return_dict_prop(self.properties, "text_key", str)
+        validate_return_dict_prop(self.properties, "doc_id_key", str)
+
+        # nprobes is only used for vector and hybrid queries
+        if (
+            query_type == LanceDBQueryType.VECTOR
+            or query_type == LanceDBQueryType.HYBRID
+        ):
+            validate_return_dict_prop(self.properties, "nprobes", int)
 
         return self
 
-    def lancedb_typed_properties(self) -> LanceDBConfigProperties:
-        if self.store_type != VectorStoreType.LANCE_DB:
-            raise ValueError(
-                "lancedb_typed_properties can only be called for LanceDB vector store configs"
-            )
-
-        def safe_int(value) -> int | None:
-            if value is None:
-                return None
-            return int(value)
-
-        return LanceDBConfigProperties(
-            table_schema_version=LanceDBTableSchemaVersion(
-                self.properties.get("table_schema_version")
+    @property
+    def lancedb_properties(self) -> LanceDBConfigBaseProperties:
+        return LanceDBConfigBaseProperties(
+            similarity_top_k=validate_return_dict_prop(
+                self.properties, "similarity_top_k", int
             ),
-            vector_index_type=LanceDBVectorIndexType(
-                self.properties.get("vector_index_type")
+            overfetch_factor=validate_return_dict_prop(
+                self.properties, "overfetch_factor", int
             ),
+            vector_column_name=validate_return_dict_prop(
+                self.properties, "vector_column_name", str
+            ),
+            text_key=validate_return_dict_prop(self.properties, "text_key", str),
+            doc_id_key=validate_return_dict_prop(self.properties, "doc_id_key", str),
+            nprobes=validate_return_dict_prop_optional(self.properties, "nprobes", int),
         )
 
     # Workaround to return typed parent without importing Project

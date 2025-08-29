@@ -1,21 +1,28 @@
 import logging
-from typing import List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
-import lancedb
-from lancedb import AsyncConnection, AsyncTable
-from lancedb.index import FTS
-from lancedb.pydantic import LanceModel, Vector
+from llama_index.core.schema import MetadataMode, TextNode
+from llama_index.core.vector_stores.types import (
+    VectorStoreQuery,
+    VectorStoreQueryResult,
+)
+from llama_index.vector_stores.lancedb import LanceDBVectorStore
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
-    BaseVectorStoreCollection,
+    KilnVectorStoreQuery,
     SearchResult,
-    SimilarityMetric,
-    VectorStoreConfig,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
-from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import (
+    LanceDBQueryType,
+    VectorStoreConfig,
+    VectorStoreType,
+    raise_exhaustive_enum_error,
+)
+from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -24,185 +31,144 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     def __init__(
         self,
         vector_store_config: VectorStoreConfig,
-        connection: AsyncConnection,
+        lancedb_vector_store: LanceDBVectorStore,
     ):
         super().__init__(vector_store_config)
-        self.connection = connection
-        self.config_properties = self.vector_store_config.lancedb_typed_properties()
+        self.lancedb_vector_store = lancedb_vector_store
+        self.config_properties = self.vector_store_config.lancedb_properties
 
-    def schema(self, vector_dimensions: int) -> type[LanceModel]:
-        """
-        LanceDB has different ways of defining the schema for a table. If using Pydantic / LanceModel,
-        make sure to mark the fields as lancedb.Optional[type] otherwise upsert throws an error.
-        See: https://discord.com/channels/1030247538198061086/1197630499926057021/1404511576060592210
-        """
-
-        class ChunkLanceDBSchema(LanceModel):
-            id: lancedb.Optional[str]
-            document_id: lancedb.Optional[str]
-            chunk_idx: lancedb.Optional[int]
-            vector: lancedb.Optional[Vector(dim=vector_dimensions, nullable=False)]  # type: ignore
-            text: lancedb.Optional[str]
-
-        return ChunkLanceDBSchema
-
-    async def create_collection(self, rag_config: RagConfig, vector_dimensions: int):
-        """
-        Create a table for the given RagConfig and return a collection adapter.
-        Replaces the table if it already exists.
-        """
-        table_name = self.table_name_for_rag_config(rag_config=rag_config)
-
-        # we must throw if the table already exists - must destroy it first
-        table = await self.connection.create_table(
-            name=table_name,
-            exist_ok=False,
-            schema=self.schema(vector_dimensions),
-            mode="create",
-        )
-
-        # many options for preprocessing the text (stemming, tokenization, etc.):
-        # https://lancedb.github.io/lancedb/fts/#tokenization
-        await table.create_index("text", config=FTS())
-
-        # create_table also opens the table so we don't need to do it separately
-        return LanceDBCollection(self.vector_store_config, table)
-
-    async def collection(
+    async def add_chunks_with_embeddings(
         self,
-        rag_config: RagConfig,
-    ) -> "LanceDBCollection":
-        """
-        Open the table for the given RagConfig and return a collection adapter.
-        Raises an error if the table does not exist.
-        """
-        table = await self.connection.open_table(
-            self.table_name_for_rag_config(rag_config=rag_config)
-        )
+        records: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
+    ) -> None:
+        nodes: List[TextNode] = []
+        for document_id, chunked_document, chunk_embeddings in records:
+            # Get text content from each chunk in the document
+            chunks_text = await chunked_document.load_chunks_text()
 
-        return LanceDBCollection(self.vector_store_config, table)
-
-    async def destroy_collection(self, rag_config: RagConfig):
-        table_name = self.table_name_for_rag_config(rag_config=rag_config)
-        await self.connection.drop_table(table_name)
-
-    def table_name_for_rag_config(self, rag_config: RagConfig) -> str:
-        return f"rag_config_{rag_config.id}"
-
-
-class LanceDBCollection(BaseVectorStoreCollection):
-    def __init__(
-        self,
-        vector_store_config: VectorStoreConfig,
-        table: AsyncTable,
-    ):
-        super().__init__(vector_store_config)
-        self.table = table
-
-    async def chunks_to_records(
-        self,
-        chunks: List[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
-    ) -> List[dict]:
-        records = []
-        for document_id, chunked_document, chunk_embeddings in chunks:
-            chunk_texts = await chunked_document.load_chunks_text()
-            for chunk_id, (chunk_text, embedding) in enumerate(
-                zip(chunk_texts, chunk_embeddings.embeddings)
-            ):
-                records.append(
-                    {
-                        "id": f"{document_id}::{chunk_id}",
-                        "document_id": document_id,
-                        "chunk_idx": chunk_id,
-                        "vector": embedding.vector,
-                        "text": chunk_text,
-                    }
+            for chunk_text, embedding in zip(chunks_text, chunk_embeddings.embeddings):
+                nodes.append(
+                    TextNode(
+                        text=chunk_text,
+                        embedding=embedding.vector,
+                        metadata={
+                            "ref_doc_id": document_id,
+                        },
+                    )
                 )
+        await self.lancedb_vector_store.async_add(nodes)
 
-        return records
+    async def delete_chunks_by_document_id(self, document_id: str) -> None:
+        await self.lancedb_vector_store.adelete(document_id)
 
-    async def upsert_chunks(
-        self,
-        chunks: List[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
-    ):
-        records = await self.chunks_to_records(chunks)
-        await (
-            self.table.merge_insert("id")
-            .when_matched_update_all()
-            .when_not_matched_insert_all()
-            .execute(records)
-        )
+    def format_query_result(
+        self, query_result: VectorStoreQueryResult
+    ) -> List[SearchResult]:
+        if (
+            query_result.ids is None
+            or query_result.nodes is None
+            or query_result.similarities is None
+        ):
+            raise ValueError("ids, nodes, and similarities must not be None")
+        if not (
+            len(query_result.ids)
+            == len(query_result.nodes)
+            == len(query_result.similarities)
+        ):
+            raise ValueError("ids, nodes, and similarities must have the same length")
 
-        # this should not be needed, unclear if bug or feature, but if we don't
-        # do this here, FTS search after an upsert raises an error
-        await self.table.create_index("text", config=FTS(), replace=False)
-
-    def map_to_search_results(self, results: List[dict]) -> List[SearchResult]:
-        search_results: List[SearchResult] = []
-        for result in results:
-            document_id = result.get("document_id")
-            if not document_id:
-                raise ValueError("Document id is required")
-            chunk_idx = result.get("chunk_idx")
-            if not isinstance(chunk_idx, int):
-                raise ValueError("Chunk index is required")
-            chunk_text = result.get("text")
-            if not chunk_text:
-                raise ValueError("Chunk text is required")
-            # LanceDB returns _distance for vector search and _score for FTS search
-            score = result.get("_distance", None) or result.get("_score", -1)
-            search_results.append(
+        results = []
+        for id, node, similarity in zip(
+            query_result.ids or [],
+            query_result.nodes or [],
+            query_result.similarities or [],
+        ):
+            results.append(
                 SearchResult(
-                    document_id=document_id,
-                    chunk_idx=chunk_idx,
-                    chunk_text=chunk_text,
-                    score=score,
+                    document_id=id,
+                    chunk_text=node.get_content(),
+                    similarity=similarity,
                 )
             )
-        return search_results
+        return results
 
-    async def search_fts(self, query: str, k: int) -> List[SearchResult]:
-        results = (
-            await (
-                await self.table.search(query, query_type="fts", fts_columns=["text"])
+    def build_kwargs_for_query(self, query: KilnVectorStoreQuery) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {
+            "similarity_top_k": self.config_properties.similarity_top_k,
+        }
+
+        match self.query_type:
+            case LanceDBQueryType.FTS:
+                if query.query_string is None:
+                    raise ValueError("query_string must be provided for fts search")
+                kwargs["query_str"] = query.query_string
+            case LanceDBQueryType.HYBRID:
+                if query.query_embedding is None or query.query_string is None:
+                    raise ValueError(
+                        "query_string and query_embedding must be provided for hybrid search"
+                    )
+                kwargs["query_embedding"] = query.query_embedding
+                kwargs["query_str"] = query.query_string
+            case LanceDBQueryType.VECTOR:
+                if not query.query_embedding:
+                    raise ValueError(
+                        "query_embedding must be provided for vector search"
+                    )
+                kwargs["query_embedding"] = query.query_embedding
+            case _:
+                raise_exhaustive_enum_error(self.query_type)
+        return kwargs
+
+    async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
+        query_result = await self.lancedb_vector_store.aquery(
+            VectorStoreQuery(
+                **self.build_kwargs_for_query(query),
+            ),
+            query_type=self.query_type,
+        )
+        return self.format_query_result(query_result)
+
+    async def get_all_chunks(self) -> List[SearchResult]:
+        nodes = self.lancedb_vector_store.get_nodes()
+        return [
+            SearchResult(
+                document_id=node.metadata["ref_doc_id"],
+                chunk_text=node.get_content(MetadataMode.NONE),
+                similarity=None,
             )
-            .limit(k)
-            .to_list()
-        )
-
-        return self.map_to_search_results(results)
-
-    async def search_vector(
-        self,
-        vector: List[float],
-        k: int,
-        distance_type: SimilarityMetric,
-    ) -> List[SearchResult]:
-        results = (
-            await (await self.table.search(vector))
-            .distance_type(distance_type)
-            .limit(k)
-            .to_list()
-        )
-
-        return self.map_to_search_results(results)
-
-    async def search_hybrid(
-        self, query: str, vector: List[float], k: int, distance_type: SimilarityMetric
-    ) -> List[SearchResult]:
-        raise NotImplementedError("Hybrid search is not supported for LanceDB")
+            for node in nodes
+        ]
 
     async def count_records(self) -> int:
-        return await self.table.count_rows()
+        # this throws a TableNotFoundError if the table doesn't exist
+        table = self.lancedb_vector_store.table
+        if table is None:
+            raise ValueError("Table is not initialized")
+        return table.count_rows()
 
-    async def optimize(self):
-        await self.table.optimize()
+    @property
+    def query_type(self) -> LanceDBQueryType:
+        return LanceDBAdapter.lancedb_query_type_for_config(self.vector_store_config)
 
-    async def close(self):
-        if self.table.is_open():
-            try:
-                self.table.close()
-            except Exception as e:
-                logger.error(
-                    f"Error closing table {self.table.name}: {e}", exc_info=True
-                )
+    @staticmethod
+    def lancedb_query_type_for_config(
+        vector_store_config: VectorStoreConfig,
+    ) -> LanceDBQueryType:
+        match vector_store_config.store_type:
+            case VectorStoreType.LANCE_DB_FTS:
+                return LanceDBQueryType.FTS
+            case VectorStoreType.LANCE_DB_HYBRID:
+                return LanceDBQueryType.HYBRID
+            case VectorStoreType.LANCE_DB_VECTOR:
+                return LanceDBQueryType.VECTOR
+            case _:
+                raise_exhaustive_enum_error(vector_store_config.store_type)
+
+    @staticmethod
+    def lancedb_path_for_config(vector_store_config: VectorStoreConfig) -> str:
+        data_dir = Config.shared().local_data_dir()
+        if isinstance(data_dir, str):
+            data_dir = Path(data_dir)
+        if vector_store_config.id is None:
+            raise ValueError("Vector store config ID is required")
+        return str(data_dir / "lancedb" / vector_store_config.id)

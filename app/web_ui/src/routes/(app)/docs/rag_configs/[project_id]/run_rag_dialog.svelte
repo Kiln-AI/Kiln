@@ -66,6 +66,10 @@
     "embedding",
     config_progress,
   )
+  $: indexing_progress_value = get_step_progress_value(
+    "indexing",
+    config_progress,
+  )
 
   $: progress_max = config_progress?.total_document_count || 100
   $: extraction_progress_pct = Math.round(
@@ -77,6 +81,10 @@
   $: embedding_progress_pct = Math.round(
     (embedding_progress_value / progress_max) * 100,
   )
+  $: indexing_progress_pct = Math.round(
+    (indexing_progress_value / progress_max) * 100,
+  )
+
   $: total_docs = config_progress?.total_document_count || 0
   $: completed_pct =
     total_docs > 0
@@ -136,6 +144,15 @@
           ? "completed"
           : "pending"
       }
+      case "indexing": {
+        if (config_progress.total_document_count === 0) {
+          return "pending"
+        }
+        return config_progress.total_document_indexed_count >=
+          config_progress.total_document_count
+          ? "completed"
+          : "pending"
+      }
       default:
         return "pending"
     }
@@ -154,6 +171,8 @@
         return config_progress.total_document_chunked_count
       case "embedding":
         return config_progress.total_document_embedded_count
+      case "indexing":
+        return config_progress.total_document_indexed_count
       default:
         return 0
     }
@@ -244,7 +263,7 @@
 
     <!-- RAG Steps -->
     <div class="flex flex-col gap-4 max-w-md mx-auto">
-      {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }] as step}
+      {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }, { name: "indexing", label: "Indexing", progress: indexing_progress_value, pct: indexing_progress_pct }] as step}
         <div
           class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
         >

@@ -3420,6 +3420,18 @@ export interface components {
              */
             total_document_embedded_error_count: number;
             /**
+             * Total Document Indexed Count
+             * @description The number of items that have been indexed
+             * @default 0
+             */
+            total_document_indexed_count: number;
+            /**
+             * Total Document Indexed Error Count
+             * @description The number of items that have errored during indexing
+             * @default 0
+             */
+            total_document_indexed_error_count: number;
+            /**
              * Logs
              * @description A list of log messages to display to the user
              */

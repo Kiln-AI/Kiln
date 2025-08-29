@@ -10,12 +10,10 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapt
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
-from kiln_ai.adapters.rag.progress import (
-    LogMessage,
-    RagProgress,
-    compute_current_progress_for_rag_config,
+from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
 )
-from kiln_ai.adapters.vector_store.registry import vector_store_adapter_for_config
 from kiln_ai.datamodel import Project
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument, ChunkerConfig
@@ -29,6 +27,7 @@ from kiln_ai.datamodel.extraction import (
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.lock import shared_async_lock_manager
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -495,8 +494,8 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                                         yield jobs
                                         jobs = []
 
-            if len(jobs) > 0:
-                yield jobs
+        if len(jobs) > 0:
+            yield jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         async with shared_async_lock_manager.acquire(self.lock_key):
@@ -505,30 +504,17 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             # infer dimensionality - we peek into the first record to get the vector dimensions
             # vector dimensions are not stored in the config because they are derived from the model
             # and in some cases dynamic shortening of the vector (OpenAI has this)
-            print("======================")
-            print("Collecting records for vector dimensions")
             async for records in self.collect_records(batch_size=1):
                 if len(records) > 0:
                     embedding = records[0][2].embeddings[0]
                     vector_dimensions = len(embedding.vector)
-                    print(f"Vector dimensions: {vector_dimensions}")
                     break
 
             if vector_dimensions is None:
                 raise ValueError("Vector dimensions are not set")
 
-            print("======================")
-            print("Creating vector store collection")
             vector_store = await vector_store_adapter_for_config(
                 self.vector_store_config,
-            )
-
-            print("======================")
-            print("Creating vector store collection")
-            # create index from scratch
-            collection = await vector_store.create_collection(
-                rag_config=self.rag_config,
-                vector_dimensions=vector_dimensions,
             )
 
             # TODO: count the number of records to upsert, we need to do a separate first pass
@@ -536,13 +522,12 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             # if the user has thousands of documents
             # that is N(docs) * (N(chunks) + N(embeddings))
 
-            print("======================")
-            print("Upserting records")
-            async for records in self.collect_records(25):
-                print(f"Upserting {len(records)} records")
-                await collection.upsert_chunks(records)
+            indexed_count = 0
+            async for records in self.collect_records(batch_size=10000):
+                await vector_store.add_chunks_with_embeddings(records)
+                indexed_count += len(records)
                 yield RagStepRunnerProgress(
-                    success_count=1,
+                    success_count=indexed_count,
                     error_count=0,
                 )
 
@@ -554,9 +539,8 @@ class RagWorkflowRunnerConfiguration(BaseModel):
         description="The step runners to run",
     )
 
-    initial_progress: RagProgress | None = Field(
+    initial_progress: RagProgress = Field(
         description="The state of the workflow before starting, if left empty the initial progress will be computed on initialization",
-        default=None,
     )
 
     rag_config: RagConfig = Field(
@@ -577,17 +561,15 @@ class RagWorkflowRunnerConfiguration(BaseModel):
 
 
 class RagWorkflowRunner:
-    def __init__(self, project: Project, configuration: RagWorkflowRunnerConfiguration):
+    def __init__(
+        self,
+        project: Project,
+        configuration: RagWorkflowRunnerConfiguration,
+    ):
         self.project = project
         self.configuration = configuration
         self.step_runners: list[AbstractRagStepRunner] = configuration.step_runners
-        self.initial_progress = (
-            self.configuration.initial_progress
-            or compute_current_progress_for_rag_config(
-                self.project,
-                self.configuration.rag_config,
-            )
-        )
+        self.initial_progress = self.configuration.initial_progress
         self.current_progress = self.initial_progress.model_copy()
 
     @property
@@ -638,13 +620,27 @@ class RagWorkflowRunner:
                         step_progress.error_count
                         + self.initial_progress.total_document_embedded_error_count,
                     )
+            case RagWorkflowStepNames.INDEXING:
+                if step_progress.success_count is not None:
+                    self.current_progress.total_document_indexed_count = max(
+                        self.current_progress.total_document_indexed_count,
+                        step_progress.success_count
+                        + self.initial_progress.total_document_indexed_count,
+                    )
+                if step_progress.error_count is not None:
+                    self.current_progress.total_document_indexed_error_count = max(
+                        self.current_progress.total_document_indexed_error_count,
+                        step_progress.error_count
+                        + self.initial_progress.total_document_indexed_error_count,
+                    )
             case _:
-                raise ValueError(f"Unknown step name: {step_name}")
+                raise_exhaustive_enum_error(step_name)
 
         self.current_progress.total_document_completed_count = min(
             self.current_progress.total_document_extracted_count,
             self.current_progress.total_document_chunked_count,
             self.current_progress.total_document_embedded_count,
+            self.current_progress.total_document_indexed_count,
         )
 
         self.current_progress.logs = step_progress.logs
@@ -661,7 +657,4 @@ class RagWorkflowRunner:
                     continue
 
                 async for progress in step.run():
-                    if step.stage() == RagWorkflowStepNames.INDEXING:
-                        print(f"Indexing progress: {progress}")
-                    else:
-                        yield self.update_workflow_progress(step.stage(), progress)
+                    yield self.update_workflow_progress(step.stage(), progress)
