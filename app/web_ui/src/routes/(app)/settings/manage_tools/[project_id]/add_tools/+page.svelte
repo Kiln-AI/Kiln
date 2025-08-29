@@ -3,6 +3,7 @@
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
   import SettingsSection from "$lib/ui/settings_section.svelte"
+  import { client } from "$lib/api_client"
 
   $: project_id = $page.params.project_id
 
@@ -125,6 +126,25 @@
       installation_instruction: "",
     },
   ]
+
+  async function enable_demo_tools() {
+    try {
+      const { error } = await client.POST("/api/demo_tools", {
+        params: {
+          query: {
+            enable_demo_tools: true,
+          },
+        },
+      })
+      if (error) {
+        throw error
+      }
+      goto(`/settings/manage_tools/${project_id}`)
+    } catch (error) {
+      console.error(error)
+      alert("Error enabling demo tools.")
+    }
+  }
 </script>
 
 <AppPage title="Add Tools">
@@ -132,6 +152,13 @@
     <SettingsSection
       title="Sample Tools"
       items={[
+        {
+          name: "Math Demo Tools",
+          description:
+            "Enable with one click to try out tool calling. Simple math tools: add, subtract, multiply, divide.",
+          button_text: "Enable",
+          on_click: () => enable_demo_tools(),
+        },
         ...sampleRemoteMcpServers.map((item) => ({
           name: item.name,
           description: item.description,
