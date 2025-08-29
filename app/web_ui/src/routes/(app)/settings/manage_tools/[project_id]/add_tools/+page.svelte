@@ -144,13 +144,13 @@
       button_text: "Enable",
       on_click: () => enable_demo_tools(),
     },
-    ...sampleRemoteMcpServers.map((tool) => ({
-      ...tool,
-      on_click: () => connectRemoteMcp(tool),
-    })),
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
       on_click: () => connectLocalMcp(tool),
+    })),
+    ...sampleRemoteMcpServers.map((tool) => ({
+      ...tool,
+      on_click: () => connectRemoteMcp(tool),
     })),
   ]
 
