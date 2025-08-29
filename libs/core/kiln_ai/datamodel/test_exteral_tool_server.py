@@ -399,7 +399,6 @@ def test_local_mcp_tool_creation_minimal():
     assert tool.description is None
     assert tool.properties["command"] == "node"
     assert tool.properties["args"] == ["server.js"]
-    assert tool.properties["env_vars"] == {}  # Should default to empty dict
 
 
 def test_local_mcp_tool_creation_with_empty_env_vars():

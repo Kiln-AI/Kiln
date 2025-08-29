@@ -84,9 +84,6 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "env_vars must be a dictionary for external tools of type 'local_mcp'"
                     )
-                # Set the default value if not provided
-                if "env_vars" not in self.properties:
-                    self.properties["env_vars"] = {}
 
             case _:
                 # Type checking will catch missing cases
