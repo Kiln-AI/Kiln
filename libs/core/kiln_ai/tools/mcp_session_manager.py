@@ -79,8 +79,8 @@ class MCPSessionManager:
             raise ValueError("command is required")
 
         args = tool_server.properties.get("args", [])
-        if not args:
-            raise ValueError("argument is required")
+        if not isinstance(args, list):
+            raise ValueError("args must be a list")
 
         env_vars = tool_server.properties.get("env_vars", {})
 

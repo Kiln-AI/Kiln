@@ -294,8 +294,8 @@ class TestMCPSessionManager:
             async with manager.mcp_client(tool_server):
                 pass
 
-    async def test_local_mcp_session_empty_args_runtime_error(self):
-        """Test that empty args list raises ValueError during session creation."""
+    async def test_local_mcp_session_invalid_args_type_runtime_error(self):
+        """Test that non-list args raises ValueError during session creation."""
         # Create a valid tool server first
         tool_server = ExternalToolServer(
             name="test_server",
@@ -309,11 +309,11 @@ class TestMCPSessionManager:
         )
 
         # Manually modify the properties after creation to bypass pydantic validation
-        tool_server.properties["args"] = []
+        tool_server.properties["args"] = "not a list"
 
         manager = MCPSessionManager.shared()
 
-        with pytest.raises(ValueError, match="argument is required"):
+        with pytest.raises(ValueError, match="args must be a list"):
             async with manager.mcp_client(tool_server):
                 pass
 
