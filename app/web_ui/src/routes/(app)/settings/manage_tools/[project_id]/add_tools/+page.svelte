@@ -14,7 +14,6 @@
     description: string
     server_url: string
     headers: { key: string; value: string; placeholder: string | null }[]
-    button_text: string
   }
 
   interface LocalMcpServer {
@@ -24,7 +23,6 @@
     command: string
     args: string[]
     env_vars: { key: string; value: string; placeholder: string | null }[]
-    button_text: string
   }
 
   // Helper function to navigate to remote MCP page with pre-filled data
@@ -64,7 +62,6 @@
           placeholder: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
         },
       ],
-      button_text: "Connect",
     },
     {
       name: "Stock Quotes",
@@ -83,7 +80,6 @@
           placeholder: "REPLACE_WITH_YOUR_OPENAI_API_KEY",
         },
       ],
-      button_text: "Connect",
     },
   ]
 
@@ -101,7 +97,22 @@
           placeholder: "REPLACE_WITH_FIRECRAWL_API_KEY",
         },
       ],
-      button_text: "Connect",
+    },
+    {
+      name: "Run Python Code",
+      subtitle: "by Pydantic",
+      description: "Run Python code in a sandboxed environment.",
+      command: "deno",
+      args: [
+        "run",
+        "-N",
+        "-R=node_modules",
+        "-W=node_modules",
+        "--node-modules-dir=auto",
+        "jsr:@pydantic/mcp-run-python",
+        "stdio",
+      ],
+      env_vars: [],
     },
     {
       name: "Access Files",
@@ -115,7 +126,6 @@
         "REPLACE_WITH_OTHER_ALLOWED_DIRECTORIES",
       ],
       env_vars: [],
-      button_text: "Connect",
     },
   ]
 
