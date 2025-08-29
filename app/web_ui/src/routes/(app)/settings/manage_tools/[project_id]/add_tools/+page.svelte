@@ -9,6 +9,7 @@
 
   interface RemoteMcpServer {
     name: string
+    subtitle: string
     description: string
     server_url: string
     headers: { key: string; value: string; placeholder: string | null }[]
@@ -17,6 +18,7 @@
 
   interface LocalMcpServer {
     name: string
+    subtitle: string
     description: string
     command: string
     args: string[]
@@ -52,9 +54,9 @@
 
   const sampleRemoteMcpServers: RemoteMcpServer[] = [
     {
-      name: "GitHub",
-      description:
-        "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
+      name: "Control GitHub",
+      subtitle: "by GitHub",
+      description: "Manage repos, issues, PRs and workflows.",
       server_url: "https://api.githubcopilot.com/mcp/",
       headers: [
         {
@@ -66,9 +68,9 @@
       button_text: "Connect",
     },
     {
-      name: "Twelve Data",
-      description:
-        "Integrates with Twelve Data API to provide real-time quotes, historical OHLCV price data, and instrument metadata for stocks, forex pairs, and cryptocurrencies across global markets.",
+      name: "Stock Quotes",
+      subtitle: "by Twelve Data",
+      description: "Real-time quotes and historical data.",
       server_url: "https://mcp.twelvedata.com/mcp/",
       headers: [
         {
@@ -84,20 +86,13 @@
       ],
       button_text: "Connect",
     },
-    {
-      name: "Postman Echo",
-      description: "Simple MCP Server to test MCP tool connections.",
-      server_url: "https://postman-echo-mcp.fly.dev/",
-      headers: [],
-      button_text: "Connect",
-    },
   ]
 
   const sampleLocalMcpServers: LocalMcpServer[] = [
     {
-      name: "Firecrawl",
-      description:
-        "Firecrawl is a tool that allows you to crawl websites and extract data.",
+      name: "Web Search & Scrape",
+      subtitle: "by Firecrawl",
+      description: "Search the web and scrape websites.",
       command: "npx",
       args: ["-y", "firecrawl-mcp"],
       env_vars: [
@@ -112,7 +107,8 @@
         "To install Firecrawl, run 'npm install -g firecrawl-mcp'",
     },
     {
-      name: "Filesystem",
+      name: "Access Files",
+      subtitle: "by Anthropic",
       description:
         "Read, write, and manipulate local files through a controlled API.",
       command: "npx",
@@ -125,6 +121,25 @@
       button_text: "Connect",
       installation_instruction: "",
     },
+  ]
+
+  const sample_tools = [
+    {
+      name: "Math Tools",
+      subtitle: "by Kiln",
+      description:
+        "One click to try out tool calling, for simple math operations.",
+      button_text: "Enable",
+      on_click: () => enable_demo_tools(),
+    },
+    ...sampleRemoteMcpServers.map((tool) => ({
+      ...tool,
+      on_click: () => connectRemoteMcp(tool),
+    })),
+    ...sampleLocalMcpServers.map((tool) => ({
+      ...tool,
+      on_click: () => connectLocalMcp(tool),
+    })),
   ]
 
   async function enable_demo_tools() {
@@ -149,30 +164,44 @@
 
 <AppPage title="Add Tools">
   <div class="max-w-4xl mt-12 space-y-12">
-    <SettingsSection
-      title="Sample Tools"
-      items={[
-        {
-          name: "Math Demo Tools",
-          description:
-            "Enable with one click to try out tool calling. Simple math tools: add, subtract, multiply, divide.",
-          button_text: "Enable",
-          on_click: () => enable_demo_tools(),
-        },
-        ...sampleRemoteMcpServers.map((item) => ({
-          name: item.name,
-          description: item.description,
-          button_text: item.button_text,
-          on_click: () => connectRemoteMcp(item),
-        })),
-        ...sampleLocalMcpServers.map((item) => ({
-          name: item.name,
-          description: item.description,
-          button_text: item.button_text,
-          on_click: () => connectLocalMcp(item),
-        })),
-      ]}
-    />
+    <div class="">
+      <h2 class="text-lg font-medium text-gray-900 mb-4">Example Tools</h2>
+      <div
+        class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
+      >
+        {#each sample_tools as tool}
+          <div class="carousel-item">
+            <div
+              class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
+              on:click={tool.on_click}
+              on:keydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  tool.on_click()
+                }
+              }}
+              tabindex="0"
+              role="button"
+              aria-label="Connect {tool.name}"
+            >
+              <div class="p-4">
+                <div class="text-lg font-semibold leading-tight">
+                  {tool.name}
+                </div>
+                {#if tool.subtitle}
+                  <div class="text-xs text-gray-500 font-medium mt-1">
+                    {tool.subtitle}
+                  </div>
+                {/if}
+                <p class="text-base-content/70 text-xs leading-relaxed mt-3">
+                  {tool.description}
+                </p>
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </div>
     <SettingsSection
       title="Custom Tools"
       items={[
