@@ -13,7 +13,6 @@
     description: string
     server_url: string
     headers: { key: string; value: string; placeholder: string | null }[]
-    button_text: string
   }
 
   interface LocalMcpServer {
@@ -23,7 +22,6 @@
     command: string
     args: string[]
     env_vars: { key: string; value: string; placeholder: string | null }[]
-    button_text: string
     installation_instruction: string
   }
 
@@ -65,7 +63,6 @@
           placeholder: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
         },
       ],
-      button_text: "Connect",
     },
     {
       name: "Stock Quotes",
@@ -84,7 +81,6 @@
           placeholder: "REPLACE_WITH_YOUR_OPENAI_API_KEY",
         },
       ],
-      button_text: "Connect",
     },
   ]
 
@@ -102,9 +98,26 @@
           placeholder: "FIRECRAWL_API_KEY",
         },
       ],
-      button_text: "Connect",
       installation_instruction:
         "To install Firecrawl, run 'npm install -g firecrawl-mcp'",
+    },
+    {
+      name: "Run Python Code",
+      subtitle: "by Pydantic",
+      description: "Run Python code in a sandboxed environment.",
+      command: "deno",
+      args: [
+        "run",
+        "-N",
+        "-R=node_modules",
+        "-W=node_modules",
+        "--node-modules-dir=auto",
+        "jsr:@pydantic/mcp-run-python",
+        "stdio",
+      ],
+      env_vars: [],
+      installation_instruction:
+        "You must install deno, a JavaScript runtime, to run this server: https://deno.com",
     },
     {
       name: "Access Files",
@@ -118,7 +131,6 @@
         "<Other Allowed Directories e.g. /Users/username/Desktop>",
       ],
       env_vars: [],
-      button_text: "Connect",
       installation_instruction: "",
     },
   ]
