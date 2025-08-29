@@ -68,7 +68,7 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "command must be a string to start a local MCP server"
                     )
-                if not command:
+                if not command.strip():
                     raise ValueError("command is required to start a local MCP server")
 
                 args = self.properties.get("args", None)

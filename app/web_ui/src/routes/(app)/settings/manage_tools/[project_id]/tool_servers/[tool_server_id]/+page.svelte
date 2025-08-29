@@ -223,7 +223,7 @@
                   tool_server.properties["headers"] || {},
                 ).map(([key, value]) => ({
                   name: key,
-                  value: String(value || "N/A"),
+                  value: String(value ?? "N/A"),
                 }))}
                 title="Headers"
               />
@@ -239,7 +239,7 @@
                   tool_server.properties["env_vars"] || {},
                 ).map(([key, value]) => ({
                   name: key,
-                  value: String(value || "N/A"),
+                  value: String(value ?? "N/A"),
                 }))}
                 title="Environment Variables"
               />

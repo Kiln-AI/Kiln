@@ -83,7 +83,7 @@
             name: name.trim(),
             description: description.trim() || null,
             command: command.trim(),
-            args: args.trim().split(" "), // Split args into array of strings
+            args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
             env_vars: buildEnvVarsObject(),
           },
         },
