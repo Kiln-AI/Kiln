@@ -26,6 +26,16 @@
   let error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
+  // Search state
+  let searchQuery: string = ""
+  let searchLoading: boolean = false
+  let searchError: KilnError | null = null
+  let searchResults: Array<{
+    document_id: string
+    chunk_text: string
+    similarity: number | null
+  }> = []
+
   onMount(async () => {
     // need to load available models to get the model store populated
     await load_available_models()
@@ -73,6 +83,49 @@
         return exhaustiveCheck
       }
     }
+  }
+
+  async function performSearch() {
+    if (!searchQuery.trim() || !rag_config) {
+      return
+    }
+
+    try {
+      searchLoading = true
+      searchError = null
+
+      const { error: search_error, data: search_data } = await client.POST(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
+        {
+          params: {
+            path: {
+              project_id,
+              rag_config_id,
+            },
+          },
+          body: {
+            query: searchQuery.trim(),
+          },
+        },
+      )
+
+      if (search_error) {
+        searchError = createKilnError(search_error)
+        return
+      }
+
+      searchResults = search_data?.results || []
+    } catch (err) {
+      searchError = createKilnError(err)
+      searchResults = []
+    } finally {
+      searchLoading = false
+    }
+  }
+
+  async function handleSearchSubmit(event: Event) {
+    event.preventDefault()
+    await performSearch()
   }
 </script>
 
@@ -202,6 +255,85 @@
               },
             ]}
           />
+        </div>
+      </div>
+
+      <!-- Search Section -->
+      <div class="mt-12">
+        <h2 class="text-xl font-medium mb-6">Search Documents</h2>
+
+        <div class="bg-base-200 rounded-lg p-6">
+          <form on:submit={handleSearchSubmit}>
+            <div class="form-control">
+              <label class="label" for="search-query">
+                <span class="label-text">Search Query</span>
+                <span class="label-text-alt text-gray-500">
+                  Enter text to search through the indexed documents
+                </span>
+              </label>
+              <div class="flex gap-2">
+                <input
+                  id="search-query"
+                  type="text"
+                  bind:value={searchQuery}
+                  placeholder="Enter your search query..."
+                  class="input input-bordered flex-1"
+                  disabled={searchLoading}
+                />
+                <button
+                  type="submit"
+                  class="btn btn-primary"
+                  disabled={searchLoading || !searchQuery.trim()}
+                >
+                  {#if searchLoading}
+                    <span class="loading loading-spinner loading-sm"></span>
+                  {:else}
+                    Search
+                  {/if}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {#if searchError}
+            <div class="alert alert-error mt-4">
+              <span>{searchError.getMessage() || "Search failed"}</span>
+            </div>
+          {/if}
+
+          {#if searchResults.length > 0}
+            <div class="mt-6">
+              <h3 class="text-lg font-medium mb-4">
+                Search Results ({searchResults.length})
+              </h3>
+
+              <div class="space-y-4">
+                {#each searchResults as result}
+                  <div
+                    class="bg-base-100 rounded-lg p-4 border border-base-300"
+                  >
+                    <div class="flex justify-between items-start mb-2">
+                      <div class="text-sm text-gray-500">
+                        Document: {result.document_id}
+                      </div>
+                      {#if result.similarity !== null}
+                        <div class="text-sm text-gray-500">
+                          Score: {result.similarity.toFixed(3)}
+                        </div>
+                      {/if}
+                    </div>
+                    <div class="text-base text-base-content">
+                      {result.chunk_text}
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {:else if searchQuery && !searchLoading && !searchError}
+            <div class="text-center text-gray-500 mt-6">
+              No results found for "{searchQuery}"
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
