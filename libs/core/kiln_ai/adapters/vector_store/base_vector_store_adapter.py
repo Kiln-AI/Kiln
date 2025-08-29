@@ -39,10 +39,6 @@ class BaseVectorStoreAdapter(ABC):
         pass
 
     @abstractmethod
-    async def delete_chunks_by_document_id(self, document_id: str) -> None:
-        pass
-
-    @abstractmethod
     async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
         pass
 

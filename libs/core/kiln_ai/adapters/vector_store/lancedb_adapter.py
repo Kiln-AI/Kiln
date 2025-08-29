@@ -58,9 +58,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 )
         await self.lancedb_vector_store.async_add(nodes)
 
-    async def delete_chunks_by_document_id(self, document_id: str) -> None:
-        await self.lancedb_vector_store.adelete(document_id)
-
     def format_query_result(
         self, query_result: VectorStoreQueryResult
     ) -> List[SearchResult]:
