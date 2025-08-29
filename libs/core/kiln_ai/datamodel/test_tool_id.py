@@ -93,7 +93,7 @@ class TestCheckToolId:
         ]
 
         for invalid_id in mcp_remote_invalid_ids:
-            with pytest.raises(ValueError, match="Invalid MCP remote tool ID"):
+            with pytest.raises(ValueError, match="Invalid remote MCP tool ID"):
                 _check_tool_id(invalid_id)
 
         # These IDs start with the MCP local prefix but have invalid formats
@@ -106,7 +106,7 @@ class TestCheckToolId:
         ]
 
         for invalid_id in mcp_local_invalid_ids:
-            with pytest.raises(ValueError, match="Invalid MCP local tool ID"):
+            with pytest.raises(ValueError, match="Invalid local MCP tool ID"):
                 _check_tool_id(invalid_id)
 
         # This ID doesn't start with MCP prefix so gets generic error
@@ -144,7 +144,7 @@ class TestMcpServerAndToolNameFromId:
         ]
 
         for invalid_id in remote_invalid_ids:
-            with pytest.raises(ValueError, match="Invalid MCP remote tool ID"):
+            with pytest.raises(ValueError, match="Invalid remote MCP tool ID"):
                 mcp_server_and_tool_name_from_id(invalid_id)
 
         # Test local MCP tool ID errors
@@ -155,7 +155,7 @@ class TestMcpServerAndToolNameFromId:
         ]
 
         for invalid_id in local_invalid_ids:
-            with pytest.raises(ValueError, match="Invalid MCP local tool ID"):
+            with pytest.raises(ValueError, match="Invalid local MCP tool ID"):
                 mcp_server_and_tool_name_from_id(invalid_id)
 
         # Test generic MCP tool ID errors (not remote or local)

@@ -76,11 +76,15 @@ class MCPSessionManager:
         """
         command = tool_server.properties.get("command")
         if not command:
-            raise ValueError("command is required")
+            raise ValueError(
+                "Attempted to start local MCP server, but no command was provided"
+            )
 
         args = tool_server.properties.get("args", [])
         if not isinstance(args, list):
-            raise ValueError("args must be a list")
+            raise ValueError(
+                "Attempted to start local MCP server, but args is not a list of strings"
+            )
 
         env_vars = tool_server.properties.get("env_vars", {})
 

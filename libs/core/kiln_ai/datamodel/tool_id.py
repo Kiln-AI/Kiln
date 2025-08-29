@@ -45,7 +45,7 @@ def _check_tool_id(id: str) -> str:
         server_id, tool_name = mcp_server_and_tool_name_from_id(id)
         if not server_id or not tool_name:
             raise ValueError(
-                f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
+                f"Invalid remote MCP tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
             )
         return id
 
@@ -54,7 +54,7 @@ def _check_tool_id(id: str) -> str:
         server_id, tool_name = mcp_server_and_tool_name_from_id(id)
         if not server_id or not tool_name:
             raise ValueError(
-                f"Invalid MCP local tool ID: {id}. Expected format: 'mcp::local::<server_id>::<tool_name>'."
+                f"Invalid local MCP tool ID: {id}. Expected format: 'mcp::local::<server_id>::<tool_name>'."
             )
         return id
 
@@ -70,11 +70,11 @@ def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
         # Determine if it's remote or local for the error message
         if id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
             raise ValueError(
-                f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
+                f"Invalid remote MCP tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
             )
         elif id.startswith(MCP_LOCAL_TOOL_ID_PREFIX):
             raise ValueError(
-                f"Invalid MCP local tool ID: {id}. Expected format: 'mcp::local::<server_id>::<tool_name>'."
+                f"Invalid local MCP tool ID: {id}. Expected format: 'mcp::local::<server_id>::<tool_name>'."
             )
         else:
             raise ValueError(

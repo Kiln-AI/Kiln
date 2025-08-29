@@ -2457,7 +2457,7 @@ def test_local_tool_server_creation_request_invalid_env_var_key_special_chars():
 
         error_str = str(exc_info.value)
         assert f"Invalid environment variable key: {invalid_key}" in error_str
-        assert "Can only contain ASCII letters, digits, and underscores" in error_str
+        assert "Can only contain letters, digits, and underscores" in error_str
 
 
 def test_local_tool_server_creation_request_invalid_env_var_key_non_ascii():
@@ -2484,7 +2484,7 @@ def test_local_tool_server_creation_request_invalid_env_var_key_non_ascii():
         # Should match either error message depending on the character
         assert (
             "Must start with a letter or underscore" in error_str
-            or "Can only contain ASCII letters, digits, and underscores" in error_str
+            or "Can only contain letters, digits, and underscores" in error_str
         )
 
 

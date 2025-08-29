@@ -256,7 +256,7 @@ class TestToolRegistry:
 
         for invalid_id in invalid_mcp_format_ids:
             with pytest.raises(
-                ValueError, match=f"Invalid MCP remote tool ID: {invalid_id}"
+                ValueError, match=f"Invalid remote MCP tool ID: {invalid_id}"
             ):
                 _check_tool_id(invalid_id)
 
@@ -320,7 +320,7 @@ class TestToolRegistry:
         for invalid_id in remote_invalid_inputs:
             with pytest.raises(
                 ValueError,
-                match=r"Invalid MCP remote tool ID:.*Expected format.*mcp::remote::<server_id>::<tool_name>",
+                match=r"Invalid remote MCP tool ID:.*Expected format.*mcp::remote::<server_id>::<tool_name>",
             ):
                 mcp_server_and_tool_name_from_id(invalid_id)
 
@@ -334,7 +334,7 @@ class TestToolRegistry:
         for invalid_id in local_invalid_inputs:
             with pytest.raises(
                 ValueError,
-                match=r"Invalid MCP local tool ID:.*Expected format.*mcp::local::<server_id>::<tool_name>",
+                match=r"Invalid local MCP tool ID:.*Expected format.*mcp::local::<server_id>::<tool_name>",
             ):
                 mcp_server_and_tool_name_from_id(invalid_id)
 

@@ -420,7 +420,7 @@ def test_local_mcp_missing_command():
     """Test that missing command raises ValidationError for local MCP."""
     with pytest.raises(
         ValidationError,
-        match="command must be a string for external tools of type 'local_mcp'",
+        match="command must be a string to start a local MCP server",
     ):
         ExternalToolServer(
             name="missing_command_tool",
@@ -437,7 +437,7 @@ def test_local_mcp_invalid_command_type():
     # Test with list instead of string
     with pytest.raises(
         ValidationError,
-        match="command must be a string for external tools of type 'local_mcp'",
+        match="command must be a string to start a local MCP server",
     ):
         ExternalToolServer(
             name="invalid_command_tool",
@@ -452,7 +452,7 @@ def test_local_mcp_invalid_command_type():
     # Test with None
     with pytest.raises(
         ValidationError,
-        match="command must be a string for external tools of type 'local_mcp'",
+        match="command must be a string to start a local MCP server",
     ):
         ExternalToolServer(
             name="none_command_tool",
@@ -467,7 +467,7 @@ def test_local_mcp_invalid_command_type():
     # Test with integer
     with pytest.raises(
         ValidationError,
-        match="command must be a string for external tools of type 'local_mcp'",
+        match="command must be a string to start a local MCP server",
     ):
         ExternalToolServer(
             name="int_command_tool",
@@ -484,7 +484,7 @@ def test_local_mcp_empty_command():
     """Test that empty command raises ValidationError for local MCP."""
     with pytest.raises(
         ValidationError,
-        match="command is required for external tools of type 'local_mcp'",
+        match="command is required to start a local MCP server",
     ):
         ExternalToolServer(
             name="empty_command_tool",
@@ -501,7 +501,7 @@ def test_local_mcp_missing_args():
     """Test that missing args raises ValidationError for local MCP."""
     with pytest.raises(
         ValidationError,
-        match="args must be a list for external tools of type 'local_mcp'",
+        match="arguments must be a list to start a local MCP server",
     ):
         ExternalToolServer(
             name="missing_args_tool",
@@ -518,7 +518,7 @@ def test_local_mcp_invalid_args_type():
     # Test with string instead of list
     with pytest.raises(
         ValidationError,
-        match="args must be a list for external tools of type 'local_mcp'",
+        match="arguments must be a list to start a local MCP server",
     ):
         ExternalToolServer(
             name="invalid_args_tool",
@@ -533,7 +533,7 @@ def test_local_mcp_invalid_args_type():
     # Test with None
     with pytest.raises(
         ValidationError,
-        match="args must be a list for external tools of type 'local_mcp'",
+        match="arguments must be a list to start a local MCP server",
     ):
         ExternalToolServer(
             name="none_args_tool",
@@ -548,7 +548,7 @@ def test_local_mcp_invalid_args_type():
     # Test with dict
     with pytest.raises(
         ValidationError,
-        match="args must be a list for external tools of type 'local_mcp'",
+        match="arguments must be a list to start a local MCP server",
     ):
         ExternalToolServer(
             name="dict_args_tool",
@@ -584,7 +584,7 @@ def test_local_mcp_invalid_env_vars_type():
     # Test with string instead of dict
     with pytest.raises(
         ValidationError,
-        match="env_vars must be a dictionary for external tools of type 'local_mcp'",
+        match="environment variables must be a dictionary for external tools of type 'local_mcp'",
     ):
         ExternalToolServer(
             name="invalid_env_vars_tool",
@@ -599,7 +599,7 @@ def test_local_mcp_invalid_env_vars_type():
     # Test with list
     with pytest.raises(
         ValidationError,
-        match="env_vars must be a dictionary for external tools of type 'local_mcp'",
+        match="environment variables must be a dictionary for external tools of type 'local_mcp'",
     ):
         ExternalToolServer(
             name="list_env_vars_tool",
@@ -614,7 +614,7 @@ def test_local_mcp_invalid_env_vars_type():
     # Test with None (should get default {} but if explicitly set to None, should fail)
     with pytest.raises(
         ValidationError,
-        match="env_vars must be a dictionary for external tools of type 'local_mcp'",
+        match="environment variables must be a dictionary for external tools of type 'local_mcp'",
     ):
         ExternalToolServer(
             name="none_env_vars_tool",

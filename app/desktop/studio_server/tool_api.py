@@ -43,7 +43,7 @@ class ExternalToolServerCreationRequest(BaseModel):
         # Validate server URL
         server_url = self.server_url
         if not server_url:
-            raise ValueError("Server URL is required")
+            raise ValueError("Server URL is required to connect to a remote MCP server")
 
         # Enforce absolute http(s) URLs only
         parsed_url = urlparse(server_url.strip())
@@ -101,13 +101,12 @@ class LocalToolServerCreationRequest(BaseModel):
     def validate_command(self):
         """Validate command format."""
         if not self.command:
-            raise ValueError("Command is required")
+            raise ValueError("Command is required to start a local MCP server")
 
         # Validate env_vars keys are in the correct format for Environment Variables
         # According to POSIX specification, environment variable names must:
         # - Start with a letter (a-z, A-Z) or underscore (_)
         # - Contain only ASCII letters, digits, and underscores
-        # - Be portable across different systems
         for key, value in self.env_vars.items():
             if not key or not (
                 key[0].isascii() and (key[0].isalpha() or key[0] == "_")
@@ -118,7 +117,7 @@ class LocalToolServerCreationRequest(BaseModel):
 
             if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
                 raise ValueError(
-                    f"Invalid environment variable key: {key}. Can only contain ASCII letters, digits, and underscores."
+                    f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
                 )
 
         return self

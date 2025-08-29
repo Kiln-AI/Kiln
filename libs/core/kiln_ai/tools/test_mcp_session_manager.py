@@ -223,7 +223,7 @@ class TestMCPSessionManager:
         """Test that missing command raises ValueError for local MCP."""
         with pytest.raises(
             ValidationError,
-            match="command must be a string for external tools of type 'local_mcp'",
+            match="command must be a string to start a local MCP server",
         ):
             ExternalToolServer(
                 name="missing_command_server",
@@ -240,7 +240,7 @@ class TestMCPSessionManager:
         """Test that missing args raises ValueError for local MCP."""
         with pytest.raises(
             ValidationError,
-            match="args must be a list for external tools of type 'local_mcp'",
+            match="arguments must be a list to start a local MCP server",
         ):
             ExternalToolServer(
                 name="missing_args_server",
@@ -290,7 +290,10 @@ class TestMCPSessionManager:
 
         manager = MCPSessionManager.shared()
 
-        with pytest.raises(ValueError, match="command is required"):
+        with pytest.raises(
+            ValueError,
+            match="Attempted to start local MCP server, but no command was provided",
+        ):
             async with manager.mcp_client(tool_server):
                 pass
 
@@ -313,7 +316,10 @@ class TestMCPSessionManager:
 
         manager = MCPSessionManager.shared()
 
-        with pytest.raises(ValueError, match="args must be a list"):
+        with pytest.raises(
+            ValueError,
+            match="Attempted to start local MCP server, but args is not a list of strings",
+        ):
             async with manager.mcp_client(tool_server):
                 pass
 
