@@ -1,3 +1,4 @@
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -175,7 +176,11 @@ class TestMCPSessionManager:
         call_args = mock_client.call_args[0][0]  # Get the StdioServerParameters
         assert call_args.command == "python"
         assert call_args.args == ["-m", "my_mcp_server"]
-        assert call_args.env == {"API_KEY": "test123"}
+        # Verify that the original env vars are included plus PATH
+        assert "API_KEY" in call_args.env
+        assert call_args.env["API_KEY"] == "test123"
+        assert "PATH" in call_args.env
+        assert len(call_args.env["PATH"]) > 0
 
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     async def test_local_mcp_session_with_defaults(self, mock_client):
@@ -215,9 +220,13 @@ class TestMCPSessionManager:
             async with manager.mcp_client(tool_server) as session:
                 assert session is mock_session_instance
 
-        # Verify stdio_client was called with empty env_vars
+        # Verify stdio_client was called with PATH automatically added
         call_args = mock_client.call_args[0][0]
-        assert call_args.env == {}
+        # Should only contain PATH (no other env vars were provided)
+        assert "PATH" in call_args.env
+        assert len(call_args.env["PATH"]) > 0
+        # Should not have any other env vars besides PATH
+        assert len(call_args.env) == 1
 
     async def test_local_mcp_missing_command_error(self):
         """Test that missing command raises ValueError for local MCP."""
@@ -379,3 +388,304 @@ class TestMCPServerIntegration:
         assert tools is not None
         assert len(tools.tools) > 0
         assert "firecrawl_scrape" in [tool.name for tool in tools.tools]
+
+
+    def test_get_path(self):
+        path = MCPSessionManager.shared()._get_path()
+        print(f"path: {path}")
+
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_get_path_parsing_various_formats(self, mock_open, mock_exists):
+        """Test PATH parsing handles various shell config formats correctly."""
+        # Mock config file content with various PATH export formats
+        config_content = '''
+# Valid append formats - should extract the new path part
+export PATH="$PATH:/usr/local/bin"
+export PATH=$PATH:/opt/homebrew/bin
+PATH="$PATH:/Users/scosman/.cache/lm-studio/bin"
+PATH=$PATH:/some/other/bin
+
+# Invalid formats with $PATH at start of captured group - should be skipped
+export PATH="$PATH:/invalid/path"
+PATH="$PATH:/another/invalid"
+
+# Absolute path formats - should extract the full path
+export PATH="/usr/bin:/bin:/usr/sbin"
+PATH="/absolute/path/only"
+
+# Edge cases that should be skipped
+export PATH="$SOME_OTHER_VAR:/path"
+PATH="$HOME/bin:/path"
+export PATH=""
+PATH=
+
+# Comments and other lines should be ignored
+# export PATH="$PATH:/commented/out"
+alias ll="ls -la"
+'''
+        
+        mock_exists.return_value = True
+        mock_open.return_value.__enter__.return_value.read.return_value = config_content
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.dict('os.environ', {'PATH': '/initial/path'}):
+            result_path = manager._get_path()
+        
+        # Should include initial PATH and all valid extracted paths
+        expected_paths = [
+            '/initial/path',
+            '/usr/local/bin',
+            '/opt/homebrew/bin', 
+            '/Users/scosman/.cache/lm-studio/bin',
+            '/some/other/bin',
+            '/usr/bin',
+            '/bin',
+            '/usr/sbin',
+            '/absolute/path/only'
+        ]
+        
+        for expected_path in expected_paths:
+            assert expected_path in result_path, f"Expected path {expected_path} not found in {result_path}"
+        
+        # Should NOT include invalid paths that contain literal $PATH
+        invalid_paths = [
+            '$PATH:/invalid/path',
+            '$PATH:/another/invalid',
+            '$SOME_OTHER_VAR:/path',
+            '$HOME/bin'
+        ]
+        
+        for invalid_path in invalid_paths:
+            assert invalid_path not in result_path, f"Invalid path {invalid_path} should not be in {result_path}"
+
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_get_path_malformed_paths_skipped(self, mock_open, mock_exists):
+        """Test that malformed paths containing $PATH are properly skipped."""
+        # This specifically tests the problematic case mentioned in the user query
+        config_content = '''
+export PATH="$PATH:/Users/scosman/.cache/lm-studio/bin"
+export PATH="'$PATH:/Users/scosman/.cache/lm-studio/bin'"
+PATH=$PATH:/valid/path
+PATH="$PATH_WITH_TYPO:/invalid"
+'''
+        
+        mock_exists.return_value = True
+        mock_open.return_value.__enter__.return_value.read.return_value = config_content
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.dict('os.environ', {'PATH': '/initial/path'}):
+            result_path = manager._get_path()
+        
+        # Should include the valid path
+        assert '/Users/scosman/.cache/lm-studio/bin' in result_path
+        assert '/valid/path' in result_path
+        
+        # Should NOT include malformed paths with literal $PATH
+        assert '$PATH:/Users/scosman/.cache/lm-studio/bin' not in result_path
+        assert "'$PATH:/Users/scosman/.cache/lm-studio/bin'" not in result_path
+
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_get_path_absolute_path_assignment(self, mock_open, mock_exists):
+        """Test that absolute PATH assignments like PATH="/path1:/path2" are handled correctly."""
+        config_content = '''
+# Absolute PATH assignments - should split on : and add each component
+export PATH="/usr/local/bin:/opt/bin:/custom/path"
+PATH="/another/path:/yet/another"
+PATH=/single/path
+export PATH="/mixed:/paths:/here"
+'''
+        
+        mock_exists.return_value = True
+        mock_open.return_value.__enter__.return_value.read.return_value = config_content
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.dict('os.environ', {'PATH': '/initial/path'}):
+            result_path = manager._get_path()
+        
+        # Should include all individual path components
+        expected_paths = [
+            '/initial/path',
+            '/usr/local/bin',
+            '/opt/bin', 
+            '/custom/path',
+            '/another/path',
+            '/yet/another',
+            '/single/path',
+            '/mixed',
+            '/paths',
+            '/here'
+        ]
+        
+        for expected_path in expected_paths:
+            assert expected_path in result_path, f"Expected path {expected_path} not found in {result_path}"
+
+    @patch('os.path.exists')
+    def test_get_path_no_config_files(self, mock_exists):
+        """Test PATH building when no config files exist."""
+        mock_exists.return_value = False
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.dict('os.environ', {'PATH': '/initial/path'}):
+            result_path = manager._get_path()
+        
+        # Should only contain the initial PATH
+        assert result_path == '/initial/path'
+
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_get_path_file_read_error(self, mock_open, mock_exists):
+        """Test PATH building when config file can't be read."""
+        mock_exists.return_value = True
+        mock_open.side_effect = IOError("Permission denied")
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.dict('os.environ', {'PATH': '/initial/path'}):
+            result_path = manager._get_path()
+        
+        # Should only contain the initial PATH when files can't be read
+        assert result_path == '/initial/path'
+
+    @patch('kiln_ai.tools.mcp_session_manager.Config')
+    def test_get_path_with_custom_mcp_path_single_item(self, mock_config_class):
+        """Test _get_path with custom_mcp_path containing a single path."""
+        # Mock Config to return a custom MCP path
+        mock_config = MagicMock()
+        mock_config.get_value.return_value = "/custom/mcp/path"
+        mock_config_class.shared.return_value = mock_config
+        
+        manager = MCPSessionManager.shared()
+        
+        # Mock _get_paths_from_config_files to ensure it's not called
+        with patch.object(manager, '_get_paths_from_config_files') as mock_config_files:
+            mock_config_files.return_value = ['/should/not/be/called']
+            
+            with patch.dict('os.environ', {'PATH': '/initial/path'}):
+                result_path = manager._get_path()
+        
+        # Should contain initial PATH and custom MCP path
+        assert '/initial/path' in result_path
+        assert '/custom/mcp/path' in result_path
+        
+        # Should NOT call _get_paths_from_config_files
+        mock_config_files.assert_not_called()
+        
+        # Verify Config.get_value was called with correct parameter
+        mock_config.get_value.assert_called_once_with("custom_mcp_path")
+
+    @patch('kiln_ai.tools.mcp_session_manager.Config')
+    def test_get_path_with_custom_mcp_path_multiple_items(self, mock_config_class):
+        """Test _get_path with custom_mcp_path containing multiple paths."""
+        # Mock Config to return multiple custom MCP paths
+        custom_paths = "/custom/path1:/custom/path2:/custom/path3"
+        mock_config = MagicMock()
+        mock_config.get_value.return_value = custom_paths
+        mock_config_class.shared.return_value = mock_config
+        
+        manager = MCPSessionManager.shared()
+        
+        # Mock _get_paths_from_config_files to ensure it's not called
+        with patch.object(manager, '_get_paths_from_config_files') as mock_config_files:
+            mock_config_files.return_value = ['/should/not/be/called']
+            
+            with patch.dict('os.environ', {'PATH': '/initial/path'}):
+                result_path = manager._get_path()
+        
+        # Should contain initial PATH and all custom MCP paths
+        assert '/initial/path' in result_path
+        assert '/custom/path1' in result_path
+        assert '/custom/path2' in result_path
+        assert '/custom/path3' in result_path
+        
+        # Should NOT call _get_paths_from_config_files
+        mock_config_files.assert_not_called()
+        
+        # Verify Config.get_value was called with correct parameter
+        mock_config.get_value.assert_called_once_with("custom_mcp_path")
+
+   
+    @patch('kiln_ai.tools.mcp_session_manager.Config')
+    def test_get_path_with_empty_custom_mcp_path_calls_config_files(self, mock_config_class):
+        """Test _get_path calls _get_paths_from_config_files when custom_mcp_path is empty string."""
+        # Mock Config to return empty string for custom_mcp_path
+        mock_config = MagicMock()
+        mock_config.get_value.return_value = ""
+        mock_config_class.shared.return_value = mock_config
+        
+        manager = MCPSessionManager.shared()
+        
+        # Mock _get_paths_from_config_files to return some paths
+        with patch.object(manager, '_get_paths_from_config_files') as mock_config_files:
+            mock_config_files.return_value = ['/config/path1']
+            
+            with patch.dict('os.environ', {'PATH': '/initial/path'}):
+                result_path = manager._get_path()
+        
+        # Should contain initial PATH and config file paths
+        assert '/initial/path' in result_path
+        
+        # Should call _get_paths_from_config_files when custom_mcp_path is empty
+        mock_config_files.assert_not_called()
+        
+        # Verify Config.get_value was called with correct parameter
+        mock_config.get_value.assert_called_once_with("custom_mcp_path")
+
+    @patch('kiln_ai.tools.mcp_session_manager.Config')
+    def test_get_path_custom_mcp_path_removes_duplicates(self, mock_config_class):
+        """Test _get_path removes duplicates when custom_mcp_path contains duplicate paths."""
+        # Mock Config to return custom MCP path with duplicates
+        custom_paths = "/custom/path1:/custom/path2:/custom/path1:/custom/path3"
+        mock_config = MagicMock()
+        mock_config.get_value.return_value = custom_paths
+        mock_config_class.shared.return_value = mock_config
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.object(manager, '_get_paths_from_config_files') as mock_config_files:
+            with patch.dict('os.environ', {'PATH': '/initial/path:/custom/path2'}):
+                result_path = manager._get_path()
+        
+        # Split result to count occurrences
+        result_paths = result_path.split(os.pathsep)
+        
+        # Each path should appear only once
+        assert result_paths.count('/initial/path') == 1
+        assert result_paths.count('/custom/path1') == 1
+        assert result_paths.count('/custom/path2') == 1
+        assert result_paths.count('/custom/path3') == 1
+        
+        # Should NOT call _get_paths_from_config_files
+        mock_config_files.assert_not_called()
+
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_get_path_problematic_patterns_fixed(self, mock_open, mock_exists):
+        """Test that the specific problematic patterns mentioned in the user query are now handled correctly."""
+        # These are the exact patterns that were failing according to the user
+        config_content = '''
+export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+export PATH="$PATH:/Users/scosman/.local/bin"
+'''
+        
+        mock_exists.return_value = True
+        mock_open.return_value.__enter__.return_value.read.return_value = config_content
+        
+        manager = MCPSessionManager.shared()
+        
+        with patch.dict('os.environ', {'PATH': '/initial/path'}):
+            result_path = manager._get_path()
+        
+        # Both paths should now be extracted correctly
+        assert '/opt/homebrew/opt/llvm/bin' in result_path, f"Expected '/opt/homebrew/opt/llvm/bin' not found in {result_path}"
+        assert '/Users/scosman/.local/bin' in result_path, f"Expected '/Users/scosman/.local/bin' not found in {result_path}"
+        
+        # Should NOT include the problematic full matches
+        assert '/opt/homebrew/opt/llvm/bin:$PATH' not in result_path, f"Should not include full match with $PATH"
+        assert '"$PATH:/Users/scosman/.local/bin' not in result_path, f"Should not include match with leading quote"
