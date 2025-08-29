@@ -87,7 +87,7 @@
     {
       name: "Web Search & Scrape",
       subtitle: "by Firecrawl",
-      description: "Search the web and scrape websites.",
+      description: "Search the web and scrape websites into text.",
       command: "npx",
       args: ["-y", "firecrawl-mcp"],
       env_vars: [
@@ -117,8 +117,7 @@
     {
       name: "Access Files",
       subtitle: "by Anthropic",
-      description:
-        "Read, write, and manipulate local files through a controlled API.",
+      description: "Read, write, and manipulate local files on your machine.",
       command: "npx",
       args: [
         "-y",
@@ -169,66 +168,64 @@
 </script>
 
 <AppPage title="Add Tools">
-  <div class="max-w-4xl space-y-8">
-    <div class="">
-      <h2 class="text-lg font-medium text-gray-900 mb-4">Example Tools</h2>
-      <div
-        class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
-      >
-        {#each sample_tools as tool}
-          <div class="carousel-item">
-            <div
-              class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
-              on:click={tool.on_click}
-              on:keydown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault()
-                  tool.on_click()
-                }
-              }}
-              tabindex="0"
-              role="button"
-              aria-label="Connect {tool.name}"
-            >
-              <div class="p-4">
-                <div class="text-lg font-semibold leading-tight">
-                  {tool.name}
-                </div>
-                {#if tool.subtitle}
-                  <div class="text-xs text-gray-500 font-medium mt-1">
-                    {tool.subtitle}
-                  </div>
-                {/if}
-                <p class="text-base-content/70 text-xs leading-relaxed mt-3">
-                  {tool.description}
-                </p>
+  <div class="">
+    <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
+    <div
+      class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
+    >
+      {#each sample_tools as tool}
+        <div class="carousel-item">
+          <div
+            class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
+            on:click={tool.on_click}
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                tool.on_click()
+              }
+            }}
+            tabindex="0"
+            role="button"
+            aria-label="Connect {tool.name}"
+          >
+            <div class="p-4">
+              <div class="text-lg font-semibold leading-tight">
+                {tool.name}
               </div>
+              {#if tool.subtitle}
+                <div class="text-xs text-gray-500 font-medium mt-1">
+                  {tool.subtitle}
+                </div>
+              {/if}
+              <p class="text-base-content/70 text-xs leading-relaxed mt-3">
+                {tool.description}
+              </p>
             </div>
           </div>
-        {/each}
-      </div>
+        </div>
+      {/each}
     </div>
-    <div class="space-y-6">
-      <SettingsHeader title="Custom Tools" />
+  </div>
+  <div class="max-w-4xl space-y-6 mt-8">
+    <SettingsHeader title="Custom Tools" />
 
-      <div class="space-y-1">
-        <SettingsItem
-          name="Remote MCP Servers"
-          description="Connect to remote MCP servers over the internet."
-          button_text="Connect"
-          on_click={() => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
-          }}
-        />
-        <SettingsItem
-          name="Local MCP Servers"
-          description="Connect to MCP servers you run on your machine."
-          button_text="Connect"
-          on_click={() => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`)
-          }}
-        />
-      </div>
+    <div class="space-y-1">
+      <SettingsItem
+        name="Remote MCP Servers"
+        description="Connect to remote MCP servers over the internet."
+        button_text="Connect"
+        on_click={() => {
+          goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
+        }}
+      />
+      <SettingsItem
+        name="Local MCP Servers"
+        description="Connect to MCP servers you run on your machine."
+        button_text="Connect"
+        on_click={() => {
+          goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`)
+        }}
+      />
     </div>
   </div>
 </AppPage>
