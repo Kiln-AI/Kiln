@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -25,13 +26,13 @@ from kiln_ai.datamodel.extraction import (
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+
+from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
     connect_document_api,
     run_rag_workflow_runner_with_status,
 )
-
-from conftest import MockFileFactoryMimeType
 
 
 @pytest.fixture
@@ -1847,7 +1848,7 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
         # Mock vector store adapter
         mock_adapter = AsyncMock()
         mock_adapter.search.return_value = [
-            MagicMock(
+            SearchResult(
                 document_id=result["document_id"],
                 chunk_text=result["chunk_text"],
                 similarity=result["similarity"],
@@ -1886,12 +1887,12 @@ async def test_search_rag_config_vector_success(
 ):
     """Test successful vector search in RAG config"""
     # Update vector store config to use vector search
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
     mock_vector_store_config.properties.update(
         {
             "nprobes": 10,
         }
     )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
     mock_vector_store_config.save_to_file()
 
     search_query = "test search query"
@@ -1925,7 +1926,7 @@ async def test_search_rag_config_vector_success(
         # Mock vector store adapter
         mock_adapter = AsyncMock()
         mock_adapter.search.return_value = [
-            MagicMock(
+            SearchResult(
                 document_id=result["document_id"],
                 chunk_text=result["chunk_text"],
                 similarity=result["similarity"],
@@ -1962,12 +1963,12 @@ async def test_search_rag_config_hybrid_success(
 ):
     """Test successful hybrid search in RAG config"""
     # Update vector store config to use hybrid search
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_HYBRID
     mock_vector_store_config.properties.update(
         {
             "nprobes": 10,
         }
     )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_HYBRID
     mock_vector_store_config.save_to_file()
 
     search_query = "test search query"
@@ -2001,7 +2002,7 @@ async def test_search_rag_config_hybrid_success(
         # Mock vector store adapter
         mock_adapter = AsyncMock()
         mock_adapter.search.return_value = [
-            MagicMock(
+            SearchResult(
                 document_id=result["document_id"],
                 chunk_text=result["chunk_text"],
                 similarity=result["similarity"],
@@ -2052,17 +2053,14 @@ async def test_search_rag_config_vector_store_not_found(
     client, mock_project, mock_rag_config
 ):
     """Test search when vector store config is missing"""
-    # Delete the vector store config file to simulate missing config
-    vector_store_config_path = (
-        mock_project.path.parent
-        / "vector_store_configs"
-        / f"{mock_rag_config.vector_store_config_id}.kiln"
-    )
-    if vector_store_config_path.exists():
-        vector_store_config_path.unlink()
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+    ):
         mock_project_from_id.return_value = mock_project
+        mock_vector_store_from_id.return_value = None  # Simulate missing config
 
         response = client.post(
             f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
@@ -2078,17 +2076,14 @@ async def test_search_rag_config_embedding_config_not_found(
     client, mock_project, mock_rag_config
 ):
     """Test search when embedding config is missing"""
-    # Delete the embedding config file to simulate missing config
-    embedding_config_path = (
-        mock_project.path.parent
-        / "embedding_configs"
-        / f"{mock_rag_config.embedding_config_id}.kiln"
-    )
-    if embedding_config_path.exists():
-        embedding_config_path.unlink()
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+    ):
         mock_project_from_id.return_value = mock_project
+        mock_embedding_from_id.return_value = None  # Simulate missing config
 
         response = client.post(
             f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
@@ -2105,12 +2100,12 @@ async def test_search_rag_config_embedding_generation_failure(
 ):
     """Test search when embedding generation fails"""
     # Update vector store config to use vector search
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
     mock_vector_store_config.properties.update(
         {
             "nprobes": 10,
         }
     )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
     mock_vector_store_config.save_to_file()
 
     search_query = "test search query"

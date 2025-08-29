@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
+
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import KilnVectorStoreQuery
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
@@ -14,7 +16,6 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 
 @pytest.fixture
@@ -401,8 +402,9 @@ def test_format_query_result_error_conditions():
     """Test error handling in format_query_result method."""
     from unittest.mock import Mock
 
-    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
     from llama_index.core.vector_stores.types import VectorStoreQueryResult
+
+    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
 
     # Create adapter with minimal setup
     mock_config = Mock()
@@ -429,8 +431,18 @@ def test_format_query_result_error_conditions():
     result = adapter.format_query_result(query_result)
     assert result == []
 
-    # Test with mismatched lengths
+    # Test with mismatched lengths where some arrays are empty - should return empty list
     query_result = VectorStoreQueryResult(ids=["1", "2"], nodes=[], similarities=[])
+    result = adapter.format_query_result(query_result)
+    assert result == []
+
+    # Test with mismatched lengths where all arrays are non-empty - should raise ValueError
+    from llama_index.core.schema import TextNode
+
+    node1 = TextNode(text="test1")
+    query_result = VectorStoreQueryResult(
+        ids=["1", "2"], nodes=[node1], similarities=[0.5, 0.3]
+    )
     with pytest.raises(
         ValueError, match="ids, nodes, and similarities must have the same length"
     ):
@@ -538,11 +550,5 @@ async def test_search_with_empty_results_error():
     # Search should return empty list instead of raising error
     query = KilnVectorStoreQuery(query_string="test query")
     results = await adapter.search(query)
-
-    assert results == []
-
-    assert results == []
-
-    assert results == []
 
     assert results == []

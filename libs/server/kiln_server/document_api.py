@@ -58,8 +58,9 @@ from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.project_api import project_from_id
 from pydantic import BaseModel, Field, model_validator
+
+from kiln_server.project_api import project_from_id
 
 logger = logging.getLogger(__name__)
 
@@ -1111,7 +1112,7 @@ def connect_document_api(app: FastAPI):
         vector_store_config = VectorStoreConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
-            store_type=VectorStoreType.LANCE_DB_HYBRID,
+            store_type=VectorStoreType.LANCE_DB_FTS,
             properties={
                 "similarity_top_k": 10,
                 "nprobes": 10,

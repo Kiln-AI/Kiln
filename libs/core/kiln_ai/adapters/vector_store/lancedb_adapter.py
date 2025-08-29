@@ -2,6 +2,14 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from llama_index.core.schema import MetadataMode, TextNode
+from llama_index.core.vector_stores.types import (
+    VectorStoreQuery,
+    VectorStoreQueryResult,
+)
+from llama_index.vector_stores.lancedb import LanceDBVectorStore
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
+
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     KilnVectorStoreQuery,
@@ -16,13 +24,6 @@ from kiln_ai.datamodel.vector_store import (
     raise_exhaustive_enum_error,
 )
 from kiln_ai.utils.config import Config
-from llama_index.core.schema import MetadataMode, TextNode
-from llama_index.core.vector_stores.types import (
-    VectorStoreQuery,
-    VectorStoreQueryResult,
-)
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,4 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             data_dir = Path(data_dir)
         if vector_store_config.id is None:
             raise ValueError("Vector store config ID is required")
-        return str(data_dir / "lancedb" / vector_store_config.id)
-        return str(data_dir / "lancedb" / vector_store_config.id)
         return str(data_dir / "lancedb" / vector_store_config.id)
