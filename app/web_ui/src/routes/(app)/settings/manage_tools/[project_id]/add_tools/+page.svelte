@@ -10,26 +10,26 @@
 
   interface RemoteMcpServer {
     name: string
+    subtitle: string
     description: string
     server_url: string
     headers: { key: string; value: string; placeholder: string | null }[]
-    button_text: string
   }
 
   interface LocalMcpServer {
     name: string
+    subtitle: string
     description: string
     command: string
     args: string[]
     env_vars: { key: string; value: string; placeholder: string | null }[]
-    button_text: string
   }
 
   // Helper function to navigate to remote MCP page with pre-filled data
   function connectRemoteMcp(item: RemoteMcpServer) {
     goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`, {
       state: {
-        name: item.name,
+        name: item.name + " " + item.subtitle,
         description: item.description,
         server_url: item.server_url,
         headers: item.headers,
@@ -40,7 +40,7 @@
   function connectLocalMcp(item: LocalMcpServer) {
     goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`, {
       state: {
-        name: item.name,
+        name: item.name + " " + item.subtitle,
         description: item.description,
         command: item.command,
         args: item.args,
@@ -51,9 +51,9 @@
 
   const sampleRemoteMcpServers: RemoteMcpServer[] = [
     {
-      name: "GitHub",
-      description:
-        "Adds ability to read repositories and code files, manage issues and PRs, analyze code, and automate workflow.",
+      name: "Control GitHub",
+      subtitle: "by GitHub",
+      description: "Manage repos, issues, PRs and workflows.",
       server_url: "https://api.githubcopilot.com/mcp/",
       headers: [
         {
@@ -62,12 +62,11 @@
           placeholder: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
         },
       ],
-      button_text: "Connect",
     },
     {
-      name: "Twelve Data",
-      description:
-        "Integrates with Twelve Data API to provide real-time quotes, historical OHLCV price data, and instrument metadata for stocks, forex pairs, and cryptocurrencies across global markets.",
+      name: "Stock Quotes",
+      subtitle: "by Twelve Data",
+      description: "Real-time quotes and historical data.",
       server_url: "https://mcp.twelvedata.com/mcp/",
       headers: [
         {
@@ -81,22 +80,14 @@
           placeholder: "REPLACE_WITH_YOUR_OPENAI_API_KEY",
         },
       ],
-      button_text: "Connect",
-    },
-    {
-      name: "Postman Echo",
-      description: "Simple MCP Server to test MCP tool connections.",
-      server_url: "https://postman-echo-mcp.fly.dev/",
-      headers: [],
-      button_text: "Connect",
     },
   ]
 
   const sampleLocalMcpServers: LocalMcpServer[] = [
     {
-      name: "Firecrawl",
-      description:
-        "Firecrawl is a tool that allows you to crawl websites and extract data.",
+      name: "Web Search & Scrape",
+      subtitle: "by Firecrawl",
+      description: "Search the web and scrape websites into text.",
       command: "npx",
       args: ["-y", "firecrawl-mcp"],
       env_vars: [
@@ -106,12 +97,27 @@
           placeholder: "REPLACE_WITH_FIRECRAWL_API_KEY",
         },
       ],
-      button_text: "Connect",
     },
     {
-      name: "Filesystem",
-      description:
-        "Read, write, and manipulate local files through a controlled API.",
+      name: "Run Python Code",
+      subtitle: "by Pydantic",
+      description: "Run Python code in a sandboxed environment.",
+      command: "deno",
+      args: [
+        "run",
+        "-N",
+        "-R=node_modules",
+        "-W=node_modules",
+        "--node-modules-dir=auto",
+        "jsr:@pydantic/mcp-run-python",
+        "stdio",
+      ],
+      env_vars: [],
+    },
+    {
+      name: "Access Files",
+      subtitle: "by Anthropic",
+      description: "Read, write, and manipulate local files on your machine.",
       command: "npx",
       args: [
         "-y",
@@ -119,54 +125,26 @@
         "REPLACE_WITH_OTHER_ALLOWED_DIRECTORIES",
       ],
       env_vars: [],
-      button_text: "Connect",
     },
   ]
 
-  let sections = [
+  const sample_tools = [
     {
-      category: "Sample Tools",
-      items: [
-        {
-          name: "Math Demo Tools",
-          description:
-            "Enable with one click to try out tool calling. Simple math tools: add, subtract, multiply, divide.",
-          button_text: "Enable",
-          on_click: () => enable_demo_tools(),
-        },
-        ...sampleRemoteMcpServers.map((tool) => ({
-          ...tool,
-          on_click: () => connectRemoteMcp(tool),
-        })),
-        ...sampleLocalMcpServers.map((tool) => ({
-          ...tool,
-          on_click: () => connectLocalMcp(tool),
-        })),
-      ],
+      name: "Math Tools",
+      subtitle: "by Kiln",
+      description:
+        "One click to try out tool calling, for simple math operations.",
+      button_text: "Enable",
+      on_click: () => enable_demo_tools(),
     },
-    {
-      category: "Custom Tools",
-      items: [
-        {
-          name: "Remote MCP Servers",
-          description:
-            "Connect to remote MCP servers to add tools to your project.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
-          },
-        },
-        {
-          name: "Local MCP Servers",
-          description:
-            "Connect to local MCP servers to add tools to your project.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`)
-          },
-        },
-      ],
-    },
+    ...sampleLocalMcpServers.map((tool) => ({
+      ...tool,
+      on_click: () => connectLocalMcp(tool),
+    })),
+    ...sampleRemoteMcpServers.map((tool) => ({
+      ...tool,
+      on_click: () => connectRemoteMcp(tool),
+    })),
   ]
 
   async function enable_demo_tools() {
@@ -190,22 +168,64 @@
 </script>
 
 <AppPage title="Add Tools">
-  <div class="max-w-4xl mt-12 space-y-12">
-    {#each sections as section}
-      <div class="space-y-6">
-        <SettingsHeader title={section.category} />
-
-        <div class="space-y-1">
-          {#each section.items as item}
-            <SettingsItem
-              name={item.name}
-              description={item.description}
-              button_text={item.button_text}
-              on_click={item.on_click}
-            />
-          {/each}
+  <div class="">
+    <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
+    <div
+      class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
+    >
+      {#each sample_tools as tool}
+        <div class="carousel-item">
+          <div
+            class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
+            on:click={tool.on_click}
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                tool.on_click()
+              }
+            }}
+            tabindex="0"
+            role="button"
+            aria-label="Connect {tool.name}"
+          >
+            <div class="p-4">
+              <div class="text-lg font-semibold leading-tight">
+                {tool.name}
+              </div>
+              {#if tool.subtitle}
+                <div class="text-xs text-gray-500 font-medium mt-1">
+                  {tool.subtitle}
+                </div>
+              {/if}
+              <p class="text-base-content/70 text-xs leading-relaxed mt-3">
+                {tool.description}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
-    {/each}
+      {/each}
+    </div>
+  </div>
+  <div class="max-w-4xl space-y-6 mt-8">
+    <SettingsHeader title="Custom Tools" />
+
+    <div class="space-y-1">
+      <SettingsItem
+        name="Remote MCP Servers"
+        description="Connect to remote MCP servers over the internet."
+        button_text="Connect"
+        on_click={() => {
+          goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
+        }}
+      />
+      <SettingsItem
+        name="Local MCP Servers"
+        description="Connect to MCP servers you run on your machine."
+        button_text="Connect"
+        on_click={() => {
+          goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`)
+        }}
+      />
+    </div>
   </div>
 </AppPage>
