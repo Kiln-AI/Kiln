@@ -254,7 +254,7 @@ class TestMCPSessionManager:
             )
 
     async def test_local_mcp_empty_args_allowed(self):
-        """Test that empty args list is now allowed for local MCP (arguments no longer required)."""
+        """Test that empty args list is now allowed for local MCP."""
         # Should not raise any exception - empty args are now allowed
         tool_server = ExternalToolServer(
             name="empty_args_server",

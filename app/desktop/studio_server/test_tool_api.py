@@ -2246,7 +2246,7 @@ def test_local_tool_server_creation_request_missing_command():
 
 
 def test_local_tool_server_creation_request_empty_args():
-    """Test LocalToolServerCreationRequest accepts empty args list (arguments no longer required)"""
+    """Test LocalToolServerCreationRequest accepts empty args list"""
 
     request = LocalToolServerCreationRequest(
         name="Empty Args Server",
@@ -2716,7 +2716,7 @@ def test_create_local_tool_server_empty_command(client, test_project):
 
 
 async def test_create_local_tool_server_empty_args(client, test_project):
-    """Test local tool server creation succeeds when args are empty (arguments no longer required)"""
+    """Test local tool server creation succeeds when args are empty"""
     tool_data = {
         "name": "empty_args_tool",
         "command": "python",
