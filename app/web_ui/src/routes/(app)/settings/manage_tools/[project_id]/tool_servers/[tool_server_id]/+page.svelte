@@ -130,22 +130,6 @@
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
-    return Object.entries(tool.properties["headers"] || {}).map(
-      ([key, value]) => ({
-        name: key,
-        value: String(value || "N/A"),
-      }),
-    )
-  }
-  function getEnvVarsProperties(tool: ExternalToolServerApiDescription) {
-    return Object.entries(tool.properties["env_vars"] || {}).map(
-      ([key, value]) => ({
-        name: key,
-        value: String(value || "N/A"),
-      }),
-    )
-  }
 
   interface Argument {
     name: string
@@ -227,7 +211,7 @@
           />
         </div>
         <div class="flex-1">
-          {#if tool_server.type === "remote_mcp" && getHeadersProperties(tool_server).length > 0}
+          {#if tool_server.type === "remote_mcp"}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Connection Details"
@@ -235,18 +219,28 @@
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
               <PropertyList
-                properties={getHeadersProperties(tool_server)}
+                properties={Object.entries(
+                  tool_server.properties["headers"] || {},
+                ).map(([key, value]) => ({
+                  name: key,
+                  value: String(value || "N/A"),
+                }))}
                 title="Headers"
               />
             </div>
-          {:else if tool_server.type === "local_mcp" && getEnvVarsProperties(tool_server).length > 0}
+          {:else if tool_server.type === "local_mcp"}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
             <div class="mt-8">
               <PropertyList
-                properties={getEnvVarsProperties(tool_server)}
+                properties={Object.entries(
+                  tool_server.properties["env_vars"] || {},
+                ).map(([key, value]) => ({
+                  name: key,
+                  value: String(value || "N/A"),
+                }))}
                 title="Environment Variables"
               />
             </div>
