@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import KilnVectorStoreQuery
 from kiln_ai.adapters.vector_store.vector_store_registry import (
@@ -331,3 +332,160 @@ async def test_upsert_behavior(fts_vector_store_config, mock_chunked_documents):
         print()
 
     assert len(results3) > 0
+
+
+@pytest.mark.asyncio
+async def test_count_records_empty_store(fts_vector_store_config):
+    """Test counting records in an empty vector store."""
+
+    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+
+    # Fresh adapter should raise TableNotFoundError when table doesn't exist yet
+    with pytest.raises(TableNotFoundError, match="Table vectors is not initialized"):
+        await adapter.count_records()
+
+
+@pytest.mark.asyncio
+async def test_count_records_with_data(fts_vector_store_config, mock_chunked_documents):
+    """Test counting records after adding data."""
+    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+
+    # Add chunks first to create the table
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Should now have records (8 chunks total across both documents)
+    final_count = await adapter.count_records()
+    assert final_count == 8
+
+
+@pytest.mark.asyncio
+async def test_count_records_with_table_none():
+    """Test count_records when table is None."""
+    from unittest.mock import Mock
+
+    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+
+    # Create a mock vector store config
+    mock_config = Mock()
+
+    # Create a mock LanceDBVectorStore with table set to None
+    mock_lancedb_store = Mock()
+    mock_lancedb_store.table = None
+
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    # Should raise ValueError when table is None
+    with pytest.raises(ValueError, match="Table is not initialized"):
+        await adapter.count_records()
+
+
+@pytest.mark.asyncio
+async def test_get_all_chunks(fts_vector_store_config, mock_chunked_documents):
+    """Test getting all chunks from the vector store."""
+    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+
+    # Add chunks first to create the table
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Get all chunks
+    all_chunks = await adapter.get_all_chunks()
+    assert len(all_chunks) == 8  # 8 chunks total
+
+    # Verify structure
+    for chunk in all_chunks:
+        assert chunk.document_id in ["doc_001", "doc_002"]
+        assert len(chunk.chunk_text) > 0
+        assert chunk.similarity is None  # get_all_chunks doesn't include similarity
+
+
+def test_format_query_result_error_conditions():
+    """Test error handling in format_query_result method."""
+    from unittest.mock import Mock
+
+    from llama_index.core.vector_stores.types import VectorStoreQueryResult
+
+    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+
+    # Create adapter with minimal setup
+    mock_config = Mock()
+    mock_lancedb_store = Mock()
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    # Test with None ids
+    query_result = VectorStoreQueryResult(ids=None, nodes=[], similarities=[])
+    with pytest.raises(
+        ValueError, match="ids, nodes, and similarities must not be None"
+    ):
+        adapter.format_query_result(query_result)
+
+    # Test with None nodes
+    query_result = VectorStoreQueryResult(ids=[], nodes=None, similarities=[])
+    with pytest.raises(
+        ValueError, match="ids, nodes, and similarities must not be None"
+    ):
+        adapter.format_query_result(query_result)
+
+    # Test with None similarities
+    query_result = VectorStoreQueryResult(ids=[], nodes=[], similarities=None)
+    with pytest.raises(
+        ValueError, match="ids, nodes, and similarities must not be None"
+    ):
+        adapter.format_query_result(query_result)
+
+    # Test with mismatched lengths
+    query_result = VectorStoreQueryResult(ids=["1", "2"], nodes=[], similarities=[])
+    with pytest.raises(
+        ValueError, match="ids, nodes, and similarities must have the same length"
+    ):
+        adapter.format_query_result(query_result)
+
+
+def test_build_kwargs_for_query_validation_errors():
+    """Test error handling in build_kwargs_for_query method."""
+    from unittest.mock import Mock
+
+    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+    from kiln_ai.datamodel.vector_store import VectorStoreType
+
+    # Mock config for FTS
+    mock_config = Mock()
+    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
+    mock_config.lancedb_properties.similarity_top_k = 10
+
+    mock_lancedb_store = Mock()
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    # Test FTS search without query_string
+    query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
+    with pytest.raises(
+        ValueError, match="query_string must be provided for fts search"
+    ):
+        adapter.build_kwargs_for_query(query)
+
+    # Test HYBRID search without required parameters
+    mock_config.store_type = VectorStoreType.LANCE_DB_HYBRID
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    query = KilnVectorStoreQuery(query_string=None, query_embedding=[1.0, 2.0])
+    with pytest.raises(
+        ValueError,
+        match="query_string and query_embedding must be provided for hybrid search",
+    ):
+        adapter.build_kwargs_for_query(query)
+
+    query = KilnVectorStoreQuery(query_string="test", query_embedding=None)
+    with pytest.raises(
+        ValueError,
+        match="query_string and query_embedding must be provided for hybrid search",
+    ):
+        adapter.build_kwargs_for_query(query)
+
+    # Test VECTOR search without embedding
+    mock_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
+    with pytest.raises(
+        ValueError, match="query_embedding must be provided for vector search"
+    ):
+        adapter.build_kwargs_for_query(query)
