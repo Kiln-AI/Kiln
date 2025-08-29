@@ -9,7 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 
 
-class TestEmbeddingAdapter(BaseEmbeddingAdapter):
+class MockEmbeddingAdapter(BaseEmbeddingAdapter):
     """Concrete implementation of BaseEmbeddingAdapter for testing purposes."""
 
     async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
@@ -21,7 +21,7 @@ class TestEmbeddingAdapter(BaseEmbeddingAdapter):
         return EmbeddingResult(embeddings=embeddings)
 
 
-class TestEmbeddingAdapterWithUsage(BaseEmbeddingAdapter):
+class MockEmbeddingAdapterWithUsage(BaseEmbeddingAdapter):
     """Concrete implementation that includes usage information."""
 
     async def _generate_embeddings(self, text_inputs: list[str]) -> EmbeddingResult:
@@ -51,13 +51,13 @@ def mock_embedding_config():
 @pytest.fixture
 def test_adapter(mock_embedding_config):
     """Create a test adapter instance."""
-    return TestEmbeddingAdapter(mock_embedding_config)
+    return MockEmbeddingAdapter(mock_embedding_config)
 
 
 @pytest.fixture
 def test_adapter_with_usage(mock_embedding_config):
     """Create a test adapter instance that includes usage information."""
-    return TestEmbeddingAdapterWithUsage(mock_embedding_config)
+    return MockEmbeddingAdapterWithUsage(mock_embedding_config)
 
 
 class TestEmbedding:
@@ -117,7 +117,7 @@ class TestBaseEmbeddingAdapter:
 
     def test_init(self, mock_embedding_config):
         """Test successful initialization of the adapter."""
-        adapter = TestEmbeddingAdapter(mock_embedding_config)
+        adapter = MockEmbeddingAdapter(mock_embedding_config)
         assert adapter.embedding_config == mock_embedding_config
         assert adapter.embedding_config.name == "test-embedding"
         assert adapter.embedding_config.model_provider_name == ModelProviderName.openai
@@ -221,7 +221,7 @@ class TestBaseEmbeddingAdapterEdgeCases:
     def test_embedding_config_properties(self, mock_embedding_config):
         """Test that embedding config properties are accessible."""
         mock_embedding_config.properties = {"dimensions": 1536, "normalize": True}
-        adapter = TestEmbeddingAdapter(mock_embedding_config)
+        adapter = MockEmbeddingAdapter(mock_embedding_config)
         assert adapter.embedding_config.properties["dimensions"] == 1536
         assert adapter.embedding_config.properties["normalize"] is True
 
