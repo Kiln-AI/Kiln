@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
@@ -15,6 +15,7 @@ from app.desktop.studio_server.tool_api import (
     LocalToolServerCreationRequest,
     available_mcp_tools,
     connect_tool_servers_api,
+    tool_server_from_id,
     validate_tool_server_connectivity,
 )
 
@@ -521,7 +522,7 @@ def test_get_tool_server_not_found(client, test_project):
 
         assert response.status_code == 404
         result = response.json()
-        assert result["detail"] == "Tool not found"
+        assert result["detail"] == "Tool server not found"
 
 
 def test_get_available_tools_empty(client, test_project):
@@ -2878,3 +2879,278 @@ async def test_validate_tool_server_connectivity_local_mcp_failed():
         # Should raise the raw exception
         with pytest.raises(Exception, match="Local MCP server failed"):
             await validate_tool_server_connectivity(tool_server)
+
+
+# Tests for tool_server_from_id function
+def test_tool_server_from_id_success(test_project):
+    """Test tool_server_from_id returns correct tool server when found"""
+
+    # Create a tool server
+    tool_server = ExternalToolServer(
+        name="test_tool_server",
+        type=ToolServerType.remote_mcp,
+        description="Test tool server",
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+        },
+        parent=test_project,
+    )
+    tool_server.save_to_file()
+
+    # Test that we can find it with mocked project_from_id
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        found_server = tool_server_from_id(test_project.id, str(tool_server.id))
+        assert found_server.id == tool_server.id
+        assert found_server.name == "test_tool_server"
+        assert found_server.type == ToolServerType.remote_mcp
+
+
+def test_tool_server_from_id_not_found(test_project):
+    """Test tool_server_from_id raises HTTPException when tool server not found"""
+
+    # Try to find a non-existent tool server with mocked project_from_id
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        with pytest.raises(HTTPException) as exc_info:
+            tool_server_from_id(test_project.id, "non-existent-id")
+
+        assert exc_info.value.status_code == 404
+        assert "Tool server not found" in str(exc_info.value.detail)
+
+
+def test_tool_server_from_id_project_not_found():
+    """Test tool_server_from_id raises HTTPException when project not found"""
+
+    # Try to find a tool server in a non-existent project
+    with pytest.raises(HTTPException) as exc_info:
+        tool_server_from_id("non-existent-project", "some-tool-id")
+
+    assert exc_info.value.status_code == 404
+    assert "Project not found" in str(exc_info.value.detail)
+
+
+def test_tool_server_from_id_multiple_servers(test_project):
+    """Test tool_server_from_id finds correct server when multiple exist"""
+
+    # Create multiple tool servers
+    server1 = ExternalToolServer(
+        name="server1",
+        type=ToolServerType.remote_mcp,
+        description="First server",
+        properties={"server_url": "https://server1.com", "headers": {}},
+        parent=test_project,
+    )
+    server1.save_to_file()
+
+    server2 = ExternalToolServer(
+        name="server2",
+        type=ToolServerType.local_mcp,
+        description="Second server",
+        properties={"command": "python", "args": ["-m", "server"], "env_vars": {}},
+        parent=test_project,
+    )
+    server2.save_to_file()
+
+    # Test that we can find the correct one with mocked project_from_id
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        found_server1 = tool_server_from_id(test_project.id, str(server1.id))
+        found_server2 = tool_server_from_id(test_project.id, str(server2.id))
+
+        assert found_server1.id == server1.id
+        assert found_server1.name == "server1"
+        assert found_server1.type == ToolServerType.remote_mcp
+
+        assert found_server2.id == server2.id
+        assert found_server2.name == "server2"
+        assert found_server2.type == ToolServerType.local_mcp
+
+
+# Tests for DELETE /api/projects/{project_id}/tool_servers/{tool_server_id} endpoint
+async def test_delete_tool_server_success(client, test_project):
+    """Test successful deletion of a tool server"""
+    # First create a tool server
+    tool_data = {
+        "name": "test_delete_tool",
+        "server_url": "https://example.com/api",
+        "headers": {"Authorization": "Bearer token"},
+        "description": "Tool to be deleted",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify it exists by getting it
+            get_response = client.get(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+            )
+            assert get_response.status_code == 200
+
+            # Now delete it
+            delete_response = client.delete(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+            )
+            assert delete_response.status_code == 200
+
+            # Verify it's been deleted by trying to get it again
+            get_after_delete_response = client.get(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+            )
+            assert get_after_delete_response.status_code == 404
+
+
+def test_delete_tool_server_not_found(client, test_project):
+    """Test deletion of non-existent tool server returns 404"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Try to delete a non-existent tool server
+        response = client.delete(
+            f"/api/projects/{test_project.id}/tool_servers/non-existent-id"
+        )
+        assert response.status_code == 404
+        assert "Tool server not found" in response.json()["detail"]
+
+
+def test_delete_tool_server_project_not_found(client):
+    """Test deletion with non-existent project returns 404"""
+    # Try to delete from a non-existent project
+    response = client.delete(
+        "/api/projects/non-existent-project/tool_servers/some-tool-id"
+    )
+    assert response.status_code == 404
+    assert "Project not found" in response.json()["detail"]
+
+
+async def test_delete_tool_server_local_mcp(client, test_project):
+    """Test successful deletion of a local MCP tool server"""
+    # First create a local MCP tool server
+    tool_data = {
+        "name": "test_delete_local",
+        "command": "python",
+        "args": ["-m", "test_server"],
+        "env_vars": {"DEBUG": "true"},
+        "description": "Local tool to be deleted",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the local tool server
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify it exists
+            get_response = client.get(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+            )
+            assert get_response.status_code == 200
+            assert get_response.json()["type"] == "local_mcp"
+
+            # Now delete it
+            delete_response = client.delete(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+            )
+            assert delete_response.status_code == 200
+
+            # Verify it's been deleted
+            get_after_delete_response = client.get(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+            )
+            assert get_after_delete_response.status_code == 404
+
+
+async def test_delete_tool_server_affects_available_servers_list(client, test_project):
+    """Test that deleting a tool server removes it from the available servers list"""
+    # Create two tool servers
+    tool_data_1 = {
+        "name": "tool_server_1",
+        "server_url": "https://server1.com/api",
+        "headers": {},
+        "description": "First server",
+    }
+
+    tool_data_2 = {
+        "name": "tool_server_2",
+        "server_url": "https://server2.com/api",
+        "headers": {},
+        "description": "Second server",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create both servers
+            create_response_1 = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data_1,
+            )
+            assert create_response_1.status_code == 200
+            server_1_id = create_response_1.json()["id"]
+
+            create_response_2 = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data_2,
+            )
+            assert create_response_2.status_code == 200
+            server_2_id = create_response_2.json()["id"]
+
+            # Verify both appear in available servers list
+            list_response = client.get(
+                f"/api/projects/{test_project.id}/available_tool_servers"
+            )
+            assert list_response.status_code == 200
+            servers = list_response.json()
+            assert len(servers) == 2
+            server_ids = [server["id"] for server in servers]
+            assert server_1_id in server_ids
+            assert server_2_id in server_ids
+
+            # Delete one server
+            delete_response = client.delete(
+                f"/api/projects/{test_project.id}/tool_servers/{server_1_id}"
+            )
+            assert delete_response.status_code == 200
+
+            # Verify only one remains in the list
+            list_after_delete_response = client.get(
+                f"/api/projects/{test_project.id}/available_tool_servers"
+            )
+            assert list_after_delete_response.status_code == 200
+            remaining_servers = list_after_delete_response.json()
+            assert len(remaining_servers) == 1
+            assert remaining_servers[0]["id"] == server_2_id
+            assert remaining_servers[0]["name"] == "tool_server_2"
