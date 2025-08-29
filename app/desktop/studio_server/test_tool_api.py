@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
@@ -196,18 +196,12 @@ async def test_create_tool_server_validation_connection_failed(client, test_proj
         mock_project_from_id.return_value = test_project
 
         async with mock_mcp_connection_error():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 422
-            error_data = response.json()
-            # Error could be in "detail" or "message" field depending on FastAPI's error handling
-            error_message = error_data.get("detail", "") or error_data.get(
-                "message", ""
-            )
-            assert "Failed to connect to the server" in error_message
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="Connection failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    json=tool_data,
+                )
 
 
 async def test_create_tool_server_validation_list_tools_failed(client, test_project):
@@ -225,18 +219,12 @@ async def test_create_tool_server_validation_list_tools_failed(client, test_proj
         mock_project_from_id.return_value = test_project
 
         async with mock_mcp_list_tools_error():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 422
-            error_data = response.json()
-            # Error could be in "detail" or "message" field depending on FastAPI's error handling
-            error_message = error_data.get("detail", "") or error_data.get(
-                "message", ""
-            )
-            assert "Failed to connect to the server" in error_message
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="list_tools failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    json=tool_data,
+                )
 
 
 def test_create_tool_server_validation_empty_name(client, test_project):
@@ -1638,12 +1626,9 @@ async def test_validate_tool_server_connectivity_connection_failed():
     )
 
     async with mock_mcp_connection_error():
-        # Should raise HTTPException with specific message
-        with pytest.raises(HTTPException) as exc_info:
+        # Should raise the raw exception
+        with pytest.raises(Exception, match="Connection failed"):
             await validate_tool_server_connectivity(tool_server)
-
-        assert exc_info.value.status_code == 422
-        assert "Failed to connect to the server" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -1658,12 +1643,9 @@ async def test_validate_tool_server_connectivity_list_tools_failed():
     )
 
     async with mock_mcp_list_tools_error():
-        # Should raise HTTPException
-        with pytest.raises(HTTPException) as exc_info:
+        # Should raise the raw exception
+        with pytest.raises(Exception, match="list_tools failed"):
             await validate_tool_server_connectivity(tool_server)
-
-        assert exc_info.value.status_code == 422
-        assert "Failed to connect to the server" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -2475,17 +2457,12 @@ async def test_create_local_tool_server_validation_failed(client, test_project):
         mock_project_from_id.return_value = test_project
 
         async with mock_mcp_connection_error():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 422
-            error_data = response.json()
-            error_message = error_data.get("detail", "") or error_data.get(
-                "message", ""
-            )
-            assert "Failed to connect to the server" in error_message
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="Connection failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    json=tool_data,
+                )
 
 
 def test_create_local_tool_server_missing_command(client, test_project):
@@ -2717,9 +2694,6 @@ async def test_validate_tool_server_connectivity_local_mcp_failed():
     )
 
     async with mock_mcp_list_tools_error("Local MCP server failed"):
-        # Should raise HTTPException
-        with pytest.raises(HTTPException) as exc_info:
+        # Should raise the raw exception
+        with pytest.raises(Exception, match="Local MCP server failed"):
             await validate_tool_server_connectivity(tool_server)
-
-        assert exc_info.value.status_code == 422
-        assert "Failed to connect to the server" in exc_info.value.detail

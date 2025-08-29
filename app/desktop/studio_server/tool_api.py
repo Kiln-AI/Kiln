@@ -187,23 +187,9 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     match tool_server.type:
         case ToolServerType.remote_mcp | ToolServerType.local_mcp:
             # Validate the server is reachable
-            try:
-                async with MCPSessionManager.shared().mcp_client(
-                    tool_server
-                ) as session:
-                    # Use list tools to validate the server is reachable
-                    await session.list_tools()
-            except ConnectionError:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Unable to connect to the server. Please check that the server is running and accessible.",
-                )
-            except Exception as e:
-                # For any other error, include the original message
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Failed to connect to the server: {str(e)}",
-                )
+            async with MCPSessionManager.shared().mcp_client(tool_server) as session:
+                # Use list tools to validate the server is reachable
+                await session.list_tools()
         case _:
             raise_exhaustive_enum_error(tool_server.type)
 

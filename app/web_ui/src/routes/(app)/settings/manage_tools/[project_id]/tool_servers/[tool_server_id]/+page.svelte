@@ -227,11 +227,11 @@
           />
         </div>
         <div class="flex-1">
-          <PropertyList
-            properties={getConnectionProperties(tool_server)}
-            title="Connection Details"
-          />
           {#if tool_server.type === "remote_mcp" && getHeadersProperties(tool_server).length > 0}
+            <PropertyList
+              properties={getConnectionProperties(tool_server)}
+              title="Connection Details"
+            />
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
               <PropertyList
@@ -240,6 +240,10 @@
               />
             </div>
           {:else if tool_server.type === "local_mcp" && getEnvVarsProperties(tool_server).length > 0}
+            <PropertyList
+              properties={getConnectionProperties(tool_server)}
+              title="Run Configuration"
+            />
             <div class="mt-8">
               <PropertyList
                 properties={getEnvVarsProperties(tool_server)}
