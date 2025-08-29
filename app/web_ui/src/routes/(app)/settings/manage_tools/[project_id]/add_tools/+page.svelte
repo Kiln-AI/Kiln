@@ -29,7 +29,7 @@
   function connectRemoteMcp(item: RemoteMcpServer) {
     goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`, {
       state: {
-        name: item.name,
+        name: item.name + " " + item.subtitle,
         description: item.description,
         server_url: item.server_url,
         headers: item.headers,
@@ -40,7 +40,7 @@
   function connectLocalMcp(item: LocalMcpServer) {
     goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`, {
       state: {
-        name: item.name,
+        name: item.name + " " + item.subtitle,
         description: item.description,
         command: item.command,
         args: item.args,
