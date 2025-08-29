@@ -402,3 +402,12 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server.save_to_file()
 
         return tool_server
+
+    @app.get("/api/demo_tools")
+    async def get_demo_tools() -> bool:
+        return Config.shared().enable_demo_tools
+
+    @app.post("/api/demo_tools")
+    async def set_demo_tools(enable_demo_tools: bool) -> bool:
+        Config.shared().enable_demo_tools = enable_demo_tools
+        return Config.shared().enable_demo_tools

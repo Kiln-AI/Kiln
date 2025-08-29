@@ -2722,3 +2722,56 @@ async def test_validate_tool_server_connectivity_local_mcp_failed():
 
         assert exc_info.value.status_code == 422
         assert "Failed to connect to the server" in exc_info.value.detail
+
+
+# Tests for demo tools API endpoints
+def test_get_demo_tools_enabled(client):
+    """Test GET /api/demo_tools returns True when demo tools are enabled"""
+    with patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config:
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.enable_demo_tools = True
+
+        response = client.get("/api/demo_tools")
+
+        assert response.status_code == 200
+        assert response.json() is True
+
+
+def test_get_demo_tools_disabled(client):
+    """Test GET /api/demo_tools returns False when demo tools are disabled"""
+    with patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config:
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.enable_demo_tools = False
+
+        response = client.get("/api/demo_tools")
+
+        assert response.status_code == 200
+        assert response.json() is False
+
+
+def test_set_demo_tools_enable(client):
+    """Test POST /api/demo_tools enables demo tools"""
+    with patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config:
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.enable_demo_tools = False  # Initially disabled
+
+        response = client.post("/api/demo_tools?enable_demo_tools=true")
+
+        assert response.status_code == 200
+        assert response.json() is True
+        # Verify the config was updated
+        assert mock_config_instance.enable_demo_tools is True
+
+
+def test_set_demo_tools_disable(client):
+    """Test POST /api/demo_tools disables demo tools"""
+    with patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config:
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.enable_demo_tools = True  # Initially enabled
+
+        response = client.post("/api/demo_tools?enable_demo_tools=false")
+
+        assert response.status_code == 200
+        assert response.json() is False
+        # Verify the config was updated
+        assert mock_config_instance.enable_demo_tools is False
