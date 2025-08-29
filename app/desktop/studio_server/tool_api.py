@@ -398,8 +398,6 @@ def connect_tool_servers_api(app: FastAPI):
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(tool_server)
 
-        raise Exception(f"Not implemented")
-
         # Save the tool to file
         tool_server.save_to_file()
 
