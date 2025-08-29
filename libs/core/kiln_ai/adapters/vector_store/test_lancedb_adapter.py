@@ -4,8 +4,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
-
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import KilnVectorStoreQuery
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
@@ -16,6 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 
 @pytest.fixture
@@ -402,35 +401,33 @@ def test_format_query_result_error_conditions():
     """Test error handling in format_query_result method."""
     from unittest.mock import Mock
 
-    from llama_index.core.vector_stores.types import VectorStoreQueryResult
-
     from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+    from llama_index.core.vector_stores.types import VectorStoreQueryResult
 
     # Create adapter with minimal setup
     mock_config = Mock()
     mock_lancedb_store = Mock()
     adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
 
-    # Test with None ids
+    # Test with None ids - should return empty list instead of raising error
     query_result = VectorStoreQueryResult(ids=None, nodes=[], similarities=[])
-    with pytest.raises(
-        ValueError, match="ids, nodes, and similarities must not be None"
-    ):
-        adapter.format_query_result(query_result)
+    result = adapter.format_query_result(query_result)
+    assert result == []
 
-    # Test with None nodes
+    # Test with None nodes - should return empty list instead of raising error
     query_result = VectorStoreQueryResult(ids=[], nodes=None, similarities=[])
-    with pytest.raises(
-        ValueError, match="ids, nodes, and similarities must not be None"
-    ):
-        adapter.format_query_result(query_result)
+    result = adapter.format_query_result(query_result)
+    assert result == []
 
-    # Test with None similarities
+    # Test with None similarities - should return empty list instead of raising error
     query_result = VectorStoreQueryResult(ids=[], nodes=[], similarities=None)
-    with pytest.raises(
-        ValueError, match="ids, nodes, and similarities must not be None"
-    ):
-        adapter.format_query_result(query_result)
+    result = adapter.format_query_result(query_result)
+    assert result == []
+
+    # Test with empty lists - should return empty list (valid empty result)
+    query_result = VectorStoreQueryResult(ids=[], nodes=[], similarities=[])
+    result = adapter.format_query_result(query_result)
+    assert result == []
 
     # Test with mismatched lengths
     query_result = VectorStoreQueryResult(ids=["1", "2"], nodes=[], similarities=[])
@@ -489,3 +486,63 @@ def test_build_kwargs_for_query_validation_errors():
         ValueError, match="query_embedding must be provided for vector search"
     ):
         adapter.build_kwargs_for_query(query)
+
+
+@pytest.mark.asyncio
+async def test_search_with_table_not_found_error():
+    """Test that search handles TableNotFoundError gracefully"""
+    from unittest.mock import AsyncMock, Mock
+
+    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+
+    # Create adapter with minimal setup
+    mock_config = Mock()
+    mock_config.lancedb_properties = Mock()
+    mock_config.lancedb_properties.similarity_top_k = 10
+    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
+
+    mock_lancedb_store = AsyncMock()
+    # Make aquery raise TableNotFoundError
+    mock_lancedb_store.aquery.side_effect = TableNotFoundError(
+        "Table vectors is not initialized"
+    )
+
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    # Search should return empty list instead of raising error
+    query = KilnVectorStoreQuery(query_string="test query")
+    results = await adapter.search(query)
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_search_with_empty_results_error():
+    """Test that search handles 'query results are empty' error gracefully"""
+    from unittest.mock import AsyncMock, Mock
+
+    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+
+    # Create adapter with minimal setup
+    mock_config = Mock()
+    mock_config.lancedb_properties = Mock()
+    mock_config.lancedb_properties.similarity_top_k = 10
+    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
+
+    mock_lancedb_store = AsyncMock()
+    # Make aquery raise an error with "query results are empty" message
+    mock_lancedb_store.aquery.side_effect = Exception("query results are empty")
+
+    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+
+    # Search should return empty list instead of raising error
+    query = KilnVectorStoreQuery(query_string="test query")
+    results = await adapter.search(query)
+
+    assert results == []
+
+    assert results == []
+
+    assert results == []
+
+    assert results == []

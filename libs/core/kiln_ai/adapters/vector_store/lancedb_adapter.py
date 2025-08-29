@@ -2,13 +2,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from llama_index.core.schema import MetadataMode, TextNode
-from llama_index.core.vector_stores.types import (
-    VectorStoreQuery,
-    VectorStoreQueryResult,
-)
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     KilnVectorStoreQuery,
@@ -23,6 +16,13 @@ from kiln_ai.datamodel.vector_store import (
     raise_exhaustive_enum_error,
 )
 from kiln_ai.utils.config import Config
+from llama_index.core.schema import MetadataMode, TextNode
+from llama_index.core.vector_stores.types import (
+    VectorStoreQuery,
+    VectorStoreQueryResult,
+)
+from llama_index.vector_stores.lancedb import LanceDBVectorStore
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +61,24 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     def format_query_result(
         self, query_result: VectorStoreQueryResult
     ) -> List[SearchResult]:
+        # Handle case where no results are found - return empty list
         if (
             query_result.ids is None
             or query_result.nodes is None
             or query_result.similarities is None
         ):
-            raise ValueError("ids, nodes, and similarities must not be None")
+            # If any of the fields are None (which shouldn't happen normally),
+            # return empty results instead of raising an error
+            return []
+
+        # If all fields exist but are empty lists, that's a valid empty result
+        if (
+            len(query_result.ids) == 0
+            or len(query_result.nodes) == 0
+            or len(query_result.similarities) == 0
+        ):
+            return []
+
         if not (
             len(query_result.ids)
             == len(query_result.nodes)
@@ -76,9 +88,9 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
         results = []
         for id, node, similarity in zip(
-            query_result.ids or [],
-            query_result.nodes or [],
-            query_result.similarities or [],
+            query_result.ids,
+            query_result.nodes,
+            query_result.similarities,
         ):
             results.append(
                 SearchResult(
@@ -117,13 +129,31 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         return kwargs
 
     async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
-        query_result = await self.lancedb_vector_store.aquery(
-            VectorStoreQuery(
-                **self.build_kwargs_for_query(query),
-            ),
-            query_type=self.query_type,
-        )
-        return self.format_query_result(query_result)
+        try:
+            query_result = await self.lancedb_vector_store.aquery(
+                VectorStoreQuery(
+                    **self.build_kwargs_for_query(query),
+                ),
+                query_type=self.query_type,
+            )
+            return self.format_query_result(query_result)
+        except (TableNotFoundError, Exception) as e:
+            # Handle various error conditions that can occur with empty or non-existent tables
+            error_msg = str(e).lower()
+            if (
+                isinstance(e, TableNotFoundError)
+                or "query results are empty" in error_msg
+                or "table is not initialized" in error_msg
+                or "table does not exist" in error_msg
+                or "no data" in error_msg
+                or "empty" in error_msg
+            ):
+                # Return empty results instead of propagating the error
+                logger.info(f"Vector store search returned no results: {e}")
+                return []
+            else:
+                # Re-raise other errors
+                raise
 
     async def get_all_chunks(self) -> List[SearchResult]:
         nodes = self.lancedb_vector_store.get_nodes()
@@ -168,4 +198,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             data_dir = Path(data_dir)
         if vector_store_config.id is None:
             raise ValueError("Vector store config ID is required")
+        return str(data_dir / "lancedb" / vector_store_config.id)
+        return str(data_dir / "lancedb" / vector_store_config.id)
         return str(data_dir / "lancedb" / vector_store_config.id)

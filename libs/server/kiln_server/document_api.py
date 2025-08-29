@@ -6,6 +6,7 @@ from typing import Annotated, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
@@ -24,6 +25,13 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
+)
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
+    KilnVectorStoreQuery,
+    SearchResult,
+)
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
 )
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -50,9 +58,8 @@ from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel, Field, model_validator
-
 from kiln_server.project_api import project_from_id
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +397,18 @@ class GetRagConfigProgressRequest(BaseModel):
     rag_config_ids: list[str] | None = Field(
         description="The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned",
         default=None,
+    )
+
+
+class RagSearchRequest(BaseModel):
+    query: str = Field(
+        description="The search query text",
+    )
+
+
+class RagSearchResponse(BaseModel):
+    results: list[SearchResult] = Field(
+        description="The search results",
     )
 
 
@@ -1092,7 +1111,7 @@ def connect_document_api(app: FastAPI):
         vector_store_config = VectorStoreConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
-            store_type=VectorStoreType.LANCE_DB_FTS,
+            store_type=VectorStoreType.LANCE_DB_HYBRID,
             properties={
                 "similarity_top_k": 10,
                 "nprobes": 10,
@@ -1256,3 +1275,101 @@ def connect_document_api(app: FastAPI):
             str, RagProgress
         ] = await compute_current_progress_for_rag_configs(project, rag_configs)
         return progress_map
+
+    @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/search")
+    async def search_rag_config(
+        project_id: str,
+        rag_config_id: str,
+        request: RagSearchRequest,
+    ) -> RagSearchResponse:
+        """Search the vector store associated with a RAG config."""
+        project = project_from_id(project_id)
+
+        # Get the RAG config and associated configs
+        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+        if rag_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="RAG config not found",
+            )
+
+        # Get the vector store config
+        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+            str(rag_config.vector_store_config_id), project.path
+        )
+        if vector_store_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Vector store config not found",
+            )
+
+        # Get the embedding config
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            str(rag_config.embedding_config_id), project.path
+        )
+        if not embedding_config:
+            raise HTTPException(
+                status_code=404,
+                detail="Embedding config not found",
+            )
+
+        # Create the vector store adapter
+        vector_store_adapter = await vector_store_adapter_for_config(
+            vector_store_config, lancedb_mode="create"
+        )
+
+        # Prepare the search query based on vector store type
+        search_query: KilnVectorStoreQuery
+
+        if vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS:
+            # For FTS, just use the text query
+            search_query = KilnVectorStoreQuery(
+                query_string=request.query,
+                query_embedding=None,
+            )
+        elif vector_store_config.store_type in [
+            VectorStoreType.LANCE_DB_VECTOR,
+            VectorStoreType.LANCE_DB_HYBRID,
+        ]:
+            # For vector and hybrid search, generate embeddings for the query
+            embedding_adapter = embedding_adapter_from_type(embedding_config)
+            embedding_result = await embedding_adapter.generate_embeddings(
+                [request.query]
+            )
+
+            if not embedding_result.embeddings:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to generate embeddings for search query",
+                )
+
+            query_embedding = embedding_result.embeddings[0].vector
+
+            if vector_store_config.store_type == VectorStoreType.LANCE_DB_VECTOR:
+                # Pure vector search
+                search_query = KilnVectorStoreQuery(
+                    query_string=None,
+                    query_embedding=query_embedding,
+                )
+            else:
+                # Hybrid search
+                search_query = KilnVectorStoreQuery(
+                    query_string=request.query,
+                    query_embedding=query_embedding,
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported vector store type: {vector_store_config.store_type}",
+            )
+
+        # Perform the search
+        try:
+            search_results = await vector_store_adapter.search(search_query)
+            return RagSearchResponse(results=search_results)
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Search failed: {e!s}",
+            )
