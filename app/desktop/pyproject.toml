@@ -11,7 +11,7 @@ dependencies = [
     "kiln-server",
     "pillow>=11.0.0",
     "pystray>=0.19.5",
-    "pyinstaller==6.11.1",
+    "pyinstaller==6.15.0",
     "scipy>=1.15.2",
 ]
 

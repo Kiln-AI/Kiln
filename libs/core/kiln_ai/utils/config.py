@@ -152,6 +152,11 @@ class Config:
                 env_var="ENABLE_DEMO_TOOLS",
                 default=False,
             ),
+            # Allow the user to set the path to lookup MCP server commands, like npx.
+            "custom_mcp_path": ConfigProperty(
+                str,
+                env_var="CUSTOM_MCP_PATH",
+            ),
         }
         self._lock = threading.Lock()
         self._settings = self.load_settings()
