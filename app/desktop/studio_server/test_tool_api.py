@@ -2236,7 +2236,7 @@ def test_local_tool_server_creation_request_missing_command():
     """Test LocalToolServerCreationRequest rejects missing command"""
 
     with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
+        LocalToolServerCreationRequest(  # type: ignore
             name="Missing Command Server",
             args=["arg1"],
             # Missing required command field
@@ -2263,7 +2263,7 @@ def test_local_tool_server_creation_request_missing_args():
     """Test LocalToolServerCreationRequest rejects missing args"""
 
     with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
+        LocalToolServerCreationRequest(  # type: ignore
             name="Missing Args Server",
             command="python",
             # Missing required args field
@@ -2290,7 +2290,7 @@ def test_local_tool_server_creation_request_missing_name():
     """Test LocalToolServerCreationRequest rejects missing name"""
 
     with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
+        LocalToolServerCreationRequest(  # type: ignore
             command="python",
             args=["-m", "server"],
             # Missing required name field
@@ -2373,7 +2373,188 @@ def test_local_tool_server_creation_request_unicode_name():
     )
 
     assert request.name == "本地服务器"
-    assert "émojis 🚀" in request.description
+    assert request.description is not None and "émojis 🚀" in request.description
+
+
+def test_local_tool_server_creation_request_valid_env_var_keys():
+    """Test LocalToolServerCreationRequest with valid environment variable keys"""
+    valid_env_vars = {
+        "PATH": "/usr/bin",
+        "HOME": "/home/user",
+        "PYTHON_PATH": "/opt/python",
+        "_PRIVATE_VAR": "private",
+        "VAR_123": "value123",
+        "a": "single_letter",
+        "A": "single_uppercase",
+        "_": "single_underscore",
+        "VAR_WITH_UNDERSCORES": "value",
+        "CamelCase": "mixed_case",
+        "UPPER_CASE": "upper",
+        "lower_case": "lower",
+        "Mixed_Case_123": "mixed",
+    }
+
+    request = LocalToolServerCreationRequest(
+        name="Valid Env Vars Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars=valid_env_vars,
+    )
+
+    assert request.env_vars == valid_env_vars
+
+
+def test_local_tool_server_creation_request_invalid_env_var_key_start_digit():
+    """Test LocalToolServerCreationRequest rejects env var keys starting with digits"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Invalid Env Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"123_INVALID": "value"},  # Starts with digit
+        )
+
+    error_str = str(exc_info.value)
+    assert "Invalid environment variable key: 123_INVALID" in error_str
+    assert "Must start with a letter or underscore" in error_str
+
+
+def test_local_tool_server_creation_request_invalid_env_var_key_special_chars():
+    """Test LocalToolServerCreationRequest rejects env var keys with invalid characters"""
+    invalid_keys = [
+        ("KEY-WITH-DASHES", "dash"),
+        ("KEY.WITH.DOTS", "dot"),
+        ("KEY WITH SPACES", "space"),
+        ("KEY@SYMBOL", "at symbol"),
+        ("KEY#HASH", "hash"),
+        ("KEY$DOLLAR", "dollar sign"),
+        ("KEY%PERCENT", "percent"),
+        ("KEY&AMPERSAND", "ampersand"),
+        ("KEY*ASTERISK", "asterisk"),
+        ("KEY+PLUS", "plus"),
+        ("KEY=EQUALS", "equals"),
+        ("KEY[BRACKET]", "bracket"),
+        ("KEY{BRACE}", "brace"),
+        ("KEY(PAREN)", "parenthesis"),
+        ("KEY|PIPE", "pipe"),
+        ("KEY\\BACKSLASH", "backslash"),
+        ("KEY/SLASH", "slash"),
+        ("KEY:COLON", "colon"),
+        ("KEY;SEMICOLON", "semicolon"),
+        ("KEY<LESS>", "angle bracket"),
+        ("KEY?QUESTION", "question mark"),
+        ("KEY,COMMA", "comma"),
+    ]
+
+    for invalid_key, description in invalid_keys:
+        with pytest.raises(ValidationError) as exc_info:
+            LocalToolServerCreationRequest(
+                name="Invalid Env Key Server",
+                command="python",
+                args=["-m", "server"],
+                env_vars={invalid_key: "value"},
+            )
+
+        error_str = str(exc_info.value)
+        assert f"Invalid environment variable key: {invalid_key}" in error_str
+        assert "Can only contain ASCII letters, digits, and underscores" in error_str
+
+
+def test_local_tool_server_creation_request_invalid_env_var_key_non_ascii():
+    """Test LocalToolServerCreationRequest rejects env var keys with non-ASCII characters"""
+    invalid_keys = [
+        "KEY_WITH_ÉMOJI_🚀",
+        "键名",  # Chinese characters
+        "CLAVÉ",  # Accented characters
+        "КЛЮЧ",  # Cyrillic characters
+        "مفتاح",  # Arabic characters
+    ]
+
+    for invalid_key in invalid_keys:
+        with pytest.raises(ValidationError) as exc_info:
+            LocalToolServerCreationRequest(
+                name="Invalid Env Key Server",
+                command="python",
+                args=["-m", "server"],
+                env_vars={invalid_key: "value"},
+            )
+
+        error_str = str(exc_info.value)
+        assert f"Invalid environment variable key: {invalid_key}" in error_str
+        # Should match either error message depending on the character
+        assert (
+            "Must start with a letter or underscore" in error_str
+            or "Can only contain ASCII letters, digits, and underscores" in error_str
+        )
+
+
+def test_local_tool_server_creation_request_empty_env_var_key():
+    """Test LocalToolServerCreationRequest rejects empty environment variable keys"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Empty Env Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"": "value"},  # Empty key
+        )
+
+    error_str = str(exc_info.value)
+    assert "Invalid environment variable key:" in error_str
+    assert "Must start with a letter or underscore" in error_str
+
+
+def test_local_tool_server_creation_request_env_var_key_edge_cases():
+    """Test LocalToolServerCreationRequest with edge cases for environment variable keys"""
+    # Test single character valid keys
+    valid_single_chars = {
+        "A": "uppercase_letter",
+        "a": "lowercase_letter",
+        "Z": "last_uppercase",
+        "z": "last_lowercase",
+        "_": "underscore_only",
+    }
+
+    request = LocalToolServerCreationRequest(
+        name="Edge Case Env Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars=valid_single_chars,
+    )
+    assert request.env_vars == valid_single_chars
+
+    # Test invalid single character keys
+    invalid_single_chars = ["0", "9", "@", "#", "-", ".", " "]
+
+    for invalid_char in invalid_single_chars:
+        with pytest.raises(ValidationError) as exc_info:
+            LocalToolServerCreationRequest(
+                name="Invalid Single Char Env Server",
+                command="python",
+                args=["-m", "server"],
+                env_vars={invalid_char: "value"},
+            )
+
+        error_str = str(exc_info.value)
+        assert f"Invalid environment variable key: {invalid_char}" in error_str
+
+
+def test_local_tool_server_creation_request_mixed_valid_invalid_env_vars():
+    """Test LocalToolServerCreationRequest with mix of valid and invalid env var keys"""
+    # Should fail on the first invalid key encountered
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Mixed Env Vars Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={
+                "VALID_KEY": "valid_value",
+                "123_INVALID": "invalid_value",  # This should cause failure
+                "ANOTHER_VALID": "another_valid",
+            },
+        )
+
+    error_str = str(exc_info.value)
+    assert "Invalid environment variable key: 123_INVALID" in error_str
 
 
 # Tests for connect_local_mcp endpoint

@@ -103,6 +103,24 @@ class LocalToolServerCreationRequest(BaseModel):
         if not self.command:
             raise ValueError("Command is required")
 
+        # Validate env_vars keys are in the correct format for Environment Variables
+        # According to POSIX specification, environment variable names must:
+        # - Start with a letter (a-z, A-Z) or underscore (_)
+        # - Contain only ASCII letters, digits, and underscores
+        # - Be portable across different systems
+        for key, value in self.env_vars.items():
+            if not key or not (
+                key[0].isascii() and (key[0].isalpha() or key[0] == "_")
+            ):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Must start with a letter or underscore."
+                )
+
+            if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Can only contain ASCII letters, digits, and underscores."
+                )
+
         return self
 
 
