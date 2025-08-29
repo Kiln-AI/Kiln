@@ -3342,6 +3342,11 @@ export interface components {
              * @description The ID of the embedding config used to embed the documents.
              */
             embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The ID of the vector store config that was used to store the documents.
+             */
+            vector_store_config_id: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -3414,6 +3419,18 @@ export interface components {
              * @default 0
              */
             total_document_embedded_error_count: number;
+            /**
+             * Total Document Indexed Count
+             * @description The number of items that have been indexed
+             * @default 0
+             */
+            total_document_indexed_count: number;
+            /**
+             * Total Document Indexed Error Count
+             * @description The number of items that have errored during indexing
+             * @default 0
+             */
+            total_document_indexed_error_count: number;
             /**
              * Logs
              * @description A list of log messages to display to the user

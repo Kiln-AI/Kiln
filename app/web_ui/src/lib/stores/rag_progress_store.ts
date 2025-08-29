@@ -57,7 +57,8 @@ function createRagProgressStore() {
     return (
       (progress.total_document_extracted_error_count ?? 0) > 0 ||
       (progress.total_document_chunked_error_count ?? 0) > 0 ||
-      (progress.total_document_embedded_error_count ?? 0) > 0
+      (progress.total_document_embedded_error_count ?? 0) > 0 ||
+      (progress.total_document_indexed_error_count ?? 0) > 0
     )
   }
 
@@ -277,6 +278,7 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     progress.total_document_extracted_count,
     progress.total_document_chunked_count,
     progress.total_document_embedded_count,
+    progress.total_document_indexed_count,
   )
   if (max_step_completion === 0) {
     return "not_started"
@@ -286,6 +288,7 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     progress.total_document_extracted_count,
     progress.total_document_chunked_count,
     progress.total_document_embedded_count,
+    progress.total_document_indexed_count,
   )
   if (min_step_completion < progress.total_document_count) {
     return "incomplete"
@@ -295,6 +298,7 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     progress.total_document_extracted_error_count,
     progress.total_document_chunked_error_count,
     progress.total_document_embedded_error_count,
+    progress.total_document_indexed_error_count,
   ].some((count) => count > 0)
   if (has_errors) {
     return "completed_with_errors"

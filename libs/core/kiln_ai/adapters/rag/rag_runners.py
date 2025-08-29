@@ -10,10 +10,9 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapt
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
-from kiln_ai.adapters.rag.progress import (
-    LogMessage,
-    RagProgress,
-    compute_current_progress_for_rag_config,
+from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
 )
 from kiln_ai.datamodel import Project
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnAttachmentModel
@@ -26,7 +25,9 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
 )
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.lock import shared_async_lock_manager
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,6 +94,7 @@ class RagWorkflowStepNames(str, Enum):
     EXTRACTING = "extracting"
     CHUNKING = "chunking"
     EMBEDDING = "embedding"
+    INDEXING = "indexing"
 
 
 async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> bool:
@@ -428,6 +430,108 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                         )
 
 
+class RagIndexingStepRunner(AbstractRagStepRunner):
+    def __init__(
+        self,
+        project: Project,
+        extractor_config: ExtractorConfig,
+        chunker_config: ChunkerConfig,
+        embedding_config: EmbeddingConfig,
+        vector_store_config: VectorStoreConfig,
+        rag_config: RagConfig,
+        concurrency: int = 10,
+    ):
+        self.project = project
+        self.extractor_config = extractor_config
+        self.chunker_config = chunker_config
+        self.embedding_config = embedding_config
+        self.vector_store_config = vector_store_config
+        self.rag_config = rag_config
+        self.concurrency = concurrency
+
+    @property
+    def lock_key(self) -> str:
+        return f"rag:index:{self.vector_store_config.id}"
+
+    def stage(self) -> RagWorkflowStepNames:
+        return RagWorkflowStepNames.INDEXING
+
+    async def collect_records(
+        self,
+        batch_size: int = 100,
+    ) -> AsyncGenerator[list[Tuple[str, ChunkedDocument, ChunkEmbeddings]], None]:
+        target_extractor_config_id = self.extractor_config.id
+        target_chunker_config_id = self.chunker_config.id
+        target_embedding_config_id = self.embedding_config.id
+
+        # (document_id, chunked_document, embedding)
+        jobs: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]] = []
+        for document in self.project.documents(readonly=True):
+            extractions = document.extractions(readonly=True)
+            for extraction in extractions:
+                if extraction.extractor_config_id == target_extractor_config_id:
+                    for chunked_document in extraction.chunked_documents(readonly=True):
+                        if (
+                            chunked_document.chunker_config_id
+                            == target_chunker_config_id
+                        ):
+                            for chunk_embedding in chunked_document.chunk_embeddings(
+                                readonly=True
+                            ):
+                                if (
+                                    chunk_embedding.embedding_config_id
+                                    == target_embedding_config_id
+                                ):
+                                    jobs.append(
+                                        (
+                                            str(document.id),
+                                            chunked_document,
+                                            chunk_embedding,
+                                        )
+                                    )
+
+                                    if len(jobs) >= batch_size:
+                                        yield jobs
+                                        jobs = []
+
+        if len(jobs) > 0:
+            yield jobs
+
+    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
+        async with shared_async_lock_manager.acquire(self.lock_key):
+            vector_dimensions: int | None = None
+
+            # infer dimensionality - we peek into the first record to get the vector dimensions
+            # vector dimensions are not stored in the config because they are derived from the model
+            # and in some cases dynamic shortening of the vector (OpenAI has this)
+            async for records in self.collect_records(batch_size=1):
+                if len(records) > 0:
+                    embedding = records[0][2].embeddings[0]
+                    vector_dimensions = len(embedding.vector)
+                    break
+
+            if vector_dimensions is None:
+                raise ValueError("Vector dimensions are not set")
+
+            vector_store = await vector_store_adapter_for_config(
+                self.vector_store_config,
+            )
+
+            # TODO: count the number of records to upsert, we need to do a separate first pass
+            # to count, because we cannot just acc everything into an array (would be too big
+            # if the user has thousands of documents
+            # that is N(docs) * (N(chunks) + N(embeddings))
+
+            indexed_count = 0
+            async for records in self.collect_records(batch_size=10000):
+                await vector_store.add_chunks_with_embeddings(records)
+                indexed_count += len(records)
+                yield RagStepRunnerProgress(
+                    success_count=indexed_count,
+                    error_count=0,
+                )
+
+
 class RagWorkflowRunnerConfiguration(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -435,9 +539,8 @@ class RagWorkflowRunnerConfiguration(BaseModel):
         description="The step runners to run",
     )
 
-    initial_progress: RagProgress | None = Field(
+    initial_progress: RagProgress = Field(
         description="The state of the workflow before starting, if left empty the initial progress will be computed on initialization",
-        default=None,
     )
 
     rag_config: RagConfig = Field(
@@ -458,17 +561,15 @@ class RagWorkflowRunnerConfiguration(BaseModel):
 
 
 class RagWorkflowRunner:
-    def __init__(self, project: Project, configuration: RagWorkflowRunnerConfiguration):
+    def __init__(
+        self,
+        project: Project,
+        configuration: RagWorkflowRunnerConfiguration,
+    ):
         self.project = project
         self.configuration = configuration
         self.step_runners: list[AbstractRagStepRunner] = configuration.step_runners
-        self.initial_progress = (
-            self.configuration.initial_progress
-            or compute_current_progress_for_rag_config(
-                self.project,
-                self.configuration.rag_config,
-            )
-        )
+        self.initial_progress = self.configuration.initial_progress
         self.current_progress = self.initial_progress.model_copy()
 
     @property
@@ -519,13 +620,27 @@ class RagWorkflowRunner:
                         step_progress.error_count
                         + self.initial_progress.total_document_embedded_error_count,
                     )
+            case RagWorkflowStepNames.INDEXING:
+                if step_progress.success_count is not None:
+                    self.current_progress.total_document_indexed_count = max(
+                        self.current_progress.total_document_indexed_count,
+                        step_progress.success_count
+                        + self.initial_progress.total_document_indexed_count,
+                    )
+                if step_progress.error_count is not None:
+                    self.current_progress.total_document_indexed_error_count = max(
+                        self.current_progress.total_document_indexed_error_count,
+                        step_progress.error_count
+                        + self.initial_progress.total_document_indexed_error_count,
+                    )
             case _:
-                raise ValueError(f"Unknown step name: {step_name}")
+                raise_exhaustive_enum_error(step_name)
 
         self.current_progress.total_document_completed_count = min(
             self.current_progress.total_document_extracted_count,
             self.current_progress.total_document_chunked_count,
             self.current_progress.total_document_embedded_count,
+            self.current_progress.total_document_indexed_count,
         )
 
         self.current_progress.logs = step_progress.logs

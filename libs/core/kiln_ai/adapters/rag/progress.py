@@ -1,8 +1,13 @@
 from collections import defaultdict
 from typing import Dict, Literal
 
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
 from pydantic import BaseModel, Field
 
 
@@ -56,13 +61,51 @@ class RagProgress(BaseModel):
         default=0,
     )
 
+    total_document_indexed_count: int = Field(
+        description="The number of items that have been indexed",
+        default=0,
+    )
+
+    total_document_indexed_error_count: int = Field(
+        description="The number of items that have errored during indexing",
+        default=0,
+    )
+
     logs: list[LogMessage] | None = Field(
         description="A list of log messages to display to the user",
         default=None,
     )
 
 
-def compute_current_progress_for_rag_configs(
+async def count_documents_in_vector_store(
+    vector_store_config: VectorStoreConfig,
+) -> int:
+    # we initialize in create mode to force it to throw an error if the table doesn't exist
+    # instead of the default behavior of overwriting the table may exist
+    vector_store = await vector_store_adapter_for_config(
+        vector_store_config, lancedb_mode="create"
+    )
+
+    try:
+        return await vector_store.count_records()
+    except TableNotFoundError:
+        return 0
+
+
+async def count_documents_in_vector_store_for_rag_config(
+    project: Project,
+    rag_config: RagConfig,
+) -> int:
+    vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+        str(rag_config.vector_store_config_id),
+        project.path,
+    )
+    if vector_store_config is None:
+        raise ValueError(f"Rag config {rag_config.id} has no vector store config")
+    return await count_documents_in_vector_store(vector_store_config)
+
+
+async def compute_current_progress_for_rag_configs(
     project: Project,
     rag_configs: list[RagConfig],
 ) -> Dict[str, RagProgress]:
@@ -90,6 +133,9 @@ def compute_current_progress_for_rag_configs(
             total_document_extracted_count=0,
             total_document_chunked_count=0,
             total_document_embedded_count=0,
+            total_document_indexed_count=await count_documents_in_vector_store_for_rag_config(
+                project, rag_config
+            ),
         )
 
     for document in project.documents(readonly=True):
@@ -128,16 +174,19 @@ def compute_current_progress_for_rag_configs(
             rag_config_progress.total_document_extracted_count,
             rag_config_progress.total_document_chunked_count,
             rag_config_progress.total_document_embedded_count,
+            rag_config_progress.total_document_indexed_count,
         )
 
     return dict(rag_config_progress_map)
 
 
-def compute_current_progress_for_rag_config(
+async def compute_current_progress_for_rag_config(
     project: Project,
     rag_config: RagConfig,
 ) -> RagProgress:
-    config_progress = compute_current_progress_for_rag_configs(project, [rag_config])
+    config_progress = await compute_current_progress_for_rag_configs(
+        project, [rag_config]
+    )
     if str(rag_config.id) not in config_progress:
         raise ValueError(f"Failed to compute progress for rag config {rag_config.id}")
     return config_progress[str(rag_config.id)]
