@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
@@ -128,6 +129,200 @@ class TestMCPSessionManager:
         # Verify streamablehttp_client was called with empty headers dict
         mock_client.assert_called_once_with("http://example.com/mcp", headers={})
 
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_session_creation(self, mock_client):
+        """Test successful local MCP session creation with mocked client."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+        )
+
+        # Create a valid local tool server
+        tool_server = ExternalToolServer(
+            name="test_local_server",
+            type=ToolServerType.local_mcp,
+            description="Test local server",
+            properties={
+                "command": "python",
+                "args": ["-m", "my_mcp_server"],
+                "env_vars": {"API_KEY": "test123"},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                # Verify session is returned
+                assert session is mock_session_instance
+
+                # Verify initialize was called
+                mock_session_instance.initialize.assert_called_once()
+
+        # Verify stdio_client was called with correct parameters
+        call_args = mock_client.call_args[0][0]  # Get the StdioServerParameters
+        assert call_args.command == "python"
+        assert call_args.args == ["-m", "my_mcp_server"]
+        assert call_args.env == {"API_KEY": "test123"}
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_session_with_defaults(self, mock_client):
+        """Test local MCP session creation with default env_vars."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+        )
+
+        # Create a tool server without env_vars (should default to {})
+        tool_server = ExternalToolServer(
+            name="test_local_server_defaults",
+            type=ToolServerType.local_mcp,
+            description="Test local server with defaults",
+            properties={
+                "command": "node",
+                "args": ["server.js"],
+                # No env_vars provided
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify stdio_client was called with empty env_vars
+        call_args = mock_client.call_args[0][0]
+        assert call_args.env == {}
+
+    async def test_local_mcp_missing_command_error(self):
+        """Test that missing command raises ValueError for local MCP."""
+        with pytest.raises(
+            ValidationError,
+            match="command must be a string to start a local MCP server",
+        ):
+            ExternalToolServer(
+                name="missing_command_server",
+                type=ToolServerType.local_mcp,
+                description="Server missing command",
+                properties={
+                    # No command provided
+                    "args": ["arg1"],
+                    "env_vars": {},
+                },
+            )
+
+    async def test_local_mcp_missing_args_error(self):
+        """Test that missing args raises ValueError for local MCP."""
+        with pytest.raises(
+            ValidationError,
+            match="arguments must be a list to start a local MCP server",
+        ):
+            ExternalToolServer(
+                name="missing_args_server",
+                type=ToolServerType.local_mcp,
+                description="Server missing args",
+                properties={
+                    "command": "python",
+                    # No args provided
+                    "env_vars": {},
+                },
+            )
+
+    async def test_local_mcp_empty_args_allowed(self):
+        """Test that empty args list is now allowed for local MCP."""
+        # Should not raise any exception - empty args are now allowed
+        tool_server = ExternalToolServer(
+            name="empty_args_server",
+            type=ToolServerType.local_mcp,
+            description="Server with empty args",
+            properties={
+                "command": "python",
+                "args": [],  # Empty args list should now be allowed
+                "env_vars": {},
+            },
+        )
+
+        assert tool_server.name == "empty_args_server"
+        assert tool_server.type == ToolServerType.local_mcp
+        assert tool_server.properties["args"] == []
+
+    async def test_local_mcp_session_empty_command_runtime_error(self):
+        """Test that empty command string raises ValueError during session creation."""
+        # Create a valid tool server first
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        # Manually modify the properties after creation to bypass pydantic validation
+        tool_server.properties["command"] = ""
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError,
+            match="Attempted to start local MCP server, but no command was provided",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    async def test_local_mcp_session_invalid_args_type_runtime_error(self):
+        """Test that non-list args raises ValueError during session creation."""
+        # Create a valid tool server first
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        # Manually modify the properties after creation to bypass pydantic validation
+        tool_server.properties["args"] = "not a list"
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError,
+            match="Attempted to start local MCP server, but args is not a list of strings",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
 
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""
@@ -135,7 +330,7 @@ class TestMCPServerIntegration:
     @pytest.mark.skip(
         reason="Skipping integration test since it requires calling a real MCP server"
     )
-    async def test_list_tools_with_real_mcp_server(self):
+    async def test_list_tools_with_real_remote_mcp_server(self):
         """Test list_tools with a real MCP server if available."""
         external_tool_server = ExternalToolServer(
             name="postman_echo",
@@ -157,3 +352,30 @@ class TestMCPServerIntegration:
         assert tools is not None
         assert len(tools.tools) > 0
         assert "echo" in [tool.name for tool in tools.tools]
+
+    @pytest.mark.skip(
+        reason="Skipping integration test since it requires calling a real MCP server"
+    )
+    async def test_list_tools_with_real_local_mcp_server(self):
+        """Test list_tools with a real local MCP server if available."""
+        external_tool_server = ExternalToolServer(
+            name="Firecrawl",
+            type=ToolServerType.local_mcp,
+            description="Firecrawl MCP Server for testing",
+            properties={
+                "command": "npx",
+                "args": ["-y", "firecrawl-mcp"],
+                "env_vars": {"FIRECRAWL_API_KEY": "REPLACE_WITH_YOUR_API_KEY"},
+            },
+        )
+
+        async with MCPSessionManager.shared().mcp_client(
+            external_tool_server
+        ) as session:
+            tools = await session.list_tools()
+
+        print("Test tools:", tools)
+
+        assert tools is not None
+        assert len(tools.tools) > 0
+        assert "firecrawl_scrape" in [tool.name for tool in tools.tools]

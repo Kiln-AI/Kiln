@@ -6,6 +6,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     _check_tool_id,
@@ -76,6 +77,110 @@ class TestToolRegistry:
         with pytest.raises(ValueError, match="Tool ID  not found in tool registry"):
             tool_from_id("")
 
+    def test_tool_from_id_mcp_remote_tool_success(self):
+        """Test that tool_from_id works with MCP remote tool IDs."""
+        # Create mock external tool server
+        mock_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
+        )
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        # Test with remote MCP tool ID
+        tool_id = f"{MCP_REMOTE_TOOL_ID_PREFIX}{mock_server.id}::echo"
+        tool = tool_from_id(tool_id, task=mock_task)
+
+        # Verify the tool is MCPServerTool
+        assert isinstance(tool, MCPServerTool)
+        assert tool._tool_server_model == mock_server
+        assert tool._name == "echo"
+
+    def test_tool_from_id_mcp_local_tool_success(self):
+        """Test that tool_from_id works with MCP local tool IDs."""
+        # Create mock external tool server
+        mock_server = ExternalToolServer(
+            name="local_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["server.py", "--port", "8080"],
+                "env_vars": {},
+            },
+        )
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        # Test with local MCP tool ID
+        tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}{mock_server.id}::calculate"
+        tool = tool_from_id(tool_id, task=mock_task)
+
+        # Verify the tool is MCPServerTool
+        assert isinstance(tool, MCPServerTool)
+        assert tool._tool_server_model == mock_server
+        assert tool._name == "calculate"
+
+    def test_tool_from_id_mcp_tool_project_not_found(self):
+        """Test that tool_from_id raises ValueError when task is not provided."""
+        tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}test_server::test_tool"
+        with pytest.raises(
+            ValueError,
+            match="Unable to resolve tool from id.*Requires a parent project/task",
+        ):
+            tool_from_id(tool_id, task=None)
+
+    def test_tool_from_id_mcp_tool_server_not_found(self):
+        """Test that tool_from_id raises ValueError when tool server is not found."""
+        # Create mock external tool server with different ID
+        mock_server = ExternalToolServer(
+            name="different_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "headers": {},
+            },
+        )
+
+        # Create mock project with the external tool server
+        mock_project = Mock(spec=Project)
+        mock_project.id = "test_project_id"
+        mock_project.external_tool_servers.return_value = [mock_server]
+
+        # Create mock task with parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = mock_project
+
+        # Test with both remote and local tool IDs that reference nonexistent servers
+        test_cases = [
+            f"{MCP_REMOTE_TOOL_ID_PREFIX}missing_server::test_tool",
+            f"{MCP_LOCAL_TOOL_ID_PREFIX}missing_server::test_tool",
+        ]
+
+        for tool_id in test_cases:
+            with pytest.raises(
+                ValueError,
+                match="External tool server not found: missing_server in project ID test_project_id",
+            ):
+                tool_from_id(tool_id, task=mock_task)
+
     def test_all_built_in_tools_are_registered(self):
         """Test that all KilnBuiltInToolId enum members are handled by the registry."""
         for tool_id in KilnBuiltInToolId:
@@ -126,6 +231,19 @@ class TestToolRegistry:
             result = _check_tool_id(tool_id)
             assert result == tool_id
 
+    def test_check_tool_id_valid_mcp_local_tool_id(self):
+        """Test that _check_tool_id accepts valid MCP local tool IDs."""
+        valid_mcp_local_ids = [
+            f"{MCP_LOCAL_TOOL_ID_PREFIX}server123::tool_name",
+            f"{MCP_LOCAL_TOOL_ID_PREFIX}my_local_server::calculate",
+            f"{MCP_LOCAL_TOOL_ID_PREFIX}local_tool_server::process_data",
+            f"{MCP_LOCAL_TOOL_ID_PREFIX}server_with_underscores::complex_tool_name",
+        ]
+
+        for tool_id in valid_mcp_local_ids:
+            result = _check_tool_id(tool_id)
+            assert result == tool_id
+
     def test_check_tool_id_invalid_mcp_remote_tool_id(self):
         """Test that _check_tool_id rejects invalid MCP-like tool IDs."""
         # These start with the prefix but have wrong format - get specific MCP error
@@ -138,7 +256,7 @@ class TestToolRegistry:
 
         for invalid_id in invalid_mcp_format_ids:
             with pytest.raises(
-                ValueError, match=f"Invalid MCP remote tool ID: {invalid_id}"
+                ValueError, match=f"Invalid remote MCP tool ID: {invalid_id}"
             ):
                 _check_tool_id(invalid_id)
 
@@ -157,6 +275,7 @@ class TestToolRegistry:
     def test_mcp_server_and_tool_name_from_id_valid_inputs(self):
         """Test that mcp_server_and_tool_name_from_id correctly parses valid MCP tool IDs."""
         test_cases = [
+            # Remote MCP tool IDs
             ("mcp::remote::server123::tool_name", ("server123", "tool_name")),
             ("mcp::remote::my_server::echo", ("my_server", "echo")),
             ("mcp::remote::123456789::test_tool", ("123456789", "test_tool")),
@@ -169,6 +288,18 @@ class TestToolRegistry:
                 "mcp::remote::server-with-dashes::tool-with-dashes",
                 ("server-with-dashes", "tool-with-dashes"),
             ),
+            # Local MCP tool IDs
+            ("mcp::local::local_server::calculate", ("local_server", "calculate")),
+            ("mcp::local::my_local_tool::process", ("my_local_tool", "process")),
+            (
+                "mcp::local::123456789::local_test_tool",
+                ("123456789", "local_test_tool"),
+            ),
+            (
+                "mcp::local::local_server_with_underscores::complex_local_tool",
+                ("local_server_with_underscores", "complex_local_tool"),
+            ),
+            ("mcp::local::x::y", ("x", "y")),  # Minimal valid case for local
         ]
 
         for tool_id, expected in test_cases:
@@ -179,20 +310,46 @@ class TestToolRegistry:
 
     def test_mcp_server_and_tool_name_from_id_invalid_inputs(self):
         """Test that mcp_server_and_tool_name_from_id raises ValueError for invalid MCP tool IDs."""
-        invalid_inputs = [
+        # Test remote MCP format errors
+        remote_invalid_inputs = [
             "mcp::remote::server",  # Only 3 parts instead of 4
             "mcp::remote::",  # Only 3 parts, missing server and tool
             "mcp::remote::server::tool::extra",  # 5 parts instead of 4
+        ]
+
+        for invalid_id in remote_invalid_inputs:
+            with pytest.raises(
+                ValueError,
+                match=r"Invalid remote MCP tool ID:.*Expected format.*mcp::remote::<server_id>::<tool_name>",
+            ):
+                mcp_server_and_tool_name_from_id(invalid_id)
+
+        # Test local MCP format errors
+        local_invalid_inputs = [
+            "mcp::local::server",  # Only 3 parts instead of 4
+            "mcp::local::",  # Only 3 parts, missing server and tool
+            "mcp::local::server::tool::extra",  # 5 parts instead of 4
+        ]
+
+        for invalid_id in local_invalid_inputs:
+            with pytest.raises(
+                ValueError,
+                match=r"Invalid local MCP tool ID:.*Expected format.*mcp::local::<server_id>::<tool_name>",
+            ):
+                mcp_server_and_tool_name_from_id(invalid_id)
+
+        # Test generic MCP format errors (no valid prefix)
+        generic_invalid_inputs = [
             "invalid::format::here",  # 3 parts, wrong prefix
             "",  # Empty string
             "single_part",  # No separators
             "two::parts",  # Only 2 parts
         ]
 
-        for invalid_id in invalid_inputs:
+        for invalid_id in generic_invalid_inputs:
             with pytest.raises(
                 ValueError,
-                match=r"Invalid MCP remote tool ID:.*Expected format.*mcp::remote::<server_id>::<tool_name>",
+                match=r"Invalid MCP tool ID:.*Expected format.*mcp::\(remote\|local\)::<server_id>::<tool_name>",
             ):
                 mcp_server_and_tool_name_from_id(invalid_id)
 
@@ -221,6 +378,17 @@ class TestToolRegistry:
                 "mcp::remote::long_server_name_123::complex_tool_name_456",
                 "long_server_name_123",
                 "complex_tool_name_456",
+            ),
+            (
+                "mcp::local::local_test_server::local_test_tool",
+                "local_test_server",
+                "local_test_tool",
+            ),
+            ("mcp::local::l::l", "l", "l"),
+            (
+                "mcp::local::long_local_server_123::complex_local_tool_456",
+                "long_local_server_123",
+                "complex_local_tool_456",
             ),
         ],
     )

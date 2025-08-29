@@ -356,3 +356,340 @@ def test_external_tool_model_validation_assignment():
         tool.properties["headers"] = {}
         # Trigger validation by reassigning the properties dict
         tool.properties = tool.properties
+
+
+# Local MCP Tests
+
+
+def test_local_mcp_tool_creation():
+    """Test successful creation of local MCP ExternalToolServer with valid data."""
+    tool = ExternalToolServer(
+        name="local_test_tool",
+        type=ToolServerType.local_mcp,
+        description="A test local MCP tool",
+        properties={
+            "command": "python",
+            "args": ["server.py", "--port", "8080"],
+            "env_vars": {"API_KEY": "secret", "DEBUG": "true"},
+        },
+    )
+
+    assert tool.name == "local_test_tool"
+    assert tool.type == ToolServerType.local_mcp
+    assert tool.description == "A test local MCP tool"
+    assert tool.properties["command"] == "python"
+    assert tool.properties["args"] == ["server.py", "--port", "8080"]
+    assert tool.properties["env_vars"] == {"API_KEY": "secret", "DEBUG": "true"}
+    assert tool.id is not None
+
+
+def test_local_mcp_tool_creation_minimal():
+    """Test creation of local MCP ExternalToolServer with minimal required fields."""
+    tool = ExternalToolServer(
+        name="minimal_local_tool",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "node",
+            "args": ["server.js"],
+        },
+    )
+
+    assert tool.name == "minimal_local_tool"
+    assert tool.type == ToolServerType.local_mcp
+    assert tool.description is None
+    assert tool.properties["command"] == "node"
+    assert tool.properties["args"] == ["server.js"]
+
+
+def test_local_mcp_tool_creation_with_empty_env_vars():
+    """Test creation of local MCP tool with explicitly empty env_vars."""
+    tool = ExternalToolServer(
+        name="empty_env_tool",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "python",
+            "args": ["script.py"],
+            "env_vars": {},
+        },
+    )
+
+    assert tool.properties["env_vars"] == {}
+
+
+def test_local_mcp_missing_command():
+    """Test that missing command raises ValidationError for local MCP."""
+    with pytest.raises(
+        ValidationError,
+        match="command must be a string to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="missing_command_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "args": ["script.py"],
+                "env_vars": {},
+            },
+        )
+
+
+def test_local_mcp_invalid_command_type():
+    """Test that invalid command type raises ValidationError for local MCP."""
+    # Test with list instead of string
+    with pytest.raises(
+        ValidationError,
+        match="command must be a string to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="invalid_command_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": ["python", "script.py"],  # Should be string, not list
+                "args": ["--verbose"],
+                "env_vars": {},
+            },
+        )
+
+    # Test with None
+    with pytest.raises(
+        ValidationError,
+        match="command must be a string to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="none_command_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": None,
+                "args": ["script.py"],
+                "env_vars": {},
+            },
+        )
+
+    # Test with integer
+    with pytest.raises(
+        ValidationError,
+        match="command must be a string to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="int_command_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": 123,
+                "args": ["script.py"],
+                "env_vars": {},
+            },
+        )
+
+
+def test_local_mcp_empty_command():
+    """Test that empty command raises ValidationError for local MCP."""
+    with pytest.raises(
+        ValidationError,
+        match="command is required to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="empty_command_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "",
+                "args": ["script.py"],
+                "env_vars": {},
+            },
+        )
+
+
+def test_local_mcp_missing_args():
+    """Test that missing args raises ValidationError for local MCP."""
+    with pytest.raises(
+        ValidationError,
+        match="arguments must be a list to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="missing_args_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "env_vars": {},
+            },
+        )
+
+
+def test_local_mcp_invalid_args_type():
+    """Test that invalid args type raises ValidationError for local MCP."""
+    # Test with string instead of list
+    with pytest.raises(
+        ValidationError,
+        match="arguments must be a list to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="invalid_args_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": "script.py --verbose",  # Should be list, not string
+                "env_vars": {},
+            },
+        )
+
+    # Test with None
+    with pytest.raises(
+        ValidationError,
+        match="arguments must be a list to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="none_args_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": None,
+                "env_vars": {},
+            },
+        )
+
+    # Test with dict
+    with pytest.raises(
+        ValidationError,
+        match="arguments must be a list to start a local MCP server",
+    ):
+        ExternalToolServer(
+            name="dict_args_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": {"script": "server.py", "port": "8080"},
+                "env_vars": {},
+            },
+        )
+
+
+def test_local_mcp_empty_args():
+    """Test that empty args list is now allowed for local MCP (arguments no longer required)."""
+    # Should not raise any exception - empty args are now allowed
+    tool_server = ExternalToolServer(
+        name="empty_args_tool",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "python",
+            "args": [],  # Empty list should now be allowed
+            "env_vars": {},
+        },
+    )
+
+    assert tool_server.name == "empty_args_tool"
+    assert tool_server.type == ToolServerType.local_mcp
+    assert tool_server.properties["args"] == []
+
+
+def test_local_mcp_invalid_env_vars_type():
+    """Test that invalid env_vars type raises ValidationError for local MCP."""
+    # Test with string instead of dict
+    with pytest.raises(
+        ValidationError,
+        match="environment variables must be a dictionary for external tools of type 'local_mcp'",
+    ):
+        ExternalToolServer(
+            name="invalid_env_vars_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["script.py"],
+                "env_vars": "API_KEY=secret",  # Should be dict, not string
+            },
+        )
+
+    # Test with list
+    with pytest.raises(
+        ValidationError,
+        match="environment variables must be a dictionary for external tools of type 'local_mcp'",
+    ):
+        ExternalToolServer(
+            name="list_env_vars_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["script.py"],
+                "env_vars": ["API_KEY=secret", "DEBUG=true"],
+            },
+        )
+
+    # Test with None (should get default {} but if explicitly set to None, should fail)
+    with pytest.raises(
+        ValidationError,
+        match="environment variables must be a dictionary for external tools of type 'local_mcp'",
+    ):
+        ExternalToolServer(
+            name="none_env_vars_tool",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["script.py"],
+                "env_vars": None,
+            },
+        )
+
+
+def test_local_mcp_valid_command_variations():
+    """Test various valid command formats for local MCP."""
+    valid_commands = [
+        ("python", "tool_python"),
+        ("node", "tool_node"),
+        ("/usr/bin/python3", "tool_usr_bin_python3"),
+        ("./local_script.sh", "tool_local_script"),
+        ("C:\\Program Files\\Python\\python.exe", "tool_windows_python"),
+        ("my-custom-executable", "tool_custom_executable"),
+    ]
+
+    for command, tool_name in valid_commands:
+        tool = ExternalToolServer(
+            name=tool_name,
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": command,
+                "args": ["script.py"],
+            },
+        )
+        assert tool.properties["command"] == command
+
+
+def test_local_mcp_valid_args_variations():
+    """Test various valid args formats for local MCP."""
+    valid_args_sets = [
+        ["script.py"],
+        ["server.js", "--port", "8080"],
+        ["--help"],
+        ["script.py", "--config", "/path/to/config.json", "--verbose"],
+        ["executable", "arg1", "arg2", "--flag"],
+    ]
+
+    for i, args in enumerate(valid_args_sets):
+        tool = ExternalToolServer(
+            name=f"tool_args_{i}",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": args,
+            },
+        )
+        assert tool.properties["args"] == args
+
+
+def test_local_mcp_valid_env_vars_variations():
+    """Test various valid env_vars formats for local MCP."""
+    valid_env_vars_sets = [
+        {},  # Empty dict
+        {"API_KEY": "secret"},
+        {"DEBUG": "true", "PORT": "8080"},
+        {"PATH": "/usr/local/bin", "HOME": "/home/user", "LANG": "en_US.UTF-8"},
+        {"COMPLEX_VAR": "value with spaces and symbols!@#$%"},
+    ]
+
+    for i, env_vars in enumerate(valid_env_vars_sets):
+        tool = ExternalToolServer(
+            name=f"tool_env_{i}",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["script.py"],
+                "env_vars": env_vars,
+            },
+        )
+        assert tool.properties["env_vars"] == env_vars

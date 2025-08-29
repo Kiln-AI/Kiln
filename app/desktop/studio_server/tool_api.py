@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
@@ -32,9 +33,9 @@ class KilnToolServerDescription(BaseModel):
 
 class ExternalToolServerCreationRequest(BaseModel):
     name: str
+    description: str | None = None
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
-    description: str | None = None
 
     @model_validator(mode="after")
     def validate_server_details(self):
@@ -42,7 +43,7 @@ class ExternalToolServerCreationRequest(BaseModel):
         # Validate server URL
         server_url = self.server_url
         if not server_url:
-            raise ValueError("Server URL is required")
+            raise ValueError("Server URL is required to connect to a remote MCP server")
 
         # Enforce absolute http(s) URLs only
         parsed_url = urlparse(server_url.strip())
@@ -85,6 +86,39 @@ class ExternalToolServerCreationRequest(BaseModel):
 
             # Update headers to validated version
             self.headers = validated_headers
+
+        return self
+
+
+class LocalToolServerCreationRequest(BaseModel):
+    name: str
+    description: str | None = None
+    command: str
+    args: List[str]
+    env_vars: Dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_command(self):
+        """Validate command format."""
+        if not self.command:
+            raise ValueError("Command is required to start a local MCP server")
+
+        # Validate env_vars keys are in the correct format for Environment Variables
+        # According to POSIX specification, environment variable names must:
+        # - Start with a letter (a-z, A-Z) or underscore (_)
+        # - Contain only ASCII letters, digits, and underscores
+        for key, value in self.env_vars.items():
+            if not key or not (
+                key[0].isascii() and (key[0].isalpha() or key[0] == "_")
+            ):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Must start with a letter or underscore."
+                )
+
+            if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
+                )
 
         return self
 
@@ -135,17 +169,26 @@ class ToolSetApiDescription(BaseModel):
     tools: list[ToolApiDescription]
 
 
-async def available_remote_mcp_tools(
+async def available_mcp_tools(
     server: ExternalToolServer,
 ) -> list[ToolApiDescription]:
     """
-    Get the available tools from a remote MCP server
+    Get the available tools from an MCP server (remote or local)
     """
+    # Determine the prefix based on server type
+    match server.type:
+        case ToolServerType.remote_mcp:
+            prefix = MCP_REMOTE_TOOL_ID_PREFIX
+        case ToolServerType.local_mcp:
+            prefix = MCP_LOCAL_TOOL_ID_PREFIX
+        case _:
+            raise_exhaustive_enum_error(server.type)
+
     async with MCPSessionManager.shared().mcp_client(server) as session:
         tools_result = await session.list_tools()
         return [
             ToolApiDescription(
-                id=f"{MCP_REMOTE_TOOL_ID_PREFIX}{server.id}::{tool.name}",
+                id=f"{prefix}{server.id}::{tool.name}",
                 name=tool.name,
                 description=tool.description,
             )
@@ -156,28 +199,14 @@ async def available_remote_mcp_tools(
 async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     """
     Validate that the tool server is reachable by attempting to connect.
-    Basic field validation is now handled by Pydantic validators in ExternalToolServerCreationRequest.
+    Basic field validation is now handled by Pydantic validators in CreationRequest.
     """
     match tool_server.type:
-        case ToolServerType.remote_mcp:
+        case ToolServerType.remote_mcp | ToolServerType.local_mcp:
             # Validate the server is reachable
-            try:
-                async with MCPSessionManager.shared().mcp_client(
-                    tool_server
-                ) as session:
-                    # Use list tools to validate the server is reachable
-                    await session.list_tools()
-            except ConnectionError:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Unable to connect to the server. Please check that the server is running and accessible.",
-                )
-            except Exception as e:
-                # For any other error, include the original message
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Failed to connect to the server: {str(e)}",
-                )
+            async with MCPSessionManager.shared().mcp_client(tool_server) as session:
+                # Use list tools to validate the server is reachable
+                await session.list_tools()
         case _:
             raise_exhaustive_enum_error(tool_server.type)
 
@@ -191,24 +220,24 @@ def connect_tool_servers_api(app: FastAPI):
 
         tool_sets = []
 
-        # Get available tools from remote MCP servers only
+        # Get available tools from MCP servers
         for server in project.external_tool_servers(readonly=True):
-            available_mcp_tools = []
+            server_tools = []
             match server.type:
-                case ToolServerType.remote_mcp:
+                case ToolServerType.remote_mcp | ToolServerType.local_mcp:
                     try:
-                        available_mcp_tools = await available_remote_mcp_tools(server)
+                        server_tools = await available_mcp_tools(server)
                     except Exception:
                         # Skip the tool when we can't connect to the server
                         continue
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
-            if available_mcp_tools:
+            if server_tools:
                 tool_sets.append(
                     ToolSetApiDescription(
                         set_name="MCP Server: " + server.name,
-                        tools=available_mcp_tools,
+                        tools=server_tools,
                     )
                 )
 
@@ -279,7 +308,7 @@ def connect_tool_servers_api(app: FastAPI):
         # Get available tools based on server type
         available_tools = []
         match tool_server.type:
-            case ToolServerType.remote_mcp:
+            case ToolServerType.remote_mcp | ToolServerType.local_mcp:
                 async with MCPSessionManager.shared().mcp_client(
                     tool_server
                 ) as session:
@@ -318,6 +347,35 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server = ExternalToolServer(
             name=tool_data.name,
             type=ToolServerType.remote_mcp,  # Default to remote MCP type
+            description=tool_data.description,
+            properties=properties,
+            parent=project,
+        )
+
+        # Validate the tool server connectivity
+        await validate_tool_server_connectivity(tool_server)
+
+        # Save the tool to file
+        tool_server.save_to_file()
+
+        return tool_server
+
+    @app.post("/api/projects/{project_id}/connect_local_mcp")
+    async def connect_local_mcp(
+        project_id: str, tool_data: LocalToolServerCreationRequest
+    ) -> ExternalToolServer:
+        project = project_from_id(project_id)
+
+        # Create the ExternalToolServer with required fields
+        properties = {
+            "command": tool_data.command,
+            "args": tool_data.args,
+            "env_vars": tool_data.env_vars,
+        }
+
+        tool_server = ExternalToolServer(
+            name=tool_data.name,
+            type=ToolServerType.local_mcp,
             description=tool_data.description,
             properties=properties,
             parent=project,

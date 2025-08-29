@@ -1,5 +1,6 @@
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
+    MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     mcp_server_and_tool_name_from_id,
@@ -35,7 +36,7 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 raise_exhaustive_enum_error(typed_tool_id)
 
     # Check MCP Server Tools
-    if tool_id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
+    if tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)):
         project = task.parent_project() if task is not None else None
         if project is None:
             raise ValueError(

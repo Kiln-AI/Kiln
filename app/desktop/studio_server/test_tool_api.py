@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
@@ -12,7 +12,8 @@ from pydantic import ValidationError
 
 from app.desktop.studio_server.tool_api import (
     ExternalToolServerCreationRequest,
-    available_remote_mcp_tools,
+    LocalToolServerCreationRequest,
+    available_mcp_tools,
     connect_tool_servers_api,
     validate_tool_server_connectivity,
 )
@@ -195,18 +196,12 @@ async def test_create_tool_server_validation_connection_failed(client, test_proj
         mock_project_from_id.return_value = test_project
 
         async with mock_mcp_connection_error():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 422
-            error_data = response.json()
-            # Error could be in "detail" or "message" field depending on FastAPI's error handling
-            error_message = error_data.get("detail", "") or error_data.get(
-                "message", ""
-            )
-            assert "Failed to connect to the server" in error_message
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="Connection failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    json=tool_data,
+                )
 
 
 async def test_create_tool_server_validation_list_tools_failed(client, test_project):
@@ -224,18 +219,12 @@ async def test_create_tool_server_validation_list_tools_failed(client, test_proj
         mock_project_from_id.return_value = test_project
 
         async with mock_mcp_list_tools_error():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 422
-            error_data = response.json()
-            # Error could be in "detail" or "message" field depending on FastAPI's error handling
-            error_message = error_data.get("detail", "") or error_data.get(
-                "message", ""
-            )
-            assert "Failed to connect to the server" in error_message
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="list_tools failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    json=tool_data,
+                )
 
 
 def test_create_tool_server_validation_empty_name(client, test_project):
@@ -1458,8 +1447,8 @@ def test_get_tool_server_with_many_tools(client, test_project):
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_success():
-    """Test available_remote_mcp_tools successfully retrieves tools from MCP server"""
+async def test_available_mcp_tools_remote_success():
+    """Test available_mcp_tools successfully retrieves tools from remote MCP server"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1481,7 +1470,7 @@ async def test_available_remote_mcp_tools_success():
 
     async with mock_mcp_success(tools=mock_tools):
         # Call the function
-        result = await available_remote_mcp_tools(server)
+        result = await available_mcp_tools(server)
 
         # Verify the result
         assert len(result) == 3
@@ -1506,8 +1495,8 @@ async def test_available_remote_mcp_tools_success():
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_connection_error():
-    """Test available_remote_mcp_tools throws exception on connection errors"""
+async def test_available_mcp_tools_connection_error():
+    """Test available_mcp_tools throws exception on connection errors"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1520,12 +1509,12 @@ async def test_available_remote_mcp_tools_connection_error():
     async with mock_mcp_connection_error():
         # Call the function - should throw exception on error
         with pytest.raises(Exception, match="Connection failed"):
-            await available_remote_mcp_tools(server)
+            await available_mcp_tools(server)
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_list_tools_error():
-    """Test available_remote_mcp_tools throws exception on list_tools errors"""
+async def test_available_mcp_tools_list_tools_error():
+    """Test available_mcp_tools throws exception on list_tools errors"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1538,12 +1527,12 @@ async def test_available_remote_mcp_tools_list_tools_error():
     async with mock_mcp_list_tools_error():
         # Call the function - should throw exception on error
         with pytest.raises(Exception, match="list_tools failed"):
-            await available_remote_mcp_tools(server)
+            await available_mcp_tools(server)
 
 
 @pytest.mark.asyncio
-async def test_available_remote_mcp_tools_empty_tools():
-    """Test available_remote_mcp_tools handles empty tools list"""
+async def test_available_mcp_tools_empty_tools():
+    """Test available_mcp_tools handles empty tools list"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
@@ -1555,10 +1544,54 @@ async def test_available_remote_mcp_tools_empty_tools():
 
     async with mock_mcp_success():  # Empty tools by default
         # Call the function
-        result = await available_remote_mcp_tools(server)
+        result = await available_mcp_tools(server)
 
         # Verify empty list is returned
         assert result == []
+
+
+@pytest.mark.asyncio
+async def test_available_mcp_tools_local_success():
+    """Test available_mcp_tools successfully retrieves tools from local MCP server"""
+
+    # Create a mock ExternalToolServer for local MCP
+    server = ExternalToolServer(
+        name="local_test_server",
+        type=ToolServerType.local_mcp,
+        description="Test local MCP server",
+        properties={
+            "command": "python",
+            "args": ["-m", "test_mcp_server"],
+            "env_vars": {},
+        },
+    )
+
+    # Mock tools that the MCP server should return
+    mock_tools = [
+        Tool(name="local_echo", description="Local echo tool", inputSchema={}),
+        Tool(name="local_calc", description="Local calculator", inputSchema={}),
+    ]
+
+    async with mock_mcp_success(tools=mock_tools):
+        # Call the function
+        result = await available_mcp_tools(server)
+
+        # Verify the result
+        assert len(result) == 2
+
+        # Check tool details
+        tool_names = [tool.name for tool in result]
+        assert "local_echo" in tool_names
+        assert "local_calc" in tool_names
+
+        # Check tool IDs are properly formatted with local prefix
+        for tool in result:
+            assert tool.id.startswith(f"mcp::local::{server.id}::")
+            assert tool.name in ["local_echo", "local_calc"]
+
+        # Check descriptions
+        echo_tool = next(t for t in result if t.name == "local_echo")
+        assert echo_tool.description == "Local echo tool"
 
 
 # Unit tests for validate_tool_server_connectivity function
@@ -1593,12 +1626,9 @@ async def test_validate_tool_server_connectivity_connection_failed():
     )
 
     async with mock_mcp_connection_error():
-        # Should raise HTTPException with specific message
-        with pytest.raises(HTTPException) as exc_info:
+        # Should raise the raw exception
+        with pytest.raises(Exception, match="Connection failed"):
             await validate_tool_server_connectivity(tool_server)
-
-        assert exc_info.value.status_code == 422
-        assert "Failed to connect to the server" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -1613,12 +1643,9 @@ async def test_validate_tool_server_connectivity_list_tools_failed():
     )
 
     async with mock_mcp_list_tools_error():
-        # Should raise HTTPException
-        with pytest.raises(HTTPException) as exc_info:
+        # Should raise the raw exception
+        with pytest.raises(Exception, match="list_tools failed"):
             await validate_tool_server_connectivity(tool_server)
-
-        assert exc_info.value.status_code == 422
-        assert "Failed to connect to the server" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -2154,3 +2181,700 @@ def test_external_tool_server_creation_request_model_validator_integration():
     error_str = str(exc_info.value)
     # Should catch the URL error first since it's checked before headers
     assert "Server URL must start with http:// or https://" in error_str
+
+
+# Tests for LocalToolServerCreationRequest validation
+def test_local_tool_server_creation_request_valid_minimal():
+    """Test LocalToolServerCreationRequest with minimal valid data"""
+    request = LocalToolServerCreationRequest(
+        name="Test Local Server",
+        command="python",
+        args=["-m", "test_server"],
+    )
+
+    assert request.name == "Test Local Server"
+    assert request.command == "python"
+    assert request.args == ["-m", "test_server"]
+    assert request.env_vars == {}
+    assert request.description is None
+
+
+def test_local_tool_server_creation_request_valid_complete():
+    """Test LocalToolServerCreationRequest with all valid fields"""
+    env_vars = {"PATH": "/usr/bin", "ENV_VAR": "value"}
+
+    request = LocalToolServerCreationRequest(
+        name="Complete Local Server",
+        command="/usr/bin/python3",
+        args=["-m", "my_mcp_server", "--config", "config.json"],
+        env_vars=env_vars,
+        description="A complete local server configuration",
+    )
+
+    assert request.name == "Complete Local Server"
+    assert request.command == "/usr/bin/python3"
+    assert request.args == ["-m", "my_mcp_server", "--config", "config.json"]
+    assert request.env_vars == env_vars
+    assert request.description == "A complete local server configuration"
+
+
+def test_local_tool_server_creation_request_empty_command():
+    """Test LocalToolServerCreationRequest rejects empty command"""
+
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Empty Command Server",
+            command="",  # Empty command should fail validation
+            args=["arg1"],
+        )
+
+    error_str = str(exc_info.value)
+    assert "Command is required" in error_str
+
+
+def test_local_tool_server_creation_request_missing_command():
+    """Test LocalToolServerCreationRequest rejects missing command"""
+
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(  # type: ignore
+            name="Missing Command Server",
+            args=["arg1"],
+            # Missing required command field
+        )
+
+    assert exc_info.value.error_count() > 0
+
+
+def test_local_tool_server_creation_request_empty_args():
+    """Test LocalToolServerCreationRequest accepts empty args list"""
+
+    request = LocalToolServerCreationRequest(
+        name="Empty Args Server",
+        command="python",
+        args=[],  # Empty args should now be allowed
+    )
+
+    assert request.name == "Empty Args Server"
+    assert request.command == "python"
+    assert request.args == []
+
+
+def test_local_tool_server_creation_request_missing_args():
+    """Test LocalToolServerCreationRequest rejects missing args"""
+
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(  # type: ignore
+            name="Missing Args Server",
+            command="python",
+            # Missing required args field
+        )
+
+    assert exc_info.value.error_count() > 0
+
+
+def test_local_tool_server_creation_request_empty_name():
+    """Test LocalToolServerCreationRequest accepts empty name (no validation on request)"""
+    # Note: The API request classes don't validate names - validation happens on the domain objects
+    request = LocalToolServerCreationRequest(
+        name="",  # Empty name is allowed in request object
+        command="python",
+        args=["-m", "server"],
+    )
+
+    assert request.name == ""
+    assert request.command == "python"
+    assert request.args == ["-m", "server"]
+
+
+def test_local_tool_server_creation_request_missing_name():
+    """Test LocalToolServerCreationRequest rejects missing name"""
+
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(  # type: ignore
+            command="python",
+            args=["-m", "server"],
+            # Missing required name field
+        )
+
+    assert exc_info.value.error_count() > 0
+
+
+def test_local_tool_server_creation_request_no_description():
+    """Test LocalToolServerCreationRequest works without description (optional field)"""
+    request = LocalToolServerCreationRequest(
+        name="No Description Server",
+        command="python",
+        args=["-m", "server"],
+        # description is optional
+    )
+
+    assert request.description is None
+
+
+def test_local_tool_server_creation_request_empty_env_vars():
+    """Test LocalToolServerCreationRequest works with empty env_vars (default)"""
+    request = LocalToolServerCreationRequest(
+        name="Default Env Server",
+        command="python",
+        args=["-m", "server"],
+        # env_vars defaults to empty dict
+    )
+
+    assert request.env_vars == {}
+
+
+def test_local_tool_server_creation_request_with_env_vars():
+    """Test LocalToolServerCreationRequest with custom environment variables"""
+    env_vars = {
+        "PYTHON_PATH": "/opt/python/bin",
+        "CONFIG_FILE": "/etc/config.json",
+        "DEBUG": "true",
+        "PORT": "8080",
+    }
+
+    request = LocalToolServerCreationRequest(
+        name="Env Vars Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars=env_vars,
+    )
+
+    assert request.env_vars == env_vars
+
+
+def test_local_tool_server_creation_request_various_commands():
+    """Test LocalToolServerCreationRequest with various command formats"""
+    test_cases = [
+        ("python", ["-m", "server"]),
+        ("/usr/bin/python3", ["script.py", "--verbose"]),
+        ("node", ["index.js", "--port", "3000"]),
+        ("./local_server", ["--config", "conf.yaml"]),
+        ("/path/to/executable", ["--flag1", "--flag2", "value"]),
+    ]
+
+    for command, args in test_cases:
+        request = LocalToolServerCreationRequest(
+            name=f"Server for {command}",
+            command=command,
+            args=args,
+        )
+
+        assert request.command == command
+        assert request.args == args
+
+
+def test_local_tool_server_creation_request_unicode_name():
+    """Test LocalToolServerCreationRequest with Unicode characters in name"""
+    request = LocalToolServerCreationRequest(
+        name="本地服务器",  # Chinese characters
+        command="python",
+        args=["-m", "server"],
+        description="Local server with émojis 🚀 and spéciàl characters",
+    )
+
+    assert request.name == "本地服务器"
+    assert request.description is not None and "émojis 🚀" in request.description
+
+
+def test_local_tool_server_creation_request_valid_env_var_keys():
+    """Test LocalToolServerCreationRequest with valid environment variable keys"""
+    valid_env_vars = {
+        "PATH": "/usr/bin",
+        "HOME": "/home/user",
+        "PYTHON_PATH": "/opt/python",
+        "_PRIVATE_VAR": "private",
+        "VAR_123": "value123",
+        "a": "single_letter",
+        "A": "single_uppercase",
+        "_": "single_underscore",
+        "VAR_WITH_UNDERSCORES": "value",
+        "CamelCase": "mixed_case",
+        "UPPER_CASE": "upper",
+        "lower_case": "lower",
+        "Mixed_Case_123": "mixed",
+    }
+
+    request = LocalToolServerCreationRequest(
+        name="Valid Env Vars Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars=valid_env_vars,
+    )
+
+    assert request.env_vars == valid_env_vars
+
+
+def test_local_tool_server_creation_request_invalid_env_var_key_start_digit():
+    """Test LocalToolServerCreationRequest rejects env var keys starting with digits"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Invalid Env Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"123_INVALID": "value"},  # Starts with digit
+        )
+
+    error_str = str(exc_info.value)
+    assert "Invalid environment variable key: 123_INVALID" in error_str
+    assert "Must start with a letter or underscore" in error_str
+
+
+def test_local_tool_server_creation_request_invalid_env_var_key_special_chars():
+    """Test LocalToolServerCreationRequest rejects env var keys with invalid characters"""
+    invalid_keys = [
+        ("KEY-WITH-DASHES", "dash"),
+        ("KEY.WITH.DOTS", "dot"),
+        ("KEY WITH SPACES", "space"),
+        ("KEY@SYMBOL", "at symbol"),
+        ("KEY#HASH", "hash"),
+        ("KEY$DOLLAR", "dollar sign"),
+        ("KEY%PERCENT", "percent"),
+        ("KEY&AMPERSAND", "ampersand"),
+        ("KEY*ASTERISK", "asterisk"),
+        ("KEY+PLUS", "plus"),
+        ("KEY=EQUALS", "equals"),
+        ("KEY[BRACKET]", "bracket"),
+        ("KEY{BRACE}", "brace"),
+        ("KEY(PAREN)", "parenthesis"),
+        ("KEY|PIPE", "pipe"),
+        ("KEY\\BACKSLASH", "backslash"),
+        ("KEY/SLASH", "slash"),
+        ("KEY:COLON", "colon"),
+        ("KEY;SEMICOLON", "semicolon"),
+        ("KEY<LESS>", "angle bracket"),
+        ("KEY?QUESTION", "question mark"),
+        ("KEY,COMMA", "comma"),
+    ]
+
+    for invalid_key, description in invalid_keys:
+        with pytest.raises(ValidationError) as exc_info:
+            LocalToolServerCreationRequest(
+                name="Invalid Env Key Server",
+                command="python",
+                args=["-m", "server"],
+                env_vars={invalid_key: "value"},
+            )
+
+        error_str = str(exc_info.value)
+        assert f"Invalid environment variable key: {invalid_key}" in error_str
+        assert "Can only contain letters, digits, and underscores" in error_str
+
+
+def test_local_tool_server_creation_request_invalid_env_var_key_non_ascii():
+    """Test LocalToolServerCreationRequest rejects env var keys with non-ASCII characters"""
+    invalid_keys = [
+        "KEY_WITH_ÉMOJI_🚀",
+        "键名",  # Chinese characters
+        "CLAVÉ",  # Accented characters
+        "КЛЮЧ",  # Cyrillic characters
+        "مفتاح",  # Arabic characters
+    ]
+
+    for invalid_key in invalid_keys:
+        with pytest.raises(ValidationError) as exc_info:
+            LocalToolServerCreationRequest(
+                name="Invalid Env Key Server",
+                command="python",
+                args=["-m", "server"],
+                env_vars={invalid_key: "value"},
+            )
+
+        error_str = str(exc_info.value)
+        assert f"Invalid environment variable key: {invalid_key}" in error_str
+        # Should match either error message depending on the character
+        assert (
+            "Must start with a letter or underscore" in error_str
+            or "Can only contain letters, digits, and underscores" in error_str
+        )
+
+
+def test_local_tool_server_creation_request_empty_env_var_key():
+    """Test LocalToolServerCreationRequest rejects empty environment variable keys"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Empty Env Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"": "value"},  # Empty key
+        )
+
+    error_str = str(exc_info.value)
+    assert "Invalid environment variable key:" in error_str
+    assert "Must start with a letter or underscore" in error_str
+
+
+def test_local_tool_server_creation_request_env_var_key_edge_cases():
+    """Test LocalToolServerCreationRequest with edge cases for environment variable keys"""
+    # Test single character valid keys
+    valid_single_chars = {
+        "A": "uppercase_letter",
+        "a": "lowercase_letter",
+        "Z": "last_uppercase",
+        "z": "last_lowercase",
+        "_": "underscore_only",
+    }
+
+    request = LocalToolServerCreationRequest(
+        name="Edge Case Env Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars=valid_single_chars,
+    )
+    assert request.env_vars == valid_single_chars
+
+    # Test invalid single character keys
+    invalid_single_chars = ["0", "9", "@", "#", "-", ".", " "]
+
+    for invalid_char in invalid_single_chars:
+        with pytest.raises(ValidationError) as exc_info:
+            LocalToolServerCreationRequest(
+                name="Invalid Single Char Env Server",
+                command="python",
+                args=["-m", "server"],
+                env_vars={invalid_char: "value"},
+            )
+
+        error_str = str(exc_info.value)
+        assert f"Invalid environment variable key: {invalid_char}" in error_str
+
+
+def test_local_tool_server_creation_request_mixed_valid_invalid_env_vars():
+    """Test LocalToolServerCreationRequest with mix of valid and invalid env var keys"""
+    # Should fail on the first invalid key encountered
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Mixed Env Vars Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={
+                "VALID_KEY": "valid_value",
+                "123_INVALID": "invalid_value",  # This should cause failure
+                "ANOTHER_VALID": "another_valid",
+            },
+        )
+
+    error_str = str(exc_info.value)
+    assert "Invalid environment variable key: 123_INVALID" in error_str
+
+
+# Tests for connect_local_mcp endpoint
+async def test_create_local_tool_server_success(client, test_project):
+    """Test successful local tool server creation"""
+    tool_data = {
+        "name": "test_local_mcp_tool",
+        "command": "python",
+        "args": ["-m", "test_mcp_server"],
+        "env_vars": {"DEBUG": "true"},
+        "description": "A test local MCP tool",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "test_local_mcp_tool"
+            assert result["type"] == "local_mcp"
+            assert result["description"] == "A test local MCP tool"
+            assert result["properties"]["command"] == "python"
+            assert result["properties"]["args"] == ["-m", "test_mcp_server"]
+            assert result["properties"]["env_vars"]["DEBUG"] == "true"
+            assert "id" in result
+            assert "created_at" in result
+
+
+async def test_create_local_tool_server_validation_success(client, test_project):
+    """Test successful local tool server creation with MCP validation"""
+    tool_data = {
+        "name": "validated_local_tool",
+        "command": "/usr/bin/python3",
+        "args": ["-m", "validated_server", "--config", "config.json"],
+        "env_vars": {"PATH": "/usr/bin"},
+        "description": "A validated local MCP tool",
+    }
+
+    tools = [
+        Tool(name="local_test_tool", description="Local test tool", inputSchema={})
+    ]
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success(tools=tools):
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "validated_local_tool"
+            assert result["type"] == "local_mcp"
+
+
+async def test_create_local_tool_server_validation_failed(client, test_project):
+    """Test local tool server creation fails when MCP server validation fails"""
+    tool_data = {
+        "name": "failing_local_tool",
+        "command": "python",
+        "args": ["-m", "nonexistent_server"],
+        "env_vars": {},
+        "description": "Local tool that will fail validation",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_connection_error():
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="Connection failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    json=tool_data,
+                )
+
+
+def test_create_local_tool_server_missing_command(client, test_project):
+    """Test local tool server creation fails when command is missing"""
+    tool_data = {
+        "name": "missing_command_tool",
+        "args": ["-m", "server"],
+        "description": "Tool with missing command",
+        # Missing required command
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_local_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+
+
+def test_create_local_tool_server_missing_args(client, test_project):
+    """Test local tool server creation fails when args are missing"""
+    tool_data = {
+        "name": "missing_args_tool",
+        "command": "python",
+        "description": "Tool with missing args",
+        # Missing required args
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_local_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+
+
+def test_create_local_tool_server_empty_command(client, test_project):
+    """Test local tool server creation fails when command is empty"""
+    tool_data = {
+        "name": "empty_command_tool",
+        "command": "",  # Empty command
+        "args": ["-m", "server"],
+        "description": "Tool with empty command",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_local_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error from Pydantic
+        error_data = response.json()
+        # The validation error should mention command
+        assert "command" in str(error_data).lower()
+
+
+async def test_create_local_tool_server_empty_args(client, test_project):
+    """Test local tool server creation succeeds when args are empty"""
+    tool_data = {
+        "name": "empty_args_tool",
+        "command": "python",
+        "args": [],  # Empty args should now be allowed
+        "description": "Tool with empty args",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200  # Should succeed now
+            result = response.json()
+            assert result["name"] == "empty_args_tool"
+            assert result["properties"]["args"] == []
+
+
+async def test_create_local_tool_server_no_description(client, test_project):
+    """Test local tool server creation works without description (optional field)"""
+    tool_data = {
+        "name": "no_desc_local_tool",
+        "command": "python",
+        "args": ["-m", "server"],
+        # description is optional
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["description"] is None
+
+
+async def test_create_local_tool_server_no_env_vars(client, test_project):
+    """Test local tool server creation works without env_vars (defaults to empty dict)"""
+    tool_data = {
+        "name": "no_env_local_tool",
+        "command": "python",
+        "args": ["-m", "server"],
+        # env_vars defaults to empty dict
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["properties"]["env_vars"] == {}
+
+
+async def test_create_local_tool_server_complex_command(client, test_project):
+    """Test local tool server creation with complex command and arguments"""
+    tool_data = {
+        "name": "complex_local_tool",
+        "command": "/opt/miniconda3/envs/mcp/bin/python",
+        "args": [
+            "-m",
+            "custom_mcp_server",
+            "--config",
+            "/etc/mcp/config.yaml",
+            "--verbose",
+            "--log-level",
+            "debug",
+            "--port",
+            "8080",
+        ],
+        "env_vars": {
+            "PYTHONPATH": "/opt/custom/lib",
+            "CONFIG_PATH": "/etc/mcp",
+            "LOG_LEVEL": "debug",
+            "MCP_SERVER_MODE": "production",
+        },
+        "description": "Complex local MCP tool with detailed configuration",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "complex_local_tool"
+            assert (
+                result["properties"]["command"] == "/opt/miniconda3/envs/mcp/bin/python"
+            )
+            assert len(result["properties"]["args"]) == 9
+            assert result["properties"]["args"][0] == "-m"
+            assert result["properties"]["args"][1] == "custom_mcp_server"
+            assert result["properties"]["env_vars"]["PYTHONPATH"] == "/opt/custom/lib"
+            assert result["properties"]["env_vars"]["MCP_SERVER_MODE"] == "production"
+
+
+# Test validation of local MCP with validate_tool_server_connectivity
+@pytest.mark.asyncio
+async def test_validate_tool_server_connectivity_local_mcp_success():
+    """Test validate_tool_server_connectivity succeeds for local MCP server"""
+    tool_server = ExternalToolServer(
+        name="test_local_server",
+        type=ToolServerType.local_mcp,
+        description="Test local MCP server",
+        properties={
+            "command": "python",
+            "args": ["-m", "test_mcp_server"],
+            "env_vars": {"DEBUG": "true"},
+        },
+    )
+
+    async with mock_mcp_success():
+        # Should not raise any exception
+        await validate_tool_server_connectivity(tool_server)
+
+
+@pytest.mark.asyncio
+async def test_validate_tool_server_connectivity_local_mcp_failed():
+    """Test validate_tool_server_connectivity raises error when local MCP fails"""
+    tool_server = ExternalToolServer(
+        name="failing_local_server",
+        type=ToolServerType.local_mcp,
+        description="Failing local MCP server",
+        properties={
+            "command": "python",
+            "args": ["-m", "nonexistent_server"],
+            "env_vars": {},
+        },
+    )
+
+    async with mock_mcp_list_tools_error("Local MCP server failed"):
+        # Should raise the raw exception
+        with pytest.raises(Exception, match="Local MCP server failed"):
+            await validate_tool_server_connectivity(tool_server)

@@ -2,11 +2,11 @@
   import { goto } from "$app/navigation"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
+  import SettingsSection from "$lib/ui/settings_section.svelte"
 
   $: project_id = $page.params.project_id
 
-  // Type definition for MCP tool items
-  interface McpServer {
+  interface RemoteMcpServer {
     name: string
     description: string
     server_url: string
@@ -14,8 +14,18 @@
     button_text: string
   }
 
+  interface LocalMcpServer {
+    name: string
+    description: string
+    command: string
+    args: string[]
+    env_vars: { key: string; value: string; placeholder: string | null }[]
+    button_text: string
+    installation_instruction: string
+  }
+
   // Helper function to navigate to remote MCP page with pre-filled data
-  function connectRemoteMcp(item: McpServer) {
+  function connectRemoteMcp(item: RemoteMcpServer) {
     goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`, {
       state: {
         name: item.name,
@@ -26,7 +36,20 @@
     })
   }
 
-  const sampleMcpServers: McpServer[] = [
+  function connectLocalMcp(item: LocalMcpServer) {
+    goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`, {
+      state: {
+        name: item.name,
+        description: item.description,
+        command: item.command,
+        args: item.args,
+        env_vars: item.env_vars,
+        installation_instruction: item.installation_instruction,
+      },
+    })
+  }
+
+  const sampleRemoteMcpServers: RemoteMcpServer[] = [
     {
       name: "GitHub",
       description:
@@ -69,73 +92,80 @@
     },
   ]
 
-  let sections = [
+  const sampleLocalMcpServers: LocalMcpServer[] = [
     {
-      category: "Sample Tools",
-      items: [
-        // TODO: Add more custom tool servers, pre-filled in.
-        ...sampleMcpServers.map((tool) => ({
-          ...tool,
-          on_click: () => connectRemoteMcp(tool),
-        })),
-      ],
-    },
-    {
-      category: "Custom Tools",
-      items: [
+      name: "Firecrawl",
+      description:
+        "Firecrawl is a tool that allows you to crawl websites and extract data.",
+      command: "npx",
+      args: ["-y", "firecrawl-mcp"],
+      env_vars: [
         {
-          name: "Remote MCP Servers",
-          description:
-            "Connect to remote MCP servers to add tools to your project.",
-          button_text: "Connect",
-          on_click: () => {
-            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`)
-          },
+          key: "FIRECRAWL_API_KEY",
+          value: "",
+          placeholder: "FIRECRAWL_API_KEY",
         },
       ],
+      button_text: "Connect",
+      installation_instruction:
+        "To install Firecrawl, run 'npm install -g firecrawl-mcp'",
+    },
+    {
+      name: "Filesystem",
+      description:
+        "Read, write, and manipulate local files through a controlled API.",
+      command: "npx",
+      args: [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "<Other Allowed Directories e.g. /Users/username/Desktop>",
+      ],
+      env_vars: [],
+      button_text: "Connect",
+      installation_instruction: "",
     },
   ]
 </script>
 
 <AppPage title="Add Tools">
   <div class="max-w-4xl mt-12 space-y-12">
-    {#each sections as section}
-      <div class="space-y-6">
-        <!-- Category Header -->
-        <div class="pb-3 border-b border-gray-200">
-          <h2 class="text-lg font-medium text-gray-900">{section.category}</h2>
-        </div>
-
-        <!-- Category Items -->
-        <div class="space-y-1">
-          {#each section.items as item}
-            {#if item.on_click}
-              <button
-                on:click={item.on_click}
-                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
-              >
-                <div class="flex-1 min-w-0">
-                  <h3 class="text-base font-medium text-gray-900 mb-1">
-                    {item.name}
-                  </h3>
-                  <p class="text-sm font-light text-gray-500 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div class="flex-shrink-0 ml-6">
-                  <div
-                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
-                    style="min-width: 12rem;"
-                  >
-                    {item.button_text}
-                  </div>
-                </div>
-              </button>
-            {/if}
-          {/each}
-        </div>
-      </div>
-    {/each}
+    <SettingsSection
+      title="Sample Tools"
+      items={[
+        ...sampleRemoteMcpServers.map((item) => ({
+          name: item.name,
+          description: item.description,
+          button_text: item.button_text,
+          on_click: () => connectRemoteMcp(item),
+        })),
+        ...sampleLocalMcpServers.map((item) => ({
+          name: item.name,
+          description: item.description,
+          button_text: item.button_text,
+          on_click: () => connectLocalMcp(item),
+        })),
+      ]}
+    />
+    <SettingsSection
+      title="Custom Tools"
+      items={[
+        {
+          name: "Remote MCP Servers",
+          description:
+            "Connect to remote MCP servers to add tools to your project.",
+          button_text: "Connect",
+          on_click: () =>
+            goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`),
+        },
+        {
+          name: "Local MCP Servers",
+          description:
+            "Connect to local MCP servers to add tools to your project.",
+          button_text: "Connect",
+          on_click: () =>
+            goto(`/settings/manage_tools/${project_id}/add_tools/local_mcp`),
+        },
+      ]}
+    />
   </div>
 </AppPage>
