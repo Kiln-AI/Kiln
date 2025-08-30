@@ -1,3 +1,5 @@
+import os
+import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -175,7 +177,11 @@ class TestMCPSessionManager:
         call_args = mock_client.call_args[0][0]  # Get the StdioServerParameters
         assert call_args.command == "python"
         assert call_args.args == ["-m", "my_mcp_server"]
-        assert call_args.env == {"API_KEY": "test123"}
+        # Verify that the original env vars are included plus PATH
+        assert "API_KEY" in call_args.env
+        assert call_args.env["API_KEY"] == "test123"
+        assert "PATH" in call_args.env
+        assert len(call_args.env["PATH"]) > 0
 
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     async def test_local_mcp_session_with_defaults(self, mock_client):
@@ -215,9 +221,13 @@ class TestMCPSessionManager:
             async with manager.mcp_client(tool_server) as session:
                 assert session is mock_session_instance
 
-        # Verify stdio_client was called with empty env_vars
+        # Verify stdio_client was called with PATH automatically added
         call_args = mock_client.call_args[0][0]
-        assert call_args.env == {}
+        # Should only contain PATH (no other env vars were provided)
+        assert "PATH" in call_args.env
+        assert len(call_args.env["PATH"]) > 0
+        # Should not have any other env vars besides PATH
+        assert len(call_args.env) == 1
 
     async def test_local_mcp_missing_command_error(self):
         """Test that missing command raises ValueError for local MCP."""
@@ -322,6 +332,240 @@ class TestMCPSessionManager:
         ):
             async with manager.mcp_client(tool_server):
                 pass
+
+    @patch("kiln_ai.utils.config.Config.shared")
+    def test_get_path_with_custom_mcp_path(self, mock_config):
+        """Test _get_path() returns custom MCP path when configured."""
+        # Setup mock config to return a custom path
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = "/custom/mcp/path"
+        mock_config.return_value = mock_config_instance
+
+        manager = MCPSessionManager()
+
+        # Mock get_shell_path to ensure it's not called
+        with patch.object(manager, "get_shell_path") as mock_get_shell_path:
+            result = manager._get_path()
+
+            assert result == "/custom/mcp/path"
+            mock_config_instance.get_value.assert_called_once_with("custom_mcp_path")
+            mock_get_shell_path.assert_not_called()
+
+    @patch("kiln_ai.utils.config.Config.shared")
+    def test_get_path_fallback_to_shell_path(self, mock_config):
+        """Test _get_path() falls back to get_shell_path() when no custom path."""
+        # Setup mock config to return None (no custom path)
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = None
+        mock_config.return_value = mock_config_instance
+
+        manager = MCPSessionManager()
+
+        with patch.object(
+            manager, "get_shell_path", return_value="/shell/path"
+        ) as mock_shell:
+            result = manager._get_path()
+
+            assert result == "/shell/path"
+            mock_shell.assert_called_once()
+
+    @patch("sys.platform", "win32")
+    @patch.dict(os.environ, {"PATH": "/windows/path"})
+    def test_get_shell_path_windows(self):
+        """Test get_shell_path() on Windows platform."""
+        manager = MCPSessionManager()
+
+        result = manager.get_shell_path()
+
+        assert result == "/windows/path"
+
+    @patch("sys.platform", "Windows")
+    @patch.dict(os.environ, {"PATH": "/windows/path2"})
+    def test_get_shell_path_windows_alt_platform_name(self):
+        """Test get_shell_path() on Windows with 'Windows' platform name."""
+        manager = MCPSessionManager()
+
+        result = manager.get_shell_path()
+
+        assert result == "/windows/path2"
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash", "PATH": "/fallback/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_success(self, mock_run):
+        """Test get_shell_path() successful shell execution on Unix."""
+        # Mock successful subprocess execution
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/usr/local/bin:/usr/bin:/bin\n"
+        mock_run.return_value = mock_result
+
+        manager = MCPSessionManager()
+
+        result = manager.get_shell_path()
+
+        assert result == "/usr/local/bin:/usr/bin:/bin"
+        mock_run.assert_called_once_with(
+            ["/bin/bash", "-l", "-c", "echo $PATH"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/zsh", "PATH": "/fallback/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_with_custom_shell(self, mock_run):
+        """Test get_shell_path() uses custom shell from environment."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/custom/shell/path\n"
+        mock_run.return_value = mock_result
+
+        manager = MCPSessionManager()
+
+        result = manager.get_shell_path()
+
+        assert result == "/custom/shell/path"
+        mock_run.assert_called_once_with(
+            ["/bin/zsh", "-l", "-c", "echo $PATH"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"PATH": "/fallback/path"}, clear=True)
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_default_shell(self, mock_run):
+        """Test get_shell_path() uses default bash when SHELL not set."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/default/bash/path\n"
+        mock_run.return_value = mock_result
+
+        manager = MCPSessionManager()
+
+        result = manager.get_shell_path()
+
+        assert result == "/default/bash/path"
+        mock_run.assert_called_once_with(
+            ["/bin/bash", "-l", "-c", "echo $PATH"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash", "PATH": "/fallback/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_subprocess_failure(self, mock_run):
+        """Test get_shell_path() falls back to environment PATH on subprocess failure."""
+        # Mock failed subprocess execution
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_run.return_value = mock_result
+
+        manager = MCPSessionManager()
+
+        with patch("kiln_ai.tools.mcp_session_manager.logger") as mock_logger:
+            result = manager.get_shell_path()
+
+            assert result == "/fallback/path"
+            mock_logger.error.assert_called_once()
+            assert "Error getting shell PATH" in mock_logger.error.call_args[0][0]
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash", "PATH": "/fallback/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_subprocess_timeout(self, mock_run):
+        """Test get_shell_path() handles subprocess timeout."""
+        # Mock subprocess timeout
+        mock_run.side_effect = subprocess.TimeoutExpired(["bash"], 3)
+
+        manager = MCPSessionManager()
+
+        with patch("kiln_ai.tools.mcp_session_manager.logger") as mock_logger:
+            result = manager.get_shell_path()
+
+            assert result == "/fallback/path"
+            mock_logger.error.assert_any_call(
+                "Shell path exception details: Command '['bash']' timed out after 3 seconds"
+            )
+            mock_logger.error.assert_any_call(
+                "Error getting shell PATH. You may not be able to find MCP server commands like 'npx'. You can set a custom MCP path in the Kiln config file. See docs for details."
+            )
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash", "PATH": "/fallback/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_subprocess_error(self, mock_run):
+        """Test get_shell_path() handles subprocess errors."""
+        # Mock subprocess error
+        mock_run.side_effect = subprocess.SubprocessError("Command failed")
+
+        manager = MCPSessionManager()
+
+        with patch("kiln_ai.tools.mcp_session_manager.logger") as mock_logger:
+            result = manager.get_shell_path()
+
+            assert result == "/fallback/path"
+            mock_logger.error.assert_any_call(
+                "Shell path exception details: Command failed"
+            )
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash", "PATH": "/fallback/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_general_exception(self, mock_run):
+        """Test get_shell_path() handles general exceptions."""
+        # Mock general exception
+        mock_run.side_effect = RuntimeError("Unexpected error")
+
+        manager = MCPSessionManager()
+
+        with patch("kiln_ai.tools.mcp_session_manager.logger") as mock_logger:
+            result = manager.get_shell_path()
+
+            assert result == "/fallback/path"
+            mock_logger.error.assert_any_call(
+                "Shell path exception details: Unexpected error"
+            )
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash"}, clear=True)
+    @patch("subprocess.run")
+    def test_get_shell_path_unix_no_fallback_path(self, mock_run):
+        """Test get_shell_path() when no PATH environment variable exists."""
+        mock_run.side_effect = subprocess.SubprocessError("Command failed")
+
+        manager = MCPSessionManager()
+
+        result = manager.get_shell_path()
+
+        assert result == ""
+
+    @patch("sys.platform", "linux")
+    @patch.dict(os.environ, {"SHELL": "/bin/bash", "PATH": "/original/path"})
+    @patch("subprocess.run")
+    def test_get_shell_path_caching(self, mock_run):
+        """Test get_shell_path() caches the result."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/cached/path\n"
+        mock_run.return_value = mock_result
+
+        manager = MCPSessionManager()
+
+        # First call should execute subprocess
+        result1 = manager.get_shell_path()
+        assert result1 == "/cached/path"
+        assert mock_run.call_count == 1
+
+        # Second call should use cached value
+        result2 = manager.get_shell_path()
+        assert result2 == "/cached/path"
+        assert mock_run.call_count == 1  # Should not have been called again
 
 
 class TestMCPServerIntegration:
