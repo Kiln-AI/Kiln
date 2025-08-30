@@ -8,6 +8,7 @@
   import { goto } from "$app/navigation"
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
+  import DeleteDialog from "$lib/ui/delete_dialog.svelte"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -15,6 +16,11 @@
   let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
   let error: KilnError | null = null
+  let delete_dialog: DeleteDialog | null = null
+  $: delete_url = `/api/projects/${project_id}/tool_servers/${tool_server_id}`
+  let after_delete = () => {
+    goto(`/settings/manage_tools/${project_id}`)
+  }
 
   onMount(async () => {
     await fetch_tool_server()
@@ -184,7 +190,22 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title={"Tool Server"} subtitle={`Name: ${tool_server?.name || ""}`}>
+  <AppPage
+    title={"Tool Server"}
+    subtitle={`Name: ${tool_server?.name || ""}`}
+    action_buttons={[
+      {
+        icon: "/images/delete.svg",
+        handler: () => delete_dialog?.show(),
+      },
+      {
+        label: "Edit",
+        handler: () => {
+          goto(`/settings/edit_tool_server/${project_id}/${tool_server_id}`)
+        },
+      },
+    ]}
+  >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -322,3 +343,10 @@
     {/if}
   </AppPage>
 </div>
+
+<DeleteDialog
+  name="Tool Server"
+  bind:this={delete_dialog}
+  {delete_url}
+  {after_delete}
+/>
