@@ -99,7 +99,7 @@
         },
       ],
       installation_instruction:
-        "To install Firecrawl, run 'npm install -g firecrawl-mcp'",
+        "You must have Node.js installed: https://nodejs.org",
     },
     {
       name: "Run Python Code",
@@ -117,7 +117,7 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must install deno, a JavaScript runtime, to run this server: https://deno.com",
+        "You must have deno, a JavaScript runtime, installed: https://deno.com",
     },
     {
       name: "Access Files",
@@ -130,7 +130,8 @@
         "<Other Allowed Directories e.g. /Users/username/Desktop>",
       ],
       env_vars: [],
-      installation_instruction: "",
+      installation_instruction:
+        "You must have Node.js installed: https://nodejs.org",
     },
   ]
 
