@@ -1,8 +1,32 @@
+import json
 import os
 from enum import Enum
 from typing import List
 
+import uvicorn.logging
 from kiln_ai.utils.logging import get_default_formatter, get_log_file_path
+
+
+class KilnConsoleFormatter(uvicorn.logging.DefaultFormatter):
+    """Custom formatter that displays props data from extra logging parameters."""
+
+    def format(self, record):
+        # format with uvicorn's colored formatter
+        formatted = super().format(record)
+
+        # check if record has any keys
+        dict_value = getattr(record, "dict", None)
+        if dict_value:
+            try:
+                if isinstance(dict_value, dict):
+                    dict_str = json.dumps(dict_value, ensure_ascii=False, indent=2)
+                else:
+                    dict_str = str(dict_value)
+                formatted += f"\n{dict_str}"
+            except Exception:
+                pass
+
+        return formatted
 
 
 class LogDestination(Enum):
@@ -48,19 +72,26 @@ def log_config():
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            # uvicorn expects a "default" formatter
+            # uvicorn expects a "default" formatter with colors
             "default": {
-                "format": get_default_formatter(),
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(levelprefix)s %(message)s",
+                "use_colors": None,
             },
-            # uvicorn expects an "access" formatter
+            # uvicorn expects an "access" formatter with colors for HTTP status codes
             "access": {
-                "format": get_default_formatter(),
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
             },
             "logformatter": {
-                "format": get_default_formatter(),
+                "()": "app.desktop.log_config.KilnConsoleFormatter",
+                "fmt": get_default_formatter(),
+                "use_colors": None,
             },
             "console": {
-                "format": "%(levelname)s: %(message)s",
+                "()": "app.desktop.log_config.KilnConsoleFormatter",
+                "fmt": "%(levelprefix)s %(message)s",
+                "use_colors": None,
             },
         },
         "handlers": {
@@ -77,6 +108,28 @@ def log_config():
                 "class": "logging.StreamHandler",
                 "level": get_log_level(),
                 "formatter": "console",
+            },
+            "default": {
+                "class": "logging.StreamHandler",
+                "level": "INFO",
+                "formatter": "default",
+            },
+            "access": {
+                "class": "logging.StreamHandler",
+                "level": "INFO",
+                "formatter": "access",
+            },
+        },
+        "loggers": {
+            "uvicorn": {
+                "level": "INFO",
+                "handlers": ["default"],
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "level": "INFO",
+                "handlers": ["access"],
+                "propagate": False,
             },
         },
         "root": {"level": get_log_level(), "handlers": get_handlers()},
