@@ -160,3 +160,7 @@ class MCPSessionManager:
 
         self._shell_path = shell_path
         return shell_path
+
+    def clear_shell_path_cache(self):
+        """Clear the cached shell path. Typically used when adding a new tool, which might have just been installed."""
+        self._shell_path = None

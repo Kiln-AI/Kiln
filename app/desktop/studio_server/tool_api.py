@@ -382,6 +382,7 @@ def connect_tool_servers_api(app: FastAPI):
         )
 
         # Validate the tool server connectivity
+        MCPSessionManager.shared().clear_shell_path_cache()
         await validate_tool_server_connectivity(tool_server)
 
         # Save the tool to file
