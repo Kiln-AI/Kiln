@@ -327,10 +327,26 @@ class BaseAdapter(metaclass=ABCMeta):
             new_run_config.structured_output_mode = structured_output_mode
             self.run_config = new_run_config
 
-    def available_tools(self) -> list[KilnToolInterface]:
+    async def available_tools(self) -> list[KilnToolInterface]:
         tool_config = self.run_config.tools_config
         if tool_config is None or tool_config.tools is None:
             return []
 
+        project = self.task.parent_project()
+        if project is None:
+            raise ValueError("Task must have a parent project to resolve tools")
+
+        project_id = project.id
+        if project_id is None:
+            raise ValueError("Project must have an ID to resolve tools")
+
         tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
+
+        # Check each tool has a unique name
+        tool_names = [await tool.name() for tool in tools]
+        if len(tool_names) != len(set(tool_names)):
+            raise ValueError(
+                "Each tool must have a unique name. Either de-select the duplicate tools, or modify their names to describe their unique purpose. Model will struggle if tools do not have descriptive names and tool execution will be undefined."
+            )
+
         return tools

@@ -577,13 +577,13 @@ class LiteLlmAdapter(BaseAdapter):
 
         return usage
 
-    def cached_available_tools(self) -> list[KilnToolInterface]:
+    async def cached_available_tools(self) -> list[KilnToolInterface]:
         if self._cached_available_tools is None:
-            self._cached_available_tools = self.available_tools()
+            self._cached_available_tools = await self.available_tools()
         return self._cached_available_tools
 
     async def litellm_tools(self) -> list[Dict]:
-        available_tools = self.cached_available_tools()
+        available_tools = await self.cached_available_tools()
 
         # LiteLLM takes the standard OpenAI-compatible tool call format
         return [await tool.toolcall_definition() for tool in available_tools]
@@ -607,7 +607,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Process normal tool calls (not the "task_response" tool)
             tool_name = tool_call.function.name
             tool = None
-            for tool_option in self.cached_available_tools():
+            for tool_option in await self.cached_available_tools():
                 if await tool_option.name() == tool_name:
                     tool = tool_option
                     break

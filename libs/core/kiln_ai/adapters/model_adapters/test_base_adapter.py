@@ -526,7 +526,7 @@ async def test_available_tools(
     )
 
     # Get available tools
-    tools = adapter.available_tools()
+    tools = await adapter.available_tools()
 
     # Verify tool count
     assert len(tools) == expected_tool_count
@@ -541,7 +541,7 @@ async def test_available_tools(
         assert actual_tool_ids == expected_tool_ids
 
 
-def test_available_tools_with_invalid_tool_id(base_project):
+async def test_available_tools_with_invalid_tool_id(base_project):
     """Test that available_tools raises ValueError for invalid tool ID"""
     # Create a task with a parent project
     task = Task(name="test_task", instruction="test_instruction", parent=base_project)
@@ -573,4 +573,49 @@ def test_available_tools_with_invalid_tool_id(base_project):
         with pytest.raises(
             ValueError, match="Tool ID test_id not found in tool registry"
         ):
-            adapter.available_tools()
+            await adapter.available_tools()
+
+
+async def test_available_tools_duplicate_names_raises_error(base_project):
+    """Test that available_tools raises ValueError when tools have duplicate names"""
+    # Create a task with a parent project
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
+    # Create tools config with two different tool IDs
+    tools_config = ToolsRunConfig(
+        tools=[KilnBuiltInToolId.ADD_NUMBERS, KilnBuiltInToolId.SUBTRACT_NUMBERS]
+    )
+
+    # Create adapter
+    adapter = MockAdapter(
+        task=task,
+        run_config=RunConfigProperties(
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            tools_config=tools_config,
+        ),
+    )
+
+    # Create mock tools with duplicate names
+    async def mock_name1():
+        return "duplicate_name"
+
+    async def mock_name2():
+        return "duplicate_name"
+
+    mock_tool1 = MagicMock(spec=KilnToolInterface)
+    mock_tool1.name = mock_name1
+    mock_tool2 = MagicMock(spec=KilnToolInterface)
+    mock_tool2.name = mock_name2  # Same name as tool1
+
+    # Mock tool_from_id to return our mock tools with duplicate names
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.tool_from_id"
+    ) as mock_tool_from_id:
+        mock_tool_from_id.side_effect = [mock_tool1, mock_tool2]
+
+        # Should raise ValueError when tools have duplicate names
+        with pytest.raises(ValueError, match="Each tool must have a unique name"):
+            await adapter.available_tools()
