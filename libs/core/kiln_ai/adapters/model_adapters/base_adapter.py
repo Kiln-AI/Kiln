@@ -340,7 +340,7 @@ class BaseAdapter(metaclass=ABCMeta):
         if project_id is None:
             raise ValueError("Project must have an ID to resolve tools")
 
-        tools = [tool_from_id(tool_id, project_id) for tool_id in tool_config.tools]
+        tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
 
         # Check each tool has a unique name
         tool_names = [await tool.name() for tool in tools]
