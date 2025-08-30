@@ -198,12 +198,6 @@
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
       },
-      {
-        label: "Edit",
-        handler: () => {
-          goto(`/settings/edit_tool_server/${project_id}/${tool_server_id}`)
-        },
-      },
     ]}
   >
     {#if loading}
