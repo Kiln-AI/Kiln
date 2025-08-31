@@ -18,23 +18,34 @@
   <a href="https://docs.kiln.tech/docs/synthetic-data-generation"><strong>Synthetic Data</strong></a> • 
   <a href="https://docs.kiln.tech"><strong>All Docs</strong></a>
 </p>
+<div align="center">
+  <a href="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml"><img src="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml/badge.svg" alt="Build and Test"></a>
+  <a href="https://github.com/Kiln-AI/kiln/actions/workflows/test_count.yml"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/scosman/57742c1b1b60d597a6aba5d5148d728e/raw/test_count_kiln.json" alt="Test Count Badge"></a>
+  <a href="https://kiln.tech/discord"><img src="https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white" alt="Discord"></a>
+  <a href="https://kiln.tech/blog"><img src="https://img.shields.io/badge/Newsletter-subscribe-blue?logo=mailboxdotorg&logoColor=white" alt="Newsletter"></a>
+</div>
 
+## What is Kiln?
 
+[Kiln](https://kiln.tech) is an free, easy to use, and private app for building AI systems and products. It integrates evals, synthetic data, fine-tuning [and more](#key-features).
+
+[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="220" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
 
 ## Key Features
 
-- 🚀 **Intuitive Desktop Apps**: One-click apps for Windows, MacOS, and Linux. Truly intuitive design.
-- 🎛️ **Fine Tuning**: Zero-code fine-tuning for Llama, GPT-4o, and more. Automatic serverless deployment of models.
-- 📊 **Evals:** Evaluate the quality of your models/tasks using state of the art evaluators.
-- 🤖 **Synthetic Data Generation**: Generate training data with our interactive visual tooling.
+- 🚀 [**Intuitive Desktop Apps**](https://kiln.tech/download): One-click apps for Windows, MacOS, and Linux. 
+- 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations): Evaluate the quality of your models/tasks using state of the art evaluators.
+- 🎛️ [**Fine Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide): Zero-code fine-tuning for Llama, GPT-4o, and more. Automatic serverless deployment of models.
+- 🤖 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation): Generate eval datasets or fine-tuning data with our interactive visual tooling.
+- 🌐 [**Comprehensive Model Support**](https://kiln.tech/model_library): Skip the guesswork — we've tested over 100 models' capabilities. Use any model via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, any OpenAI compatible API, and more.
 - 🧠 **Reasoning Models**: Train or distill your own custom reasoning models.
 - 🤝 **Team Collaboration**: Git-based version control for your AI datasets. Intuitive UI makes it easy to collaborate with QA, PM, and subject matter experts on structured data (examples, prompts, ratings, feedback, issues, etc.).
 - 📝 **Prompt Generation**: Automatically generate prompts from your data, including chain-of-thought, few-shot, and multi-shot, and more.
-- 🌐 **Wide Model and Provider Support**: Use any model via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, or any OpenAI compatible API.
 - 🧑‍💻 **Open-Source Library and API**: Our Python library and OpenAPI REST API are MIT open source.
-- 🔒 **Privacy-First**: We can't see your data. Bring your own API keys or run locally with Ollama.
+- 🔒 **Privacy-First**: Kiln runs on your computer. We can't access your data. Bring your own API keys or use Ollama.
 - 🗃️ **Structured Data**: Build AI tasks that speak JSON.
-- 💰 **Free**: Our apps are free, and our library is open-source.
+- 💰 **Free**: Our apps are free and our library is open-source.
+
 
 ## Download Kiln Desktop Apps
 
@@ -91,7 +102,6 @@ For developers, see our [Kiln Python Library Docs](https://kiln-ai.github.io/Kil
 | Apps    | [![MacOS](https://img.shields.io/badge/MacOS-black?logo=apple)](https://kiln.tech/download) [![Windows](https://img.shields.io/badge/Windows-0067b8.svg?logo=data:image/svg%2bxml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyBmaWxsPSIjZmZmIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2Ljc0MiAxNi43NDJ2MTQuMjUzaDE0LjI1M3YtMTQuMjUzek0xLjAwNCAxNi43NDJ2MTQuMjUzaDE0LjI1NnYtMTQuMjUzek0xNi43NDIgMS4wMDR2MTQuMjU2aDE0LjI1M3YtMTQuMjU2ek0xLjAwNCAxLjAwNHYxNC4yNTZoMTQuMjU2di0xNC4yNTZ6Ij48L3BhdGg+Cjwvc3ZnPg==)](https://kiln.tech/download) [![Linux](https://img.shields.io/badge/Linux-444444?logo=linux&logoColor=ffffff)](https://kiln.tech/download) ![Github Downsloads](https://img.shields.io/github/downloads/kiln-ai/kiln/total)                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Connect | [![Discord](https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white)](https://kiln.tech/discord) [![Newsletter](https://img.shields.io/badge/Newsletter-subscribe-blue?logo=mailboxdotorg&logoColor=white)](https://kiln.tech/blog)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="220" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
 
 ## Install Python Library
 
