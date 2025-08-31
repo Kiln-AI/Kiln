@@ -47,21 +47,23 @@
 - 📚 [**Awesome Docs**](https://docs.kiln.tech): easy-to-follow video guides, approachable for beginners, and depth for advanced users.
 - 💰 **Free**: Our apps are free and our library is open-source.
 
-## Download Kiln Desktop Apps
-
-The Kiln desktop app is completely free. Available on MacOS, Windows and Linux.
-
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download)
-
 ## Demo
 
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/e5268dd9-8813-45fe-b091-0d9f4c1907f9">](https://kiln.tech#demo)
+[Watch a 2 minute overview of Kiln:](https://kiln.tech#demo)
 
 <kbd>
 <a href="https://kiln.tech#demo">
 <img alt="Kiln Preview" src="guides/kiln_preview.gif">
 </a>
 </kbd>
+
+Or watch our [end to end project demo (20 minutes)](https://kiln.tech/blog/end_to_end_kiln_project_demo#video-walkthrough).
+
+## Download Kiln Desktop Apps
+
+The Kiln desktop app is completely free. Available on MacOS, Windows and Linux.
+
+[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download)
 
 ## Docs & Guides
 
