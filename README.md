@@ -29,7 +29,7 @@
 
 [Kiln](https://kiln.tech) is a free and easy-to-use app for building AI systems and products. It integrates evals, synthetic data, fine-tuning, [and more](#key-features).
 
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="220" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
+[<img width="180" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="180" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
 
 ## Key Features
 
@@ -57,13 +57,13 @@
 </a>
 </kbd>
 
-Or watch our [end to end project demo (20 minutes)](https://kiln.tech/blog/end_to_end_kiln_project_demo#video-walkthrough).
+Or watch our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
 
 ## Download Kiln Desktop Apps
 
-The Kiln desktop app is completely free. Available on MacOS, Windows and Linux.
+Available on MacOS, Windows and Linux.
 
-[<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download)
+[<img width="180" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download)
 
 ## Docs & Guides
 
@@ -74,6 +74,7 @@ Kiln is quite intuitive, so we suggest launching the desktop app and diving in. 
 - [Fine Tuning LLM Models](https://docs.kiln.tech/docs/fine-tuning-guide)
 - [Guide: Train a Reasoning Model](https://docs.kiln.tech/docs/guide-train-a-reasoning-model)
 - [LLM Evaluators](https://docs.kiln.tech/docs/evaluators)
+- [End to End Project Demo](https://docs.kiln.tech/docs/end-to-end-project-demo)
 
 ### All Docs
 
@@ -105,7 +106,7 @@ For developers, see our [Kiln Python Library Docs](https://kiln-ai.github.io/Kil
 | Connect | [![Discord](https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white)](https://kiln.tech/discord) [![Newsletter](https://img.shields.io/badge/Newsletter-subscribe-blue?logo=mailboxdotorg&logoColor=white)](https://kiln.tech/blog)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 
-## Install Python Library
+## Python Library
 
 [![PyPI - Version](https://img.shields.io/pypi/v/kiln-ai.svg?logo=pypi&label=PyPI&logoColor=gold)](https://pypi.org/project/kiln-ai/) [![Docs](https://img.shields.io/badge/docs-pdoc-blue)](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html)
 
@@ -127,6 +128,8 @@ We currently support:
 - Chain of thought / thinking, with optional custom “thinking” instructions
 - Many models: GPT, Llama, Claude, Gemini, Mistral, Gemma, Phi
 - Fine Tuning: create custom models using your Kiln dataset
+- Evaluations using LLM-as-Judge and G-Eval
+- Distilling models:
 
 In the future, we plan to add more powerful no-code options like evals, and RAG. For experienced data-scientists, you can create these techniques today using Kiln datasets and our python library.
 
@@ -146,9 +149,9 @@ The dataset file format is designed to be be used with Git for powerful collabor
 
 Products don’t naturally have “datasets”, but Kiln helps you create one. Every time you use Kiln, we capture the inputs, outputs, human ratings, feedback, and repairs needed to build high quality models for use in your product. The more you use it, the more data you have.
 
-Your model quality improves automatically as the dataset grows, by giving the models more examples of quality content (and mistakes).
+Our synthetic data generation tool can build datasets for evals and fine-tuning in minutes.
 
-If your product goals shift or new bugs are found (as is almost always the case), you can easily iterate the dataset to address issues.
+Your model quality improves automatically as the dataset grows, by giving the models more examples of quality content (and mistakes). If your product goals shift or new bugs are found (as is almost always the case), you can easily iterate the dataset to address issues.
 
 ## Contributing & Development
 
