@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-    The Easiest Way to Build AI Products
+    Evals, Synthetic Data, and Fine-Tuning Made Easy
 </h3>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ## What is Kiln?
 
-[Kiln](https://kiln.tech) is an free, easy to use, and private app for building AI systems and products. It integrates evals, synthetic data, fine-tuning [and more](#key-features).
+[Kiln](https://kiln.tech) is a free and easy-to-use app for building AI systems and products. It integrates evals, synthetic data, fine-tuning, [and more](#key-features).
 
 [<img width="220" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="220" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
 
@@ -37,13 +37,13 @@
 - 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations): Evaluate the quality of your models/tasks using state of the art evaluators.
 - 🎛️ [**Fine Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide): Zero-code fine-tuning for Llama, GPT-4o, and more. Automatic serverless deployment of models.
 - 🤖 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation): Generate eval datasets or fine-tuning data with our interactive visual tooling.
-- 🌐 [**Comprehensive Model Support**](https://kiln.tech/model_library): Skip the guesswork — we've tested over 100 models' capabilities. Use any model via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, any OpenAI compatible API, and more.
-- 🤝 [**Team Collaboration**](https://docs.kiln.tech/docs/collaboration): Git-based version control for your AI datasets. Intuitive UI makes it easy to collaborate with QA, PM, and subject matter experts on data samples, evals, prompts, ratings and issues.
 - 🧠 [**Reasoning Models**](https://docs.kiln.tech/docs/guide-train-a-reasoning-model): Train or distill your own custom reasoning models.
 - 📝 [**Prompt Generation**](https://docs.kiln.tech/docs/prompts): Automatically generate prompts including chain-of-thought, few-shot, and multi-shot, and more.
-- 🧑‍💻 **Open-Source Library and API**: Our Python library and OpenAPI REST API are MIT open source.
-- 🔒 [**Privacy-First**](https://docs.kiln.tech/docs/privacy): Kiln runs on your computer. We can't access your data. Bring your own API keys or use Ollama.
+- 🌐 [**Comprehensive Model Support**](https://kiln.tech/model_library): Skip the guesswork — we've tested over 100 models' capabilities. Use any model via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, any OpenAI compatible API, and more.
+- 🤝 [**Team Collaboration**](https://docs.kiln.tech/docs/collaboration): Git-based version control for your AI datasets. Intuitive UI makes it easy to collaborate with QA, PM, and subject matter experts on data samples, evals, prompts, ratings and issues.
 - 🗃️ [**Structured Data**](https://docs.kiln.tech/docs/structured-data-json): Build AI tasks that speak JSON.
+- 🧑‍💻 **Open-Source Library and API**: Our Python library and OpenAPI REST API are MIT open source.
+- 🔒 [**Privacy-First**](https://docs.kiln.tech/docs/privacy): Kiln runs locally on your computer. We can't access your data. Bring your own API keys or use Ollama.
 - 📚 [**Awesome Docs**](https://docs.kiln.tech): easy-to-follow video guides, approachable for beginners, and depth for advanced users.
 - 💰 **Free**: Our apps are free and our library is open-source.
 
