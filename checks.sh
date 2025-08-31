@@ -26,6 +26,11 @@ else
     echo "\033[31mTo install follow the instructions at https://github.com/golangci/misspell \033[0m"
 fi
 
+echo "${headerStart}OpenAPI Schema Check${headerEnd}"
+cd app/web_ui/src/lib/
+./check_schema.sh --allow-skip
+cd ../../../..
+
 echo "${headerStart}Web UI: format, lint, check${headerEnd}"
 changed_files=$(git diff --name-only --staged)
 if [[ "$changed_files" == *"app/web_ui/"* ]]; then
