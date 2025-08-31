@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Parse command line arguments
 ALLOW_SKIP=false
