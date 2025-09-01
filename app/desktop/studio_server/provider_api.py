@@ -524,46 +524,6 @@ async def connect_siliconflow(key: str):
         )
 
 
-async def connect_siliconflow(key: str):
-    try:
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
-
-        response = requests.get(
-            "https://api.siliconflow.cn/v1/models",
-            headers=headers,
-        )
-
-        if response.status_code == 401:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "message": "Failed to connect to SiliconFlow. Invalid API key."
-                },
-            )
-        elif response.status_code == 200:
-            Config.shared().siliconflow_cn_api_key = key
-            return JSONResponse(
-                status_code=200,
-                content={"message": "Connected to SiliconFlow"},
-            )
-        else:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "message": f"Failed to connect to SiliconFlow. Error: [{response.status_code}] {response.text}"
-                },
-            )
-    except Exception as e:
-        # unexpected error
-        return JSONResponse(
-            status_code=400,
-            content={"message": f"Failed to connect to SiliconFlow. Error: {str(e)}"},
-        )
-
-
 async def connect_fireworks(key_data: dict):
     try:
         key = key_data.get("API Key")
@@ -975,39 +935,6 @@ async def connect_cerebras(key: str):
         )
 
 
-async def connect_cerebras(key: str):
-    try:
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
-        response = requests.get("https://api.cerebras.ai/v1/models", headers=headers)
-
-        if response.status_code == 401:
-            return JSONResponse(
-                status_code=401,
-                content={"message": "Failed to connect to Cerebras. Invalid API key."},
-            )
-        elif response.status_code != 200:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "message": f"Failed to connect to Cerebras. Error: [{response.status_code}]"
-                },
-            )
-        else:
-            Config.shared().cerebras_api_key = key
-            return JSONResponse(
-                status_code=200,
-                content={"message": "Connected to Cerebras"},
-            )
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"message": f"Failed to connect to Cerebras. Error: {str(e)}"},
-        )
-
-
 async def connect_bedrock(key_data: dict):
     access_key = key_data.get("Access Key")
     secret_key = key_data.get("Secret Key")
@@ -1147,6 +1074,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_function_calling=docker_provider.supports_function_calling,
                         )
                     )
         for docker_model in docker_connection.untested_models:
@@ -1164,6 +1092,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_function_calling=False,
                 )
             )
 

@@ -1171,11 +1171,6 @@ built_in_models: List[KilnModel] = [
                 model_id="llama-4-scout-17b-16e-instruct",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.cerebras,
-                model_id="llama-4-scout-17b-16e-instruct",
-                structured_output_mode=StructuredOutputMode.json_schema,
-            ),
         ],
     ),
     # Llama 3.1-8b
@@ -1924,12 +1919,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
             ),
             KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Qwen/QwQ-32B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwq:32B-Q4_K_M",
                 reasoning_capable=True,
@@ -2062,38 +2051,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 supports_function_calling=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Pro/deepseek-ai/DeepSeek-R1",
-                parser=ModelParserID.optional_r1_thinking,
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                supports_data_gen=True,
-            ),
-        ],
-    ),
-    # DeepSeek R1 0528 Distill Qwen 3 8B
-    KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_r1_0528_distill_qwen3_8b,
-        friendly_name="DeepSeek R1 0528 Distill Qwen 3 8B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="deepseek/deepseek-r1-0528-qwen3-8b",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                r1_openrouter_options=True,
-                require_openrouter_reasoning=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
-                supports_data_gen=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -2330,14 +2287,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
-                supports_data_gen=False,
-            ),
         ],
     ),
     # DeepSeek R1 Distill Llama 8B
@@ -2410,16 +2359,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 model_id="deepseek-r1:7b",
                 supports_function_calling=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                # Best mode, but fails to often to enable without warning
-                supports_structured_output=False,
-                supports_data_gen=False,
-                model_id="Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -3131,15 +3070,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 suggested_for_data_gen=True,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Qwen/Qwen3-235B-A22B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                siliconflow_enable_thinking=True,
-                supports_data_gen=True,
-                suggested_for_data_gen=True,
-            ),
         ],
     ),
     # Qwen 3 235B (22B Active) 2507 Version Non-Thinking
@@ -3215,75 +3145,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
                 supports_function_calling=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Qwen/Qwen3-235B-A22B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                siliconflow_enable_thinking=False,
-                supports_data_gen=True,
-            ),
-        ],
-    ),
-    # Qwen Long L1 32B
-    KilnModel(
-        family=ModelFamily.qwen,
-        name=ModelName.qwen_long_l1_32b,
-        friendly_name="QwenLong L1 32B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Tongyi-Zhiwen/QwenLong-L1-32B",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
-            ),
-        ],
-    ),
-    # GLM 4.5
-    KilnModel(
-        family=ModelFamily.glm,
-        name=ModelName.glm_4_5,
-        friendly_name="GLM 4.5",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="z-ai/glm-4.5",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/glm-4p5",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-        ],
-    ),
-    # GLM 4.5 AIR
-    KilnModel(
-        family=ModelFamily.glm,
-        name=ModelName.glm_4_5_air,
-        friendly_name="GLM 4.5 AIR",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="z-ai/glm-4.5-air",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/glm-4p5-air",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                model_id="zai-org/GLM-4.5-Air-FP8",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
