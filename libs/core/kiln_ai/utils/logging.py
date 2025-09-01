@@ -21,8 +21,7 @@ def get_log_file_path(filename: str) -> str:
     Returns:
         str: The path to the log file
     """
-    log_path_default = os.path.join(Config.settings_dir(), "logs", filename)
-    log_path = os.getenv("KILN_LOG_FILE", log_path_default)
+    log_path = os.path.join(Config.settings_dir(), "logs", filename)
 
     # Ensure the log directory exists
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
