@@ -8,11 +8,11 @@ actions:
 
   - name: "lint_python"
     description: "Lint the python source code, checking for errors and warnings"
-    command: "uvx ruff check --extend-select I,F401"
+    command: "uvx ruff check"
 
   - name: "lint_fix_python"
     description: "Lint the pythong source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
-    command: "uvx ruff check --extend-select I,F401 --fix"
+    command: "uvx ruff check --fix"
 
   - name: "check_format_python"
     description: "Check if the python source code is formatted correctly"
@@ -70,3 +70,33 @@ actions:
     description: "Build the app/web_ui application, which will report any build issues"
     command: "npm run build_quiet"
     run_path: "app/web_ui"
+
+  - name: "update_api_types"
+    description: "Update typescript API definition for the frontend to use, from the latest FastAPI server code."
+    command: "npx openapi-typescript http://localhost:8757/openapi.json -o api_schema.d.ts"
+    run_path: "app/web_ui/src/lib/"
+
+prompts:
+  - name: "AGENTS.md"
+    description: "Overview of the project for agents, including the purpose, architecture, and key components"
+    prompt-file: "AGENTS.md"
+
+  - name: "python_test_guide.md"
+    description: "Guide for testing best practices for python code"
+    prompt-file: "agents/python_test_guide.md"
+
+  - name: "frontend_design_guide.md"
+    description: "Guide for UI design including color, typography, and controls"
+    prompt-file: "agents/frontend_design_guide.md"
+
+  - name: "frontend_controls.md"
+    description: "Guide for UI controls available in the web app (spinners, buttons, dialogs, etc)"
+    prompt-file: "agents/frontend_controls.md"
+
+  - name: "tables_style.md"
+    description: "Guide for css table styling"
+    prompt-file: "agents/tables_style.md"
+
+  - name: "card_style.md"
+    description: "Guide for css card styling"
+    prompt-file: "agents/card_style.md"

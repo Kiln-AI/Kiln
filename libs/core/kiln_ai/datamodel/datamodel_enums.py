@@ -99,3 +99,4 @@ class ModelProviderName(str, Enum):
     together_ai = "together_ai"
     siliconflow_cn = "siliconflow_cn"
     cerebras = "cerebras"
+    docker_model_runner = "docker_model_runner"

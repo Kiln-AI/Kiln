@@ -13,9 +13,16 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetF
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
 
-oai_client = openai.AsyncOpenAI(
-    api_key=Config.shared().open_ai_api_key or "",
-)
+
+def _get_openai_client():
+    key = Config.shared().open_ai_api_key
+    if not key:
+        raise RuntimeError(
+            "OpenAI API key not set. You must connect OpenAI in settings."
+        )
+    return openai.AsyncOpenAI(
+        api_key=key,
+    )
 
 
 class OpenAIFinetune(BaseFinetuneAdapter):
@@ -45,6 +52,7 @@ class OpenAIFinetune(BaseFinetuneAdapter):
 
         try:
             # Will raise an error if the job is not found, or for other issues
+            oai_client = _get_openai_client()
             response = await oai_client.fine_tuning.jobs.retrieve(
                 self.datamodel.provider_id
             )
@@ -79,7 +87,7 @@ class OpenAIFinetune(BaseFinetuneAdapter):
                 )
             return FineTuneStatus(
                 status=FineTuneStatusType.unknown,
-                message=f"Unknown error: [{str(e)}]",
+                message=f"Unknown error: [{e!s}]",
             )
 
         if not response or not isinstance(response, FineTuningJob):
@@ -145,6 +153,7 @@ class OpenAIFinetune(BaseFinetuneAdapter):
             if k in ["n_epochs", "learning_rate_multiplier", "batch_size"]
         }
 
+        oai_client = _get_openai_client()
         ft = await oai_client.fine_tuning.jobs.create(
             training_file=train_file_id,
             model=self.datamodel.base_model_id,
@@ -168,6 +177,7 @@ class OpenAIFinetune(BaseFinetuneAdapter):
         )
         path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
 
+        oai_client = _get_openai_client()
         response = await oai_client.files.create(
             file=open(path, "rb"),
             purpose="fine-tune",

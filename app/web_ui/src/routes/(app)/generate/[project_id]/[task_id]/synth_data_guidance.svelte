@@ -107,7 +107,7 @@
       Add guidance to improve or steer the AI-generated {description_plural()}.
       Learn more and see examples
       <a
-        href="https://docs.getkiln.ai/docs/synthetic-data-generation#human-guidance"
+        href="https://docs.kiln.tech/docs/synthetic-data-generation#human-guidance"
         target="_blank"
         class="link">in the docs</a
       >.

@@ -8,7 +8,7 @@ from . import base_finetune, dataset_formatter, finetune_registry, openai_finetu
 
 __all__ = [
     "base_finetune",
-    "openai_finetune",
     "dataset_formatter",
     "finetune_registry",
+    "openai_finetune",
 ]

@@ -103,7 +103,7 @@
           name: "Docs & Getting Started",
           description:
             "Read the docs, including our getting started guide and video tutorials.",
-          href: "https://docs.getkiln.ai",
+          href: "https://docs.kiln.tech",
           button_text: "Docs & Guides",
           is_external: true,
         },

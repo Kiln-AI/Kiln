@@ -2,17 +2,17 @@ import sys
 from typing import List
 
 import pytest
+from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
+    ModelProviderName,
+    built_in_models,
+)
+from kiln_ai.adapters.provider_tools import provider_name_from_id
 
 from app.desktop.studio_server.finetune_api import (
     FinetuneProviderModel,
     fetch_fireworks_finetune_models,
 )
-from libs.core.kiln_ai.adapters.ml_model_list import (
-    KilnModelProvider,
-    ModelProviderName,
-    built_in_models,
-)
-from libs.core.kiln_ai.adapters.provider_tools import provider_name_from_id
 
 
 def _all_providers_support(providers: List[KilnModelProvider], attribute: str) -> bool:

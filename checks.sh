@@ -14,8 +14,7 @@ headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
 
 echo "${headerStart}Checking Python: Ruff, format, check${headerEnd}"
-# I is import sorting, F401 is unused imports
-uvx  ruff check --extend-select I,F401
+uvx ruff check
 uvx ruff format --check .
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
@@ -24,7 +23,7 @@ if command -v misspell >/dev/null 2>&1; then
     echo "No misspellings found"
 else
     echo "\033[31mWarning: misspell command not found. Skipping misspelling check.\033[0m"
-    echo "\033[31mTo install: go install github.com/client9/misspell/cmd/misspell@latest\033[0m"
+    echo "\033[31mTo install follow the instructions at https://github.com/golangci/misspell \033[0m"
 fi
 
 echo "${headerStart}Web UI: format, lint, check${headerEnd}"
@@ -43,8 +42,15 @@ else
     echo "Skipping Web UI: no files changed"
 fi
 
-echo "${headerStart}Checking Types${headerEnd}"
-pyright .
 
-echo "${headerStart}Running Python Tests${headerEnd}"
-python3 -m pytest --benchmark-quiet -q .
+# Check if python files were changed, and run tests/typecheck if so
+if echo "$changed_files" | grep -q "\.py$"; then
+    echo "${headerStart}Checking Python Types${headerEnd}"
+    pyright .
+
+    echo "${headerStart}Running Python Tests${headerEnd}"
+    python3 -m pytest --benchmark-quiet -q .
+else
+    echo "${headerStart}Python Checks${headerEnd}"
+    echo "Skipping Python tests/typecheck: no .py files changed"
+fi

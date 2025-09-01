@@ -1,19 +1,16 @@
-# Synthetic Data Generation - Kiln AI 
-
+# Synthetic Data Generation - Kiln AI
 
 ---
 
-# This guide as moved to [our docs](https://docs.getkiln.ai/docs/synthetic-data-generation). This page may be out of date.
+# This guide has moved to [our docs](https://docs.kiln.tech/docs/synthetic-data-generation)
 
-We suggest reading the [latest version](https://docs.getkiln.ai/docs/synthetic-data-generation).
+This page may be out of date. We suggest reading the [latest version](https://docs.kiln.tech/docs/synthetic-data-generation).
 
 ---
 
 ## Original Content
 
-
-[Kiln](https://getkiln.ai) can generate synthetic data for your tasks. 
-
+[Kiln](https://kiln.tech) can generate synthetic data for your tasks.
 
 ## Video Walkthrough
 
@@ -84,21 +81,21 @@ You can use synthetic data generation as many times as you'd like. Data will be 
 
 Synthetic data can help resolve issues in your LLM systems.
 
-As an example, let's assume your model is often generating text using the wrong tone. For this example: too formal when the use case calls for more causal tone. 
+As an example, let's assume your model is often generating text using the wrong tone. For this example: too formal when the use case calls for more causal tone.
 
 Synthetic data can help resolve this issue, and ensure it doesn't regress.
 
-1) Open the synthetic dataset tab.
-2) Select a high quality model - even if it's not one that's fast or cheap enough for production.
-3) Start generating data which shows the issue, but use the human guidance feature and better model to ensure the outputs are high quality.
-4) Manually delete examples that don't have the correct style.
-5) Once the synthetic data tool is reliably generating correct data (with this model and guidance pair), scale up your generation to hundreds of samples.
-6) Save your new synthetic dataset
+1. Open the synthetic dataset tab.
+2. Select a high quality model - even if it's not one that's fast or cheap enough for production.
+3. Start generating data which shows the issue, but use the human guidance feature and better model to ensure the outputs are high quality.
+4. Manually delete examples that don't have the correct style.
+5. Once the synthetic data tool is reliably generating correct data (with this model and guidance pair), scale up your generation to hundreds of samples.
+6. Save your new synthetic dataset
 
 The new examples will be saved to your dataset, and will include a unique tag to idenity them (e.g. `synthetic_session_12345`). With this new dataset in hand you can resolve the issue:
 
-1) Simple: Fix the root prompt, and use this new dataset subset in your evaluations to ensure it works (and doesn't regress in the future)
-2) Advanced: [Fine-tune a model](Fine%20Tuning%20LLM%20Models%20Guide.md) with this data, so smaller and faster models learn to emulate your desired styles. Withhold a test set to ensure it worked.
+1. Simple: Fix the root prompt, and use this new dataset subset in your evaluations to ensure it works (and doesn't regress in the future)
+2. Advanced: [Fine-tune a model](Fine%20Tuning%20LLM%20Models%20Guide.md) with this data, so smaller and faster models learn to emulate your desired styles. Withhold a test set to ensure it worked.
 
 ## Collaboration
 
@@ -113,7 +110,6 @@ Kiln includes a rating interface for rating dataset entries. This can be used to
 Only highly rated data will be used for features like multi-shot prompting.
 
 <img width="337" alt="rating UI" src="https://github.com/user-attachments/assets/6872d5ad-18ad-46f3-9091-2e26741cb852">
-
 
 ## Consuming Your Dataset
 

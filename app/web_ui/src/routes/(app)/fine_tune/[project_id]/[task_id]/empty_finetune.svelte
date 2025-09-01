@@ -89,7 +89,7 @@
       Create a Fine-Tune
     </a>
     <a
-      href="https://docs.getkiln.ai/docs/fine-tuning-guide"
+      href="https://docs.kiln.tech/docs/fine-tuning-guide"
       class="btn"
       target="_blank"
     >
