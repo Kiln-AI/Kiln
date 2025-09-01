@@ -13,16 +13,18 @@
   $: is_empty = !tools || tools.length == 0
 
   let tools: KilnToolServerDescription[] | null = null
+  let demo_tools_enabled: boolean | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
     await fetch_available_tool_servers()
+    await load_demo_tools()
+    loading = false
   })
 
   async function fetch_available_tool_servers() {
     try {
-      loading = true
       error = null
 
       if (!project_id) {
@@ -47,8 +49,18 @@
       tools = data
     } catch (err) {
       error = createKilnError(err)
-    } finally {
-      loading = false
+    }
+  }
+
+  async function load_demo_tools() {
+    try {
+      const { data, error } = await client.GET("/api/demo_tools")
+      if (error) {
+        throw error
+      }
+      demo_tools_enabled = data
+    } catch (error) {
+      console.error(error)
     }
   }
 
@@ -57,6 +69,24 @@
       goto(
         `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
       )
+    }
+  }
+
+  async function disable_demo_tools() {
+    try {
+      demo_tools_enabled = false
+      const { error } = await client.POST("/api/demo_tools", {
+        params: {
+          query: {
+            enable_demo_tools: false,
+          },
+        },
+      })
+      if (error) {
+        throw error
+      }
+    } catch (error) {
+      console.error(error)
     }
   }
 </script>
@@ -87,7 +117,7 @@
           {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
-    {:else if tools && tools.length > 0}
+    {:else if demo_tools_enabled || (tools && tools.length > 0)}
       <div class="overflow-x-auto rounded-lg border mt-4">
         <table class="table">
           <thead>
@@ -98,7 +128,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each tools as tool}
+            {#each tools || [] as tool}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolServer(tool)}
@@ -112,6 +142,21 @@
                 <td class="text-sm">{tool.description || "N/A"}</td>
               </tr>
             {/each}
+            {#if demo_tools_enabled}
+              <tr>
+                <td class="font-medium">Math Demo Tools</td>
+                <td class="text-sm">Built-in Tools</td>
+                <td class="text-sm"
+                  >Basic math tools: add, subtract, multiply, divide.
+                  <button
+                    class="link text-gray-500"
+                    on:click={disable_demo_tools}
+                  >
+                    Disable
+                  </button>
+                </td>
+              </tr>
+            {/if}
           </tbody>
         </table>
       </div>

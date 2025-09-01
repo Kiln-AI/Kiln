@@ -381,6 +381,7 @@ def connect_tool_servers_api(app: FastAPI):
         )
 
         # Validate the tool server connectivity
+        MCPSessionManager.shared().clear_shell_path_cache()
         await validate_tool_server_connectivity(tool_server)
 
         # Save the tool to file
@@ -392,3 +393,12 @@ def connect_tool_servers_api(app: FastAPI):
     async def delete_tool_server(project_id: str, tool_server_id: str):
         tool_server = tool_server_from_id(project_id, tool_server_id)
         tool_server.delete()
+
+    @app.get("/api/demo_tools")
+    async def get_demo_tools() -> bool:
+        return Config.shared().enable_demo_tools
+
+    @app.post("/api/demo_tools")
+    async def set_demo_tools(enable_demo_tools: bool) -> bool:
+        Config.shared().enable_demo_tools = enable_demo_tools
+        return Config.shared().enable_demo_tools
