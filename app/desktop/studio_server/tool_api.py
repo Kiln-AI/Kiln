@@ -169,6 +169,15 @@ class ToolSetApiDescription(BaseModel):
     tools: list[ToolApiDescription]
 
 
+def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
+    project = project_from_id(project_id)
+    for tool_server in project.external_tool_servers(readonly=True):
+        if tool_server.id == tool_server_id:
+            return tool_server
+
+    raise HTTPException(status_code=404, detail="Tool server not found")
+
+
 async def available_mcp_tools(
     server: ExternalToolServer,
 ) -> list[ToolApiDescription]:
@@ -293,17 +302,7 @@ def connect_tool_servers_api(app: FastAPI):
     async def get_tool_server(
         project_id: str, tool_server_id: str
     ) -> ExternalToolServerApiDescription:
-        project = project_from_id(project_id)
-        tool_server = next(
-            (
-                t
-                for t in project.external_tool_servers(readonly=True)
-                if t.id == tool_server_id
-            ),
-            None,
-        )
-        if not tool_server:
-            raise HTTPException(status_code=404, detail="Tool not found")
+        tool_server = tool_server_from_id(project_id, tool_server_id)
 
         # Get available tools based on server type
         available_tools = []
@@ -389,6 +388,11 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server.save_to_file()
 
         return tool_server
+
+    @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
+    async def delete_tool_server(project_id: str, tool_server_id: str):
+        tool_server = tool_server_from_id(project_id, tool_server_id)
+        tool_server.delete()
 
     @app.get("/api/demo_tools")
     async def get_demo_tools() -> bool:
