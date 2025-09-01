@@ -18,9 +18,6 @@
   let error: KilnError | null = null
   let delete_dialog: DeleteDialog | null = null
   $: delete_url = `/api/projects/${project_id}/tool_servers/${tool_server_id}`
-  let after_delete = () => {
-    goto(`/settings/manage_tools/${project_id}`)
-  }
 
   onMount(async () => {
     await fetch_tool_server()
@@ -342,5 +339,7 @@
   name="Tool Server"
   bind:this={delete_dialog}
   {delete_url}
-  {after_delete}
+  after_delete={() => {
+    goto(`/settings/manage_tools/${project_id}`)
+  }}
 />
