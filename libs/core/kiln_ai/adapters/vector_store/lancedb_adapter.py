@@ -1,13 +1,20 @@
+import hashlib
+import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from llama_index.core.schema import MetadataMode, TextNode
 from llama_index.core.vector_stores.types import (
+    FilterCondition,
+    FilterOperator,
+    MetadataFilter,
     VectorStoreQuery,
     VectorStoreQueryResult,
 )
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
+from llama_index.vector_stores.lancedb.base import MetadataFilters, TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -16,6 +23,7 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import (
     LanceDBQueryType,
     VectorStoreConfig,
@@ -30,12 +38,60 @@ logger = logging.getLogger(__name__)
 class LanceDBAdapter(BaseVectorStoreAdapter):
     def __init__(
         self,
+        rag_config: RagConfig,
         vector_store_config: VectorStoreConfig,
         lancedb_vector_store: LanceDBVectorStore,
     ):
-        super().__init__(vector_store_config)
+        super().__init__(rag_config, vector_store_config)
         self.lancedb_vector_store = lancedb_vector_store
         self.config_properties = self.vector_store_config.lancedb_properties
+
+    async def is_chunk_indexed(
+        self, document_id: str, chunk_idx: int, node_hash: str
+    ) -> bool:
+        # before the first write, we get a TableNotFoundError when trying to access the table
+        try:
+            self.lancedb_vector_store.table
+        except TableNotFoundError:
+            return False
+
+        nodes = self.lancedb_vector_store.get_nodes(
+            filters=MetadataFilters(
+                filters=[
+                    MetadataFilter(
+                        key="kiln_doc_id",
+                        operator=FilterOperator.EQ,
+                        value=document_id,
+                    ),
+                    MetadataFilter(
+                        key="kiln_chunk_idx",
+                        value=chunk_idx,
+                        operator=FilterOperator.EQ,
+                    ),
+                    MetadataFilter(
+                        key="kiln_node_hash",
+                        value=node_hash,
+                        operator=FilterOperator.EQ,
+                    ),
+                ],
+                condition=FilterCondition.AND,
+            )
+        )
+        return len(nodes) > chunk_idx
+
+    def hash_node(
+        self, text: str, embedding: list[float], document_id: str, chunk_idx: int
+    ) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                {
+                    "text": text,
+                    "embedding": embedding,
+                    "kiln_doc_id": document_id,
+                    "kiln_chunk_idx": chunk_idx,
+                }
+            ).encode()
+        ).hexdigest()
 
     async def add_chunks_with_embeddings(
         self,
@@ -46,17 +102,40 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             # Get text content from each chunk in the document
             chunks_text = await chunked_document.load_chunks_text()
 
-            for chunk_text, embedding in zip(chunks_text, chunk_embeddings.embeddings):
+            for chunk_idx, (chunk_text, embedding) in enumerate(
+                zip(chunks_text, chunk_embeddings.embeddings)
+            ):
+                node_hash = self.hash_node(
+                    chunk_text, embedding.vector, document_id, chunk_idx
+                )
+
+                # the correct way of doing an upsert is not supported by llamaindex
+                # we check if the chunk is already indexed using a non-atomic check
+                # but we must be careful with concurrency to avoid duplicates
+                if await self.is_chunk_indexed(document_id, chunk_idx, node_hash):
+                    continue
+                else:
+                    # TODO: delete the chunk
+                    pass
+
                 nodes.append(
                     TextNode(
                         text=chunk_text,
                         embedding=embedding.vector,
                         metadata={
-                            "ref_doc_id": document_id,
+                            "kiln_doc_id": document_id,
+                            "kiln_chunk_idx": chunk_idx,
+                            "kiln_node_hash": node_hash,
                         },
                     )
                 )
         await self.lancedb_vector_store.async_add(nodes)
+
+        table = self.lancedb_vector_store.table
+        if table is None:
+            raise ValueError("Table is not initialized")
+
+        table.optimize()
 
     def format_query_result(
         self, query_result: VectorStoreQueryResult
@@ -83,6 +162,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             results.append(
                 SearchResult(
                     document_id=id,
+                    chunk_idx=node.metadata["kiln_chunk_idx"],
                     chunk_text=node.get_content(),
                     similarity=similarity,
                 )
@@ -129,7 +209,8 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         nodes = self.lancedb_vector_store.get_nodes()
         return [
             SearchResult(
-                document_id=node.metadata["ref_doc_id"],
+                document_id=node.metadata["kiln_doc_id"],
+                chunk_idx=node.metadata["kiln_chunk_idx"],
                 chunk_text=node.get_content(MetadataMode.NONE),
                 similarity=None,
             )
@@ -162,10 +243,14 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 raise_exhaustive_enum_error(vector_store_config.store_type)
 
     @staticmethod
-    def lancedb_path_for_config(vector_store_config: VectorStoreConfig) -> str:
+    def lancedb_path_for_config(rag_config: RagConfig) -> str:
         data_dir = Config.shared().local_data_dir()
         if isinstance(data_dir, str):
             data_dir = Path(data_dir)
-        if vector_store_config.id is None:
+        if rag_config.id is None:
             raise ValueError("Vector store config ID is required")
-        return str(data_dir / "lancedb" / vector_store_config.id)
+        return str(data_dir / "lancedb" / rag_config.id)
+
+    async def destroy(self) -> None:
+        lancedb_path = LanceDBAdapter.lancedb_path_for_config(self.rag_config)
+        shutil.rmtree(lancedb_path)

@@ -10,6 +10,7 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 
 
@@ -44,8 +45,14 @@ class TestBaseVectorStoreAdapter:
             async def count_records(self) -> int:
                 return 0
 
+            async def destroy(self) -> None:
+                pass
+
+            async def is_chunk_indexed(self, document_id: str, chunk_idx: int) -> bool:
+                return True
+
         config = MagicMock(spec=VectorStoreConfig)
-        adapter = ConcreteAdapter(config)
+        adapter = ConcreteAdapter(MagicMock(spec=RagConfig), config)
         assert adapter.vector_store_config is config
 
 
@@ -87,7 +94,10 @@ class TestSearchResult:
     def test_required_fields(self):
         """Test creating a search result with required fields."""
         result = SearchResult(
-            document_id="doc123", chunk_text="This is a test chunk", similarity=0.95
+            document_id="doc123",
+            chunk_text="This is a test chunk",
+            similarity=0.95,
+            chunk_idx=0,
         )
         assert result.document_id == "doc123"
         assert result.chunk_text == "This is a test chunk"
@@ -96,7 +106,10 @@ class TestSearchResult:
     def test_optional_similarity(self):
         """Test that similarity can be None."""
         result = SearchResult(
-            document_id="doc123", chunk_text="This is a test chunk", similarity=None
+            document_id="doc123",
+            chunk_text="This is a test chunk",
+            similarity=None,
+            chunk_idx=0,
         )
         assert result.document_id == "doc123"
         assert result.chunk_text == "This is a test chunk"

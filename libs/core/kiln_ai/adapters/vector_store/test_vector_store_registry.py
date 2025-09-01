@@ -1,6 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
+from typing import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,9 @@ from kiln_ai.adapters.vector_store.vector_store_registry import (
     build_lancedb_vector_store,
     vector_store_adapter_for_config,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.embedding import EmbeddingConfig
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreType
 
 
@@ -24,6 +28,35 @@ def temp_db_path():
         import shutil
 
         shutil.rmtree(db_path)
+
+
+@pytest.fixture
+def create_rag_config_factory() -> Callable[
+    [VectorStoreConfig, EmbeddingConfig], RagConfig
+]:
+    def create_rag_config(
+        vector_store_config: VectorStoreConfig, embedding_config: EmbeddingConfig
+    ) -> RagConfig:
+        return RagConfig(
+            name="test_rag",
+            extractor_config_id="test_extractor",
+            chunker_config_id="test_chunker",
+            embedding_config_id=embedding_config.id,
+            vector_store_config_id=vector_store_config.id,
+        )
+
+    return create_rag_config
+
+
+@pytest.fixture
+def embedding_config():
+    """Create an embedding config for testing."""
+    return EmbeddingConfig(
+        name="test_embedding",
+        model_provider_name=ModelProviderName.openai,
+        model_name="text-embedding-ada-002",
+        properties={},
+    )
 
 
 @pytest.fixture
@@ -49,21 +82,30 @@ def vector_store_config(temp_db_path):
 class TestBuildLanceDBVectorStore:
     """Test the build_lancedb_vector_store function."""
 
-    def test_build_lancedb_vector_store_success(self, vector_store_config):
+    def test_build_lancedb_vector_store_success(
+        self, vector_store_config, create_rag_config_factory, embedding_config
+    ):
         """Test successful creation of LanceDBVectorStore."""
+
+        rag_config = create_rag_config_factory(vector_store_config, embedding_config)
+
         with patch("kiln_ai.utils.config.Config.shared") as mock_config:
             mock_config.return_value.local_data_dir.return_value = Path("/tmp/test")
 
             vector_store = build_lancedb_vector_store(
-                vector_store_config, mode="overwrite"
+                rag_config, vector_store_config, mode="overwrite"
             )
 
             assert vector_store is not None
             mock_config.assert_called_once()
             mock_config.return_value.local_data_dir.assert_called_once()
 
-    def test_build_lancedb_vector_store_no_id(self):
+    def test_build_lancedb_vector_store_no_id(
+        self, create_rag_config_factory, vector_store_config, embedding_config
+    ):
         """Test error handling when vector store config has no ID."""
+        rag_config = create_rag_config_factory(vector_store_config, embedding_config)
+
         config = VectorStoreConfig(
             name="test_config",
             store_type=VectorStoreType.LANCE_DB_HYBRID,
@@ -80,57 +122,76 @@ class TestBuildLanceDBVectorStore:
         config.id = None
 
         with pytest.raises(ValueError, match="Vector store config ID is required"):
-            build_lancedb_vector_store(config, mode="overwrite")
+            build_lancedb_vector_store(rag_config, config, mode="overwrite")
 
 
 class TestVectorStoreAdapterForConfig:
     """Test the vector_store_adapter_for_config function."""
 
     @pytest.mark.asyncio
-    async def test_vector_store_adapter_for_config_lance_db(self, vector_store_config):
+    async def test_vector_store_adapter_for_config_lance_db(
+        self, vector_store_config, create_rag_config_factory, embedding_config
+    ):
         """Test creating LanceDB adapter for LANCE_DB store type."""
+
+        rag_config = create_rag_config_factory(vector_store_config, embedding_config)
+
         with patch(
             "kiln_ai.adapters.vector_store.vector_store_registry.build_lancedb_vector_store"
         ) as mock_build:
             mock_vector_store = MagicMock()
             mock_build.return_value = mock_vector_store
 
-            adapter = await vector_store_adapter_for_config(vector_store_config)
+            adapter = await vector_store_adapter_for_config(
+                rag_config, vector_store_config
+            )
 
             assert isinstance(adapter, LanceDBAdapter)
             assert adapter.vector_store_config == vector_store_config
             assert adapter.lancedb_vector_store == mock_vector_store
-            mock_build.assert_called_once_with(vector_store_config, mode="overwrite")
+            mock_build.assert_called_once_with(
+                rag_config, vector_store_config, mode="overwrite"
+            )
 
     @pytest.mark.asyncio
-    async def test_vector_store_adapter_for_config_unsupported_type(self):
+    async def test_vector_store_adapter_for_config_unsupported_type(
+        self, create_rag_config_factory, vector_store_config, embedding_config
+    ):
         """Test error handling for unsupported vector store types."""
         # Create a mock config with an invalid store type
         unsupported_config = MagicMock()
         unsupported_config.store_type = "INVALID_TYPE"
         unsupported_config.name = "unsupported"
 
+        rag_config = create_rag_config_factory(
+            MagicMock(spec=VectorStoreConfig, id="test_config_id"), embedding_config
+        )
         with pytest.raises(ValueError, match="Unhandled enum value"):
-            await vector_store_adapter_for_config(unsupported_config)
+            await vector_store_adapter_for_config(rag_config, unsupported_config)
 
     @pytest.mark.asyncio
     async def test_vector_store_adapter_for_config_calls_build_lancedb_vector_store(
-        self, vector_store_config
+        self, vector_store_config, create_rag_config_factory, embedding_config
     ):
         """Test that build_lancedb_vector_store is called when creating LanceDB adapter."""
+
+        rag_config = create_rag_config_factory(vector_store_config, embedding_config)
+
         with patch(
             "kiln_ai.adapters.vector_store.vector_store_registry.build_lancedb_vector_store"
         ) as mock_build:
             mock_vector_store = MagicMock()
             mock_build.return_value = mock_vector_store
 
-            await vector_store_adapter_for_config(vector_store_config)
+            await vector_store_adapter_for_config(rag_config, vector_store_config)
 
-            mock_build.assert_called_once_with(vector_store_config, mode="overwrite")
+            mock_build.assert_called_once_with(
+                rag_config, vector_store_config, mode="overwrite"
+            )
 
     @pytest.mark.asyncio
     async def test_vector_store_adapter_for_config_passes_config_to_adapter(
-        self, vector_store_config
+        self, vector_store_config, create_rag_config_factory, embedding_config
     ):
         """Test that the adapter receives the correct vector store config."""
         with patch(
@@ -139,7 +200,12 @@ class TestVectorStoreAdapterForConfig:
             mock_vector_store = MagicMock()
             mock_build.return_value = mock_vector_store
 
-            adapter = await vector_store_adapter_for_config(vector_store_config)
+            rag_config = create_rag_config_factory(
+                vector_store_config, embedding_config
+            )
+            adapter = await vector_store_adapter_for_config(
+                rag_config, vector_store_config
+            )
 
             assert adapter.vector_store_config == vector_store_config
             assert adapter.vector_store_config.name == "test_config"

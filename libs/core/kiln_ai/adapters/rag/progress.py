@@ -78,12 +78,13 @@ class RagProgress(BaseModel):
 
 
 async def count_documents_in_vector_store(
+    rag_config: RagConfig,
     vector_store_config: VectorStoreConfig,
 ) -> int:
     # we initialize in create mode to force it to throw an error if the table doesn't exist
     # instead of the default behavior of overwriting the table may exist
     vector_store = await vector_store_adapter_for_config(
-        vector_store_config, lancedb_mode="create"
+        rag_config, vector_store_config, lancedb_mode="create"
     )
 
     try:
@@ -102,7 +103,7 @@ async def count_documents_in_vector_store_for_rag_config(
     )
     if vector_store_config is None:
         raise ValueError(f"Rag config {rag_config.id} has no vector store config")
-    return await count_documents_in_vector_store(vector_store_config)
+    return await count_documents_in_vector_store(rag_config, vector_store_config)
 
 
 async def compute_current_progress_for_rag_configs(

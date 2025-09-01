@@ -514,6 +514,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 raise ValueError("Vector dimensions are not set")
 
             vector_store = await vector_store_adapter_for_config(
+                self.rag_config,
                 self.vector_store_config,
             )
 
@@ -523,7 +524,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             # that is N(docs) * (N(chunks) + N(embeddings))
 
             indexed_count = 0
-            async for records in self.collect_records(batch_size=10000):
+            async for records in self.collect_records(batch_size=100):
                 await vector_store.add_chunks_with_embeddings(records)
                 indexed_count += len(records)
                 yield RagStepRunnerProgress(

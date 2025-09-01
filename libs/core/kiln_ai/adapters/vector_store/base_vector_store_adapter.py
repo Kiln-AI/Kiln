@@ -5,11 +5,13 @@ from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 
 
 class SearchResult(BaseModel):
     document_id: str = Field(description="The id of the Kiln document.")
+    chunk_idx: int = Field(description="The index of the chunk.")
     chunk_text: str = Field(description="The text of the chunk.")
     similarity: float | None = Field(
         description="The score of the chunk, which depends on the similarity metric used."
@@ -28,8 +30,9 @@ class KilnVectorStoreQuery(BaseModel):
 
 
 class BaseVectorStoreAdapter(ABC):
-    def __init__(self, vector_store_config: VectorStoreConfig):
+    def __init__(self, rag_config: RagConfig, vector_store_config: VectorStoreConfig):
         self.vector_store_config = vector_store_config
+        self.rag_config = rag_config
 
     @abstractmethod
     async def add_chunks_with_embeddings(
@@ -48,4 +51,8 @@ class BaseVectorStoreAdapter(ABC):
 
     @abstractmethod
     async def count_records(self) -> int:
+        pass
+
+    @abstractmethod
+    async def destroy(self) -> None:
         pass
