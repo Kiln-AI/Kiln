@@ -1,4 +1,3 @@
-from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -81,7 +80,8 @@ class TestMCPServerTool:
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
         call_result = CallToolResult(
-            content=cast(list[ContentBlock], []), isError=False
+            content=list[ContentBlock]([]),
+            isError=False,  # type: ignore
         )
         mock_session.call_tool.return_value = call_result
 
@@ -133,7 +133,8 @@ class TestMCPServerTool:
 
         result_content = [TextContent(type="text", text="Error occurred")]
         call_result = CallToolResult(
-            content=cast(list[ContentBlock], result_content), isError=True
+            content=list[ContentBlock](result_content),
+            isError=True,  # type: ignore
         )
         mock_session.call_tool.return_value = call_result
 

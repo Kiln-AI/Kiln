@@ -35,7 +35,7 @@
         params: {
           path: { project_id, task_id },
         },
-        // todo: a transform must be set up to determine how to serialize multipart file uploads
+        // Unknown as mutlipart files uploads aren't supported by the openapi-typescript library
         // see: https://github.com/openapi-ts/openapi-typescript/issues/1214
         body: formData as unknown as { file: string },
       },
@@ -90,7 +90,7 @@
         <p>
           Upload a CSV to add each row to your dataset. The CSV must have a
           header row (<a
-            href="https://docs.getkiln.ai/docs/organizing-datasets"
+            href="https://docs.kiln.tech/docs/organizing-datasets"
             target="_blank"
             class="link">see docs</a
           >). The following columns are supported:

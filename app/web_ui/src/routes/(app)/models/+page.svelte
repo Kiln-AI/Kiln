@@ -424,7 +424,7 @@
     title="Model Library"
     subtitle="Browse available models"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
+    sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
     action_buttons={[
       {
         label: "Manage Providers",

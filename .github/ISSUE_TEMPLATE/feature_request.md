@@ -12,7 +12,7 @@ A clear and concise description of what the problem is. Ex. I'm always frustrate
 
 **Checks**
 
-- [ ] I've searched [the docs](https://docs.getkiln.ai) for a solution
+- [ ] I've searched [the docs](https://docs.kiln.tech) for a solution
 - [ ] I've searched for existing Github issues
 
 **Describe the solution you'd like**

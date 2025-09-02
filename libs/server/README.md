@@ -7,7 +7,7 @@
 
 ## About Kiln AI
 
-Learn more about Kiln AI at [getkiln.ai](https://getkiln.ai)
+Learn more about Kiln AI at [kiln.tech](https://kiln.tech)
 
 This package is the Kiln AI server package. There is also a separate desktop application and python library package.
 

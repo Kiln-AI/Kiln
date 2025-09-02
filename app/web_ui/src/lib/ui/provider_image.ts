@@ -6,6 +6,7 @@ const provider_image_map: Record<ModelProviderName | "wandb", string> = {
   anthropic: "/images/anthropic.svg",
   groq: "/images/groq.svg",
   ollama: "/images/ollama.svg",
+  docker_model_runner: "/images/docker.svg",
   gemini_api: "/images/gemini.svg",
   vertex: "/images/google_logo.svg",
   amazon_bedrock: "/images/aws.svg",

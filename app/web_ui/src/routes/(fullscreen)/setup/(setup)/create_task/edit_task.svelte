@@ -269,6 +269,7 @@
       label="Prompt / Task Instructions"
       inputType="textarea"
       id="task_instructions"
+      tall="medium"
       description={prompt_description()}
       bind:value={task.instruction}
     />
@@ -301,7 +302,7 @@
           Define requirements you can use to rate the results of the model.
           These are used in the prompt, ratings, evals and training.
           <a
-            href="https://docs.getkiln.ai/docs/reviewing-and-rating"
+            href="https://docs.kiln.tech/docs/reviewing-and-rating"
             target="_blank"
             class="link">Learn more</a
           >.

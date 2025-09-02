@@ -311,6 +311,9 @@ class LiteLlmAdapter(BaseAdapter):
                 if provider_name == ModelProviderName.ollama:
                     # Ollama added json_schema to all models: https://ollama.com/blog/structured-outputs
                     return self.json_schema_response_format()
+                elif provider_name == ModelProviderName.docker_model_runner:
+                    # Docker Model Runner uses OpenAI-compatible API with JSON schema support
+                    return self.json_schema_response_format()
                 else:
                     # Default to function calling -- it's older than the other modes. Higher compatibility.
                     # Strict isn't widely supported yet, so we don't use it by default unless it's OpenAI.
@@ -449,6 +452,10 @@ class LiteLlmAdapter(BaseAdapter):
             case ModelProviderName.ollama:
                 # We don't let litellm use the Ollama API and muck with our requests. We use Ollama's OpenAI compatible API.
                 # This is because we're setting detailed features like response_format=json_schema and want lower level control.
+                is_custom = True
+            case ModelProviderName.docker_model_runner:
+                # Docker Model Runner uses OpenAI-compatible API, similar to Ollama
+                # We want direct control over the requests for features like response_format=json_schema
                 is_custom = True
             case ModelProviderName.gemini_api:
                 litellm_provider_name = "gemini"

@@ -3,7 +3,7 @@ See our docs for details about our datamodel classes and hierarchy:
 
 Developer docs: https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html
 
-User docs: https://docs.getkiln.ai/developers/kiln-datamodel
+User docs: https://docs.kiln.tech/developers/kiln-datamodel
 """
 
 # This component uses "flat" imports so we don't have too much internal structure exposed in the API.
@@ -48,32 +48,32 @@ from kiln_ai.datamodel.task_run import (
 )
 
 __all__ = [
-    "strict_mode",
-    "dataset_split",
-    "eval",
-    "Task",
-    "Project",
-    "TaskRun",
-    "TaskOutput",
-    "Priority",
+    "BasePrompt",
     "DataSource",
-    "DataSourceType",
     "DataSourceProperty",
+    "DataSourceType",
+    "DatasetSplit",
+    "DatasetSplitDefinition",
     "ExternalToolServer",
-    "Finetune",
     "FineTuneStatusType",
+    "Finetune",
+    "Priority",
+    "Project",
+    "Prompt",
+    "PromptGenerators",
+    "PromptId",
+    "RequirementRating",
+    "StructuredOutputMode",
+    "Task",
+    "TaskOutput",
+    "TaskOutputRating",
     "TaskOutputRatingType",
     "TaskRequirement",
-    "DatasetSplitDefinition",
-    "DatasetSplit",
-    "RequirementRating",
     "TaskRequirement",
-    "BasePrompt",
-    "Prompt",
-    "TaskOutputRating",
-    "StructuredOutputMode",
-    "PromptId",
-    "PromptGenerators",
-    "prompt_generator_values",
+    "TaskRun",
     "Usage",
+    "dataset_split",
+    "eval",
+    "prompt_generator_values",
+    "strict_mode",
 ]
