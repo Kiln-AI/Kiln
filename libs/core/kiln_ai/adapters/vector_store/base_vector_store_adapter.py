@@ -46,10 +46,6 @@ class BaseVectorStoreAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_all_chunks(self) -> List[SearchResult]:
-        pass
-
-    @abstractmethod
     async def count_records(self) -> int:
         pass
 

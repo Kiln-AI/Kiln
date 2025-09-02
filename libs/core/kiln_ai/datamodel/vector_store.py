@@ -20,12 +20,6 @@ class VectorStoreType(str, Enum):
     LANCE_DB_VECTOR = "lancedb_vector"
 
 
-class LanceDBQueryType(str, Enum):
-    FTS = "fts"
-    HYBRID = "hybrid"
-    VECTOR = "vector"
-
-
 class LanceDBConfigBaseProperties(BaseModel):
     similarity_top_k: int = Field(
         description="The number of results to return from the vector store.",
@@ -63,15 +57,15 @@ class VectorStoreConfig(KilnParentedModel):
     def validate_properties(self):
         match self.store_type:
             case VectorStoreType.LANCE_DB_FTS:
-                return self.validate_lancedb_properties(LanceDBQueryType.FTS)
+                return self.validate_lancedb_properties(VectorStoreType.LANCE_DB_FTS)
             case VectorStoreType.LANCE_DB_HYBRID:
-                return self.validate_lancedb_properties(LanceDBQueryType.HYBRID)
+                return self.validate_lancedb_properties(VectorStoreType.LANCE_DB_HYBRID)
             case VectorStoreType.LANCE_DB_VECTOR:
-                return self.validate_lancedb_properties(LanceDBQueryType.VECTOR)
+                return self.validate_lancedb_properties(VectorStoreType.LANCE_DB_VECTOR)
             case _:
                 raise_exhaustive_enum_error(self.store_type)
 
-    def validate_lancedb_properties(self, query_type: LanceDBQueryType):
+    def validate_lancedb_properties(self, store_type: VectorStoreType):
         validate_return_dict_prop(self.properties, "similarity_top_k", int)
         validate_return_dict_prop(self.properties, "overfetch_factor", int)
         validate_return_dict_prop(self.properties, "vector_column_name", str)
@@ -80,8 +74,8 @@ class VectorStoreConfig(KilnParentedModel):
 
         # nprobes is only used for vector and hybrid queries
         if (
-            query_type == LanceDBQueryType.VECTOR
-            or query_type == LanceDBQueryType.HYBRID
+            store_type == VectorStoreType.LANCE_DB_VECTOR
+            or store_type == VectorStoreType.LANCE_DB_HYBRID
         ):
             validate_return_dict_prop(self.properties, "nprobes", int)
 
