@@ -161,6 +161,11 @@ class Config:
                 str,
                 env_var="CUSTOM_MCP_PATH",
             ),
+            # Allow the user to set secrets for MCP servers, the key is mcp_server_id::key_name
+            "mcp_secrets": ConfigProperty(
+                dict[str, str],
+                sensitive=True,
+            ),
         }
         self._lock = threading.Lock()
         self._settings = self.load_settings()

@@ -36,6 +36,7 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
+    secret_header_keys: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_server_details(self):
@@ -86,6 +87,24 @@ class ExternalToolServerCreationRequest(BaseModel):
 
             # Update headers to validated version
             self.headers = validated_headers
+
+        # Validate secret header keys
+        if isinstance(self.secret_header_keys, list):
+            validated_secret_header_keys = []
+            for key in self.secret_header_keys:
+                key_str = key.strip() if isinstance(key, str) else str(key).strip()
+                if not key_str:
+                    raise ValueError("Secret header key is required")
+                # Check if the key is in the headers
+                if key_str not in self.headers:
+                    raise ValueError(
+                        f"Secret header key {key_str} is not in the headers"
+                    )
+
+                validated_secret_header_keys.append(key_str)
+
+            # Update secret header keys to validated version
+            self.secret_header_keys = validated_secret_header_keys
 
         return self
 
@@ -303,6 +322,7 @@ def connect_tool_servers_api(app: FastAPI):
         project_id: str, tool_server_id: str
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
+        print(f"tool_server: {tool_server}")
 
         # Get available tools based on server type
         available_tools = []
@@ -337,7 +357,7 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with required fields
+        # Create the ExternalToolServer with required fields, temporarily store all headers in properties to validate the connectivity
         properties = {
             "server_url": tool_data.server_url,
             "headers": tool_data.headers,
@@ -354,8 +374,32 @@ def connect_tool_servers_api(app: FastAPI):
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(tool_server)
 
+        # Now the tool server is validate
+        # Remove the secret headers from the properties and store them in the configuration
+        non_secret_headers = {
+            key: tool_data.headers[key]
+            for key in tool_data.headers.keys()
+            if key not in tool_data.secret_header_keys
+        }
+
+        tool_server.properties["headers"] = non_secret_headers
+        tool_server.properties["secret_header_keys"] = tool_data.secret_header_keys
+
         # Save the tool to file
         tool_server.save_to_file()
+
+        # Store secret headers in the configuration before validation
+        if tool_data.secret_header_keys:
+            config = Config.shared()
+            mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+
+            # Store secrets with the pattern: mcp_server_id::header_name
+            for header_name in tool_data.secret_header_keys:
+                header_value = tool_data.headers[header_name]
+                secret_key = f"{tool_server.id}::{header_name}"
+                mcp_secrets[secret_key] = header_value
+
+            config.update_settings({"mcp_secrets": mcp_secrets})
 
         return tool_server
 

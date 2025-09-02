@@ -62,6 +62,16 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "headers must be a dictionary for external tools of type 'remote_mcp'"
                     )
+
+                secret_headers_keys = self.properties.get("secret_headers_keys", None)
+                # Secret headers keys are optional, but if they are set, they must be a list of strings
+                if secret_headers_keys is not None and not isinstance(
+                    secret_headers_keys, list
+                ):
+                    raise ValueError(
+                        "secret_headers_keys must be a list for external tools of type 'remote_mcp'"
+                    )
+
             case ToolServerType.local_mcp:
                 command = self.properties.get("command", None)
                 if not isinstance(command, str):

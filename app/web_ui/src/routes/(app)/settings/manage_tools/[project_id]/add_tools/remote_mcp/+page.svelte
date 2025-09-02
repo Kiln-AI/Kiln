@@ -19,6 +19,7 @@
     key: string
     value: string
     placeholder: string | null
+    is_secret: boolean
   }
 
   let headers: HeaderPair[] = []
@@ -46,16 +47,28 @@
     }
   })
 
-  function buildHeadersObject(): Record<string, string> {
+  function buildHeadersObject(): {
+    headersObj: Record<string, string>
+    secret_header_keys: string[]
+  } {
     const headersObj: Record<string, string> = {}
+    const secretHeaderKeys: string[] = []
 
     for (const header of headers) {
       if (header.key.trim() && header.value.trim()) {
-        headersObj[header.key.trim()] = header.value.trim()
+        const key = header.key.trim()
+        headersObj[key] = header.value.trim()
+
+        if (header.is_secret) {
+          secretHeaderKeys.push(key)
+        }
       }
     }
 
-    return headersObj
+    return {
+      headersObj: headersObj,
+      secret_header_keys: secretHeaderKeys,
+    }
   }
 
   async function connect_remote_mcp() {
@@ -63,7 +76,7 @@
       error = null
       submitting = true
 
-      const headersObj = buildHeadersObject()
+      const headersData = buildHeadersObject()
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/connect_remote_mcp",
@@ -76,7 +89,8 @@
           body: {
             name: name.trim(),
             server_url: server_url.trim(),
-            headers: headersObj,
+            headers: headersData.headersObj,
+            secret_header_keys: headersData.secret_header_keys,
             description: description.trim() || null,
           },
         },
@@ -177,6 +191,16 @@
               placeholder={headers[item_index].placeholder || "Value"}
               light_label={true}
               bind:value={headers[item_index].value}
+            />
+          </div>
+          <div class="flex-1 max-w-[20px]">
+            <FormElement
+              inputType="checkbox"
+              label="Is Secret?"
+              id="secret_{item_index}"
+              info_description="If this header is a secret such as an API key, check this box to prevent it from being synced. Kiln will store the secret in your project's settings."
+              light_label={true}
+              bind:value={headers[item_index].is_secret}
             />
           </div>
         </div>
