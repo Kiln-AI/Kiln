@@ -59,6 +59,10 @@
 
 Or watch our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
 
+## People in Our Community Work For
+
+<img width="500" alt="Logo Grid" src="https://github.com/user-attachments/assets/f85a16af-37ae-41bf-95f7-11e13f8a5e47" />
+
 ## Download Kiln Desktop Apps
 
 Available on MacOS, Windows and Linux.
