@@ -14,7 +14,7 @@ from llama_index.core.vector_stores.types import (
     VectorStoreQueryResult,
 )
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
-from llama_index.vector_stores.lancedb.base import MetadataFilters, TableNotFoundError
+from llama_index.vector_stores.lancedb.base import MetadataFilters
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -49,12 +49,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     async def is_chunk_indexed(
         self, document_id: str, chunk_idx: int, node_hash: str
     ) -> bool:
-        # before the first write, we get a TableNotFoundError when trying to access the table
-        try:
-            self.lancedb_vector_store.table
-        except TableNotFoundError:
-            return False
-
         nodes = self.lancedb_vector_store.get_nodes(
             filters=MetadataFilters(
                 filters=[
@@ -108,15 +102,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 node_hash = self.hash_node(
                     chunk_text, embedding.vector, document_id, chunk_idx
                 )
-
-                # the correct way of doing an upsert is not supported by llamaindex
-                # we check if the chunk is already indexed using a non-atomic check
-                # but we must be careful with concurrency to avoid duplicates
-                if await self.is_chunk_indexed(document_id, chunk_idx, node_hash):
-                    continue
-                else:
-                    # TODO: delete the chunk
-                    pass
 
                 nodes.append(
                     TextNode(
@@ -222,7 +207,9 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         table = self.lancedb_vector_store.table
         if table is None:
             raise ValueError("Table is not initialized")
-        return table.count_rows()
+        table.optimize()
+        count = table.count_rows()
+        return count
 
     @property
     def query_type(self) -> LanceDBQueryType:

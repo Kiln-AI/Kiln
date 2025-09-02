@@ -24,7 +24,7 @@ def mock_project():
 def mock_vector_store_count():
     """Mock the vector store count operations to return 0 by default"""
     with patch(
-        "kiln_ai.adapters.rag.progress.count_documents_in_vector_store_for_rag_config",
+        "kiln_ai.adapters.rag.progress.count_records_in_vector_store_for_rag_config",
         new_callable=AsyncMock,
         return_value=0,
     ) as mock:

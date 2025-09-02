@@ -118,14 +118,18 @@ async def run_all_extractors_and_rag_workflows(
         for result in results:
             if isinstance(result, Exception):
                 logger.error(f"Error running extractor: {result}")
+        logger.warning(f"Extractor tasks: {extractor_tasks}")
 
     rag_tasks: list[asyncio.Task] = []
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
 
         async def run_rag(rag_config=rag_config):
-            # no need to lock here, each rag runner gets a lock when it starts running
+            # no need to lock here, each rag step runner gets a lock when it starts running
             rag_runner = await build_rag_workflow_runner(project, str(rag_config.id))
             async for progress in rag_runner.run():
+                logger.warning(
+                    f"RAG workflow progress ({rag_config.id}): {progress.total_document_completed_count}, {progress.total_document_count}, {progress.total_chunk_completed_count}, {progress.total_chunk_count}, {progress.total_document_extracted_count}, {progress.total_document_chunked_count}, {progress.total_document_embedded_count}, {progress.total_document_extracted_error_count}, {progress.total_document_chunked_error_count}, {progress.total_document_embedded_error_count}, {progress.total_chunks_indexed_count}, {progress.total_chunks_indexed_error_count}"
+                )
                 pass
 
         rag_tasks.append(asyncio.create_task(run_rag()))
@@ -134,7 +138,10 @@ async def run_all_extractors_and_rag_workflows(
         results = await asyncio.gather(*rag_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error running RAG workflow: {result}")
+                logger.error(
+                    f"Error running RAG workflow: {type(result).__name__}: {result}",
+                    exc_info=result,
+                )
 
     return None
 
@@ -172,14 +179,16 @@ async def run_rag_workflow_runner_with_status(
             data = {
                 "total_document_completed_count": progress.total_document_completed_count,
                 "total_document_count": progress.total_document_count,
+                "total_chunk_count": progress.total_chunk_count,
+                "total_chunk_completed_count": progress.total_chunk_completed_count,
                 "total_document_extracted_count": progress.total_document_extracted_count,
                 "total_document_chunked_count": progress.total_document_chunked_count,
                 "total_document_embedded_count": progress.total_document_embedded_count,
                 "total_document_extracted_error_count": progress.total_document_extracted_error_count,
                 "total_document_chunked_error_count": progress.total_document_chunked_error_count,
                 "total_document_embedded_error_count": progress.total_document_embedded_error_count,
-                "total_document_indexed_count": progress.total_document_indexed_count,
-                "total_document_indexed_error_count": progress.total_document_indexed_error_count,
+                "total_chunks_indexed_count": progress.total_chunks_indexed_count,
+                "total_chunks_indexed_error_count": progress.total_chunks_indexed_error_count,
                 "logs": logs,
             }
             yield f"data: {json.dumps(data)}\n\n"

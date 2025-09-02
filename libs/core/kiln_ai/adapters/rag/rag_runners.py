@@ -11,6 +11,9 @@ from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
+    BaseVectorStoreAdapter,
+)
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
 )
@@ -53,9 +56,18 @@ class EmbeddingJob:
 
 
 class RagStepRunnerProgress(BaseModel):
-    success_count: int | None = None
-    error_count: int | None = None
-    logs: list[LogMessage] = []
+    success_count: int | None = Field(
+        description="The number of items that have been processed",
+        default=None,
+    )
+    error_count: int | None = Field(
+        description="The number of items that have errored",
+        default=None,
+    )
+    logs: list[LogMessage] = Field(
+        description="A list of log messages to display to the user",
+        default=[],
+    )
 
 
 T = TypeVar("T")
@@ -231,7 +243,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
             jobs = await self.collect_jobs()
             extractor = extractor_adapter_from_type(
                 self.extractor_config.extractor_type,
@@ -308,7 +320,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
             jobs = await self.collect_jobs()
             chunker = chunker_adapter_from_type(
                 self.chunker_config.chunker_type,
@@ -395,7 +407,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         return jobs
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
             jobs = await self.collect_jobs()
             embedding_adapter = embedding_adapter_from_type(
                 self.embedding_config,
@@ -497,6 +509,26 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         if len(jobs) > 0:
             yield jobs
 
+    async def count_total_chunks(self) -> int:
+        total_chunk_count = 0
+        async for records in self.collect_records(batch_size=1):
+            _, chunked_doc, _ = records[0]
+            total_chunk_count += len(chunked_doc.chunks)
+        return total_chunk_count
+
+    async def reset_store(self) -> BaseVectorStoreAdapter:
+        previous_vector_store = await vector_store_adapter_for_config(
+            self.rag_config,
+            self.vector_store_config,
+        )
+        await previous_vector_store.destroy()
+
+        new_vector_store = await vector_store_adapter_for_config(
+            self.rag_config,
+            self.vector_store_config,
+        )
+        return new_vector_store
+
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         async with shared_async_lock_manager.acquire(self.lock_key):
             vector_dimensions: int | None = None
@@ -513,24 +545,42 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             if vector_dimensions is None:
                 raise ValueError("Vector dimensions are not set")
 
-            vector_store = await vector_store_adapter_for_config(
-                self.rag_config,
-                self.vector_store_config,
+            # enforcing idempotence with llama_index wrappers is too fragile
+            # so we destroy the entire store and recreate it from scratch
+            vector_store = await self.reset_store()
+
+            yield RagStepRunnerProgress(
+                success_count=0,
+                error_count=0,
             )
 
-            # TODO: count the number of records to upsert, we need to do a separate first pass
-            # to count, because we cannot just acc everything into an array (would be too big
-            # if the user has thousands of documents
-            # that is N(docs) * (N(chunks) + N(embeddings))
-
+            batch_size = 100
             indexed_count = 0
-            async for records in self.collect_records(batch_size=100):
-                await vector_store.add_chunks_with_embeddings(records)
-                indexed_count += len(records)
-                yield RagStepRunnerProgress(
-                    success_count=indexed_count,
-                    error_count=0,
-                )
+            async for records in self.collect_records(batch_size=batch_size):
+                chunk_count = 0
+                for record in records:
+                    chunk_count += len(record[1].chunks)
+
+                try:
+                    await vector_store.add_chunks_with_embeddings(records)
+                    indexed_count += chunk_count
+                    yield RagStepRunnerProgress(
+                        success_count=chunk_count,
+                        error_count=0,
+                    )
+                except Exception as e:
+                    error_msg = f"Error indexing document batch starting with {records[0][0]}: {e}"
+                    logger.error(error_msg, exc_info=True)
+                    yield RagStepRunnerProgress(
+                        success_count=0,
+                        error_count=chunk_count,
+                        logs=[
+                            LogMessage(
+                                level="error",
+                                message=error_msg,
+                            ),
+                        ],
+                    )
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):
@@ -622,17 +672,19 @@ class RagWorkflowRunner:
                         + self.initial_progress.total_document_embedded_error_count,
                     )
             case RagWorkflowStepNames.INDEXING:
+                logger.warning(
+                    f"Indexing step progress: total_chunks_indexed_count: {self.current_progress.total_chunks_indexed_count}, step_progress.success_count: {step_progress.success_count}"
+                )
                 if step_progress.success_count is not None:
-                    self.current_progress.total_document_indexed_count = max(
-                        self.current_progress.total_document_indexed_count,
-                        step_progress.success_count
-                        + self.initial_progress.total_document_indexed_count,
+                    self.current_progress.total_chunks_indexed_count = (
+                        self.current_progress.total_chunks_indexed_count
+                        + step_progress.success_count
                     )
                 if step_progress.error_count is not None:
-                    self.current_progress.total_document_indexed_error_count = max(
-                        self.current_progress.total_document_indexed_error_count,
+                    self.current_progress.total_chunks_indexed_error_count = max(
+                        self.current_progress.total_chunks_indexed_error_count,
                         step_progress.error_count
-                        + self.initial_progress.total_document_indexed_error_count,
+                        + self.initial_progress.total_chunks_indexed_error_count,
                     )
             case _:
                 raise_exhaustive_enum_error(step_name)
@@ -641,7 +693,10 @@ class RagWorkflowRunner:
             self.current_progress.total_document_extracted_count,
             self.current_progress.total_document_chunked_count,
             self.current_progress.total_document_embedded_count,
-            self.current_progress.total_document_indexed_count,
+        )
+
+        self.current_progress.total_chunk_completed_count = (
+            self.current_progress.total_chunks_indexed_count
         )
 
         self.current_progress.logs = step_progress.logs
@@ -650,12 +705,24 @@ class RagWorkflowRunner:
     async def run(
         self, stages_to_run: list[RagWorkflowStepNames] | None = None
     ) -> AsyncGenerator[RagProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
             yield self.initial_progress
 
             for step in self.step_runners:
                 if stages_to_run is not None and step.stage() not in stages_to_run:
                     continue
+
+                # we need to know the total number of chunks to index to be able to
+                # calculate the progress on the client
+                if step.stage() == RagWorkflowStepNames.INDEXING and isinstance(
+                    step, RagIndexingStepRunner
+                ):
+                    # reindexing restarts from 0 because we destroy the entire store
+                    self.current_progress.total_chunk_completed_count = 0
+                    self.current_progress.total_chunks_indexed_count = 0
+                    self.current_progress.total_chunk_count = (
+                        await step.count_total_chunks()
+                    )
 
                 async for progress in step.run():
                     yield self.update_workflow_progress(step.stage(), progress)
