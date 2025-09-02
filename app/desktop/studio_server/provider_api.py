@@ -20,7 +20,6 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
@@ -180,7 +179,7 @@ class ProviderModel(BaseModel):
 
 
 class ProviderModels(BaseModel):
-    models: Dict[ModelName, ProviderModel]
+    models: Dict[str, ProviderModel]
 
 
 class ProviderEmbeddingModels(BaseModel):

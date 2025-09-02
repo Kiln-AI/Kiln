@@ -121,6 +121,7 @@ class ModelName(str, Enum):
     qwen_2p5_14b = "qwen_2p5_14b"
     qwen_2p5_72b = "qwen_2p5_72b"
     qwq_32b = "qwq_32b"
+    deepseek_3_1 = "deepseek_3_1"
     deepseek_3 = "deepseek_3"
     deepseek_r1 = "deepseek_r1"
     deepseek_r1_0528 = "deepseek_r1_0528"
@@ -279,6 +280,13 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
@@ -842,26 +850,25 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude 3.5 Sonnet
+    # Claude Sonnet 4
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_3_5_sonnet,
-        friendly_name="Claude 3.5 Sonnet",
+        name=ModelName.claude_sonnet_4,
+        friendly_name="Claude 4 Sonnet",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-sonnet-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                model_id="anthropic/claude-3.5-sonnet",
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
-                model_id="claude-3-5-sonnet-20241022",
+                model_id="claude-sonnet-4-20250514",
                 structured_output_mode=StructuredOutputMode.function_calling,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.vertex,
-                model_id="claude-3-5-sonnet",
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
@@ -906,25 +913,26 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude Sonnet 4
+    # Claude 3.5 Sonnet
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_sonnet_4,
-        friendly_name="Claude Sonnet 4",
+        name=ModelName.claude_3_5_sonnet,
+        friendly_name="Claude 3.5 Sonnet",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="anthropic/claude-sonnet-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
+                model_id="anthropic/claude-3.5-sonnet",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
-                model_id="claude-sonnet-4-20250514",
+                model_id="claude-3-5-sonnet-20241022",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="claude-3-5-sonnet",
+                structured_output_mode=StructuredOutputMode.function_calling_weak,
             ),
         ],
     ),
@@ -2215,6 +2223,26 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
+            ),
+        ],
+    ),
+    # DeepSeek 3.1
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_3_1,
+        friendly_name="DeepSeek 3.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-chat-v3.1",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v3p1",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
             ),
         ],
     ),
