@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -3250,6 +3250,303 @@ async def test_delete_tool_server_affects_available_servers_list(client, test_pr
             assert remaining_servers[0]["name"] == "tool_server_2"
 
 
+async def test_delete_tool_server_with_secret_headers(client, test_project):
+    """Test that deleting a tool server removes secret headers from Config"""
+    # Create a tool server with secret headers
+    tool_data = {
+        "name": "tool_with_secrets",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Authorization": "Bearer secret-token-123",
+            "X-API-Key": "api-key-456",
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization", "X-API-Key"],
+        "description": "Tool with secret headers",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify the tool server was created with secret headers
+            assert "secret_header_keys" in created_tool["properties"]
+            assert created_tool["properties"]["secret_header_keys"] == [
+                "Authorization",
+                "X-API-Key",
+            ]
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    f"{tool_server_id}::Authorization": "Bearer secret-token-123",
+                    f"{tool_server_id}::X-API-Key": "api-key-456",
+                    "other_server::some_header": "other_value",  # Should not be deleted
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that secret headers were removed from config
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that the updated mcp_secrets no longer contains the deleted server's secrets
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_tool_server_no_secret_headers(client, test_project):
+    """Test that deleting a tool server without secret headers works correctly"""
+    # Create a tool server without secret headers
+    tool_data = {
+        "name": "tool_without_secrets",
+        "server_url": "https://example.com/api",
+        "headers": {"Content-Type": "application/json"},
+        "secret_header_keys": [],
+        "description": "Tool without secret headers",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify the tool server was created without secret headers
+            assert created_tool["properties"]["secret_header_keys"] == []
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    "other_server::some_header": "other_value"
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that config update was still called (even with empty secret_header_keys)
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that existing secrets remain unchanged
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_tool_server_missing_secret_header_keys_property(
+    client, test_project
+):
+    """Test that deleting a tool server handles missing secret_header_keys property gracefully"""
+    # Create a tool server first
+    tool_data = {
+        "name": "tool_without_secret_keys_prop",
+        "server_url": "https://example.com/api",
+        "headers": {"Content-Type": "application/json"},
+        "secret_header_keys": [],
+        "description": "Tool for testing missing property",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Manually remove the secret_header_keys property to simulate old data
+            # This requires directly modifying the tool server's properties
+            tool_server = tool_server_from_id(test_project.id, tool_server_id)
+            del tool_server.properties["secret_header_keys"]
+            tool_server.save_to_file()
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    "other_server::some_header": "other_value"
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server - this should handle the missing property gracefully
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that config update was still called
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that existing secrets remain unchanged since no secret keys were found
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_tool_server_secret_key_not_in_config(client, test_project):
+    """Test that deleting a tool server handles cases where secret keys are not in config"""
+    # Create a tool server with secret headers
+    tool_data = {
+        "name": "tool_with_missing_secrets",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Authorization": "Bearer secret-token-123",
+            "X-API-Key": "api-key-456",
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization", "X-API-Key"],
+        "description": "Tool with secret headers not in config",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Now mock Config for delete - but don't include this server's secrets
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                # Config doesn't have the secret keys for this tool server
+                mock_config.get_value.return_value = {
+                    "other_server::some_header": "other_value"
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server - this should handle missing secrets gracefully
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that config update was still called
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that existing secrets remain unchanged since the secret keys weren't in config
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_tool_server_local_mcp_no_secret_headers(client, test_project):
+    """Test that deleting a local MCP tool server (which doesn't have secret headers) works correctly"""
+    # Create a local MCP tool server
+    tool_data = {
+        "name": "local_tool_no_secrets",
+        "command": "python",
+        "args": ["-m", "test_server"],
+        "env_vars": {"DEBUG": "true"},
+        "description": "Local tool without secret headers",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the local tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify it's a local MCP server (no secret_header_keys property expected)
+            assert created_tool["type"] == "local_mcp"
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    "other_server::some_header": "other_value"
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that config update was still called
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that existing secrets remain unchanged
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
 # Tests for demo tools API endpoints
 def test_get_demo_tools_enabled(client):
     """Test GET /api/demo_tools returns True when demo tools are enabled"""
@@ -3497,3 +3794,117 @@ async def test_connect_remote_mcp_secret_header_validation_error(client, test_pr
             "Secret header key Authorization is not in the headers" in str(error)
             for error in error_detail
         )
+
+
+async def test_delete_tool_server_config_update_fixed(client, test_project):
+    """Test that deleting a tool server with secret headers properly saves config changes"""
+    # Create a tool server with secret headers
+    tool_data = {
+        "name": "tool_with_config_bug",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Authorization": "Bearer secret-token-123",
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization"],
+        "description": "Tool to test config update bug",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    f"{tool_server_id}::Authorization": "Bearer secret-token-123",
+                    "other_server::some_header": "other_value",
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # FIXED: The implementation now properly calls update_settings after removing secrets
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Verify that the secret for this tool server was removed
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_tool_server_missing_secret_key_in_config(client, test_project):
+    """Test that deleting a tool server handles gracefully when secret keys are not in config"""
+    # Create a tool server with secret headers
+    tool_data = {
+        "name": "tool_missing_secret_key",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Authorization": "Bearer secret-token-123",
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization"],
+        "description": "Tool to test missing secret key handling",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Mock Config for delete - but don't include this server's secrets
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                # The secret for this tool server is NOT in the config (maybe it was manually deleted)
+                mock_config.get_value.return_value = {
+                    "other_server::some_header": "other_value",
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete should work without error even if secret key is missing
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Config should still be updated (even though no secrets were removed)
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Other secrets should remain unchanged
+                expected_remaining_secrets = {
+                    "other_server::some_header": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets

@@ -435,6 +435,30 @@ def connect_tool_servers_api(app: FastAPI):
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):
         tool_server = tool_server_from_id(project_id, tool_server_id)
+
+        # Delete the secret headers from the settings
+        config = Config.shared()
+        mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+
+        match tool_server.type:
+            case ToolServerType.remote_mcp:
+                secret_header_keys = tool_server.properties.get(
+                    "secret_header_keys", []
+                )
+                for header_name in secret_header_keys:
+                    secret_key = f"{tool_server.id}::{header_name}"
+                    if secret_key in mcp_secrets:
+                        del mcp_secrets[secret_key]
+            case ToolServerType.local_mcp:
+                # TODO: Implement this
+                pass
+            case _:
+                raise_exhaustive_enum_error(tool_server.type)
+
+        # Update the config with the modified secrets
+        config.update_settings({"mcp_secrets": mcp_secrets})
+
+        # Delete the tool server from the file system
         tool_server.delete()
 
     @app.get("/api/demo_tools")
