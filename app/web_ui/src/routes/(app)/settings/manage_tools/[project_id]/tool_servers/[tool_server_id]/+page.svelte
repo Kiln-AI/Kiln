@@ -134,6 +134,30 @@
     return properties
   }
 
+  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
+    const headers = tool.properties["headers"] || {}
+    const secretHeaderKeys = (tool.properties["secret_header_keys"] ||
+      []) as string[]
+
+    const properties = Object.entries(headers).map(([key, value]) => ({
+      name: key,
+      value: String(value ?? "N/A"),
+    }))
+
+    // Add secret headers with masked values
+    secretHeaderKeys.forEach((key: string) => {
+      // Only add if not already in regular headers
+      if (!(key in headers)) {
+        properties.push({
+          name: key,
+          value: "****",
+        })
+      }
+    })
+
+    return properties
+  }
+
   interface Argument {
     name: string
     type: string
@@ -231,12 +255,7 @@
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
               <PropertyList
-                properties={Object.entries(
-                  tool_server.properties["headers"] || {},
-                ).map(([key, value]) => ({
-                  name: key,
-                  value: String(value ?? "N/A"),
-                }))}
+                properties={getHeadersProperties(tool_server)}
                 title="Headers"
               />
             </div>
