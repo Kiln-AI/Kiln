@@ -1,5 +1,4 @@
-import hashlib
-import json
+import asyncio
 import logging
 import shutil
 from pathlib import Path
@@ -53,54 +52,48 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             **kwargs,
         )
 
-    def hash_node(
-        self, text: str, embedding: list[float], document_id: str, chunk_idx: int
-    ) -> str:
-        return hashlib.sha256(
-            json.dumps(
-                {
-                    "text": text,
-                    "embedding": embedding,
-                    "kiln_doc_id": document_id,
-                    "kiln_chunk_idx": chunk_idx,
-                }
-            ).encode()
-        ).hexdigest()
-
     async def add_chunks_with_embeddings(
         self,
         records: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
+        nodes_batch_size: int = 100,
     ) -> None:
-        nodes: List[TextNode] = []
-        for document_id, chunked_document, chunk_embeddings in records:
-            # Get text content from each chunk in the document
-            chunks_text = await chunked_document.load_chunks_text()
+        if len(records) == 0:
+            return
 
+        node_batch: List[TextNode] = []
+        for document_id, chunked_document, chunk_embeddings in records:
+            if len(chunk_embeddings.embeddings) != len(chunked_document.chunks):
+                raise RuntimeError(
+                    f"Number of embeddings ({len(chunk_embeddings.embeddings)}) does not match number of chunks ({len(chunked_document.chunks)}) for document {document_id}"
+                )
+
+            chunks_text = await chunked_document.load_chunks_text()
             for chunk_idx, (chunk_text, embedding) in enumerate(
                 zip(chunks_text, chunk_embeddings.embeddings)
             ):
-                node_hash = self.hash_node(
-                    chunk_text, embedding.vector, document_id, chunk_idx
-                )
-
-                nodes.append(
+                node_batch.append(
                     TextNode(
                         text=chunk_text,
                         embedding=embedding.vector,
                         metadata={
                             "kiln_doc_id": document_id,
                             "kiln_chunk_idx": chunk_idx,
-                            "kiln_node_hash": node_hash,
                         },
                     )
                 )
-        await self.lancedb_vector_store.async_add(nodes)
 
-        table = self.lancedb_vector_store.table
-        if table is None:
-            raise ValueError("Table is not initialized")
+                if len(node_batch) >= nodes_batch_size:
+                    # async_add is currently not async, LanceDB has an async API but
+                    # llama_index does not use it, so it is synchronous and blocking
+                    # avoid calling with too many nodes at once
+                    await self.lancedb_vector_store.async_add(node_batch)
+                    node_batch.clear()
 
-        table.optimize()
+            await asyncio.sleep(0)
+
+        if node_batch:
+            await self.lancedb_vector_store.async_add(node_batch)
+            node_batch.clear()
 
     def format_query_result(
         self, query_result: VectorStoreQueryResult
