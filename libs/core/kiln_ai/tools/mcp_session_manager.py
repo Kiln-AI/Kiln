@@ -64,7 +64,8 @@ class MCPSessionManager:
         if not server_url:
             raise ValueError("server_url is required")
 
-        headers = tool_server.properties.get("headers", {})
+        # Make a copy of the headers to avoid modifying the original object
+        headers = tool_server.properties.get("headers", {}).copy()
 
         # Retrieve secret headers from configuration and merge with regular headers
         secret_headers_keys = tool_server.properties.get("secret_header_keys", [])

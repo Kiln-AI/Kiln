@@ -397,6 +397,155 @@ class TestMCPSessionManager:
             "http://example.com/mcp", headers=expected_headers
         )
 
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_secret_headers_do_not_modify_original_properties(
+        self, mock_config, mock_client
+    ):
+        """Test that secret headers are not saved back to the original tool server properties."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Mock config with secret headers
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = {
+            "test_server_id::Authorization": "Bearer secret-token-123",
+            "test_server_id::X-API-Key": "api-key-456",
+        }
+        mock_config.return_value = mock_config_instance
+
+        # Create a tool server with secret header keys
+        tool_server = ExternalToolServer(
+            name="bug_test_server",
+            type=ToolServerType.remote_mcp,
+            description="Server to test the secret headers bug",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
+        )
+        # Set the server ID to match our mock secrets
+        tool_server.id = "test_server_id"
+
+        # Store original headers for comparison
+        original_headers = tool_server.properties["headers"].copy()
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            # Use the session multiple times to ensure the bug doesn't occur
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+            # Check that original headers are unchanged after first use
+            assert tool_server.properties["headers"] == original_headers
+            assert "Authorization" not in tool_server.properties["headers"]
+            assert "X-API-Key" not in tool_server.properties["headers"]
+
+            # Use the session a second time to ensure the bug doesn't occur on subsequent uses
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+            # Check that original headers are still unchanged after second use
+            assert tool_server.properties["headers"] == original_headers
+            assert "Authorization" not in tool_server.properties["headers"]
+            assert "X-API-Key" not in tool_server.properties["headers"]
+
+        # Verify streamablehttp_client was called with merged headers both times
+        expected_headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer secret-token-123",
+            "X-API-Key": "api-key-456",
+        }
+        # Should have been called twice (once for each session)
+        assert mock_client.call_count == 2
+        for call in mock_client.call_args_list:
+            assert call[0][0] == "http://example.com/mcp"
+            assert call[1]["headers"] == expected_headers
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_demonstrates_bug_without_copy_fix(self, mock_config, mock_client):
+        """
+        Test that demonstrates the bug that would occur without the .copy() fix.
+        This test simulates what would happen if we modified headers directly.
+        """
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Mock config with secret headers
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = {
+            "test_server_id::Authorization": "Bearer secret-token-123",
+        }
+        mock_config.return_value = mock_config_instance
+
+        # Create a tool server with secret header keys
+        tool_server = ExternalToolServer(
+            name="bug_demo_server",
+            type=ToolServerType.remote_mcp,
+            description="Server to demonstrate the bug",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        # Store original headers for comparison
+        original_headers = tool_server.properties["headers"].copy()
+
+        # Simulate the buggy behavior by directly modifying the headers
+        # (This is what would happen without the .copy() fix)
+        buggy_headers = tool_server.properties.get("headers", {})  # No .copy()!
+
+        # Simulate what the buggy code would do - directly modify the original headers
+        secret_headers_keys = tool_server.properties.get("secret_header_keys", [])
+        if secret_headers_keys:
+            config = mock_config_instance
+            mcp_secrets = config.get_value("mcp_secrets")
+            if mcp_secrets:
+                for header_name in secret_headers_keys:
+                    header_value = mcp_secrets.get(f"{tool_server.id}::{header_name}")
+                    if header_value:
+                        buggy_headers[header_name] = header_value
+
+        # Now the original properties would be contaminated with secrets!
+        assert "Authorization" in tool_server.properties["headers"]
+        assert (
+            tool_server.properties["headers"]["Authorization"]
+            == "Bearer secret-token-123"
+        )
+
+        # This demonstrates the security bug - secrets are now permanently stored
+        # in the tool server properties and would be serialized/saved
+        assert tool_server.properties["headers"] != original_headers
+
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     async def test_local_mcp_session_creation(self, mock_client):
         """Test successful local MCP session creation with mocked client."""
