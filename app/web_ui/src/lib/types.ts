@@ -48,3 +48,4 @@ export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =
   components["schemas"]["ToolSetApiDescription"]
+export type TaskToolInfo = components["schemas"]["TaskToolInfo"]

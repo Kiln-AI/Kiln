@@ -1,6 +1,9 @@
 from abc import ABCMeta, abstractmethod
 
-from kiln_ai.datamodel import PromptGenerators, PromptId, Task, TaskRun
+# TODO: imports and nothing else??
+from kiln_ai.datamodel.prompt_id import PromptGenerators, PromptId
+from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 

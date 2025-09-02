@@ -639,30 +639,30 @@ async def test_build_completion_kwargs_includes_tools(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "structured_output_mode, expected_error_message",
+    "structured_output_mode, should_auto_adjust",
     [
         (
             StructuredOutputMode.function_calling,
-            "Function calling/tools can't be used as the JSON response format if you're also using tools",
+            True,
         ),
         (
             StructuredOutputMode.function_calling_weak,
-            "Function calling/tools can't be used as the JSON response format if you're also using tools",
+            True,
         ),
         (
             StructuredOutputMode.json_instructions,
-            None,
+            False,
         ),
         (
             StructuredOutputMode.json_schema,
-            None,
+            False,
         ),
     ],
 )
-async def test_build_completion_kwargs_raises_error_with_tools_conflict(
-    config, mock_task, mock_math_tools, structured_output_mode, expected_error_message
+async def test_build_completion_kwargs_auto_adjusts_with_tools_conflict(
+    config, mock_task, mock_math_tools, structured_output_mode, should_auto_adjust
 ):
-    """Test build_completion_kwargs raises error when structured output mode conflicts with available tools"""
+    """Test build_completion_kwargs auto-adjusts structured output mode when it conflicts with available tools"""
     config.run_config_properties.structured_output_mode = structured_output_mode
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
@@ -674,15 +674,19 @@ async def test_build_completion_kwargs_raises_error_with_tools_conflict(
         patch.object(adapter, "build_extra_body", return_value={}),
         patch.object(adapter, "available_tools", return_value=mock_math_tools),
     ):
-        if expected_error_message is not None:
-            with pytest.raises(
-                ValueError,
-                match=expected_error_message,
-            ):
-                await adapter.build_completion_kwargs(mock_provider, messages, None)
+        # Should not raise an error anymore, should auto-adjust instead
+        result = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+        if should_auto_adjust:
+            # Should have json_mode response format when auto-adjusted
+            assert "response_format" in result
+            assert result["response_format"]["type"] == "json_object"
         else:
-            # should not raise an error
-            await adapter.build_completion_kwargs(mock_provider, messages, None)
+            # Should not have json_mode response format when no conflict
+            assert (
+                "response_format" not in result
+                or result["response_format"]["type"] != "json_object"
+            )
 
 
 class TestExtractAndValidateLogprobs:

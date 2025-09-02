@@ -24,6 +24,7 @@ class KilnBuiltInToolId(str, Enum):
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
+KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 
 
 def _check_tool_id(id: str) -> str:
@@ -46,6 +47,11 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Kiln task tools must have format: kiln_task::<project_id>::<task_id>
+    if id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+        # TODO: Check that the project ID is valid and the task ID is valid
+        return id
+
     raise ValueError(f"Invalid tool ID: {id}")
 
 
@@ -59,3 +65,18 @@ def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
             f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
         )
     return parts[2], parts[3]  # server_id, tool_name
+
+
+def kiln_task_id_from_tool_id(tool_id: str) -> str:
+    """Extract task ID from Kiln task tool ID."""
+    if not tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+        raise ValueError(f"Invalid Kiln task tool ID format: {tool_id}")
+
+    # Remove prefix and split on ::
+    remaining = tool_id[len(KILN_TASK_TOOL_ID_PREFIX) :]
+    parts = remaining.split("::")
+
+    if len(parts) != 2:
+        raise ValueError(f"Invalid Kiln task tool ID format: {tool_id}")
+
+    return parts[1]  # parts[0] is project_id, parts[1] is task_id

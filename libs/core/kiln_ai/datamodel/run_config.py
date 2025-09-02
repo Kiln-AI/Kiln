@@ -16,7 +16,8 @@ class ToolsRunConfig(BaseModel):
     A config describing which tools are available to a task.
     """
 
-    tools: List[ToolId] = Field(
+    # TODO: Look into circular dependency -- might be fixed with latest commit
+    tools: List["ToolId"] = Field(
         description="The IDs of the tools available to the task."
     )
 

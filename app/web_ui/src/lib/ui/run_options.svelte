@@ -27,6 +27,19 @@
   // Update if project_id changes
   $: load_tools(project_id)
 
+  // TODO: This is a hack
+  // TODO: Remove this and debug why it wasn't working before
+  // Auto-adjust structured output mode when tools are selected
+  $: if (tools.length > 0) {
+    if (
+      structured_output_mode === "default" ||
+      structured_output_mode === "function_calling" ||
+      structured_output_mode === "function_calling_weak"
+    ) {
+      structured_output_mode = "json_mode"
+    }
+  }
+
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
   ) => {
@@ -135,16 +148,17 @@
   ): OptionGroup[] {
     let option_groups: OptionGroup[] = []
 
+    // Add all tools (including task tools which are now part of available_tools)
     available_tools?.forEach((tool_set) => {
       option_groups.push({
         label: tool_set.set_name,
         options: tool_set.tools.map((tool) => ({
           value: tool.id,
           label: tool.name,
-          description: tool.description || undefined,
         })),
       })
     })
+
     return option_groups
   }
 </script>
@@ -157,7 +171,9 @@
       inputType="multi_select"
       info_description="Select the tools available to the model. The model may or may not choose to use them."
       bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
+      fancy_select_options={get_tool_options(
+        $available_tools[project_id] || [],
+      )}
     />
   {/if}
 

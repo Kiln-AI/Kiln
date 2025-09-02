@@ -1,8 +1,11 @@
 from os import getenv
+from typing import TYPE_CHECKING
 
-from kiln_ai import datamodel
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.task import Task
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
@@ -17,7 +20,7 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 def adapter_for_task(
-    kiln_task: datamodel.Task,
+    kiln_task: "Task",
     run_config_properties: RunConfigProperties,
     base_adapter_config: AdapterConfig | None = None,
 ) -> BaseAdapter:

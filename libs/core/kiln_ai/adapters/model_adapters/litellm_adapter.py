@@ -141,6 +141,11 @@ class LiteLlmAdapter(BaseAdapter):
 
             # If no tool calls, return the content as final output
             if content:
+                # Log if tools were available but not used
+                if len(self.cached_available_tools()) > 0:
+                    logger.warning(
+                        "Tools were available but not called by the model in this iteration"
+                    )
                 return ModelTurnResult(
                     assistant_message=content,
                     all_messages=messages,
@@ -525,6 +530,13 @@ class LiteLlmAdapter(BaseAdapter):
         if has_tools:
             completion_kwargs["tools"] = tool_calls
             completion_kwargs["tool_choice"] = "auto"
+            # Get tool names and descriptions from the raw tool objects
+            tool_info = []
+            for tool in self.cached_available_tools():
+                name = await tool.name()
+                description = await tool.description()
+                tool_info.append(f"{name}: {description}")
+            print(f"Available tools for this run: {tool_info}")  # TODO: remove logs
 
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
@@ -533,9 +545,13 @@ class LiteLlmAdapter(BaseAdapter):
             # TODO: maybe reconsider this. Model should be able to choose between a final answer or a tool call on any turn. But good models have json_schea, so do we need to support both? If we do, merge them, and consider auto vs forced when merging (only forced for final, auto for merged).
             # Check for a conflict between tools and response format using tools
             if has_tools and "tools" in response_format_options:
-                raise ValueError(
-                    "Function calling/tools can't be used as the JSON response format if you're also using tools. Please select a different structured output mode."
+                # Auto-adjust to json_mode to avoid conflict with tools
+                logger.warning(
+                    f"Detected conflict between tools and structured output mode '{self.run_config.structured_output_mode}'. "
+                    "Automatically switching to json_mode to resolve conflict."
                 )
+                # Override with json_mode response format
+                response_format_options = {"response_format": {"type": "json_object"}}
 
             completion_kwargs.update(response_format_options)
 
@@ -632,7 +648,10 @@ class LiteLlmAdapter(BaseAdapter):
                     f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
                 ) from e
 
+            # Log tool execution for debugging
+            logger.warning(f"Executing tool: {tool_name} with arguments: {parsed_args}")
             result = await tool.run(**parsed_args)
+            logger.warning(f"Tool {tool_name} returned: {result}")
 
             tool_call_response_messages.append(
                 ChatCompletionToolMessageParam(

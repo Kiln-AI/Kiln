@@ -9,6 +9,7 @@ from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
 from .task_api import connect_task_api
+from .task_tool_api import connect_task_tool_api
 
 
 def make_app(lifespan=None):
@@ -27,6 +28,7 @@ def make_app(lifespan=None):
     connect_task_api(app)
     connect_prompt_api(app)
     connect_run_api(app)
+    connect_task_tool_api(app)
     connect_custom_errors(app)
 
     allowed_origins = [

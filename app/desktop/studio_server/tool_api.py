@@ -11,6 +11,7 @@ from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, KilnBuiltInToolId, 
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
+from kiln_server.task_tool_api import get_task_tools_for_project
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 
@@ -207,6 +208,25 @@ def connect_tool_servers_api(app: FastAPI):
                         tools=available_mcp_tools,
                     )
                 )
+
+        # Add task tools
+        # TODO: this method is slightly different from the mcp one, it should return ToolApiDescriptions (copy above)
+        task_tools = get_task_tools_for_project(project)
+        if task_tools:
+            tool_sets.append(
+                ToolSetApiDescription(
+                    set_name="Project Tasks",
+                    tools=[
+                        ToolApiDescription(
+                            id=f"kiln_task::{project_id}::{task_tool.task_id}",
+                            name=task_tool.task_name,
+                            description=task_tool.task_description
+                            or f"Task: {task_tool.task_name}",
+                        )
+                        for task_tool in task_tools
+                    ],
+                )
+            )
 
         # Add demo tools if enabled
         if Config.shared().enable_demo_tools:
