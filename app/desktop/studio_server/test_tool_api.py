@@ -1951,6 +1951,100 @@ def test_external_tool_server_creation_request_complex_valid_headers():
     assert request.headers["X-API-Key"] == "sk-1234567890abcdef"
 
 
+def test_external_tool_server_creation_request_secret_headers_valid():
+    """Test ExternalToolServerCreationRequest with valid secret headers"""
+    request = ExternalToolServerCreationRequest(
+        name="Secret Headers Server",
+        server_url="https://example.com",
+        headers={
+            "Authorization": "Bearer secret-token",
+            "X-API-Key": "api-key-123",
+            "Content-Type": "application/json",
+        },
+        secret_header_keys=["Authorization", "X-API-Key"],
+    )
+
+    assert request.name == "Secret Headers Server"
+    assert request.server_url == "https://example.com"
+    assert len(request.headers) == 3
+    assert len(request.secret_header_keys) == 2
+    assert "Authorization" in request.secret_header_keys
+    assert "X-API-Key" in request.secret_header_keys
+
+
+def test_external_tool_server_creation_request_secret_headers_empty_list():
+    """Test ExternalToolServerCreationRequest with empty secret headers list"""
+    request = ExternalToolServerCreationRequest(
+        name="No Secret Headers Server",
+        server_url="https://example.com",
+        headers={"Content-Type": "application/json"},
+        secret_header_keys=[],
+    )
+
+    assert request.secret_header_keys == []
+    assert len(request.headers) == 1
+
+
+def test_external_tool_server_creation_request_secret_headers_not_in_headers():
+    """Test ExternalToolServerCreationRequest rejects secret header keys not in headers"""
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Invalid Secret Server",
+            server_url="https://example.com",
+            headers={"Content-Type": "application/json"},
+            secret_header_keys=["Authorization"],  # Not in headers
+        )
+
+    error_str = str(exc_info.value)
+    assert "Secret header key Authorization is not in the headers" in error_str
+
+
+def test_external_tool_server_creation_request_secret_headers_empty_key():
+    """Test ExternalToolServerCreationRequest rejects empty secret header keys"""
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Empty Secret Key Server",
+            server_url="https://example.com",
+            headers={"Authorization": "Bearer token"},
+            secret_header_keys=[""],  # Empty key
+        )
+
+    error_str = str(exc_info.value)
+    assert "Secret header key is required" in error_str
+
+
+def test_external_tool_server_creation_request_secret_headers_whitespace_trimming():
+    """Test that secret header keys are properly trimmed of whitespace"""
+    request = ExternalToolServerCreationRequest(
+        name="Trimmed Secret Server",
+        server_url="https://example.com",
+        headers={
+            "Authorization": "Bearer token",
+            "X-API-Key": "key123",
+        },
+        secret_header_keys=["  Authorization  ", " X-API-Key "],  # Whitespace
+    )
+
+    assert "Authorization" in request.secret_header_keys
+    assert "X-API-Key" in request.secret_header_keys
+    assert len(request.secret_header_keys) == 2
+
+
+def test_external_tool_server_creation_request_secret_headers_multiple_validation_errors():
+    """Test that multiple secret header validation errors are caught"""
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Multiple Errors Server",
+            server_url="https://example.com",
+            headers={"Content-Type": "application/json"},
+            secret_header_keys=["", "NonExistentHeader"],  # Empty and non-existent
+        )
+
+    error_str = str(exc_info.value)
+    # Should catch the first error (empty key)
+    assert "Secret header key is required" in error_str
+
+
 def test_external_tool_server_creation_request_empty_url():
     """Test that empty server URL is rejected"""
 
@@ -3207,3 +3301,199 @@ def test_set_demo_tools_disable(client):
         assert response.json() is False
         # Verify the config was updated
         assert mock_config_instance.enable_demo_tools is False
+
+
+# Tests for secret headers functionality
+async def test_connect_remote_mcp_with_secret_headers(client, test_project):
+    """Test connect_remote_mcp endpoint stores secret headers correctly"""
+    tool_data = {
+        "name": "secret_tool",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Authorization": "Bearer secret-token-123",
+            "X-API-Key": "api-key-456",
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization", "X-API-Key"],
+        "description": "Tool with secret headers",
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Mock config for storing secrets
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.get_value.return_value = {}  # Empty mcp_secrets initially
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify the tool server was created correctly
+        assert result["name"] == "secret_tool"
+        assert result["properties"]["server_url"] == "https://example.com/api"
+
+        # Verify secret headers were removed from properties and only non-secret headers remain
+        stored_headers = result["properties"]["headers"]
+        assert "Content-Type" in stored_headers
+        assert stored_headers["Content-Type"] == "application/json"
+        assert "Authorization" not in stored_headers
+        assert "X-API-Key" not in stored_headers
+
+        # Verify secret header keys were stored
+        assert result["properties"]["secret_header_keys"] == [
+            "Authorization",
+            "X-API-Key",
+        ]
+
+        # Verify config.update_settings was called to store secrets
+        mock_config_instance.update_settings.assert_called_once()
+        call_args = mock_config_instance.update_settings.call_args[0][0]
+        assert "mcp_secrets" in call_args
+
+        # Verify secret values were stored with correct keys
+        mcp_secrets = call_args["mcp_secrets"]
+        server_id = result["id"]
+        assert f"{server_id}::Authorization" in mcp_secrets
+        assert f"{server_id}::X-API-Key" in mcp_secrets
+        assert mcp_secrets[f"{server_id}::Authorization"] == "Bearer secret-token-123"
+        assert mcp_secrets[f"{server_id}::X-API-Key"] == "api-key-456"
+
+
+async def test_connect_remote_mcp_no_secret_headers(client, test_project):
+    """Test connect_remote_mcp endpoint without secret headers"""
+    tool_data = {
+        "name": "no_secret_tool",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Content-Type": "application/json",
+            "User-Agent": "Kiln-AI/1.0",
+        },
+        "secret_header_keys": [],  # Empty list
+        "description": "Tool without secret headers",
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_config_instance = mock_config.return_value
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify all headers remain in properties
+        stored_headers = result["properties"]["headers"]
+        assert stored_headers["Content-Type"] == "application/json"
+        assert stored_headers["User-Agent"] == "Kiln-AI/1.0"
+        assert result["properties"]["secret_header_keys"] == []
+
+        # Verify config.update_settings was NOT called since no secrets
+        mock_config_instance.update_settings.assert_not_called()
+
+
+async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
+    """Test connect_remote_mcp endpoint merges with existing mcp_secrets"""
+    tool_data = {
+        "name": "merge_secret_tool",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Authorization": "Bearer new-token",
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization"],
+        "description": "Tool that merges with existing secrets",
+    }
+
+    existing_secrets = {
+        "other_server_id::X-API-Key": "existing-api-key",
+        "another_server::Token": "existing-token",
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Mock config with existing secrets
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.get_value.return_value = existing_secrets.copy()
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify config.update_settings was called to merge secrets
+        mock_config_instance.update_settings.assert_called_once()
+        call_args = mock_config_instance.update_settings.call_args[0][0]
+
+        # Verify existing secrets are preserved and new ones added
+        mcp_secrets = call_args["mcp_secrets"]
+        server_id = result["id"]
+
+        # Existing secrets should still be there
+        assert "other_server_id::X-API-Key" in mcp_secrets
+        assert "another_server::Token" in mcp_secrets
+        assert mcp_secrets["other_server_id::X-API-Key"] == "existing-api-key"
+        assert mcp_secrets["another_server::Token"] == "existing-token"
+
+        # New secret should be added
+        assert f"{server_id}::Authorization" in mcp_secrets
+        assert mcp_secrets[f"{server_id}::Authorization"] == "Bearer new-token"
+
+
+async def test_connect_remote_mcp_secret_header_validation_error(client, test_project):
+    """Test connect_remote_mcp endpoint handles secret header validation errors"""
+    tool_data = {
+        "name": "invalid_secret_tool",
+        "server_url": "https://example.com/api",
+        "headers": {
+            "Content-Type": "application/json",
+        },
+        "secret_header_keys": ["Authorization"],  # Not in headers
+        "description": "Tool with invalid secret header keys",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_remote_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+        error_detail = response.json()["detail"]
+        assert any(
+            "Secret header key Authorization is not in the headers" in str(error)
+            for error in error_detail
+        )

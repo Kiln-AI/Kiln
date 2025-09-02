@@ -322,7 +322,6 @@ def connect_tool_servers_api(app: FastAPI):
         project_id: str, tool_server_id: str
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
-        print(f"tool_server: {tool_server}")
 
         # Get available tools based on server type
         available_tools = []

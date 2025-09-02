@@ -74,10 +74,11 @@ class MCPSessionManager:
             mcp_secrets = config.get_value("mcp_secrets")
 
             # Look for secrets with the pattern: mcp_server_id::header_name
-            for header_name in secret_headers_keys:
-                header_value = mcp_secrets.get(f"{tool_server.id}::{header_name}")
-                if header_value:
-                    headers[header_name] = header_value
+            if mcp_secrets:  # Only proceed if mcp_secrets is not None
+                for header_name in secret_headers_keys:
+                    header_value = mcp_secrets.get(f"{tool_server.id}::{header_name}")
+                    if header_value:
+                        headers[header_name] = header_value
 
         async with streamablehttp_client(server_url, headers=headers) as (
             read_stream,

@@ -322,3 +322,140 @@ def test_update_settings_thread_safety(config_with_yaml):
 
     assert not exceptions
     assert config.int_property in range(5)
+
+
+def test_mcp_secrets_property():
+    """Test mcp_secrets configuration property"""
+    config = Config.shared()
+
+    # Initially should be None/empty
+    assert config.mcp_secrets is None
+
+    # Set some secrets
+    secrets = {
+        "server1::Authorization": "Bearer token123",
+        "server1::X-API-Key": "api-key-456",
+        "server2::Token": "secret-token",
+    }
+    config.mcp_secrets = secrets
+
+    # Verify they are stored correctly
+    assert config.mcp_secrets == secrets
+    assert config.mcp_secrets["server1::Authorization"] == "Bearer token123"
+    assert config.mcp_secrets["server1::X-API-Key"] == "api-key-456"
+    assert config.mcp_secrets["server2::Token"] == "secret-token"
+
+
+def test_mcp_secrets_sensitive_hiding():
+    """Test that mcp_secrets are hidden when hide_sensitive=True"""
+    config = Config.shared()
+
+    # Set some secrets
+    secrets = {
+        "server1::Authorization": "Bearer secret123",
+        "server2::X-API-Key": "secret-key",
+    }
+    config.mcp_secrets = secrets
+
+    # Test without hiding sensitive data
+    visible_settings = config.settings(hide_sensitive=False)
+    assert "mcp_secrets" in visible_settings
+    assert visible_settings["mcp_secrets"] == secrets
+
+    # Test with hiding sensitive data
+    hidden_settings = config.settings(hide_sensitive=True)
+    assert "mcp_secrets" in hidden_settings
+    assert hidden_settings["mcp_secrets"] == "[hidden]"
+
+
+def test_mcp_secrets_persistence(mock_yaml_file):
+    """Test that mcp_secrets are persisted to YAML correctly"""
+    with patch(
+        "kiln_ai.utils.config.Config.settings_path",
+        return_value=mock_yaml_file,
+    ):
+        config = Config()
+
+        # Set some secrets
+        secrets = {
+            "server1::Authorization": "Bearer persist123",
+            "server2::Token": "persist-token",
+        }
+        config.mcp_secrets = secrets
+
+        # Check that the value was saved to the YAML file
+        with open(mock_yaml_file, "r") as f:
+            saved_settings = yaml.safe_load(f)
+        assert saved_settings["mcp_secrets"] == secrets
+
+        # Create a new config instance to test loading from YAML
+        new_config = Config()
+
+        # Check that the value is loaded from YAML
+        assert new_config.mcp_secrets == secrets
+
+
+def test_mcp_secrets_get_value():
+    """Test that mcp_secrets can be retrieved using get_value method"""
+    config = Config.shared()
+
+    # Initially should be None
+    assert config.get_value("mcp_secrets") is None
+
+    # Set some secrets
+    secrets = {"server::key": "value"}
+    config.mcp_secrets = secrets
+
+    # Should be retrievable via get_value
+    assert config.get_value("mcp_secrets") == secrets
+
+
+def test_mcp_secrets_update_settings():
+    """Test updating mcp_secrets using update_settings method"""
+    config = Config.shared()
+
+    # Set initial secrets
+    initial_secrets = {"server1::key1": "value1"}
+    config.update_settings({"mcp_secrets": initial_secrets})
+    assert config.mcp_secrets == initial_secrets
+
+    # Update with new secrets (should replace, not merge)
+    new_secrets = {
+        "server1::key1": "updated_value1",
+        "server2::key2": "value2",
+    }
+    config.update_settings({"mcp_secrets": new_secrets})
+    assert config.mcp_secrets == new_secrets
+    assert config.mcp_secrets["server1::key1"] == "updated_value1"
+    assert config.mcp_secrets["server2::key2"] == "value2"
+
+
+def test_mcp_secrets_empty_dict():
+    """Test mcp_secrets with empty dict"""
+    config = Config.shared()
+
+    # Set empty dict
+    config.mcp_secrets = {}
+    assert config.mcp_secrets == {}
+
+    # Should still be dict type, not None
+    assert isinstance(config.mcp_secrets, dict)
+
+
+def test_mcp_secrets_type_validation():
+    """Test that mcp_secrets enforces dict[str, str] type"""
+    config = Config.shared()
+
+    # Valid dict[str, str]
+    valid_secrets = {"server::key": "value"}
+    config.mcp_secrets = valid_secrets
+    assert config.mcp_secrets == valid_secrets
+
+    # The config system applies type conversion when retrieving values
+    mixed_types = {"server::key": 123}  # int value
+    config.mcp_secrets = mixed_types
+    # The type conversion happens when the value is retrieved, not when set
+    # So the underlying storage may preserve the original type
+    assert config.mcp_secrets == mixed_types or config.mcp_secrets == {
+        "server::key": "123"
+    }

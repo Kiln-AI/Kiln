@@ -131,6 +131,272 @@ class TestMCPSessionManager:
         # Verify streamablehttp_client was called with empty headers dict
         mock_client.assert_called_once_with("http://example.com/mcp", headers={})
 
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_session_with_secret_headers(self, mock_config, mock_client):
+        """Test session creation with secret headers retrieved from config."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Mock config with secret headers
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = {
+            "test_server_id::Authorization": "Bearer secret-token-123",
+            "test_server_id::X-API-Key": "api-key-456",
+            "other_server::Token": "other-token",  # Should be ignored
+        }
+        mock_config.return_value = mock_config_instance
+
+        # Create a tool server with secret header keys
+        tool_server = ExternalToolServer(
+            name="secret_headers_server",
+            type=ToolServerType.remote_mcp,
+            description="Server with secret headers",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
+        )
+        # Set the server ID to match our mock secrets
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify config was accessed for mcp_secrets
+        mock_config_instance.get_value.assert_called_once_with("mcp_secrets")
+
+        # Verify streamablehttp_client was called with merged headers
+        expected_headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer secret-token-123",
+            "X-API-Key": "api-key-456",
+        }
+        mock_client.assert_called_once_with(
+            "http://example.com/mcp", headers=expected_headers
+        )
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_session_with_partial_secret_headers(self, mock_config, mock_client):
+        """Test session creation when only some secret headers are found in config."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Mock config with only one of the expected secret headers
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = {
+            "test_server_id::Authorization": "Bearer found-token",
+            # Missing test_server_id::X-API-Key
+        }
+        mock_config.return_value = mock_config_instance
+
+        # Create a tool server expecting two secret headers
+        tool_server = ExternalToolServer(
+            name="partial_secret_server",
+            type=ToolServerType.remote_mcp,
+            description="Server with partial secret headers",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify only the found secret header is merged
+        expected_headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer found-token",
+            # X-API-Key should not be present since it wasn't found in config
+        }
+        mock_client.assert_called_once_with(
+            "http://example.com/mcp", headers=expected_headers
+        )
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_session_with_no_secret_headers_config(
+        self, mock_config, mock_client
+    ):
+        """Test session creation when config has no mcp_secrets."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Mock config with no mcp_secrets (returns None)
+        mock_config_instance = MagicMock()
+        mock_config_instance.get_value.return_value = None
+        mock_config.return_value = mock_config_instance
+
+        # Create a tool server expecting secret headers
+        tool_server = ExternalToolServer(
+            name="no_secrets_config_server",
+            type=ToolServerType.remote_mcp,
+            description="Server with no secrets in config",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify only the original headers are used
+        expected_headers = {"Content-Type": "application/json"}
+        mock_client.assert_called_once_with(
+            "http://example.com/mcp", headers=expected_headers
+        )
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_session_with_empty_secret_header_keys(self, mock_client):
+        """Test session creation with empty secret_header_keys list."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Create a tool server with empty secret header keys
+        tool_server = ExternalToolServer(
+            name="empty_secret_keys_server",
+            type=ToolServerType.remote_mcp,
+            description="Server with empty secret header keys",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": [],  # Empty list
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify only the original headers are used (no config access needed for empty list)
+        expected_headers = {"Content-Type": "application/json"}
+        mock_client.assert_called_once_with(
+            "http://example.com/mcp", headers=expected_headers
+        )
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_session_with_missing_secret_header_keys_property(self, mock_client):
+        """Test session creation when secret_header_keys property is missing."""
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        # Create a tool server without secret_header_keys property
+        tool_server = ExternalToolServer(
+            name="missing_secret_keys_server",
+            type=ToolServerType.remote_mcp,
+            description="Server without secret header keys property",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                # No secret_header_keys property
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                assert session is mock_session_instance
+
+        # Verify only the original headers are used (no config access needed when property missing)
+        expected_headers = {"Content-Type": "application/json"}
+        mock_client.assert_called_once_with(
+            "http://example.com/mcp", headers=expected_headers
+        )
+
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     async def test_local_mcp_session_creation(self, mock_client):
         """Test successful local MCP session creation with mocked client."""
