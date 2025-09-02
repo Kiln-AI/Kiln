@@ -1240,7 +1240,9 @@ export interface components {
             name?: string | null;
             type: components["schemas"]["EvalConfigType"];
             /** Properties */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Name */
             model_name: string;
             provider: components["schemas"]["ModelProviderName"];
@@ -1385,7 +1387,9 @@ export interface components {
              * Input
              * @description Input for this sample
              */
-            input: string | Record<string, never>;
+            input: string | {
+                [key: string]: unknown;
+            };
             /**
              * Topic Path
              * @description The path to the topic for this sample. Empty is the root topic.
@@ -1669,7 +1673,9 @@ export interface components {
              * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
              * @default {}
              */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2071,7 +2077,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        "KilnBaseModel-Input": {
+        KilnBaseModel: {
             /**
              * V
              * @default 1
@@ -2088,37 +2094,6 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-        };
-        /**
-         * KilnBaseModel
-         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
-         *
-         *     Attributes:
-         *         v (int): Schema version number for migration support
-         *         id (str): Unique identifier for the model instance
-         *         path (Path): File system path where the model is stored
-         *         created_at (datetime): Timestamp when the model was created
-         *         created_by (str): User ID of the creator
-         */
-        "KilnBaseModel-Output": {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -2165,13 +2140,6 @@ export interface components {
             /** Task Filter */
             task_filter?: string[] | null;
         };
-        /**
-         * ModelName
-         * @description Enumeration of specific model versions supported by the system.
-         *     Where models have instruct and raw versions, instruct is default and raw is specified.
-         * @enum {string}
-         */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_5" | "gpt_5_chat" | "gpt_5_mini" | "gpt_5_nano" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_oss_20b" | "gpt_oss_120b" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_0528_distill_qwen3_8b" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b_2507" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_2507_no_thinking" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b_2507" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_2507_no_thinking" | "qwen_3_235b_a22b_no_thinking" | "qwen_long_l1_32b" | "kimi_k2" | "kimi_dev_72b" | "glm_4_1v_9b_thinking" | "glm_z1_32b_0414" | "glm_z1_9b_0414" | "ernie_4_5_300b_a47b" | "hunyuan_a13b" | "hunyuan_a13b_no_thinking" | "minimax_m1_80k" | "pangu_pro_moe_72b_a16b";
         /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
@@ -2499,7 +2467,9 @@ export interface components {
             /** Plaintext Input */
             plaintext_input?: string | null;
             /** Structured Input */
-            structured_input?: Record<string, never> | null;
+            structured_input?: {
+                [key: string]: unknown;
+            } | null;
             /** Tags */
             tags?: string[] | null;
         };
@@ -2795,7 +2765,7 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -3055,7 +3025,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -3147,7 +3119,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -3203,7 +3177,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -3271,7 +3247,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -3607,7 +3585,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4014,7 +3994,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4191,7 +4173,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
