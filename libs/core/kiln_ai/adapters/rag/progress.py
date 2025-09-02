@@ -99,7 +99,7 @@ async def count_records_in_vector_store(
     vector_store_config: VectorStoreConfig,
 ) -> int:
     vector_store = await vector_store_adapter_for_config(
-        rag_config, vector_store_config, lancedb_mode="create"
+        rag_config, vector_store_config
     )
 
     try:

@@ -3,18 +3,14 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
-from llama_index.core.schema import MetadataMode, TextNode
+from llama_index.core.schema import TextNode
 from llama_index.core.vector_stores.types import (
-    FilterCondition,
-    FilterOperator,
-    MetadataFilter,
     VectorStoreQuery,
     VectorStoreQueryResult,
 )
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
-from llama_index.vector_stores.lancedb.base import MetadataFilters
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -25,7 +21,6 @@ from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import (
-    LanceDBQueryType,
     VectorStoreConfig,
     VectorStoreType,
     raise_exhaustive_enum_error,
@@ -40,38 +35,23 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         self,
         rag_config: RagConfig,
         vector_store_config: VectorStoreConfig,
-        lancedb_vector_store: LanceDBVectorStore,
     ):
         super().__init__(rag_config, vector_store_config)
-        self.lancedb_vector_store = lancedb_vector_store
         self.config_properties = self.vector_store_config.lancedb_properties
 
-    async def is_chunk_indexed(
-        self, document_id: str, chunk_idx: int, node_hash: str
-    ) -> bool:
-        nodes = self.lancedb_vector_store.get_nodes(
-            filters=MetadataFilters(
-                filters=[
-                    MetadataFilter(
-                        key="kiln_doc_id",
-                        operator=FilterOperator.EQ,
-                        value=document_id,
-                    ),
-                    MetadataFilter(
-                        key="kiln_chunk_idx",
-                        value=chunk_idx,
-                        operator=FilterOperator.EQ,
-                    ),
-                    MetadataFilter(
-                        key="kiln_node_hash",
-                        value=node_hash,
-                        operator=FilterOperator.EQ,
-                    ),
-                ],
-                condition=FilterCondition.AND,
-            )
+        kwargs: Dict[str, Any] = {}
+        if vector_store_config.lancedb_properties.nprobes is not None:
+            kwargs["nprobes"] = vector_store_config.lancedb_properties.nprobes
+
+        self.lancedb_vector_store = LanceDBVectorStore(
+            uri=LanceDBAdapter.lancedb_path_for_config(rag_config),
+            query_type=self.query_type,
+            overfetch_factor=vector_store_config.lancedb_properties.overfetch_factor,
+            vector_column_name=vector_store_config.lancedb_properties.vector_column_name,
+            text_key=vector_store_config.lancedb_properties.text_key,
+            doc_id_key=vector_store_config.lancedb_properties.doc_id_key,
+            **kwargs,
         )
-        return len(nodes) > chunk_idx
 
     def hash_node(
         self, text: str, embedding: list[float], document_id: str, chunk_idx: int
@@ -160,18 +140,18 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         }
 
         match self.query_type:
-            case LanceDBQueryType.FTS:
+            case "fts":
                 if query.query_string is None:
                     raise ValueError("query_string must be provided for fts search")
                 kwargs["query_str"] = query.query_string
-            case LanceDBQueryType.HYBRID:
+            case "hybrid":
                 if query.query_embedding is None or query.query_string is None:
                     raise ValueError(
                         "query_string and query_embedding must be provided for hybrid search"
                     )
                 kwargs["query_embedding"] = query.query_embedding
                 kwargs["query_str"] = query.query_string
-            case LanceDBQueryType.VECTOR:
+            case "vector":
                 if not query.query_embedding:
                     raise ValueError(
                         "query_embedding must be provided for vector search"
@@ -190,18 +170,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         )
         return self.format_query_result(query_result)
 
-    async def get_all_chunks(self) -> List[SearchResult]:
-        nodes = self.lancedb_vector_store.get_nodes()
-        return [
-            SearchResult(
-                document_id=node.metadata["kiln_doc_id"],
-                chunk_idx=node.metadata["kiln_chunk_idx"],
-                chunk_text=node.get_content(MetadataMode.NONE),
-                similarity=None,
-            )
-            for node in nodes
-        ]
-
     async def count_records(self) -> int:
         # this throws a TableNotFoundError if the table doesn't exist
         table = self.lancedb_vector_store.table
@@ -212,31 +180,23 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         return count
 
     @property
-    def query_type(self) -> LanceDBQueryType:
-        return LanceDBAdapter.lancedb_query_type_for_config(self.vector_store_config)
-
-    @staticmethod
-    def lancedb_query_type_for_config(
-        vector_store_config: VectorStoreConfig,
-    ) -> LanceDBQueryType:
-        match vector_store_config.store_type:
+    def query_type(self) -> Literal["fts", "hybrid", "vector"]:
+        match self.vector_store_config.store_type:
             case VectorStoreType.LANCE_DB_FTS:
-                return LanceDBQueryType.FTS
+                return "fts"
             case VectorStoreType.LANCE_DB_HYBRID:
-                return LanceDBQueryType.HYBRID
+                return "hybrid"
             case VectorStoreType.LANCE_DB_VECTOR:
-                return LanceDBQueryType.VECTOR
+                return "vector"
             case _:
-                raise_exhaustive_enum_error(vector_store_config.store_type)
+                raise_exhaustive_enum_error(self.vector_store_config.store_type)
 
     @staticmethod
     def lancedb_path_for_config(rag_config: RagConfig) -> str:
-        data_dir = Config.shared().local_data_dir()
-        if isinstance(data_dir, str):
-            data_dir = Path(data_dir)
+        data_dir = Path(Config.settings_dir())
         if rag_config.id is None:
             raise ValueError("Vector store config ID is required")
-        return str(data_dir / "lancedb" / rag_config.id)
+        return str(data_dir / "rag_indexes" / "lancedb" / rag_config.id)
 
     async def destroy(self) -> None:
         lancedb_path = LanceDBAdapter.lancedb_path_for_config(self.rag_config)

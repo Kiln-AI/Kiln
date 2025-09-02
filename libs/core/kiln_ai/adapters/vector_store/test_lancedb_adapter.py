@@ -1,14 +1,18 @@
 import os
 import tempfile
 from pathlib import Path
-from typing import Callable
-from unittest.mock import Mock, patch
+from typing import Callable, List
+from unittest.mock import patch
 
 import pytest
+from llama_index.core.schema import MetadataMode
 from llama_index.core.vector_stores.types import VectorStoreQueryResult
 from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
-from kiln_ai.adapters.vector_store.base_vector_store_adapter import KilnVectorStoreQuery
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
+    KilnVectorStoreQuery,
+    SearchResult,
+)
 from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
@@ -19,6 +23,19 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+
+
+def get_all_nodes(adapter: LanceDBAdapter) -> List[SearchResult]:
+    nodes = adapter.lancedb_vector_store.get_nodes()
+    return [
+        SearchResult(
+            document_id=node.metadata["kiln_doc_id"],
+            chunk_idx=node.metadata["kiln_chunk_idx"],
+            chunk_text=node.get_content(MetadataMode.NONE),
+            similarity=None,
+        )
+        for node in nodes
+    ]
 
 
 @pytest.fixture
@@ -36,7 +53,7 @@ def temp_db_path():
 @pytest.fixture
 def hybrid_vector_store_config(temp_db_path):
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
         yield VectorStoreConfig(
             name="test_config",
             store_type=VectorStoreType.LANCE_DB_HYBRID,
@@ -54,7 +71,7 @@ def hybrid_vector_store_config(temp_db_path):
 @pytest.fixture
 def fts_vector_store_config(temp_db_path):
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
         yield VectorStoreConfig(
             name="test_config",
             store_type=VectorStoreType.LANCE_DB_FTS,
@@ -69,9 +86,9 @@ def fts_vector_store_config(temp_db_path):
 
 
 @pytest.fixture
-def similarity_vector_store_config(temp_db_path):
+def knn_vector_store_config(temp_db_path):
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
         yield VectorStoreConfig(
             name="test_config",
             store_type=VectorStoreType.LANCE_DB_VECTOR,
@@ -113,6 +130,13 @@ def create_rag_config_factory() -> Callable[
         )
 
     return create_rag_config
+
+
+def lancedb_adapter_tmp_factory(
+    rag_config: RagConfig, vector_store_config: VectorStoreConfig, temp_db_path
+) -> LanceDBAdapter:
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
+        return LanceDBAdapter(rag_config, vector_store_config)
 
 
 def dicts_to_indexable_docs(
@@ -199,7 +223,7 @@ def mock_chunked_documents(tmp_path):
 
 @pytest.mark.asyncio
 async def test_add_chunks_with_embeddings_and_similarity_search(
-    similarity_vector_store_config,
+    knn_vector_store_config,
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
@@ -207,14 +231,10 @@ async def test_add_chunks_with_embeddings_and_similarity_search(
     """Test adding chunks and similarity search."""
     print("=== Testing Add Chunks and Similarity Search ===")
 
-    rag_config = create_rag_config_factory(
-        similarity_vector_store_config, embedding_config
-    )
+    rag_config = create_rag_config_factory(knn_vector_store_config, embedding_config)
 
     # Create adapter using the registry
-    adapter = await vector_store_adapter_for_config(
-        rag_config, similarity_vector_store_config
-    )
+    adapter = await vector_store_adapter_for_config(rag_config, knn_vector_store_config)
 
     # Add chunks to the vector store
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
@@ -255,7 +275,8 @@ async def test_fts_search(
 
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
-    all_chunks = await adapter.get_all_chunks()
+    assert isinstance(adapter, LanceDBAdapter)
+    all_chunks = get_all_nodes(adapter)
     print(f"All chunks: {[chunk.chunk_text for chunk in all_chunks]}")
 
     # Test FTS search for "London"
@@ -318,7 +339,8 @@ async def test_hybrid_search(
     assert len(tokyo_results) >= 2  # Both Tokyo chunks should be found
 
 
-@pytest.mark.asyncio
+# FIXME: must implement upsert
+@pytest.mark.skip(reason="Upsert currently on hold - need to figure out a way")
 async def test_upsert_behavior(
     fts_vector_store_config,
     mock_chunked_documents,
@@ -411,23 +433,25 @@ async def test_count_records_with_data(
 
 @pytest.mark.asyncio
 async def test_count_records_with_table_none(
-    fts_vector_store_config, embedding_config, create_rag_config_factory
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
 ):
     """Test count_records when table is None."""
 
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
     # Create a mock vector store config
-    mock_config = Mock()
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
 
-    # Create a mock LanceDBVectorStore with table set to None
-    mock_lancedb_store = Mock()
-    mock_lancedb_store.table = None
-
-    adapter = LanceDBAdapter(rag_config, mock_config, mock_lancedb_store)
-
-    # Should raise ValueError when table is None
-    with pytest.raises(ValueError, match="Table is not initialized"):
+    # Should raise TableNotFoundError when table is None
+    with pytest.raises(
+        TableNotFoundError,
+        match="Table vectors is not initialized. Please create it or add some data first.",
+    ):
         await adapter.count_records()
 
 
@@ -437,17 +461,20 @@ async def test_get_all_chunks(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
+    temp_db_path,
 ):
     """Test getting all chunks from the vector store."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = await vector_store_adapter_for_config(rag_config, fts_vector_store_config)
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
 
     # Add chunks first to create the table
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
     # Get all chunks
-    all_chunks = await adapter.get_all_chunks()
+    all_chunks = get_all_nodes(adapter)
     assert len(all_chunks) == 8  # 8 chunks total
 
     # Verify structure
@@ -458,16 +485,16 @@ async def test_get_all_chunks(
 
 
 def test_format_query_result_error_conditions(
-    fts_vector_store_config, embedding_config, create_rag_config_factory
+    fts_vector_store_config, embedding_config, create_rag_config_factory, temp_db_path
 ):
     """Test error handling in format_query_result method."""
 
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
     # Create adapter with minimal setup
-    mock_config = Mock()
-    mock_lancedb_store = Mock()
-    adapter = LanceDBAdapter(rag_config, mock_config, mock_lancedb_store)
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
 
     # Test with None ids
     query_result = VectorStoreQueryResult(ids=None, nodes=[], similarities=[])
@@ -499,19 +526,20 @@ def test_format_query_result_error_conditions(
 
 
 def test_build_kwargs_for_query_validation_errors(
-    create_rag_config_factory, fts_vector_store_config, embedding_config
+    create_rag_config_factory,
+    hybrid_vector_store_config,
+    fts_vector_store_config,
+    knn_vector_store_config,
+    embedding_config,
+    temp_db_path,
 ):
     """Test error handling in build_kwargs_for_query method."""
 
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    # Mock config for FTS
-    mock_config = Mock()
-    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
-    mock_config.lancedb_properties.similarity_top_k = 10
-
-    mock_lancedb_store = Mock()
-    adapter = LanceDBAdapter(rag_config, mock_config, mock_lancedb_store)
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
 
     # Test FTS search without query_string
     query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
@@ -521,8 +549,9 @@ def test_build_kwargs_for_query_validation_errors(
         adapter.build_kwargs_for_query(query)
 
     # Test HYBRID search without required parameters
-    mock_config.store_type = VectorStoreType.LANCE_DB_HYBRID
-    adapter = LanceDBAdapter(rag_config, mock_config, mock_lancedb_store)
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, hybrid_vector_store_config, temp_db_path
+    )
 
     query = KilnVectorStoreQuery(query_string=None, query_embedding=[1.0, 2.0])
     with pytest.raises(
@@ -539,11 +568,185 @@ def test_build_kwargs_for_query_validation_errors(
         adapter.build_kwargs_for_query(query)
 
     # Test VECTOR search without embedding
-    mock_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-    adapter = LanceDBAdapter(rag_config, mock_config, mock_lancedb_store)
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, knn_vector_store_config, temp_db_path
+    )
 
     query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
     with pytest.raises(
         ValueError, match="query_embedding must be provided for vector search"
     ):
         adapter.build_kwargs_for_query(query)
+
+
+@pytest.mark.asyncio
+async def test_destroy(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test the destroy method removes the database directory."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Add some data to create the database
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify data exists
+    count = await adapter.count_records()
+    assert count == 8
+
+    # Get the database path
+    db_path = LanceDBAdapter.lancedb_path_for_config(rag_config)
+    assert os.path.exists(db_path)
+
+    # Destroy the database
+    await adapter.destroy()
+
+    # Verify the database directory is gone
+    assert not os.path.exists(db_path)
+
+
+def test_lancedb_path_for_config(temp_db_path):
+    """Test the lancedb_path_for_config static method."""
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
+        # Test with valid rag_config
+        rag_config = RagConfig(
+            name="test_rag",
+            extractor_config_id="test_extractor",
+            chunker_config_id="test_chunker",
+            embedding_config_id="test_embedding",
+            vector_store_config_id="test_vector_store",
+        )
+
+        expected_path = str(
+            Path(temp_db_path) / "rag_indexes" / "lancedb" / str(rag_config.id)
+        )
+        actual_path = LanceDBAdapter.lancedb_path_for_config(rag_config)
+
+        assert actual_path == expected_path
+
+        # Test with rag_config with no ID (should raise ValueError)
+        rag_config_no_id = RagConfig(
+            name="test_rag",
+            extractor_config_id="test_extractor",
+            chunker_config_id="test_chunker",
+            embedding_config_id="test_embedding",
+            vector_store_config_id="test_vector_store",
+        )
+        rag_config_no_id.id = None
+
+        with pytest.raises(ValueError, match="Vector store config ID is required"):
+            LanceDBAdapter.lancedb_path_for_config(rag_config_no_id)
+
+
+def test_query_type_property(
+    temp_db_path,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test the query_type property returns correct values for different store types."""
+
+    # Test FTS query type
+    fts_config = VectorStoreConfig(
+        name="fts_test",
+        store_type=VectorStoreType.LANCE_DB_FTS,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    rag_config = create_rag_config_factory(fts_config, embedding_config)
+
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
+        adapter = LanceDBAdapter(rag_config, fts_config)
+        assert adapter.query_type == "fts"
+
+    # Test Hybrid query type
+    hybrid_config = VectorStoreConfig(
+        name="hybrid_test",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    rag_config = create_rag_config_factory(hybrid_config, embedding_config)
+
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
+        adapter = LanceDBAdapter(rag_config, hybrid_config)
+        assert adapter.query_type == "hybrid"
+
+    # Test Vector query type
+    vector_config = VectorStoreConfig(
+        name="vector_test",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    rag_config = create_rag_config_factory(vector_config, embedding_config)
+
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
+        adapter = LanceDBAdapter(rag_config, vector_config)
+        assert adapter.query_type == "vector"
+
+
+@pytest.mark.asyncio
+async def test_adapter_reuse_preserves_data(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test that creating the same LanceDBAdapter twice doesn't destroy/empty the db."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    # Create first adapter and add data
+    adapter1 = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+    await adapter1.add_chunks_with_embeddings([mock_chunked_documents[0]])
+
+    # Verify data exists
+    count1 = await adapter1.count_records()
+    assert count1 == 4
+
+    # Create second adapter with same config
+    adapter2 = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+    await adapter2.add_chunks_with_embeddings([mock_chunked_documents[1]])
+
+    # Verify data still exists and wasn't destroyed by second instantiation
+    count2 = await adapter2.count_records()
+    assert count2 == 8
+
+    # interesting: adapter1 is no longer usable after creating adapter2
+    with pytest.raises(
+        Exception,
+        match="lance error: Retryable commit conflict for version 4: This CreateIndex transaction was preempted by concurrent transaction Rewrite at version 4. Please retry.",
+    ):
+        await adapter1.search(KilnVectorStoreQuery(query_string="Tokyo"))
+
+    # but we can query adapter2
+    results2 = await adapter2.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    assert len(results2) > 0

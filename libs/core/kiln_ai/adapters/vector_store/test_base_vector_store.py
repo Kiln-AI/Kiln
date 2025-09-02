@@ -39,17 +39,11 @@ class TestBaseVectorStoreAdapter:
             async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
                 return []
 
-            async def get_all_chunks(self) -> List[SearchResult]:
-                return []
-
             async def count_records(self) -> int:
                 return 0
 
             async def destroy(self) -> None:
                 pass
-
-            async def is_chunk_indexed(self, document_id: str, chunk_idx: int) -> bool:
-                return True
 
         config = MagicMock(spec=VectorStoreConfig)
         adapter = ConcreteAdapter(MagicMock(spec=RagConfig), config)
