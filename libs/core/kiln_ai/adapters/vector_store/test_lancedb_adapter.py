@@ -1,4 +1,6 @@
+import asyncio
 import os
+import random
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -547,3 +549,233 @@ def test_build_kwargs_for_query_validation_errors(
         ValueError, match="query_embedding must be provided for vector search"
     ):
         adapter.build_kwargs_for_query(query)
+
+
+def generate_benchmark_data(
+    count: int, vector_size: int, word_count: int, tmp_path: Path
+) -> list[tuple[str, ChunkedDocument, ChunkEmbeddings]]:
+    """Generate random data for benchmarking."""
+
+    def generate_word_pool(target_size: int) -> list[str]:
+        """Generate a pool of random words using common prefixes, roots, and suffixes."""
+        prefixes = [
+            "pre",
+            "un",
+            "re",
+            "in",
+            "dis",
+            "en",
+            "non",
+            "over",
+            "mis",
+            "sub",
+            "inter",
+            "super",
+            "anti",
+            "semi",
+            "multi",
+            "auto",
+            "co",
+            "de",
+            "ex",
+            "pro",
+        ]
+        roots = [
+            "act",
+            "form",
+            "port",
+            "dict",
+            "ject",
+            "rupt",
+            "scrib",
+            "struct",
+            "tract",
+            "vert",
+            "vis",
+            "spect",
+            "mit",
+            "duc",
+            "fac",
+            "cap",
+            "cred",
+            "grad",
+            "loc",
+            "mov",
+            "ped",
+            "pend",
+            "pos",
+            "sect",
+            "sent",
+            "serv",
+            "sign",
+            "sist",
+            "spec",
+            "tain",
+            "temp",
+            "tend",
+            "terr",
+            "test",
+            "text",
+            "tort",
+            "typ",
+            "urb",
+            "vac",
+            "val",
+            "ven",
+            "vers",
+            "vid",
+            "voc",
+            "volv",
+        ]
+        suffixes = [
+            "tion",
+            "sion",
+            "ness",
+            "ment",
+            "able",
+            "ible",
+            "ful",
+            "less",
+            "ing",
+            "ed",
+            "er",
+            "est",
+            "ly",
+            "ity",
+            "ous",
+            "ive",
+            "al",
+            "ic",
+            "ical",
+            "ary",
+            "ory",
+            "ure",
+            "ade",
+            "age",
+            "ance",
+            "ence",
+            "dom",
+            "hood",
+            "ship",
+            "ward",
+            "wise",
+            "like",
+            "some",
+            "teen",
+            "ty",
+            "th",
+            "ish",
+            "esque",
+        ]
+
+        words = set()
+
+        # Generate combinations
+        while len(words) < target_size:
+            # Simple root words
+            if random.random() < 0.3:
+                words.add(random.choice(roots))
+            # Prefix + root
+            elif random.random() < 0.6:
+                words.add(random.choice(prefixes) + random.choice(roots))
+            # Root + suffix
+            elif random.random() < 0.8:
+                words.add(random.choice(roots) + random.choice(suffixes))
+            # Prefix + root + suffix
+            else:
+                words.add(
+                    random.choice(prefixes)
+                    + random.choice(roots)
+                    + random.choice(suffixes)
+                )
+
+        return list(words)
+
+    # Generate word pool that's ~25x the word_count for variety
+    target_pool_size = max(
+        word_count * 25, 100
+    )  # At least 100 words, scale dictionary with word_count*25
+    words = generate_word_pool(target_pool_size)
+
+    results = []
+    for i in range(count):
+        doc_id = f"doc_{i:05d}"
+
+        # Generate random text (word_count words) - allow repetition for variety
+        selected_words = random.choices(words, k=word_count)
+        text_content = " ".join(selected_words)
+
+        # Generate random vector_size-dimensional vector
+        vector = [random.uniform(-1.0, 1.0) for _ in range(vector_size)]
+
+        # Create chunked document with single chunk
+        chunked_document = ChunkedDocument(
+            chunker_config_id="test_chunker",
+            chunks=[
+                Chunk(content=KilnAttachmentModel.from_data(text_content, "text/plain"))
+            ],
+            path=tmp_path / f"chunked_document_{i}.kiln",
+        )
+
+        # Create chunk embeddings
+        chunk_embeddings = ChunkEmbeddings(
+            embedding_config_id="test_embedding",
+            embeddings=[Embedding(vector=vector)],
+            path=tmp_path / f"chunk_embeddings_{i}.kiln",
+        )
+
+        results.append((doc_id, chunked_document, chunk_embeddings))
+
+    return results
+
+
+@pytest.mark.benchmark
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+def test_benchmark_add_chunks(
+    benchmark,
+    hybrid_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Benchmark adding chunks with embeddings to LanceDB."""
+
+    count = 50000
+    vector_size = 1024
+    word_count = 200
+
+    # Set random seed for reproducible results
+    random.seed(42)
+
+    # Generate random data items (this is not benchmarked)
+    benchmark_data = generate_benchmark_data(count, vector_size, word_count, tmp_path)
+
+    # Create RAG config and adapter (not benchmarked)
+    rag_config = create_rag_config_factory(hybrid_vector_store_config, embedding_config)
+    adapter = asyncio.run(
+        vector_store_adapter_for_config(rag_config, hybrid_vector_store_config)
+    )
+
+    # Benchmark only the index loading
+    def add_chunks():
+        return asyncio.run(adapter.add_chunks_with_embeddings(benchmark_data))
+
+    # one iteration
+    benchmark.pedantic(add_chunks, rounds=1, iterations=1)
+    stats = benchmark.stats.stats
+
+    # Verify that data was actually added
+    async def verify_count():
+        final_count = await adapter.count_records()
+        return final_count
+
+    final_count = asyncio.run(verify_count())
+    assert final_count == count, f"Expected {count} records, got {final_count}"
+
+    # Expect min 2500 ops per second
+    max_time = count / 2500
+    if stats.max > max_time:
+        pytest.fail(
+            f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
+        )
