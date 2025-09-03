@@ -118,7 +118,6 @@ async def run_all_extractors_and_rag_workflows(
         for result in results:
             if isinstance(result, Exception):
                 logger.error(f"Error running extractor: {result}")
-        logger.warning(f"Extractor tasks: {extractor_tasks}")
 
     rag_tasks: list[asyncio.Task] = []
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:

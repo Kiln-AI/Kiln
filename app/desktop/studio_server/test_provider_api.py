@@ -22,6 +22,7 @@ from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
+    default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.utils.config import Config
 
@@ -3060,3 +3061,48 @@ def test_get_providers_embedding_models(client):
             data["models"][EmbeddingModelName.openai_text_embedding_3_small]["name"]
             == "text-embedding-3-small"
         )
+
+
+def test_remote_model_name_not_in_enum_handled_gracefully():
+    # Test with a model name that definitely doesn't exist in the ModelName enum
+    remote_model_name = "remote-model-abc"
+
+    # This should not raise an exception even though the model name is not in the enum
+    result = default_structured_output_mode_for_model_provider(
+        model_name=remote_model_name,
+        provider=ModelProviderName.openai,
+        default=StructuredOutputMode.json_schema,
+    )
+
+    # Should return the default mode since the model is not found
+    assert result == StructuredOutputMode.json_schema
+
+
+def test_get_providers_models_handles_remote_models(client):
+    # Mock built_in_models to include models with names that are not in the enum
+    mock_model1 = MagicMock()
+    mock_model1.name = "remote-model-abc"
+    mock_model1.friendly_name = "Remote Model ABC"
+
+    mock_model2 = MagicMock()
+    mock_model2.name = "remote-model-xyz"
+    mock_model2.friendly_name = "Remote Model XYZ"
+
+    mock_built_in_models = [mock_model1, mock_model2]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.built_in_models", mock_built_in_models
+    ):
+        response = client.get("/api/providers/models")
+
+        # Should handle the remote model names without failing
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "remote-model-abc" in data["models"]
+        assert "remote-model-xyz" in data["models"]
+
+        assert data["models"]["remote-model-abc"]["id"] == "remote-model-abc"
+        assert data["models"]["remote-model-abc"]["name"] == "Remote Model ABC"
+        assert data["models"]["remote-model-xyz"]["id"] == "remote-model-xyz"
+        assert data["models"]["remote-model-xyz"]["name"] == "Remote Model XYZ"

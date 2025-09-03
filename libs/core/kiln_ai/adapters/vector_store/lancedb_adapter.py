@@ -1,15 +1,23 @@
 import asyncio
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Tuple
 
-from llama_index.core.schema import TextNode
+from llama_index.core import StorageContext, VectorStoreIndex
+from llama_index.core.schema import (
+    BaseNode,
+    NodeRelationship,
+    RelatedNodeInfo,
+    TextNode,
+)
 from llama_index.core.vector_stores.types import (
     VectorStoreQuery,
     VectorStoreQueryResult,
 )
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
+from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -25,6 +33,7 @@ from kiln_ai.datamodel.vector_store import (
     raise_exhaustive_enum_error,
 )
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.uuid import string_to_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +61,46 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             **kwargs,
         )
 
+        storage_context = StorageContext.from_defaults(
+            vector_store=self.lancedb_vector_store
+        )
+
+        # FIXME:
+        # embed_model=None should be valid and result in llama_index initializing it
+        # to a mock (like it does elsewhere) but there is a fallback in the
+        # VectorStoreIndex constructor that overrides None with "default"
+        # and tries to load OpenAI and throws if the OPENAI_API_KEY is not set
+        # maybe should open an issue on their repo
+        os.environ["OPENAI_API_KEY"] = "dummy"
+
+        # VectorStoreIndex is a wrapper around a vector store
+        # it exposes higher level operations (that rely on internal
+        # fields like ref_doc_id); make sure implementation mirrors
+        # the upstream llama_index logic that we do not use
+        self.index = VectorStoreIndex(
+            [],
+            storage_context=storage_context,
+            embed_model=None,
+        )
+
+    async def delete_nodes_by_document_id(self, document_id: str) -> None:
+        # higher level operation that requires ref_doc_id to be set on the nodes
+        # which is set through the source node relationship
+        self.index.delete_ref_doc(document_id)
+
+    async def get_nodes_by_ids(self, node_ids: List[str]) -> List[BaseNode]:
+        try:
+            chunk_ids_in_database = await self.lancedb_vector_store.aget_nodes(
+                node_ids=node_ids
+            )
+            return chunk_ids_in_database
+        except TableNotFoundError as e:
+            logger.warning(
+                f"Error getting nodes by ids due to table not found, which may be expected if the table does not exist yet: {e}",
+                exc_info=True,
+            )
+            return []
+
     async def add_chunks_with_embeddings(
         self,
         records: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
@@ -67,17 +116,61 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                     f"Number of embeddings ({len(chunk_embeddings.embeddings)}) does not match number of chunks ({len(chunked_document.chunks)}) for document {document_id}"
                 )
 
+            chunk_count_for_document = len(chunked_document.chunks)
+            deterministic_chunk_ids = [
+                self.compute_deterministic_chunk_id(document_id, chunk_idx)
+                for chunk_idx in range(chunk_count_for_document)
+            ]
+
+            # check if the chunk ids are already in the database
+            chunk_ids_in_database = await self.get_nodes_by_ids(deterministic_chunk_ids)
+            if len(chunk_ids_in_database) == chunk_count_for_document:
+                # we already have all the chunks for this document in the database
+                continue
+            else:
+                # otherwise, we just insert all the chunks for this document again
+                pass
+
             chunks_text = await chunked_document.load_chunks_text()
             for chunk_idx, (chunk_text, embedding) in enumerate(
                 zip(chunks_text, chunk_embeddings.embeddings)
             ):
                 node_batch.append(
                     TextNode(
+                        id_=deterministic_chunk_ids[chunk_idx],
                         text=chunk_text,
                         embedding=embedding.vector,
                         metadata={
+                            # metadata is populated by some internal llama_index logic
+                            # that uses for example the source_node relationship
                             "kiln_doc_id": document_id,
                             "kiln_chunk_idx": chunk_idx,
+                            #
+                            # llama_index lancedb vector store automatically sets these metadata:
+                            # "doc_id": "UUID node_id of the Source Node relationship",
+                            # "document_id": "UUID node_id of the Source Node relationship",
+                            # "ref_doc_id": "UUID node_id of the Source Node relationship"
+                            #
+                            # llama_index file loaders set these metadata, which would be useful to also support:
+                            # "creation_date": "2025-09-03",
+                            # "file_name": "file.pdf",
+                            # "file_path": "/absolute/path/to/the/file.pdf",
+                            # "file_size": 395154,
+                            # "file_type": "application\/pdf",
+                            # "last_modified_date": "2025-09-03",
+                            # "page_label": "1",
+                        },
+                        relationships={
+                            # when using the llama_index loaders, llama_index groups Nodes under Documents
+                            # and relationships point to the Document (which is also a Node), which confusingly
+                            # enough does not map to an actual file (for a PDF, a Document is a page of the PDF)
+                            # the Document structure is not something that is persisted, so it is fine here
+                            # if we have a relationship to a node_id that does not exist in the db
+                            NodeRelationship.SOURCE: RelatedNodeInfo(
+                                node_id=document_id,
+                                node_type="1",
+                                metadata={},
+                            ),
                         },
                     )
                 )
@@ -86,13 +179,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                     # async_add is currently not async, LanceDB has an async API but
                     # llama_index does not use it, so it is synchronous and blocking
                     # avoid calling with too many nodes at once
-                    await self.lancedb_vector_store.async_add(node_batch)
+                    await self.index.ainsert_nodes(node_batch)
                     node_batch.clear()
 
             await asyncio.sleep(0)
 
         if node_batch:
-            await self.lancedb_vector_store.async_add(node_batch)
+            await self.index.ainsert_nodes(node_batch)
             node_batch.clear()
 
     def format_query_result(
@@ -162,6 +255,10 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             query_type=self.query_type,
         )
         return self.format_query_result(query_result)
+
+    def compute_deterministic_chunk_id(self, document_id: str, chunk_idx: int) -> str:
+        # the id_ of the Node must be a UUID string, otherwise llama_index / LanceDB fails downstream
+        return str(string_to_uuid(f"{document_id}::{chunk_idx}"))
 
     async def count_records(self) -> int:
         # this throws a TableNotFoundError if the table doesn't exist

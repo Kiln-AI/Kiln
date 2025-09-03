@@ -269,6 +269,7 @@
       label="Prompt / Task Instructions"
       inputType="textarea"
       id="task_instructions"
+      tall="medium"
       description={prompt_description()}
       bind:value={task.instruction}
     />
