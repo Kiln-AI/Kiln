@@ -68,18 +68,8 @@ class MCPSessionManager:
         headers = tool_server.properties.get("headers", {}).copy()
 
         # Retrieve secret headers from configuration and merge with regular headers
-        secret_headers_keys = tool_server.properties.get("secret_header_keys", [])
-
-        if secret_headers_keys and len(secret_headers_keys) > 0:
-            config = Config.shared()
-            mcp_secrets = config.get_value("mcp_secrets")
-
-            # Look for secrets with the pattern: mcp_server_id::header_name
-            if mcp_secrets:  # Only proceed if mcp_secrets is not None
-                for header_name in secret_headers_keys:
-                    header_value = mcp_secrets.get(f"{tool_server.id}::{header_name}")
-                    if header_value:
-                        headers[header_name] = header_value
+        secret_headers = tool_server.retrieve_secrets()
+        headers.update(secret_headers)
 
         async with streamablehttp_client(server_url, headers=headers) as (
             read_stream,
@@ -115,18 +105,8 @@ class MCPSessionManager:
         env_vars = tool_server.properties.get("env_vars", {}).copy()
 
         # Retrieve secret environment variables from configuration and merge with regular env_vars
-        secret_env_var_keys = tool_server.properties.get("secret_env_var_keys", [])
-
-        if secret_env_var_keys and len(secret_env_var_keys) > 0:
-            config = Config.shared()
-            mcp_secrets = config.get_value("mcp_secrets")
-
-            # Look for secrets with the pattern: mcp_server_id::env_var_name
-            if mcp_secrets:  # Only proceed if mcp_secrets is not None
-                for env_var_name in secret_env_var_keys:
-                    env_var_value = mcp_secrets.get(f"{tool_server.id}::{env_var_name}")
-                    if env_var_value:
-                        env_vars[env_var_name] = env_var_value
+        secret_env_vars = tool_server.retrieve_secrets()
+        env_vars.update(secret_env_vars)
 
         # Set PATH, only if not explicitly set during MCP tool setup
         if "PATH" not in env_vars:

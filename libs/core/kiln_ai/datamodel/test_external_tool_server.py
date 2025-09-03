@@ -1,3 +1,5 @@
+from unittest.mock import Mock, patch
+
 import pytest
 from pydantic import ValidationError
 
@@ -193,6 +195,41 @@ class TestExternalToolServerValidation:
         assert server.properties["env_vars"]["API_KEY"] == "secret123"
         assert server.properties["env_vars"]["PORT"] == "3000"
 
+    def test_local_mcp_valid_with_secret_env_var_keys(self):
+        """Test ExternalToolServer with valid secret environment variable keys."""
+        server = ExternalToolServer(
+            name="secret_local_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {
+                    "API_KEY": "secret_key",
+                    "DB_PASSWORD": "secret_password",
+                    "PORT": "3000",
+                },
+                "secret_env_var_keys": ["API_KEY", "DB_PASSWORD"],
+            },
+        )
+
+        assert server.name == "secret_local_server"
+        assert server.properties["secret_env_var_keys"] == ["API_KEY", "DB_PASSWORD"]
+
+    def test_local_mcp_valid_with_empty_secret_env_var_keys(self):
+        """Test ExternalToolServer with empty secret env var keys list."""
+        server = ExternalToolServer(
+            name="no_secrets_local_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"PORT": "3000"},
+                "secret_env_var_keys": [],
+            },
+        )
+
+        assert server.properties["secret_env_var_keys"] == []
+
     def test_local_mcp_missing_command(self):
         """Test ExternalToolServer rejects local MCP without command."""
         with pytest.raises(ValidationError, match="command must be a string"):
@@ -317,6 +354,23 @@ class TestExternalToolServerValidation:
         # The validator should set it to {} when missing
         assert server.properties.get("env_vars", {}) == {}
 
+    def test_local_mcp_invalid_secret_env_var_keys_type(self):
+        """Test ExternalToolServer rejects non-list secret_env_var_keys."""
+        with pytest.raises(
+            ValidationError,
+            match="secret_env_var_keys must be a list for external tools of type 'local_mcp'",
+        ):
+            ExternalToolServer(
+                name="invalid_secret_env_keys_type_server",
+                type=ToolServerType.local_mcp,
+                properties={
+                    "command": "python",
+                    "args": [],
+                    "env_vars": {},
+                    "secret_env_var_keys": "not a list",  # Invalid type
+                },
+            )
+
     def test_server_with_description(self):
         """Test ExternalToolServer with optional description."""
         server = ExternalToolServer(
@@ -343,3 +397,471 @@ class TestExternalToolServerValidation:
         )
 
         assert server.description is None
+
+
+class TestExternalToolServerSecretMethods:
+    """Tests for ExternalToolServer secret management methods."""
+
+    def test_get_secret_keys_remote_mcp_with_secrets(self):
+        """Test get_secret_keys returns correct keys for remote MCP servers."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {
+                    "Authorization": "Bearer token",
+                    "Content-Type": "application/json",
+                },
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+
+        secret_keys = server.get_secret_keys()
+        assert secret_keys == ["Authorization"]
+
+    def test_get_secret_keys_remote_mcp_no_secrets(self):
+        """Test get_secret_keys returns empty list when no secret keys defined."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+            },
+        )
+
+        secret_keys = server.get_secret_keys()
+        assert secret_keys == []
+
+    def test_get_secret_keys_local_mcp_with_secrets(self):
+        """Test get_secret_keys returns correct keys for local MCP servers."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"API_KEY": "secret", "PORT": "3000"},
+                "secret_env_var_keys": ["API_KEY"],
+            },
+        )
+
+        secret_keys = server.get_secret_keys()
+        assert secret_keys == ["API_KEY"]
+
+    def test_get_secret_keys_local_mcp_no_secrets(self):
+        """Test get_secret_keys returns empty list for local MCP with no secrets."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"PORT": "3000"},
+            },
+        )
+
+        secret_keys = server.get_secret_keys()
+        assert secret_keys == []
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_retrieve_secrets_remote_mcp_with_secrets(self, mock_config_shared):
+        """Test retrieve_secrets returns correct secret values for remote MCP."""
+        # Mock config
+        mock_config = Mock()
+        mock_config.get_value.return_value = {
+            "test_id::Authorization": "Bearer secret_token",
+            "test_id::X-API-Key": "api_key_value",
+            "other_server::key": "other_value",
+        }
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {
+                    "Authorization": "Bearer placeholder",
+                    "Content-Type": "application/json",
+                },
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
+        )
+        server.id = "test_id"  # Set ID for secret lookup
+
+        secrets = server.retrieve_secrets()
+        assert secrets == {
+            "Authorization": "Bearer secret_token",
+            "X-API-Key": "api_key_value",
+        }
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_retrieve_secrets_local_mcp_with_secrets(self, mock_config_shared):
+        """Test retrieve_secrets returns correct secret values for local MCP."""
+        # Mock config
+        mock_config = Mock()
+        mock_config.get_value.return_value = {
+            "test_id::API_KEY": "secret_api_key",
+            "test_id::DB_PASSWORD": "secret_password",
+        }
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"API_KEY": "placeholder", "PORT": "3000"},
+                "secret_env_var_keys": ["API_KEY", "DB_PASSWORD"],
+            },
+        )
+        server.id = "test_id"
+
+        secrets = server.retrieve_secrets()
+        assert secrets == {
+            "API_KEY": "secret_api_key",
+            "DB_PASSWORD": "secret_password",
+        }
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_retrieve_secrets_no_mcp_secrets_in_config(self, mock_config_shared):
+        """Test retrieve_secrets handles missing mcp_secrets in config."""
+        # Mock config with no mcp_secrets
+        mock_config = Mock()
+        mock_config.get_value.return_value = None
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer placeholder"},
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+        server.id = "test_id"
+
+        secrets = server.retrieve_secrets()
+        assert secrets == {}
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_retrieve_secrets_no_matching_secrets(self, mock_config_shared):
+        """Test retrieve_secrets returns empty dict when no matching secrets found."""
+        # Mock config with secrets for different server
+        mock_config = Mock()
+        mock_config.get_value.return_value = {
+            "other_server::Authorization": "Bearer other_token",
+        }
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer placeholder"},
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+        server.id = "test_id"
+
+        secrets = server.retrieve_secrets()
+        assert secrets == {}
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_save_secrets_remote_mcp(self, mock_config_shared):
+        """Test save_secrets stores remote MCP secrets correctly."""
+        # Mock config
+        mock_config = Mock()
+        mock_config.get_value.return_value = {}
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {
+                    "Authorization": "Bearer secret_token",
+                    "Content-Type": "application/json",
+                },
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+        server.id = "test_id"
+
+        server.save_secrets()
+
+        # Verify config was updated with correct secret key pattern
+        mock_config.update_settings.assert_called_once()
+        call_args = mock_config.update_settings.call_args[0][0]
+        assert "mcp_secrets" in call_args
+        assert (
+            call_args["mcp_secrets"]["test_id::Authorization"] == "Bearer secret_token"
+        )
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_save_secrets_local_mcp(self, mock_config_shared):
+        """Test save_secrets stores local MCP secrets correctly."""
+        # Mock config
+        mock_config = Mock()
+        mock_config.get_value.return_value = {}
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"API_KEY": "secret_key", "PORT": "3000"},
+                "secret_env_var_keys": ["API_KEY"],
+            },
+        )
+        server.id = "test_id"
+
+        server.save_secrets()
+
+        # Verify config was updated with correct secret key pattern
+        mock_config.update_settings.assert_called_once()
+        call_args = mock_config.update_settings.call_args[0][0]
+        assert "mcp_secrets" in call_args
+        assert call_args["mcp_secrets"]["test_id::API_KEY"] == "secret_key"
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_save_secrets_no_secret_keys(self, mock_config_shared):
+        """Test save_secrets does nothing when no secret keys defined."""
+        mock_config = Mock()
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+            },
+        )
+        server.id = "test_id"
+
+        server.save_secrets()
+
+        # Should not call config update when no secrets to save
+        mock_config.update_settings.assert_not_called()
+
+    def test_save_secrets_none_id_raises_error(self):
+        """Test save_secrets raises error when server ID is None."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer token"},
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+        # Manually set ID to None to test the validation
+        server.id = None
+
+        with pytest.raises(
+            ValueError, match="Server ID cannot be None when saving secrets"
+        ):
+            server.save_secrets()
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_delete_secrets(self, mock_config_shared):
+        """Test delete_secrets removes all secrets for the server."""
+        # Mock config with existing secrets
+        mock_config = Mock()
+        existing_secrets = {
+            "test_id::Authorization": "Bearer token",
+            "test_id::X-API-Key": "api_key",
+            "other_server::key": "other_value",
+        }
+        mock_config.get_value.return_value = existing_secrets.copy()
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer placeholder"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
+        )
+        server.id = "test_id"
+
+        server.delete_secrets()
+
+        # Verify config was updated with secrets removed
+        mock_config.update_settings.assert_called_once()
+        call_args = mock_config.update_settings.call_args[0][0]
+        expected_secrets = {
+            "other_server::key": "other_value"
+        }  # Only other server's secrets should remain
+        assert call_args["mcp_secrets"] == expected_secrets
+
+    @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
+    def test_delete_secrets_no_existing_secrets(self, mock_config_shared):
+        """Test delete_secrets handles case when no secrets exist."""
+        # Mock config with no existing secrets
+        mock_config = Mock()
+        mock_config.get_value.return_value = {}
+        mock_config_shared.return_value = mock_config
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer placeholder"},
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+        server.id = "test_id"
+
+        server.delete_secrets()
+
+        # Should still call update_settings to maintain consistency
+        mock_config.update_settings.assert_called_once()
+        call_args = mock_config.update_settings.call_args[0][0]
+        assert call_args["mcp_secrets"] == {}
+
+
+class TestExternalToolServerSaveToFileOverride:
+    """Tests for ExternalToolServer save_to_file method that strips secrets."""
+
+    @patch("kiln_ai.datamodel.external_tool_server.ExternalToolServer.save_secrets")
+    @patch.object(
+        ExternalToolServer.__bases__[0], "save_to_file"
+    )  # Mock parent save_to_file
+    def test_save_to_file_strips_remote_mcp_secrets(
+        self, mock_parent_save, mock_save_secrets
+    ):
+        """Test save_to_file strips secret headers from remote MCP properties."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {
+                    "Authorization": "Bearer secret_token",
+                    "Content-Type": "application/json",
+                    "X-API-Key": "secret_key",
+                },
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
+        )
+
+        server.save_to_file()
+
+        # Verify secrets were stripped from headers
+        expected_headers = {"Content-Type": "application/json"}
+        assert server.properties["headers"] == expected_headers
+
+        # Verify parent save_to_file was called
+        mock_parent_save.assert_called_once()
+
+    @patch("kiln_ai.datamodel.external_tool_server.ExternalToolServer.save_secrets")
+    @patch.object(ExternalToolServer.__bases__[0], "save_to_file")
+    def test_save_to_file_strips_local_mcp_secrets(
+        self, mock_parent_save, mock_save_secrets
+    ):
+        """Test save_to_file strips secret env vars from local MCP properties."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {
+                    "API_KEY": "secret_key",
+                    "PORT": "3000",
+                    "DB_PASSWORD": "secret_password",
+                },
+                "secret_env_var_keys": ["API_KEY", "DB_PASSWORD"],
+            },
+        )
+
+        server.save_to_file()
+
+        # Verify secrets were stripped from env_vars
+        expected_env_vars = {"PORT": "3000"}
+        assert server.properties["env_vars"] == expected_env_vars
+
+        # Verify parent save_to_file was called
+        mock_parent_save.assert_called_once()
+
+    @patch("kiln_ai.datamodel.external_tool_server.ExternalToolServer.save_secrets")
+    @patch.object(ExternalToolServer.__bases__[0], "save_to_file")
+    def test_save_to_file_no_secrets_to_strip(
+        self, mock_parent_save, mock_save_secrets
+    ):
+        """Test save_to_file works correctly when no secrets need stripping."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+            },
+        )
+
+        original_headers = server.properties["headers"].copy()
+        server.save_to_file()
+
+        # Headers should remain unchanged
+        assert server.properties["headers"] == original_headers
+
+        # Verify parent save_to_file was called
+        mock_parent_save.assert_called_once()
+
+    @patch("kiln_ai.datamodel.external_tool_server.ExternalToolServer.save_secrets")
+    @patch.object(ExternalToolServer.__bases__[0], "save_to_file")
+    def test_save_to_file_handles_missing_headers_dict(
+        self, mock_parent_save, mock_save_secrets
+    ):
+        """Test save_to_file handles case where headers dict is missing."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {},  # Empty headers
+                "secret_header_keys": ["Authorization"],
+            },
+        )
+
+        server.save_to_file()
+
+        # Should not raise error and headers should remain empty
+        assert server.properties["headers"] == {}
+        mock_parent_save.assert_called_once()
+
+    @patch("kiln_ai.datamodel.external_tool_server.ExternalToolServer.save_secrets")
+    @patch.object(ExternalToolServer.__bases__[0], "save_to_file")
+    def test_save_to_file_handles_missing_env_vars_dict(
+        self, mock_parent_save, mock_save_secrets
+    ):
+        """Test save_to_file handles case where env_vars dict is missing."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {},  # Empty env_vars
+                "secret_env_var_keys": ["API_KEY"],
+            },
+        )
+
+        server.save_to_file()
+
+        # Should not raise error and env_vars should remain empty
+        assert server.properties["env_vars"] == {}
+        mock_parent_save.assert_called_once()

@@ -7,6 +7,7 @@ from kiln_ai.datamodel.basemodel import (
     FilenameString,
     KilnParentedModel,
 )
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -93,7 +94,146 @@ class ExternalToolServer(KilnParentedModel):
                         "environment variables must be a dictionary for external tools of type 'local_mcp'"
                     )
 
+                secret_env_var_keys = self.properties.get("secret_env_var_keys", None)
+                # Secret env var keys are optional, but if they are set, they must be a list of strings
+                if secret_env_var_keys is not None and not isinstance(
+                    secret_env_var_keys, list
+                ):
+                    raise ValueError(
+                        "secret_env_var_keys must be a list for external tools of type 'local_mcp'"
+                    )
+
             case _:
                 # Type checking will catch missing cases
                 raise_exhaustive_enum_error(self.type)
         return self
+
+    def get_secret_keys(self) -> list[str]:
+        """
+        Get the list of secret key names based on server type.
+
+        Returns:
+            List of secret key names (header names for remote, env var names for local)
+        """
+        match self.type:
+            case ToolServerType.remote_mcp:
+                return self.properties.get("secret_header_keys", [])
+            case ToolServerType.local_mcp:
+                return self.properties.get("secret_env_var_keys", [])
+            case _:
+                raise_exhaustive_enum_error(self.type)
+
+    def retrieve_secrets(self) -> dict[str, str]:
+        """
+        Retrieve secrets from configuration using the pattern: mcp_server_id::key_name
+        Automatically determines which secret keys to retrieve based on the server type.
+
+        Returns:
+            Dictionary mapping key names to their secret values
+        """
+        secrets = {}
+        secret_keys = self.get_secret_keys()
+
+        if secret_keys and len(secret_keys) > 0:
+            config = Config.shared()
+            mcp_secrets = config.get_value("mcp_secrets")
+
+            # Look for secrets with the pattern: mcp_server_id::key_name
+            if mcp_secrets:  # Only proceed if mcp_secrets is not None
+                for key_name in secret_keys:
+                    secret_value = mcp_secrets.get(f"{self.id}::{key_name}")
+                    if secret_value:
+                        secrets[key_name] = secret_value
+
+        return secrets
+
+    def save_secrets(self) -> None:
+        """
+        Save secrets to the configuration system.
+        Extracts secret values from properties based on server type.
+        """
+        secret_keys = self.get_secret_keys()
+
+        if not secret_keys:
+            return
+
+        if self.id is None:
+            raise ValueError("Server ID cannot be None when saving secrets")
+
+        # Extract secret values from properties based on server type
+        match self.type:
+            case ToolServerType.remote_mcp:
+                secret_values = self.properties.get("headers", {})
+            case ToolServerType.local_mcp:
+                secret_values = self.properties.get("env_vars", {})
+            case _:
+                raise_exhaustive_enum_error(self.type)
+
+        config = Config.shared()
+        mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+
+        # Store secrets with the pattern: mcp_server_id::key_name
+        for key_name in secret_keys:
+            if key_name in secret_values:
+                secret_key = f"{self.id}::{key_name}"
+                mcp_secrets[secret_key] = secret_values[key_name]
+
+        config.update_settings({"mcp_secrets": mcp_secrets})
+
+    def delete_secrets(self) -> None:
+        """
+        Delete all secrets for this tool server from the configuration system.
+        """
+        secret_keys = self.get_secret_keys()
+
+        config = Config.shared()
+        mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+
+        # Remove secrets with the pattern: mcp_server_id::key_name
+        for key_name in secret_keys:
+            secret_key = f"{self.id}::{key_name}"
+            if secret_key in mcp_secrets:
+                del mcp_secrets[secret_key]
+
+        # Always call update_settings to maintain consistency with the old behavior
+        config.update_settings({"mcp_secrets": mcp_secrets})
+
+    def save_to_file(self) -> None:
+        """
+        Override save_to_file to automatically strip secrets from properties before saving.
+
+        This ensures that sensitive data is never persisted to disk in the properties,
+        while still being accessible via retrieve_secrets() for runtime use.
+
+        This method also permanently strips secrets from the in-memory object to ensure
+        consistent behavior between saved and in-memory representations.
+        """
+        # Strip secrets based on server type
+        match self.type:
+            case ToolServerType.remote_mcp:
+                secret_keys = self.properties.get("secret_header_keys", [])
+                if secret_keys and "headers" in self.properties:
+                    # Remove secret headers from the headers dict
+                    non_secret_headers = {
+                        key: value
+                        for key, value in self.properties["headers"].items()
+                        if key not in secret_keys
+                    }
+                    self.properties["headers"] = non_secret_headers
+
+            case ToolServerType.local_mcp:
+                secret_keys = self.properties.get("secret_env_var_keys", [])
+                if secret_keys and "env_vars" in self.properties:
+                    # Remove secret env vars from the env_vars dict
+                    non_secret_env_vars = {
+                        key: value
+                        for key, value in self.properties["env_vars"].items()
+                        if key not in secret_keys
+                    }
+                    self.properties["env_vars"] = non_secret_env_vars
+
+            case _:
+                raise_exhaustive_enum_error(self.type)
+
+        # Call the parent save_to_file method
+        super().save_to_file()

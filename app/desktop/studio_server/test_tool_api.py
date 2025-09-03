@@ -2935,6 +2935,230 @@ async def test_create_local_tool_server_complex_command(client, test_project):
             assert result["properties"]["env_vars"]["MCP_SERVER_MODE"] == "production"
 
 
+async def test_create_local_tool_server_missing_name(client, test_project):
+    """Test local tool server creation fails when name is missing"""
+    tool_data = {
+        "command": "python",
+        "args": ["-m", "server"],
+        "description": "Tool with missing name",
+        # Missing required name
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_local_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+
+
+async def test_create_local_tool_server_whitespace_handling(client, test_project):
+    """Test local tool server creation handles whitespace in name and description properly"""
+    tool_data = {
+        "name": "  whitespace_tool  ",  # Name with whitespace
+        "command": "python",
+        "args": ["-m", "server"],
+        "description": "  Tool with whitespace in description  ",
+        "env_vars": {"VALID_KEY": "  spaced_value  "},
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            # The API should trim whitespace from names for filename validation
+            assert result["name"] == "whitespace_tool"
+            assert result["description"] == "  Tool with whitespace in description  "
+
+
+async def test_create_local_tool_server_unicode_characters(client, test_project):
+    """Test local tool server creation works with unicode characters"""
+    tool_data = {
+        "name": "测试工具_🚀",  # Unicode name with emoji
+        "command": "python",
+        "args": ["-m", "server"],
+        "description": "Тест c юникодом и émojis 🎉",
+        "env_vars": {"UNICODE_VAR": "测试值"},
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == "测试工具_🚀"
+            assert result["description"] == "Тест c юникодом и émojis 🎉"
+            assert result["properties"]["env_vars"]["UNICODE_VAR"] == "测试值"
+
+
+async def test_create_local_tool_server_long_description(client, test_project):
+    """Test local tool server creation works with very long descriptions"""
+    long_description = "A" * 1000  # 1000 character description
+    tool_data = {
+        "name": "long_desc_tool",
+        "command": "python",
+        "args": ["-m", "server"],
+        "description": long_description,
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["description"] == long_description
+
+
+async def test_create_local_tool_server_concurrent_creation(client, test_project):
+    """Test concurrent local tool server creation works correctly"""
+    tool_servers = [
+        {
+            "name": f"concurrent_tool_{i}",
+            "command": "python",
+            "args": ["-m", f"server_{i}"],
+            "description": f"Concurrent tool {i}",
+            "env_vars": {f"VAR_{i}": f"value_{i}"},
+        }
+        for i in range(5)
+    ]
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            created_tools = []
+            for tool_data in tool_servers:
+                response = client.post(
+                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    json=tool_data,
+                )
+                assert response.status_code == 200
+                created_tools.append(response.json())
+
+            # Verify all tools were created with unique IDs
+            tool_ids = [tool["id"] for tool in created_tools]
+            assert len(set(tool_ids)) == 5  # All IDs should be unique
+
+
+async def test_create_local_tool_server_duplicate_names_allowed(client, test_project):
+    """Test local tool server creation allows duplicate names (like remote MCP)"""
+    tool_data = {
+        "name": "duplicate_name_tool",
+        "command": "python",
+        "args": ["-m", "server1"],
+        "description": "First tool with this name",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            # Create first tool
+            response1 = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert response1.status_code == 200
+            tool1_id = response1.json()["id"]
+
+            # Create second tool with same name but different properties
+            tool_data["args"] = ["-m", "server2"]
+            tool_data["description"] = "Second tool with this name"
+
+            response2 = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert response2.status_code == 200
+            tool2_id = response2.json()["id"]
+
+            # Both should exist with different IDs
+            assert tool1_id != tool2_id
+
+
+async def test_create_local_tool_server_max_length_name(client, test_project):
+    """Test local tool server creation works with maximum length names"""
+    max_length_name = "a" * 120  # 120 character name (assuming same max as remote)
+    tool_data = {
+        "name": max_length_name,
+        "command": "python",
+        "args": ["-m", "server"],
+        "description": "Tool with maximum length name",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["name"] == max_length_name
+
+
+async def test_create_local_tool_server_list_tools_failed(client, test_project):
+    """Test local tool server creation fails when MCP list_tools fails"""
+    tool_data = {
+        "name": "list_tools_failing_local",
+        "command": "python",
+        "args": ["-m", "failing_server"],
+        "description": "Local tool where list_tools fails",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_list_tools_error("list_tools failed"):
+            # Unhandled exception is now raised instead of returning 422
+            with pytest.raises(Exception, match="list_tools failed"):
+                client.post(
+                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    json=tool_data,
+                )
+
+
 # Test validation of local MCP with validate_tool_server_connectivity
 @pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_local_mcp_success():
@@ -4329,6 +4553,68 @@ async def test_delete_local_mcp_tool_server_secret_key_not_in_config(
                 call_args = mock_config.update_settings.call_args[0][0]
 
                 # Other secrets should remain unchanged
+                expected_remaining_secrets = {
+                    "other_server::some_env_var": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_local_mcp_tool_server_missing_secret_env_var_keys_property(
+    client, test_project
+):
+    """Test that deleting a local MCP tool server handles missing secret_env_var_keys property gracefully"""
+    # Create a local MCP tool server first
+    tool_data = {
+        "name": "local_tool_without_secret_keys_prop",
+        "command": "python",
+        "args": ["-m", "test_server"],
+        "env_vars": {"DEBUG": "true"},
+        "secret_env_var_keys": [],
+        "description": "Local tool for testing missing property",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the local tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Manually remove the secret_env_var_keys property to simulate old data
+            # This requires directly modifying the tool server's properties
+            tool_server = tool_server_from_id(test_project.id, tool_server_id)
+            del tool_server.properties["secret_env_var_keys"]
+            tool_server.save_to_file()
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    "other_server::some_env_var": "other_value"
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server - this should handle the missing property gracefully
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that config update was still called
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that existing secrets remain unchanged since no secret keys were found
                 expected_remaining_secrets = {
                     "other_server::some_env_var": "other_value"
                 }

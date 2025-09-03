@@ -375,15 +375,16 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with required fields, temporarily store all headers in properties to validate the connectivity
+        # Create the ExternalToolServer with all data for validation
         properties = {
             "server_url": tool_data.server_url,
             "headers": tool_data.headers,
+            "secret_header_keys": tool_data.secret_header_keys,
         }
 
         tool_server = ExternalToolServer(
-            name=tool_data.name,
-            type=ToolServerType.remote_mcp,  # Default to remote MCP type
+            name=tool_data.name.strip(),  # Trim whitespace for filename validation
+            type=ToolServerType.remote_mcp,
             description=tool_data.description,
             properties=properties,
             parent=project,
@@ -392,32 +393,11 @@ def connect_tool_servers_api(app: FastAPI):
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(tool_server)
 
-        # Now the tool server is validate
-        # Remove the secret headers from the properties and store them in the configuration
-        non_secret_headers = {
-            key: tool_data.headers[key]
-            for key in tool_data.headers.keys()
-            if key not in tool_data.secret_header_keys
-        }
+        # Store secret headers in the configuration after validation
+        tool_server.save_secrets()
 
-        tool_server.properties["headers"] = non_secret_headers
-        tool_server.properties["secret_header_keys"] = tool_data.secret_header_keys
-
-        # Save the tool to file
+        # Save the tool to file (save_to_file will automatically strip secrets)
         tool_server.save_to_file()
-
-        # Store secret headers in the configuration before validation
-        if tool_data.secret_header_keys:
-            config = Config.shared()
-            mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
-
-            # Store secrets with the pattern: mcp_server_id::header_name
-            for header_name in tool_data.secret_header_keys:
-                header_value = tool_data.headers[header_name]
-                secret_key = f"{tool_server.id}::{header_name}"
-                mcp_secrets[secret_key] = header_value
-
-            config.update_settings({"mcp_secrets": mcp_secrets})
 
         return tool_server
 
@@ -427,15 +407,16 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with required fields, temporarily store all env vars in properties to validate the connectivity
+        # Create the ExternalToolServer with all data for validation
         properties = {
             "command": tool_data.command,
             "args": tool_data.args,
             "env_vars": tool_data.env_vars,
+            "secret_env_var_keys": tool_data.secret_env_var_keys,
         }
 
         tool_server = ExternalToolServer(
-            name=tool_data.name,
+            name=tool_data.name.strip(),  # Trim whitespace for filename validation
             type=ToolServerType.local_mcp,
             description=tool_data.description,
             properties=properties,
@@ -446,66 +427,19 @@ def connect_tool_servers_api(app: FastAPI):
         MCPSessionManager.shared().clear_shell_path_cache()
         await validate_tool_server_connectivity(tool_server)
 
-        # Now the tool server is validated
-        # Remove the secret env vars from the properties and store them in the configuration
-        non_secret_env_vars = {
-            key: tool_data.env_vars[key]
-            for key in tool_data.env_vars.keys()
-            if key not in tool_data.secret_env_var_keys
-        }
-
-        tool_server.properties["env_vars"] = non_secret_env_vars
-        tool_server.properties["secret_env_var_keys"] = tool_data.secret_env_var_keys
-
-        # Save the tool to file
-        tool_server.save_to_file()
-
         # Store secret env vars in the configuration after validation
-        if tool_data.secret_env_var_keys:
-            config = Config.shared()
-            mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+        tool_server.save_secrets()
 
-            # Store secrets with the pattern: mcp_server_id::env_var_name
-            for env_var_name in tool_data.secret_env_var_keys:
-                env_var_value = tool_data.env_vars[env_var_name]
-                secret_key = f"{tool_server.id}::{env_var_name}"
-                mcp_secrets[secret_key] = env_var_value
-
-            config.update_settings({"mcp_secrets": mcp_secrets})
+        # Save the tool to file (save_to_file will automatically strip secrets)
+        tool_server.save_to_file()
 
         return tool_server
 
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):
         tool_server = tool_server_from_id(project_id, tool_server_id)
-
-        # Delete the secret headers from the settings
-        config = Config.shared()
-        mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
-
-        match tool_server.type:
-            case ToolServerType.remote_mcp:
-                secret_header_keys = tool_server.properties.get(
-                    "secret_header_keys", []
-                )
-                for header_name in secret_header_keys:
-                    secret_key = f"{tool_server.id}::{header_name}"
-                    if secret_key in mcp_secrets:
-                        del mcp_secrets[secret_key]
-            case ToolServerType.local_mcp:
-                secret_env_var_keys = tool_server.properties.get(
-                    "secret_env_var_keys", []
-                )
-                for env_var_name in secret_env_var_keys:
-                    secret_key = f"{tool_server.id}::{env_var_name}"
-                    if secret_key in mcp_secrets:
-                        del mcp_secrets[secret_key]
-            case _:
-                raise_exhaustive_enum_error(tool_server.type)
-
-        # Update the config with the modified secrets
-        config.update_settings({"mcp_secrets": mcp_secrets})
-
+        # Delete the secrets from the settings
+        tool_server.delete_secrets()
         # Delete the tool server from the file system
         tool_server.delete()
 
