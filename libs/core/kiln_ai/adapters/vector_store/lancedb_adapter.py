@@ -94,10 +94,9 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 node_ids=node_ids
             )
             return chunk_ids_in_database
-        except TableNotFoundError as e:
+        except TableNotFoundError:
             logger.warning(
-                f"Error getting nodes by ids due to table not found, which may be expected if the table does not exist yet: {e}",
-                exc_info=True,
+                "Table not found while getting nodes by ids, which may be expected if the table does not exist yet",
             )
             return []
 
