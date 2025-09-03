@@ -7,7 +7,7 @@ from kiln_ai.datamodel.basemodel import (
     FilenameString,
     KilnParentedModel,
 )
-from kiln_ai.utils.config import Config
+from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -136,12 +136,12 @@ class ExternalToolServer(KilnParentedModel):
 
         if secret_keys and len(secret_keys) > 0:
             config = Config.shared()
-            mcp_secrets = config.get_value("mcp_secrets")
+            mcp_secrets = config.get_value(MCP_SECRETS_KEY)
 
             # Look for secrets with the pattern: mcp_server_id::key_name
             if mcp_secrets:  # Only proceed if mcp_secrets is not None
                 for key_name in secret_keys:
-                    secret_value = mcp_secrets.get(f"{self.id}::{key_name}")
+                    secret_value = mcp_secrets.get(self._config_secret_key(key_name))
                     if secret_value:
                         secrets[key_name] = secret_value
 
@@ -170,15 +170,15 @@ class ExternalToolServer(KilnParentedModel):
                 raise_exhaustive_enum_error(self.type)
 
         config = Config.shared()
-        mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+        mcp_secrets = config.get_value(MCP_SECRETS_KEY) or dict[str, str]()
 
         # Store secrets with the pattern: mcp_server_id::key_name
         for key_name in secret_keys:
             if key_name in secret_values:
-                secret_key = f"{self.id}::{key_name}"
+                secret_key = self._config_secret_key(key_name)
                 mcp_secrets[secret_key] = secret_values[key_name]
 
-        config.update_settings({"mcp_secrets": mcp_secrets})
+        config.update_settings({MCP_SECRETS_KEY: mcp_secrets})
 
     def delete_secrets(self) -> None:
         """
@@ -187,16 +187,16 @@ class ExternalToolServer(KilnParentedModel):
         secret_keys = self.get_secret_keys()
 
         config = Config.shared()
-        mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+        mcp_secrets = config.get_value(MCP_SECRETS_KEY) or dict[str, str]()
 
         # Remove secrets with the pattern: mcp_server_id::key_name
         for key_name in secret_keys:
-            secret_key = f"{self.id}::{key_name}"
+            secret_key = self._config_secret_key(key_name)
             if secret_key in mcp_secrets:
                 del mcp_secrets[secret_key]
 
         # Always call update_settings to maintain consistency with the old behavior
-        config.update_settings({"mcp_secrets": mcp_secrets})
+        config.update_settings({MCP_SECRETS_KEY: mcp_secrets})
 
     def save_to_file(self) -> None:
         """
@@ -237,3 +237,17 @@ class ExternalToolServer(KilnParentedModel):
 
         # Call the parent save_to_file method
         super().save_to_file()
+
+    #  Internal helpers
+
+    def _config_secret_key(self, key_name: str) -> str:
+        """
+        Generate the secret key pattern for storing/retrieving secrets.
+
+        Args:
+            key_name: The name of the secret key
+
+        Returns:
+            The formatted secret key: "{server_id}::{key_name}"
+        """
+        return f"{self.id}::{key_name}"

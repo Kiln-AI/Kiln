@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
+from kiln_ai.utils.config import MCP_SECRETS_KEY
 from kiln_ai.utils.dataset_import import format_validation_error
 from mcp.types import ListToolsResult, Tool
 from pydantic import ValidationError
@@ -3537,7 +3538,7 @@ async def test_delete_tool_server_with_secret_headers(client, test_project):
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_tool_server_no_secret_headers(client, test_project):
@@ -3593,7 +3594,7 @@ async def test_delete_tool_server_no_secret_headers(client, test_project):
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_tool_server_missing_secret_header_keys_property(
@@ -3654,7 +3655,7 @@ async def test_delete_tool_server_missing_secret_header_keys_property(
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_tool_server_secret_key_not_in_config(client, test_project):
@@ -3712,7 +3713,7 @@ async def test_delete_tool_server_secret_key_not_in_config(client, test_project)
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_tool_server_local_mcp_no_secret_headers(client, test_project):
@@ -3768,7 +3769,7 @@ async def test_delete_tool_server_local_mcp_no_secret_headers(client, test_proje
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 # Tests for demo tools API endpoints
@@ -3880,10 +3881,10 @@ async def test_connect_remote_mcp_with_secret_headers(client, test_project):
         # Verify config.update_settings was called to store secrets
         mock_config_instance.update_settings.assert_called_once()
         call_args = mock_config_instance.update_settings.call_args[0][0]
-        assert "mcp_secrets" in call_args
+        assert MCP_SECRETS_KEY in call_args
 
         # Verify secret values were stored with correct keys
-        mcp_secrets = call_args["mcp_secrets"]
+        mcp_secrets = call_args[MCP_SECRETS_KEY]
         server_id = result["id"]
         assert f"{server_id}::Authorization" in mcp_secrets
         assert f"{server_id}::X-API-Key" in mcp_secrets
@@ -3976,7 +3977,7 @@ async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
         call_args = mock_config_instance.update_settings.call_args[0][0]
 
         # Verify existing secrets are preserved and new ones added
-        mcp_secrets = call_args["mcp_secrets"]
+        mcp_secrets = call_args[MCP_SECRETS_KEY]
         server_id = result["id"]
 
         # Existing secrets should still be there
@@ -4074,7 +4075,7 @@ async def test_delete_tool_server_config_update_fixed(client, test_project):
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_tool_server_missing_secret_key_in_config(client, test_project):
@@ -4131,7 +4132,7 @@ async def test_delete_tool_server_missing_secret_key_in_config(client, test_proj
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 # Tests for local MCP secret environment variables functionality
@@ -4195,10 +4196,10 @@ async def test_connect_local_mcp_with_secret_env_vars(client, test_project):
         # Verify config.update_settings was called to store secrets
         mock_config_instance.update_settings.assert_called_once()
         call_args = mock_config_instance.update_settings.call_args[0][0]
-        assert "mcp_secrets" in call_args
+        assert MCP_SECRETS_KEY in call_args
 
         # Verify secret values were stored with correct keys
-        mcp_secrets = call_args["mcp_secrets"]
+        mcp_secrets = call_args[MCP_SECRETS_KEY]
         server_id = result["id"]
         assert f"{server_id}::SECRET_API_KEY" in mcp_secrets
         assert f"{server_id}::ANOTHER_SECRET" in mcp_secrets
@@ -4293,7 +4294,7 @@ async def test_connect_local_mcp_existing_mcp_secrets(client, test_project):
         call_args = mock_config_instance.update_settings.call_args[0][0]
 
         # Verify existing secrets are preserved and new ones added
-        mcp_secrets = call_args["mcp_secrets"]
+        mcp_secrets = call_args[MCP_SECRETS_KEY]
         server_id = result["id"]
 
         # Existing secrets should still be there
@@ -4438,7 +4439,7 @@ async def test_delete_local_mcp_tool_server_with_secret_env_vars(client, test_pr
                 expected_remaining_secrets = {
                     "other_server::some_env_var": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_local_mcp_tool_server_no_secret_env_vars(client, test_project):
@@ -4495,7 +4496,7 @@ async def test_delete_local_mcp_tool_server_no_secret_env_vars(client, test_proj
                 expected_remaining_secrets = {
                     "other_server::some_env_var": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_local_mcp_tool_server_secret_key_not_in_config(
@@ -4556,7 +4557,7 @@ async def test_delete_local_mcp_tool_server_secret_key_not_in_config(
                 expected_remaining_secrets = {
                     "other_server::some_env_var": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 async def test_delete_local_mcp_tool_server_missing_secret_env_var_keys_property(
@@ -4618,7 +4619,7 @@ async def test_delete_local_mcp_tool_server_missing_secret_env_var_keys_property
                 expected_remaining_secrets = {
                     "other_server::some_env_var": "other_value"
                 }
-                assert call_args["mcp_secrets"] == expected_remaining_secrets
+                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 # Tests for LocalToolServerCreationRequest secret environment variable validation

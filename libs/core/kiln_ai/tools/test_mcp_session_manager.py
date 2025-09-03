@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.utils.config import MCP_SECRETS_KEY
 
 
 class TestMCPSessionManager:
@@ -183,7 +184,7 @@ class TestMCPSessionManager:
                 assert session is mock_session_instance
 
         # Verify config was accessed for mcp_secrets
-        mock_config_instance.get_value.assert_called_once_with("mcp_secrets")
+        mock_config_instance.get_value.assert_called_once_with(MCP_SECRETS_KEY)
 
         # Verify streamablehttp_client was called with merged headers
         expected_headers = {
@@ -528,7 +529,7 @@ class TestMCPSessionManager:
         secret_headers_keys = tool_server.properties.get("secret_header_keys", [])
         if secret_headers_keys:
             config = mock_config_instance
-            mcp_secrets = config.get_value("mcp_secrets")
+            mcp_secrets = config.get_value(MCP_SECRETS_KEY)
             if mcp_secrets:
                 for header_name in secret_headers_keys:
                     header_value = mcp_secrets.get(f"{tool_server.id}::{header_name}")
@@ -756,7 +757,7 @@ class TestMCPSessionManager:
         mock_config_instance = MagicMock()
 
         def mock_get_value(key):
-            if key == "mcp_secrets":
+            if key == MCP_SECRETS_KEY:
                 return {
                     "test_server_id::SECRET_API_KEY": "secret_value_123",
                     "test_server_id::ANOTHER_SECRET": "another_secret_value",
@@ -816,7 +817,7 @@ class TestMCPSessionManager:
 
         # Verify config was accessed for mcp_secrets
         assert mock_config_instance.get_value.call_count == 2
-        mock_config_instance.get_value.assert_any_call("mcp_secrets")
+        mock_config_instance.get_value.assert_any_call(MCP_SECRETS_KEY)
         mock_config_instance.get_value.assert_any_call("custom_mcp_path")
 
         # Verify stdio_client was called with correct parameters including secrets
@@ -849,7 +850,7 @@ class TestMCPSessionManager:
         mock_config_instance = MagicMock()
 
         def mock_get_value(key):
-            if key == "mcp_secrets":
+            if key == MCP_SECRETS_KEY:
                 return None
             elif key == "custom_mcp_path":
                 return None  # No custom path, will use shell path

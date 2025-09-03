@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.utils.config import MCP_SECRETS_KEY
 
 
 class TestExternalToolServerValidation:
@@ -465,6 +466,67 @@ class TestExternalToolServerSecretMethods:
         secret_keys = server.get_secret_keys()
         assert secret_keys == []
 
+    def test_config_secret_key_formats_correctly(self):
+        """Test _config_secret_key generates the correct secret key pattern."""
+        # Test with remote MCP server
+        remote_server = ExternalToolServer(
+            name="test_remote_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {},
+            },
+        )
+        remote_server.id = "remote_server_123"
+
+        assert (
+            remote_server._config_secret_key("Authorization")
+            == "remote_server_123::Authorization"
+        )
+        assert (
+            remote_server._config_secret_key("X-API-Key")
+            == "remote_server_123::X-API-Key"
+        )
+
+        # Test with local MCP server
+        local_server = ExternalToolServer(
+            name="test_local_server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": ["-m", "server"],
+            },
+        )
+        local_server.id = "local_server_456"
+
+        assert local_server._config_secret_key("API_KEY") == "local_server_456::API_KEY"
+        assert (
+            local_server._config_secret_key("SECRET_TOKEN")
+            == "local_server_456::SECRET_TOKEN"
+        )
+
+    def test_config_secret_key_with_special_characters(self):
+        """Test _config_secret_key handles key names with special characters."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com/mcp",
+                "headers": {},
+            },
+        )
+        server.id = "test_server_789"
+
+        # Test with key names containing special characters
+        assert (
+            server._config_secret_key("X-Custom-Header")
+            == "test_server_789::X-Custom-Header"
+        )
+        assert server._config_secret_key("API_KEY_V2") == "test_server_789::API_KEY_V2"
+        assert (
+            server._config_secret_key("oauth.token") == "test_server_789::oauth.token"
+        )
+
     @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
     def test_retrieve_secrets_remote_mcp_with_secrets(self, mock_config_shared):
         """Test retrieve_secrets returns correct secret values for remote MCP."""
@@ -599,9 +661,10 @@ class TestExternalToolServerSecretMethods:
         # Verify config was updated with correct secret key pattern
         mock_config.update_settings.assert_called_once()
         call_args = mock_config.update_settings.call_args[0][0]
-        assert "mcp_secrets" in call_args
+        assert MCP_SECRETS_KEY in call_args
         assert (
-            call_args["mcp_secrets"]["test_id::Authorization"] == "Bearer secret_token"
+            call_args[MCP_SECRETS_KEY]["test_id::Authorization"]
+            == "Bearer secret_token"
         )
 
     @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
@@ -629,8 +692,8 @@ class TestExternalToolServerSecretMethods:
         # Verify config was updated with correct secret key pattern
         mock_config.update_settings.assert_called_once()
         call_args = mock_config.update_settings.call_args[0][0]
-        assert "mcp_secrets" in call_args
-        assert call_args["mcp_secrets"]["test_id::API_KEY"] == "secret_key"
+        assert MCP_SECRETS_KEY in call_args
+        assert call_args[MCP_SECRETS_KEY]["test_id::API_KEY"] == "secret_key"
 
     @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
     def test_save_secrets_no_secret_keys(self, mock_config_shared):
@@ -704,7 +767,7 @@ class TestExternalToolServerSecretMethods:
         expected_secrets = {
             "other_server::key": "other_value"
         }  # Only other server's secrets should remain
-        assert call_args["mcp_secrets"] == expected_secrets
+        assert call_args[MCP_SECRETS_KEY] == expected_secrets
 
     @patch("kiln_ai.datamodel.external_tool_server.Config.shared")
     def test_delete_secrets_no_existing_secrets(self, mock_config_shared):
@@ -730,7 +793,7 @@ class TestExternalToolServerSecretMethods:
         # Should still call update_settings to maintain consistency
         mock_config.update_settings.assert_called_once()
         call_args = mock_config.update_settings.call_args[0][0]
-        assert call_args["mcp_secrets"] == {}
+        assert call_args[MCP_SECRETS_KEY] == {}
 
 
 class TestExternalToolServerSaveToFileOverride:

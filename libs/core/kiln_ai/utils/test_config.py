@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from kiln_ai.utils.config import Config, ConfigProperty, _get_user_id
+from kiln_ai.utils.config import MCP_SECRETS_KEY, Config, ConfigProperty, _get_user_id
 
 
 @pytest.fixture
@@ -359,13 +359,13 @@ def test_mcp_secrets_sensitive_hiding():
 
     # Test without hiding sensitive data
     visible_settings = config.settings(hide_sensitive=False)
-    assert "mcp_secrets" in visible_settings
-    assert visible_settings["mcp_secrets"] == secrets
+    assert MCP_SECRETS_KEY in visible_settings
+    assert visible_settings[MCP_SECRETS_KEY] == secrets
 
     # Test with hiding sensitive data
     hidden_settings = config.settings(hide_sensitive=True)
-    assert "mcp_secrets" in hidden_settings
-    assert hidden_settings["mcp_secrets"] == "[hidden]"
+    assert MCP_SECRETS_KEY in hidden_settings
+    assert hidden_settings[MCP_SECRETS_KEY] == "[hidden]"
 
 
 def test_mcp_secrets_persistence(mock_yaml_file):
@@ -386,7 +386,7 @@ def test_mcp_secrets_persistence(mock_yaml_file):
         # Check that the value was saved to the YAML file
         with open(mock_yaml_file, "r") as f:
             saved_settings = yaml.safe_load(f)
-        assert saved_settings["mcp_secrets"] == secrets
+        assert saved_settings[MCP_SECRETS_KEY] == secrets
 
         # Create a new config instance to test loading from YAML
         new_config = Config()
@@ -400,14 +400,14 @@ def test_mcp_secrets_get_value():
     config = Config.shared()
 
     # Initially should be None
-    assert config.get_value("mcp_secrets") is None
+    assert config.get_value(MCP_SECRETS_KEY) is None
 
     # Set some secrets
     secrets = {"server::key": "value"}
     config.mcp_secrets = secrets
 
     # Should be retrievable via get_value
-    assert config.get_value("mcp_secrets") == secrets
+    assert config.get_value(MCP_SECRETS_KEY) == secrets
 
 
 def test_mcp_secrets_update_settings():
@@ -416,7 +416,7 @@ def test_mcp_secrets_update_settings():
 
     # Set initial secrets
     initial_secrets = {"server1::key1": "value1"}
-    config.update_settings({"mcp_secrets": initial_secrets})
+    config.update_settings({MCP_SECRETS_KEY: initial_secrets})
     assert config.mcp_secrets == initial_secrets
 
     # Update with new secrets (should replace, not merge)
@@ -424,7 +424,7 @@ def test_mcp_secrets_update_settings():
         "server1::key1": "updated_value1",
         "server2::key2": "value2",
     }
-    config.update_settings({"mcp_secrets": new_secrets})
+    config.update_settings({MCP_SECRETS_KEY: new_secrets})
     assert config.mcp_secrets == new_secrets
     assert config.mcp_secrets["server1::key1"] == "updated_value1"
     assert config.mcp_secrets["server2::key2"] == "value2"
