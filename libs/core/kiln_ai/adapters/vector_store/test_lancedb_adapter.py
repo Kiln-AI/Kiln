@@ -1,11 +1,12 @@
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Callable, List
 from unittest.mock import patch
 
 import pytest
-from llama_index.core.schema import MetadataMode
+from llama_index.core.schema import MetadataMode, NodeRelationship
 from llama_index.core.vector_stores.types import VectorStoreQueryResult
 from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
@@ -339,8 +340,6 @@ async def test_hybrid_search(
     assert len(tokyo_results) >= 2  # Both Tokyo chunks should be found
 
 
-# FIXME: must implement upsert
-@pytest.mark.skip(reason="Upsert currently on hold - need to figure out a way")
 async def test_upsert_behavior(
     fts_vector_store_config,
     mock_chunked_documents,
@@ -750,3 +749,431 @@ async def test_adapter_reuse_preserves_data(
     # but we can query adapter2
     results2 = await adapter2.search(KilnVectorStoreQuery(query_string="Tokyo"))
     assert len(results2) > 0
+
+
+@pytest.mark.asyncio
+async def test_skip_existing_chunks_when_count_matches(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test that chunks already in DB are skipped when they match incoming chunks count."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Add first document
+    first_doc = [mock_chunked_documents[0]]  # doc_001 with 4 chunks
+    await adapter.add_chunks_with_embeddings(first_doc)
+
+    # Verify it was added
+    count_after_first = await adapter.count_records()
+    assert count_after_first == 4
+
+    # Try to add the same document again - should be skipped
+    await adapter.add_chunks_with_embeddings(first_doc)
+
+    # Count should remain the same (chunks were skipped)
+    count_after_second = await adapter.count_records()
+    assert count_after_second == 4
+
+    # Verify the chunks are still there and retrievable
+    results = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    assert len(results) > 0
+    assert "Tokyo" in results[0].chunk_text
+
+
+@pytest.mark.asyncio
+async def test_batching_functionality(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+    tmp_path,
+):
+    """Test basic batching functionality in add_chunks_with_embeddings."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Create a document with many chunks to test batching
+    large_doc_data = {
+        "large_doc": [
+            {"vector": [i * 0.1, i * 0.2], "text": f"Chunk {i} content"}
+            for i in range(15)  # 15 chunks to test batching
+        ]
+    }
+
+    large_doc_records = dicts_to_indexable_docs(large_doc_data, tmp_path)
+
+    # Track batch sizes by patching the insert method
+    batch_sizes = []
+    original_ainsert_nodes = adapter.index.ainsert_nodes
+
+    async def mock_ainsert_nodes(nodes):
+        batch_sizes.append(len(nodes))
+        return await original_ainsert_nodes(nodes)
+
+    # Patch the insert method to track batch sizes
+    with patch.object(adapter.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+        # Add with small batch size to force batching
+        await adapter.add_chunks_with_embeddings(large_doc_records, nodes_batch_size=5)
+
+    # Verify batching behavior
+    # With 15 chunks and batch_size=5, we expect 3 batches of 5 chunks each
+    expected_batch_sizes = [5, 5, 5]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+    # Verify all chunks were added
+    count = await adapter.count_records()
+    assert count == 15
+
+    # Verify we can search and find chunks
+    results = await adapter.search(KilnVectorStoreQuery(query_string="Chunk"))
+    assert len(results) > 0  # Should find chunks containing "Chunk"
+    assert len(results) <= 15  # Should not exceed total number of chunks
+
+
+@pytest.mark.asyncio
+async def test_batching_functionality_with_remainder(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+    tmp_path,
+):
+    """Test batching functionality with a remainder (not evenly divisible)."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Create a document with 17 chunks to test batching with remainder
+    large_doc_data = {
+        "large_doc": [
+            {"vector": [i * 0.1, i * 0.2], "text": f"Chunk {i} content"}
+            for i in range(17)  # 17 chunks to test batching with remainder
+        ]
+    }
+
+    large_doc_records = dicts_to_indexable_docs(large_doc_data, tmp_path)
+
+    # Track batch sizes by patching the insert method
+    batch_sizes = []
+    original_ainsert_nodes = adapter.index.ainsert_nodes
+
+    async def mock_ainsert_nodes(nodes):
+        batch_sizes.append(len(nodes))
+        return await original_ainsert_nodes(nodes)
+
+    # Patch the insert method to track batch sizes
+    with patch.object(adapter.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+        # Add with batch_size=7 to get 2 full batches + 1 remainder batch
+        await adapter.add_chunks_with_embeddings(large_doc_records, nodes_batch_size=7)
+
+    # Verify batching behavior
+    # With 17 chunks and batch_size=7, we expect 2 batches of 7 and 1 batch of 3
+    expected_batch_sizes = [7, 7, 3]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+    # Verify all chunks were added
+    count = await adapter.count_records()
+    assert count == 17
+
+
+@pytest.mark.asyncio
+async def test_batching_functionality_edge_cases(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+    tmp_path,
+):
+    """Test batching functionality edge cases (small batches, single batch)."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Test 1: Single batch (3 chunks with batch_size=10)
+    small_doc_data = {
+        "small_doc": [
+            {"vector": [i * 0.1, i * 0.2], "text": f"Small chunk {i} content"}
+            for i in range(3)
+        ]
+    }
+
+    small_doc_records = dicts_to_indexable_docs(small_doc_data, tmp_path)
+
+    # Track batch sizes by patching the insert method
+    batch_sizes = []
+    original_ainsert_nodes = adapter.index.ainsert_nodes
+
+    async def mock_ainsert_nodes(nodes):
+        batch_sizes.append(len(nodes))
+        return await original_ainsert_nodes(nodes)
+
+    # Test single batch scenario
+    with patch.object(adapter.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+        await adapter.add_chunks_with_embeddings(small_doc_records, nodes_batch_size=10)
+
+    # With 3 chunks and batch_size=10, we expect 1 batch of 3 chunks
+    expected_batch_sizes = [3]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+    # Verify all chunks were added
+    count = await adapter.count_records()
+    assert count == 3
+
+    # Test 2: Very small batches (batch_size=1)
+    batch_sizes.clear()  # Reset for next test
+
+    # Create new adapter for clean state
+    adapter2 = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path + "_small_batches"
+    )
+
+    with patch.object(adapter2.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+        await adapter2.add_chunks_with_embeddings(small_doc_records, nodes_batch_size=1)
+
+    # With 3 chunks and batch_size=1, we expect 3 batches of 1 chunk each
+    expected_batch_sizes = [1, 1, 1]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_nodes_by_ids_functionality(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test get_nodes_by_ids method functionality."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # before inserting data, we should simply return an empty list
+    retrieved_nodes_before_any_insert = await adapter.get_nodes_by_ids(
+        [str(uuid.uuid4()), str(uuid.uuid4())]
+    )
+    assert len(retrieved_nodes_before_any_insert) == 0
+
+    # Add some data
+    await adapter.add_chunks_with_embeddings([mock_chunked_documents[0]])  # doc_001
+
+    # Test getting nodes by IDs - compute expected IDs
+    expected_ids = [
+        adapter.compute_deterministic_chunk_id("doc_001", i) for i in range(4)
+    ]
+
+    # Get nodes by IDs
+    retrieved_nodes = await adapter.get_nodes_by_ids(expected_ids)
+
+    # Should retrieve all 4 nodes
+    assert len(retrieved_nodes) == 4
+
+    # Verify node properties
+    for i, node in enumerate(retrieved_nodes):
+        assert node.id_ == expected_ids[i]
+        assert node.metadata["kiln_doc_id"] == "doc_001"
+        assert node.metadata["kiln_chunk_idx"] == i
+        assert len(node.get_content()) > 0
+
+    # Test with non-existent IDs
+    fake_ids = [adapter.compute_deterministic_chunk_id("fake_doc", i) for i in range(2)]
+    retrieved_fake = await adapter.get_nodes_by_ids(fake_ids)
+    assert len(retrieved_fake) == 0
+
+    # Test with empty table (no table exists yet)
+    empty_adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path + "_empty"
+    )
+    empty_result = await empty_adapter.get_nodes_by_ids(expected_ids)
+    assert len(empty_result) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_by_document_id(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test delete_nodes_by_document_id method."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Add both documents
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify both documents are there
+    count_before = await adapter.count_records()
+    assert count_before == 8  # 4 chunks per document
+
+    # Delete nodes for doc_001
+    await adapter.delete_nodes_by_document_id("doc_001")
+
+    # Verify doc_001 chunks are gone
+    count_after = await adapter.count_records()
+    assert count_after == 4  # Only doc_002 chunks remain
+
+    # Verify we can still find doc_002 chunks but not doc_001
+    results_doc2 = await adapter.search(KilnVectorStoreQuery(query_string="area"))
+    assert len(results_doc2) > 0
+
+    # Try to search for population (which was in doc_001) - should find no results
+    # LanceDB raises a Warning when no results are found, so we catch it
+    try:
+        results_doc1 = await adapter.search(
+            KilnVectorStoreQuery(query_string="population")
+        )
+        assert len(results_doc1) == 0
+    except Warning as w:
+        # This is expected - LanceDB raises a Warning for empty results
+        assert "query results are empty" in str(w)
+
+    # Try to delete non-existent document (should not error)
+    await adapter.delete_nodes_by_document_id("non_existent_doc")
+    final_count = await adapter.count_records()
+    assert final_count == 4  # Count unchanged
+
+
+@pytest.mark.asyncio
+async def test_uuid_scheme_retrieval_and_node_properties(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test UUID scheme retrieval and that inserted nodes have correct ID and ref_doc_id."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Add first document
+    await adapter.add_chunks_with_embeddings([mock_chunked_documents[0]])  # doc_001
+
+    # Test the UUID scheme: document_id::chunk_idx
+    for chunk_idx in range(4):
+        # Compute expected ID using the same scheme as the adapter
+        expected_id = adapter.compute_deterministic_chunk_id("doc_001", chunk_idx)
+
+        # Retrieve the specific node by ID
+        retrieved_nodes = await adapter.get_nodes_by_ids([expected_id])
+        assert len(retrieved_nodes) == 1
+
+        node = retrieved_nodes[0]
+
+        # Test that inserted nodes have the expected ID we set
+        assert node.id_ == expected_id
+
+        # Test that inserted nodes have ref_doc_id set correctly
+        # The ref_doc_id should be set through the SOURCE relationship
+        source_relationship = node.relationships.get(NodeRelationship.SOURCE)
+        assert source_relationship is not None
+        # Handle both single RelatedNodeInfo and list of RelatedNodeInfo
+        if isinstance(source_relationship, list):
+            assert len(source_relationship) > 0
+            assert source_relationship[0].node_id == "doc_001"
+        else:
+            assert source_relationship.node_id == "doc_001"
+
+        # Verify other node properties
+        assert node.metadata["kiln_doc_id"] == "doc_001"
+        assert node.metadata["kiln_chunk_idx"] == chunk_idx
+        assert len(node.get_content()) > 0
+        assert node.embedding is not None
+        assert len(node.embedding) == 2  # Our test embeddings are 2D
+
+    # Test with a different document to ensure the scheme works consistently
+    await adapter.add_chunks_with_embeddings([mock_chunked_documents[1]])  # doc_002
+
+    # Test retrieval of doc_002 chunks
+    for chunk_idx in range(4):
+        expected_id = adapter.compute_deterministic_chunk_id("doc_002", chunk_idx)
+        retrieved_nodes = await adapter.get_nodes_by_ids([expected_id])
+        assert len(retrieved_nodes) == 1
+
+        node = retrieved_nodes[0]
+        assert node.id_ == expected_id
+        assert node.metadata["kiln_doc_id"] == "doc_002"
+        assert node.metadata["kiln_chunk_idx"] == chunk_idx
+
+        # Check ref_doc_id relationship
+        source_relationship = node.relationships.get(NodeRelationship.SOURCE)
+        assert source_relationship is not None
+        # Handle both single RelatedNodeInfo and list of RelatedNodeInfo
+        if isinstance(source_relationship, list):
+            assert len(source_relationship) > 0
+            assert source_relationship[0].node_id == "doc_002"
+        else:
+            assert source_relationship.node_id == "doc_002"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_chunk_id_consistency(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    temp_db_path,
+):
+    """Test that the deterministic chunk ID generation is consistent."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = lancedb_adapter_tmp_factory(
+        rag_config, fts_vector_store_config, temp_db_path
+    )
+
+    # Test that the same document_id and chunk_idx always produce the same UUID
+    doc_id = "test_doc_123"
+    chunk_idx = 5
+
+    id1 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx)
+    id2 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx)
+
+    assert id1 == id2
+
+    # Test that different inputs produce different UUIDs
+    id3 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx + 1)
+    id4 = adapter.compute_deterministic_chunk_id(doc_id + "_different", chunk_idx)
+
+    assert id1 != id3
+    assert id1 != id4
+    assert id3 != id4
+
+    # Verify the format is a valid UUID string
+    import uuid
+
+    try:
+        uuid.UUID(id1)  # Should not raise an exception
+        uuid.UUID(id3)
+        uuid.UUID(id4)
+    except ValueError:
+        pytest.fail("Generated IDs are not valid UUIDs")
