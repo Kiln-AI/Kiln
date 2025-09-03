@@ -67,6 +67,7 @@ def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
     return parts[2], parts[3]  # server_id, tool_name
 
 
+## TODO: Need run config id too
 def kiln_task_id_from_tool_id(tool_id: str) -> str:
     """Extract task ID from Kiln task tool ID."""
     if not tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
