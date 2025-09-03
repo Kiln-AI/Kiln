@@ -2,6 +2,7 @@ import asyncio
 import os
 import random
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Callable, List
@@ -26,6 +27,37 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.utils.uuid import string_to_uuid
+
+
+class TimingCollector:
+    """Utility class to collect timing data for different operations."""
+
+    def __init__(self):
+        self.timings = {}
+        self.counts = {}
+
+    def time_operation(self, operation_name: str, duration: float):
+        """Record timing for an operation."""
+        if operation_name not in self.timings:
+            self.timings[operation_name] = []
+            self.counts[operation_name] = 0
+        self.timings[operation_name].append(duration)
+        self.counts[operation_name] += 1
+
+    def get_summary(self) -> dict:
+        """Get a summary of all timing data."""
+        summary = {}
+        for operation, times in self.timings.items():
+            total_time = sum(times)
+            avg_time = total_time / len(times) if times else 0
+            summary[operation] = {
+                "total_time": total_time,
+                "avg_time": avg_time,
+                "count": self.counts[operation],
+                "times": times,
+            }
+        return summary
 
 
 def get_all_nodes(adapter: LanceDBAdapter) -> List[SearchResult]:
@@ -1182,7 +1214,11 @@ async def test_deterministic_chunk_id_consistency(
 
 
 def generate_benchmark_data(
-    count: int, vector_size: int, word_count: int, tmp_path: Path
+    doc_count: int,
+    chunks_per_doc: int,
+    vector_size: int,
+    word_count: int,
+    tmp_path: Path,
 ) -> list[tuple[str, ChunkedDocument, ChunkEmbeddings]]:
     """Generate random data for benchmarking."""
 
@@ -1328,7 +1364,7 @@ def generate_benchmark_data(
     words = generate_word_pool(target_pool_size)
 
     results = []
-    for i in range(count):
+    for i in range(doc_count):
         doc_id = f"doc_{i:05d}"
 
         # Generate random text (word_count words) - allow repetition for variety
@@ -1343,6 +1379,7 @@ def generate_benchmark_data(
             chunker_config_id="test_chunker",
             chunks=[
                 Chunk(content=KilnAttachmentModel.from_data(text_content, "text/plain"))
+                for _ in range(chunks_per_doc)
             ],
             path=tmp_path / f"chunked_document_{i}.kiln",
         )
@@ -1350,7 +1387,7 @@ def generate_benchmark_data(
         # Create chunk embeddings
         chunk_embeddings = ChunkEmbeddings(
             embedding_config_id="test_embedding",
-            embeddings=[Embedding(vector=vector)],
+            embeddings=[Embedding(vector=vector) for _ in range(chunks_per_doc)],
             path=tmp_path / f"chunk_embeddings_{i}.kiln",
         )
 
@@ -1371,7 +1408,8 @@ def test_benchmark_add_chunks(
 ):
     """Benchmark adding chunks with embeddings to LanceDB."""
 
-    count = 50000
+    doc_count = 1000
+    chunks_per_doc = 50
     vector_size = 1024
     word_count = 200
 
@@ -1379,7 +1417,9 @@ def test_benchmark_add_chunks(
     random.seed(42)
 
     # Generate random data items (this is not benchmarked)
-    benchmark_data = generate_benchmark_data(count, vector_size, word_count, tmp_path)
+    benchmark_data = generate_benchmark_data(
+        doc_count, chunks_per_doc, vector_size, word_count, tmp_path
+    )
 
     # Create RAG config and adapter (not benchmarked)
     rag_config = create_rag_config_factory(hybrid_vector_store_config, embedding_config)
@@ -1401,10 +1441,208 @@ def test_benchmark_add_chunks(
         return final_count
 
     final_count = asyncio.run(verify_count())
-    assert final_count == count, f"Expected {count} records, got {final_count}"
+    assert final_count == doc_count, f"Expected {doc_count} records, got {final_count}"
 
     # Expect min 2500 ops per second
-    max_time = count / 2500
+    max_time = doc_count / 2500
+    if stats.max > max_time:
+        pytest.fail(
+            f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
+        )
+
+
+@pytest.mark.benchmark
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+def test_benchmark_add_chunks_with_timing(
+    benchmark,
+    hybrid_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Benchmark adding chunks with embeddings to LanceDB with detailed timing breakdown."""
+
+    doc_count = 1000
+    chunks_per_doc = 50
+    vector_size = 1024
+    word_count = 200
+
+    # Set random seed for reproducible results
+    random.seed(42)
+
+    # Generate random data items (this is not benchmarked)
+    benchmark_data = generate_benchmark_data(
+        doc_count, chunks_per_doc, vector_size, word_count, tmp_path
+    )
+
+    # Create RAG config and adapter (not benchmarked)
+    rag_config = create_rag_config_factory(hybrid_vector_store_config, embedding_config)
+    adapter = asyncio.run(
+        vector_store_adapter_for_config(rag_config, hybrid_vector_store_config)
+    )
+    assert isinstance(adapter, LanceDBAdapter)  # Ensure we have the right type
+
+    # Create timing collector
+    timing_collector = TimingCollector()
+
+    # Patch methods to collect timing data
+    original_string_to_uuid = string_to_uuid
+    original_get_nodes_by_ids = adapter.get_nodes_by_ids
+    original_ainsert_nodes = adapter.index.ainsert_nodes
+
+    def timed_string_to_uuid(value: str) -> uuid.UUID:
+        start_time = time.perf_counter()
+        result = original_string_to_uuid(value)
+        end_time = time.perf_counter()
+        timing_collector.time_operation("string_to_uuid", end_time - start_time)
+        return result
+
+    async def timed_get_nodes_by_ids(node_ids):
+        start_time = time.perf_counter()
+        result = await original_get_nodes_by_ids(node_ids)
+        end_time = time.perf_counter()
+        timing_collector.time_operation("get_nodes_by_ids", end_time - start_time)
+        return result
+
+    async def timed_ainsert_nodes(nodes):
+        start_time = time.perf_counter()
+        result = await original_ainsert_nodes(nodes)
+        end_time = time.perf_counter()
+        timing_collector.time_operation("ainsert_nodes", end_time - start_time)
+        return result
+
+    # Patch the load_chunks_text method to time it
+    async def timed_load_chunks_text(chunked_document):
+        start_time = time.perf_counter()
+        result = await chunked_document.load_chunks_text()
+        end_time = time.perf_counter()
+        timing_collector.time_operation("load_chunks_text", end_time - start_time)
+        return result
+
+    def add_chunks_with_timing():
+        async def async_add_chunks():
+            # Apply patches
+            with (
+                patch(
+                    "kiln_ai.utils.uuid.string_to_uuid",
+                    side_effect=timed_string_to_uuid,
+                ),
+                patch.object(
+                    adapter, "get_nodes_by_ids", side_effect=timed_get_nodes_by_ids
+                ),
+                patch.object(
+                    adapter.index, "ainsert_nodes", side_effect=timed_ainsert_nodes
+                ),
+            ):
+                # Time the overall operation and individual components
+                for document_id, chunked_document, chunk_embeddings in benchmark_data:
+                    # Time load_chunks_text operation
+                    start_time = time.perf_counter()
+                    chunks_text = await chunked_document.load_chunks_text()
+                    end_time = time.perf_counter()
+                    timing_collector.time_operation(
+                        "load_chunks_text", end_time - start_time
+                    )
+
+                    # Time deterministic chunk ID generation (includes string_to_uuid)
+                    start_time = time.perf_counter()
+                    chunk_count = len(chunked_document.chunks)
+                    deterministic_chunk_ids = [
+                        adapter.compute_deterministic_chunk_id(document_id, chunk_idx)
+                        for chunk_idx in range(chunk_count)
+                    ]
+                    end_time = time.perf_counter()
+                    timing_collector.time_operation(
+                        "compute_chunk_ids", end_time - start_time
+                    )
+
+                    # Check existing chunks
+                    existing_chunks = await adapter.get_nodes_by_ids(
+                        deterministic_chunk_ids
+                    )
+                    if len(existing_chunks) == chunk_count:
+                        continue
+
+                    # Time TextNode creation
+                    start_time = time.perf_counter()
+                    # Create TextNodes
+                    nodes = []
+                    for chunk_idx, (chunk_text, embedding) in enumerate(
+                        zip(chunks_text, chunk_embeddings.embeddings)
+                    ):
+                        from llama_index.core.schema import (
+                            NodeRelationship,
+                            RelatedNodeInfo,
+                            TextNode,
+                        )
+
+                        nodes.append(
+                            TextNode(
+                                id_=deterministic_chunk_ids[chunk_idx],
+                                text=chunk_text,
+                                embedding=embedding.vector,
+                                metadata={
+                                    "kiln_doc_id": document_id,
+                                    "kiln_chunk_idx": chunk_idx,
+                                },
+                                relationships={
+                                    NodeRelationship.SOURCE: RelatedNodeInfo(
+                                        node_id=document_id,
+                                        node_type="1",
+                                        metadata={},
+                                    ),
+                                },
+                            )
+                        )
+                    end_time = time.perf_counter()
+                    timing_collector.time_operation(
+                        "textnode_creation", end_time - start_time
+                    )
+
+                    # Insert nodes
+                    if nodes:
+                        await adapter.index.ainsert_nodes(nodes)
+
+        return asyncio.run(async_add_chunks())
+
+    # Benchmark the operation
+    benchmark.pedantic(add_chunks_with_timing, rounds=1, iterations=1)
+    stats = benchmark.stats.stats
+
+    # Print detailed timing breakdown
+    timing_summary = timing_collector.get_summary()
+    print(f"\n=== Detailed Timing Breakdown for {doc_count} documents ===")
+    total_accounted_time = 0
+
+    for operation, data in timing_summary.items():
+        total_time = data["total_time"]
+        avg_time = data["avg_time"]
+        count_ops = data["count"]
+        total_accounted_time += total_time
+
+        print(f"{operation}:")
+        print(f"  Total time: {total_time:.4f}s")
+        print(f"  Average per call: {avg_time * 1000:.4f}ms")
+        print(f"  Number of calls: {count_ops}")
+        print(f"  Percentage of total: {(total_time / stats.mean) * 100:.2f}%")
+        print()
+
+    print(f"Total benchmark time: {stats.mean:.4f}s")
+    print(f"Accounted time: {total_accounted_time:.4f}s")
+    print(f"Unaccounted time: {stats.mean - total_accounted_time:.4f}s")
+    print(f"Operations per second: {doc_count / stats.mean:.2f}")
+
+    # Verify that data was actually added
+    async def verify_count():
+        final_count = await adapter.count_records()
+        return final_count
+
+    final_count = asyncio.run(verify_count())
+    assert final_count == doc_count, f"Expected {doc_count} records, got {final_count}"
+
+    # Expect min 2500 ops per second
+    max_time = doc_count / 2500
     if stats.max > max_time:
         pytest.fail(
             f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
