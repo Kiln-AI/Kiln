@@ -24,6 +24,7 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
+    RagWorkflowStepNames,
 )
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -97,7 +98,7 @@ async def run_all_extractors_and_rag_workflows(
             try:
                 async with shared_async_lock_manager.acquire(
                     f"docs:extract:{extractor_config.id}",
-                    timeout=0.5,
+                    timeout=20,
                 ):
                     extractor_runner = ExtractorRunner(
                         extractor_configs=[extractor_config],
@@ -128,7 +129,15 @@ async def run_all_extractors_and_rag_workflows(
         async def run_rag(rag_config=rag_config):
             # no need to lock here, each rag step runner gets a lock when it starts running
             rag_runner = await build_rag_workflow_runner(project, str(rag_config.id))
-            async for progress in rag_runner.run():
+            async for progress in rag_runner.run(
+                stages_to_run=[
+                    # we skip extracting here because we already ran the extractors independently higher up
+                    RagWorkflowStepNames.CHUNKING,
+                    RagWorkflowStepNames.EMBEDDING,
+                    RagWorkflowStepNames.INDEXING,
+                ],
+                document_ids=[document.id],
+            ):
                 pass
 
         rag_tasks.append(asyncio.create_task(run_rag()))

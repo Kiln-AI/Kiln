@@ -61,6 +61,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             **kwargs,
         )
 
+        self._index = None
+
+    @property
+    def index(self) -> VectorStoreIndex:
+        if self._index is not None:
+            return self._index
+
         storage_context = StorageContext.from_defaults(
             vector_store=self.lancedb_vector_store
         )
@@ -73,15 +80,20 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         # maybe should open an issue on their repo
         os.environ["OPENAI_API_KEY"] = "dummy"
 
-        # VectorStoreIndex is a wrapper around a vector store
+        # - VectorStoreIndex is a wrapper around a vector store
         # it exposes higher level operations (that rely on internal
         # fields like ref_doc_id); make sure implementation mirrors
         # the upstream llama_index logic that we do not use
-        self.index = VectorStoreIndex(
+        # - Make sure you do not initialize the VectorStoreIndex before
+        # having data in the underlying vector store, otherwise downstream
+        # operations will fail due to schema mismatch
+        self._index = VectorStoreIndex(
             [],
             storage_context=storage_context,
             embed_model=None,
         )
+
+        return self._index
 
     async def delete_nodes_by_document_id(self, document_id: str) -> None:
         # higher level operation that requires ref_doc_id to be set on the nodes
@@ -184,13 +196,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                     # async_add is currently not async, LanceDB has an async API but
                     # llama_index does not use it, so it is synchronous and blocking
                     # avoid calling with too many nodes at once
-                    await self.index.ainsert_nodes(node_batch)
+                    await self.lancedb_vector_store.async_add(node_batch)
                     node_batch.clear()
 
             await asyncio.sleep(0)
 
         if node_batch:
-            await self.index.ainsert_nodes(node_batch)
+            await self.lancedb_vector_store.async_add(node_batch)
             node_batch.clear()
 
     def format_query_result(

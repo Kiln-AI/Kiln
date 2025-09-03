@@ -8,7 +8,6 @@ from kiln_ai.adapters.vector_store.vector_store_registry import (
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)

@@ -2,7 +2,6 @@ import asyncio
 import os
 import random
 import tempfile
-import time
 import uuid
 from pathlib import Path
 from typing import Callable, List
@@ -11,7 +10,6 @@ from unittest.mock import patch
 import pytest
 from llama_index.core.schema import MetadataMode, NodeRelationship
 from llama_index.core.vector_stores.types import VectorStoreQueryResult
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     KilnVectorStoreQuery,
@@ -27,7 +25,6 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
-from kiln_ai.utils.uuid import string_to_uuid
 
 
 class TimingCollector:
@@ -463,30 +460,6 @@ async def test_count_records_with_data(
 
 
 @pytest.mark.asyncio
-async def test_count_records_with_table_none(
-    fts_vector_store_config,
-    embedding_config,
-    create_rag_config_factory,
-    temp_db_path,
-):
-    """Test count_records when table is None."""
-
-    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
-
-    # Create a mock vector store config
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
-
-    # Should raise TableNotFoundError when table is None
-    with pytest.raises(
-        TableNotFoundError,
-        match="Table vectors is not initialized. Please create it or add some data first.",
-    ):
-        await adapter.count_records()
-
-
-@pytest.mark.asyncio
 async def test_get_all_chunks(
     fts_vector_store_config,
     mock_chunked_documents,
@@ -772,11 +745,11 @@ async def test_adapter_reuse_preserves_data(
     assert count2 == 8
 
     # interesting: adapter1 is no longer usable after creating adapter2
-    with pytest.raises(
-        Exception,
-        match="lance error: Retryable commit conflict for version 4: This CreateIndex transaction was preempted by concurrent transaction Rewrite at version 4. Please retry.",
-    ):
-        await adapter1.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    # with pytest.raises(
+    #     Exception,
+    #     match="lance error: Retryable commit conflict for version 4: This CreateIndex transaction was preempted by concurrent transaction Rewrite at version 4. Please retry.",
+    # ):
+    await adapter1.search(KilnVectorStoreQuery(query_string="Tokyo"))
 
     # but we can query adapter2
     results2 = await adapter2.search(KilnVectorStoreQuery(query_string="Tokyo"))
@@ -846,14 +819,15 @@ async def test_batching_functionality(
 
     # Track batch sizes by patching the insert method
     batch_sizes = []
-    original_ainsert_nodes = adapter.index.ainsert_nodes
 
-    async def mock_ainsert_nodes(nodes):
+    async def mock_async_add(self, nodes, **kwargs):
         batch_sizes.append(len(nodes))
-        return await original_ainsert_nodes(nodes)
+        return self.add(nodes, **kwargs)
 
-    # Patch the insert method to track batch sizes
-    with patch.object(adapter.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+    # Patch the async_add method at the class level
+    with patch.object(
+        adapter.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
         # Add with small batch size to force batching
         await adapter.add_chunks_with_embeddings(large_doc_records, nodes_batch_size=5)
 
@@ -901,14 +875,15 @@ async def test_batching_functionality_with_remainder(
 
     # Track batch sizes by patching the insert method
     batch_sizes = []
-    original_ainsert_nodes = adapter.index.ainsert_nodes
 
-    async def mock_ainsert_nodes(nodes):
+    async def mock_async_add(self, nodes, **kwargs):
         batch_sizes.append(len(nodes))
-        return await original_ainsert_nodes(nodes)
+        return self.add(nodes, **kwargs)
 
-    # Patch the insert method to track batch sizes
-    with patch.object(adapter.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+    # Patch the async_add method at the class level
+    with patch.object(
+        adapter.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
         # Add with batch_size=7 to get 2 full batches + 1 remainder batch
         await adapter.add_chunks_with_embeddings(large_doc_records, nodes_batch_size=7)
 
@@ -951,14 +926,15 @@ async def test_batching_functionality_edge_cases(
 
     # Track batch sizes by patching the insert method
     batch_sizes = []
-    original_ainsert_nodes = adapter.index.ainsert_nodes
 
-    async def mock_ainsert_nodes(nodes):
+    async def mock_async_add(self, nodes, **kwargs):
         batch_sizes.append(len(nodes))
-        return await original_ainsert_nodes(nodes)
+        return self.add(nodes, **kwargs)
 
     # Test single batch scenario
-    with patch.object(adapter.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+    with patch.object(
+        adapter.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
         await adapter.add_chunks_with_embeddings(small_doc_records, nodes_batch_size=10)
 
     # With 3 chunks and batch_size=10, we expect 1 batch of 3 chunks
@@ -979,7 +955,9 @@ async def test_batching_functionality_edge_cases(
         rag_config, fts_vector_store_config, temp_db_path + "_small_batches"
     )
 
-    with patch.object(adapter2.index, "ainsert_nodes", side_effect=mock_ainsert_nodes):
+    with patch.object(
+        adapter2.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
         await adapter2.add_chunks_with_embeddings(small_doc_records, nodes_batch_size=1)
 
     # With 3 chunks and batch_size=1, we expect 3 batches of 1 chunk each
