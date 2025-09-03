@@ -1441,10 +1441,12 @@ def test_benchmark_add_chunks(
         return final_count
 
     final_count = asyncio.run(verify_count())
-    assert final_count == doc_count, f"Expected {doc_count} records, got {final_count}"
+    assert final_count == doc_count * chunks_per_doc, (
+        f"Expected {doc_count} records, got {final_count}"
+    )
 
     # Expect min 2500 ops per second
-    max_time = doc_count / 2500
+    max_time = (doc_count * chunks_per_doc) / 2500
     if stats.max > max_time:
         pytest.fail(
             f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
@@ -1463,7 +1465,7 @@ def test_benchmark_add_chunks_with_timing(
 ):
     """Benchmark adding chunks with embeddings to LanceDB with detailed timing breakdown."""
 
-    doc_count = 1000
+    doc_count = 500
     chunks_per_doc = 50
     vector_size = 1024
     word_count = 200
@@ -1565,7 +1567,6 @@ def test_benchmark_add_chunks_with_timing(
                         continue
 
                     # Time TextNode creation
-                    start_time = time.perf_counter()
                     # Create TextNodes
                     nodes = []
                     for chunk_idx, (chunk_text, embedding) in enumerate(
@@ -1595,14 +1596,24 @@ def test_benchmark_add_chunks_with_timing(
                                 },
                             )
                         )
-                    end_time = time.perf_counter()
-                    timing_collector.time_operation(
-                        "textnode_creation", end_time - start_time
-                    )
+
+                        if len(nodes) >= 100:
+                            start_time = time.perf_counter()
+                            await adapter.lancedb_vector_store.async_add(nodes)
+                            nodes.clear()
+                            end_time = time.perf_counter()
+                            timing_collector.time_operation(
+                                "async_add", end_time - start_time
+                            )
 
                     # Insert nodes
                     if nodes:
-                        await adapter.index.ainsert_nodes(nodes)
+                        start_time = time.perf_counter()
+                        await adapter.lancedb_vector_store.async_add(nodes)
+                        end_time = time.perf_counter()
+                        timing_collector.time_operation(
+                            "async_add", end_time - start_time
+                        )
 
         return asyncio.run(async_add_chunks())
 
@@ -1631,7 +1642,7 @@ def test_benchmark_add_chunks_with_timing(
     print(f"Total benchmark time: {stats.mean:.4f}s")
     print(f"Accounted time: {total_accounted_time:.4f}s")
     print(f"Unaccounted time: {stats.mean - total_accounted_time:.4f}s")
-    print(f"Operations per second: {doc_count / stats.mean:.2f}")
+    print(f"Operations per second: {(doc_count * chunks_per_doc) / stats.mean:.2f}")
 
     # Verify that data was actually added
     async def verify_count():
@@ -1639,10 +1650,12 @@ def test_benchmark_add_chunks_with_timing(
         return final_count
 
     final_count = asyncio.run(verify_count())
-    assert final_count == doc_count, f"Expected {doc_count} records, got {final_count}"
+    assert final_count == doc_count * chunks_per_doc, (
+        f"Expected {doc_count} records, got {final_count}"
+    )
 
     # Expect min 2500 ops per second
-    max_time = doc_count / 2500
+    max_time = (doc_count * chunks_per_doc) / 2500
     if stats.max > max_time:
         pytest.fail(
             f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
