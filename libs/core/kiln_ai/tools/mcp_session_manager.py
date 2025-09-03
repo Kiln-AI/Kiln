@@ -111,7 +111,22 @@ class MCPSessionManager:
                 "Attempted to start local MCP server, but args is not a list of strings"
             )
 
-        env_vars = tool_server.properties.get("env_vars", {})
+        # Make a copy of the env_vars to avoid modifying the original object
+        env_vars = tool_server.properties.get("env_vars", {}).copy()
+
+        # Retrieve secret environment variables from configuration and merge with regular env_vars
+        secret_env_var_keys = tool_server.properties.get("secret_env_var_keys", [])
+
+        if secret_env_var_keys and len(secret_env_var_keys) > 0:
+            config = Config.shared()
+            mcp_secrets = config.get_value("mcp_secrets")
+
+            # Look for secrets with the pattern: mcp_server_id::env_var_name
+            if mcp_secrets:  # Only proceed if mcp_secrets is not None
+                for env_var_name in secret_env_var_keys:
+                    env_var_value = mcp_secrets.get(f"{tool_server.id}::{env_var_name}")
+                    if env_var_value:
+                        env_vars[env_var_name] = env_var_value
 
         # Set PATH, only if not explicitly set during MCP tool setup
         if "PATH" not in env_vars:

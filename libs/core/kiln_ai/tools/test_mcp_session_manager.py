@@ -748,6 +748,162 @@ class TestMCPSessionManager:
             async with manager.mcp_client(tool_server):
                 pass
 
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_local_mcp_session_with_secrets(self, mock_config, mock_client):
+        """Test local MCP session creation with secret environment variables."""
+        # Mock config to return different values based on the key
+        mock_config_instance = MagicMock()
+
+        def mock_get_value(key):
+            if key == "mcp_secrets":
+                return {
+                    "test_server_id::SECRET_API_KEY": "secret_value_123",
+                    "test_server_id::ANOTHER_SECRET": "another_secret_value",
+                }
+            elif key == "custom_mcp_path":
+                return None  # No custom path, will use shell path
+            return None
+
+        mock_config_instance.get_value.side_effect = mock_get_value
+        mock_config.return_value = mock_config_instance
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+        )
+
+        # Create a tool server with secret env var keys
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server with secrets",
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"PUBLIC_VAR": "public_value"},
+                "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
+            },
+        )
+        # Set the server ID to match our mock secrets
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        # Mock get_shell_path to return a simple PATH
+        with (
+            patch.object(manager, "get_shell_path", return_value="/usr/bin:/bin"),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.ClientSession"
+            ) as mock_session_class,
+        ):
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server) as session:
+                # Verify session is returned
+                assert session is mock_session_instance
+
+                # Verify initialize was called
+                mock_session_instance.initialize.assert_called_once()
+
+        # Verify config was accessed for mcp_secrets
+        assert mock_config_instance.get_value.call_count == 2
+        mock_config_instance.get_value.assert_any_call("mcp_secrets")
+        mock_config_instance.get_value.assert_any_call("custom_mcp_path")
+
+        # Verify stdio_client was called with correct parameters including secrets
+        call_args = mock_client.call_args[0][0]  # Get the StdioServerParameters
+        assert call_args.command == "python"
+        assert call_args.args == ["-m", "my_server"]
+
+        # Verify that both public and secret env vars are included
+        assert "PUBLIC_VAR" in call_args.env
+        assert call_args.env["PUBLIC_VAR"] == "public_value"
+        assert "SECRET_API_KEY" in call_args.env
+        assert call_args.env["SECRET_API_KEY"] == "secret_value_123"
+        assert "ANOTHER_SECRET" in call_args.env
+        assert call_args.env["ANOTHER_SECRET"] == "another_secret_value"
+        assert "PATH" in call_args.env
+
+        # Verify original properties were not modified (security check)
+        original_env_vars = tool_server.properties.get("env_vars", {})
+        assert "SECRET_API_KEY" not in original_env_vars
+        assert "ANOTHER_SECRET" not in original_env_vars
+        assert original_env_vars.get("PUBLIC_VAR") == "public_value"
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    @patch("kiln_ai.utils.config.Config.shared")
+    async def test_local_mcp_session_with_no_secrets_config(
+        self, mock_config, mock_client
+    ):
+        """Test local MCP session creation when config has no mcp_secrets."""
+        # Mock config to return None for mcp_secrets
+        mock_config_instance = MagicMock()
+
+        def mock_get_value(key):
+            if key == "mcp_secrets":
+                return None
+            elif key == "custom_mcp_path":
+                return None  # No custom path, will use shell path
+            return None
+
+        mock_config_instance.get_value.side_effect = mock_get_value
+        mock_config.return_value = mock_config_instance
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+        )
+
+        # Create a tool server with secret env var keys but no secrets in config
+        tool_server = ExternalToolServer(
+            name="no_secrets_config_server",
+            type=ToolServerType.local_mcp,
+            description="Server with no secrets in config",
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"PUBLIC_VAR": "public_value"},
+                "secret_env_var_keys": ["SECRET_API_KEY"],
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        # Mock get_shell_path to return a simple PATH
+        with (
+            patch.object(manager, "get_shell_path", return_value="/usr/bin:/bin"),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.ClientSession"
+            ) as mock_session_class,
+        ):
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            async with manager.mcp_client(tool_server):
+                pass  # Should not raise any errors
+
+        # Verify stdio_client was called and only public vars are included
+        call_args = mock_client.call_args[0][0]
+        assert "PUBLIC_VAR" in call_args.env
+        assert call_args.env["PUBLIC_VAR"] == "public_value"
+        assert "SECRET_API_KEY" not in call_args.env  # Secret not found in config
+        assert "PATH" in call_args.env
+
     @patch("kiln_ai.utils.config.Config.shared")
     def test_get_path_with_custom_mcp_path(self, mock_config):
         """Test _get_path() returns custom MCP path when configured."""

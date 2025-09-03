@@ -115,6 +115,7 @@ class LocalToolServerCreationRequest(BaseModel):
     command: str
     args: List[str]
     env_vars: Dict[str, str] = Field(default_factory=dict)
+    secret_env_var_keys: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_command(self):
@@ -138,6 +139,24 @@ class LocalToolServerCreationRequest(BaseModel):
                 raise ValueError(
                     f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
                 )
+
+        # Validate secret environment variable keys
+        if isinstance(self.secret_env_var_keys, list):
+            validated_secret_env_var_keys = []
+            for key in self.secret_env_var_keys:
+                key_str = key.strip() if isinstance(key, str) else str(key).strip()
+                if not key_str:
+                    raise ValueError("Secret environment variable key is required")
+                # Check if the key is in the env_vars
+                if key_str not in self.env_vars:
+                    raise ValueError(
+                        f"Secret environment variable key {key_str} is not in the list of environment variables"
+                    )
+
+                validated_secret_env_var_keys.append(key_str)
+
+            # Update secret env var keys to validated version
+            self.secret_env_var_keys = validated_secret_env_var_keys
 
         return self
 
@@ -408,7 +427,7 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with required fields
+        # Create the ExternalToolServer with required fields, temporarily store all env vars in properties to validate the connectivity
         properties = {
             "command": tool_data.command,
             "args": tool_data.args,
@@ -427,8 +446,32 @@ def connect_tool_servers_api(app: FastAPI):
         MCPSessionManager.shared().clear_shell_path_cache()
         await validate_tool_server_connectivity(tool_server)
 
+        # Now the tool server is validated
+        # Remove the secret env vars from the properties and store them in the configuration
+        non_secret_env_vars = {
+            key: tool_data.env_vars[key]
+            for key in tool_data.env_vars.keys()
+            if key not in tool_data.secret_env_var_keys
+        }
+
+        tool_server.properties["env_vars"] = non_secret_env_vars
+        tool_server.properties["secret_env_var_keys"] = tool_data.secret_env_var_keys
+
         # Save the tool to file
         tool_server.save_to_file()
+
+        # Store secret env vars in the configuration after validation
+        if tool_data.secret_env_var_keys:
+            config = Config.shared()
+            mcp_secrets = config.get_value("mcp_secrets") or dict[str, str]()
+
+            # Store secrets with the pattern: mcp_server_id::env_var_name
+            for env_var_name in tool_data.secret_env_var_keys:
+                env_var_value = tool_data.env_vars[env_var_name]
+                secret_key = f"{tool_server.id}::{env_var_name}"
+                mcp_secrets[secret_key] = env_var_value
+
+            config.update_settings({"mcp_secrets": mcp_secrets})
 
         return tool_server
 
@@ -450,8 +493,13 @@ def connect_tool_servers_api(app: FastAPI):
                     if secret_key in mcp_secrets:
                         del mcp_secrets[secret_key]
             case ToolServerType.local_mcp:
-                # TODO: Implement this
-                pass
+                secret_env_var_keys = tool_server.properties.get(
+                    "secret_env_var_keys", []
+                )
+                for env_var_name in secret_env_var_keys:
+                    secret_key = f"{tool_server.id}::{env_var_name}"
+                    if secret_key in mcp_secrets:
+                        del mcp_secrets[secret_key]
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 

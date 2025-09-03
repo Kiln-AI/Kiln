@@ -150,7 +150,31 @@
       if (!(key in headers)) {
         properties.push({
           name: key,
-          value: "****",
+          value: "●●●●●●",
+        })
+      }
+    })
+
+    return properties
+  }
+
+  function getEnvVarProperties(tool: ExternalToolServerApiDescription) {
+    const envVars = tool.properties["env_vars"] || {}
+    const secretEnvVarKeys = (tool.properties["secret_env_var_keys"] ||
+      []) as string[]
+
+    const properties = Object.entries(envVars).map(([key, value]) => ({
+      name: key,
+      value: String(value ?? "N/A"),
+    }))
+
+    // Add secret environment variables with masked values
+    secretEnvVarKeys.forEach((key: string) => {
+      // Only add if not already in regular env_vars
+      if (!(key in envVars)) {
+        properties.push({
+          name: key,
+          value: "●●●●●●",
         })
       }
     })
@@ -266,12 +290,7 @@
             />
             <div class="mt-8">
               <PropertyList
-                properties={Object.entries(
-                  tool_server.properties["env_vars"] || {},
-                ).map(([key, value]) => ({
-                  name: key,
-                  value: String(value ?? "N/A"),
-                }))}
+                properties={getEnvVarProperties(tool_server)}
                 title="Environment Variables"
               />
             </div>

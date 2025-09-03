@@ -3908,3 +3908,634 @@ async def test_delete_tool_server_missing_secret_key_in_config(client, test_proj
                     "other_server::some_header": "other_value"
                 }
                 assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+# Tests for local MCP secret environment variables functionality
+async def test_connect_local_mcp_with_secret_env_vars(client, test_project):
+    """Test connect_local_mcp endpoint stores secret environment variables correctly"""
+    tool_data = {
+        "name": "secret_env_tool",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+            "SECRET_API_KEY": "secret_key_123",
+            "ANOTHER_SECRET": "another_secret_value",
+            "DEBUG": "true",
+        },
+        "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
+        "description": "Tool with secret environment variables",
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Mock config for storing secrets
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.get_value.return_value = {}  # Empty mcp_secrets initially
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify the tool server was created correctly
+        assert result["name"] == "secret_env_tool"
+        assert result["properties"]["command"] == "python"
+        assert result["properties"]["args"] == ["-m", "my_server"]
+
+        # Verify secret env vars were removed from properties and only non-secret env vars remain
+        stored_env_vars = result["properties"]["env_vars"]
+        assert "PUBLIC_VAR" in stored_env_vars
+        assert stored_env_vars["PUBLIC_VAR"] == "public_value"
+        assert "DEBUG" in stored_env_vars
+        assert stored_env_vars["DEBUG"] == "true"
+        assert "SECRET_API_KEY" not in stored_env_vars
+        assert "ANOTHER_SECRET" not in stored_env_vars
+
+        # Verify secret env var keys were stored
+        assert result["properties"]["secret_env_var_keys"] == [
+            "SECRET_API_KEY",
+            "ANOTHER_SECRET",
+        ]
+
+        # Verify config.update_settings was called to store secrets
+        mock_config_instance.update_settings.assert_called_once()
+        call_args = mock_config_instance.update_settings.call_args[0][0]
+        assert "mcp_secrets" in call_args
+
+        # Verify secret values were stored with correct keys
+        mcp_secrets = call_args["mcp_secrets"]
+        server_id = result["id"]
+        assert f"{server_id}::SECRET_API_KEY" in mcp_secrets
+        assert f"{server_id}::ANOTHER_SECRET" in mcp_secrets
+        assert mcp_secrets[f"{server_id}::SECRET_API_KEY"] == "secret_key_123"
+        assert mcp_secrets[f"{server_id}::ANOTHER_SECRET"] == "another_secret_value"
+
+
+async def test_connect_local_mcp_no_secret_env_vars(client, test_project):
+    """Test connect_local_mcp endpoint without secret environment variables"""
+    tool_data = {
+        "name": "no_secret_env_tool",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+            "DEBUG": "true",
+        },
+        "secret_env_var_keys": [],  # Empty list
+        "description": "Tool without secret environment variables",
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_config_instance = mock_config.return_value
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify all env vars remain in properties
+        stored_env_vars = result["properties"]["env_vars"]
+        assert stored_env_vars["PUBLIC_VAR"] == "public_value"
+        assert stored_env_vars["DEBUG"] == "true"
+        assert result["properties"]["secret_env_var_keys"] == []
+
+        # Verify config.update_settings was NOT called since no secrets
+        mock_config_instance.update_settings.assert_not_called()
+
+
+async def test_connect_local_mcp_existing_mcp_secrets(client, test_project):
+    """Test connect_local_mcp endpoint merges with existing mcp_secrets"""
+    tool_data = {
+        "name": "merge_secret_env_tool",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+            "NEW_SECRET": "new_secret_value",
+        },
+        "secret_env_var_keys": ["NEW_SECRET"],
+        "description": "Tool that merges with existing secrets",
+    }
+
+    existing_secrets = {
+        "other_server_id::OLD_SECRET": "existing_secret",
+        "another_server::TOKEN": "existing_token",
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Mock config with existing secrets
+        mock_config_instance = mock_config.return_value
+        mock_config_instance.get_value.return_value = existing_secrets.copy()
+
+        async with mock_mcp_success():
+            response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify config.update_settings was called to merge secrets
+        mock_config_instance.update_settings.assert_called_once()
+        call_args = mock_config_instance.update_settings.call_args[0][0]
+
+        # Verify existing secrets are preserved and new ones added
+        mcp_secrets = call_args["mcp_secrets"]
+        server_id = result["id"]
+
+        # Existing secrets should still be there
+        assert "other_server_id::OLD_SECRET" in mcp_secrets
+        assert "another_server::TOKEN" in mcp_secrets
+        assert mcp_secrets["other_server_id::OLD_SECRET"] == "existing_secret"
+        assert mcp_secrets["another_server::TOKEN"] == "existing_token"
+
+        # New secret should be added
+        assert f"{server_id}::NEW_SECRET" in mcp_secrets
+        assert mcp_secrets[f"{server_id}::NEW_SECRET"] == "new_secret_value"
+
+
+async def test_connect_local_mcp_secret_env_var_validation_error(client, test_project):
+    """Test connect_local_mcp endpoint handles secret env var validation errors"""
+    tool_data = {
+        "name": "invalid_secret_env_tool",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+        },
+        "secret_env_var_keys": ["SECRET_API_KEY"],  # Not in env_vars
+        "description": "Tool with invalid secret env var keys",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_local_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+        error_detail = response.json()["detail"]
+        assert any(
+            "Secret environment variable key SECRET_API_KEY is not in the list of environment variables"
+            in str(error)
+            for error in error_detail
+        )
+
+
+async def test_connect_local_mcp_empty_secret_env_var_key_validation_error(
+    client, test_project
+):
+    """Test connect_local_mcp endpoint handles empty secret env var key validation errors"""
+    tool_data = {
+        "name": "empty_secret_key_tool",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+        },
+        "secret_env_var_keys": [
+            ""
+        ],  # Empty key (not in env_vars, but will trigger empty key validation first)
+        "description": "Tool with empty secret env var key",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.post(
+            f"/api/projects/{test_project.id}/connect_local_mcp",
+            json=tool_data,
+        )
+
+        assert response.status_code == 422  # Validation error
+        error_detail = response.json()["detail"]
+        assert any(
+            "Secret environment variable key is required" in str(error)
+            for error in error_detail
+        )
+
+
+async def test_delete_local_mcp_tool_server_with_secret_env_vars(client, test_project):
+    """Test that deleting a local MCP tool server removes secret environment variables from Config"""
+    # Create a local MCP tool server with secret env vars
+    tool_data = {
+        "name": "local_tool_with_secrets",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+            "SECRET_API_KEY": "secret_key_123",
+            "ANOTHER_SECRET": "another_secret_value",
+        },
+        "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
+        "description": "Local tool with secret env vars",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify the tool server was created with secret env vars
+            assert "secret_env_var_keys" in created_tool["properties"]
+            assert created_tool["properties"]["secret_env_var_keys"] == [
+                "SECRET_API_KEY",
+                "ANOTHER_SECRET",
+            ]
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    f"{tool_server_id}::SECRET_API_KEY": "secret_key_123",
+                    f"{tool_server_id}::ANOTHER_SECRET": "another_secret_value",
+                    "other_server::some_env_var": "other_value",  # Should not be deleted
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Verify that secret env vars were removed from config
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Check that the updated mcp_secrets no longer contains the deleted server's secrets
+                expected_remaining_secrets = {
+                    "other_server::some_env_var": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_local_mcp_tool_server_no_secret_env_vars(client, test_project):
+    """Test that deleting a local MCP tool server without secret env vars works correctly"""
+    # Create a local MCP tool server without secret env vars
+    tool_data = {
+        "name": "local_tool_without_secrets",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {"PUBLIC_VAR": "public_value"},
+        "secret_env_var_keys": [],
+        "description": "Local tool without secret env vars",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Verify the tool server was created without secret env vars
+            assert created_tool["properties"]["secret_env_var_keys"] == []
+
+            # Now mock Config for the delete operation
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                mock_config.get_value.return_value = {
+                    "other_server::some_env_var": "other_value"  # Should remain
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Config should still be updated (even though no secrets were removed)
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Other secrets should remain unchanged
+                expected_remaining_secrets = {
+                    "other_server::some_env_var": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+async def test_delete_local_mcp_tool_server_secret_key_not_in_config(
+    client, test_project
+):
+    """Test that deleting a local MCP tool server handles cases where secret keys are not in config"""
+    # Create a local MCP tool server with secret env vars
+    tool_data = {
+        "name": "local_tool_with_missing_secrets",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PUBLIC_VAR": "public_value",
+            "SECRET_API_KEY": "secret_key_123",
+            "ANOTHER_SECRET": "another_secret_value",
+        },
+        "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
+        "description": "Local tool with secret env vars not in config",
+    }
+
+    async with mock_mcp_success():
+        with patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id:
+            mock_project_from_id.return_value = test_project
+
+            # Create the tool server first (without mocking Config to avoid interference)
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_local_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+            created_tool = create_response.json()
+            tool_server_id = created_tool["id"]
+
+            # Now mock Config for the delete operation with missing secrets
+            with patch(
+                "app.desktop.studio_server.tool_api.Config.shared"
+            ) as mock_config_shared:
+                mock_config = mock_config_shared.return_value
+                # Config doesn't contain the server's secrets (they were never saved or were deleted)
+                mock_config.get_value.return_value = {
+                    "other_server::some_env_var": "other_value"  # Should remain
+                }
+                mock_config.update_settings = Mock()
+
+                # Delete the tool server - should not raise an exception
+                delete_response = client.delete(
+                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+                )
+                assert delete_response.status_code == 200
+
+                # Config should still be updated
+                mock_config.update_settings.assert_called_once()
+                call_args = mock_config.update_settings.call_args[0][0]
+
+                # Other secrets should remain unchanged
+                expected_remaining_secrets = {
+                    "other_server::some_env_var": "other_value"
+                }
+                assert call_args["mcp_secrets"] == expected_remaining_secrets
+
+
+# Tests for LocalToolServerCreationRequest secret environment variable validation
+def test_local_tool_server_creation_request_valid_secret_env_var_keys():
+    """Test LocalToolServerCreationRequest with valid secret environment variable keys"""
+    request = LocalToolServerCreationRequest(
+        name="Secret Env Vars Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars={
+            "PUBLIC_VAR": "public_value",
+            "SECRET_API_KEY": "secret_key_123",
+            "ANOTHER_SECRET": "another_secret_value",
+        },
+        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET"],
+        description="Server with secret environment variables",
+    )
+
+    assert request.name == "Secret Env Vars Server"
+    assert request.command == "python"
+    assert request.args == ["-m", "server"]
+    assert request.env_vars == {
+        "PUBLIC_VAR": "public_value",
+        "SECRET_API_KEY": "secret_key_123",
+        "ANOTHER_SECRET": "another_secret_value",
+    }
+    assert request.secret_env_var_keys == ["SECRET_API_KEY", "ANOTHER_SECRET"]
+    assert request.description == "Server with secret environment variables"
+
+
+def test_local_tool_server_creation_request_empty_secret_env_var_keys():
+    """Test LocalToolServerCreationRequest with empty secret_env_var_keys (default)"""
+    request = LocalToolServerCreationRequest(
+        name="No Secret Env Vars Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars={"PUBLIC_VAR": "public_value"},
+        # secret_env_var_keys defaults to empty list
+    )
+
+    assert request.secret_env_var_keys == []
+
+
+def test_local_tool_server_creation_request_secret_env_var_key_not_in_env_vars():
+    """Test LocalToolServerCreationRequest rejects secret keys not in env_vars"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Invalid Secret Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"PUBLIC_VAR": "public_value"},
+            secret_env_var_keys=["SECRET_API_KEY"],  # Not in env_vars
+        )
+
+    error_str = str(exc_info.value)
+    assert (
+        "Secret environment variable key SECRET_API_KEY is not in the list of environment variables"
+        in error_str
+    )
+
+
+def test_local_tool_server_creation_request_empty_secret_env_var_key():
+    """Test LocalToolServerCreationRequest rejects empty secret env var keys"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Empty Secret Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"PUBLIC_VAR": "public_value", "": "some_value"},
+            secret_env_var_keys=[""],  # Empty key
+        )
+
+    error_str = str(exc_info.value)
+    # The validation first catches invalid env var keys, then secret env var key validation
+    assert (
+        "Secret environment variable key is required" in error_str
+        or "Invalid environment variable key" in error_str
+    )
+
+
+def test_local_tool_server_creation_request_whitespace_only_secret_env_var_key():
+    """Test LocalToolServerCreationRequest rejects whitespace-only secret env var keys"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Whitespace Secret Key Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"PUBLIC_VAR": "public_value", "   ": "some_value"},
+            secret_env_var_keys=["   "],  # Whitespace only
+        )
+
+    error_str = str(exc_info.value)
+    # The validation first catches invalid env var keys, then secret env var key validation
+    assert (
+        "Secret environment variable key is required" in error_str
+        or "Invalid environment variable key" in error_str
+    )
+
+
+def test_local_tool_server_creation_request_multiple_secret_env_var_key_validation_errors():
+    """Test LocalToolServerCreationRequest handles multiple secret env var key validation errors"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Multiple Errors Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={"PUBLIC_VAR": "public_value"},
+            secret_env_var_keys=["", "NOT_IN_ENV_VARS", "   "],  # Multiple invalid keys
+        )
+
+    error_str = str(exc_info.value)
+    # Should contain errors for all invalid keys
+    # The validation first catches invalid env var keys, then secret env var key validation
+    assert (
+        "Secret environment variable key is required" in error_str
+        or "Invalid environment variable key" in error_str
+    )
+    # Note: The first validation error (empty key) stops further validation, so NOT_IN_ENV_VARS error may not appear
+    # assert "Secret environment variable key NOT_IN_ENV_VARS is not in the list of environment variables" in error_str
+
+
+def test_local_tool_server_creation_request_secret_env_var_keys_strips_whitespace():
+    """Test LocalToolServerCreationRequest strips whitespace from secret env var keys"""
+    request = LocalToolServerCreationRequest(
+        name="Whitespace Stripping Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars={
+            "PUBLIC_VAR": "public_value",
+            "SECRET_KEY": "secret_value",
+            "ANOTHER_SECRET": "another_value",
+        },
+        secret_env_var_keys=["  SECRET_KEY  ", " ANOTHER_SECRET "],  # With whitespace
+    )
+
+    # Should strip whitespace from keys
+    assert request.secret_env_var_keys == ["SECRET_KEY", "ANOTHER_SECRET"]
+
+
+def test_local_tool_server_creation_request_secret_env_var_keys_with_all_env_vars_secret():
+    """Test LocalToolServerCreationRequest when all env vars are marked as secret"""
+    request = LocalToolServerCreationRequest(
+        name="All Secret Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars={
+            "SECRET_API_KEY": "secret_key_123",
+            "ANOTHER_SECRET": "another_secret_value",
+            "DATABASE_PASSWORD": "db_password",
+        },
+        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET", "DATABASE_PASSWORD"],
+    )
+
+    assert set(request.secret_env_var_keys) == {
+        "SECRET_API_KEY",
+        "ANOTHER_SECRET",
+        "DATABASE_PASSWORD",
+    }
+    assert set(request.secret_env_var_keys) == set(request.env_vars.keys())
+
+
+def test_local_tool_server_creation_request_secret_env_var_keys_partial_overlap():
+    """Test LocalToolServerCreationRequest with some env vars marked as secret"""
+    request = LocalToolServerCreationRequest(
+        name="Partial Secret Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars={
+            "PUBLIC_VAR": "public_value",
+            "DEBUG": "true",
+            "SECRET_API_KEY": "secret_key_123",
+            "ANOTHER_SECRET": "another_secret_value",
+            "PORT": "8080",
+        },
+        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET"],
+    )
+
+    assert request.secret_env_var_keys == ["SECRET_API_KEY", "ANOTHER_SECRET"]
+    # Verify all secret keys are in env_vars
+    for secret_key in request.secret_env_var_keys:
+        assert secret_key in request.env_vars
+
+
+def test_local_tool_server_creation_request_duplicate_secret_env_var_keys():
+    """Test LocalToolServerCreationRequest handles duplicate secret env var keys"""
+    request = LocalToolServerCreationRequest(
+        name="Duplicate Secret Keys Server",
+        command="python",
+        args=["-m", "server"],
+        env_vars={
+            "PUBLIC_VAR": "public_value",
+            "SECRET_API_KEY": "secret_key_123",
+        },
+        secret_env_var_keys=[
+            "SECRET_API_KEY",
+            "SECRET_API_KEY",
+            "SECRET_API_KEY",
+        ],  # Duplicates
+    )
+
+    # Should preserve duplicates as provided (validation doesn't dedupe)
+    assert request.secret_env_var_keys == [
+        "SECRET_API_KEY",
+        "SECRET_API_KEY",
+        "SECRET_API_KEY",
+    ]

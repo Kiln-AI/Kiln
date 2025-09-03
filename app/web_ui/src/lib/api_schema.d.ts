@@ -2593,6 +2593,8 @@ export interface components {
             env_vars?: {
                 [key: string]: string;
             };
+            /** Secret Env Var Keys */
+            secret_env_var_keys?: string[];
         };
         /** MeanUsage */
         MeanUsage: {
