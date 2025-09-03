@@ -1987,12 +1987,6 @@ built_in_models: List[KilnModel] = [
                 model_id="qwen2.5:72b",
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/qwen2p5-72b-instruct",
-                # Tool calling forces schema -- fireworks doesn't support json_schema, just json_mode
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 provider_finetune_id="Qwen/Qwen2.5-72B-Instruct",
             ),
