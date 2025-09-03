@@ -123,8 +123,14 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
             # check if the chunk ids are already in the database
             chunk_ids_in_database = await self.get_nodes_by_ids(deterministic_chunk_ids)
+
+            # we already have all the chunks for this document in the database
             if len(chunk_ids_in_database) == chunk_count_for_document:
-                # we already have all the chunks for this document in the database
+                # free up event loop to avoid risk of looping for a long time
+                # without any real async ops releasing the event loop at all
+                # (get_nodes_by_ids implementation in llama_index is actually sync
+                # and it is slow)
+                await asyncio.sleep(0)
                 continue
             else:
                 # otherwise, we just insert all the chunks for this document again
@@ -260,13 +266,14 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         return str(string_to_uuid(f"{document_id}::{chunk_idx}"))
 
     async def count_records(self) -> int:
-        # this throws a TableNotFoundError if the table doesn't exist
-        table = self.lancedb_vector_store.table
-        if table is None:
-            raise ValueError("Table is not initialized")
-        table.optimize()
-        count = table.count_rows()
-        return count
+        try:
+            table = self.lancedb_vector_store.table
+            if table is None:
+                raise ValueError("Table is not initialized")
+            count = table.count_rows()
+            return count
+        except TableNotFoundError:
+            return 0
 
     @property
     def query_type(self) -> Literal["fts", "hybrid", "vector"]:

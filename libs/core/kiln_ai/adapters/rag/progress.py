@@ -101,12 +101,8 @@ async def count_records_in_vector_store(
     vector_store = await vector_store_adapter_for_config(
         rag_config, vector_store_config
     )
-
-    try:
-        count = await vector_store.count_records()
-        return count
-    except TableNotFoundError:
-        return 0
+    count = await vector_store.count_records()
+    return count
 
 
 async def count_records_in_vector_store_for_rag_config(

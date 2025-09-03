@@ -452,6 +452,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         vector_store_config: VectorStoreConfig,
         rag_config: RagConfig,
         concurrency: int = 10,
+        batch_size: int = 20,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -460,6 +461,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         self.vector_store_config = vector_store_config
         self.rag_config = rag_config
         self.concurrency = concurrency
+        self.batch_size = batch_size
 
     @property
     def lock_key(self) -> str:
@@ -470,7 +472,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
     async def collect_records(
         self,
-        batch_size: int = 100,
+        batch_size: int,
     ) -> AsyncGenerator[list[Tuple[str, ChunkedDocument, ChunkEmbeddings]], None]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
@@ -504,10 +506,11 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
                                     if len(jobs) >= batch_size:
                                         yield jobs
-                                        jobs = []
+                                        jobs.clear()
 
         if len(jobs) > 0:
             yield jobs
+            jobs.clear()
 
     async def count_total_chunks(self) -> int:
         total_chunk_count = 0
@@ -515,19 +518,6 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             _, chunked_doc, _ = records[0]
             total_chunk_count += len(chunked_doc.chunks)
         return total_chunk_count
-
-    async def reset_store(self) -> BaseVectorStoreAdapter:
-        previous_vector_store = await vector_store_adapter_for_config(
-            self.rag_config,
-            self.vector_store_config,
-        )
-        await previous_vector_store.destroy()
-
-        new_vector_store = await vector_store_adapter_for_config(
-            self.rag_config,
-            self.vector_store_config,
-        )
-        return new_vector_store
 
     async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
         async with shared_async_lock_manager.acquire(self.lock_key):
@@ -545,18 +535,18 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             if vector_dimensions is None:
                 raise ValueError("Vector dimensions are not set")
 
-            # enforcing idempotence with llama_index wrappers is too fragile
-            # so we destroy the entire store and recreate it from scratch
-            vector_store = await self.reset_store()
+            vector_store = await vector_store_adapter_for_config(
+                self.rag_config,
+                self.vector_store_config,
+            )
 
             yield RagStepRunnerProgress(
                 success_count=0,
                 error_count=0,
             )
 
-            batch_size = 100
             indexed_count = 0
-            async for records in self.collect_records(batch_size=batch_size):
+            async for records in self.collect_records(batch_size=self.batch_size):
                 chunk_count = 0
                 for record in records:
                     chunk_count += len(record[1].chunks)
@@ -672,9 +662,6 @@ class RagWorkflowRunner:
                         + self.initial_progress.total_document_embedded_error_count,
                     )
             case RagWorkflowStepNames.INDEXING:
-                logger.warning(
-                    f"Indexing step progress: total_chunks_indexed_count: {self.current_progress.total_chunks_indexed_count}, step_progress.success_count: {step_progress.success_count}"
-                )
                 if step_progress.success_count is not None:
                     self.current_progress.total_chunks_indexed_count = (
                         self.current_progress.total_chunks_indexed_count
@@ -717,9 +704,6 @@ class RagWorkflowRunner:
                 if step.stage() == RagWorkflowStepNames.INDEXING and isinstance(
                     step, RagIndexingStepRunner
                 ):
-                    # reindexing restarts from 0 because we destroy the entire store
-                    self.current_progress.total_chunk_completed_count = 0
-                    self.current_progress.total_chunks_indexed_count = 0
                     self.current_progress.total_chunk_count = (
                         await step.count_total_chunks()
                     )

@@ -117,7 +117,10 @@ async def run_all_extractors_and_rag_workflows(
         results = await asyncio.gather(*extractor_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error running extractor: {result}")
+                logger.error(
+                    f"Error running extractor: {type(result).__name__}: {result}",
+                    exc_info=result,
+                )
 
     rag_tasks: list[asyncio.Task] = []
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
@@ -126,9 +129,6 @@ async def run_all_extractors_and_rag_workflows(
             # no need to lock here, each rag step runner gets a lock when it starts running
             rag_runner = await build_rag_workflow_runner(project, str(rag_config.id))
             async for progress in rag_runner.run():
-                logger.warning(
-                    f"RAG workflow progress ({rag_config.id}): {progress.total_document_completed_count}, {progress.total_document_count}, {progress.total_chunk_completed_count}, {progress.total_chunk_count}, {progress.total_document_extracted_count}, {progress.total_document_chunked_count}, {progress.total_document_embedded_count}, {progress.total_document_extracted_error_count}, {progress.total_document_chunked_error_count}, {progress.total_document_embedded_error_count}, {progress.total_chunks_indexed_count}, {progress.total_chunks_indexed_error_count}"
-                )
                 pass
 
         rag_tasks.append(asyncio.create_task(run_rag()))

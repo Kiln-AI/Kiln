@@ -272,10 +272,6 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     progress.total_document_completed_count === progress.total_document_count &&
     progress.total_chunk_completed_count === progress.total_chunk_count
   ) {
-    console.info(
-      `Complete RAG config because both document and chunk counts are completed:`,
-      progress,
-    )
     return "complete"
   }
 
