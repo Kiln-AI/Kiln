@@ -454,10 +454,10 @@ async def test_get_available_tool_servers_with_missing_secrets(client, test_proj
             mock_tool_server.name = "tool_with_missing_secrets"
             mock_tool_server.type = ToolServerType.remote_mcp
             mock_tool_server.description = "Tool with missing secrets"
-            mock_tool_server.missing_secrets.return_value = [
-                "Authorization",
-                "X-API-Key",
-            ]
+            mock_tool_server.retrieve_secrets.return_value = (
+                {},
+                ["Authorization", "X-API-Key"],
+            )
 
             # Mock the project's external_tool_servers method
             mock_project = Mock()
@@ -519,7 +519,7 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
             mock_tool_server.name = "local_tool_with_missing_secrets"
             mock_tool_server.type = ToolServerType.local_mcp
             mock_tool_server.description = "Local tool with missing secrets"
-            mock_tool_server.missing_secrets.return_value = ["API_KEY"]
+            mock_tool_server.retrieve_secrets.return_value = ({}, ["API_KEY"])
 
             # Mock the project's external_tool_servers method
             mock_project = Mock()
@@ -5056,10 +5056,10 @@ async def test_get_tool_server_with_missing_secrets(client, test_project):
                 "headers": {"Authorization": "Bearer token", "X-API-Key": "key"},
                 "secret_header_keys": ["Authorization", "X-API-Key"],
             }
-            mock_tool_server.missing_secrets.return_value = [
-                "Authorization",
-                "X-API-Key",
-            ]
+            mock_tool_server.retrieve_secrets.return_value = (
+                {},
+                ["Authorization", "X-API-Key"],
+            )
             mock_tool_server_from_id.return_value = mock_tool_server
 
             # Get the tool server - should return with missing_secrets and no available_tools
@@ -5134,9 +5134,10 @@ async def test_get_tool_server_with_some_missing_secrets(client, test_project):
                 },
                 "secret_header_keys": ["Authorization", "X-API-Key"],
             }
-            mock_tool_server.missing_secrets.return_value = [
-                "X-API-Key"
-            ]  # Only one missing
+            mock_tool_server.retrieve_secrets.return_value = (
+                {"Authorization": "Bearer token"},
+                ["X-API-Key"],
+            )  # Only one missing
             mock_tool_server_from_id.return_value = mock_tool_server
 
             # Get the tool server - should return with missing_secrets and no available_tools
@@ -5198,7 +5199,10 @@ async def test_get_tool_server_no_missing_secrets(client, test_project):
                 "headers": {"Authorization": "Bearer token", "X-API-Key": "key"},
                 "secret_header_keys": ["Authorization", "X-API-Key"],
             }
-            mock_tool_server.missing_secrets.return_value = []  # No missing secrets
+            mock_tool_server.retrieve_secrets.return_value = (
+                {"Authorization": "Bearer token", "X-API-Key": "key"},
+                [],
+            )  # No missing secrets
             mock_tool_server_from_id.return_value = mock_tool_server
 
             # Mock successful tool retrieval
@@ -5280,9 +5284,10 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
                 },
                 "secret_env_var_keys": ["API_KEY", "DATABASE_PASSWORD"],
             }
-            mock_tool_server.missing_secrets.return_value = [
-                "DATABASE_PASSWORD"
-            ]  # Missing secret
+            mock_tool_server.retrieve_secrets.return_value = (
+                {"API_KEY": "secret_key"},
+                ["DATABASE_PASSWORD"],
+            )  # Missing secret
             mock_tool_server_from_id.return_value = mock_tool_server
 
             # Get the tool server - should return with missing_secrets

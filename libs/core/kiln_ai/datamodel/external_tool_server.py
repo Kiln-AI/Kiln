@@ -66,12 +66,13 @@ class ExternalToolServer(KilnParentedModel):
 
                 secret_header_keys = self.properties.get("secret_header_keys", None)
                 # Secret header keys are optional, but if they are set, they must be a list of strings
-                if secret_header_keys is not None and not isinstance(
-                    secret_header_keys, list
-                ):
-                    raise ValueError(
-                        "secret_header_keys must be a list for external tools of type 'remote_mcp'"
-                    )
+                if secret_header_keys is not None:
+                    if not isinstance(secret_header_keys, list):
+                        raise ValueError(
+                            "secret_header_keys must be a list for external tools of type 'remote_mcp'"
+                        )
+                    if not all(isinstance(k, str) for k in secret_header_keys):
+                        raise ValueError("secret_header_keys must contain only strings")
 
             case ToolServerType.local_mcp:
                 command = self.properties.get("command", None)
@@ -96,12 +97,15 @@ class ExternalToolServer(KilnParentedModel):
 
                 secret_env_var_keys = self.properties.get("secret_env_var_keys", None)
                 # Secret env var keys are optional, but if they are set, they must be a list of strings
-                if secret_env_var_keys is not None and not isinstance(
-                    secret_env_var_keys, list
-                ):
-                    raise ValueError(
-                        "secret_env_var_keys must be a list for external tools of type 'local_mcp'"
-                    )
+                if secret_env_var_keys is not None:
+                    if not isinstance(secret_env_var_keys, list):
+                        raise ValueError(
+                            "secret_env_var_keys must be a list for external tools of type 'local_mcp'"
+                        )
+                    if not all(isinstance(k, str) for k in secret_env_var_keys):
+                        raise ValueError(
+                            "secret_env_var_keys must contain only strings"
+                        )
 
             case _:
                 # Type checking will catch missing cases
@@ -123,37 +127,17 @@ class ExternalToolServer(KilnParentedModel):
             case _:
                 raise_exhaustive_enum_error(self.type)
 
-    def retrieve_secrets(self) -> dict[str, str]:
+    def retrieve_secrets(self) -> tuple[dict[str, str], list[str]]:
         """
         Retrieve secrets from configuration using the pattern: mcp_server_id::key_name
         Automatically determines which secret keys to retrieve based on the server type.
 
         Returns:
-            Dictionary mapping key names to their secret values
+            Tuple of (secrets_dict, missing_secrets_list) where:
+            - secrets_dict: Dictionary mapping key names to their secret values
+            - missing_secrets_list: List of secret key names that are missing values in Config
         """
         secrets = {}
-        secret_keys = self.get_secret_keys()
-
-        if secret_keys and len(secret_keys) > 0:
-            config = Config.shared()
-            mcp_secrets = config.get_value(MCP_SECRETS_KEY)
-
-            # Look for secrets with the pattern: mcp_server_id::key_name
-            if mcp_secrets:  # Only proceed if mcp_secrets is not None
-                for key_name in secret_keys:
-                    secret_value = mcp_secrets.get(self._config_secret_key(key_name))
-                    if secret_value:
-                        secrets[key_name] = secret_value
-
-        return secrets
-
-    def missing_secrets(self) -> list[str]:
-        """
-        Check if the tool server has missing secrets.
-
-        Returns:
-            List of secret key names that are missing values in Config
-        """
         missing_secrets = []
         secret_keys = self.get_secret_keys()
 
@@ -161,13 +145,17 @@ class ExternalToolServer(KilnParentedModel):
             config = Config.shared()
             mcp_secrets = config.get_value(MCP_SECRETS_KEY)
 
+            # Look for secrets with the pattern: mcp_server_id::key_name
             for key_name in secret_keys:
                 secret_key = self._config_secret_key(key_name)
-                # Check if the secret is missing or empty
-                if not mcp_secrets or not mcp_secrets.get(secret_key):
+                secret_value = mcp_secrets.get(secret_key) if mcp_secrets else None
+
+                if secret_value:
+                    secrets[key_name] = secret_value
+                else:
                     missing_secrets.append(key_name)
 
-        return missing_secrets
+        return secrets, missing_secrets
 
     def save_secrets(self) -> None:
         """
@@ -183,16 +171,23 @@ class ExternalToolServer(KilnParentedModel):
             raise ValueError("Server ID cannot be None when saving secrets")
 
         # Extract secret values from properties based on server type
+        secret_values = {}
         match self.type:
             case ToolServerType.remote_mcp:
-                secret_values = self.properties.get("headers", {})
+                headers = self.properties.get("headers", {})
+                for key_name in secret_keys:
+                    if key_name in headers:
+                        secret_values[key_name] = headers[key_name]
             case ToolServerType.local_mcp:
-                secret_values = self.properties.get("env_vars", {})
+                env_vars = self.properties.get("env_vars", {})
+                for key_name in secret_keys:
+                    if key_name in env_vars:
+                        secret_values[key_name] = env_vars[key_name]
             case _:
                 raise_exhaustive_enum_error(self.type)
 
         config = Config.shared()
-        mcp_secrets = config.get_value(MCP_SECRETS_KEY) or dict[str, str]()
+        mcp_secrets: dict[str, str] = config.get_value(MCP_SECRETS_KEY) or {}
 
         # Store secrets with the pattern: mcp_server_id::key_name
         for key_name in secret_keys:

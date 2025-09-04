@@ -294,16 +294,19 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> List[KilnToolServerDescription]:
         project = project_from_id(project_id)
 
-        return [
-            KilnToolServerDescription(
-                name=tool.name,
-                id=tool.id,
-                type=tool.type,
-                description=tool.description,
-                missing_secrets=tool.missing_secrets(),
+        results = []
+        for tool in project.external_tool_servers():
+            _, missing_secrets = tool.retrieve_secrets()
+            results.append(
+                KilnToolServerDescription(
+                    name=tool.name,
+                    id=tool.id,
+                    type=tool.type,
+                    description=tool.description,
+                    missing_secrets=missing_secrets,
+                )
             )
-            for tool in project.external_tool_servers()
-        ]
+        return results
 
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def get_tool_server(
@@ -313,7 +316,7 @@ def connect_tool_servers_api(app: FastAPI):
 
         # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
         # If there are missing secrets, add a requirement to the result and skip getting available tools.
-        missing_secrets = tool_server.missing_secrets()
+        _, missing_secrets = tool_server.retrieve_secrets()
         if missing_secrets:
             return ExternalToolServerApiDescription(
                 id=tool_server.id,

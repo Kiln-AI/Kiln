@@ -68,7 +68,7 @@ class MCPSessionManager:
         headers = tool_server.properties.get("headers", {}).copy()
 
         # Retrieve secret headers from configuration and merge with regular headers
-        secret_headers = tool_server.retrieve_secrets()
+        secret_headers, _ = tool_server.retrieve_secrets()
         headers.update(secret_headers)
 
         async with streamablehttp_client(server_url, headers=headers) as (
@@ -105,7 +105,7 @@ class MCPSessionManager:
         env_vars = tool_server.properties.get("env_vars", {}).copy()
 
         # Retrieve secret environment variables from configuration and merge with regular env_vars
-        secret_env_vars = tool_server.retrieve_secrets()
+        secret_env_vars, _ = tool_server.retrieve_secrets()
         env_vars.update(secret_env_vars)
 
         # Set PATH, only if not explicitly set during MCP tool setup
