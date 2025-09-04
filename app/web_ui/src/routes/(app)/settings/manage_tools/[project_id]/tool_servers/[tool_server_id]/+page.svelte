@@ -303,7 +303,8 @@
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
-            {#if tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0}
+            <!-- Check if there are any environment variables or secret environment variables -->
+            {#if (tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0) || (tool_server.properties["secret_env_var_keys"] && Object.keys(tool_server.properties["secret_env_var_keys"]).length > 0)}
               <div class="mt-8">
                 <PropertyList
                   properties={buildPropertiesWithSecrets(
