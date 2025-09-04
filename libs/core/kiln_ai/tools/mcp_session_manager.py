@@ -96,7 +96,7 @@ class MCPSessionManager:
                 "Attempted to start local MCP server, but args is not a list of strings"
             )
 
-        env_vars = tool_server.properties.get("env_vars", {})
+        env_vars = tool_server.properties.get("env_vars", {}).copy()
 
         # Set PATH, only if not explicitly set during MCP tool setup
         if "PATH" not in env_vars:

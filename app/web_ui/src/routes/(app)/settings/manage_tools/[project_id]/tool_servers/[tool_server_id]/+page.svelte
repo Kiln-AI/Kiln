@@ -253,17 +253,19 @@
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
-            <div class="mt-8">
-              <PropertyList
-                properties={Object.entries(
-                  tool_server.properties["env_vars"] || {},
-                ).map(([key, value]) => ({
-                  name: key,
-                  value: String(value ?? "N/A"),
-                }))}
-                title="Environment Variables"
-              />
-            </div>
+            {#if tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0}
+              <div class="mt-8">
+                <PropertyList
+                  properties={Object.entries(
+                    tool_server.properties["env_vars"] || {},
+                  ).map(([key, value]) => ({
+                    name: key,
+                    value: String(value ?? "N/A"),
+                  }))}
+                  title="Environment Variables"
+                />
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
