@@ -679,6 +679,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_vector_store_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Vector Store Config */
+        post: operations["create_vector_store_config_api_projects__project_id__create_vector_store_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/vector_store_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vector Store Configs */
+        get: operations["get_vector_store_configs_api_projects__project_id__vector_store_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/rag_configs/create_rag_config": {
         parameters: {
             query?: never;
@@ -1917,6 +1951,11 @@ export interface components {
              * @description The embedding config to use for the RAG workflow.
              */
             embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The vector store config to use for the RAG workflow.
+             */
+            vector_store_config_id: string | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -1925,6 +1964,25 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /** CreateVectorStoreConfigRequest */
+        CreateVectorStoreConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the vector store config
+             */
+            description?: string | null;
+            /** @description The type of vector store to use */
+            store_type: components["schemas"]["VectorStoreType"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -3358,6 +3416,7 @@ export interface components {
             extractor_config: components["schemas"]["ExtractorConfig"];
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
+            vector_store_config: components["schemas"]["VectorStoreConfig"];
         };
         /** RagProgress */
         RagProgress: {
@@ -3597,6 +3656,11 @@ export interface components {
              * @description The id of the Kiln document.
              */
             document_id: string;
+            /**
+             * Chunk Idx
+             * @description The index of the chunk.
+             */
+            chunk_idx: number;
             /**
              * Chunk Text
              * @description The text of the chunk.
@@ -4082,6 +4146,46 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VectorStoreConfig */
+        VectorStoreConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for your own reference to identify the vector store config.
+             */
+            name: string;
+            /** @description The type of vector store to use. */
+            store_type: components["schemas"]["VectorStoreType"];
+            /**
+             * Properties
+             * @description The properties of the vector store config, specific to the selected store_type.
+             */
+            properties: {
+                [key: string]: string | number | null;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * VectorStoreType
+         * @enum {string}
+         */
+        VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
     };
     responses: never;
     parameters: never;
@@ -5674,6 +5778,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_vector_store_config_api_projects__project_id__create_vector_store_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateVectorStoreConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vector_store_configs_api_projects__project_id__vector_store_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"][];
                 };
             };
             /** @description Validation Error */

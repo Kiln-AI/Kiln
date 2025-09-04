@@ -255,6 +255,7 @@ class RagConfigWithSubConfigs(BaseModel):
     extractor_config: ExtractorConfig
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
+    vector_store_config: VectorStoreConfig
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -274,6 +275,9 @@ class CreateRagConfigRequest(BaseModel):
     )
     embedding_config_id: ID_TYPE = Field(
         description="The embedding config to use for the RAG workflow.",
+    )
+    vector_store_config_id: ID_TYPE = Field(
+        description="The vector store config to use for the RAG workflow.",
     )
 
 
@@ -308,6 +312,23 @@ class CreateEmbeddingConfigRequest(BaseModel):
     )
     model_name: EmbeddingModelName = Field(
         description="The name of the embedding model",
+    )
+    properties: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+    )
+
+
+class CreateVectorStoreConfigRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the vector store config",
+        default=None,
+    )
+    store_type: VectorStoreType = Field(
+        description="The type of vector store to use",
     )
     properties: dict[str, str | int | float | bool] = Field(
         default_factory=dict,
@@ -1092,6 +1113,37 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
+    @app.post("/api/projects/{project_id}/create_vector_store_config")
+    async def create_vector_store_config(
+        project_id: str,
+        request: CreateVectorStoreConfigRequest,
+    ) -> VectorStoreConfig:
+        project = project_from_id(project_id)
+
+        vector_store_config = VectorStoreConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            store_type=request.store_type,
+            properties={
+                **request.properties,
+                "overfetch_factor": 1,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+            },
+        )
+        vector_store_config.save_to_file()
+
+        return vector_store_config
+
+    @app.get("/api/projects/{project_id}/vector_store_configs")
+    async def get_vector_store_configs(
+        project_id: str,
+    ) -> list[VectorStoreConfig]:
+        project = project_from_id(project_id)
+        return project.vector_store_configs(readonly=True)
+
     @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
     async def create_rag_config(
         project_id: str,
@@ -1125,21 +1177,14 @@ def connect_document_api(app: FastAPI):
                 detail=f"Embedding config {request.embedding_config_id} not found",
             )
 
-        # TODO: get vector store config params from the request
-        vector_store_config = VectorStoreConfig(
-            parent=project,
-            name=string_to_valid_name(request.name or generate_memorable_name()),
-            store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "nprobes": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+            str(request.vector_store_config_id), project.path
         )
-        vector_store_config.save_to_file()
+        if not vector_store_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Vector store config {request.vector_store_config_id} not found",
+            )
 
         rag_config = RagConfig(
             parent=project,
@@ -1189,6 +1234,15 @@ def connect_document_api(app: FastAPI):
                     detail=f"Embedding config {rag_config.embedding_config_id} not found",
                 )
 
+            vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+                str(rag_config.vector_store_config_id), project.path
+            )
+            if not vector_store_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Vector store config {rag_config.vector_store_config_id} not found",
+                )
+
             rag_configs.append(
                 RagConfigWithSubConfigs(
                     id=rag_config.id,
@@ -1199,6 +1253,7 @@ def connect_document_api(app: FastAPI):
                     extractor_config=extractor_config,
                     chunker_config=chunker_config,
                     embedding_config=embedding_config,
+                    vector_store_config=vector_store_config,
                 )
             )
 
@@ -1244,6 +1299,15 @@ def connect_document_api(app: FastAPI):
                 detail=f"Embedding config {rag_config.embedding_config_id} not found",
             )
 
+        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+            str(rag_config.vector_store_config_id), project.path
+        )
+        if not vector_store_config:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Vector store config {rag_config.vector_store_config_id} not found",
+            )
+
         return RagConfigWithSubConfigs(
             id=rag_config.id,
             name=rag_config.name,
@@ -1253,6 +1317,7 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
             chunker_config=chunker_config,
             embedding_config=embedding_config,
+            vector_store_config=vector_store_config,
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better

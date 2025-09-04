@@ -154,186 +154,232 @@
         <div class="text-error text-sm">RAG config not found</div>
       </div>
     {:else}
-      <div class="flex flex-col md:flex-row gap-8 xl:gap-16 mb-10">
-        <div class="grow flex flex-col">
-          <PropertyList
-            title="Details"
-            properties={[
-              { name: "ID", value: rag_config.id || "N/A" },
-              { name: "Name", value: rag_config.name || "N/A" },
-              { name: "Description", value: rag_config.description || "N/A" },
-              {
-                name: "Created At",
-                value: formatDate(rag_config.created_at),
-              },
-              { name: "Created By", value: rag_config.created_by || "N/A" },
-            ]}
-          />
-        </div>
-
-        <div class="grow flex flex-col gap-8 min-w-[320px]">
-          <PropertyList
-            title="Extractor"
-            properties={[
-              {
-                name: "Model Provider",
-                value:
-                  provider_name_from_id(
-                    rag_config.extractor_config.model_provider_name,
-                  ) || "N/A",
-              },
-              {
-                name: "Model",
-                value:
-                  "" +
-                  (model_name(rag_config.extractor_config?.model_name, null) ||
-                    "N/A"),
-              },
-              {
-                name: "Output Format",
-                value:
-                  extractor_output_format(
-                    rag_config.extractor_config.output_format,
-                  ) || "N/A",
-              },
-              {
-                name: "Details",
-                value: "View Extractor Configuration",
-                link: `/docs/extractors/${project_id}/${rag_config.extractor_config.id}/extractor`,
-              },
-            ]}
-          />
-
-          <PropertyList
-            title="Chunker"
-            properties={[
-              {
-                name: "Strategy",
-                value:
-                  chunker_type_format(rag_config.chunker_config.chunker_type) ||
-                  "N/A",
-                tooltip: tooltip_for_chunker_type(
-                  rag_config.chunker_config.chunker_type,
-                ),
-              },
-              {
-                name: "Chunk Size",
-                value: rag_config.chunker_config.properties?.chunk_size
-                  ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
-                  : "N/A",
-                tooltip:
-                  "The approximate number of words to include in each chunk",
-              },
-              {
-                name: "Overlap",
-                value: rag_config.chunker_config.properties?.chunk_overlap
-                  ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
-                  : "N/A",
-                tooltip:
-                  "The approximate number of words to overlap between chunks",
-              },
-            ]}
-          />
-
-          <PropertyList
-            title="Embedding Model"
-            properties={[
-              {
-                name: "Provider",
-                value:
-                  provider_name_from_id(
-                    rag_config.embedding_config.model_provider_name,
-                  ) || "N/A",
-              },
-              {
-                name: "Model",
-                value:
-                  embedding_model_name(
-                    rag_config.embedding_config.model_name,
-                    rag_config.embedding_config.model_provider_name,
-                  ) || "N/A",
-              },
-            ]}
-          />
-        </div>
-      </div>
-
-      <!-- Search Section -->
-      <div class="mt-12">
-        <h2 class="text-xl font-medium mb-6">Search Documents</h2>
-
-        <div class="bg-base-200 rounded-lg p-6">
-          <form on:submit={handleSearchSubmit}>
-            <div class="form-control">
-              <label class="label" for="search-query">
-                <span class="label-text">Search Query</span>
-                <span class="label-text-alt text-gray-500">
-                  Enter text to search through the indexed documents
-                </span>
-              </label>
-              <div class="flex gap-2">
-                <input
-                  id="search-query"
-                  type="text"
-                  bind:value={searchQuery}
-                  placeholder="Enter your search query..."
-                  class="input input-bordered flex-1"
-                  disabled={searchLoading}
-                />
-                <button
-                  type="submit"
-                  class="btn btn-primary"
-                  disabled={searchLoading || !searchQuery.trim()}
-                >
-                  {#if searchLoading}
-                    <span class="loading loading-spinner loading-sm"></span>
-                  {:else}
-                    Search
-                  {/if}
-                </button>
-              </div>
-            </div>
-          </form>
-
-          {#if searchError}
-            <div class="alert alert-error mt-4">
-              <span>{searchError.getMessage() || "Search failed"}</span>
-            </div>
-          {/if}
-
-          {#if searchResults.length > 0}
-            <div class="mt-6">
-              <h3 class="text-lg font-medium mb-4">
-                Search Results ({searchResults.length})
-              </h3>
-
-              <div class="space-y-4">
-                {#each searchResults as result}
-                  <div
-                    class="bg-base-100 rounded-lg p-4 border border-base-300"
+      <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
+        <!-- Main Content - Search Section -->
+        <div class="flex-1">
+          <div class="mb-8">
+            <form on:submit={handleSearchSubmit}>
+              <div class="form-control">
+                <label class="label" for="search-query">
+                  <span class="label-text">Search Query</span>
+                  <span class="label-text-alt text-gray-500">
+                    Enter text to search through the indexed documents
+                  </span>
+                </label>
+                <div class="flex gap-2">
+                  <input
+                    id="search-query"
+                    type="text"
+                    bind:value={searchQuery}
+                    placeholder="Enter your search query..."
+                    class="input input-bordered flex-1"
+                    disabled={searchLoading}
+                  />
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    disabled={searchLoading || !searchQuery.trim()}
                   >
-                    <div class="flex justify-between items-start mb-2">
-                      <div class="text-sm text-gray-500">
-                        Document: {result.document_id}
-                      </div>
-                      {#if result.similarity !== null}
-                        <div class="text-sm text-gray-500">
-                          Score: {result.similarity.toFixed(3)}
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="text-base text-base-content">
-                      {result.chunk_text}
-                    </div>
-                  </div>
-                {/each}
+                    {#if searchLoading}
+                      <span class="loading loading-spinner loading-sm"></span>
+                    {:else}
+                      Search
+                    {/if}
+                  </button>
+                </div>
               </div>
-            </div>
-          {:else if searchQuery && !searchLoading && !searchError}
-            <div class="text-center text-gray-500 mt-6">
-              No results found for "{searchQuery}"
-            </div>
-          {/if}
+            </form>
+
+            {#if searchError}
+              <div class="alert alert-error mt-4">
+                <span>{searchError.getMessage() || "Search failed"}</span>
+              </div>
+            {/if}
+
+            {#if searchResults.length > 0}
+              <div class="mt-6">
+                <h3 class="text-lg font-medium mb-4">
+                  Search Results ({searchResults.length})
+                </h3>
+
+                <div class="space-y-4">
+                  {#each searchResults as result}
+                    <div
+                      class="bg-base-100 rounded-lg p-4 border border-base-300"
+                    >
+                      <div class="flex justify-between items-start mb-2">
+                        <div class="text-sm text-gray-500">
+                          Document: {result.document_id}
+                        </div>
+                        {#if result.similarity !== null}
+                          <div class="text-sm text-gray-500">
+                            Score: {result.similarity.toFixed(3)}
+                          </div>
+                        {/if}
+                      </div>
+                      <div class="text-base text-base-content">
+                        {result.chunk_text}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {:else if searchQuery && !searchLoading && !searchError}
+              <div class="text-center text-gray-500 mt-6">
+                No results found for "{searchQuery}"
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Right Sidebar - Configuration Details -->
+        <div class="w-full lg:w-80 xl:w-96 flex-shrink-0">
+          <div class="flex flex-col gap-6">
+            <PropertyList
+              title="Details"
+              properties={[
+                { name: "ID", value: rag_config.id || "N/A" },
+                { name: "Name", value: rag_config.name || "N/A" },
+                { name: "Description", value: rag_config.description || "N/A" },
+                {
+                  name: "Created At",
+                  value: formatDate(rag_config.created_at),
+                },
+                { name: "Created By", value: rag_config.created_by || "N/A" },
+              ]}
+            />
+
+            <PropertyList
+              title="Extractor"
+              properties={[
+                {
+                  name: "Model Provider",
+                  value:
+                    provider_name_from_id(
+                      rag_config.extractor_config.model_provider_name,
+                    ) || "N/A",
+                },
+                {
+                  name: "Model",
+                  value:
+                    "" +
+                    (model_name(
+                      rag_config.extractor_config?.model_name,
+                      null,
+                    ) || "N/A"),
+                },
+                {
+                  name: "Output Format",
+                  value:
+                    extractor_output_format(
+                      rag_config.extractor_config.output_format,
+                    ) || "N/A",
+                },
+                {
+                  name: "Details",
+                  value: "View Extractor Configuration",
+                  link: `/docs/extractors/${project_id}/${rag_config.extractor_config.id}/extractor`,
+                },
+              ]}
+            />
+
+            <PropertyList
+              title="Chunker"
+              properties={[
+                {
+                  name: "Strategy",
+                  value:
+                    chunker_type_format(
+                      rag_config.chunker_config.chunker_type,
+                    ) || "N/A",
+                  tooltip: tooltip_for_chunker_type(
+                    rag_config.chunker_config.chunker_type,
+                  ),
+                },
+                {
+                  name: "Chunk Size",
+                  value: rag_config.chunker_config.properties?.chunk_size
+                    ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
+                    : "N/A",
+                  tooltip:
+                    "The approximate number of words to include in each chunk",
+                },
+                {
+                  name: "Overlap",
+                  value: rag_config.chunker_config.properties?.chunk_overlap
+                    ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
+                    : "N/A",
+                  tooltip:
+                    "The approximate number of words to overlap between chunks",
+                },
+              ]}
+            />
+
+            <PropertyList
+              title="Embedding Model"
+              properties={[
+                {
+                  name: "Provider",
+                  value:
+                    provider_name_from_id(
+                      rag_config.embedding_config.model_provider_name,
+                    ) || "N/A",
+                },
+                {
+                  name: "Model",
+                  value:
+                    embedding_model_name(
+                      rag_config.embedding_config.model_name,
+                      rag_config.embedding_config.model_provider_name,
+                    ) || "N/A",
+                },
+              ]}
+            />
+
+            <PropertyList
+              title="Vector Store"
+              properties={[
+                {
+                  name: "Type",
+                  value:
+                    rag_config.vector_store_config.store_type === "lancedb_fts"
+                      ? "Full Text Search"
+                      : rag_config.vector_store_config.store_type ===
+                          "lancedb_vector"
+                        ? "Vector Search"
+                        : "Hybrid Search",
+                  tooltip:
+                    rag_config.vector_store_config.store_type === "lancedb_fts"
+                      ? "Search using text matching only - fastest for keyword searches"
+                      : rag_config.vector_store_config.store_type ===
+                          "lancedb_vector"
+                        ? "Search using semantic similarity vectors - best for meaning-based searches"
+                        : "Combines text and vector search - best overall accuracy",
+                },
+                {
+                  name: "Top K",
+                  value: String(
+                    rag_config.vector_store_config.properties
+                      .similarity_top_k || 10,
+                  ),
+                  tooltip: "The number of top search results returned",
+                },
+                ...(rag_config.vector_store_config.store_type !== "lancedb_fts"
+                  ? [
+                      {
+                        name: "Vector Probes",
+                        value: String(
+                          rag_config.vector_store_config.properties.nprobes ||
+                            10,
+                        ),
+                        tooltip:
+                          "Number of partitions to search for vector queries (higher = more accurate but slower)",
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          </div>
         </div>
       </div>
     {/if}

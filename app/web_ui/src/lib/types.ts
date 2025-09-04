@@ -58,4 +58,6 @@ export type ModelProviderName = components["schemas"]["ModelProviderName"]
 export type RagProgress = components["schemas"]["RagProgress"]
 export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
+export type VectorStoreConfig = components["schemas"]["VectorStoreConfig"]
+export type VectorStoreType = components["schemas"]["VectorStoreType"]
 export type LogMessage = components["schemas"]["LogMessage"]

@@ -970,12 +970,82 @@ async def test_get_embedding_configs_no_embedding_configs(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_create_vector_store_config_success(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Test Vector Store",
+                "description": "Test vector store description",
+                "store_type": "lancedb_fts",
+                "properties": {
+                    "similarity_top_k": 10,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test Vector Store"
+    assert result["description"] == "Test vector store description"
+    assert result["store_type"] == "lancedb_fts"
+    assert result["properties"]["similarity_top_k"] == 10
+    assert result["properties"]["overfetch_factor"] == 1
+    assert result["properties"]["vector_column_name"] == "vector"
+    assert result["properties"]["text_key"] == "text"
+    assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+@pytest.mark.asyncio
+async def test_create_vector_store_config_with_hybrid_type(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Test Hybrid Vector Store",
+                "store_type": "lancedb_hybrid",
+                "properties": {
+                    "similarity_top_k": 5,
+                    "nprobes": 20,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["store_type"] == "lancedb_hybrid"
+    assert result["properties"]["nprobes"] == 20
+
+    # these are set by default
+    assert result["properties"]["overfetch_factor"] == 1
+    assert result["properties"]["vector_column_name"] == "vector"
+    assert result["properties"]["text_key"] == "text"
+    assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+@pytest.mark.asyncio
+async def test_get_vector_store_configs(client, mock_project, mock_vector_store_config):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/vector_store_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 1
+    assert result[0]["name"] == "Test Vector Store"
+
+
+@pytest.mark.asyncio
 async def test_create_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -989,6 +1059,7 @@ async def test_create_rag_config_success(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
             },
         )
 
@@ -1000,11 +1071,17 @@ async def test_create_rag_config_success(
     assert result["extractor_config_id"] is not None
     assert result["chunker_config_id"] is not None
     assert result["embedding_config_id"] is not None
+    assert result["vector_store_config_id"] is not None
 
 
 @pytest.mark.parametrize(
     "missing_config_type",
-    ["extractor_config_id", "chunker_config_id", "embedding_config_id"],
+    [
+        "extractor_config_id",
+        "chunker_config_id",
+        "embedding_config_id",
+        "vector_store_config_id",
+    ],
 )
 @pytest.mark.asyncio
 async def test_create_rag_config_missing_config(
@@ -1013,6 +1090,7 @@ async def test_create_rag_config_missing_config(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
     missing_config_type,
 ):
     project = mock_project
@@ -1028,6 +1106,7 @@ async def test_create_rag_config_missing_config(
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
+            "vector_store_config_id": mock_vector_store_config.id,
         }
 
         # set one of the configs to a fake id - where we expect the error to be thrown
