@@ -145,12 +145,15 @@
                 <td class="text-sm">
                   {#if tool.missing_secrets && tool.missing_secrets.length > 0}
                     <Warning
-                      warning_message="Information Incomplete"
+                      warning_message="Action Required"
                       warning_color="warning"
-                      tight={true}
                     />
                   {:else}
-                    <span class="text-success">✓ Ready</span>
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                    />
                   {/if}
                 </td>
               </tr>
