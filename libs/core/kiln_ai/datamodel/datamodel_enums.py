@@ -77,6 +77,14 @@ THINKING_DATA_STRATEGIES: list[ChatStrategy] = [
 ]
 
 
+class ThinkingStyle(str, Enum):
+    """
+    Enumeration of thinking styles for prompt generation.
+    """
+
+    chain_of_thought = "chain_of_thought"
+
+
 class ModelProviderName(str, Enum):
     """
     Enumeration of supported AI model providers.

@@ -118,7 +118,7 @@ def test_prompt_generators_content():
 
     # Test a few key generators
     basic = next(g for g in _prompt_generators if g.id == "simple_prompt_builder")
-    assert basic.chain_of_thought is False
+    assert basic.thinking_style is None
     assert "zero-shot" in basic.description.lower()
 
     cot = next(
@@ -126,7 +126,7 @@ def test_prompt_generators_content():
         for g in _prompt_generators
         if g.id == "simple_chain_of_thought_prompt_builder"
     )
-    assert cot.chain_of_thought is True
+    assert cot.thinking_style is not None
     assert "Chain of Thought" in cot.name
 
 

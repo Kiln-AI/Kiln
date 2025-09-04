@@ -40,7 +40,7 @@
 
     const generators: Option[] = []
     for (const generator of current_task_prompts.generators) {
-      if (generator.chain_of_thought && exclude_cot) {
+      if (generator.thinking_style === "chain_of_thought" && exclude_cot) {
         continue
       }
       generators.push({

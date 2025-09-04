@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
+from kiln_ai.datamodel.datamodel_enums import ThinkingStyle
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
@@ -43,7 +44,7 @@ class PromptGenerator(BaseModel):
     short_description: str
     description: str
     name: str
-    chain_of_thought: bool
+    thinking_style: ThinkingStyle | None = None
 
 
 class PromptResponse(BaseModel):
@@ -121,55 +122,55 @@ _prompt_generators = [
         name="Basic (Zero Shot)",
         short_description="Just the prompt, no examples.",
         description="A basic prompt generator. It will include the instructions and requirements from your task definition. It won't include any examples from your runs (zero-shot).",
-        chain_of_thought=False,
+        thinking_style=None,
     ),
     PromptGenerator(
         id="few_shot_prompt_builder",
         name="Few-Shot",
         short_description="Includes up to 4 examples.",
         description="A multi-shot prompt generator that includes up to 4 examples from your dataset (few-shot). It also includes the instructions and requirements from your task definition.",
-        chain_of_thought=False,
+        thinking_style=None,
     ),
     PromptGenerator(
         id="multi_shot_prompt_builder",
         name="Many-Shot",
         short_description="Includes up to 25 examples.",
         description="A multi-shot prompt generator that includes up to 25 examples from your dataset (many-shot). It also includes the instructions and requirements from your task definition.",
-        chain_of_thought=False,
+        thinking_style=None,
     ),
     PromptGenerator(
         id="repairs_prompt_builder",
         name="Repair Multi-Shot",
         short_description="With examples of human repairs.",
         description="A multi-shot prompt that will include up to 25 examples from your dataset. This prompt will use repaired examples to show 1) the generated content which had issues, 2) the human feedback about what was incorrect, 3) the corrected and approved content. This gives the LLM examples of common errors to avoid. It also includes the instructions and requirements from your task definition.",
-        chain_of_thought=False,
+        thinking_style=None,
     ),
     PromptGenerator(
         id="simple_chain_of_thought_prompt_builder",
         name="Chain of Thought",
         short_description="Give the LLM time to 'think'.",
         description="A chain of thought prompt generator that gives the LLM time to 'think' before replying. It will use the thinking_instruction from your task definition if it exists, or a standard 'step by step' instruction. The result will only include the final answer, not the 'thinking' tokens. The 'thinking' tokens will be available in the data model. It also includes the instructions and requirements from your task definition.",
-        chain_of_thought=True,
+        thinking_style=ThinkingStyle.chain_of_thought,
     ),
     PromptGenerator(
         id="few_shot_chain_of_thought_prompt_builder",
         name="Chain of Thought - Few Shot",
         short_description="Combines CoT and few-shot.",
         description="Combines our 'Chain of Thought' generator with our 'Few-Shot' generator, for both the thinking and the few shot examples.",
-        chain_of_thought=True,
+        thinking_style=ThinkingStyle.chain_of_thought,
     ),
     PromptGenerator(
         id="multi_shot_chain_of_thought_prompt_builder",
         name="Chain of Thought - Many Shot",
         short_description="Combines CoT and many-shot.",
         description="Combines our 'Chain of Thought' generator with our 'Many-Shot' generator, for both the thinking and the many shot examples.",
-        chain_of_thought=True,
+        thinking_style=ThinkingStyle.chain_of_thought,
     ),
     PromptGenerator(
         id="short_prompt_builder",
         name="Short",
         short_description="Just the prompt, no requirements or examples.",
         description="A short prompt generator. It will include only the task's instruction/prompt. It excludes your task's requirements, and does not include any examples from your dataset.",
-        chain_of_thought=False,
+        thinking_style=None,
     ),
 ]
