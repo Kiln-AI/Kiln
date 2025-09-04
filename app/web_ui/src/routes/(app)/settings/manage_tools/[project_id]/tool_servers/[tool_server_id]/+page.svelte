@@ -249,7 +249,7 @@
               <div class="mt-8">
                 <PropertyList
                   properties={Object.entries(
-                    tool_server.properties["env_vars"] || { None: "" },
+                    tool_server.properties["env_vars"] || {},
                   ).map(([key, value]) => ({
                     name: key,
                     value: String(value ?? "N/A"),
