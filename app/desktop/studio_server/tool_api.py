@@ -384,10 +384,7 @@ def connect_tool_servers_api(app: FastAPI):
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(tool_server)
 
-        # Store secret headers in the configuration after validation
-        tool_server.save_secrets()
-
-        # Save the tool to file (save_to_file will automatically strip secrets)
+        # Save the tool to file
         tool_server.save_to_file()
 
         return tool_server
@@ -418,10 +415,7 @@ def connect_tool_servers_api(app: FastAPI):
         MCPSessionManager.shared().clear_shell_path_cache()
         await validate_tool_server_connectivity(tool_server)
 
-        # Store secret env vars in the configuration after validation
-        tool_server.save_secrets()
-
-        # Save the tool to file (save_to_file will automatically strip secrets)
+        # Save the tool to file
         tool_server.save_to_file()
 
         return tool_server

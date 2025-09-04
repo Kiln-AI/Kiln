@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict
 
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
@@ -40,6 +40,39 @@ class ExternalToolServer(KilnParentedModel):
         default={},
         description="Configuration properties specific to the tool type.",
     )
+
+    # Private variable to store unsaved secrets
+    _unsaved_secrets: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Extract secrets from properties immediately after validation
+        secret_keys = self.get_secret_keys()
+
+        if not secret_keys:
+            return
+
+        # Extract secret values from properties based on server type
+        match self.type:
+            case ToolServerType.remote_mcp:
+                headers = self.properties.get("headers", {})
+                for key_name in secret_keys:
+                    if key_name in headers:
+                        self._unsaved_secrets[key_name] = headers[key_name]
+                        # Remove from headers immediately so they are not saved to file
+                        del headers[key_name]
+
+            case ToolServerType.local_mcp:
+                env_vars = self.properties.get("env_vars", {})
+                for key_name in secret_keys:
+                    if key_name in env_vars:
+                        self._unsaved_secrets[key_name] = env_vars[key_name]
+                        # Remove from env_vars immediately so they are not saved to file
+                        del env_vars[key_name]
+
+            case _:
+                raise_exhaustive_enum_error(self.type)
 
     @model_validator(mode="after")
     def validate_required_fields(self) -> "ExternalToolServer":
@@ -129,13 +162,14 @@ class ExternalToolServer(KilnParentedModel):
 
     def retrieve_secrets(self) -> tuple[dict[str, str], list[str]]:
         """
-        Retrieve secrets from configuration using the pattern: mcp_server_id::key_name
+        Retrieve secrets from configuration system or in-memory storage.
         Automatically determines which secret keys to retrieve based on the server type.
+        Config secrets take precedence over unsaved secrets.
 
         Returns:
             Tuple of (secrets_dict, missing_secrets_list) where:
             - secrets_dict: Dictionary mapping key names to their secret values
-            - missing_secrets_list: List of secret key names that are missing values in Config
+            - missing_secrets_list: List of secret key names that are missing values
         """
         secrets = {}
         missing_secrets = []
@@ -145,10 +179,20 @@ class ExternalToolServer(KilnParentedModel):
             config = Config.shared()
             mcp_secrets = config.get_value(MCP_SECRETS_KEY)
 
-            # Look for secrets with the pattern: mcp_server_id::key_name
             for key_name in secret_keys:
+                secret_value = None
+
+                # First check config secrets (persistent storage), key is mcp_server_id::key_name
                 secret_key = self._config_secret_key(key_name)
                 secret_value = mcp_secrets.get(secret_key) if mcp_secrets else None
+
+                # Fall back to unsaved secrets (in-memory storage)
+                if (
+                    not secret_value
+                    and hasattr(self, "_unsaved_secrets")
+                    and key_name in self._unsaved_secrets
+                ):
+                    secret_value = self._unsaved_secrets[key_name]
 
                 if secret_value:
                     secrets[key_name] = secret_value
@@ -157,45 +201,35 @@ class ExternalToolServer(KilnParentedModel):
 
         return secrets, missing_secrets
 
-    def save_secrets(self) -> None:
+    def _save_secrets(self) -> None:
         """
-        Save secrets to the configuration system.
-        Extracts secret values from properties based on server type.
+        Save unsaved secrets to the configuration system.
         """
         secret_keys = self.get_secret_keys()
 
+        # No secrets to save
         if not secret_keys:
             return
 
         if self.id is None:
             raise ValueError("Server ID cannot be None when saving secrets")
 
-        # Extract secret values from properties based on server type
-        secret_values = {}
-        match self.type:
-            case ToolServerType.remote_mcp:
-                headers = self.properties.get("headers", {})
-                for key_name in secret_keys:
-                    if key_name in headers:
-                        secret_values[key_name] = headers[key_name]
-            case ToolServerType.local_mcp:
-                env_vars = self.properties.get("env_vars", {})
-                for key_name in secret_keys:
-                    if key_name in env_vars:
-                        secret_values[key_name] = env_vars[key_name]
-            case _:
-                raise_exhaustive_enum_error(self.type)
+        # Check if secrets are already saved
+        if not hasattr(self, "_unsaved_secrets") or not self._unsaved_secrets:
+            return
 
         config = Config.shared()
         mcp_secrets: dict[str, str] = config.get_value(MCP_SECRETS_KEY) or {}
 
         # Store secrets with the pattern: mcp_server_id::key_name
-        for key_name in secret_keys:
-            if key_name in secret_values:
-                secret_key = self._config_secret_key(key_name)
-                mcp_secrets[secret_key] = secret_values[key_name]
+        for key_name, secret_value in self._unsaved_secrets.items():
+            secret_key = self._config_secret_key(key_name)
+            mcp_secrets[secret_key] = secret_value
 
         config.update_settings({MCP_SECRETS_KEY: mcp_secrets})
+
+        # Clear unsaved secrets after saving
+        self._unsaved_secrets.clear()
 
     def delete_secrets(self) -> None:
         """
@@ -217,40 +251,15 @@ class ExternalToolServer(KilnParentedModel):
 
     def save_to_file(self) -> None:
         """
-        Override save_to_file to automatically strip secrets from properties before saving.
+        Override save_to_file to automatically save any unsaved secrets before saving to file.
 
-        This ensures that sensitive data is never persisted to disk in the properties,
-        while still being accessible via retrieve_secrets() for runtime use.
-
-        This method also permanently strips secrets from the in-memory object to ensure
-        consistent behavior between saved and in-memory representations.
+        This ensures that secrets are always saved when the object is saved,
+        preventing the issue where secrets could be lost if save_to_file is called
+        without explicitly saving secrets first.
         """
-        # Strip secrets based on server type
-        match self.type:
-            case ToolServerType.remote_mcp:
-                secret_keys = self.properties.get("secret_header_keys", [])
-                if secret_keys and "headers" in self.properties:
-                    # Remove secret headers from the headers dict
-                    non_secret_headers = {
-                        key: value
-                        for key, value in self.properties["headers"].items()
-                        if key not in secret_keys
-                    }
-                    self.properties["headers"] = non_secret_headers
-
-            case ToolServerType.local_mcp:
-                secret_keys = self.properties.get("secret_env_var_keys", [])
-                if secret_keys and "env_vars" in self.properties:
-                    # Remove secret env vars from the env_vars dict
-                    non_secret_env_vars = {
-                        key: value
-                        for key, value in self.properties["env_vars"].items()
-                        if key not in secret_keys
-                    }
-                    self.properties["env_vars"] = non_secret_env_vars
-
-            case _:
-                raise_exhaustive_enum_error(self.type)
+        # Save any unsaved secrets first
+        if hasattr(self, "_unsaved_secrets") and self._unsaved_secrets:
+            self._save_secrets()
 
         # Call the parent save_to_file method
         super().save_to_file()
