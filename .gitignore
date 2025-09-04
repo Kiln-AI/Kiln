@@ -8,6 +8,7 @@ __pycache__/
 .coverage
 **/.venv
 **/*.egg-info
+node_modules/
 
 libs/core/docs
 libs/core/build
