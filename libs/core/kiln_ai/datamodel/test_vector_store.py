@@ -3,7 +3,6 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.vector_store import (
     LanceDBConfigBaseProperties,
-    LanceDBQueryType,
     VectorStoreConfig,
     VectorStoreType,
 )
@@ -15,14 +14,6 @@ class TestVectorStoreType:
         assert VectorStoreType.LANCE_DB_FTS == "lancedb_fts"
         assert VectorStoreType.LANCE_DB_HYBRID == "lancedb_hybrid"
         assert VectorStoreType.LANCE_DB_VECTOR == "lancedb_vector"
-
-
-class TestLanceDBQueryType:
-    def test_lance_db_query_type_values(self):
-        """Test that LanceDBQueryType enum has expected values."""
-        assert LanceDBQueryType.FTS == "fts"
-        assert LanceDBQueryType.HYBRID == "hybrid"
-        assert LanceDBQueryType.VECTOR == "vector"
 
 
 class TestLanceDBConfigBaseProperties:

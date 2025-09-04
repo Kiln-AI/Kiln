@@ -31,7 +31,7 @@ class RagConfig(KilnParentedModel):
     )
 
     vector_store_config_id: ID_TYPE = Field(
-        description="The ID of the vector store config that was used to store the documents.",
+        description="The ID of the vector store config used to store the documents.",
     )
 
     # Workaround to return typed parent without importing Project

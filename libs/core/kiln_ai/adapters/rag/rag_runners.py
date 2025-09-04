@@ -53,9 +53,18 @@ class EmbeddingJob:
 
 
 class RagStepRunnerProgress(BaseModel):
-    success_count: int | None = None
-    error_count: int | None = None
-    logs: list[LogMessage] = []
+    success_count: int | None = Field(
+        description="The number of items that have been processed",
+        default=None,
+    )
+    error_count: int | None = Field(
+        description="The number of items that have errored",
+        default=None,
+    )
+    logs: list[LogMessage] = Field(
+        description="A list of log messages to display to the user",
+        default=[],
+    )
 
 
 T = TypeVar("T")
@@ -192,7 +201,9 @@ class AbstractRagStepRunner(ABC):
     # async keyword in the abstract prototype causes a type error in pyright
     # so we need to remove it, but the concrete implementation should declare async
     @abstractmethod
-    def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
+    def run(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> AsyncGenerator[RagStepRunnerProgress, None]:
         pass
 
 
@@ -217,10 +228,14 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
                 return True
         return False
 
-    async def collect_jobs(self) -> list[ExtractorJob]:
+    async def collect_jobs(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> list[ExtractorJob]:
         jobs: list[ExtractorJob] = []
         target_extractor_config_id = self.extractor_config.id
         for document in self.project.documents(readonly=True):
+            if document_ids is not None and document.id not in document_ids:
+                continue
             if not self.has_extraction(document, target_extractor_config_id):
                 jobs.append(
                     ExtractorJob(
@@ -230,9 +245,11 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
                 )
         return jobs
 
-    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
-            jobs = await self.collect_jobs()
+    async def run(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> AsyncGenerator[RagStepRunnerProgress, None]:
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+            jobs = await self.collect_jobs(document_ids=document_ids)
             extractor = extractor_adapter_from_type(
                 self.extractor_config.extractor_type,
                 self.extractor_config,
@@ -290,12 +307,16 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                 return True
         return False
 
-    async def collect_jobs(self) -> list[ChunkerJob]:
+    async def collect_jobs(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> list[ChunkerJob]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
 
         jobs: list[ChunkerJob] = []
         for document in self.project.documents(readonly=True):
+            if document_ids is not None and document.id not in document_ids:
+                continue
             for extraction in document.extractions(readonly=True):
                 if extraction.extractor_config_id == target_extractor_config_id:
                     if not self.has_chunks(extraction, target_chunker_config_id):
@@ -307,9 +328,11 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                         )
         return jobs
 
-    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
-            jobs = await self.collect_jobs()
+    async def run(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> AsyncGenerator[RagStepRunnerProgress, None]:
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+            jobs = await self.collect_jobs(document_ids=document_ids)
             chunker = chunker_adapter_from_type(
                 self.chunker_config.chunker_type,
                 self.chunker_config,
@@ -368,13 +391,17 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                 return True
         return False
 
-    async def collect_jobs(self) -> list[EmbeddingJob]:
+    async def collect_jobs(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> list[EmbeddingJob]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
         target_embedding_config_id = self.embedding_config.id
 
         jobs: list[EmbeddingJob] = []
         for document in self.project.documents(readonly=True):
+            if document_ids is not None and document.id not in document_ids:
+                continue
             extractions = document.extractions(readonly=True)
             for extraction in extractions:
                 if extraction.extractor_config_id == target_extractor_config_id:
@@ -394,9 +421,11 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
                                 )
         return jobs
 
-    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
-            jobs = await self.collect_jobs()
+    async def run(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> AsyncGenerator[RagStepRunnerProgress, None]:
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+            jobs = await self.collect_jobs(document_ids=document_ids)
             embedding_adapter = embedding_adapter_from_type(
                 self.embedding_config,
             )
@@ -440,6 +469,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         vector_store_config: VectorStoreConfig,
         rag_config: RagConfig,
         concurrency: int = 10,
+        batch_size: int = 20,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -448,6 +478,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         self.vector_store_config = vector_store_config
         self.rag_config = rag_config
         self.concurrency = concurrency
+        self.batch_size = batch_size
 
     @property
     def lock_key(self) -> str:
@@ -458,7 +489,8 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
     async def collect_records(
         self,
-        batch_size: int = 100,
+        batch_size: int,
+        document_ids: list[ID_TYPE] | None = None,
     ) -> AsyncGenerator[list[Tuple[str, ChunkedDocument, ChunkEmbeddings]], None]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
@@ -467,6 +499,8 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         # (document_id, chunked_document, embedding)
         jobs: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]] = []
         for document in self.project.documents(readonly=True):
+            if document_ids is not None and document.id not in document_ids:
+                continue
             extractions = document.extractions(readonly=True)
             for extraction in extractions:
                 if extraction.extractor_config_id == target_extractor_config_id:
@@ -492,20 +526,35 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
                                     if len(jobs) >= batch_size:
                                         yield jobs
-                                        jobs = []
+                                        jobs.clear()
 
         if len(jobs) > 0:
             yield jobs
+            jobs.clear()
 
-    async def run(self) -> AsyncGenerator[RagStepRunnerProgress, None]:
+    async def count_total_chunks(self) -> int:
+        total_chunk_count = 0
+        async for records in self.collect_records(batch_size=1):
+            _, chunked_doc, _ = records[0]
+            total_chunk_count += len(chunked_doc.chunks)
+        return total_chunk_count
+
+    async def run(
+        self, document_ids: list[ID_TYPE] | None = None
+    ) -> AsyncGenerator[RagStepRunnerProgress, None]:
         async with shared_async_lock_manager.acquire(self.lock_key):
             vector_dimensions: int | None = None
 
             # infer dimensionality - we peek into the first record to get the vector dimensions
             # vector dimensions are not stored in the config because they are derived from the model
             # and in some cases dynamic shortening of the vector (OpenAI has this)
-            async for records in self.collect_records(batch_size=1):
-                if len(records) > 0:
+            async for records in self.collect_records(
+                batch_size=1,
+            ):
+                if len(records) == 0:
+                    # there are no records, because there may be nothing in the upstream steps at all yet
+                    return
+                else:
                     embedding = records[0][2].embeddings[0]
                     vector_dimensions = len(embedding.vector)
                     break
@@ -514,22 +563,43 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 raise ValueError("Vector dimensions are not set")
 
             vector_store = await vector_store_adapter_for_config(
+                self.rag_config,
                 self.vector_store_config,
             )
 
-            # TODO: count the number of records to upsert, we need to do a separate first pass
-            # to count, because we cannot just acc everything into an array (would be too big
-            # if the user has thousands of documents
-            # that is N(docs) * (N(chunks) + N(embeddings))
+            yield RagStepRunnerProgress(
+                success_count=0,
+                error_count=0,
+            )
 
             indexed_count = 0
-            async for records in self.collect_records(batch_size=10000):
-                await vector_store.add_chunks_with_embeddings(records)
-                indexed_count += len(records)
-                yield RagStepRunnerProgress(
-                    success_count=indexed_count,
-                    error_count=0,
-                )
+            async for records in self.collect_records(
+                batch_size=self.batch_size, document_ids=document_ids
+            ):
+                chunk_count = 0
+                for record in records:
+                    chunk_count += len(record[1].chunks)
+
+                try:
+                    await vector_store.add_chunks_with_embeddings(records)
+                    indexed_count += chunk_count
+                    yield RagStepRunnerProgress(
+                        success_count=chunk_count,
+                        error_count=0,
+                    )
+                except Exception as e:
+                    error_msg = f"Error indexing document batch starting with {records[0][0]}: {e}"
+                    logger.error(error_msg, exc_info=True)
+                    yield RagStepRunnerProgress(
+                        success_count=0,
+                        error_count=chunk_count,
+                        logs=[
+                            LogMessage(
+                                level="error",
+                                message=error_msg,
+                            ),
+                        ],
+                    )
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):
@@ -622,16 +692,15 @@ class RagWorkflowRunner:
                     )
             case RagWorkflowStepNames.INDEXING:
                 if step_progress.success_count is not None:
-                    self.current_progress.total_document_indexed_count = max(
-                        self.current_progress.total_document_indexed_count,
-                        step_progress.success_count
-                        + self.initial_progress.total_document_indexed_count,
+                    self.current_progress.total_chunks_indexed_count = (
+                        self.current_progress.total_chunks_indexed_count
+                        + step_progress.success_count
                     )
                 if step_progress.error_count is not None:
-                    self.current_progress.total_document_indexed_error_count = max(
-                        self.current_progress.total_document_indexed_error_count,
+                    self.current_progress.total_chunks_indexed_error_count = max(
+                        self.current_progress.total_chunks_indexed_error_count,
                         step_progress.error_count
-                        + self.initial_progress.total_document_indexed_error_count,
+                        + self.initial_progress.total_chunks_indexed_error_count,
                     )
             case _:
                 raise_exhaustive_enum_error(step_name)
@@ -640,21 +709,41 @@ class RagWorkflowRunner:
             self.current_progress.total_document_extracted_count,
             self.current_progress.total_document_chunked_count,
             self.current_progress.total_document_embedded_count,
-            self.current_progress.total_document_indexed_count,
+        )
+
+        self.current_progress.total_chunk_completed_count = (
+            self.current_progress.total_chunks_indexed_count
         )
 
         self.current_progress.logs = step_progress.logs
         return self.current_progress
 
     async def run(
-        self, stages_to_run: list[RagWorkflowStepNames] | None = None
+        self,
+        stages_to_run: list[RagWorkflowStepNames] | None = None,
+        document_ids: list[ID_TYPE] | None = None,
     ) -> AsyncGenerator[RagProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=0.5):
+        """
+        Runs the RAG workflow for the given stages and document ids.
+
+        :param stages_to_run: The stages to run. If None, all stages will be run.
+        :param document_ids: The document ids to run the workflow for. If None, all documents will be run.
+        """
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
             yield self.initial_progress
 
             for step in self.step_runners:
                 if stages_to_run is not None and step.stage() not in stages_to_run:
                     continue
 
-                async for progress in step.run():
+                # we need to know the total number of chunks to index to be able to
+                # calculate the progress on the client
+                if step.stage() == RagWorkflowStepNames.INDEXING and isinstance(
+                    step, RagIndexingStepRunner
+                ):
+                    self.current_progress.total_chunk_count = (
+                        await step.count_total_chunks()
+                    )
+
+                async for progress in step.run(document_ids=document_ids):
                     yield self.update_workflow_progress(step.stage(), progress)

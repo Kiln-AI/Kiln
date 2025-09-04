@@ -25,6 +25,7 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
+    RagWorkflowStepNames,
 )
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     KilnVectorStoreQuery,
@@ -105,7 +106,7 @@ async def run_all_extractors_and_rag_workflows(
             try:
                 async with shared_async_lock_manager.acquire(
                     f"docs:extract:{extractor_config.id}",
-                    timeout=0.5,
+                    timeout=20,
                 ):
                     extractor_runner = ExtractorRunner(
                         extractor_configs=[extractor_config],
@@ -125,15 +126,26 @@ async def run_all_extractors_and_rag_workflows(
         results = await asyncio.gather(*extractor_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error running extractor: {result}")
+                logger.error(
+                    f"Error running extractor: {type(result).__name__}: {result}",
+                    exc_info=(type(result), result, result.__traceback__),
+                )
 
     rag_tasks: list[asyncio.Task] = []
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
 
         async def run_rag(rag_config=rag_config):
-            # no need to lock here, each rag runner gets a lock when it starts running
+            # no need to lock here, each rag step runner gets a lock when it starts running
             rag_runner = await build_rag_workflow_runner(project, str(rag_config.id))
-            async for progress in rag_runner.run():
+            async for progress in rag_runner.run(
+                stages_to_run=[
+                    # we skip extracting here because we already ran the extractors independently higher up
+                    RagWorkflowStepNames.CHUNKING,
+                    RagWorkflowStepNames.EMBEDDING,
+                    RagWorkflowStepNames.INDEXING,
+                ],
+                document_ids=[document.id],
+            ):
                 pass
 
         rag_tasks.append(asyncio.create_task(run_rag()))
@@ -142,7 +154,10 @@ async def run_all_extractors_and_rag_workflows(
         results = await asyncio.gather(*rag_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error running RAG workflow: {result}")
+                logger.error(
+                    f"Error running RAG workflow: {type(result).__name__}: {result}",
+                    exc_info=(type(result), result, result.__traceback__),
+                )
 
     return None
 
@@ -180,14 +195,16 @@ async def run_rag_workflow_runner_with_status(
             data = {
                 "total_document_completed_count": progress.total_document_completed_count,
                 "total_document_count": progress.total_document_count,
+                "total_chunk_count": progress.total_chunk_count,
+                "total_chunk_completed_count": progress.total_chunk_completed_count,
                 "total_document_extracted_count": progress.total_document_extracted_count,
                 "total_document_chunked_count": progress.total_document_chunked_count,
                 "total_document_embedded_count": progress.total_document_embedded_count,
                 "total_document_extracted_error_count": progress.total_document_extracted_error_count,
                 "total_document_chunked_error_count": progress.total_document_chunked_error_count,
                 "total_document_embedded_error_count": progress.total_document_embedded_error_count,
-                "total_document_indexed_count": progress.total_document_indexed_count,
-                "total_document_indexed_error_count": progress.total_document_indexed_error_count,
+                "total_chunks_indexed_count": progress.total_chunks_indexed_count,
+                "total_chunks_indexed_error_count": progress.total_chunks_indexed_error_count,
                 "logs": logs,
             }
             yield f"data: {json.dumps(data)}\n\n"
@@ -1316,7 +1333,7 @@ def connect_document_api(app: FastAPI):
 
         # Create the vector store adapter
         vector_store_adapter = await vector_store_adapter_for_config(
-            vector_store_config, lancedb_mode="create"
+            rag_config, vector_store_config
         )
 
         # Prepare the search query based on vector store type

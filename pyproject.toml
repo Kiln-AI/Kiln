@@ -25,6 +25,9 @@ dev = [
     "watchfiles>=1.1.0",
 ]
 
+[tool.uv]
+override-dependencies = []
+
 [tool.uv.workspace]
 members = ["libs/core", "libs/server", "app/desktop"]
 

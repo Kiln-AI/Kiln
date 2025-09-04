@@ -75,12 +75,7 @@
         )))
   )
 
-  // Update sorting when score_type or score_summary changes
-  $: if (eval_configs && score_summary && evaluator) {
-    sortEvalConfigs()
-  }
-
-  // Sort eval_configs whenever score_type changes
+  // Sort eval_configs whenever score_type or score_summary changes
   $: if (score_type && eval_configs && score_summary && evaluator) {
     sortEvalConfigs()
   }
@@ -212,6 +207,15 @@
         throw error
       }
       evaluator = data
+      // Override default score_type to "mse" when eval rating type is pass_fail or pass_fail_critical
+      // We have different scores to compare human preference to LLM-as-Judge in evals. Kendall Tau (the current default) is a great score for comparing ranked data, but kinda lousy for pass/fail data
+      const hasPassFailRating = evaluator.output_scores.some(
+        (score) =>
+          score.type === "pass_fail" || score.type === "pass_fail_critical",
+      )
+      if (hasPassFailRating) {
+        score_type = "mse"
+      }
     } catch (error) {
       eval_error = createKilnError(error)
     } finally {
@@ -668,7 +672,7 @@
                         {:else if score_type === "norm_mae"}
                           {scores.mean_normalized_absolute_error.toFixed(3)}
                         {:else if score_type === "spearman"}
-                          {#if scores.spearman_correlation}
+                          {#if scores.spearman_correlation != null}
                             {scores.spearman_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
@@ -677,7 +681,7 @@
                             />
                           {/if}
                         {:else if score_type === "pearson"}
-                          {#if scores.pearson_correlation}
+                          {#if scores.pearson_correlation != null}
                             {scores.pearson_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip
@@ -686,7 +690,7 @@
                             />
                           {/if}
                         {:else if score_type === "kendalltau"}
-                          {#if scores.kendalltau_correlation}
+                          {#if scores.kendalltau_correlation != null}
                             {scores.kendalltau_correlation.toFixed(3)}
                           {:else}
                             N/A <InfoTooltip

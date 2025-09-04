@@ -1,12 +1,21 @@
+import asyncio
 import os
-import tempfile
+import random
+import uuid
 from pathlib import Path
+from typing import Callable, List
 from unittest.mock import patch
 
 import pytest
+from llama_index.core.schema import MetadataMode, NodeRelationship
+from llama_index.core.vector_stores.types import VectorStoreQueryResult
 from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
-from kiln_ai.adapters.vector_store.base_vector_store_adapter import KilnVectorStoreQuery
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
+    KilnVectorStoreQuery,
+    SearchResult,
+)
+from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
 )
@@ -16,71 +25,76 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.utils.config import Config
 
 
-@pytest.fixture
-def temp_db_path():
-    """Create a temporary database path for testing."""
-    db_path = tempfile.mkdtemp(suffix=".lancedb")
-    yield db_path
-    # Cleanup
-    if os.path.exists(db_path):
-        import shutil
-
-        shutil.rmtree(db_path)
-
-
-@pytest.fixture
-def hybrid_vector_store_config(temp_db_path):
-    """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
-        yield VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_HYBRID,
-            properties={
-                "similarity_top_k": 10,
-                "nprobes": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+def get_all_nodes(adapter: LanceDBAdapter) -> List[SearchResult]:
+    nodes = adapter.lancedb_vector_store.get_nodes()
+    return [
+        SearchResult(
+            document_id=node.metadata["kiln_doc_id"],
+            chunk_idx=node.metadata["kiln_chunk_idx"],
+            chunk_text=node.get_content(MetadataMode.NONE),
+            similarity=None,
         )
+        for node in nodes
+    ]
+
+
+@pytest.fixture(autouse=True)
+def patch_settings_dir(tmp_path):
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=tmp_path):
+        yield
 
 
 @pytest.fixture
-def fts_vector_store_config(temp_db_path):
+def hybrid_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
-        yield VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
-        )
+    return VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
 
 
 @pytest.fixture
-def similarity_vector_store_config(temp_db_path):
+def fts_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.local_data_dir", return_value=temp_db_path):
-        yield VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_VECTOR,
-            properties={
-                "similarity_top_k": 10,
-                "nprobes": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
-        )
+    return VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_FTS,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+
+
+@pytest.fixture
+def knn_vector_store_config():
+    """Create a vector store config for testing."""
+    return VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
 
 
 @pytest.fixture
@@ -95,14 +109,21 @@ def embedding_config():
 
 
 @pytest.fixture
-def rag_config(vector_store_config, embedding_config):
-    return RagConfig(
-        name="test_rag",
-        extractor_config_id="test_extractor",
-        chunker_config_id="test_chunker",
-        embedding_config_id=embedding_config.id,
-        vector_store_config_id=vector_store_config.id,
-    )
+def create_rag_config_factory() -> Callable[
+    [VectorStoreConfig, EmbeddingConfig], RagConfig
+]:
+    def create_rag_config(
+        vector_store_config: VectorStoreConfig, embedding_config: EmbeddingConfig
+    ) -> RagConfig:
+        return RagConfig(
+            name="test_rag",
+            extractor_config_id="test_extractor",
+            chunker_config_id="test_chunker",
+            embedding_config_id=embedding_config.id,
+            vector_store_config_id=vector_store_config.id,
+        )
+
+    return create_rag_config
 
 
 def dicts_to_indexable_docs(
@@ -189,13 +210,18 @@ def mock_chunked_documents(tmp_path):
 
 @pytest.mark.asyncio
 async def test_add_chunks_with_embeddings_and_similarity_search(
-    similarity_vector_store_config, mock_chunked_documents
+    knn_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
 ):
     """Test adding chunks and similarity search."""
     print("=== Testing Add Chunks and Similarity Search ===")
 
+    rag_config = create_rag_config_factory(knn_vector_store_config, embedding_config)
+
     # Create adapter using the registry
-    adapter = await vector_store_adapter_for_config(similarity_vector_store_config)
+    adapter = await vector_store_adapter_for_config(rag_config, knn_vector_store_config)
 
     # Add chunks to the vector store
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
@@ -222,15 +248,22 @@ async def test_add_chunks_with_embeddings_and_similarity_search(
 
 
 @pytest.mark.asyncio
-async def test_fts_search(fts_vector_store_config, mock_chunked_documents):
+async def test_fts_search(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
     """Test full-text search functionality."""
     print("=== Testing Full-Text Search ===")
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+    adapter = await vector_store_adapter_for_config(rag_config, fts_vector_store_config)
 
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
-    all_chunks = await adapter.get_all_chunks()
+    assert isinstance(adapter, LanceDBAdapter)
+    all_chunks = get_all_nodes(adapter)
     print(f"All chunks: {[chunk.chunk_text for chunk in all_chunks]}")
 
     # Test FTS search for "London"
@@ -254,11 +287,20 @@ async def test_fts_search(fts_vector_store_config, mock_chunked_documents):
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search(hybrid_vector_store_config, mock_chunked_documents):
+async def test_hybrid_search(
+    hybrid_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
     """Test hybrid search combining vector and text search."""
     print("=== Testing Hybrid Search ===")
 
-    adapter = await vector_store_adapter_for_config(hybrid_vector_store_config)
+    rag_config = create_rag_config_factory(hybrid_vector_store_config, embedding_config)
+
+    adapter = await vector_store_adapter_for_config(
+        rag_config, hybrid_vector_store_config
+    )
 
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
@@ -284,12 +326,18 @@ async def test_hybrid_search(hybrid_vector_store_config, mock_chunked_documents)
     assert len(tokyo_results) >= 2  # Both Tokyo chunks should be found
 
 
-@pytest.mark.asyncio
-async def test_upsert_behavior(fts_vector_store_config, mock_chunked_documents):
+async def test_upsert_behavior(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
     """Test that adding the same chunks multiple times works (upsert behavior)."""
     print("=== Testing Upsert Behavior ===")
 
-    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = await vector_store_adapter_for_config(rag_config, fts_vector_store_config)
 
     # Extract first document only
     first_doc = [mock_chunked_documents[0]]
@@ -316,7 +364,7 @@ async def test_upsert_behavior(fts_vector_store_config, mock_chunked_documents):
         print()
 
     # Should find Tokyo chunks but behavior may vary based on LanceDB implementation
-    assert len(results2) >= len(results1)
+    assert len(results2) == len(results1)
 
     # Add all documents
     print("Adding all documents...")
@@ -335,20 +383,28 @@ async def test_upsert_behavior(fts_vector_store_config, mock_chunked_documents):
 
 
 @pytest.mark.asyncio
-async def test_count_records_empty_store(fts_vector_store_config):
+async def test_count_records_empty_store(
+    fts_vector_store_config, embedding_config, create_rag_config_factory
+):
     """Test counting records in an empty vector store."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+    adapter = await vector_store_adapter_for_config(rag_config, fts_vector_store_config)
 
-    # Fresh adapter should raise TableNotFoundError when table doesn't exist yet
-    with pytest.raises(TableNotFoundError, match="Table vectors is not initialized"):
-        await adapter.count_records()
+    assert await adapter.count_records() == 0
 
 
 @pytest.mark.asyncio
-async def test_count_records_with_data(fts_vector_store_config, mock_chunked_documents):
+async def test_count_records_with_data(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
     """Test counting records after adding data."""
-    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = await vector_store_adapter_for_config(rag_config, fts_vector_store_config)
 
     # Add chunks first to create the table
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
@@ -359,36 +415,22 @@ async def test_count_records_with_data(fts_vector_store_config, mock_chunked_doc
 
 
 @pytest.mark.asyncio
-async def test_count_records_with_table_none():
-    """Test count_records when table is None."""
-    from unittest.mock import Mock
-
-    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
-
-    # Create a mock vector store config
-    mock_config = Mock()
-
-    # Create a mock LanceDBVectorStore with table set to None
-    mock_lancedb_store = Mock()
-    mock_lancedb_store.table = None
-
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
-
-    # Should raise ValueError when table is None
-    with pytest.raises(ValueError, match="Table is not initialized"):
-        await adapter.count_records()
-
-
-@pytest.mark.asyncio
-async def test_get_all_chunks(fts_vector_store_config, mock_chunked_documents):
+async def test_get_all_chunks(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
     """Test getting all chunks from the vector store."""
-    adapter = await vector_store_adapter_for_config(fts_vector_store_config)
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Add chunks first to create the table
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
     # Get all chunks
-    all_chunks = await adapter.get_all_chunks()
+    all_chunks = get_all_nodes(adapter)
     assert len(all_chunks) == 8  # 8 chunks total
 
     # Verify structure
@@ -398,18 +440,15 @@ async def test_get_all_chunks(fts_vector_store_config, mock_chunked_documents):
         assert chunk.similarity is None  # get_all_chunks doesn't include similarity
 
 
-def test_format_query_result_error_conditions():
+def test_format_query_result_error_conditions(
+    fts_vector_store_config, embedding_config, create_rag_config_factory
+):
     """Test error handling in format_query_result method."""
-    from unittest.mock import Mock
 
-    from llama_index.core.vector_stores.types import VectorStoreQueryResult
-
-    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
     # Create adapter with minimal setup
-    mock_config = Mock()
-    mock_lancedb_store = Mock()
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Test with None ids - should return empty list instead of raising error
     query_result = VectorStoreQueryResult(ids=None, nodes=[], similarities=[])
@@ -449,20 +488,18 @@ def test_format_query_result_error_conditions():
         adapter.format_query_result(query_result)
 
 
-def test_build_kwargs_for_query_validation_errors():
+def test_build_kwargs_for_query_validation_errors(
+    create_rag_config_factory,
+    hybrid_vector_store_config,
+    fts_vector_store_config,
+    knn_vector_store_config,
+    embedding_config,
+):
     """Test error handling in build_kwargs_for_query method."""
-    from unittest.mock import Mock
 
-    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
-    from kiln_ai.datamodel.vector_store import VectorStoreType
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    # Mock config for FTS
-    mock_config = Mock()
-    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
-    mock_config.lancedb_properties.similarity_top_k = 10
-
-    mock_lancedb_store = Mock()
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Test FTS search without query_string
     query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
@@ -472,8 +509,7 @@ def test_build_kwargs_for_query_validation_errors():
         adapter.build_kwargs_for_query(query)
 
     # Test HYBRID search without required parameters
-    mock_config.store_type = VectorStoreType.LANCE_DB_HYBRID
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+    adapter = LanceDBAdapter(rag_config, hybrid_vector_store_config)
 
     query = KilnVectorStoreQuery(query_string=None, query_embedding=[1.0, 2.0])
     with pytest.raises(
@@ -490,8 +526,7 @@ def test_build_kwargs_for_query_validation_errors():
         adapter.build_kwargs_for_query(query)
 
     # Test VECTOR search without embedding
-    mock_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+    adapter = LanceDBAdapter(rag_config, knn_vector_store_config)
 
     query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
     with pytest.raises(
@@ -501,54 +536,865 @@ def test_build_kwargs_for_query_validation_errors():
 
 
 @pytest.mark.asyncio
-async def test_search_with_table_not_found_error():
+async def test_search_with_table_not_found_error(
+    fts_vector_store_config, embedding_config, create_rag_config_factory
+):
     """Test that search handles TableNotFoundError gracefully"""
-    from unittest.mock import AsyncMock, Mock
 
-    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    # Create adapter with minimal setup
-    mock_config = Mock()
-    mock_config.lancedb_properties = Mock()
-    mock_config.lancedb_properties.similarity_top_k = 10
-    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
+    # Create the adapter normally
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
-    mock_lancedb_store = AsyncMock()
-    # Make aquery raise TableNotFoundError
-    mock_lancedb_store.aquery.side_effect = TableNotFoundError(
-        "Table vectors is not initialized"
-    )
+    # Mock the aquery method directly on the LanceDBVectorStore class
+    with patch(
+        "llama_index.vector_stores.lancedb.LanceDBVectorStore.aquery"
+    ) as mock_aquery:
+        mock_aquery.side_effect = TableNotFoundError("Table vectors is not initialized")
 
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+        # Search should return empty list instead of raising error
+        query = KilnVectorStoreQuery(query_string="test query")
+        results = await adapter.search(query)
 
-    # Search should return empty list instead of raising error
-    query = KilnVectorStoreQuery(query_string="test query")
-    results = await adapter.search(query)
-
-    assert results == []
+        assert results == []
 
 
 @pytest.mark.asyncio
-async def test_search_with_empty_results_error():
+async def test_search_with_empty_results_error(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+):
     """Test that search handles 'query results are empty' error gracefully"""
-    from unittest.mock import AsyncMock, Mock
 
-    from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    # Create adapter with minimal setup
-    mock_config = Mock()
-    mock_config.lancedb_properties = Mock()
-    mock_config.lancedb_properties.similarity_top_k = 10
-    mock_config.store_type = VectorStoreType.LANCE_DB_FTS
+    # Create the adapter normally
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
-    mock_lancedb_store = AsyncMock()
-    # Make aquery raise an error with "query results are empty" message
-    mock_lancedb_store.aquery.side_effect = Exception("query results are empty")
+    # Mock the aquery method directly on the LanceDBVectorStore class
+    with patch(
+        "llama_index.vector_stores.lancedb.LanceDBVectorStore.aquery"
+    ) as mock_aquery:
+        mock_aquery.side_effect = Exception("query results are empty")
 
-    adapter = LanceDBAdapter(mock_config, mock_lancedb_store)
+        # Search should return empty list instead of raising error
+        query = KilnVectorStoreQuery(query_string="test query")
+        results = await adapter.search(query)
 
-    # Search should return empty list instead of raising error
-    query = KilnVectorStoreQuery(query_string="test query")
-    results = await adapter.search(query)
+        assert results == []
 
-    assert results == []
+
+async def test_destroy(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test the destroy method removes the database directory."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(
+        rag_config,
+        fts_vector_store_config,
+    )
+
+    # Add some data to create the database
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify data exists
+    count = await adapter.count_records()
+    assert count == 8
+
+    # Get the database path
+    db_path = LanceDBAdapter.lancedb_path_for_config(rag_config)
+    assert os.path.exists(db_path)
+
+    # Destroy the database
+    await adapter.destroy()
+
+    # Verify the database directory is gone
+    assert not os.path.exists(db_path)
+
+
+def test_lancedb_path_for_config():
+    """Test the lancedb_path_for_config static method."""
+    # Test with valid rag_config
+    rag_config = RagConfig(
+        name="test_rag",
+        extractor_config_id="test_extractor",
+        chunker_config_id="test_chunker",
+        embedding_config_id="test_embedding",
+        vector_store_config_id="test_vector_store",
+    )
+
+    expected_path = str(
+        Path(Config.settings_dir()) / "rag_indexes" / "lancedb" / str(rag_config.id)
+    )
+    actual_path = LanceDBAdapter.lancedb_path_for_config(rag_config)
+
+    assert actual_path == expected_path
+
+    # Test with rag_config with no ID (should raise ValueError)
+    rag_config_no_id = RagConfig(
+        name="test_rag",
+        extractor_config_id="test_extractor",
+        chunker_config_id="test_chunker",
+        embedding_config_id="test_embedding",
+        vector_store_config_id="test_vector_store",
+    )
+    rag_config_no_id.id = None
+
+    with pytest.raises(ValueError, match="Vector store config ID is required"):
+        LanceDBAdapter.lancedb_path_for_config(rag_config_no_id)
+
+
+def test_query_type_property(
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test the query_type property returns correct values for different store types."""
+
+    # Test FTS query type
+    fts_config = VectorStoreConfig(
+        name="fts_test",
+        store_type=VectorStoreType.LANCE_DB_FTS,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    rag_config = create_rag_config_factory(fts_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_config)
+    assert adapter.query_type == "fts"
+
+    # Test Hybrid query type
+    hybrid_config = VectorStoreConfig(
+        name="hybrid_test",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    rag_config = create_rag_config_factory(hybrid_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, hybrid_config)
+    assert adapter.query_type == "hybrid"
+
+    # Test Vector query type
+    vector_config = VectorStoreConfig(
+        name="vector_test",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    rag_config = create_rag_config_factory(vector_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, vector_config)
+    assert adapter.query_type == "vector"
+
+
+@pytest.mark.asyncio
+async def test_adapter_reuse_preserves_data(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test that creating the same LanceDBAdapter twice doesn't destroy/empty the db."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    # Create first adapter and add data
+    adapter1 = LanceDBAdapter(rag_config, fts_vector_store_config)
+    await adapter1.add_chunks_with_embeddings([mock_chunked_documents[0]])
+
+    # Verify data exists
+    count1 = await adapter1.count_records()
+    assert count1 == 4
+
+    # Create second adapter with same config
+    adapter2 = LanceDBAdapter(rag_config, fts_vector_store_config)
+    await adapter2.add_chunks_with_embeddings([mock_chunked_documents[1]])
+
+    # Verify data still exists and wasn't destroyed by second instantiation
+    count2 = await adapter2.count_records()
+    assert count2 == 8
+
+    # interesting: adapter1 is no longer usable after creating adapter2
+    # with pytest.raises(
+    #     Exception,
+    #     match="lance error: Retryable commit conflict for version 4: This CreateIndex transaction was preempted by concurrent transaction Rewrite at version 4. Please retry.",
+    # ):
+    await adapter1.search(KilnVectorStoreQuery(query_string="Tokyo"))
+
+    # but we can query adapter2
+    results2 = await adapter2.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    assert len(results2) > 0
+
+
+@pytest.mark.asyncio
+async def test_skip_existing_chunks_when_count_matches(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test that chunks already in DB are skipped when they match incoming chunks count."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Add first document
+    first_doc = [mock_chunked_documents[0]]  # doc_001 with 4 chunks
+    await adapter.add_chunks_with_embeddings(first_doc)
+
+    # Verify it was added
+    count_after_first = await adapter.count_records()
+    assert count_after_first == 4
+
+    # Try to add the same document again - should be skipped
+    await adapter.add_chunks_with_embeddings(first_doc)
+
+    # Count should remain the same (chunks were skipped)
+    count_after_second = await adapter.count_records()
+    assert count_after_second == 4
+
+    # Verify the chunks are still there and retrievable
+    results = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    assert len(results) > 0
+    assert "Tokyo" in results[0].chunk_text
+
+
+@pytest.mark.asyncio
+async def test_batching_functionality(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test basic batching functionality in add_chunks_with_embeddings."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create a document with many chunks to test batching
+    large_doc_data = {
+        "large_doc": [
+            {"vector": [i * 0.1, i * 0.2], "text": f"Chunk {i} content"}
+            for i in range(15)  # 15 chunks to test batching
+        ]
+    }
+
+    large_doc_records = dicts_to_indexable_docs(large_doc_data, tmp_path)
+
+    # Track batch sizes by patching the insert method
+    batch_sizes = []
+
+    async def mock_async_add(self, nodes, **kwargs):
+        batch_sizes.append(len(nodes))
+        return self.add(nodes, **kwargs)
+
+    # Patch the async_add method at the class level
+    with patch.object(
+        adapter.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
+        # Add with small batch size to force batching
+        await adapter.add_chunks_with_embeddings(large_doc_records, nodes_batch_size=5)
+
+    # Verify batching behavior
+    # With 15 chunks and batch_size=5, we expect 3 batches of 5 chunks each
+    expected_batch_sizes = [5, 5, 5]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+    # Verify all chunks were added
+    count = await adapter.count_records()
+    assert count == 15
+
+    # Verify we can search and find chunks
+    results = await adapter.search(KilnVectorStoreQuery(query_string="Chunk"))
+    assert len(results) > 0  # Should find chunks containing "Chunk"
+    assert len(results) <= 15  # Should not exceed total number of chunks
+
+
+@pytest.mark.asyncio
+async def test_batching_functionality_with_remainder(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test batching functionality with a remainder (not evenly divisible)."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create a document with 17 chunks to test batching with remainder
+    large_doc_data = {
+        "large_doc": [
+            {"vector": [i * 0.1, i * 0.2], "text": f"Chunk {i} content"}
+            for i in range(17)  # 17 chunks to test batching with remainder
+        ]
+    }
+
+    large_doc_records = dicts_to_indexable_docs(large_doc_data, tmp_path)
+
+    # Track batch sizes by patching the insert method
+    batch_sizes = []
+
+    async def mock_async_add(self, nodes, **kwargs):
+        batch_sizes.append(len(nodes))
+        return self.add(nodes, **kwargs)
+
+    # Patch the async_add method at the class level
+    with patch.object(
+        adapter.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
+        # Add with batch_size=7 to get 2 full batches + 1 remainder batch
+        await adapter.add_chunks_with_embeddings(large_doc_records, nodes_batch_size=7)
+
+    # Verify batching behavior
+    # With 17 chunks and batch_size=7, we expect 2 batches of 7 and 1 batch of 3
+    expected_batch_sizes = [7, 7, 3]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+    # Verify all chunks were added
+    count = await adapter.count_records()
+    assert count == 17
+
+
+@pytest.mark.asyncio
+async def test_batching_functionality_edge_cases(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test batching functionality edge cases (small batches, single batch)."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Test 1: Single batch (3 chunks with batch_size=10)
+    small_doc_data = {
+        "small_doc": [
+            {"vector": [i * 0.1, i * 0.2], "text": f"Small chunk {i} content"}
+            for i in range(3)
+        ]
+    }
+
+    small_doc_records = dicts_to_indexable_docs(small_doc_data, tmp_path)
+
+    # Track batch sizes by patching the insert method
+    batch_sizes = []
+
+    async def mock_async_add(self, nodes, **kwargs):
+        batch_sizes.append(len(nodes))
+        return self.add(nodes, **kwargs)
+
+    # Test single batch scenario
+    with patch.object(
+        adapter.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
+        await adapter.add_chunks_with_embeddings(small_doc_records, nodes_batch_size=10)
+
+    # With 3 chunks and batch_size=10, we expect 1 batch of 3 chunks
+    expected_batch_sizes = [3]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+    # Verify all chunks were added
+    count = await adapter.count_records()
+    assert count == 3
+
+    # Test 2: Very small batches (batch_size=1)
+    batch_sizes.clear()  # Reset for next test
+
+    # Create new rag_config to get a fresh database
+    rag_config2 = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter2 = LanceDBAdapter(rag_config2, fts_vector_store_config)
+
+    with patch.object(
+        adapter2.lancedb_vector_store.__class__, "async_add", mock_async_add
+    ):
+        await adapter2.add_chunks_with_embeddings(small_doc_records, nodes_batch_size=1)
+
+    # With 3 chunks and batch_size=1, we expect 3 batches of 1 chunk each
+    expected_batch_sizes = [1, 1, 1]
+    assert batch_sizes == expected_batch_sizes, (
+        f"Expected batch sizes {expected_batch_sizes}, got {batch_sizes}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_nodes_by_ids_functionality(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test get_nodes_by_ids method functionality."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # before inserting data, we should simply return an empty list
+    retrieved_nodes_before_any_insert = await adapter.get_nodes_by_ids(
+        [str(uuid.uuid4()), str(uuid.uuid4())]
+    )
+    assert len(retrieved_nodes_before_any_insert) == 0
+
+    # Add some data
+    await adapter.add_chunks_with_embeddings([mock_chunked_documents[0]])  # doc_001
+
+    # Test getting nodes by IDs - compute expected IDs
+    expected_ids = [
+        adapter.compute_deterministic_chunk_id("doc_001", i) for i in range(4)
+    ]
+
+    # Get nodes by IDs
+    retrieved_nodes = await adapter.get_nodes_by_ids(expected_ids)
+
+    # Should retrieve all 4 nodes
+    assert len(retrieved_nodes) == 4
+
+    # Verify node properties
+    for i, node in enumerate(retrieved_nodes):
+        assert node.id_ == expected_ids[i]
+        assert node.metadata["kiln_doc_id"] == "doc_001"
+        assert node.metadata["kiln_chunk_idx"] == i
+        assert len(node.get_content()) > 0
+
+    # Test with non-existent IDs
+    fake_ids = [adapter.compute_deterministic_chunk_id("fake_doc", i) for i in range(2)]
+    retrieved_fake = await adapter.get_nodes_by_ids(fake_ids)
+    assert len(retrieved_fake) == 0
+
+    # Test with empty table (no table exists yet)
+    empty_rag_config = create_rag_config_factory(
+        fts_vector_store_config, embedding_config
+    )
+    empty_adapter = LanceDBAdapter(empty_rag_config, fts_vector_store_config)
+    empty_result = await empty_adapter.get_nodes_by_ids(expected_ids)
+    assert len(empty_result) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_by_document_id(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test delete_nodes_by_document_id method."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Add both documents
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify both documents are there
+    count_before = await adapter.count_records()
+    assert count_before == 8  # 4 chunks per document
+
+    # Delete nodes for doc_001
+    await adapter.delete_nodes_by_document_id("doc_001")
+
+    # Verify doc_001 chunks are gone
+    count_after = await adapter.count_records()
+    assert count_after == 4  # Only doc_002 chunks remain
+
+    # Verify we can still find doc_002 chunks but not doc_001
+    results_doc2 = await adapter.search(KilnVectorStoreQuery(query_string="area"))
+    assert len(results_doc2) > 0
+
+    # Try to search for population (which was in doc_001) - should find no results
+    # LanceDB raises a Warning when no results are found, so we catch it
+    try:
+        results_doc1 = await adapter.search(
+            KilnVectorStoreQuery(query_string="population")
+        )
+        assert len(results_doc1) == 0
+    except Warning as w:
+        # This is expected - LanceDB raises a Warning for empty results
+        assert "query results are empty" in str(w)
+
+    # Try to delete non-existent document (should not error)
+    await adapter.delete_nodes_by_document_id("non_existent_doc")
+    final_count = await adapter.count_records()
+    assert final_count == 4  # Count unchanged
+
+
+@pytest.mark.asyncio
+async def test_uuid_scheme_retrieval_and_node_properties(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test UUID scheme retrieval and that inserted nodes have correct ID and ref_doc_id."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Add first document
+    await adapter.add_chunks_with_embeddings([mock_chunked_documents[0]])  # doc_001
+
+    # Test the UUID scheme: document_id::chunk_idx
+    for chunk_idx in range(4):
+        # Compute expected ID using the same scheme as the adapter
+        expected_id = adapter.compute_deterministic_chunk_id("doc_001", chunk_idx)
+
+        # Retrieve the specific node by ID
+        retrieved_nodes = await adapter.get_nodes_by_ids([expected_id])
+        assert len(retrieved_nodes) == 1
+
+        node = retrieved_nodes[0]
+
+        # Test that inserted nodes have the expected ID we set
+        assert node.id_ == expected_id
+
+        # Test that inserted nodes have ref_doc_id set correctly
+        # The ref_doc_id should be set through the SOURCE relationship
+        source_relationship = node.relationships.get(NodeRelationship.SOURCE)
+        assert source_relationship is not None
+        # Handle both single RelatedNodeInfo and list of RelatedNodeInfo
+        if isinstance(source_relationship, list):
+            assert len(source_relationship) > 0
+            assert source_relationship[0].node_id == "doc_001"
+        else:
+            assert source_relationship.node_id == "doc_001"
+
+        # Verify other node properties
+        assert node.metadata["kiln_doc_id"] == "doc_001"
+        assert node.metadata["kiln_chunk_idx"] == chunk_idx
+        assert len(node.get_content()) > 0
+        assert node.embedding is not None
+        assert len(node.embedding) == 2  # Our test embeddings are 2D
+
+    # Test with a different document to ensure the scheme works consistently
+    await adapter.add_chunks_with_embeddings([mock_chunked_documents[1]])  # doc_002
+
+    # Test retrieval of doc_002 chunks
+    for chunk_idx in range(4):
+        expected_id = adapter.compute_deterministic_chunk_id("doc_002", chunk_idx)
+        retrieved_nodes = await adapter.get_nodes_by_ids([expected_id])
+        assert len(retrieved_nodes) == 1
+
+        node = retrieved_nodes[0]
+        assert node.id_ == expected_id
+        assert node.metadata["kiln_doc_id"] == "doc_002"
+        assert node.metadata["kiln_chunk_idx"] == chunk_idx
+
+        # Check ref_doc_id relationship
+        source_relationship = node.relationships.get(NodeRelationship.SOURCE)
+        assert source_relationship is not None
+        # Handle both single RelatedNodeInfo and list of RelatedNodeInfo
+        if isinstance(source_relationship, list):
+            assert len(source_relationship) > 0
+            assert source_relationship[0].node_id == "doc_002"
+        else:
+            assert source_relationship.node_id == "doc_002"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_chunk_id_consistency(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test that the deterministic chunk ID generation is consistent."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    adapter = LanceDBAdapter(
+        rag_config,
+        fts_vector_store_config,
+    )
+
+    # Test that the same document_id and chunk_idx always produce the same UUID
+    doc_id = "test_doc_123"
+    chunk_idx = 5
+
+    id1 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx)
+    id2 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx)
+
+    assert id1 == id2
+
+    # Test that different inputs produce different UUIDs
+    id3 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx + 1)
+    id4 = adapter.compute_deterministic_chunk_id(doc_id + "_different", chunk_idx)
+
+    assert id1 != id3
+    assert id1 != id4
+    assert id3 != id4
+
+    # Verify the format is a valid UUID string
+    import uuid
+
+    try:
+        uuid.UUID(id1)  # Should not raise an exception
+        uuid.UUID(id3)
+        uuid.UUID(id4)
+    except ValueError:
+        pytest.fail("Generated IDs are not valid UUIDs")
+
+
+def generate_benchmark_data(
+    doc_count: int,
+    chunks_per_doc: int,
+    vector_size: int,
+    word_count: int,
+    tmp_path: Path,
+) -> list[tuple[str, ChunkedDocument, ChunkEmbeddings]]:
+    """Generate random data for benchmarking."""
+
+    def generate_word_pool(target_size: int) -> list[str]:
+        """Generate a pool of random words using common prefixes, roots, and suffixes."""
+        prefixes = [
+            "pre",
+            "un",
+            "re",
+            "in",
+            "dis",
+            "en",
+            "non",
+            "over",
+            "mis",
+            "sub",
+            "inter",
+            "super",
+            "anti",
+            "semi",
+            "multi",
+            "auto",
+            "co",
+            "de",
+            "ex",
+            "pro",
+        ]
+        roots = [
+            "act",
+            "form",
+            "port",
+            "dict",
+            "ject",
+            "rupt",
+            "scrib",
+            "struct",
+            "tract",
+            "vert",
+            "vis",
+            "spect",
+            "mit",
+            "duc",
+            "fac",
+            "cap",
+            "cred",
+            "grad",
+            "loc",
+            "mov",
+            "ped",
+            "pend",
+            "pos",
+            "sect",
+            "sent",
+            "serv",
+            "sign",
+            "sist",
+            "spec",
+            "tain",
+            "temp",
+            "tend",
+            "terr",
+            "test",
+            "text",
+            "tort",
+            "typ",
+            "urb",
+            "vac",
+            "val",
+            "ven",
+            "vers",
+            "vid",
+            "voc",
+            "volv",
+        ]
+        suffixes = [
+            "tion",
+            "sion",
+            "ness",
+            "ment",
+            "able",
+            "ible",
+            "ful",
+            "less",
+            "ing",
+            "ed",
+            "er",
+            "est",
+            "ly",
+            "ity",
+            "ous",
+            "ive",
+            "al",
+            "ic",
+            "ical",
+            "ary",
+            "ory",
+            "ure",
+            "ade",
+            "age",
+            "ance",
+            "ence",
+            "dom",
+            "hood",
+            "ship",
+            "ward",
+            "wise",
+            "like",
+            "some",
+            "teen",
+            "ty",
+            "th",
+            "ish",
+            "esque",
+        ]
+
+        words = set()
+
+        # Generate combinations
+        while len(words) < target_size:
+            # Simple root words
+            if random.random() < 0.3:
+                words.add(random.choice(roots))
+            # Prefix + root
+            elif random.random() < 0.6:
+                words.add(random.choice(prefixes) + random.choice(roots))
+            # Root + suffix
+            elif random.random() < 0.8:
+                words.add(random.choice(roots) + random.choice(suffixes))
+            # Prefix + root + suffix
+            else:
+                words.add(
+                    random.choice(prefixes)
+                    + random.choice(roots)
+                    + random.choice(suffixes)
+                )
+
+        return list(words)
+
+    # Generate word pool that's ~25x the word_count for variety
+    target_pool_size = max(
+        word_count * 25, 100
+    )  # At least 100 words, scale dictionary with word_count*25
+    words = generate_word_pool(target_pool_size)
+
+    results = []
+    for i in range(doc_count):
+        doc_id = f"doc_{i:05d}"
+
+        # Generate random text (word_count words) - allow repetition for variety
+        selected_words = random.choices(words, k=word_count)
+        text_content = " ".join(selected_words)
+
+        # Generate random vector_size-dimensional vector
+        vector = [random.uniform(-1.0, 1.0) for _ in range(vector_size)]
+
+        # Create chunked document with single chunk
+        chunked_document = ChunkedDocument(
+            chunker_config_id="test_chunker",
+            chunks=[
+                Chunk(content=KilnAttachmentModel.from_data(text_content, "text/plain"))
+                for _ in range(chunks_per_doc)
+            ],
+            path=tmp_path / f"chunked_document_{i}.kiln",
+        )
+
+        # Create chunk embeddings
+        chunk_embeddings = ChunkEmbeddings(
+            embedding_config_id="test_embedding",
+            embeddings=[Embedding(vector=vector) for _ in range(chunks_per_doc)],
+            path=tmp_path / f"chunk_embeddings_{i}.kiln",
+        )
+
+        results.append((doc_id, chunked_document, chunk_embeddings))
+
+    return results
+
+
+@pytest.mark.benchmark
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+def test_benchmark_add_chunks(
+    benchmark,
+    hybrid_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Benchmark adding chunks with embeddings to LanceDB."""
+
+    doc_count = 1000
+    chunks_per_doc = 50
+    vector_size = 1024
+    word_count = 200
+
+    # Set random seed for reproducible results
+    random.seed(42)
+
+    # Generate random data items (this is not benchmarked)
+    benchmark_data = generate_benchmark_data(
+        doc_count, chunks_per_doc, vector_size, word_count, tmp_path
+    )
+
+    # Create RAG config and adapter (not benchmarked)
+    rag_config = create_rag_config_factory(hybrid_vector_store_config, embedding_config)
+    adapter = asyncio.run(
+        vector_store_adapter_for_config(rag_config, hybrid_vector_store_config)
+    )
+
+    # Benchmark only the index loading
+    def add_chunks():
+        return asyncio.run(adapter.add_chunks_with_embeddings(benchmark_data))
+
+    # one iteration
+    benchmark.pedantic(add_chunks, rounds=1, iterations=1)
+    stats = benchmark.stats.stats
+
+    # Verify that data was actually added
+    async def verify_count():
+        final_count = await adapter.count_records()
+        return final_count
+
+    final_count = asyncio.run(verify_count())
+    assert final_count == doc_count * chunks_per_doc, (
+        f"Expected {doc_count} records, got {final_count}"
+    )
+
+    # Expect min 2500 ops per second
+    max_time = (doc_count * chunks_per_doc) / 2500
+    if stats.max > max_time:
+        pytest.fail(
+            f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
+        )

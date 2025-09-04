@@ -788,15 +788,19 @@ class TestRagWorkflowRunner:
         workflow_runner.current_progress.total_document_extracted_count = 10
         workflow_runner.current_progress.total_document_chunked_count = 8
         workflow_runner.current_progress.total_document_embedded_count = 5
-        workflow_runner.current_progress.total_document_indexed_count = 3
+        workflow_runner.current_progress.total_chunks_indexed_count = 3
 
         step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
         result = workflow_runner.update_workflow_progress(
             RagWorkflowStepNames.EXTRACTING, step_progress
         )
 
-        # Completed count should be the minimum of all step counts (including indexing)
-        assert result.total_document_completed_count == 3
+        # Completed count should be the minimum of all document-related step counts
+        assert result.total_document_completed_count == 5
+
+        # chunks are tracked separately (so we can compare them against the total chunk count
+        # to determine completion)
+        assert result.total_chunk_completed_count == 3
 
     @pytest.mark.asyncio
     async def test_run_yields_initial_progress_and_step_progress(self, workflow_runner):

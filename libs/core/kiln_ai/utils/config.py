@@ -203,14 +203,14 @@ class Config:
             raise AttributeError(f"Config has no attribute '{name}'")
 
     @classmethod
-    def settings_dir(cls, create=True):
+    def settings_dir(cls, create=True) -> str:
         settings_dir = os.path.join(Path.home(), ".kiln_ai")
         if create and not os.path.exists(settings_dir):
             os.makedirs(settings_dir)
         return settings_dir
 
     @classmethod
-    def settings_path(cls, create=True):
+    def settings_path(cls, create=True) -> str:
         settings_dir = cls.settings_dir(create)
         return os.path.join(settings_dir, "settings.yaml")
 
@@ -260,14 +260,6 @@ class Config:
             with open(self.settings_path(), "w") as f:
                 yaml.dump(current_settings, f)
             self._settings = current_settings
-
-    def local_data_dir(self) -> Path:
-        """
-        Get the path to the local data directory.
-
-        This is the directory where we store local data such as index files, etc.
-        """
-        return Path(os.path.join(self.settings_dir(), "kiln_data"))
 
 
 def _get_user_id():

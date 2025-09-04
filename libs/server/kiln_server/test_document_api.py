@@ -1849,6 +1849,7 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
         mock_adapter = AsyncMock()
         mock_adapter.search.return_value = [
             SearchResult(
+                chunk_idx=0,
                 document_id=result["document_id"],
                 chunk_text=result["chunk_text"],
                 similarity=result["similarity"],
@@ -1927,6 +1928,7 @@ async def test_search_rag_config_vector_success(
         mock_adapter = AsyncMock()
         mock_adapter.search.return_value = [
             SearchResult(
+                chunk_idx=0,
                 document_id=result["document_id"],
                 chunk_text=result["chunk_text"],
                 similarity=result["similarity"],
@@ -2003,6 +2005,7 @@ async def test_search_rag_config_hybrid_success(
         mock_adapter = AsyncMock()
         mock_adapter.search.return_value = [
             SearchResult(
+                chunk_idx=0,
                 document_id=result["document_id"],
                 chunk_text=result["chunk_text"],
                 similarity=result["similarity"],
