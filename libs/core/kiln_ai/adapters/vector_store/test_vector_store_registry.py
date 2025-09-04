@@ -1,5 +1,3 @@
-import os
-import tempfile
 from typing import Callable
 from unittest.mock import MagicMock, patch
 
@@ -14,16 +12,10 @@ from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 
 
-@pytest.fixture
-def temp_db_path():
-    """Create a temporary database path for testing."""
-    db_path = tempfile.mkdtemp(suffix=".lancedb")
-    yield db_path
-    # Cleanup
-    if os.path.exists(db_path):
-        import shutil
-
-        shutil.rmtree(db_path)
+@pytest.fixture(autouse=True)
+def patch_settings_dir(tmp_path):
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=tmp_path):
+        yield
 
 
 @pytest.fixture
@@ -56,65 +48,62 @@ def embedding_config():
 
 
 @pytest.fixture
-def lancedb_fts_vector_store_config(temp_db_path):
+def lancedb_fts_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        config = VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 20,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
-        )
-        # Set an ID for the config since build_lancedb_vector_store requires it
-        config.id = "test_config_id"
-        yield config
+    config = VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_FTS,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
+    # Set an ID for the config since build_lancedb_vector_store requires it
+    config.id = "test_config_id"
+    return config
 
 
 @pytest.fixture
-def lancedb_knn_vector_store_config(temp_db_path):
+def lancedb_knn_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        config = VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_VECTOR,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 20,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-                "nprobes": 10,
-            },
-        )
-        # Set an ID for the config since build_lancedb_vector_store requires it
-        config.id = "test_config_id"
-        yield config
+    config = VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+            "nprobes": 10,
+        },
+    )
+    # Set an ID for the config since build_lancedb_vector_store requires it
+    config.id = "test_config_id"
+    return config
 
 
 @pytest.fixture
-def lancedb_hybrid_vector_store_config(temp_db_path):
+def lancedb_hybrid_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        config = VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_HYBRID,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 20,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-                "nprobes": 10,
-            },
-        )
-        # Set an ID for the config since build_lancedb_vector_store requires it
-        config.id = "test_config_id"
-        yield config
+    config = VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+            "nprobes": 10,
+        },
+    )
+    # Set an ID for the config since build_lancedb_vector_store requires it
+    config.id = "test_config_id"
+    return config
 
 
 class TestVectorStoreAdapterForConfig:

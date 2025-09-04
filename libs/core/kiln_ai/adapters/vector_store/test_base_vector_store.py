@@ -1,8 +1,6 @@
 from typing import List, Tuple
 from unittest.mock import MagicMock
 
-import pytest
-
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     KilnVectorStoreQuery,

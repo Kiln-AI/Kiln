@@ -1,7 +1,6 @@
 import asyncio
 import os
 import random
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Callable, List
@@ -25,36 +24,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding, EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
-
-
-class TimingCollector:
-    """Utility class to collect timing data for different operations."""
-
-    def __init__(self):
-        self.timings = {}
-        self.counts = {}
-
-    def time_operation(self, operation_name: str, duration: float):
-        """Record timing for an operation."""
-        if operation_name not in self.timings:
-            self.timings[operation_name] = []
-            self.counts[operation_name] = 0
-        self.timings[operation_name].append(duration)
-        self.counts[operation_name] += 1
-
-    def get_summary(self) -> dict:
-        """Get a summary of all timing data."""
-        summary = {}
-        for operation, times in self.timings.items():
-            total_time = sum(times)
-            avg_time = total_time / len(times) if times else 0
-            summary[operation] = {
-                "total_time": total_time,
-                "avg_time": avg_time,
-                "count": self.counts[operation],
-                "times": times,
-            }
-        return summary
+from kiln_ai.utils.config import Config
 
 
 def get_all_nodes(adapter: LanceDBAdapter) -> List[SearchResult]:
@@ -70,69 +40,60 @@ def get_all_nodes(adapter: LanceDBAdapter) -> List[SearchResult]:
     ]
 
 
-@pytest.fixture
-def temp_db_path():
-    """Create a temporary database path for testing."""
-    db_path = tempfile.mkdtemp(suffix=".lancedb")
-    yield db_path
-    # Cleanup
-    if os.path.exists(db_path):
-        import shutil
-
-        shutil.rmtree(db_path)
+@pytest.fixture(autouse=True)
+def patch_settings_dir(tmp_path):
+    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=tmp_path):
+        yield
 
 
 @pytest.fixture
-def hybrid_vector_store_config(temp_db_path):
+def hybrid_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        yield VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_HYBRID,
-            properties={
-                "similarity_top_k": 10,
-                "nprobes": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
-        )
+    return VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
 
 
 @pytest.fixture
-def fts_vector_store_config(temp_db_path):
+def fts_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        yield VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
-        )
+    return VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_FTS,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
 
 
 @pytest.fixture
-def knn_vector_store_config(temp_db_path):
+def knn_vector_store_config():
     """Create a vector store config for testing."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        yield VectorStoreConfig(
-            name="test_config",
-            store_type=VectorStoreType.LANCE_DB_VECTOR,
-            properties={
-                "similarity_top_k": 10,
-                "nprobes": 10,
-                "overfetch_factor": 10,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
-        )
+    return VectorStoreConfig(
+        name="test_config",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "nprobes": 10,
+            "overfetch_factor": 10,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+        },
+    )
 
 
 @pytest.fixture
@@ -162,13 +123,6 @@ def create_rag_config_factory() -> Callable[
         )
 
     return create_rag_config
-
-
-def lancedb_adapter_tmp_factory(
-    rag_config: RagConfig, vector_store_config: VectorStoreConfig, temp_db_path
-) -> LanceDBAdapter:
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        return LanceDBAdapter(rag_config, vector_store_config)
 
 
 def dicts_to_indexable_docs(
@@ -465,14 +419,11 @@ async def test_get_all_chunks(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test getting all chunks from the vector store."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Add chunks first to create the table
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
@@ -489,16 +440,14 @@ async def test_get_all_chunks(
 
 
 def test_format_query_result_error_conditions(
-    fts_vector_store_config, embedding_config, create_rag_config_factory, temp_db_path
+    fts_vector_store_config, embedding_config, create_rag_config_factory
 ):
     """Test error handling in format_query_result method."""
 
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
     # Create adapter with minimal setup
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Test with None ids
     query_result = VectorStoreQueryResult(ids=None, nodes=[], similarities=[])
@@ -535,15 +484,12 @@ def test_build_kwargs_for_query_validation_errors(
     fts_vector_store_config,
     knn_vector_store_config,
     embedding_config,
-    temp_db_path,
 ):
     """Test error handling in build_kwargs_for_query method."""
 
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Test FTS search without query_string
     query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
@@ -553,9 +499,7 @@ def test_build_kwargs_for_query_validation_errors(
         adapter.build_kwargs_for_query(query)
 
     # Test HYBRID search without required parameters
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, hybrid_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, hybrid_vector_store_config)
 
     query = KilnVectorStoreQuery(query_string=None, query_embedding=[1.0, 2.0])
     with pytest.raises(
@@ -572,9 +516,7 @@ def test_build_kwargs_for_query_validation_errors(
         adapter.build_kwargs_for_query(query)
 
     # Test VECTOR search without embedding
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, knn_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, knn_vector_store_config)
 
     query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
     with pytest.raises(
@@ -589,13 +531,13 @@ async def test_destroy(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test the destroy method removes the database directory."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
+    adapter = LanceDBAdapter(
+        rag_config,
+        fts_vector_store_config,
     )
 
     # Add some data to create the database
@@ -616,41 +558,39 @@ async def test_destroy(
     assert not os.path.exists(db_path)
 
 
-def test_lancedb_path_for_config(temp_db_path):
+def test_lancedb_path_for_config():
     """Test the lancedb_path_for_config static method."""
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        # Test with valid rag_config
-        rag_config = RagConfig(
-            name="test_rag",
-            extractor_config_id="test_extractor",
-            chunker_config_id="test_chunker",
-            embedding_config_id="test_embedding",
-            vector_store_config_id="test_vector_store",
-        )
+    # Test with valid rag_config
+    rag_config = RagConfig(
+        name="test_rag",
+        extractor_config_id="test_extractor",
+        chunker_config_id="test_chunker",
+        embedding_config_id="test_embedding",
+        vector_store_config_id="test_vector_store",
+    )
 
-        expected_path = str(
-            Path(temp_db_path) / "rag_indexes" / "lancedb" / str(rag_config.id)
-        )
-        actual_path = LanceDBAdapter.lancedb_path_for_config(rag_config)
+    expected_path = str(
+        Path(Config.settings_dir()) / "rag_indexes" / "lancedb" / str(rag_config.id)
+    )
+    actual_path = LanceDBAdapter.lancedb_path_for_config(rag_config)
 
-        assert actual_path == expected_path
+    assert actual_path == expected_path
 
-        # Test with rag_config with no ID (should raise ValueError)
-        rag_config_no_id = RagConfig(
-            name="test_rag",
-            extractor_config_id="test_extractor",
-            chunker_config_id="test_chunker",
-            embedding_config_id="test_embedding",
-            vector_store_config_id="test_vector_store",
-        )
-        rag_config_no_id.id = None
+    # Test with rag_config with no ID (should raise ValueError)
+    rag_config_no_id = RagConfig(
+        name="test_rag",
+        extractor_config_id="test_extractor",
+        chunker_config_id="test_chunker",
+        embedding_config_id="test_embedding",
+        vector_store_config_id="test_vector_store",
+    )
+    rag_config_no_id.id = None
 
-        with pytest.raises(ValueError, match="Vector store config ID is required"):
-            LanceDBAdapter.lancedb_path_for_config(rag_config_no_id)
+    with pytest.raises(ValueError, match="Vector store config ID is required"):
+        LanceDBAdapter.lancedb_path_for_config(rag_config_no_id)
 
 
 def test_query_type_property(
-    temp_db_path,
     embedding_config,
     create_rag_config_factory,
 ):
@@ -670,9 +610,8 @@ def test_query_type_property(
     )
     rag_config = create_rag_config_factory(fts_config, embedding_config)
 
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        adapter = LanceDBAdapter(rag_config, fts_config)
-        assert adapter.query_type == "fts"
+    adapter = LanceDBAdapter(rag_config, fts_config)
+    assert adapter.query_type == "fts"
 
     # Test Hybrid query type
     hybrid_config = VectorStoreConfig(
@@ -689,9 +628,8 @@ def test_query_type_property(
     )
     rag_config = create_rag_config_factory(hybrid_config, embedding_config)
 
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        adapter = LanceDBAdapter(rag_config, hybrid_config)
-        assert adapter.query_type == "hybrid"
+    adapter = LanceDBAdapter(rag_config, hybrid_config)
+    assert adapter.query_type == "hybrid"
 
     # Test Vector query type
     vector_config = VectorStoreConfig(
@@ -708,9 +646,8 @@ def test_query_type_property(
     )
     rag_config = create_rag_config_factory(vector_config, embedding_config)
 
-    with patch("kiln_ai.utils.config.Config.settings_dir", return_value=temp_db_path):
-        adapter = LanceDBAdapter(rag_config, vector_config)
-        assert adapter.query_type == "vector"
+    adapter = LanceDBAdapter(rag_config, vector_config)
+    assert adapter.query_type == "vector"
 
 
 @pytest.mark.asyncio
@@ -719,15 +656,12 @@ async def test_adapter_reuse_preserves_data(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test that creating the same LanceDBAdapter twice doesn't destroy/empty the db."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
     # Create first adapter and add data
-    adapter1 = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter1 = LanceDBAdapter(rag_config, fts_vector_store_config)
     await adapter1.add_chunks_with_embeddings([mock_chunked_documents[0]])
 
     # Verify data exists
@@ -735,9 +669,7 @@ async def test_adapter_reuse_preserves_data(
     assert count1 == 4
 
     # Create second adapter with same config
-    adapter2 = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter2 = LanceDBAdapter(rag_config, fts_vector_store_config)
     await adapter2.add_chunks_with_embeddings([mock_chunked_documents[1]])
 
     # Verify data still exists and wasn't destroyed by second instantiation
@@ -762,14 +694,11 @@ async def test_skip_existing_chunks_when_count_matches(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test that chunks already in DB are skipped when they match incoming chunks count."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Add first document
     first_doc = [mock_chunked_documents[0]]  # doc_001 with 4 chunks
@@ -797,15 +726,12 @@ async def test_batching_functionality(
     fts_vector_store_config,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
     tmp_path,
 ):
     """Test basic batching functionality in add_chunks_with_embeddings."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Create a document with many chunks to test batching
     large_doc_data = {
@@ -853,15 +779,12 @@ async def test_batching_functionality_with_remainder(
     fts_vector_store_config,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
     tmp_path,
 ):
     """Test batching functionality with a remainder (not evenly divisible)."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Create a document with 17 chunks to test batching with remainder
     large_doc_data = {
@@ -904,15 +827,12 @@ async def test_batching_functionality_edge_cases(
     fts_vector_store_config,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
     tmp_path,
 ):
     """Test batching functionality edge cases (small batches, single batch)."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Test 1: Single batch (3 chunks with batch_size=10)
     small_doc_data = {
@@ -950,10 +870,9 @@ async def test_batching_functionality_edge_cases(
     # Test 2: Very small batches (batch_size=1)
     batch_sizes.clear()  # Reset for next test
 
-    # Create new adapter for clean state
-    adapter2 = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path + "_small_batches"
-    )
+    # Create new rag_config to get a fresh database
+    rag_config2 = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter2 = LanceDBAdapter(rag_config2, fts_vector_store_config)
 
     with patch.object(
         adapter2.lancedb_vector_store.__class__, "async_add", mock_async_add
@@ -973,14 +892,12 @@ async def test_get_nodes_by_ids_functionality(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
+    tmp_path,
 ):
     """Test get_nodes_by_ids method functionality."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # before inserting data, we should simply return an empty list
     retrieved_nodes_before_any_insert = await adapter.get_nodes_by_ids(
@@ -1015,9 +932,10 @@ async def test_get_nodes_by_ids_functionality(
     assert len(retrieved_fake) == 0
 
     # Test with empty table (no table exists yet)
-    empty_adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path + "_empty"
+    empty_rag_config = create_rag_config_factory(
+        fts_vector_store_config, embedding_config
     )
+    empty_adapter = LanceDBAdapter(empty_rag_config, fts_vector_store_config)
     empty_result = await empty_adapter.get_nodes_by_ids(expected_ids)
     assert len(empty_result) == 0
 
@@ -1028,14 +946,11 @@ async def test_delete_nodes_by_document_id(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test delete_nodes_by_document_id method."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Add both documents
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
@@ -1078,14 +993,11 @@ async def test_uuid_scheme_retrieval_and_node_properties(
     mock_chunked_documents,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test UUID scheme retrieval and that inserted nodes have correct ID and ref_doc_id."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
-    )
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Add first document
     await adapter.add_chunks_with_embeddings([mock_chunked_documents[0]])  # doc_001
@@ -1152,13 +1064,13 @@ async def test_deterministic_chunk_id_consistency(
     fts_vector_store_config,
     embedding_config,
     create_rag_config_factory,
-    temp_db_path,
 ):
     """Test that the deterministic chunk ID generation is consistent."""
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
-    adapter = lancedb_adapter_tmp_factory(
-        rag_config, fts_vector_store_config, temp_db_path
+    adapter = LanceDBAdapter(
+        rag_config,
+        fts_vector_store_config,
     )
 
     # Test that the same document_id and chunk_idx always produce the same UUID

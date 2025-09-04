@@ -78,7 +78,8 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         # VectorStoreIndex constructor that overrides None with "default"
         # and tries to load OpenAI and throws if the OPENAI_API_KEY is not set
         # maybe should open an issue on their repo
-        os.environ["OPENAI_API_KEY"] = "dummy"
+        if "OPENAI_API_KEY" not in os.environ:
+            os.environ["OPENAI_API_KEY"] = "dummy"
 
         # - VectorStoreIndex is a wrapper around a vector store
         # it exposes higher level operations (that rely on internal
