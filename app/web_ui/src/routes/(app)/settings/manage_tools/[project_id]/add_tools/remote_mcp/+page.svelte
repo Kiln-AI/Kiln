@@ -8,6 +8,7 @@
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
+  import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
 
   // Form fields
@@ -15,14 +16,7 @@
   let server_url = ""
   let description = ""
 
-  // Headers as array of key/value pairs
-  interface HeaderPair {
-    key: string
-    value: string
-    placeholder: string | null
-  }
-
-  let headers: HeaderPair[] = []
+  let headers: McpServerKeyValuePair[] = []
 
   // Form state
   let error: KilnError | null = null
@@ -47,16 +41,28 @@
     }
   })
 
-  function buildHeadersObject(): Record<string, string> {
+  function buildHeadersObject(): {
+    headersObj: Record<string, string>
+    secret_header_keys: string[]
+  } {
     const headersObj: Record<string, string> = {}
+    const secretHeaderKeys: string[] = []
 
     for (const header of headers) {
       if (header.key.trim() && header.value.trim()) {
-        headersObj[header.key.trim()] = header.value.trim()
+        const key = header.key
+        headersObj[key] = header.value
+
+        if (header.is_secret) {
+          secretHeaderKeys.push(key)
+        }
       }
     }
 
-    return headersObj
+    return {
+      headersObj: headersObj,
+      secret_header_keys: secretHeaderKeys,
+    }
   }
 
   async function connect_remote_mcp() {
@@ -64,7 +70,7 @@
       error = null
       submitting = true
 
-      const headersObj = buildHeadersObject()
+      const headersData = buildHeadersObject()
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/connect_remote_mcp",
@@ -77,7 +83,8 @@
           body: {
             name: name.trim(),
             server_url: server_url.trim(),
-            headers: headersObj,
+            headers: headersData.headersObj,
+            secret_header_keys: headersData.secret_header_keys,
             description: description.trim() || null,
           },
         },
@@ -108,7 +115,7 @@
   subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
         tools to your project."
 >
-  <div class="max-w-2xl">
+  <div class="max-w-4xl">
     <FormContainer
       submit_label="Connect"
       on:submit={connect_remote_mcp}
@@ -158,6 +165,7 @@
         empty_content={{
           key: "",
           value: "",
+          is_secret: false,
         }}
         let:item_index
       >
@@ -180,6 +188,20 @@
               placeholder={headers[item_index].placeholder || "Value"}
               light_label={true}
               bind:value={headers[item_index].value}
+            />
+          </div>
+          <div class="flex-1 max-w-[140px]">
+            <FormElement
+              inputType="select"
+              label="Secret"
+              id="secret_{item_index}"
+              info_description="If this header is a secret such as an API key, select 'Secret' to prevent it from being synced. Kiln will store the secret in your project's settings."
+              light_label={true}
+              select_options={[
+                [false, "No Secret"],
+                [true, "Secret"],
+              ]}
+              bind:value={headers[item_index].is_secret}
             />
           </div>
         </div>

@@ -64,7 +64,12 @@ class MCPSessionManager:
         if not server_url:
             raise ValueError("server_url is required")
 
-        headers = tool_server.properties.get("headers", {})
+        # Make a copy of the headers to avoid modifying the original object
+        headers = tool_server.properties.get("headers", {}).copy()
+
+        # Retrieve secret headers from configuration and merge with regular headers
+        secret_headers, _ = tool_server.retrieve_secrets()
+        headers.update(secret_headers)
 
         async with streamablehttp_client(server_url, headers=headers) as (
             read_stream,
@@ -96,7 +101,12 @@ class MCPSessionManager:
                 "Attempted to start local MCP server, but args is not a list of strings"
             )
 
+        # Make a copy of the env_vars to avoid modifying the original object
         env_vars = tool_server.properties.get("env_vars", {}).copy()
+
+        # Retrieve secret environment variables from configuration and merge with regular env_vars
+        secret_env_vars, _ = tool_server.retrieve_secrets()
+        env_vars.update(secret_env_vars)
 
         # Set PATH, only if not explicitly set during MCP tool setup
         if "PATH" not in env_vars:
