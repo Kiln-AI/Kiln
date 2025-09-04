@@ -26,7 +26,17 @@
       if (!settings) {
         throw new KilnError("Settings not found", null)
       }
-      custom_models = settings["custom_models"] || []
+      const incoming_settings_custom_models = settings["custom_models"]
+      if (!incoming_settings_custom_models) {
+        custom_models = []
+      } else if (
+        !Array.isArray(incoming_settings_custom_models) ||
+        incoming_settings_custom_models.some((m) => typeof m !== "string")
+      ) {
+        throw new KilnError("Custom models must be an array of strings", null)
+      } else {
+        custom_models = incoming_settings_custom_models
+      }
       if (settings["open_ai_api_key"]) {
         connected_providers.push(["openai", "OpenAI"])
       }

@@ -135,7 +135,6 @@
             run_id: run?.id || "",
           },
         },
-        // @ts-expect-error type checking and PATCH don't mix
         body: patch_body,
       },
     )

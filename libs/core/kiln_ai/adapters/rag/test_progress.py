@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from kiln_ai.adapters.rag.progress import (
@@ -20,6 +20,17 @@ def mock_project():
     return project
 
 
+@pytest.fixture
+def mock_vector_store_count():
+    """Mock the vector store count operations to return 0 by default"""
+    with patch(
+        "kiln_ai.adapters.rag.progress.count_records_in_vector_store_for_rag_config",
+        new_callable=AsyncMock,
+        return_value=0,
+    ) as mock:
+        yield mock
+
+
 def create_mock_embedding(embedding_config_id):
     """Helper to create a mock embedding with the specified config ID"""
     mock_embedding = MagicMock(spec=ChunkEmbeddings)
@@ -27,7 +38,7 @@ def create_mock_embedding(embedding_config_id):
     return mock_embedding
 
 
-def create_mock_chunked_document(chunker_config_id, embeddings=None):
+def create_mock_chunked_document(chunker_config_id, embeddings=None, num_chunks=1):
     """Helper to create a mock chunked document with the specified config ID and embeddings"""
     if embeddings is None:
         embeddings = []
@@ -35,6 +46,8 @@ def create_mock_chunked_document(chunker_config_id, embeddings=None):
     mock_chunked_doc = MagicMock(spec=ChunkedDocument)
     mock_chunked_doc.chunker_config_id = chunker_config_id
     mock_chunked_doc.chunk_embeddings.return_value = embeddings
+    # Mock the chunks attribute to return a list with the specified number of chunks
+    mock_chunked_doc.chunks = [MagicMock() for _ in range(num_chunks)]
     return mock_chunked_doc
 
 
@@ -60,7 +73,11 @@ def create_mock_document(extractions=None):
 
 
 def create_mock_rag_config(
-    config_id, extractor_config_id, chunker_config_id, embedding_config_id
+    config_id,
+    extractor_config_id,
+    chunker_config_id,
+    embedding_config_id,
+    vector_store_config_id="vector_store_1",
 ):
     """Helper to create a mock RAG config with the specified IDs"""
     mock_rag_config = MagicMock(spec=RagConfig)
@@ -68,6 +85,7 @@ def create_mock_rag_config(
     mock_rag_config.extractor_config_id = extractor_config_id
     mock_rag_config.chunker_config_id = chunker_config_id
     mock_rag_config.embedding_config_id = embedding_config_id
+    mock_rag_config.vector_store_config_id = vector_store_config_id
     return mock_rag_config
 
 
@@ -89,12 +107,16 @@ class TestRagProgress:
         progress = RagProgress()
         assert progress.total_document_count == 0
         assert progress.total_document_completed_count == 0
+        assert progress.total_chunk_count == 0
+        assert progress.total_chunk_completed_count == 0
         assert progress.total_document_extracted_count == 0
         assert progress.total_document_extracted_error_count == 0
         assert progress.total_document_chunked_count == 0
         assert progress.total_document_chunked_error_count == 0
         assert progress.total_document_embedded_count == 0
         assert progress.total_document_embedded_error_count == 0
+        assert progress.total_chunks_indexed_count == 0
+        assert progress.total_chunks_indexed_error_count == 0
         assert progress.logs is None
 
     def test_rag_progress_with_values(self):
@@ -105,6 +127,9 @@ class TestRagProgress:
             total_document_extracted_count=8,
             total_document_chunked_count=6,
             total_document_embedded_count=5,
+            total_chunk_count=6,
+            total_chunk_completed_count=3,
+            total_chunks_indexed_count=3,
             logs=logs,
         )
         assert progress.total_document_count == 10
@@ -112,25 +137,36 @@ class TestRagProgress:
         assert progress.total_document_extracted_count == 8
         assert progress.total_document_chunked_count == 6
         assert progress.total_document_embedded_count == 5
+        assert progress.total_chunk_count == 6
+        assert progress.total_chunk_completed_count == 3
+        assert progress.total_chunks_indexed_count == 3
         assert progress.logs is not None
         assert len(progress.logs) == 1
         assert progress.logs[0].level == "info"
 
 
 class TestComputeCurrentProgressForRagConfigs:
-    def test_empty_project_empty_configs(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_empty_project_empty_configs(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test with no documents and no RAG configs"""
         mock_project.documents.return_value = []
 
-        result = compute_current_progress_for_rag_configs(mock_project, [])
+        result = await compute_current_progress_for_rag_configs(mock_project, [])
         assert result == {}
 
-    def test_empty_project_with_config(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_empty_project_with_config(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test with no documents but with a RAG config"""
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
         mock_project.documents.return_value = []
 
-        result = compute_current_progress_for_rag_configs(mock_project, [rag_config])
+        result = await compute_current_progress_for_rag_configs(
+            mock_project, [rag_config]
+        )
 
         assert "rag1" in result
         progress = result["rag1"]
@@ -139,14 +175,22 @@ class TestComputeCurrentProgressForRagConfigs:
         assert progress.total_document_extracted_count == 0
         assert progress.total_document_chunked_count == 0
         assert progress.total_document_embedded_count == 0
+        assert progress.total_chunks_indexed_count == 0
+        assert progress.total_chunk_count == 0
+        assert progress.total_chunk_completed_count == 0
 
-    def test_documents_no_extractions(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_documents_no_extractions(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test with documents but no extractions"""
         documents = [create_mock_document() for _ in range(3)]
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
         mock_project.documents.return_value = documents
 
-        result = compute_current_progress_for_rag_configs(mock_project, [rag_config])
+        result = await compute_current_progress_for_rag_configs(
+            mock_project, [rag_config]
+        )
 
         assert "rag1" in result
         progress = result["rag1"]
@@ -155,15 +199,21 @@ class TestComputeCurrentProgressForRagConfigs:
         assert progress.total_document_extracted_count == 0
         assert progress.total_document_chunked_count == 0
         assert progress.total_document_embedded_count == 0
+        assert progress.total_chunks_indexed_count == 0
 
-    def test_full_pipeline_single_config(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_full_pipeline_single_config(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test complete pipeline with one RAG config"""
         # Create documents with separate extraction trees
         documents = []
         for i in range(2):
             # Each document gets its own unique extraction tree
             embedding = create_mock_embedding("embed1")
-            chunked_doc = create_mock_chunked_document("chunk1", [embedding])
+            chunked_doc = create_mock_chunked_document(
+                "chunk1", [embedding], num_chunks=3
+            )  # 3 chunks per document
             extraction = create_mock_extraction("ext1", [chunked_doc])
             document = create_mock_document([extraction])
             documents.append(document)
@@ -171,26 +221,40 @@ class TestComputeCurrentProgressForRagConfigs:
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
 
         mock_project.documents.return_value = documents
-        result = compute_current_progress_for_rag_configs(mock_project, [rag_config])
+        result = await compute_current_progress_for_rag_configs(
+            mock_project, [rag_config]
+        )
 
         assert "rag1" in result
         progress = result["rag1"]
         assert progress.total_document_count == 2
-        assert progress.total_document_completed_count == 2  # min of all steps
+        assert (
+            progress.total_document_completed_count == 2
+        )  # min of extraction, chunking, embedding (all complete)
         assert progress.total_document_extracted_count == 2
         assert progress.total_document_chunked_count == 2
         assert progress.total_document_embedded_count == 2
+        assert progress.total_chunks_indexed_count == 0
+        assert progress.total_chunk_count == 6  # 2 documents * 3 chunks each
+        assert progress.total_chunk_completed_count == 0  # same as indexed count
 
-    def test_partial_pipeline_progress(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_partial_pipeline_progress(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test pipeline where some steps are incomplete"""
         # Document 1: fully processed
         embedding1 = create_mock_embedding("embed1")
-        chunked_doc1 = create_mock_chunked_document("chunk1", [embedding1])
+        chunked_doc1 = create_mock_chunked_document(
+            "chunk1", [embedding1], num_chunks=2
+        )
         extraction1 = create_mock_extraction("ext1", [chunked_doc1])
         doc1 = create_mock_document([extraction1])
 
         # Document 2: extracted and chunked but not embedded
-        chunked_doc2 = create_mock_chunked_document("chunk1", [])  # no embeddings
+        chunked_doc2 = create_mock_chunked_document(
+            "chunk1", [], num_chunks=3
+        )  # no embeddings
         extraction2 = create_mock_extraction("ext1", [chunked_doc2])
         doc2 = create_mock_document([extraction2])
 
@@ -204,7 +268,9 @@ class TestComputeCurrentProgressForRagConfigs:
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
 
         mock_project.documents.return_value = [doc1, doc2, doc3, doc4]
-        result = compute_current_progress_for_rag_configs(mock_project, [rag_config])
+        result = await compute_current_progress_for_rag_configs(
+            mock_project, [rag_config]
+        )
 
         assert "rag1" in result
         progress = result["rag1"]
@@ -212,15 +278,23 @@ class TestComputeCurrentProgressForRagConfigs:
         assert progress.total_document_extracted_count == 3  # docs 1, 2, 3
         assert progress.total_document_chunked_count == 2  # docs 1, 2
         assert progress.total_document_embedded_count == 1  # doc 1 only
+        assert progress.total_chunks_indexed_count == 0  # no indexing implemented yet
+        assert progress.total_chunk_count == 5  # doc1 has 2 chunks + doc2 has 3 chunks
+        assert progress.total_chunk_completed_count == 0  # same as indexed count
         assert progress.total_document_completed_count == 1  # min(3,2,1) = 1
 
-    def test_multiple_rag_configs_shared_prefixes(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_multiple_rag_configs_shared_prefixes(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test multiple RAG configs that share common path prefixes"""
         # Create data that matches multiple configs
         embedding1 = create_mock_embedding("embed1")
         embedding2 = create_mock_embedding("embed2")
 
-        chunked_doc = create_mock_chunked_document("chunk1", [embedding1, embedding2])
+        chunked_doc = create_mock_chunked_document(
+            "chunk1", [embedding1, embedding2], num_chunks=4
+        )
         extraction = create_mock_extraction("ext1", [chunked_doc])
         document = create_mock_document([extraction])
 
@@ -229,7 +303,7 @@ class TestComputeCurrentProgressForRagConfigs:
         rag_config2 = create_mock_rag_config("rag2", "ext1", "chunk1", "embed2")
 
         mock_project.documents.return_value = [document]
-        result = compute_current_progress_for_rag_configs(
+        result = await compute_current_progress_for_rag_configs(
             mock_project, [rag_config1, rag_config2]
         )
 
@@ -243,13 +317,23 @@ class TestComputeCurrentProgressForRagConfigs:
             assert progress.total_document_extracted_count == 1
             assert progress.total_document_chunked_count == 1
             assert progress.total_document_embedded_count == 1
-            assert progress.total_document_completed_count == 1
+            assert (
+                progress.total_chunks_indexed_count == 0
+            )  # no indexing implemented yet
+            assert progress.total_chunk_count == 4  # 4 chunks in the document
+            assert progress.total_chunk_completed_count == 0  # same as indexed count
+            assert (
+                progress.total_document_completed_count == 1
+            )  # min of extraction, chunking, embedding
 
-    def test_multiple_rag_configs_different_extractors(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_multiple_rag_configs_different_extractors(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test multiple RAG configs with different extractors"""
         # Create extractions for different extractors
         embedding = create_mock_embedding("embed1")
-        chunked_doc = create_mock_chunked_document("chunk1", [embedding])
+        chunked_doc = create_mock_chunked_document("chunk1", [embedding], num_chunks=5)
 
         extraction1 = create_mock_extraction("ext1", [chunked_doc])
         extraction2 = create_mock_extraction("ext2", [chunked_doc])
@@ -261,7 +345,7 @@ class TestComputeCurrentProgressForRagConfigs:
         rag_config2 = create_mock_rag_config("rag2", "ext2", "chunk1", "embed1")
 
         mock_project.documents.return_value = [document]
-        result = compute_current_progress_for_rag_configs(
+        result = await compute_current_progress_for_rag_configs(
             mock_project, [rag_config1, rag_config2]
         )
 
@@ -273,28 +357,40 @@ class TestComputeCurrentProgressForRagConfigs:
             assert progress.total_document_extracted_count == 1
             assert progress.total_document_chunked_count == 1
             assert progress.total_document_embedded_count == 1
-            assert progress.total_document_completed_count == 1
+            assert (
+                progress.total_chunks_indexed_count == 0
+            )  # no indexing implemented yet
+            assert progress.total_chunk_count == 5  # 5 chunks in the document
+            assert progress.total_chunk_completed_count == 0  # same as indexed count
+            assert (
+                progress.total_document_completed_count == 1
+            )  # min of extraction, chunking, embedding
 
-    def test_complex_tree_structure(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_complex_tree_structure(self, mock_project, mock_vector_store_count):
         """Test a complex tree with multiple documents, extractors, chunkers, and embeddings"""
         # Document 1: ext1 -> chunk1 -> embed1, embed2
         embedding1_1 = create_mock_embedding("embed1")
         embedding1_2 = create_mock_embedding("embed2")
         chunked_doc1_1 = create_mock_chunked_document(
-            "chunk1", [embedding1_1, embedding1_2]
+            "chunk1", [embedding1_1, embedding1_2], num_chunks=2
         )
         extraction1_1 = create_mock_extraction("ext1", [chunked_doc1_1])
 
         # Document 1: ext2 -> chunk2 -> embed1
         embedding1_3 = create_mock_embedding("embed1")
-        chunked_doc1_2 = create_mock_chunked_document("chunk2", [embedding1_3])
+        chunked_doc1_2 = create_mock_chunked_document(
+            "chunk2", [embedding1_3], num_chunks=3
+        )
         extraction1_2 = create_mock_extraction("ext2", [chunked_doc1_2])
 
         doc1 = create_mock_document([extraction1_1, extraction1_2])
 
         # Document 2: ext1 -> chunk1 -> embed1 only
         embedding2_1 = create_mock_embedding("embed1")
-        chunked_doc2_1 = create_mock_chunked_document("chunk1", [embedding2_1])
+        chunked_doc2_1 = create_mock_chunked_document(
+            "chunk1", [embedding2_1], num_chunks=4
+        )
         extraction2_1 = create_mock_extraction("ext1", [chunked_doc2_1])
         doc2 = create_mock_document([extraction2_1])
 
@@ -312,7 +408,7 @@ class TestComputeCurrentProgressForRagConfigs:
         ]
 
         mock_project.documents.return_value = [doc1, doc2]
-        result = compute_current_progress_for_rag_configs(mock_project, configs)  # type: ignore
+        result = await compute_current_progress_for_rag_configs(mock_project, configs)  # type: ignore
 
         # rag1: ext1->chunk1->embed1 appears in both documents
         progress1 = result["rag1"]
@@ -320,7 +416,12 @@ class TestComputeCurrentProgressForRagConfigs:
         assert progress1.total_document_extracted_count == 2
         assert progress1.total_document_chunked_count == 2
         assert progress1.total_document_embedded_count == 2
-        assert progress1.total_document_completed_count == 2
+        assert progress1.total_chunks_indexed_count == 0  # no indexing implemented yet
+        assert progress1.total_chunk_count == 6  # doc1 has 2 chunks + doc2 has 4 chunks
+        assert progress1.total_chunk_completed_count == 0  # same as indexed count
+        assert (
+            progress1.total_document_completed_count == 2
+        )  # min of extraction, chunking, embedding
 
         # rag2: ext1->chunk1->embed2 appears only in doc1
         progress2 = result["rag2"]
@@ -332,6 +433,9 @@ class TestComputeCurrentProgressForRagConfigs:
         assert (
             progress2.total_document_embedded_count == 1
         )  # Only doc1 has ext1->chunk1->embed2
+        assert progress2.total_chunks_indexed_count == 0  # no indexing implemented yet
+        assert progress2.total_chunk_count == 6  # doc1 has 2 chunks + doc2 has 4 chunks
+        assert progress2.total_chunk_completed_count == 0  # same as indexed count
         assert progress2.total_document_completed_count == 1  # min(2,2,1) = 1
 
         # rag3: ext2->chunk2->embed1 appears only in doc1
@@ -342,27 +446,38 @@ class TestComputeCurrentProgressForRagConfigs:
         assert (
             progress3.total_document_embedded_count == 1
         )  # Only doc1 has ext2->chunk2->embed1
+        assert progress3.total_chunks_indexed_count == 0  # no indexing implemented yet
+        assert progress3.total_chunk_count == 3  # doc1 ext2->chunk2 has 3 chunks
+        assert progress3.total_chunk_completed_count == 0  # same as indexed count
         assert progress3.total_document_completed_count == 1  # min(1,1,1) = 1
 
 
 class TestComputeCurrentProgressForRagConfig:
-    def test_single_config_success(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_single_config_success(self, mock_project, mock_vector_store_count):
         """Test computing progress for a single RAG config"""
         embedding = create_mock_embedding("embed1")
-        chunked_doc = create_mock_chunked_document("chunk1", [embedding])
+        chunked_doc = create_mock_chunked_document("chunk1", [embedding], num_chunks=3)
         extraction = create_mock_extraction("ext1", [chunked_doc])
         document = create_mock_document([extraction])
 
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
 
         mock_project.documents.return_value = [document]
-        result = compute_current_progress_for_rag_config(mock_project, rag_config)
+        result = await compute_current_progress_for_rag_config(mock_project, rag_config)
 
         assert isinstance(result, RagProgress)
         assert result.total_document_count == 1
-        assert result.total_document_completed_count == 1
+        assert result.total_chunk_count == 3  # 3 chunks in the document
+        assert result.total_chunk_completed_count == 0  # same as indexed count
+        assert (
+            result.total_document_completed_count == 1
+        )  # min of extraction, chunking, embedding
 
-    def test_single_config_not_found_error(self, mock_project):
+    @pytest.mark.asyncio
+    async def test_single_config_not_found_error(
+        self, mock_project, mock_vector_store_count
+    ):
         """Test error case when RAG config is not found in results"""
         # Create a config that won't be found (this shouldn't happen in practice)
         rag_config = create_mock_rag_config("nonexistent", "ext1", "chunk1", "embed1")
@@ -370,10 +485,11 @@ class TestComputeCurrentProgressForRagConfig:
         # Mock the underlying function to return empty dict to simulate the error
         with patch(
             "kiln_ai.adapters.rag.progress.compute_current_progress_for_rag_configs",
+            new_callable=AsyncMock,
             return_value={},
         ):
             with pytest.raises(
                 ValueError,
                 match="Failed to compute progress for rag config nonexistent",
             ):
-                compute_current_progress_for_rag_config(mock_project, rag_config)
+                await compute_current_progress_for_rag_config(mock_project, rag_config)

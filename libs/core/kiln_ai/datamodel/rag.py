@@ -1,6 +1,11 @@
+from typing import TYPE_CHECKING, Union
+
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.project import Project
 
 
 class RagConfig(KilnParentedModel):
@@ -24,3 +29,13 @@ class RagConfig(KilnParentedModel):
     embedding_config_id: ID_TYPE = Field(
         description="The ID of the embedding config used to embed the documents.",
     )
+
+    vector_store_config_id: ID_TYPE = Field(
+        description="The ID of the vector store config used to store the documents.",
+    )
+
+    # Workaround to return typed parent without importing Project
+    def parent_project(self) -> Union["Project", None]:
+        if self.parent is None or self.parent.__class__.__name__ != "Project":
+            return None
+        return self.parent  # type: ignore

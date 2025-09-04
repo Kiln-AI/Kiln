@@ -136,7 +136,6 @@
             structured_output_mode: structured_output_mode,
           },
           plaintext_input: input_form.get_plaintext_input_data(),
-          // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
           structured_input: input_form.get_structured_input_data(),
           tags: ["manual_run"],
         },

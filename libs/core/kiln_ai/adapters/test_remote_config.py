@@ -121,10 +121,14 @@ def test_load_from_url(mock_model, mock_embedding_model):
     assert sample_embedding_model == remote_config.embedding_model_list[0]
 
 
-def test_load_from_url_calls_deserialize_config_data(mock_model):
+def test_load_from_url_calls_deserialize_config_data(mock_model, mock_embedding_model):
     """Test that load_from_url calls deserialize_config_data with the model_list from the response."""
     sample_model_data = [mock_model.model_dump(mode="json")]
-    response_data = {"model_list": sample_model_data}
+    sample_embedding_model_data = [mock_embedding_model.model_dump(mode="json")]
+    response_data = {
+        "model_list": sample_model_data,
+        "embedding_model_list": sample_embedding_model_data,
+    }
 
     class FakeResponse:
         def raise_for_status(self):
@@ -141,7 +145,10 @@ def test_load_from_url_calls_deserialize_config_data(mock_model):
             "kiln_ai.adapters.remote_config.deserialize_config_data"
         ) as mock_deserialize,
     ):
-        mock_deserialize.return_value = [mock_model]
+        mock_deserialize.return_value = KilnRemoteConfig(
+            model_list=[mock_model],
+            embedding_model_list=[mock_embedding_model],
+        )
 
         result = load_from_url("http://example.com/models.json")
 
@@ -152,7 +159,8 @@ def test_load_from_url_calls_deserialize_config_data(mock_model):
         mock_deserialize.assert_called_once_with(response_data)
 
         # Verify the result is what deserialize_config_data returned
-        assert result == [mock_model]
+        assert result.model_list == [mock_model]
+        assert result.embedding_model_list == [mock_embedding_model]
 
 
 def test_dump_builtin_config(tmp_path):

@@ -1,9 +1,16 @@
+import logging
 from collections import defaultdict
 from typing import Dict, Literal
 
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class LogMessage(BaseModel):
@@ -23,6 +30,20 @@ class RagProgress(BaseModel):
 
     total_document_completed_count: int = Field(
         description="The number of items that have been processed",
+        default=0,
+    )
+
+    # Progress for indexing is tracked in terms of chunks, not documents. After the initial run
+    # the only info we have is how many chunks are in the vector store, and so we need to know
+    # the total number of chunks that should be indexed to know if it is completed or not.
+    # So we need toset and send that through to the client once we know it (after completing chunking).
+    total_chunk_count: int = Field(
+        description="The number of chunks that should be indexed for the indexing to be completed.",
+        default=0,
+    )
+
+    total_chunk_completed_count: int = Field(
+        description="The number of chunks that have been indexed",
         default=0,
     )
 
@@ -56,13 +77,47 @@ class RagProgress(BaseModel):
         default=0,
     )
 
+    total_chunks_indexed_count: int = Field(
+        description="The number of chunks that have been indexed",
+        default=0,
+    )
+
+    total_chunks_indexed_error_count: int = Field(
+        description="The number of chunks that have errored during indexing",
+        default=0,
+    )
+
     logs: list[LogMessage] | None = Field(
         description="A list of log messages to display to the user",
         default=None,
     )
 
 
-def compute_current_progress_for_rag_configs(
+async def count_records_in_vector_store(
+    rag_config: RagConfig,
+    vector_store_config: VectorStoreConfig,
+) -> int:
+    vector_store = await vector_store_adapter_for_config(
+        rag_config, vector_store_config
+    )
+    count = await vector_store.count_records()
+    return count
+
+
+async def count_records_in_vector_store_for_rag_config(
+    project: Project,
+    rag_config: RagConfig,
+) -> int:
+    vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+        str(rag_config.vector_store_config_id),
+        project.path,
+    )
+    if vector_store_config is None:
+        raise ValueError(f"Rag config {rag_config.id} has no vector store config")
+    return await count_records_in_vector_store(rag_config, vector_store_config)
+
+
+async def compute_current_progress_for_rag_configs(
     project: Project,
     rag_configs: list[RagConfig],
 ) -> Dict[str, RagProgress]:
@@ -87,9 +142,14 @@ def compute_current_progress_for_rag_configs(
         rag_config_progress_map[str(rag_config.id)] = RagProgress(
             total_document_count=len(project.documents(readonly=True)),
             total_document_completed_count=0,
+            total_chunk_count=0,
+            total_chunk_completed_count=0,
             total_document_extracted_count=0,
             total_document_chunked_count=0,
             total_document_embedded_count=0,
+            total_chunks_indexed_count=await count_records_in_vector_store_for_rag_config(
+                project, rag_config
+            ),
         )
 
     for document in project.documents(readonly=True):
@@ -111,6 +171,10 @@ def compute_current_progress_for_rag_configs(
                         matching_rag_config_id
                     ].total_document_chunked_count += 1
 
+                    rag_config_progress_map[
+                        matching_rag_config_id
+                    ].total_chunk_count += len(chunked_document.chunks)
+
                 for embedding in chunked_document.chunk_embeddings(readonly=True):
                     # increment the embedding count for every rag config that has this extractor+chunker+embedding combo
                     embedding_path_prefix = (
@@ -130,14 +194,20 @@ def compute_current_progress_for_rag_configs(
             rag_config_progress.total_document_embedded_count,
         )
 
+        rag_config_progress.total_chunk_completed_count = (
+            rag_config_progress.total_chunks_indexed_count
+        )
+
     return dict(rag_config_progress_map)
 
 
-def compute_current_progress_for_rag_config(
+async def compute_current_progress_for_rag_config(
     project: Project,
     rag_config: RagConfig,
 ) -> RagProgress:
-    config_progress = compute_current_progress_for_rag_configs(project, [rag_config])
+    config_progress = await compute_current_progress_for_rag_configs(
+        project, [rag_config]
+    )
     if str(rag_config.id) not in config_progress:
         raise ValueError(f"Failed to compute progress for rag config {rag_config.id}")
     return config_progress[str(rag_config.id)]

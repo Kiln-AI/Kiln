@@ -14,14 +14,17 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.rag.progress import (
     RagProgress,
+    compute_current_progress_for_rag_config,
     compute_current_progress_for_rag_configs,
 )
 from kiln_ai.adapters.rag.rag_runners import (
     RagChunkingStepRunner,
     RagEmbeddingStepRunner,
     RagExtractionStepRunner,
+    RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
+    RagWorkflowStepNames,
 )
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -43,6 +46,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -94,7 +98,7 @@ async def run_all_extractors_and_rag_workflows(
             try:
                 async with shared_async_lock_manager.acquire(
                     f"docs:extract:{extractor_config.id}",
-                    timeout=0.5,
+                    timeout=20,
                 ):
                     extractor_runner = ExtractorRunner(
                         extractor_configs=[extractor_config],
@@ -114,15 +118,26 @@ async def run_all_extractors_and_rag_workflows(
         results = await asyncio.gather(*extractor_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error running extractor: {result}")
+                logger.error(
+                    f"Error running extractor: {type(result).__name__}: {result}",
+                    exc_info=(type(result), result, result.__traceback__),
+                )
 
     rag_tasks: list[asyncio.Task] = []
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
 
         async def run_rag(rag_config=rag_config):
-            # no need to lock here, each rag runner gets a lock when it starts running
-            rag_runner = build_rag_workflow_runner(project, str(rag_config.id))
-            async for progress in rag_runner.run():
+            # no need to lock here, each rag step runner gets a lock when it starts running
+            rag_runner = await build_rag_workflow_runner(project, str(rag_config.id))
+            async for progress in rag_runner.run(
+                stages_to_run=[
+                    # we skip extracting here because we already ran the extractors independently higher up
+                    RagWorkflowStepNames.CHUNKING,
+                    RagWorkflowStepNames.EMBEDDING,
+                    RagWorkflowStepNames.INDEXING,
+                ],
+                document_ids=[document.id],
+            ):
                 pass
 
         rag_tasks.append(asyncio.create_task(run_rag()))
@@ -131,7 +146,10 @@ async def run_all_extractors_and_rag_workflows(
         results = await asyncio.gather(*rag_tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                logger.error(f"Error running RAG workflow: {result}")
+                logger.error(
+                    f"Error running RAG workflow: {type(result).__name__}: {result}",
+                    exc_info=(type(result), result, result.__traceback__),
+                )
 
     return None
 
@@ -169,12 +187,16 @@ async def run_rag_workflow_runner_with_status(
             data = {
                 "total_document_completed_count": progress.total_document_completed_count,
                 "total_document_count": progress.total_document_count,
+                "total_chunk_count": progress.total_chunk_count,
+                "total_chunk_completed_count": progress.total_chunk_completed_count,
                 "total_document_extracted_count": progress.total_document_extracted_count,
                 "total_document_chunked_count": progress.total_document_chunked_count,
                 "total_document_embedded_count": progress.total_document_embedded_count,
                 "total_document_extracted_error_count": progress.total_document_extracted_error_count,
                 "total_document_chunked_error_count": progress.total_document_chunked_error_count,
                 "total_document_embedded_error_count": progress.total_document_embedded_error_count,
+                "total_chunks_indexed_count": progress.total_chunks_indexed_count,
+                "total_chunks_indexed_error_count": progress.total_chunks_indexed_error_count,
                 "logs": logs,
             }
             yield f"data: {json.dumps(data)}\n\n"
@@ -388,7 +410,7 @@ class GetRagConfigProgressRequest(BaseModel):
     )
 
 
-def build_rag_workflow_runner(
+async def build_rag_workflow_runner(
     project: Project,
     rag_config_id: str,
 ) -> RagWorkflowRunner:
@@ -437,6 +459,19 @@ def build_rag_workflow_runner(
             detail="Embedding config not found",
         )
 
+    vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+        str(rag_config.vector_store_config_id), project.path
+    )
+    if vector_store_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Vector store config not found",
+        )
+
+    initial_progress = await compute_current_progress_for_rag_config(
+        project, rag_config
+    )
+
     runner = RagWorkflowRunner(
         project,
         RagWorkflowRunnerConfiguration(
@@ -463,7 +498,16 @@ def build_rag_workflow_runner(
                     embedding_config,
                     concurrency=50,
                 ),
+                RagIndexingStepRunner(
+                    project,
+                    extractor_config,
+                    chunker_config,
+                    embedding_config,
+                    vector_store_config,
+                    rag_config,
+                ),
             ],
+            initial_progress=initial_progress,
         ),
     )
 
@@ -1061,6 +1105,22 @@ def connect_document_api(app: FastAPI):
                 detail=f"Embedding config {request.embedding_config_id} not found",
             )
 
+        # TODO: get vector store config params from the request
+        vector_store_config = VectorStoreConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties={
+                "similarity_top_k": 10,
+                "nprobes": 10,
+                "overfetch_factor": 10,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+            },
+        )
+        vector_store_config.save_to_file()
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1068,6 +1128,7 @@ def connect_document_api(app: FastAPI):
             extractor_config_id=extractor_config.id,
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
+            vector_store_config_id=vector_store_config.id,
         )
         rag_config.save_to_file()
 
@@ -1181,7 +1242,7 @@ def connect_document_api(app: FastAPI):
         rag_config_id: str,
     ) -> StreamingResponse:
         project = project_from_id(project_id)
-        runner = build_rag_workflow_runner(project, rag_config_id)
+        runner = await build_rag_workflow_runner(project, rag_config_id)
 
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner)
@@ -1208,7 +1269,7 @@ def connect_document_api(app: FastAPI):
         else:
             rag_configs = project.rag_configs(readonly=True)
 
-        progress_map: Dict[str, RagProgress] = compute_current_progress_for_rag_configs(
-            project, rag_configs
-        )
+        progress_map: Dict[
+            str, RagProgress
+        ] = await compute_current_progress_for_rag_configs(project, rag_configs)
         return progress_map

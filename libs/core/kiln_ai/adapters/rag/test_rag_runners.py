@@ -130,6 +130,7 @@ def real_rag_config(mock_project):
         extractor_config_id="extractor-123",
         chunker_config_id="chunker-123",
         embedding_config_id="embedding-123",
+        vector_store_config_id="vector-store-123",
         parent=mock_project,
     )
 
@@ -721,18 +722,7 @@ class TestRagWorkflowRunner:
     ):
         return RagWorkflowRunnerConfiguration(
             step_runners=[mock_step_runner],
-            rag_config=real_rag_config,
-            extractor_config=real_extractor_config,
-            chunker_config=real_chunker_config,
-            embedding_config=real_embedding_config,
-        )
-
-    @pytest.fixture
-    def workflow_runner(self, mock_project, workflow_config):
-        with patch(
-            "kiln_ai.adapters.rag.rag_runners.compute_current_progress_for_rag_config"
-        ) as mock_compute:
-            mock_initial_progress = RagProgress(
+            initial_progress=RagProgress(
                 total_document_count=10,
                 total_document_extracted_count=0,
                 total_document_chunked_count=0,
@@ -742,12 +732,16 @@ class TestRagWorkflowRunner:
                 total_document_chunked_error_count=0,
                 total_document_embedded_error_count=0,
                 logs=[],
-            )
-            mock_compute.return_value = mock_initial_progress
+            ),
+            rag_config=real_rag_config,
+            extractor_config=real_extractor_config,
+            chunker_config=real_chunker_config,
+            embedding_config=real_embedding_config,
+        )
 
-            return RagWorkflowRunner(
-                project=mock_project, configuration=workflow_config
-            )
+    @pytest.fixture
+    def workflow_runner(self, mock_project, workflow_config):
+        return RagWorkflowRunner(project=mock_project, configuration=workflow_config)
 
     def test_lock_key_generation(self, workflow_runner):
         expected_key = f"rag:run:{workflow_runner.configuration.rag_config.id}"
@@ -786,7 +780,7 @@ class TestRagWorkflowRunner:
     def test_update_workflow_progress_unknown_step_raises_error(self, workflow_runner):
         step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
 
-        with pytest.raises(ValueError, match="Unknown step name"):
+        with pytest.raises(ValueError, match="Unhandled enum value"):
             workflow_runner.update_workflow_progress("unknown_step", step_progress)
 
     def test_update_workflow_progress_calculates_completed_count(self, workflow_runner):
@@ -794,14 +788,19 @@ class TestRagWorkflowRunner:
         workflow_runner.current_progress.total_document_extracted_count = 10
         workflow_runner.current_progress.total_document_chunked_count = 8
         workflow_runner.current_progress.total_document_embedded_count = 5
+        workflow_runner.current_progress.total_chunks_indexed_count = 3
 
         step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
         result = workflow_runner.update_workflow_progress(
             RagWorkflowStepNames.EXTRACTING, step_progress
         )
 
-        # Completed count should be the minimum of all step counts
+        # Completed count should be the minimum of all document-related step counts
         assert result.total_document_completed_count == 5
+
+        # chunks are tracked separately (so we can compare them against the total chunk count
+        # to determine completion)
+        assert result.total_chunk_completed_count == 3
 
     @pytest.mark.asyncio
     async def test_run_yields_initial_progress_and_step_progress(self, workflow_runner):
@@ -851,6 +850,7 @@ class TestRagWorkflowRunnerConfiguration:
 
         config = RagWorkflowRunnerConfiguration(
             step_runners=[mock_step_runner],
+            initial_progress=RagProgress(),
             rag_config=real_rag_config,
             extractor_config=real_extractor_config,
             chunker_config=real_chunker_config,
@@ -862,7 +862,7 @@ class TestRagWorkflowRunnerConfiguration:
         assert config.extractor_config == real_extractor_config
         assert config.chunker_config == real_chunker_config
         assert config.embedding_config == real_embedding_config
-        assert config.initial_progress is None
+        assert isinstance(config.initial_progress, RagProgress)
 
     def test_configuration_with_initial_progress(
         self,

@@ -165,9 +165,7 @@
             // @ts-expect-error provider is not typed, but server will validate
             provider: provider_name,
             properties: {
-              // @ts-expect-error properties are not typed, but server will validate
               eval_steps: eval_steps,
-              // @ts-expect-error properties are not typed, but server will validate
               task_description: task_description,
             },
           },
