@@ -358,7 +358,7 @@ def connect_tool_servers_api(app: FastAPI):
             missing_secrets=[],
         )
 
-        # Check if the tool server has missing secretes (e.g. new user syncing exisitng project)
+        # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
         # If there are missing secrets, add a requirement to the result and skip getting available tools.
         missing_secrets = tool_server.missing_secrets()
         if missing_secrets and len(missing_secrets) > 0:
