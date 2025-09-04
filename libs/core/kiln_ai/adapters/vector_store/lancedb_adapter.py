@@ -222,15 +222,23 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             raise ValueError("ids, nodes, and similarities must have the same length")
 
         results = []
-        for id, node, similarity in zip(
+        for _, node, similarity in zip(
             query_result.ids or [],
             query_result.nodes or [],
             query_result.similarities or [],
         ):
+            if node.metadata is None:
+                raise ValueError("node.metadata must not be None")
+            document_id = node.metadata.get("kiln_doc_id")
+            if document_id is None:
+                raise ValueError("node.metadata.kiln_doc_id must not be None")
+            chunk_idx = node.metadata.get("kiln_chunk_idx")
+            if chunk_idx is None:
+                raise ValueError("node.metadata.kiln_chunk_idx must not be None")
             results.append(
                 SearchResult(
-                    document_id=id,
-                    chunk_idx=node.metadata["kiln_chunk_idx"],
+                    document_id=document_id,
+                    chunk_idx=chunk_idx,
                     chunk_text=node.get_content(),
                     similarity=similarity,
                 )

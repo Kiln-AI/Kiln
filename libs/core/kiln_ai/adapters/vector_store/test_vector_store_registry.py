@@ -5,14 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kiln_ai.adapters.vector_store.base_vector_store_adapter import VectorStoreConfig
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import VectorStoreType
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 
 
 @pytest.fixture
@@ -133,6 +132,7 @@ class TestVectorStoreAdapterForConfig:
         unsupported_config = MagicMock()
         unsupported_config.store_type = "INVALID_TYPE"
         unsupported_config.name = "unsupported"
+        unsupported_config.id = "test_config_id"
 
         rag_config = create_rag_config_factory(
             MagicMock(spec=VectorStoreConfig, id="test_config_id"), embedding_config

@@ -23,7 +23,6 @@ dependencies = [
     "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
     "jsonschema>=4.23.0",
-    "llama-index-core>=0.12.42",
     "lancedb>=0.24.2",
     "litellm>=1.72.6",
     "openai>=1.53.0",

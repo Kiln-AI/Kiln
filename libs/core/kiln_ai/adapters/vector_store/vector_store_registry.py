@@ -2,11 +2,10 @@ import logging
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
-    VectorStoreConfig,
 )
 from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import VectorStoreType
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)

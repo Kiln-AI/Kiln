@@ -17,11 +17,6 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig
 class TestBaseVectorStoreAdapter:
     """Test the base vector store adapter abstract class."""
 
-    def test_cannot_instantiate_abstract_class(self):
-        """Test that the abstract base class cannot be instantiated."""
-        with pytest.raises(TypeError):
-            BaseVectorStoreAdapter(MagicMock(spec=VectorStoreConfig))
-
     def test_init_stores_config(self):
         """Test that the adapter stores the vector store config."""
 

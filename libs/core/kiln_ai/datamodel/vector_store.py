@@ -49,7 +49,7 @@ class VectorStoreConfig(KilnParentedModel):
     store_type: VectorStoreType = Field(
         description="The type of vector store to use.",
     )
-    properties: dict[str, str | int | float] = Field(
+    properties: dict[str, str | int | float | None] = Field(
         description="The properties of the vector store config, specific to the selected store_type.",
     )
 

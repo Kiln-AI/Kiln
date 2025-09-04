@@ -120,7 +120,7 @@ async def run_all_extractors_and_rag_workflows(
             if isinstance(result, Exception):
                 logger.error(
                     f"Error running extractor: {type(result).__name__}: {result}",
-                    exc_info=result,
+                    exc_info=(type(result), result, result.__traceback__),
                 )
 
     rag_tasks: list[asyncio.Task] = []
@@ -148,7 +148,7 @@ async def run_all_extractors_and_rag_workflows(
             if isinstance(result, Exception):
                 logger.error(
                     f"Error running RAG workflow: {type(result).__name__}: {result}",
-                    exc_info=result,
+                    exc_info=(type(result), result, result.__traceback__),
                 )
 
     return None
