@@ -1,7 +1,8 @@
+import copy
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, TypeAlias, Union
 
 import litellm
 from litellm.types.utils import (
@@ -9,6 +10,9 @@ from litellm.types.utils import (
     ChoiceLogprobs,
     Choices,
     ModelResponse,
+)
+from litellm.types.utils import (
+    Message as LiteLLMMessage,
 )
 from litellm.types.utils import Usage as LiteLlmUsage
 from openai.types.chat import (
@@ -44,11 +48,15 @@ MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
 
+ChatCompletionMessageIncludingLiteLLM: TypeAlias = Union[
+    ChatCompletionMessageParam, LiteLLMMessage
+]
+
 
 @dataclass
 class ModelTurnResult:
     assistant_message: str
-    all_messages: list[ChatCompletionMessageParam]
+    all_messages: list[ChatCompletionMessageIncludingLiteLLM]
     model_response: ModelResponse | None
     model_choice: Choices | None
     usage: Usage
@@ -77,7 +85,7 @@ class LiteLlmAdapter(BaseAdapter):
     async def _run_model_turn(
         self,
         provider: KilnModelProvider,
-        prior_messages: list[ChatCompletionMessageParam],
+        prior_messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool,
     ) -> ModelTurnResult:
@@ -95,7 +103,8 @@ class LiteLlmAdapter(BaseAdapter):
             # Build completion kwargs for tool calls
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
-                messages,
+                # Pass a copy, as acompletion mutates objects and breaks types.
+                copy.deepcopy(messages),
                 top_logprobs,
                 skip_response_format,
             )
@@ -108,11 +117,18 @@ class LiteLlmAdapter(BaseAdapter):
             # count the usage
             usage += self.usage_from_response(model_response)
 
-            # Extract content and tool_calls safely
-            content, assistant_message, tool_calls = self.extract_assistant_response(
-                response_choice
-            )
-            messages.append(assistant_message)
+            # Extract content and tool calls
+            if not hasattr(response_choice, "message"):
+                raise ValueError("Response choice has no message")
+            content = response_choice.message.content
+            tool_calls = response_choice.message.tool_calls
+            if not content and not tool_calls:
+                raise ValueError(
+                    "Model returned an assistant message, but no content or tool calls. This is not supported."
+                )
+
+            # Add message to messages, so it can be used in the next turn
+            messages.append(response_choice.message)
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
@@ -166,7 +182,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError("Model ID is required for OpenAI compatible models")
 
         chat_formatter = self.build_chat_formatter(input)
-        messages: list[ChatCompletionMessageParam] = []
+        messages: list[ChatCompletionMessageIncludingLiteLLM] = []
 
         prior_output: str | None = None
         final_choice: Choices | None = None
@@ -219,11 +235,12 @@ class LiteLlmAdapter(BaseAdapter):
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
+        trace = self.all_messages_to_trace(messages)
         output = RunOutput(
             output=prior_output,
             intermediate_outputs=intermediate_outputs,
             output_logprobs=logprobs,
-            trace=messages,
+            trace=trace,
         )
 
         return output, usage
@@ -504,7 +521,7 @@ class LiteLlmAdapter(BaseAdapter):
     async def build_completion_kwargs(
         self,
         provider: KilnModelProvider,
-        messages: list[ChatCompletionMessageParam],
+        messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool = False,
     ) -> dict[str, Any]:
@@ -659,53 +676,63 @@ class LiteLlmAdapter(BaseAdapter):
 
         return assistant_output_from_toolcall, tool_call_response_messages
 
-    def extract_assistant_response(
-        self, response_choice: Choices
-    ) -> tuple[
-        str | None,
-        ChatCompletionAssistantMessageParamWrapper,
-        List[ChatCompletionMessageToolCall] | None,
-    ]:
+    def litellm_message_to_trace_message(
+        self, raw_message: LiteLLMMessage
+    ) -> ChatCompletionAssistantMessageParamWrapper:
         """
-        Extract the message from the model with type safety and validation.
+        Convert a LiteLLM Message object to an OpenAI compatible message, our ChatCompletionAssistantMessageParamWrapper
         """
-        content: str | None = None
-        tool_calls: List[ChatCompletionMessageToolCall] | None = None
-        tool_calls_param: List[ChatCompletionMessageToolCallParam] = []
-        if hasattr(response_choice, "message"):
-            if hasattr(response_choice.message, "content"):
-                content = response_choice.message.content
-            if hasattr(response_choice.message, "tool_calls"):
-                tool_calls = response_choice.message.tool_calls
-
-                # ChatCompletionMessageToolCallParam != ChatCompletionMessageToolCall, obviously
-                for tool_call in tool_calls or []:
-                    # Optional in the SDK for streaming responses, but should never be None by now
-                    if tool_call.function.name is None:
-                        raise ValueError(
-                            "The model requested a tool call, without providing a function name (required)."
-                        )
-                    tool_calls_param.append(
-                        ChatCompletionMessageToolCallParam(
-                            id=tool_call.id,
-                            type="function",
-                            function={
-                                "name": tool_call.function.name,
-                                "arguments": tool_call.function.arguments,
-                            },
-                        )
-                    )
-
-        if not content and not tool_calls_param:
-            raise ValueError(
-                "Model returned an assistant message, but no content or tool calls. This is not supported."
-            )
         message: ChatCompletionAssistantMessageParamWrapper = {
             "role": "assistant",
         }
-        if content:
-            message["content"] = content
-        if tool_calls_param:
-            message["tool_calls"] = tool_calls_param
+        if raw_message.role != "assistant":
+            raise ValueError(
+                "Model returned a message with a role other than assistant. This is not supported."
+            )
 
-        return content, message, tool_calls
+        if hasattr(raw_message, "content"):
+            message["content"] = raw_message.content
+        if hasattr(raw_message, "reasoning_content"):
+            message["reasoning_content"] = raw_message.reasoning_content
+        if hasattr(raw_message, "tool_calls"):
+            # Convert ChatCompletionMessageToolCall to ChatCompletionMessageToolCallParam
+            open_ai_tool_calls: List[ChatCompletionMessageToolCallParam] = []
+            for litellm_tool_call in raw_message.tool_calls or []:
+                # Optional in the SDK for streaming responses, but should never be None at this point.
+                if litellm_tool_call.function.name is None:
+                    raise ValueError(
+                        "The model requested a tool call, without providing a function name (required)."
+                    )
+                open_ai_tool_calls.append(
+                    ChatCompletionMessageToolCallParam(
+                        id=litellm_tool_call.id,
+                        type="function",
+                        function={
+                            "name": litellm_tool_call.function.name,
+                            "arguments": litellm_tool_call.function.arguments,
+                        },
+                    )
+                )
+            if len(open_ai_tool_calls) > 0:
+                message["tool_calls"] = open_ai_tool_calls
+
+        if not message.get("content") and not message.get("tool_calls"):
+            raise ValueError(
+                "Model returned an assistant message, but no content or tool calls. This is not supported."
+            )
+
+        return message
+
+    def all_messages_to_trace(
+        self, messages: list[ChatCompletionMessageIncludingLiteLLM]
+    ) -> list[ChatCompletionMessageParam]:
+        """
+        Internally we allow LiteLLM Message objects, but for trace we need OpenAI compatible types. Replace LiteLLM Message objects with OpenAI compatible types.
+        """
+        trace: list[ChatCompletionMessageParam] = []
+        for message in messages:
+            if isinstance(message, LiteLLMMessage):
+                trace.append(self.litellm_message_to_trace_message(message))
+            else:
+                trace.append(message)
+        return trace
