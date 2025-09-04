@@ -1309,8 +1309,12 @@ export interface components {
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+         *
+         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
          *     https://github.com/pydantic/pydantic/issues/9541
+         *
+         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
         "ChatCompletionAssistantMessageParamWrapper-Input": {
             /**
@@ -1321,6 +1325,8 @@ export interface components {
             audio?: components["schemas"]["Audio"] | null;
             /** Content */
             content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
             function_call?: components["schemas"]["FunctionCall"] | null;
             /** Name */
             name?: string;
@@ -1331,8 +1337,12 @@ export interface components {
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+         *
+         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
          *     https://github.com/pydantic/pydantic/issues/9541
+         *
+         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
         "ChatCompletionAssistantMessageParamWrapper-Output": {
             /**
@@ -1343,6 +1353,8 @@ export interface components {
             audio?: components["schemas"]["Audio"] | null;
             /** Content */
             content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
             function_call?: components["schemas"]["FunctionCall"] | null;
             /** Name */
             name?: string;
