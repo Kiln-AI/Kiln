@@ -7,42 +7,121 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 
 
+# Test fixtures for common server configurations
+@pytest.fixture
+def remote_mcp_minimal():
+    """Minimal valid remote MCP server configuration."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.remote_mcp,
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {},
+        },
+    )
+
+
+@pytest.fixture
+def remote_mcp_with_headers():
+    """Remote MCP server with headers."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.remote_mcp,
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {
+                "Authorization": "Bearer token",
+                "Content-Type": "application/json",
+            },
+        },
+    )
+
+
+@pytest.fixture
+def remote_mcp_with_secrets():
+    """Remote MCP server with secret headers."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.remote_mcp,
+        properties={
+            "server_url": "https://example.com/mcp",
+            "headers": {
+                "Authorization": "Bearer secret_token",
+                "Content-Type": "application/json",
+            },
+            "secret_header_keys": ["Authorization"],
+        },
+    )
+
+
+@pytest.fixture
+def local_mcp_minimal():
+    """Minimal valid local MCP server configuration."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "python",
+            "args": ["-m", "my_server"],
+            "env_vars": {},
+        },
+    )
+
+
+@pytest.fixture
+def local_mcp_with_env_vars():
+    """Local MCP server with environment variables."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "python",
+            "args": ["-m", "my_server"],
+            "env_vars": {
+                "API_KEY": "secret_key",
+                "PORT": "3000",
+            },
+        },
+    )
+
+
+@pytest.fixture
+def local_mcp_with_secrets():
+    """Local MCP server with secret environment variables."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.local_mcp,
+        properties={
+            "command": "python",
+            "args": ["-m", "my_server"],
+            "env_vars": {
+                "API_KEY": "secret_key",
+                "PORT": "3000",
+            },
+            "secret_env_var_keys": ["API_KEY"],
+        },
+    )
+
+
 class TestExternalToolServerValidation:
     """Tests for ExternalToolServer model validation, including secret header keys."""
 
-    def test_remote_mcp_valid_minimal(self):
+    def test_remote_mcp_valid_minimal(self, remote_mcp_minimal):
         """Test ExternalToolServer with minimal valid remote MCP configuration."""
-        server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com/mcp",
-                "headers": {},
-            },
-        )
+        server = remote_mcp_minimal
 
         assert server.name == "test_server"
         assert server.type == ToolServerType.remote_mcp
         assert server.properties["server_url"] == "https://example.com/mcp"
         assert server.properties["headers"] == {}
 
-    def test_remote_mcp_valid_with_headers(self):
+    def test_remote_mcp_valid_with_headers(self, remote_mcp_with_headers):
         """Test ExternalToolServer with valid remote MCP configuration including headers."""
-        server = ExternalToolServer(
-            name="test_server_with_headers",
-            type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://api.example.com/mcp",
-                "headers": {
-                    "Authorization": "Bearer token123",
-                    "Content-Type": "application/json",
-                },
-            },
-        )
+        server = remote_mcp_with_headers
 
-        assert server.name == "test_server_with_headers"
+        assert server.name == "test_server"
         assert len(server.properties["headers"]) == 2
-        assert server.properties["headers"]["Authorization"] == "Bearer token123"
+        assert server.properties["headers"]["Authorization"] == "Bearer token"
 
     def test_remote_mcp_valid_with_secret_header_keys(self):
         """Test ExternalToolServer with valid secret header keys."""
@@ -161,19 +240,11 @@ class TestExternalToolServerValidation:
                 },
             )
 
-    def test_local_mcp_valid_minimal(self):
+    def test_local_mcp_valid_minimal(self, local_mcp_minimal):
         """Test ExternalToolServer with minimal valid local MCP configuration."""
-        server = ExternalToolServer(
-            name="local_server",
-            type=ToolServerType.local_mcp,
-            properties={
-                "command": "python",
-                "args": ["-m", "my_server"],
-                "env_vars": {},
-            },
-        )
+        server = local_mcp_minimal
 
-        assert server.name == "local_server"
+        assert server.name == "test_server"
         assert server.type == ToolServerType.local_mcp
         assert server.properties["command"] == "python"
         assert server.properties["args"] == ["-m", "my_server"]
@@ -403,65 +474,30 @@ class TestExternalToolServerValidation:
 class TestExternalToolServerSecretMethods:
     """Tests for ExternalToolServer secret management methods."""
 
-    def test_get_secret_keys_remote_mcp_with_secrets(self):
+    def test_get_secret_keys_remote_mcp_with_secrets(self, remote_mcp_with_secrets):
         """Test get_secret_keys returns correct keys for remote MCP servers."""
-        server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com/mcp",
-                "headers": {
-                    "Authorization": "Bearer token",
-                    "Content-Type": "application/json",
-                },
-                "secret_header_keys": ["Authorization"],
-            },
-        )
+        server = remote_mcp_with_secrets
 
         secret_keys = server.get_secret_keys()
         assert secret_keys == ["Authorization"]
 
-    def test_get_secret_keys_remote_mcp_no_secrets(self):
+    def test_get_secret_keys_remote_mcp_no_secrets(self, remote_mcp_minimal):
         """Test get_secret_keys returns empty list when no secret keys defined."""
-        server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com/mcp",
-                "headers": {"Content-Type": "application/json"},
-            },
-        )
+        server = remote_mcp_minimal
 
         secret_keys = server.get_secret_keys()
         assert secret_keys == []
 
-    def test_get_secret_keys_local_mcp_with_secrets(self):
+    def test_get_secret_keys_local_mcp_with_secrets(self, local_mcp_with_secrets):
         """Test get_secret_keys returns correct keys for local MCP servers."""
-        server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.local_mcp,
-            properties={
-                "command": "python",
-                "args": ["-m", "my_server"],
-                "env_vars": {"API_KEY": "secret", "PORT": "3000"},
-                "secret_env_var_keys": ["API_KEY"],
-            },
-        )
+        server = local_mcp_with_secrets
 
         secret_keys = server.get_secret_keys()
         assert secret_keys == ["API_KEY"]
 
-    def test_get_secret_keys_local_mcp_no_secrets(self):
+    def test_get_secret_keys_local_mcp_no_secrets(self, local_mcp_minimal):
         """Test get_secret_keys returns empty list for local MCP with no secrets."""
-        server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.local_mcp,
-            properties={
-                "command": "python",
-                "args": ["-m", "my_server"],
-                "env_vars": {"PORT": "3000"},
-            },
-        )
+        server = local_mcp_minimal
 
         secret_keys = server.get_secret_keys()
         assert secret_keys == []
@@ -1135,3 +1171,53 @@ class TestExternalToolServerSaveToFileOverride:
         # Should not raise error and env_vars should remain empty
         assert server.properties["env_vars"] == {}
         mock_parent_save.assert_called_once()
+
+
+class TestExternalToolServerExhaustiveEnumError:
+    """Tests for ExternalToolServer exhaustive enum error coverage."""
+
+    def test_validate_required_fields_exhaustive_enum_error(self, remote_mcp_minimal):
+        """Test validate_required_fields raises exhaustive enum error for invalid type."""
+        server = remote_mcp_minimal
+
+        # Bypass Pydantic validation to set an invalid enum value
+        object.__setattr__(server, "type", "invalid_type")
+
+        # Call the underlying validator function directly
+        validator_func = ExternalToolServer.__dict__["validate_required_fields"]
+        with pytest.raises(ValueError, match="Unhandled enum value: invalid_type"):
+            validator_func(server)
+
+    def test_get_secret_keys_exhaustive_enum_error(self, remote_mcp_minimal):
+        """Test get_secret_keys raises exhaustive enum error for invalid type."""
+        server = remote_mcp_minimal
+
+        # Bypass Pydantic validation to set an invalid enum value
+        object.__setattr__(server, "type", "invalid_type")
+
+        with pytest.raises(ValueError, match="Unhandled enum value: invalid_type"):
+            server.get_secret_keys()
+
+    def test_save_secrets_exhaustive_enum_error(self, remote_mcp_with_secrets):
+        """Test save_secrets raises exhaustive enum error for invalid type."""
+        server = remote_mcp_with_secrets
+        server.id = "test_id"
+
+        # Bypass Pydantic validation to set an invalid enum value
+        object.__setattr__(server, "type", "invalid_type")
+
+        with pytest.raises(ValueError, match="Unhandled enum value: invalid_type"):
+            server.save_secrets()
+
+    @patch.object(ExternalToolServer.__bases__[0], "save_to_file")
+    def test_save_to_file_exhaustive_enum_error(
+        self, mock_parent_save, remote_mcp_with_secrets
+    ):
+        """Test save_to_file raises exhaustive enum error for invalid type."""
+        server = remote_mcp_with_secrets
+
+        # Bypass Pydantic validation to set an invalid enum value
+        object.__setattr__(server, "type", "invalid_type")
+
+        with pytest.raises(ValueError, match="Unhandled enum value: invalid_type"):
+            server.save_to_file()
