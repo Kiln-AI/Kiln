@@ -73,7 +73,6 @@
                 project_id: project.id,
               },
             },
-            // @ts-expect-error Patching only takes some fields
             body,
           },
         )
