@@ -147,6 +147,28 @@ class ExternalToolServer(KilnParentedModel):
 
         return secrets
 
+    def missing_secrets(self) -> list[str]:
+        """
+        Check if the tool server has missing secrets.
+
+        Returns:
+            List of secret key names that are missing values in Config
+        """
+        missing_secrets = []
+        secret_keys = self.get_secret_keys()
+
+        if secret_keys and len(secret_keys) > 0:
+            config = Config.shared()
+            mcp_secrets = config.get_value(MCP_SECRETS_KEY)
+
+            for key_name in secret_keys:
+                secret_key = self._config_secret_key(key_name)
+                # Check if the secret is missing or empty
+                if not mcp_secrets or not mcp_secrets.get(secret_key):
+                    missing_secrets.append(key_name)
+
+        return missing_secrets
+
     def save_secrets(self) -> None:
         """
         Save secrets to the configuration system.

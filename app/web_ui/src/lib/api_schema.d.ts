@@ -2219,6 +2219,8 @@ export interface components {
             properties: Record<string, never>;
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
+            /** Missing Secrets */
+            missing_secrets: string[];
         };
         /** ExternalToolServerCreationRequest */
         ExternalToolServerCreationRequest: {

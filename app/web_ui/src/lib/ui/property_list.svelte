@@ -6,6 +6,7 @@
     value: string | number
     tooltip?: string
     link?: string
+    error?: boolean
   }
 
   export let properties: UiProperty[]
@@ -24,6 +25,8 @@
     <div class="flex items-center text-gray-500 overflow-x-hidden">
       {#if property.link}
         <a href={property.link} class="link">{property.value}</a>
+      {:else if property.error}
+        <span class="text-error">{property.value}</span>
       {:else}
         {property.value}
       {/if}

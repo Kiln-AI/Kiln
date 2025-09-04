@@ -194,6 +194,7 @@ class ExternalToolServerApiDescription(BaseModel):
     created_by: str | None
     properties: Dict[str, Any]
     available_tools: list[ExternalToolApiDescription]
+    missing_secrets: list[str]
 
 
 class ToolApiDescription(BaseModel):
@@ -342,6 +343,27 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
+        # Create a default result with incomplete status
+        result = ExternalToolServerApiDescription(
+            id=tool_server.id,
+            name=tool_server.name,
+            type=tool_server.type,
+            description=tool_server.description,
+            created_at=tool_server.created_at,
+            created_by=tool_server.created_by,
+            properties=tool_server.properties,
+            available_tools=[],
+            missing_secrets=[],
+        )
+
+        # Check if the tool server has missing secretes (e.g. new user syncing exisitng project)
+        # If there are missing secrets, add a requirement to the result and skip getting available tools.
+        missing_secrets = tool_server.missing_secrets()
+        if missing_secrets and len(missing_secrets) > 0:
+            result.missing_secrets = list(missing_secrets)
+            return result
+
+        # If there are no missing secrets, get available tools
         # Get available tools based on server type
         available_tools = []
         match tool_server.type:
@@ -358,16 +380,10 @@ def connect_tool_servers_api(app: FastAPI):
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 
-        return ExternalToolServerApiDescription(
-            id=tool_server.id,
-            name=tool_server.name,
-            type=tool_server.type,
-            description=tool_server.description,
-            created_at=tool_server.created_at,
-            created_by=tool_server.created_by,
-            properties=tool_server.properties,
-            available_tools=available_tools,
-        )
+        # Update the result with the available tools
+        result.available_tools = available_tools
+
+        return result
 
     @app.post("/api/projects/{project_id}/connect_remote_mcp")
     async def connect_remote_mcp(

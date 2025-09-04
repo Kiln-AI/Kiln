@@ -134,50 +134,63 @@
     return properties
   }
 
-  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
-    const headers = tool.properties["headers"] || {}
-    const secretHeaderKeys = (tool.properties["secret_header_keys"] ||
-      []) as string[]
-
-    const properties = Object.entries(headers).map(([key, value]) => ({
-      name: key,
-      value: String(value ?? "N/A"),
-    }))
-
-    // Add secret headers with masked values
-    secretHeaderKeys.forEach((key: string) => {
-      // Only add if not already in regular headers
-      if (!(key in headers)) {
-        properties.push({
-          name: key,
-          value: "●●●●●●",
-        })
-      }
-    })
-
-    return properties
+  type UiProperty = {
+    name: string
+    value: string
+    error?: boolean
   }
 
-  function getEnvVarProperties(tool: ExternalToolServerApiDescription) {
-    const envVars = tool.properties["env_vars"] || {}
-    const secretEnvVarKeys = (tool.properties["secret_env_var_keys"] ||
-      []) as string[]
+  /**
+   * Helper function to build properties list with secret handling
+   * @param noneSecretProperties - Object containing non-secret key-value pairs
+   * @param secretKeys - Array of secret key names
+   * @param missingSecrets - Array of missing secret key names
+   * @returns Array of UiProperty objects
+   */
+  function buildPropertiesWithSecrets(
+    noneSecretProperties: Record<string, string>,
+    secretKeys: string[],
+    missingSecrets: string[],
+  ): UiProperty[] {
+    // Non-secret values
+    const properties: UiProperty[] = []
+    properties.push(
+      ...Object.entries(noneSecretProperties).map(([key, value]) => ({
+        name: key,
+        value: String(value ?? "N/A"),
+      })),
+    )
 
-    const properties = Object.entries(envVars).map(([key, value]) => ({
-      name: key,
-      value: String(value ?? "N/A"),
-    }))
+    // Make sure secretKeys is an array of strings
+    const secretKeysArray: string[] = Array.isArray(secretKeys)
+      ? [...secretKeys.filter((k): k is string => typeof k === "string")]
+      : []
 
-    // Add secret environment variables with masked values
-    secretEnvVarKeys.forEach((key: string) => {
-      // Only add if not already in regular env_vars
-      if (!(key in envVars)) {
+    // Add secret values with masked values or error state
+    secretKeysArray.forEach((key: string) => {
+      // Check if the secret is missing
+      if (missingSecrets.includes(key)) {
+        properties.push({
+          name: key,
+          value: "Value missing",
+          error: true,
+        })
+      } else if (!(key in noneSecretProperties)) {
+        // Only add if not already in regular values
         properties.push({
           name: key,
           value: "●●●●●●",
         })
       }
     })
+
+    // If the properties are empty, add a placeholder
+    if (properties.length === 0) {
+      properties.push({
+        name: "None",
+        value: " ",
+      })
+    }
 
     return properties
   }
@@ -279,7 +292,11 @@
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
               <PropertyList
-                properties={getHeadersProperties(tool_server)}
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties["headers"],
+                  tool_server.properties["secret_header_keys"],
+                  tool_server.missing_secrets,
+                )}
                 title="Headers"
               />
             </div>
@@ -290,7 +307,11 @@
             />
             <div class="mt-8">
               <PropertyList
-                properties={getEnvVarProperties(tool_server)}
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties["env_vars"],
+                  tool_server.properties["secret_env_var_keys"],
+                  tool_server.missing_secrets,
+                )}
                 title="Environment Variables"
               />
             </div>
