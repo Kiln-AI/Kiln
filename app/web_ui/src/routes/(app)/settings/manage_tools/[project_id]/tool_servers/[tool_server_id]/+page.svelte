@@ -303,16 +303,18 @@
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
-            <div class="mt-8">
-              <PropertyList
-                properties={buildPropertiesWithSecrets(
-                  tool_server.properties["env_vars"],
-                  tool_server.properties["secret_env_var_keys"],
-                  tool_server.missing_secrets,
-                )}
-                title="Environment Variables"
-              />
-            </div>
+            {#if tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0}
+              <div class="mt-8">
+                <PropertyList
+                  properties={buildPropertiesWithSecrets(
+                    tool_server.properties["env_vars"],
+                    tool_server.properties["secret_env_var_keys"],
+                    tool_server.missing_secrets,
+                  )}
+                  title="Environment Variables"
+                />
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
