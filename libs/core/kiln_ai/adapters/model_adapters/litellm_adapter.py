@@ -537,8 +537,8 @@ class LiteLlmAdapter(BaseAdapter):
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
             response_format_options = await self.response_format_options()
 
-            # TODO: maybe reconsider this. Model should be able to choose between a final answer or a tool call on any turn. But good models have json_schea, so do we need to support both? If we do, merge them, and consider auto vs forced when merging (only forced for final, auto for merged).
             # Check for a conflict between tools and response format using tools
+            # We could reconsider this. Model could be able to choose between a final answer or a tool call on any turn. However, good models for tools tend to also support json_schea, so do we need to support both? If we do, merge them, and consider auto vs forced when merging (only forced for final, auto for merged).
             if has_tools and "tools" in response_format_options:
                 raise ValueError(
                     "Function calling/tools can't be used as the JSON response format if you're also using tools. Please select a different structured output mode."
