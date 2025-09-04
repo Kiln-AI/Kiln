@@ -10,7 +10,7 @@
   import EmptyTools from "./empty_tools.svelte"
 
   $: project_id = $page.params.project_id
-  $: is_empty = !tools || tools.length == 0
+  $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
@@ -117,7 +117,7 @@
           {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
-    {:else if demo_tools_enabled || (tools && tools.length > 0)}
+    {:else if !is_empty}
       <div class="overflow-x-auto rounded-lg border mt-4">
         <table class="table">
           <thead>
@@ -160,7 +160,7 @@
           </tbody>
         </table>
       </div>
-    {:else if is_empty}
+    {:else}
       <div class="flex flex-col items-center justify-center min-h-[60vh]">
         <EmptyTools {project_id} />
       </div>
