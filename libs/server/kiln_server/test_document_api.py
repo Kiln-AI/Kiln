@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -969,12 +970,82 @@ async def test_get_embedding_configs_no_embedding_configs(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_create_vector_store_config_success(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Test Vector Store",
+                "description": "Test vector store description",
+                "store_type": "lancedb_fts",
+                "properties": {
+                    "similarity_top_k": 10,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test Vector Store"
+    assert result["description"] == "Test vector store description"
+    assert result["store_type"] == "lancedb_fts"
+    assert result["properties"]["similarity_top_k"] == 10
+    assert result["properties"]["overfetch_factor"] == 1
+    assert result["properties"]["vector_column_name"] == "vector"
+    assert result["properties"]["text_key"] == "text"
+    assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+@pytest.mark.asyncio
+async def test_create_vector_store_config_with_hybrid_type(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Test Hybrid Vector Store",
+                "store_type": "lancedb_hybrid",
+                "properties": {
+                    "similarity_top_k": 5,
+                    "nprobes": 20,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["store_type"] == "lancedb_hybrid"
+    assert result["properties"]["nprobes"] == 20
+
+    # these are set by default
+    assert result["properties"]["overfetch_factor"] == 1
+    assert result["properties"]["vector_column_name"] == "vector"
+    assert result["properties"]["text_key"] == "text"
+    assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+@pytest.mark.asyncio
+async def test_get_vector_store_configs(client, mock_project, mock_vector_store_config):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/vector_store_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 1
+    assert result[0]["name"] == "Test Vector Store"
+
+
+@pytest.mark.asyncio
 async def test_create_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -988,6 +1059,7 @@ async def test_create_rag_config_success(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
             },
         )
 
@@ -999,11 +1071,17 @@ async def test_create_rag_config_success(
     assert result["extractor_config_id"] is not None
     assert result["chunker_config_id"] is not None
     assert result["embedding_config_id"] is not None
+    assert result["vector_store_config_id"] is not None
 
 
 @pytest.mark.parametrize(
     "missing_config_type",
-    ["extractor_config_id", "chunker_config_id", "embedding_config_id"],
+    [
+        "extractor_config_id",
+        "chunker_config_id",
+        "embedding_config_id",
+        "vector_store_config_id",
+    ],
 )
 @pytest.mark.asyncio
 async def test_create_rag_config_missing_config(
@@ -1012,6 +1090,7 @@ async def test_create_rag_config_missing_config(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
     missing_config_type,
 ):
     project = mock_project
@@ -1027,6 +1106,7 @@ async def test_create_rag_config_missing_config(
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
+            "vector_store_config_id": mock_vector_store_config.id,
         }
 
         # set one of the configs to a fake id - where we expect the error to be thrown
@@ -1793,3 +1873,457 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
     # Should have only 1 data event (complete message)
     assert len(data_lines) == 1
     assert data_lines[0] == "data: complete"
+
+
+# Tests for RAG search endpoint
+
+
+@pytest.fixture
+def mock_rag_config(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+    return rag_config
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_fts_success(client, mock_project, mock_rag_config):
+    """Test successful FTS search in RAG config"""
+    search_query = "test search query"
+    mock_search_results = [
+        {
+            "document_id": "doc_001",
+            "chunk_text": "This is a test document chunk containing the search query",
+            "similarity": None,
+        },
+        {
+            "document_id": "doc_002",
+            "chunk_text": "Another test chunk with relevant content",
+            "similarity": None,
+        },
+    ]
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = [
+            SearchResult(
+                chunk_idx=0,
+                document_id=result["document_id"],
+                chunk_text=result["chunk_text"],
+                similarity=result["similarity"],
+            )
+            for result in mock_search_results
+        ]
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 2
+    assert result["results"][0]["document_id"] == "doc_001"
+    assert (
+        result["results"][0]["chunk_text"]
+        == "This is a test document chunk containing the search query"
+    )
+    assert result["results"][0]["similarity"] is None
+    assert result["results"][1]["document_id"] == "doc_002"
+
+    # Verify search was called with correct parameters
+    mock_adapter.search.assert_called_once()
+    search_call = mock_adapter.search.call_args[0][0]
+    assert search_call.query_string == search_query
+    assert search_call.query_embedding is None
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_vector_success(
+    client, mock_project, mock_rag_config, mock_vector_store_config
+):
+    """Test successful vector search in RAG config"""
+    # Update vector store config to use vector search
+    mock_vector_store_config.properties.update(
+        {
+            "nprobes": 10,
+        }
+    )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+    mock_vector_store_config.save_to_file()
+
+    search_query = "test search query"
+    mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
+    mock_search_results = [
+        {
+            "document_id": "doc_001",
+            "chunk_text": "This is a test document chunk",
+            "similarity": 0.95,
+        },
+    ]
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+        patch(
+            "kiln_server.document_api.embedding_adapter_from_type"
+        ) as mock_embedding_adapter_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock embedding adapter
+        mock_embedding_adapter = AsyncMock()
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.embeddings = [MagicMock(vector=mock_embedding_vector)]
+        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
+        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = [
+            SearchResult(
+                chunk_idx=0,
+                document_id=result["document_id"],
+                chunk_text=result["chunk_text"],
+                similarity=result["similarity"],
+            )
+            for result in mock_search_results
+        ]
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert result["results"][0]["document_id"] == "doc_001"
+    assert result["results"][0]["similarity"] == 0.95
+
+    # Verify embedding generation was called
+    mock_embedding_adapter.generate_embeddings.assert_called_once_with([search_query])
+
+    # Verify search was called with correct parameters
+    mock_adapter.search.assert_called_once()
+    search_call = mock_adapter.search.call_args[0][0]
+    assert search_call.query_string is None
+    assert search_call.query_embedding == mock_embedding_vector
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_hybrid_success(
+    client, mock_project, mock_rag_config, mock_vector_store_config
+):
+    """Test successful hybrid search in RAG config"""
+    # Update vector store config to use hybrid search
+    mock_vector_store_config.properties.update(
+        {
+            "nprobes": 10,
+        }
+    )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_HYBRID
+    mock_vector_store_config.save_to_file()
+
+    search_query = "test search query"
+    mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
+    mock_search_results = [
+        {
+            "document_id": "doc_001",
+            "chunk_text": "This is a test document chunk",
+            "similarity": 0.88,
+        },
+    ]
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+        patch(
+            "kiln_server.document_api.embedding_adapter_from_type"
+        ) as mock_embedding_adapter_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock embedding adapter
+        mock_embedding_adapter = AsyncMock()
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.embeddings = [MagicMock(vector=mock_embedding_vector)]
+        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
+        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = [
+            SearchResult(
+                chunk_idx=0,
+                document_id=result["document_id"],
+                chunk_text=result["chunk_text"],
+                similarity=result["similarity"],
+            )
+            for result in mock_search_results
+        ]
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert result["results"][0]["document_id"] == "doc_001"
+    assert result["results"][0]["similarity"] == 0.88
+
+    # Verify embedding generation was called
+    mock_embedding_adapter.generate_embeddings.assert_called_once_with([search_query])
+
+    # Verify search was called with correct parameters
+    mock_adapter.search.assert_called_once()
+    search_call = mock_adapter.search.call_args[0][0]
+    assert search_call.query_string == search_query
+    assert search_call.query_embedding == mock_embedding_vector
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_not_found(client, mock_project):
+    """Test search with non-existent RAG config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/fake_id/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 404, response.text
+    assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_vector_store_not_found(
+    client, mock_project, mock_rag_config
+):
+    """Test search when vector store config is missing"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_vector_store_from_id.return_value = None  # Simulate missing config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Vector store config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_embedding_config_not_found(
+    client, mock_project, mock_rag_config
+):
+    """Test search when embedding config is missing"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_embedding_from_id.return_value = None  # Simulate missing config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Embedding config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_embedding_generation_failure(
+    client, mock_project, mock_rag_config, mock_vector_store_config
+):
+    """Test search when embedding generation fails"""
+    # Update vector store config to use vector search
+    mock_vector_store_config.properties.update(
+        {
+            "nprobes": 10,
+        }
+    )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+    mock_vector_store_config.save_to_file()
+
+    search_query = "test search query"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+        patch(
+            "kiln_server.document_api.embedding_adapter_from_type"
+        ) as mock_embedding_adapter_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock embedding adapter to return empty embeddings
+        mock_embedding_adapter = AsyncMock()
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.embeddings = []  # Empty embeddings list
+        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
+        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 500, response.text
+    assert (
+        "Failed to generate embeddings for search query" in response.json()["message"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_vector_store_search_failure(
+    client, mock_project, mock_rag_config
+):
+    """Test search when vector store search fails"""
+    search_query = "test search query"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter to raise an exception
+        mock_adapter = AsyncMock()
+        mock_adapter.search.side_effect = Exception("Vector store connection failed")
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 500, response.text
+    assert "Search failed: Vector store connection failed" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config):
+    """Test search with empty query"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = []
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": ""},
+        )
+
+    # Should still work but return empty results
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_no_results(client, mock_project, mock_rag_config):
+    """Test search that returns no results (should return empty list, not error)"""
+    search_query = "nonexistent query that should return no results"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter to return empty results
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = []  # Empty results
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    # Should return 200 with empty results, not a 500 error
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 0
+    assert result["results"] == []
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_invalid_request_body(
+    client, mock_project, mock_rag_config
+):
+    """Test search with invalid request body"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"invalid_field": "test"},
+        )
+
+    assert response.status_code == 422, response.text
