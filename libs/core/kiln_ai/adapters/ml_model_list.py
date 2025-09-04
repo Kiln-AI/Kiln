@@ -1987,12 +1987,6 @@ built_in_models: List[KilnModel] = [
                 model_id="qwen2.5:72b",
             ),
             KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/qwen2p5-72b-instruct",
-                # Tool calling forces schema -- fireworks doesn't support json_schema, just json_mode
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
-            ),
-            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 provider_finetune_id="Qwen/Qwen2.5-72B-Instruct",
             ),
@@ -2910,7 +2904,8 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
+                # This model doesn't return reasoning content after a tool call so we need to allow optional reasoning.
+                parser=ModelParserID.optional_r1_thinking,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2921,6 +2916,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_data_gen=True,
+                # Not reliable, even for simple functions
+                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -2943,7 +2940,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
+                # This model doesn't return reasoning content after a tool call so we need to allow optional reasoning.
+                parser=ModelParserID.optional_r1_thinking,
             ),
         ],
     ),

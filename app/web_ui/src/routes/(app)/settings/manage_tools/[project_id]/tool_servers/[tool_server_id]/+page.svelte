@@ -10,6 +10,7 @@
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -235,6 +236,13 @@
     }
     return args
   }
+
+  function afterDelete() {
+    // Delete the project_id from the available_tools, so next reload it loads the updated list.
+    uncache_available_tools(project_id)
+
+    goto(`/settings/manage_tools/${project_id}`)
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -388,7 +396,5 @@
   name="Tool Server"
   bind:this={delete_dialog}
   {delete_url}
-  after_delete={() => {
-    goto(`/settings/manage_tools/${project_id}`)
-  }}
+  after_delete={afterDelete}
 />
