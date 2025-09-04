@@ -225,6 +225,11 @@ export async function load_available_models() {
   }
 }
 
+export function clear_available_models_cache() {
+  available_models_loaded = "not_loaded"
+  available_models.set([])
+}
+
 // Model Info
 export const model_info = writable<ProviderModels | null>(null)
 
