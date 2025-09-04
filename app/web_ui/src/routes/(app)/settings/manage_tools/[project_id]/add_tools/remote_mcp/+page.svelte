@@ -8,6 +8,7 @@
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
+  import { uncache_available_tools } from "$lib/stores"
 
   // Form fields
   let name = ""
@@ -87,6 +88,8 @@
       }
 
       if (data?.id) {
+        // Delete the project_id from the available_tools, so next load it loads the updated list.
+        uncache_available_tools($page.params.project_id)
         // Navigate to the tools page for the created tool
         goto(
           `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,

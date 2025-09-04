@@ -205,6 +205,12 @@ export const available_tools = writable<
 >({})
 let loading_project_tools: string[] = []
 
+export function uncache_available_tools(project_id: string) {
+  // Delete the project_id from the available_tools, so next load it needs to load a updated list.
+  const { [project_id]: _, ...remaining } = get(available_tools)
+  available_tools.set(remaining)
+}
+
 export async function load_available_tools(
   project_id: string,
   force: boolean = false,
