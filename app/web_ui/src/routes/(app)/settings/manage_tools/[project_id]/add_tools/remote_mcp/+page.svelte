@@ -15,14 +15,14 @@
   let description = ""
 
   // Headers as array of key/value pairs
-  interface HeaderPair {
+  interface KeyValuePair {
     key: string
     value: string
     placeholder: string | null
     is_secret: boolean
   }
 
-  let headers: HeaderPair[] = []
+  let headers: KeyValuePair[] = []
 
   // Form state
   let error: KilnError | null = null
@@ -119,7 +119,7 @@
   subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
         tools to your project."
 >
-  <div class="max-w-2xl">
+  <div class="max-w-4xl">
     <FormContainer
       submit_label="Connect"
       on:submit={connect_remote_mcp}
@@ -169,6 +169,7 @@
         empty_content={{
           key: "",
           value: "",
+          is_secret: false,
         }}
         let:item_index
       >
@@ -193,13 +194,17 @@
               bind:value={headers[item_index].value}
             />
           </div>
-          <div class="flex-1 max-w-[20px]">
+          <div class="flex-1 max-w-[100px]">
             <FormElement
-              inputType="checkbox"
-              label="Is Secret?"
+              inputType="select"
+              label="Secret"
               id="secret_{item_index}"
-              info_description="If this header is a secret such as an API key, check this box to prevent it from being synced. Kiln will store the secret in your project's settings."
+              info_description="If this header is a secret such as an API key, select 'Yes' to prevent it from being synced. Kiln will store the secret in your project's settings."
               light_label={true}
+              select_options={[
+                [false, "No"],
+                [true, "Yes"],
+              ]}
               bind:value={headers[item_index].is_secret}
             />
           </div>

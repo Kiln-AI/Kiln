@@ -11,7 +11,7 @@
   import Warning from "$lib/ui/warning.svelte"
 
   // Environment Variables as array of key/value pairs
-  interface EnvVarPair {
+  interface KeyValuePair {
     key: string
     value: string
     placeholder: string | null
@@ -22,7 +22,7 @@
   let name = ""
   let command = ""
   let args = ""
-  let env_vars: EnvVarPair[] = []
+  let env_vars: KeyValuePair[] = []
   let description = ""
   let installation_instruction = ""
   // Form state
@@ -138,7 +138,7 @@
       />
     </div>
   {/if}
-  <div class="max-w-2xl">
+  <div class="max-w-4xl">
     <FormContainer
       submit_label="Connect"
       on:submit={connect_local_mcp}
@@ -225,13 +225,17 @@
               bind:value={env_vars[item_index].value}
             />
           </div>
-          <div class="flex-1 max-w-[20px]">
+          <div class="flex-1 max-w-[100px]">
             <FormElement
-              inputType="checkbox"
-              label="Is Secret?"
+              inputType="select"
+              label="Secret"
               id="secret_{item_index}"
-              info_description="If this header is a secret such as an API key, check this box to prevent it from being synced. Kiln will store the secret in your project's settings."
+              info_description="If this environment variable is a secret such as an API key, select 'Yes' to prevent it from being synced. Kiln will store the secret in your project's settings."
               light_label={true}
+              select_options={[
+                [false, "No"],
+                [true, "Yes"],
+              ]}
               bind:value={env_vars[item_index].is_secret}
             />
           </div>
