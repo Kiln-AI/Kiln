@@ -1,13 +1,6 @@
 <script lang="ts">
   import InfoTooltip from "./info_tooltip.svelte"
-
-  type UiProperty = {
-    name: string
-    value: string | number
-    tooltip?: string
-    link?: string
-    error?: boolean
-  }
+  import type { UiProperty } from "./property_list"
 
   export let properties: UiProperty[]
   export let title: string

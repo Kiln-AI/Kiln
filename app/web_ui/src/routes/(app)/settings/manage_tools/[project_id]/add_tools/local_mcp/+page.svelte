@@ -9,20 +9,13 @@
   import { goto } from "$app/navigation"
   import { onMount } from "svelte"
   import Warning from "$lib/ui/warning.svelte"
-
-  // Environment Variables as array of key/value pairs
-  interface KeyValuePair {
-    key: string
-    value: string
-    placeholder: string | null
-    is_secret: boolean
-  }
+  import type { McpServerKeyValuePair } from "$lib/tools"
 
   // Form fields
   let name = ""
   let command = ""
   let args = ""
-  let env_vars: KeyValuePair[] = []
+  let env_vars: McpServerKeyValuePair[] = []
   let description = ""
   let installation_instruction = ""
   // Form state
@@ -64,8 +57,8 @@
 
     for (const envVar of env_vars) {
       if (envVar.key.trim() && envVar.value.trim()) {
-        const key = envVar.key.trim()
-        envVarsObj[key] = envVar.value.trim()
+        const key = envVar.key
+        envVarsObj[key] = envVar.value
 
         if (envVar.is_secret) {
           secretEnvVarKeys.push(key)
@@ -95,9 +88,9 @@
             },
           },
           body: {
-            name: name.trim(),
-            description: description.trim() || null,
-            command: command.trim(),
+            name: name,
+            description: description || null,
+            command: command,
             args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
             env_vars: envVarsData.envVarsObj,
             secret_env_var_keys: envVarsData.secret_env_var_keys,
@@ -225,16 +218,16 @@
               bind:value={env_vars[item_index].value}
             />
           </div>
-          <div class="flex-1 max-w-[100px]">
+          <div class="flex-1 max-w-[140px]">
             <FormElement
               inputType="select"
               label="Secret"
               id="secret_{item_index}"
-              info_description="If this environment variable is a secret such as an API key, select 'Yes' to prevent it from being synced. Kiln will store the secret in your project's settings."
+              info_description="If this environment variable is a secret such as an API key, select 'Secret' to prevent it from being synced. Kiln will store the secret in your project's settings."
               light_label={true}
               select_options={[
-                [false, "No"],
-                [true, "Yes"],
+                [false, "No Secret"],
+                [true, "Secret"],
               ]}
               bind:value={env_vars[item_index].is_secret}
             />

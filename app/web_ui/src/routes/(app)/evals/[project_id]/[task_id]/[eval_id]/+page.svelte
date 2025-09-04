@@ -21,6 +21,7 @@
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import PropertyList from "$lib/ui/property_list.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -98,13 +99,6 @@
     } finally {
       eval_progress_loading = false
     }
-  }
-
-  type UiProperty = {
-    name: string
-    value: string
-    tooltip?: string
-    link?: string
   }
 
   function get_eval_properties(

@@ -8,21 +8,14 @@
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
+  import type { McpServerKeyValuePair } from "$lib/tools"
 
   // Form fields
   let name = ""
   let server_url = ""
   let description = ""
 
-  // Headers as array of key/value pairs
-  interface KeyValuePair {
-    key: string
-    value: string
-    placeholder: string | null
-    is_secret: boolean
-  }
-
-  let headers: KeyValuePair[] = []
+  let headers: McpServerKeyValuePair[] = []
 
   // Form state
   let error: KilnError | null = null
@@ -56,8 +49,8 @@
 
     for (const header of headers) {
       if (header.key.trim() && header.value.trim()) {
-        const key = header.key.trim()
-        headersObj[key] = header.value.trim()
+        const key = header.key
+        headersObj[key] = header.value
 
         if (header.is_secret) {
           secretHeaderKeys.push(key)
@@ -194,16 +187,16 @@
               bind:value={headers[item_index].value}
             />
           </div>
-          <div class="flex-1 max-w-[100px]">
+          <div class="flex-1 max-w-[140px]">
             <FormElement
               inputType="select"
               label="Secret"
               id="secret_{item_index}"
-              info_description="If this header is a secret such as an API key, select 'Yes' to prevent it from being synced. Kiln will store the secret in your project's settings."
+              info_description="If this header is a secret such as an API key, select 'Secret' to prevent it from being synced. Kiln will store the secret in your project's settings."
               light_label={true}
               select_options={[
-                [false, "No"],
-                [true, "Yes"],
+                [false, "No Secret"],
+                [true, "Secret"],
               ]}
               bind:value={headers[item_index].is_secret}
             />

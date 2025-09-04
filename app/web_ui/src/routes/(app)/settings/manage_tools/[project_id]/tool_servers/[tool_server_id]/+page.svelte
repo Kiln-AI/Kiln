@@ -9,6 +9,7 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -134,40 +135,29 @@
     return properties
   }
 
-  type UiProperty = {
-    name: string
-    value: string
-    error?: boolean
-  }
-
   /**
    * Helper function to build properties list with secret handling
-   * @param noneSecretProperties - Object containing non-secret key-value pairs
+   * @param nonSecretProperties - Object containing non-secret key-value pairs
    * @param secretKeys - Array of secret key names
    * @param missingSecrets - Array of missing secret key names
    * @returns Array of UiProperty objects
    */
   function buildPropertiesWithSecrets(
-    noneSecretProperties: Record<string, string>,
+    nonSecretProperties: Record<string, string>,
     secretKeys: string[],
     missingSecrets: string[],
   ): UiProperty[] {
     // Non-secret values
     const properties: UiProperty[] = []
     properties.push(
-      ...Object.entries(noneSecretProperties).map(([key, value]) => ({
+      ...Object.entries(nonSecretProperties).map(([key, value]) => ({
         name: key,
         value: String(value ?? "N/A"),
       })),
     )
 
-    // Make sure secretKeys is an array of strings
-    const secretKeysArray: string[] = Array.isArray(secretKeys)
-      ? [...secretKeys.filter((k): k is string => typeof k === "string")]
-      : []
-
     // Add secret values with masked values or error state
-    secretKeysArray.forEach((key: string) => {
+    secretKeys.forEach((key: string) => {
       // Check if the secret is missing
       if (missingSecrets.includes(key)) {
         properties.push({
@@ -175,7 +165,7 @@
           value: "Value missing",
           error: true,
         })
-      } else if (!(key in noneSecretProperties)) {
+      } else if (!(key in nonSecretProperties)) {
         // Only add if not already in regular values
         properties.push({
           name: key,

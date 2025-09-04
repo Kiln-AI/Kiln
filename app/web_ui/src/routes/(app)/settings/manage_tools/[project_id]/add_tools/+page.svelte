@@ -4,31 +4,25 @@
   import { page } from "$app/stores"
   import SettingsSection from "$lib/ui/settings_section.svelte"
   import { client } from "$lib/api_client"
+  import type { McpServerKeyValuePair } from "$lib/tools"
 
   $: project_id = $page.params.project_id
 
-  interface KeyValuePair {
-    key: string
-    value: string
-    placeholder: string | null
-    is_secret: boolean
-  }
-
-  interface BaseMcpServer {
+  type BaseMcpServer = {
     name: string
     subtitle: string
     description: string
   }
 
-  interface RemoteMcpServer extends BaseMcpServer {
+  type RemoteMcpServer = BaseMcpServer & {
     server_url: string
-    headers: KeyValuePair[]
+    headers: McpServerKeyValuePair[]
   }
 
-  interface LocalMcpServer extends BaseMcpServer {
+  type LocalMcpServer = BaseMcpServer & {
     command: string
     args: string[]
-    env_vars: KeyValuePair[]
+    env_vars: McpServerKeyValuePair[]
     installation_instruction: string
   }
 
