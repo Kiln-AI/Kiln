@@ -868,8 +868,6 @@ built_in_models: List[KilnModel] = [
                 # For reasoning models, we need to use json_instructions with OpenRouter
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 require_openrouter_reasoning=True,
-                # Note: this model doesn't return thinking content after a tool call so disabling tool calls. Just use non-thinking version.
-                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -877,9 +875,6 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-7-sonnet-20250219",
                 anthropic_extended_thinking=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                # Note: Anthropic expects a specific message format with tool calls and thinking. Would require extra work, and non standard trace generation so not supporting tool calls.
-                # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#extended-thinking-with-tool-use
-                supports_function_calling=False,
             ),
         ],
     ),
@@ -2915,7 +2910,8 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.r1_thinking,
+                # This model doesn't return reasoning content after a tool call so we need to allow optional reasoning.
+                parser=ModelParserID.optional_r1_thinking,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2926,6 +2922,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
                 supports_data_gen=True,
+                # Not reliable, even for simple functions
+                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -2948,7 +2946,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
                 reasoning_capable=True,
-                parser=ModelParserID.r1_thinking,
+                # This model doesn't return reasoning content after a tool call so we need to allow optional reasoning.
+                parser=ModelParserID.optional_r1_thinking,
             ),
         ],
     ),
