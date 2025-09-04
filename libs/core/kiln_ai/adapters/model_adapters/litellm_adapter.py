@@ -670,11 +670,14 @@ class LiteLlmAdapter(BaseAdapter):
         Extract the message from the model with type safety and validation.
         """
         content: str | None = None
+        reasoning_content: str | None = None
         tool_calls: List[ChatCompletionMessageToolCall] | None = None
         tool_calls_param: List[ChatCompletionMessageToolCallParam] = []
         if hasattr(response_choice, "message"):
             if hasattr(response_choice.message, "content"):
                 content = response_choice.message.content
+            if hasattr(response_choice.message, "reasoning_content"):
+                reasoning_content = response_choice.message.reasoning_content
             if hasattr(response_choice.message, "tool_calls"):
                 tool_calls = response_choice.message.tool_calls
 
@@ -707,5 +710,7 @@ class LiteLlmAdapter(BaseAdapter):
             message["content"] = content
         if tool_calls_param:
             message["tool_calls"] = tool_calls_param
+        if reasoning_content:
+            message["reasoning_content"] = reasoning_content
 
         return content, message, tool_calls

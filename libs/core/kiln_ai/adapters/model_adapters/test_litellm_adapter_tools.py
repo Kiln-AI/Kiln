@@ -262,7 +262,15 @@ async def test_tools_simplied_mocked(tmp_path):
     # Second response: final answer
     mock_response_2 = ModelResponse(
         model="gpt-4o-mini",
-        choices=[{"message": {"content": "The answer is [4]", "tool_calls": None}}],
+        choices=[
+            {
+                "message": {
+                    "content": "The answer is [4]",
+                    "tool_calls": None,
+                    "reasoning_content": "I used a tool",
+                }
+            }
+        ],
         usage=usage,
     )
 
@@ -286,6 +294,12 @@ async def test_tools_simplied_mocked(tmp_path):
         assert task_run.usage.output_tokens == 40
         assert task_run.usage.total_tokens == 60
         assert task_run.usage.cost == 1.0
+
+        # Check reasoning content in the trace
+        trace = task_run.trace
+        assert trace is not None
+        assert len(trace) == 5
+        assert trace[4].get("reasoning_content") == "I used a tool"
 
 
 async def test_tools_mocked(tmp_path):

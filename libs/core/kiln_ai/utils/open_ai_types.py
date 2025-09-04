@@ -34,8 +34,12 @@ from typing_extensions import Required, TypedDict
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
-    Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+    Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+
+    First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
     https://github.com/pydantic/pydantic/issues/9541
+
+    Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
     """
 
     role: Required[Literal["assistant"]]
@@ -51,6 +55,12 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """The contents of the assistant message.
 
     Required unless `tool_calls` or `function_call` is specified.
+    """
+
+    reasoning_content: Optional[str]
+    """The reasoning content of the assistant message. 
+    
+    A LiteLLM property for reasoning data: https://docs.litellm.ai/docs/reasoning_content
     """
 
     function_call: Optional[FunctionCall]

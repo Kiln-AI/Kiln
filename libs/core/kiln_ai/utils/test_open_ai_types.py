@@ -32,6 +32,10 @@ def test_assistant_message_param_properties_match():
     openai_properties = set(openai_annotations.keys())
     kiln_properties = set(kiln_annotations.keys())
 
+    # Reasoning content is an added property. Confirm it's there and remove it from the comparison.
+    assert "reasoning_content" in kiln_properties, "Kiln should have reasoning_content"
+    kiln_properties.remove("reasoning_content")
+
     assert openai_properties == kiln_properties, (
         f"Property names don't match. "
         f"OpenAI has: {openai_properties}, "
