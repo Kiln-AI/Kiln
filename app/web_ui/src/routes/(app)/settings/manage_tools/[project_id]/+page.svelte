@@ -172,7 +172,11 @@
                   </button>
                 </td>
                 <td class="text-sm">
-                  <span class="text-success">✓ Ready</span>
+                  <Warning
+                    warning_message="Ready"
+                    warning_color="success"
+                    warning_icon="check"
+                  />
                 </td>
               </tr>
             {/if}

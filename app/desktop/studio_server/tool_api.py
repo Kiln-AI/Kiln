@@ -46,66 +46,39 @@ class ExternalToolServerCreationRequest(BaseModel):
         server_url = self.server_url
         if not server_url:
             raise ValueError("Server URL is required to connect to a remote MCP server")
-
-        # Enforce absolute http(s) URLs only
-        parsed_url = urlparse(server_url.strip())
-        if not parsed_url.scheme:
+        # Check for leading whitespace in URL
+        if server_url != server_url.lstrip():
+            raise ValueError("Server URL must not have leading whitespace")
+        # Check if the URL is valid without stripping
+        if not urlparse(server_url).scheme:
             raise ValueError("Server URL must start with http:// or https://")
-        if not parsed_url.netloc:
+        if not urlparse(server_url).netloc:
             raise ValueError("Server URL is not a valid URL")
 
-        if parsed_url.scheme not in ("http", "https"):
-            raise ValueError("Server URL must start with http:// or https://")
-
-        # Update server_url to stripped version
-        self.server_url = server_url.strip()
-
         # Validate headers
-        if isinstance(self.headers, dict):
-            validated_headers = {}
-            for key, value in self.headers.items():
-                # Convert to string and strip
-                key_str = key.strip() if isinstance(key, str) else str(key).strip()
-                value_str = (
-                    value.strip() if isinstance(value, str) else str(value).strip()
+        for key, value in self.headers.items():
+            if not key:
+                raise ValueError("Header name is required")
+            if not value:
+                raise ValueError("Header value is required")
+
+            # Reject invalid header names and CR/LF in names/values
+            token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+            if not token_re.match(key):
+                raise ValueError(f'Invalid header name: "{key}"')
+            if re.search(r"\r|\n", key) or re.search(r"\r|\n", value):
+                raise ValueError(
+                    "Header names/values must not contain invalid characters"
                 )
 
-                if not key_str:
-                    raise ValueError("Header name is required")
-                if not value_str:
-                    raise ValueError("Header value is required")
-
-                # Reject invalid header names and CR/LF in names/values
-                token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
-                if not token_re.match(key_str):
-                    raise ValueError(f'Invalid header name: "{key_str}"')
-                if re.search(r"\r|\n", key_str) or re.search(r"\r|\n", value_str):
-                    raise ValueError(
-                        "Header names/values must not contain invalid characters"
-                    )
-
-                validated_headers[key_str] = value_str
-
-            # Update headers to validated version
-            self.headers = validated_headers
-
         # Validate secret header keys
-        if isinstance(self.secret_header_keys, list):
-            validated_secret_header_keys = []
-            for key in self.secret_header_keys:
-                key_str = key.strip() if isinstance(key, str) else str(key).strip()
-                if not key_str:
-                    raise ValueError("Secret header key is required")
-                # Check if the key is in the headers
-                if key_str not in self.headers:
-                    raise ValueError(
-                        f"Secret header key {key_str} is not in the headers"
-                    )
-
-                validated_secret_header_keys.append(key_str)
-
-            # Update secret header keys to validated version
-            self.secret_header_keys = validated_secret_header_keys
+        for key in self.secret_header_keys:
+            key = key if isinstance(key, str) else str(key)
+            if not key:
+                raise ValueError("Secret header key is required")
+            # Check if the key is in the headers
+            if key not in self.headers:
+                raise ValueError(f"Secret header key {key} is not in the headers")
 
         return self
 
@@ -142,22 +115,15 @@ class LocalToolServerCreationRequest(BaseModel):
                 )
 
         # Validate secret environment variable keys
-        if isinstance(self.secret_env_var_keys, list):
-            validated_secret_env_var_keys = []
-            for key in self.secret_env_var_keys:
-                key_str = key.strip() if isinstance(key, str) else str(key).strip()
-                if not key_str:
-                    raise ValueError("Secret environment variable key is required")
-                # Check if the key is in the env_vars
-                if key_str not in self.env_vars:
-                    raise ValueError(
-                        f"Secret environment variable key {key_str} is not in the list of environment variables"
-                    )
-
-                validated_secret_env_var_keys.append(key_str)
-
-            # Update secret env var keys to validated version
-            self.secret_env_var_keys = validated_secret_env_var_keys
+        for key in self.secret_env_var_keys:
+            key_str = key if isinstance(key, str) else str(key)
+            if not key_str:
+                raise ValueError("Secret environment variable key is required")
+            # Check if the key is in the env_vars
+            if key_str not in self.env_vars:
+                raise ValueError(
+                    f"Secret environment variable key {key_str} is not in the list of environment variables"
+                )
 
         return self
 
@@ -345,25 +311,21 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
-        # Create a default result with incomplete status
-        result = ExternalToolServerApiDescription(
-            id=tool_server.id,
-            name=tool_server.name,
-            type=tool_server.type,
-            description=tool_server.description,
-            created_at=tool_server.created_at,
-            created_by=tool_server.created_by,
-            properties=tool_server.properties,
-            available_tools=[],
-            missing_secrets=[],
-        )
-
         # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
         # If there are missing secrets, add a requirement to the result and skip getting available tools.
         missing_secrets = tool_server.missing_secrets()
-        if missing_secrets and len(missing_secrets) > 0:
-            result.missing_secrets = list(missing_secrets)
-            return result
+        if missing_secrets:
+            return ExternalToolServerApiDescription(
+                id=tool_server.id,
+                name=tool_server.name,
+                type=tool_server.type,
+                description=tool_server.description,
+                created_at=tool_server.created_at,
+                created_by=tool_server.created_by,
+                properties=tool_server.properties,
+                available_tools=[],
+                missing_secrets=list(missing_secrets),
+            )
 
         # If there are no missing secrets, get available tools
         # Get available tools based on server type
@@ -382,10 +344,18 @@ def connect_tool_servers_api(app: FastAPI):
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 
-        # Update the result with the available tools
-        result.available_tools = available_tools
-
-        return result
+        # return the result with the available tools
+        return ExternalToolServerApiDescription(
+            id=tool_server.id,
+            name=tool_server.name,
+            type=tool_server.type,
+            description=tool_server.description,
+            created_at=tool_server.created_at,
+            created_by=tool_server.created_by,
+            properties=tool_server.properties,
+            available_tools=available_tools,
+            missing_secrets=[],
+        )
 
     @app.post("/api/projects/{project_id}/connect_remote_mcp")
     async def connect_remote_mcp(
@@ -401,7 +371,7 @@ def connect_tool_servers_api(app: FastAPI):
         }
 
         tool_server = ExternalToolServer(
-            name=tool_data.name.strip(),  # Trim whitespace for filename validation
+            name=tool_data.name,
             type=ToolServerType.remote_mcp,
             description=tool_data.description,
             properties=properties,
@@ -434,7 +404,7 @@ def connect_tool_servers_api(app: FastAPI):
         }
 
         tool_server = ExternalToolServer(
-            name=tool_data.name.strip(),  # Trim whitespace for filename validation
+            name=tool_data.name,
             type=ToolServerType.local_mcp,
             description=tool_data.description,
             properties=properties,

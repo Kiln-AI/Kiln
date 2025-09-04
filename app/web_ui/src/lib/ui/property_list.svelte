@@ -22,11 +22,13 @@
         <InfoTooltip tooltip_text={property.tooltip} />
       {/if}
     </div>
-    <div class="flex items-center text-gray-500 overflow-x-hidden">
+    <div
+      class="flex items-center overflow-x-hidden {property.error
+        ? 'text-error'
+        : 'text-gray-500'}"
+    >
       {#if property.link}
         <a href={property.link} class="link">{property.value}</a>
-      {:else if property.error}
-        <span class="text-error">{property.value}</span>
       {:else}
         {property.value}
       {/if}

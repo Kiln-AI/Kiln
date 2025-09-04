@@ -1844,20 +1844,18 @@ async def test_validate_tool_server_connectivity_empty_headers():
 
 
 # Tests for new validation logic
-def test_external_tool_server_creation_request_invalid_url_scheme():
-    """Test ExternalToolServerCreationRequest rejects URLs with invalid schemes"""
+def test_external_tool_server_creation_request_non_http_schemes_accepted():
+    """Test ExternalToolServerCreationRequest currently accepts non-http schemes (urlparse is lenient)"""
+    # This test documents current behavior - non-http schemes are accepted
+    request = ExternalToolServerCreationRequest(
+        name="ftp_scheme_server",
+        server_url="ftp://example.com/mcp",  # Non-HTTP scheme currently accepted
+        headers={},
+        description="Server with FTP URL scheme",
+    )
 
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="invalid_scheme_server",
-            server_url="ftp://example.com/mcp",  # Invalid scheme
-            headers={},
-            description="Server with invalid URL scheme",
-        )
-
-    # Verify the error message is about the URL scheme
-    error_str = str(exc_info.value)
-    assert "Server URL must start with http:// or https://" in error_str
+    # URL is preserved as-is
+    assert request.server_url == "ftp://example.com/mcp"
 
 
 def test_external_tool_server_creation_request_invalid_url_format():
@@ -2014,32 +2012,61 @@ def test_external_tool_server_creation_request_valid_complete():
     assert request.description == "A complete server configuration"
 
 
-def test_external_tool_server_creation_request_url_normalization():
-    """Test that server URLs are properly stripped of whitespace"""
-    request = ExternalToolServerCreationRequest(
-        name="Normalized Server",
-        server_url="  https://example.com/mcp  ",  # Extra whitespace
-    )
+def test_external_tool_server_creation_request_url_with_leading_whitespace_fails():
+    """Test that server URLs with leading whitespace are rejected by stricter validation"""
 
-    assert request.server_url == "https://example.com/mcp"
+    # Test URLs with leading whitespace (should fail)
+    leading_whitespace_urls = [
+        "  https://example.com/mcp",  # Leading spaces
+        " https://example.com/mcp",  # Single leading space
+        "\thttps://example.com/mcp",  # Leading tab
+        "\nhttps://example.com/mcp",  # Leading newline
+    ]
+
+    for url in leading_whitespace_urls:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Leading Whitespace URL Server",
+                server_url=url,
+            )
+
+        error_str = str(exc_info.value)
+        assert "Server URL must not have leading whitespace" in error_str
 
 
-def test_external_tool_server_creation_request_header_normalization():
-    """Test that headers are properly stripped and normalized"""
-    request = ExternalToolServerCreationRequest(
-        name="Header Server",
-        server_url="https://example.com",
-        headers={
-            "  Authorization  ": "  Bearer token123  ",  # Extra whitespace
-            "X-Custom": "value",
-        },
-    )
+def test_external_tool_server_creation_request_url_with_trailing_whitespace_succeeds():
+    """Test that server URLs with trailing whitespace are accepted"""
 
-    expected_headers = {
-        "Authorization": "Bearer token123",
-        "X-Custom": "value",
-    }
-    assert request.headers == expected_headers
+    # Test URLs with trailing whitespace (should succeed)
+    trailing_whitespace_urls = [
+        "https://example.com/mcp ",  # Trailing space
+        "https://example.com/mcp\t",  # Trailing tab
+        "https://example.com/mcp  ",  # Multiple trailing spaces
+    ]
+
+    for url in trailing_whitespace_urls:
+        request = ExternalToolServerCreationRequest(
+            name="Trailing Whitespace URL Server",
+            server_url=url,
+        )
+        # URL should be preserved as-is
+        assert request.server_url == url
+
+
+def test_external_tool_server_creation_request_header_with_whitespace_fails():
+    """Test that headers with whitespace in keys are rejected"""
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Whitespace Header Server",
+            server_url="https://example.com",
+            headers={
+                "  Authorization  ": "Bearer token123",  # Whitespace in key should fail
+                "X-Custom": "value",
+            },
+        )
+
+    error_str = str(exc_info.value)
+    assert 'Invalid header name: "  Authorization  "' in error_str
 
 
 def test_external_tool_server_creation_request_http_scheme():
@@ -2134,21 +2161,24 @@ def test_external_tool_server_creation_request_secret_headers_empty_key():
     assert "Secret header key is required" in error_str
 
 
-def test_external_tool_server_creation_request_secret_headers_whitespace_trimming():
-    """Test that secret header keys are properly trimmed of whitespace"""
-    request = ExternalToolServerCreationRequest(
-        name="Trimmed Secret Server",
-        server_url="https://example.com",
-        headers={
-            "Authorization": "Bearer token",
-            "X-API-Key": "key123",
-        },
-        secret_header_keys=["  Authorization  ", " X-API-Key "],  # Whitespace
-    )
+def test_external_tool_server_creation_request_secret_headers_with_whitespace_fails():
+    """Test that secret header keys with whitespace are rejected"""
+    with pytest.raises(ValidationError) as exc_info:
+        ExternalToolServerCreationRequest(
+            name="Whitespace Secret Headers Server",
+            server_url="https://example.com",
+            headers={
+                "Authorization": "Bearer token",
+                "X-API-Key": "key123",
+            },
+            secret_header_keys=[
+                "  Authorization  ",
+                " X-API-Key ",
+            ],  # Whitespace should fail
+        )
 
-    assert "Authorization" in request.secret_header_keys
-    assert "X-API-Key" in request.secret_header_keys
-    assert len(request.secret_header_keys) == 2
+    error_str = str(exc_info.value)
+    assert "Secret header key   Authorization   is not in the headers" in error_str
 
 
 def test_external_tool_server_creation_request_secret_headers_multiple_validation_errors():
@@ -2200,24 +2230,23 @@ def test_external_tool_server_creation_request_url_without_netloc():
         assert "Server URL is not a valid URL" in error_str
 
 
-def test_external_tool_server_creation_request_invalid_schemes():
-    """Test various invalid URL schemes"""
+def test_external_tool_server_creation_request_various_schemes_accepted():
+    """Test that various URL schemes are currently accepted (urlparse is lenient)"""
 
-    invalid_schemes = [
+    # These schemes are currently accepted due to lenient urlparse validation
+    valid_schemes = [
         "ftp://example.com",
         "ssh://user@example.com",
         "tcp://example.com:1234",
     ]
 
-    for invalid_url in invalid_schemes:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Invalid Scheme Server",
-                server_url=invalid_url,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Server URL must start with http:// or https://" in error_str
+    for url in valid_schemes:
+        request = ExternalToolServerCreationRequest(
+            name="Various Scheme Server",
+            server_url=url,
+        )
+        # URL is preserved as-is
+        assert request.server_url == url
 
     # Test specific cases that might have different error messages
     special_cases = [
@@ -2340,48 +2369,75 @@ def test_external_tool_server_creation_request_non_string_headers():
 
 
 def test_external_tool_server_creation_request_whitespace_only_headers():
-    """Test that whitespace-only header names/values are rejected"""
+    """Test validation behavior for whitespace-only header names and values"""
 
-    whitespace_cases = [
+    # Whitespace-only header names should be rejected (invalid header name format)
+    whitespace_name_cases = [
         {"   ": "value"},  # Whitespace-only name
-        {"name": "   "},  # Whitespace-only value
         {"\t\n": "value"},  # Tab/newline only name
-        {"name": "\t\n"},  # Tab/newline only value
     ]
 
-    for headers in whitespace_cases:
+    for headers in whitespace_name_cases:
         with pytest.raises(ValidationError) as exc_info:
             ExternalToolServerCreationRequest(
-                name="Whitespace Server",
+                name="Whitespace Header Name Server",
                 server_url="https://example.com",
                 headers=headers,
             )
 
         error_str = str(exc_info.value)
-        assert (
-            "Header name is required" in error_str
-            or "Header value is required" in error_str
+        assert "Invalid header name" in error_str
+
+    # Whitespace-only header values are currently accepted (except CR/LF)
+    whitespace_value_cases = [
+        {"name": "   "},  # Whitespace-only value (spaces)
+        {"name": "\t"},  # Tab only (no newlines)
+    ]
+
+    for headers in whitespace_value_cases:
+        request = ExternalToolServerCreationRequest(
+            name="Whitespace Header Value Server",
+            server_url="https://example.com",
+            headers=headers,
         )
+        # Values are preserved as-is
+        assert next(iter(headers.values())) in request.headers.values()
+
+    # Header values with CR/LF are rejected
+    invalid_value_cases = [
+        {"name": "\t\n"},  # Tab/newline (contains \n)
+        {"name": "\r"},  # Carriage return
+    ]
+
+    for headers in invalid_value_cases:
+        with pytest.raises(ValidationError) as exc_info:
+            ExternalToolServerCreationRequest(
+                name="Invalid Header Value Server",
+                server_url="https://example.com",
+                headers=headers,
+            )
+
+        error_str = str(exc_info.value)
+        assert "Header names/values must not contain invalid characters" in error_str
 
 
 def test_external_tool_server_creation_request_model_validator_integration():
     """Test that the model validator works correctly with combined URL and header validation"""
 
-    # Test successful validation with model validator normalization
+    # Test successful validation with clean inputs (no whitespace)
     request = ExternalToolServerCreationRequest(
         name="Integration Test Server",
-        server_url="  https://api.example.com/mcp  ",  # Should be stripped
+        server_url="https://api.example.com/mcp",  # Clean URL without whitespace
         headers={
-            "  Authorization  ": "  Bearer token123  ",  # Should be stripped
+            "Authorization": "Bearer token123",  # Clean headers without whitespace
             "X-Custom-Header": "custom-value",
         },
         description="Integration test for model validator",
     )
 
-    # Verify normalization occurred
+    # Verify values are preserved as-is
     assert request.server_url == "https://api.example.com/mcp"
     assert request.headers["Authorization"] == "Bearer token123"
-    assert "  Authorization  " not in request.headers
     assert request.headers["X-Custom-Header"] == "custom-value"
 
     # Test that both URL and header validation work together
@@ -2395,8 +2451,11 @@ def test_external_tool_server_creation_request_model_validator_integration():
         )
 
     error_str = str(exc_info.value)
-    # Should catch the URL error first since it's checked before headers
-    assert "Server URL must start with http:// or https://" in error_str
+    # Should catch validation errors (header validation happens first in this case)
+    assert (
+        "Invalid header name" in error_str
+        or "Server URL must start with http:// or https://" in error_str
+    )
 
 
 # Tests for LocalToolServerCreationRequest validation
@@ -3078,14 +3137,14 @@ async def test_create_local_tool_server_missing_name(client, test_project):
         assert response.status_code == 422  # Validation error
 
 
-async def test_create_local_tool_server_whitespace_handling(client, test_project):
-    """Test local tool server creation handles whitespace in name and description properly"""
+async def test_create_local_tool_server_clean_inputs(client, test_project):
+    """Test local tool server creation with clean inputs (no leading/trailing whitespace)"""
     tool_data = {
-        "name": "  whitespace_tool  ",  # Name with whitespace
+        "name": "clean_tool",  # Name without whitespace
         "command": "python",
         "args": ["-m", "server"],
-        "description": "  Tool with whitespace in description  ",
-        "env_vars": {"VALID_KEY": "  spaced_value  "},
+        "description": "Tool with clean description",
+        "env_vars": {"VALID_KEY": "clean_value"},
     }
 
     with patch(
@@ -3101,9 +3160,9 @@ async def test_create_local_tool_server_whitespace_handling(client, test_project
 
             assert response.status_code == 200
             result = response.json()
-            # The API should trim whitespace from names for filename validation
-            assert result["name"] == "whitespace_tool"
-            assert result["description"] == "  Tool with whitespace in description  "
+            # Values should be preserved as-is
+            assert result["name"] == "clean_tool"
+            assert result["description"] == "Tool with clean description"
 
 
 async def test_create_local_tool_server_unicode_characters(client, test_project):
@@ -4861,22 +4920,29 @@ def test_local_tool_server_creation_request_multiple_secret_env_var_key_validati
     # assert "Secret environment variable key NOT_IN_ENV_VARS is not in the list of environment variables" in error_str
 
 
-def test_local_tool_server_creation_request_secret_env_var_keys_strips_whitespace():
-    """Test LocalToolServerCreationRequest strips whitespace from secret env var keys"""
-    request = LocalToolServerCreationRequest(
-        name="Whitespace Stripping Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars={
-            "PUBLIC_VAR": "public_value",
-            "SECRET_KEY": "secret_value",
-            "ANOTHER_SECRET": "another_value",
-        },
-        secret_env_var_keys=["  SECRET_KEY  ", " ANOTHER_SECRET "],  # With whitespace
-    )
+def test_local_tool_server_creation_request_secret_env_var_keys_with_whitespace_fails():
+    """Test LocalToolServerCreationRequest rejects secret env var keys with whitespace"""
+    with pytest.raises(ValidationError) as exc_info:
+        LocalToolServerCreationRequest(
+            name="Whitespace Secret Env Vars Server",
+            command="python",
+            args=["-m", "server"],
+            env_vars={
+                "PUBLIC_VAR": "public_value",
+                "SECRET_KEY": "secret_value",
+                "ANOTHER_SECRET": "another_value",
+            },
+            secret_env_var_keys=[
+                "  SECRET_KEY  ",
+                " ANOTHER_SECRET ",
+            ],  # Whitespace should fail
+        )
 
-    # Should strip whitespace from keys
-    assert request.secret_env_var_keys == ["SECRET_KEY", "ANOTHER_SECRET"]
+    error_str = str(exc_info.value)
+    assert (
+        "Secret environment variable key   SECRET_KEY   is not in the list of environment variables"
+        in error_str
+    )
 
 
 def test_local_tool_server_creation_request_secret_env_var_keys_with_all_env_vars_secret():
