@@ -61,7 +61,7 @@
         {
           key: "Authorization",
           value: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
-          placeholder: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
+          placeholder: "Format: 'Bearer your-token-here'",
         },
       ],
     },
@@ -74,12 +74,12 @@
         {
           key: "Authorization",
           value: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
-          placeholder: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
+          placeholder: "Format: 'apikey your-api-key-here'",
         },
         {
           key: "X-OpenAPI-Key",
           value: "",
-          placeholder: "REPLACE_WITH_YOUR_OPENAI_API_KEY",
+          placeholder: "Your OpenAI API Key",
         },
       ],
     },
@@ -96,7 +96,7 @@
         {
           key: "FIRECRAWL_API_KEY",
           value: "",
-          placeholder: "FIRECRAWL_API_KEY",
+          placeholder: "Your Firecrawl API Key",
         },
       ],
       installation_instruction:
@@ -128,7 +128,7 @@
       args: [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "<Other Allowed Directories e.g. /Users/username/Desktop>",
+        "REPLACE_WITH_LIST_OF_ALLOWED_DIRECTORIES",
       ],
       env_vars: [],
       installation_instruction:
