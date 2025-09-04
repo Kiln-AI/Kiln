@@ -8,6 +8,7 @@
   import type { KilnToolServerDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: is_empty = !tools || tools.length == 0
@@ -125,6 +126,7 @@
               <th>Server Name</th>
               <th>Type</th>
               <th>Description</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -140,6 +142,17 @@
                 <td class="font-medium">{tool.name}</td>
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">{tool.description || "N/A"}</td>
+                <td class="text-sm">
+                  {#if tool.missing_secrets && tool.missing_secrets.length > 0}
+                    <Warning
+                      warning_message="Information Incomplete"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
+                    <span class="text-success">✓ Ready</span>
+                  {/if}
+                </td>
               </tr>
             {/each}
             {#if demo_tools_enabled}
@@ -154,6 +167,9 @@
                   >
                     Disable
                   </button>
+                </td>
+                <td class="text-sm">
+                  <span class="text-success">✓ Ready</span>
                 </td>
               </tr>
             {/if}

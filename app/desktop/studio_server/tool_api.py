@@ -29,6 +29,7 @@ class KilnToolServerDescription(BaseModel):
     id: ID_TYPE
     type: ToolServerType
     description: str | None
+    missing_secrets: list[str]
 
 
 class ExternalToolServerCreationRequest(BaseModel):
@@ -333,6 +334,7 @@ def connect_tool_servers_api(app: FastAPI):
                 id=tool.id,
                 type=tool.type,
                 description=tool.description,
+                missing_secrets=tool.missing_secrets(),
             )
             for tool in project.external_tool_servers()
         ]

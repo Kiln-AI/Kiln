@@ -420,6 +420,125 @@ async def test_get_available_tool_servers_with_tool_server(client, test_project)
         assert result[0]["name"] == "my_tool"
         assert result[0]["id"] == created_tool["id"]
         assert result[0]["description"] == "My awesome tool"
+        assert "missing_secrets" in result[0]
+        assert isinstance(result[0]["missing_secrets"], list)
+
+
+async def test_get_available_tool_servers_with_missing_secrets(client, test_project):
+    """Test that get_available_tool_servers includes missing_secrets field"""
+    tool_data = {
+        "name": "tool_with_missing_secrets",
+        "server_url": "https://api.example.com",
+        "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
+        "secret_header_keys": ["Authorization", "X-API-Key"],
+        "description": "Tool with missing secrets",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        async with mock_mcp_success():
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+        created_tool = create_response.json()
+
+        # Mock the tool server to have missing secrets
+        with patch("app.desktop.studio_server.tool_api.tool_server_from_id"):
+            mock_tool_server = Mock()
+            mock_tool_server.id = created_tool["id"]
+            mock_tool_server.name = "tool_with_missing_secrets"
+            mock_tool_server.type = ToolServerType.remote_mcp
+            mock_tool_server.description = "Tool with missing secrets"
+            mock_tool_server.missing_secrets.return_value = [
+                "Authorization",
+                "X-API-Key",
+            ]
+
+            # Mock the project's external_tool_servers method
+            mock_project = Mock()
+            mock_project.external_tool_servers.return_value = [mock_tool_server]
+            mock_project_from_id.return_value = mock_project
+
+            # Get the list of tool servers
+            response = client.get(
+                f"/api/projects/{test_project.id}/available_tool_servers"
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert len(result) == 1
+            assert result[0]["name"] == "tool_with_missing_secrets"
+            assert result[0]["id"] == created_tool["id"]
+            assert result[0]["description"] == "Tool with missing secrets"
+            assert "missing_secrets" in result[0]
+            assert set(result[0]["missing_secrets"]) == {"Authorization", "X-API-Key"}
+
+
+async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
+    client, test_project
+):
+    """Test that get_available_tool_servers includes missing_secrets field for local MCP servers"""
+    tool_data = {
+        "name": "local_tool_with_missing_secrets",
+        "command": "python",
+        "args": ["-m", "my_mcp_server"],
+        "env_vars": {"DATABASE_URL": "postgres://localhost", "API_KEY": "secret"},
+        "secret_env_var_keys": ["API_KEY"],
+        "description": "Local tool with missing secrets",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Mock MCPSessionManager for shell path cache clearing
+        with patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_manager_shared:
+            mock_session_manager = AsyncMock()
+            mock_session_manager.clear_shell_path_cache = Mock()
+            mock_session_manager_shared.return_value = mock_session_manager
+
+            async with mock_mcp_success():
+                create_response = client.post(
+                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    json=tool_data,
+                )
+                assert create_response.status_code == 200
+            created_tool = create_response.json()
+
+            # Mock the tool server to have missing secrets
+            mock_tool_server = Mock()
+            mock_tool_server.id = created_tool["id"]
+            mock_tool_server.name = "local_tool_with_missing_secrets"
+            mock_tool_server.type = ToolServerType.local_mcp
+            mock_tool_server.description = "Local tool with missing secrets"
+            mock_tool_server.missing_secrets.return_value = ["API_KEY"]
+
+            # Mock the project's external_tool_servers method
+            mock_project = Mock()
+            mock_project.external_tool_servers.return_value = [mock_tool_server]
+            mock_project_from_id.return_value = mock_project
+
+            # Get the list of tool servers
+            response = client.get(
+                f"/api/projects/{test_project.id}/available_tool_servers"
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert len(result) == 1
+            assert result[0]["name"] == "local_tool_with_missing_secrets"
+            assert result[0]["id"] == created_tool["id"]
+            assert result[0]["description"] == "Local tool with missing secrets"
+            assert "missing_secrets" in result[0]
+            assert result[0]["missing_secrets"] == ["API_KEY"]
 
 
 async def test_get_tool_server_success(client, test_project):

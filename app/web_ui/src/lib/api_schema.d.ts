@@ -2580,6 +2580,8 @@ export interface components {
             type: components["schemas"]["ToolServerType"];
             /** Description */
             description: string | null;
+            /** Missing Secrets */
+            missing_secrets: string[];
         };
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
