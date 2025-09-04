@@ -4,6 +4,7 @@
   import { page } from "$app/stores"
   import SettingsSection from "$lib/ui/settings_section.svelte"
   import { client } from "$lib/api_client"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
 
@@ -166,6 +167,8 @@
       if (error) {
         throw error
       }
+      // Delete the project_id from the available_tools, so next load it loads the updated list.
+      uncache_available_tools(project_id)
       goto(`/settings/manage_tools/${project_id}`)
     } catch (error) {
       console.error(error)

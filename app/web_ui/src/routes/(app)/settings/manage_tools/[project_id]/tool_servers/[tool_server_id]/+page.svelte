@@ -9,7 +9,7 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
-  import { available_tools } from "$lib/stores"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -188,8 +188,7 @@
 
   function afterDelete() {
     // Delete the project_id from the available_tools, so next reload it loads the updated list.
-    const { [project_id]: _, ...remaining } = $available_tools
-    available_tools.set(remaining)
+    uncache_available_tools(project_id)
 
     goto(`/settings/manage_tools/${project_id}`)
   }

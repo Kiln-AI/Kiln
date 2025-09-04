@@ -8,6 +8,7 @@
   import type { KilnToolServerDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
@@ -85,6 +86,8 @@
       if (error) {
         throw error
       }
+      // Delete the project_id from the available_tools, so next load it loads the updated list.
+      uncache_available_tools(project_id)
     } catch (error) {
       console.error(error)
     }
