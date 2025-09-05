@@ -247,12 +247,10 @@
     </div>
   {/if}
   {#if editing_requires_secrets}
-    <div class="mb-6">
+    <div class="mb-6 max-w-lg">
       <Warning
-        warning_color="warning"
-        warning_icon="info"
+        warning_message="This server requires secrets, such as API keys. You must enter them below wherever it says 'SECRET_VALUE' to edit this server."
         large_icon={true}
-        warning_message="This MCP server requires secrets, such as API keys. To save changes, you must enter them below wherever it says 'SECRET_VALUE'."
       />
     </div>
   {/if}
