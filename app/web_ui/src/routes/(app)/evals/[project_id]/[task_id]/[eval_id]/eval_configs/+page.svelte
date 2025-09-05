@@ -24,6 +24,7 @@
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
   import posthog from "posthog-js"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   let score_legend_dialog: Dialog | null = null
 
@@ -273,11 +274,6 @@
     } catch (error) {
       score_summary_error = createKilnError(error)
     }
-  }
-
-  type UiProperty = {
-    name: string
-    value: string
   }
 
   function get_eval_properties(

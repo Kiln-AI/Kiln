@@ -6,6 +6,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
+# Configuration keys
+MCP_SECRETS_KEY = "mcp_secrets"
+
 
 class ConfigProperty:
     def __init__(
@@ -160,6 +163,11 @@ class Config:
             "custom_mcp_path": ConfigProperty(
                 str,
                 env_var="CUSTOM_MCP_PATH",
+            ),
+            # Allow the user to set secrets for MCP servers, the key is mcp_server_id::key_name
+            MCP_SECRETS_KEY: ConfigProperty(
+                dict[str, str],
+                sensitive=True,
             ),
         }
         self._lock = threading.Lock()

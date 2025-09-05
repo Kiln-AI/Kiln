@@ -9,6 +9,7 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
   import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
@@ -135,6 +136,56 @@
     return properties
   }
 
+  /**
+   * Helper function to build properties list with secret handling
+   * @param nonSecretProperties - Object containing non-secret key-value pairs
+   * @param secretKeys - Array of secret key names
+   * @param missingSecrets - Array of missing secret key names
+   * @returns Array of UiProperty objects
+   */
+  function buildPropertiesWithSecrets(
+    nonSecretProperties: Record<string, string>,
+    secretKeys: string[],
+    missingSecrets: string[],
+  ): UiProperty[] {
+    // Non-secret values
+    const properties: UiProperty[] = []
+    properties.push(
+      ...Object.entries(nonSecretProperties).map(([key, value]) => ({
+        name: key,
+        value: String(value ?? "N/A"),
+      })),
+    )
+
+    // Add secret values with masked values or error state
+    secretKeys.forEach((key: string) => {
+      // Check if the secret is missing
+      if (missingSecrets.includes(key)) {
+        properties.push({
+          name: key,
+          value: "Value missing",
+          error: true,
+        })
+      } else if (!(key in nonSecretProperties)) {
+        // Only add if not already in regular values
+        properties.push({
+          name: key,
+          value: "●●●●●●",
+        })
+      }
+    })
+
+    // If the properties are empty, add a placeholder
+    if (properties.length === 0) {
+      properties.push({
+        name: "None",
+        value: " ",
+      })
+    }
+
+    return properties
+  }
+
   interface Argument {
     name: string
     type: string
@@ -239,12 +290,11 @@
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
               <PropertyList
-                properties={Object.entries(
-                  tool_server.properties["headers"] || {},
-                ).map(([key, value]) => ({
-                  name: key,
-                  value: String(value ?? "N/A"),
-                }))}
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties["headers"],
+                  tool_server.properties["secret_header_keys"],
+                  tool_server.missing_secrets,
+                )}
                 title="Headers"
               />
             </div>
@@ -253,15 +303,15 @@
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
-            {#if tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0}
+            <!-- Check if there are any environment variables or secret environment variables -->
+            {#if (tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0) || (tool_server.properties["secret_env_var_keys"] && Object.keys(tool_server.properties["secret_env_var_keys"]).length > 0)}
               <div class="mt-8">
                 <PropertyList
-                  properties={Object.entries(
-                    tool_server.properties["env_vars"] || {},
-                  ).map(([key, value]) => ({
-                    name: key,
-                    value: String(value ?? "N/A"),
-                  }))}
+                  properties={buildPropertiesWithSecrets(
+                    tool_server.properties["env_vars"],
+                    tool_server.properties["secret_env_var_keys"],
+                    tool_server.missing_secrets,
+                  )}
                   title="Environment Variables"
                 />
               </div>

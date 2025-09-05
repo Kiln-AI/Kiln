@@ -9,20 +9,14 @@
   import { goto } from "$app/navigation"
   import { onMount } from "svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
-
-  // Environment Variables as array of key/value pairs
-  interface EnvVarPair {
-    key: string
-    value: string
-    placeholder: string | null
-  }
 
   // Form fields
   let name = ""
   let command = ""
   let args = ""
-  let env_vars: EnvVarPair[] = []
+  let env_vars: McpServerKeyValuePair[] = []
   let description = ""
   let installation_instruction = ""
   // Form state
@@ -55,22 +49,36 @@
     }
   })
 
-  function buildEnvVarsObject(): Record<string, string> {
+  function buildEnvVarsObject(): {
+    envVarsObj: Record<string, string>
+    secret_env_var_keys: string[]
+  } {
     const envVarsObj: Record<string, string> = {}
+    const secretEnvVarKeys: string[] = []
 
     for (const envVar of env_vars) {
       if (envVar.key.trim() && envVar.value.trim()) {
-        envVarsObj[envVar.key.trim()] = envVar.value.trim()
+        const key = envVar.key
+        envVarsObj[key] = envVar.value
+
+        if (envVar.is_secret) {
+          secretEnvVarKeys.push(key)
+        }
       }
     }
 
-    return envVarsObj
+    return {
+      envVarsObj: envVarsObj,
+      secret_env_var_keys: secretEnvVarKeys,
+    }
   }
 
   async function connect_local_mcp() {
     try {
       error = null
       submitting = true
+
+      const envVarsData = buildEnvVarsObject()
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/connect_local_mcp",
@@ -81,11 +89,12 @@
             },
           },
           body: {
-            name: name.trim(),
-            description: description.trim() || null,
-            command: command.trim(),
+            name: name,
+            description: description || null,
+            command: command,
             args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
-            env_vars: buildEnvVarsObject(),
+            env_vars: envVarsData.envVarsObj,
+            secret_env_var_keys: envVarsData.secret_env_var_keys,
           },
         },
       )
@@ -125,7 +134,7 @@
       />
     </div>
   {/if}
-  <div class="max-w-2xl">
+  <div class="max-w-4xl">
     <FormContainer
       submit_label="Connect"
       on:submit={connect_local_mcp}
@@ -187,6 +196,7 @@
         empty_content={{
           key: "",
           value: "",
+          is_secret: false,
         }}
         let:item_index
       >
@@ -209,6 +219,20 @@
               placeholder={env_vars[item_index].placeholder || "Value"}
               light_label={true}
               bind:value={env_vars[item_index].value}
+            />
+          </div>
+          <div class="flex-1 max-w-[140px]">
+            <FormElement
+              inputType="select"
+              label="Secret"
+              id="secret_{item_index}"
+              info_description="If this environment variable is a secret such as an API key, select 'Secret' to prevent it from being synced. Kiln will store the secret in your project's settings."
+              light_label={true}
+              select_options={[
+                [false, "No Secret"],
+                [true, "Secret"],
+              ]}
+              bind:value={env_vars[item_index].is_secret}
             />
           </div>
         </div>

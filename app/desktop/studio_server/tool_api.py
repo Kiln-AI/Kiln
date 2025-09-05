@@ -29,6 +29,7 @@ class KilnToolServerDescription(BaseModel):
     id: ID_TYPE
     type: ToolServerType
     description: str | None
+    missing_secrets: list[str]
 
 
 class ExternalToolServerCreationRequest(BaseModel):
@@ -36,6 +37,7 @@ class ExternalToolServerCreationRequest(BaseModel):
     description: str | None = None
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
+    secret_header_keys: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_server_details(self):
@@ -44,48 +46,39 @@ class ExternalToolServerCreationRequest(BaseModel):
         server_url = self.server_url
         if not server_url:
             raise ValueError("Server URL is required to connect to a remote MCP server")
-
-        # Enforce absolute http(s) URLs only
-        parsed_url = urlparse(server_url.strip())
-        if not parsed_url.scheme:
+        # Check for leading whitespace in URL
+        if server_url != server_url.lstrip():
+            raise ValueError("Server URL must not have leading whitespace")
+        # Check if the URL is valid without stripping
+        if not urlparse(server_url).scheme:
             raise ValueError("Server URL must start with http:// or https://")
-        if not parsed_url.netloc:
+        if not urlparse(server_url).netloc:
             raise ValueError("Server URL is not a valid URL")
 
-        if parsed_url.scheme not in ("http", "https"):
-            raise ValueError("Server URL must start with http:// or https://")
-
-        # Update server_url to stripped version
-        self.server_url = server_url.strip()
-
         # Validate headers
-        if isinstance(self.headers, dict):
-            validated_headers = {}
-            for key, value in self.headers.items():
-                # Convert to string and strip
-                key_str = key.strip() if isinstance(key, str) else str(key).strip()
-                value_str = (
-                    value.strip() if isinstance(value, str) else str(value).strip()
+        for key, value in self.headers.items():
+            if not key:
+                raise ValueError("Header name is required")
+            if not value:
+                raise ValueError("Header value is required")
+
+            # Reject invalid header names and CR/LF in names/values
+            token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+            if not token_re.match(key):
+                raise ValueError(f'Invalid header name: "{key}"')
+            if re.search(r"\r|\n", key) or re.search(r"\r|\n", value):
+                raise ValueError(
+                    "Header names/values must not contain invalid characters"
                 )
 
-                if not key_str:
-                    raise ValueError("Header name is required")
-                if not value_str:
-                    raise ValueError("Header value is required")
-
-                # Reject invalid header names and CR/LF in names/values
-                token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
-                if not token_re.match(key_str):
-                    raise ValueError(f'Invalid header name: "{key_str}"')
-                if re.search(r"\r|\n", key_str) or re.search(r"\r|\n", value_str):
-                    raise ValueError(
-                        "Header names/values must not contain invalid characters"
-                    )
-
-                validated_headers[key_str] = value_str
-
-            # Update headers to validated version
-            self.headers = validated_headers
+        # Validate secret header keys
+        for key in self.secret_header_keys:
+            key = key if isinstance(key, str) else str(key)
+            if not key:
+                raise ValueError("Secret header key is required")
+            # Check if the key is in the headers
+            if key not in self.headers:
+                raise ValueError(f"Secret header key {key} is not in the headers")
 
         return self
 
@@ -96,6 +89,7 @@ class LocalToolServerCreationRequest(BaseModel):
     command: str
     args: List[str]
     env_vars: Dict[str, str] = Field(default_factory=dict)
+    secret_env_var_keys: List[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_command(self):
@@ -118,6 +112,17 @@ class LocalToolServerCreationRequest(BaseModel):
             if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
                 raise ValueError(
                     f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
+                )
+
+        # Validate secret environment variable keys
+        for key in self.secret_env_var_keys:
+            key_str = key if isinstance(key, str) else str(key)
+            if not key_str:
+                raise ValueError("Secret environment variable key is required")
+            # Check if the key is in the env_vars
+            if key_str not in self.env_vars:
+                raise ValueError(
+                    f"Secret environment variable key {key_str} is not in the list of environment variables"
                 )
 
         return self
@@ -156,6 +161,7 @@ class ExternalToolServerApiDescription(BaseModel):
     created_by: str | None
     properties: Dict[str, Any]
     available_tools: list[ExternalToolApiDescription]
+    missing_secrets: list[str]
 
 
 class ToolApiDescription(BaseModel):
@@ -288,15 +294,19 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> List[KilnToolServerDescription]:
         project = project_from_id(project_id)
 
-        return [
-            KilnToolServerDescription(
-                name=tool.name,
-                id=tool.id,
-                type=tool.type,
-                description=tool.description,
+        results = []
+        for tool in project.external_tool_servers():
+            _, missing_secrets = tool.retrieve_secrets()
+            results.append(
+                KilnToolServerDescription(
+                    name=tool.name,
+                    id=tool.id,
+                    type=tool.type,
+                    description=tool.description,
+                    missing_secrets=missing_secrets,
+                )
             )
-            for tool in project.external_tool_servers()
-        ]
+        return results
 
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def get_tool_server(
@@ -304,6 +314,23 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
+        # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
+        # If there are missing secrets, add a requirement to the result and skip getting available tools.
+        _, missing_secrets = tool_server.retrieve_secrets()
+        if missing_secrets:
+            return ExternalToolServerApiDescription(
+                id=tool_server.id,
+                name=tool_server.name,
+                type=tool_server.type,
+                description=tool_server.description,
+                created_at=tool_server.created_at,
+                created_by=tool_server.created_by,
+                properties=tool_server.properties,
+                available_tools=[],
+                missing_secrets=list(missing_secrets),
+            )
+
+        # If there are no missing secrets, get available tools
         # Get available tools based on server type
         available_tools = []
         match tool_server.type:
@@ -320,6 +347,7 @@ def connect_tool_servers_api(app: FastAPI):
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 
+        # return the result with the available tools
         return ExternalToolServerApiDescription(
             id=tool_server.id,
             name=tool_server.name,
@@ -329,6 +357,7 @@ def connect_tool_servers_api(app: FastAPI):
             created_by=tool_server.created_by,
             properties=tool_server.properties,
             available_tools=available_tools,
+            missing_secrets=[],
         )
 
     @app.post("/api/projects/{project_id}/connect_remote_mcp")
@@ -337,15 +366,16 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with required fields
+        # Create the ExternalToolServer with all data for validation
         properties = {
             "server_url": tool_data.server_url,
             "headers": tool_data.headers,
+            "secret_header_keys": tool_data.secret_header_keys,
         }
 
         tool_server = ExternalToolServer(
             name=tool_data.name,
-            type=ToolServerType.remote_mcp,  # Default to remote MCP type
+            type=ToolServerType.remote_mcp,
             description=tool_data.description,
             properties=properties,
             parent=project,
@@ -365,11 +395,12 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with required fields
+        # Create the ExternalToolServer with all data for validation
         properties = {
             "command": tool_data.command,
             "args": tool_data.args,
             "env_vars": tool_data.env_vars,
+            "secret_env_var_keys": tool_data.secret_env_var_keys,
         }
 
         tool_server = ExternalToolServer(
@@ -392,6 +423,9 @@ def connect_tool_servers_api(app: FastAPI):
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):
         tool_server = tool_server_from_id(project_id, tool_server_id)
+        # Delete the secrets from the settings
+        tool_server.delete_secrets()
+        # Delete the tool server from the file system
         tool_server.delete()
 
     @app.get("/api/demo_tools")

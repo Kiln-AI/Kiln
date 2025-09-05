@@ -4,25 +4,26 @@
   import { page } from "$app/stores"
   import SettingsSection from "$lib/ui/settings_section.svelte"
   import { client } from "$lib/api_client"
+  import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
 
-  interface RemoteMcpServer {
+  type BaseMcpServer = {
     name: string
     subtitle: string
     description: string
-    server_url: string
-    headers: { key: string; value: string; placeholder: string | null }[]
   }
 
-  interface LocalMcpServer {
-    name: string
-    subtitle: string
-    description: string
+  type RemoteMcpServer = BaseMcpServer & {
+    server_url: string
+    headers: McpServerKeyValuePair[]
+  }
+
+  type LocalMcpServer = BaseMcpServer & {
     command: string
     args: string[]
-    env_vars: { key: string; value: string; placeholder: string | null }[]
+    env_vars: McpServerKeyValuePair[]
     installation_instruction: string
   }
 
@@ -62,6 +63,7 @@
           key: "Authorization",
           value: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
           placeholder: "Format: 'Bearer your-token-here'",
+          is_secret: true,
         },
       ],
     },
@@ -75,11 +77,13 @@
           key: "Authorization",
           value: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
           placeholder: "Format: 'apikey your-api-key-here'",
+          is_secret: true,
         },
         {
           key: "X-OpenAPI-Key",
           value: "",
           placeholder: "Your OpenAI API Key",
+          is_secret: true,
         },
       ],
     },
@@ -97,6 +101,7 @@
           key: "FIRECRAWL_API_KEY",
           value: "",
           placeholder: "Your Firecrawl API Key",
+          is_secret: true,
         },
       ],
       installation_instruction:
