@@ -10,6 +10,11 @@
   import Warning from "$lib/ui/warning.svelte"
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
+  import type { ExternalToolServerApiDescription } from "$lib/types"
+
+  // The existing tool server, if we're editing
+  export let editing_tool_server: ExternalToolServerApiDescription | null = null
+  let editing_requires_secrets: boolean = false
 
   // Form fields
   let name = ""
@@ -22,32 +27,95 @@
   let error: KilnError | null = null
   let submitting = false
 
-  // Populate fields from parent page state if provided (only if fields are empty)
+  // Populate fields from the existing server or page state if provided (only if fields are empty)
   onMount(() => {
-    const state = $page.state || {}
-    if ("name" in state && typeof state["name"] === "string") {
-      name = state.name
-    }
-    if ("description" in state && typeof state["description"] === "string") {
-      description = state.description
-    }
-    if ("command" in state && typeof state["command"] === "string") {
-      command = state.command
-    }
-    if ("args" in state && Array.isArray(state["args"])) {
-      args = state.args.join(" ")
-    }
-    if ("env_vars" in state && Array.isArray(state["env_vars"])) {
-      env_vars = [...state.env_vars]
-    }
-    if (
-      "installation_instruction" in state &&
-      typeof state["installation_instruction"] === "string"
-    ) {
-      installation_instruction = state.installation_instruction
+    if (editing_tool_server) {
+      load_existing_tool_server()
+    } else {
+      // Try to load from page state (examples)
+      const state = $page.state || {}
+      if ("name" in state && typeof state["name"] === "string") {
+        name = state.name
+      }
+      if ("description" in state && typeof state["description"] === "string") {
+        description = state.description
+      }
+      if ("command" in state && typeof state["command"] === "string") {
+        command = state.command
+      }
+      if ("args" in state && Array.isArray(state["args"])) {
+        args = state.args.join(" ")
+      }
+      if ("env_vars" in state && Array.isArray(state["env_vars"])) {
+        env_vars = [...state.env_vars]
+      }
+      if (
+        "installation_instruction" in state &&
+        typeof state["installation_instruction"] === "string"
+      ) {
+        installation_instruction = state.installation_instruction
+      }
     }
   })
 
+  function load_existing_tool_server() {
+    if (!editing_tool_server) {
+      return
+    }
+    name = editing_tool_server.name
+    description = editing_tool_server.description || ""
+
+    // TODO: fix the server type, so it's not "never" and we don't need a cast
+    const props = editing_tool_server.properties as Record<string, unknown>
+
+    if (props.command && typeof props.command === "string") {
+      command = props.command
+    }
+
+    let api_args = props.args
+    if (api_args && Array.isArray(api_args)) {
+      args = api_args.join(" ")
+    }
+
+    // Load the non-secret env vars to the form
+    let api_env_vars = props.env_vars
+    if (api_env_vars && typeof api_env_vars === "object") {
+      for (const [key, value] of Object.entries(api_env_vars)) {
+        if (typeof key === "string" && typeof value === "string") {
+          env_vars.push({
+            key: key,
+            value: value,
+            is_secret: false,
+            placeholder: "",
+          })
+        } else {
+          error = new KilnError(
+            "Invalid env var key or value when loading existing tool server",
+            null,
+          )
+          return
+        }
+      }
+      // For svelte reactivity, we need to set the env_vars array
+      env_vars = env_vars
+    }
+
+    // Load the secret env vars to the form
+    let api_secret_env_vars = props.secret_env_var_keys
+    if (api_secret_env_vars && Array.isArray(api_secret_env_vars)) {
+      for (const key of api_secret_env_vars) {
+        env_vars.push({
+          key: key,
+          value: "SECRET_VALUE",
+          is_secret: true,
+          placeholder: "",
+        })
+        editing_requires_secrets = true
+      }
+      // For svelte reactivity, we need to set the env_vars array
+      env_vars = env_vars
+    }
+  }
   function buildEnvVarsObject(): {
     envVarsObj: Record<string, string>
     secret_env_var_keys: string[]
@@ -70,6 +138,30 @@
       envVarsObj: envVarsObj,
       secret_env_var_keys: secretEnvVarKeys,
     }
+  }
+
+  async function save_or_connect() {
+    if (editing_tool_server) {
+      await save_local_mcp()
+    } else {
+      await connect_local_mcp()
+    }
+  }
+
+  async function save_local_mcp() {
+    // Check if any of the secret env vars are unset
+    for (const envVar of env_vars) {
+      if (envVar.is_secret && envVar.value.includes("SECRET_VALUE")) {
+        error = new KilnError(
+          "Please enter the value for the secret environment variables anywhere it says 'SECRET_VALUE'.",
+          null,
+        )
+        submitting = false
+        return
+      }
+    }
+
+    alert("TODO Save")
   }
 
   async function connect_local_mcp() {
@@ -129,10 +221,20 @@
       />
     </div>
   {/if}
+  {#if editing_requires_secrets}
+    <div class="mb-6">
+      <Warning
+        warning_color="warning"
+        warning_icon="info"
+        large_icon={true}
+        warning_message="This MCP server requires secrets, such as API keys. To save changes, you must enter them below wherever it says 'SECRET_VALUE'."
+      />
+    </div>
+  {/if}
   <div class="max-w-4xl">
     <FormContainer
-      submit_label="Connect"
-      on:submit={connect_local_mcp}
+      submit_label={editing_tool_server ? "Save" : "Connect"}
+      on:submit={save_or_connect}
       bind:error
       bind:submitting
     >
@@ -224,7 +326,7 @@
               info_description="If this environment variable is a secret such as an API key, select 'Secret' to prevent it from being synced. Kiln will store the secret in your project's settings."
               light_label={true}
               select_options={[
-                [false, "No Secret"],
+                [false, "Not Secret"],
                 [true, "Secret"],
               ]}
               bind:value={env_vars[item_index].is_secret}

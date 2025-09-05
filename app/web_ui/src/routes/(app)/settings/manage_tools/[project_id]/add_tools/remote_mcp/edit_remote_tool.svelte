@@ -193,7 +193,7 @@
               info_description="If this header is a secret such as an API key, select 'Secret' to prevent it from being synced. Kiln will store the secret in your project's settings."
               light_label={true}
               select_options={[
-                [false, "No Secret"],
+                [false, "Not Secret"],
                 [true, "Secret"],
               ]}
               bind:value={headers[item_index].is_secret}

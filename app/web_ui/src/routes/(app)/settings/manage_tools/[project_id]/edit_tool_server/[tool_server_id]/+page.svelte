@@ -93,7 +93,7 @@
       </div>
     </div>
   {:else if tool_server.type === "local_mcp"}
-    <EditLocalTool />
+    <EditLocalTool editing_tool_server={tool_server} />
   {:else if tool_server.type === "remote_mcp"}
     <EditRemoteTool />
   {/if}
