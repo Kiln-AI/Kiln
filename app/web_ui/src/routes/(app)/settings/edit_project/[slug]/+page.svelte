@@ -10,7 +10,11 @@
 </script>
 
 <div class="max-w-[800px]">
-  <AppPage title="Edit Project" subtitle={project?.name}>
+  <AppPage
+    title="Edit Project"
+    subtitle={project?.name}
+    breadcrumbs={[{ label: "Settings", href: "/settings" }]}
+  >
     <EditProject {project} />
   </AppPage>
 </div>

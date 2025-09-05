@@ -27,6 +27,8 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
+  import { getContext } from "svelte"
+  import type { Writable } from "svelte/store"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -283,6 +285,38 @@
       }
     }
   }
+
+  // Fancy logic to maintain the search string when navigating back to the dataset page (filters, sorting, etc.)
+  const lastPageUrl = getContext<Writable<URL | undefined>>("lastPageUrl")
+  function get_breadcrumbs() {
+    if (!$lastPageUrl) {
+      return []
+    }
+
+    try {
+      const referrerPath = $lastPageUrl.pathname
+
+      // Check if the referrer matches the pattern /dataset/{project_id}/{task_id}
+      const expectedPath = `/dataset/${$page.params.project_id}/${$page.params.task_id}`
+
+      if (referrerPath === expectedPath) {
+        // Include the full URL with search params
+        const navUrl = $lastPageUrl.search
+          ? $lastPageUrl.pathname + "?" + $lastPageUrl.search
+          : $lastPageUrl.pathname
+        return [
+          {
+            label: "Dataset",
+            href: navUrl,
+          },
+        ]
+      }
+    } catch (error) {
+      console.warn("Failed to parse referrer URL:", error)
+    }
+
+    return []
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -290,6 +324,7 @@
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
     action_buttons={buttons}
+    breadcrumbs={get_breadcrumbs()}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
