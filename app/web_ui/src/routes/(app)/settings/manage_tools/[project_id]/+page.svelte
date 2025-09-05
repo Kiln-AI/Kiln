@@ -66,20 +66,11 @@
     }
   }
 
-  function navigateToToolServer(
-    tool_server: KilnToolServerDescription,
-    edit_mode: boolean = false,
-  ) {
+  function navigateToToolServer(tool_server: KilnToolServerDescription) {
     if (tool_server.id) {
-      if (edit_mode) {
-        goto(
-          `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server.id}`,
-        )
-      } else {
-        goto(
-          `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
-        )
-      }
+      goto(
+        `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
+      )
     }
   }
 
@@ -147,7 +138,7 @@
                 tool.missing_secrets && tool.missing_secrets.length > 0}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
-                on:click={() => navigateToToolServer(tool, missing_secrets)}
+                on:click={() => navigateToToolServer(tool)}
                 on:keydown={(e) =>
                   e.key === "Enter" && navigateToToolServer(tool)}
                 role="button"

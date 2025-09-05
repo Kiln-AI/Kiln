@@ -165,6 +165,7 @@
           name: key,
           value: "Value missing",
           error: true,
+          link: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server_id}`,
         })
       } else if (!(key in nonSecretProperties)) {
         // Only add if not already in regular values
