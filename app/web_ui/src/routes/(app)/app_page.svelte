@@ -7,8 +7,13 @@
   export let sub_subtitle: string = ""
   export let sub_subtitle_link: string | undefined = undefined
   export let no_y_padding: boolean = false
-
   export let action_buttons: ActionButton[] = []
+
+  type Breadcrumb = {
+    label: string
+    href: string
+  }
+  export let breadcrumbs: Breadcrumb[] = []
 
   function run_action_button(action_button: ActionButton) {
     if (action_button.handler) {
@@ -46,6 +51,17 @@
 
 <svelte:window on:keydown={handle_key_down} />
 
+{#if breadcrumbs.length > 0}
+  <div class="breadcrumbs text-sm pt-0">
+    <ul>
+      {#each breadcrumbs as breadcrumb}
+        <li><a href={breadcrumb.href}>{breadcrumb.label}</a></li>
+      {/each}
+      <!-- Adds the last ">" separator -->
+      <li></li>
+    </ul>
+  </div>
+{/if}
 <div class="flex flex-row">
   <div class="flex flex-col grow">
     <h1 class="text-2xl font-bold">{title}</h1>

@@ -15,6 +15,7 @@
 <AppPage
   title="Check for Update"
   sub_subtitle={`Current Version ${app_version}`}
+  breadcrumbs={[{ label: "Settings", href: "/settings" }]}
 >
   <div class="max-w-2xl">
     {#if $update_info.update_loading}

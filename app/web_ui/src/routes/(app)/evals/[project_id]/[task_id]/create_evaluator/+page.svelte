@@ -140,6 +140,12 @@
   <AppPage
     title="Create a New Evaluator"
     subtitle="Evaluators judge task performance and help you find the best method of running your task."
+    breadcrumbs={[
+      {
+        label: "Evals",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+      },
+    ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

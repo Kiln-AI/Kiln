@@ -411,6 +411,16 @@
   subtitle="Find the best method of running your task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
+  breadcrumbs={[
+    {
+      label: "Evals",
+      href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+    },
+    {
+      label: evaluator?.name || "Eval",
+      href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+    },
+  ]}
   action_buttons={[
     {
       label: "Compare Judges",

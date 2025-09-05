@@ -518,6 +518,7 @@
 <AppPage
   title="Compare Run Methods"
   subtitle="Compare run methods for your task using evals"
+  breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">

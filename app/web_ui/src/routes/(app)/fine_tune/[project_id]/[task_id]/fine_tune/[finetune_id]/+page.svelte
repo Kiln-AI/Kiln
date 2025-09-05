@@ -184,6 +184,12 @@
   <AppPage
     title="Fine Tune"
     subtitle={finetune_loading ? undefined : `Name: ${finetune?.finetune.name}`}
+    breadcrumbs={[
+      {
+        label: "Fine Tunes",
+        href: `/fine_tune/${project_id}/${task_id}`,
+      },
+    ]}
     action_buttons={[
       ...(finetune
         ? [

@@ -390,6 +390,7 @@
     subtitle="Follow these steps to find the best way to evaluate and run your task"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+    breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
     action_buttons={[
       {
         label: "Edit",

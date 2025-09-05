@@ -7,10 +7,16 @@
   import { update_update_store, update_info } from "$lib/utils/update"
   import { onMount } from "svelte"
   import ProgressWidget from "$lib/ui/progress_widget.svelte"
+  import { beforeNavigate } from "$app/navigation"
+  import { setContext } from "svelte"
+  import { writable } from "svelte/store"
 
   onMount(async () => {
     update_update_store()
   })
+
+  const lastPageUrlStore = writable<URL | undefined>(undefined)
+  setContext("lastPageUrl", lastPageUrlStore)
 
   enum Section {
     Dataset,
@@ -62,6 +68,10 @@
       menu.open = false
     }
   }
+
+  beforeNavigate((nav) => {
+    lastPageUrlStore.set(nav.from?.url)
+  })
 </script>
 
 <div class="drawer lg:drawer-open">
