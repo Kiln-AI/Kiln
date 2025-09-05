@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
@@ -394,7 +395,28 @@ def connect_tool_servers_api(app: FastAPI):
         project_id: str, tool_data: LocalToolServerCreationRequest
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
+        return await _create_or_edit_tool_server(tool_data, project)
 
+    @app.patch("/api/projects/{project_id}/edit_local_mcp/{tool_server_id}")
+    async def edit_local_mcp(
+        project_id: str, tool_server_id: str, tool_data: LocalToolServerCreationRequest
+    ) -> ExternalToolServer:
+        project = project_from_id(project_id)
+        existing_tool_server = tool_server_from_id(project_id, tool_server_id)
+        if existing_tool_server.type != ToolServerType.local_mcp:
+            raise HTTPException(
+                status_code=400,
+                detail="Existing tool server is not a local MCP server. You can't edit a non-local MCP server with this endpoint.",
+            )
+        return await _create_or_edit_tool_server(
+            tool_data, project, existing_tool_server
+        )
+
+    async def _create_or_edit_tool_server(
+        tool_data: LocalToolServerCreationRequest,
+        project: Project,
+        existing_tool_server: ExternalToolServer | None = None,
+    ) -> ExternalToolServer:
         # Create the ExternalToolServer with all data for validation
         properties = {
             "command": tool_data.command,
@@ -403,13 +425,20 @@ def connect_tool_servers_api(app: FastAPI):
             "secret_env_var_keys": tool_data.secret_env_var_keys,
         }
 
-        tool_server = ExternalToolServer(
-            name=tool_data.name,
-            type=ToolServerType.local_mcp,
-            description=tool_data.description,
-            properties=properties,
-            parent=project,
-        )
+        if existing_tool_server:
+            tool_server = existing_tool_server
+            tool_server.name = tool_data.name
+            tool_server.description = tool_data.description
+            # TODO: the setter here isn't updating the properties for the for secrets. Need to make that logic reusable
+            tool_server.properties = properties
+        else:
+            tool_server = ExternalToolServer(
+                name=tool_data.name,
+                type=ToolServerType.local_mcp,
+                description=tool_data.description,
+                properties=properties,
+                parent=project,
+            )
 
         # Validate the tool server connectivity
         MCPSessionManager.shared().clear_shell_path_cache()

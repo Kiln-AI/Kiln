@@ -150,12 +150,14 @@
                     <Warning
                       warning_message="Action Required"
                       warning_color="warning"
+                      tight={true}
                     />
                   {:else}
                     <Warning
                       warning_message="Ready"
                       warning_color="success"
                       warning_icon="check"
+                      tight={true}
                     />
                   {/if}
                 </td>
@@ -179,6 +181,7 @@
                     warning_message="Ready"
                     warning_color="success"
                     warning_icon="check"
+                    tight={true}
                   />
                 </td>
               </tr>

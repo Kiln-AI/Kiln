@@ -161,7 +161,7 @@
       }
     }
 
-    alert("TODO Save")
+    await connect_local_mcp()
   }
 
   async function connect_local_mcp() {
@@ -171,37 +171,62 @@
 
       const envVarsData = buildEnvVarsObject()
 
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/connect_local_mcp",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
+      const body = {
+        name: name,
+        description: description || null,
+        command: command,
+        args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
+        env_vars: envVarsData.envVarsObj,
+        secret_env_var_keys: envVarsData.secret_env_var_keys,
+      }
+
+      let server_id: string | null | undefined = undefined
+      let api_error = null
+
+      if (editing_tool_server) {
+        const { data, error } = await client.PATCH(
+          "/api/projects/{project_id}/edit_local_mcp/{tool_server_id}",
+          {
+            params: {
+              path: {
+                project_id: $page.params.project_id,
+                tool_server_id: editing_tool_server.id || "",
+              },
             },
+            body: body,
           },
-          body: {
-            name: name,
-            description: description || null,
-            command: command,
-            args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
-            env_vars: envVarsData.envVarsObj,
-            secret_env_var_keys: envVarsData.secret_env_var_keys,
+        )
+        server_id = data?.id
+        api_error = error
+      } else {
+        const { data, error } = await client.POST(
+          "/api/projects/{project_id}/connect_local_mcp",
+          {
+            params: {
+              path: {
+                project_id: $page.params.project_id,
+              },
+            },
+            body: body,
           },
-        },
-      )
+        )
+        server_id = data?.id
+        api_error = error
+      }
 
       if (api_error) {
         throw api_error
       }
-
-      if (data?.id) {
-        // Delete the project_id from the available_tools, so next load it loads the updated list.
-        uncache_available_tools($page.params.project_id)
-        // Navigate to the tools page for the created tool
-        goto(
-          `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,
-        )
+      if (!server_id) {
+        throw new Error("Failed to get server id")
       }
+
+      // Delete the project_id from the available_tools, so next load it loads the updated list.
+      uncache_available_tools($page.params.project_id)
+      // Navigate to the tools page for the created tool
+      goto(
+        `/settings/manage_tools/${$page.params.project_id}/tool_servers/${server_id}`,
+      )
     } catch (e) {
       error = createKilnError(e)
     } finally {
