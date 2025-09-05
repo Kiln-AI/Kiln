@@ -2,12 +2,22 @@ import os
 import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.config import MCP_SECRETS_KEY
+
+# Import ExceptionGroup with proper fallback for Python 3.10
+try:
+    from exceptiongroup import ExceptionGroup  # type: ignore[import-untyped]
+except ImportError:
+    # Python 3.11+ has ExceptionGroup in builtins
+    pass
 
 
 class TestMCPSessionManager:
@@ -36,6 +46,76 @@ class TestMCPSessionManager:
 
         # They should be different objects
         assert instance1 is not instance2
+
+    def test_extract_first_exception_direct_match(self):
+        """Test _extract_first_exception with direct exception type match."""
+        manager = MCPSessionManager()
+
+        # Test with matching exception type
+        error = ValueError("test error")
+        result = manager._extract_first_exception(error, ValueError)
+        assert result is error
+
+        # Test with non-matching exception type
+        result = manager._extract_first_exception(error, TypeError)
+        assert result is None
+
+    def test_extract_first_exception_tuple_types(self):
+        """Test _extract_first_exception with tuple of exception types."""
+        manager = MCPSessionManager()
+
+        # Test with matching type in tuple
+        error = ConnectionError("connection failed")
+        result = manager._extract_first_exception(error, (ValueError, ConnectionError))
+        assert result is error
+
+        # Test with non-matching types in tuple
+        result = manager._extract_first_exception(error, (TypeError, RuntimeError))
+        assert result is None
+
+    def test_extract_first_exception_with_exception_group(self):
+        """Test _extract_first_exception with ExceptionGroup (Python 3.11+ or backport)."""
+        manager = MCPSessionManager()
+
+        # Only run this test if ExceptionGroup is available
+        if "ExceptionGroup" not in globals():
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create nested exceptions
+        inner_error = ValueError("inner error")
+        other_error = TypeError("other error")
+        group = ExceptionGroup("group error", [inner_error, other_error])
+
+        # Test extracting matching exception from group
+        result = manager._extract_first_exception(group, ValueError)
+        assert result is inner_error
+
+        # Test extracting non-matching exception from group
+        result = manager._extract_first_exception(group, RuntimeError)
+        assert result is None
+
+    def test_extract_first_exception_nested_exception_groups(self):
+        """Test _extract_first_exception with nested ExceptionGroups."""
+        manager = MCPSessionManager()
+
+        # Only run this test if ExceptionGroup is available
+        if "ExceptionGroup" not in globals():
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create deeply nested exception structure
+        target_error = FileNotFoundError("file not found")
+        inner_group = ExceptionGroup("inner group", [target_error, ValueError("other")])
+        outer_group = ExceptionGroup(
+            "outer group", [TypeError("type error"), inner_group]
+        )
+
+        # Should find the deeply nested exception
+        result = manager._extract_first_exception(outer_group, FileNotFoundError)
+        assert result is target_error
+
+        # Should not find non-existent exception type
+        result = manager._extract_first_exception(outer_group, OSError)
+        assert result is None
 
     # Note: Testing invalid tool server types is not possible because:
     # 1. The ToolServerType enum only has one value: remote_mcp
@@ -481,6 +561,326 @@ class TestMCPSessionManager:
             assert call[1]["headers"] == expected_headers
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_400_error(self, mock_client):
+        """Test remote MCP session handles HTTP 400 error with user-friendly message."""
+        # Create HTTP 400 error
+        response = MagicMock()
+        response.status_code = 400
+        http_error = httpx.HTTPStatusError(
+            "Bad Request", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="The MCP server rejected the request"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_401_error(self, mock_client):
+        """Test remote MCP session handles HTTP 401 error with user-friendly message."""
+        # Create HTTP 401 error
+        response = MagicMock()
+        response.status_code = 401
+        http_error = httpx.HTTPStatusError(
+            "Unauthorized", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="Authentication to the MCP server failed"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_403_error(self, mock_client):
+        """Test remote MCP session handles HTTP 403 error with user-friendly message."""
+        # Create HTTP 403 error
+        response = MagicMock()
+        response.status_code = 403
+        http_error = httpx.HTTPStatusError(
+            "Forbidden", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="Access to the MCP server is forbidden"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_404_error(self, mock_client):
+        """Test remote MCP session handles HTTP 404 error with user-friendly message."""
+        # Create HTTP 404 error
+        response = MagicMock()
+        response.status_code = 404
+        http_error = httpx.HTTPStatusError(
+            "Not Found", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="MCP server not found"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_500_error(self, mock_client):
+        """Test remote MCP session handles HTTP 500+ errors with user-friendly message."""
+        # Create HTTP 500 error
+        response = MagicMock()
+        response.status_code = 500
+        http_error = httpx.HTTPStatusError(
+            "Internal Server Error", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError, match="The MCP server encountered an internal error"
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_502_error(self, mock_client):
+        """Test remote MCP session handles HTTP 502 error (also 5xx) with user-friendly message."""
+        # Create HTTP 502 error
+        response = MagicMock()
+        response.status_code = 502
+        http_error = httpx.HTTPStatusError(
+            "Bad Gateway", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError, match="The MCP server encountered an internal error"
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_other_error(self, mock_client):
+        """Test remote MCP session handles other HTTP errors with generic message."""
+        # Create HTTP 418 error (I'm a teapot - uncommon status code)
+        response = MagicMock()
+        response.status_code = 418
+        http_error = httpx.HTTPStatusError(
+            "I'm a teapot", request=MagicMock(), response=response
+        )
+
+        # Mock client to raise the HTTP error
+        mock_client.return_value.__aenter__.side_effect = http_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="Failed to connect to the MCP server"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_http_error_in_exception_group(self, mock_client):
+        """Test remote MCP session extracts HTTP error from ExceptionGroup."""
+        # Only run this test if ExceptionGroup is available
+        if "ExceptionGroup" not in globals():
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create HTTP error nested in ExceptionGroup
+        response = MagicMock()
+        response.status_code = 401
+        http_error = httpx.HTTPStatusError(
+            "Unauthorized", request=MagicMock(), response=response
+        )
+        group_error = ExceptionGroup(
+            "Multiple errors", [ValueError("other error"), http_error]
+        )
+
+        # Mock client to raise the ExceptionGroup
+        mock_client.return_value.__aenter__.side_effect = group_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should extract the HTTP error from the group and handle it appropriately
+        with pytest.raises(ValueError, match="Authentication to the MCP server failed"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_connection_error(self, mock_client):
+        """Test remote MCP session handles ConnectionError with user-friendly message."""
+        # Mock client to raise ConnectionError
+        connection_error = ConnectionError("Connection refused")
+        mock_client.return_value.__aenter__.side_effect = connection_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError,
+            match="Unable to connect to MCP server due to: 'Connection refused'",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_os_error(self, mock_client):
+        """Test remote MCP session handles OSError with user-friendly message."""
+        # Mock client to raise OSError
+        os_error = OSError("Network is unreachable")
+        mock_client.return_value.__aenter__.side_effect = os_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError,
+            match="Unable to connect to MCP server due to: 'Network is unreachable'",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_connection_error_in_exception_group(self, mock_client):
+        """Test remote MCP session extracts connection error from ExceptionGroup."""
+        # Only run this test if ExceptionGroup is available
+        if "ExceptionGroup" not in globals():
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create connection error nested in ExceptionGroup
+        connection_error = ConnectionError("Connection timeout")
+        group_error = ExceptionGroup(
+            "Multiple errors", [ValueError("other error"), connection_error]
+        )
+
+        # Mock client to raise the ExceptionGroup
+        mock_client.return_value.__aenter__.side_effect = group_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should extract the connection error from the group and handle it appropriately
+        with pytest.raises(
+            ValueError,
+            match="Unable to connect to MCP server due to: 'Connection timeout'",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_remote_mcp_unknown_error_reraises(self, mock_client):
+        """Test remote MCP session re-raises unknown errors."""
+        # Mock client to raise an unknown error type
+        unknown_error = RuntimeError("Unknown error")
+        mock_client.return_value.__aenter__.side_effect = unknown_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={"server_url": "http://example.com/mcp", "headers": {}},
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should re-raise the original unknown error
+        with pytest.raises(RuntimeError, match="Unknown error"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
     @patch("kiln_ai.utils.config.Config.shared")
     async def test_demonstrates_bug_without_copy_fix(self, mock_config, mock_client):
         """
@@ -839,6 +1239,209 @@ class TestMCPSessionManager:
         assert "SECRET_API_KEY" not in original_env_vars
         assert "ANOTHER_SECRET" not in original_env_vars
         assert original_env_vars.get("PUBLIC_VAR") == "public_value"
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_file_not_found_error(self, mock_client):
+        """Test local MCP session handles FileNotFoundError with user-friendly message."""
+        # Mock client to raise FileNotFoundError
+        file_not_found = FileNotFoundError("Command 'nonexistent' not found")
+        mock_client.return_value.__aenter__.side_effect = file_not_found
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "nonexistent",
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(ValueError, match="Command 'nonexistent' not found"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_file_not_found_in_exception_group(self, mock_client):
+        """Test local MCP session extracts FileNotFoundError from ExceptionGroup."""
+        # Only run this test if ExceptionGroup is available
+        if "ExceptionGroup" not in globals():
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create FileNotFoundError nested in ExceptionGroup
+        file_not_found = FileNotFoundError("Command 'missing' not found")
+        group_error = ExceptionGroup(
+            "Multiple errors", [ValueError("other error"), file_not_found]
+        )
+
+        # Mock client to raise the ExceptionGroup
+        mock_client.return_value.__aenter__.side_effect = group_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "missing",
+                "args": ["arg1"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should extract the FileNotFoundError from the group and handle it appropriately
+        with pytest.raises(ValueError, match="Command 'missing' not found"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_mcp_error(self, mock_client):
+        """Test local MCP session handles McpError with user-friendly message."""
+        # Mock client to raise McpError
+        error_data = ErrorData(code=-1, message="Failed to initialize MCP server")
+        mcp_error = McpError(error_data)
+        mock_client.return_value.__aenter__.side_effect = mcp_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["-m", "broken_server"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with pytest.raises(
+            ValueError,
+            match="MCP server failed to start due to: 'Failed to initialize MCP server'",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_mcp_error_with_whitespace(self, mock_client):
+        """Test local MCP session handles McpError with whitespace in message."""
+        # Mock client to raise McpError with leading/trailing whitespace
+        error_data = ErrorData(
+            code=-1, message="  \n  Server initialization failed  \t  "
+        )
+        mcp_error = McpError(error_data)
+        mock_client.return_value.__aenter__.side_effect = mcp_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["-m", "broken_server"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should strip whitespace from error message
+        with pytest.raises(
+            ValueError,
+            match="MCP server failed to start due to: 'Server initialization failed'",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_mcp_error_in_exception_group(self, mock_client):
+        """Test local MCP session extracts McpError from ExceptionGroup."""
+        # Only run this test if ExceptionGroup is available
+        if "ExceptionGroup" not in globals():
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create McpError nested in ExceptionGroup
+        error_data = ErrorData(code=-1, message="Server startup failed")
+        mcp_error = McpError(error_data)
+        group_error = ExceptionGroup(
+            "Multiple errors", [ValueError("other error"), mcp_error]
+        )
+
+        # Mock client to raise the ExceptionGroup
+        mock_client.return_value.__aenter__.side_effect = group_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["-m", "broken_server"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should extract the McpError from the group and handle it appropriately
+        with pytest.raises(
+            ValueError,
+            match="MCP server failed to start due to: 'Server startup failed'",
+        ):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
+    async def test_local_mcp_unknown_error_reraises(self, mock_client):
+        """Test local MCP session re-raises unknown errors."""
+        # Mock client to raise an unknown error type
+        unknown_error = RuntimeError("Unknown local error")
+        mock_client.return_value.__aenter__.side_effect = unknown_error
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.local_mcp,
+            description="Test server",
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {},
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should re-raise the original unknown error
+        with pytest.raises(RuntimeError, match="Unknown local error"):
+            async with manager.mcp_client(tool_server):
+                pass
+
+    def test_exception_group_import_compatibility(self):
+        """Test that ExceptionGroup import works correctly across Python versions."""
+        manager = MCPSessionManager()
+
+        # Test that the import logic in the module works correctly
+        # This verifies the try/except import block in the module
+        import builtins
+        import sys
+
+        if sys.version_info >= (3, 11):
+            # Python 3.11+ should have ExceptionGroup in builtins
+            assert "ExceptionGroup" in dir(builtins)
+        else:
+            # Python 3.10 should either have the backport or skip ExceptionGroup tests
+            # The actual availability depends on whether the exceptiongroup package is installed
+            pass  # We handle this gracefully in individual tests with pytest.skip
+
+        # Test that _extract_first_exception handles the case where ExceptionGroup might not exist
+        # by testing with a regular exception (should work regardless of ExceptionGroup availability)
+        error = ValueError("test error")
+        result = manager._extract_first_exception(error, ValueError)
+        assert result is error
 
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     @patch("kiln_ai.utils.config.Config.shared")
