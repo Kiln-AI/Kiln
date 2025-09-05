@@ -46,8 +46,18 @@ class ExternalToolServer(KilnParentedModel):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Process secrets after initialization
+        self._process_secrets_from_properties()
 
-        # Extract secrets from properties immediately after validation
+    def _process_secrets_from_properties(self) -> None:
+        """
+        Extract secrets from properties and move them to _unsaved_secrets.
+        This removes secrets from the properties dict so they aren't saved to file.
+        Clears existing _unsaved_secrets first to handle property updates correctly.
+        """
+        # Clear existing unsaved secrets since we're reprocessing
+        self._unsaved_secrets.clear()
+
         secret_keys = self.get_secret_keys()
 
         if not secret_keys:
@@ -73,6 +83,16 @@ class ExternalToolServer(KilnParentedModel):
 
             case _:
                 raise_exhaustive_enum_error(self.type)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Override __setattr__ to process secrets whenever properties are updated.
+        """
+        super().__setattr__(name, value)
+
+        # Process secrets whenever properties are updated
+        if name == "properties":
+            self._process_secrets_from_properties()
 
     @model_validator(mode="after")
     def validate_required_fields(self) -> "ExternalToolServer":
