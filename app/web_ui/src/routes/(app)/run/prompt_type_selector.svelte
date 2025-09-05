@@ -4,6 +4,7 @@
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   export let prompt_method: string
   export let linked_model_selection: string | undefined = undefined
@@ -13,6 +14,7 @@
   export let fine_tune_prompt_id: string | undefined = undefined
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
+  export let read_only: boolean = false
 
   $: options = build_prompt_options(
     $current_task_prompts,
@@ -104,6 +106,23 @@
   $: {
     update_fine_tune_prompt_selection(linked_model_selection)
   }
+
+  // Get display name for selected prompt method
+  $: selected_prompt_name = get_selected_prompt_name(prompt_method, options)
+
+  function get_selected_prompt_name(
+    selected_value: string,
+    option_groups: OptionGroup[],
+  ): string {
+    for (const group of option_groups) {
+      for (const option of group.options) {
+        if (option.value === selected_value) {
+          return option.label
+        }
+      }
+    }
+    return selected_value
+  }
   function update_fine_tune_prompt_selection(model_id: string | undefined) {
     if (model_id && model_id.startsWith("kiln_fine_tune/")) {
       // Select the fine-tune prompt automatically, when selecting a fine-tuned model
@@ -127,15 +146,33 @@
   }
 </script>
 
-<FormElement
-  label="Prompt Method"
-  inputType="fancy_select"
-  {description}
-  {info_description}
-  bind:value={prompt_method}
-  id="prompt_method"
-  bind:fancy_select_options={options}
-/>
+{#if read_only}
+  <FormElement
+    label="Prompt Method"
+    inputType="header_only"
+    {description}
+    {info_description}
+    id="prompt_method_readonly"
+  />
+  <div class="relative">
+    <div
+      class="select select-bordered w-full flex items-center bg-base-200/50 text-base-content/70"
+      style="background-image: none;"
+    >
+      <span class="truncate">{selected_prompt_name}</span>
+    </div>
+  </div>
+{:else}
+  <FormElement
+    label="Prompt Method"
+    inputType="fancy_select"
+    {description}
+    {info_description}
+    bind:value={prompt_method}
+    id="prompt_method"
+    bind:fancy_select_options={options}
+  />
+{/if}
 
 {#if is_fine_tune_model && prompt_method != fine_tune_prompt_id}
   <Warning
