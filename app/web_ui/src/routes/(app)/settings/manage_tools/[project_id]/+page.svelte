@@ -66,11 +66,20 @@
     }
   }
 
-  function navigateToToolServer(tool_server: KilnToolServerDescription) {
+  function navigateToToolServer(
+    tool_server: KilnToolServerDescription,
+    edit_mode: boolean = false,
+  ) {
     if (tool_server.id) {
-      goto(
-        `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
-      )
+      if (edit_mode) {
+        goto(
+          `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server.id}`,
+        )
+      } else {
+        goto(
+          `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
+        )
+      }
     }
   }
 
@@ -134,9 +143,11 @@
           </thead>
           <tbody>
             {#each tools || [] as tool}
+              {@const missing_secrets =
+                tool.missing_secrets && tool.missing_secrets.length > 0}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
-                on:click={() => navigateToToolServer(tool)}
+                on:click={() => navigateToToolServer(tool, missing_secrets)}
                 on:keydown={(e) =>
                   e.key === "Enter" && navigateToToolServer(tool)}
                 role="button"
@@ -146,7 +157,7 @@
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">{tool.description || "N/A"}</td>
                 <td class="text-sm">
-                  {#if tool.missing_secrets && tool.missing_secrets.length > 0}
+                  {#if missing_secrets}
                     <Warning
                       warning_message="Action Required"
                       warning_color="warning"
