@@ -296,3 +296,42 @@ def test_run_config_upgrade_old_entries():
 def test_task_name_unicode_name():
     task = Task(name="你好", instruction="Do something")
     assert task.name == "你好"
+
+
+def test_task_default_run_config_id_validation(tmp_path):
+    """Test that default_run_config_id validation works correctly."""
+
+    # Create a task
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    # Create a run config for the task
+    run_config = TaskRunConfig(
+        name="Test Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Test a valid run config for default_run_config_id
+    task.default_run_config_id = run_config.id
+    assert task.default_run_config_id == run_config.id
+
+    # Test None default_run_config_id (should be valid)
+    task.default_run_config_id = None
+    assert task.default_run_config_id is None
+
+    # Test invalid default_run_config_id (should raise ValidationError)
+    with pytest.raises(ValidationError) as exc_info:
+        task.default_run_config_id = "non-existent-id"
+
+    # Check that the error message contains our custom message
+    error_msg = str(exc_info.value)
+    assert "Run config not found in task run configs" in error_msg
