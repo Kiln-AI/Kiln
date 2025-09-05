@@ -16,13 +16,6 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
-# Import ExceptionGroup with proper fallback for Python 3.10
-try:
-    from exceptiongroup import ExceptionGroup  # type: ignore[import-untyped]
-except ImportError:
-    # Python 3.11+ has ExceptionGroup in builtins
-    pass
-
 logger = logging.getLogger(__name__)
 
 
@@ -61,18 +54,24 @@ class MCPSessionManager:
                 raise_exhaustive_enum_error(tool_server.type)
 
     def _extract_first_exception(
-        self, exception: Exception, type: type | tuple[type, ...]
+        self, exception: Exception, target_type: type | tuple[type, ...]
     ) -> Exception | None:
         """
         Extract first relevant exception from ExceptionGroup or handle direct exceptions
         """
-        if isinstance(exception, type):
+        # Check if the exception itself is of the target type
+        if isinstance(exception, target_type):
             return exception
-        if isinstance(exception, ExceptionGroup):
-            for nested_exc in exception.exceptions:  # type: ignore[attr-defined]
-                result = self._extract_first_exception(nested_exc, type)
-                if result:
-                    return result
+
+        # Handle ExceptionGroup
+        if hasattr(exception, "exceptions"):
+            exceptions_attr = getattr(exception, "exceptions", None)
+            if exceptions_attr:
+                for nested_exc in exceptions_attr:
+                    result = self._extract_first_exception(nested_exc, target_type)
+                    if result:
+                        return result
+
         return None
 
     @asynccontextmanager
@@ -111,46 +110,26 @@ class MCPSessionManager:
             # Check for HTTPStatusError
             http_error = self._extract_first_exception(e, httpx.HTTPStatusError)
             if http_error and isinstance(http_error, httpx.HTTPStatusError):
-                # Create user-friendly error message based on status code
-                status_code = http_error.response.status_code
-                if status_code == 400:
-                    raise ValueError(
-                        "The MCP server rejected the request. Please verify your authentication token and server URL, and consult the server documentation for the correct request format."
-                    )
-                elif status_code == 401:
-                    raise ValueError(
-                        "Authentication to the MCP server failed. Please verify your token is valid and has not expired, and consult the server documentation if needed."
-                    )
-                elif status_code == 403:
-                    raise ValueError(
-                        "Access to the MCP server is forbidden. Please ensure your authentication token has the required permissions."
-                    )
-                elif status_code == 404:
-                    raise ValueError(
-                        "MCP server not found. Please verify the server URL is correct and the server is running."
-                    )
-                elif status_code >= 500:
-                    raise ValueError(
-                        "The MCP server encountered an internal error. This is a server-side problem — please try again later or contact the server administrator."
-                    )
-                else:
-                    raise ValueError(
-                        "Failed to connect to the MCP server. Please verify the server URL and authentication settings, and consult the server documentation for troubleshooting."
-                    )
-
-            # Check for connection errors
-            connection_error = self._extract_first_exception(
-                e, (ConnectionError, OSError)
-            )
-            if connection_error and isinstance(
-                connection_error, (ConnectionError, OSError)
-            ):
                 raise ValueError(
-                    f"Unable to connect to MCP server due to: '{connection_error}'. Please verify the configurations are correct, the server is running, and your network connection is working."
+                    f"The MCP server rejected the request. "
+                    f"Status {http_error.response.status_code}. "
+                    f"Response from server:\n{http_error.response.reason_phrase}"
                 )
 
+            # Check for connection errors
+            connection_error_types = (ConnectionError, OSError, httpx.RequestError)
+            connection_error = self._extract_first_exception(e, connection_error_types)
+            if connection_error and isinstance(
+                connection_error, connection_error_types
+            ):
+                raise RuntimeError(
+                    f"Unable to connect to MCP server. Please verify the configurations are correct, the server is running, and your network connection is working. Original error: {connection_error}"
+                ) from e
+
             # If no known error types found, re-raise the original exception
-            raise
+            raise RuntimeError(
+                f"Failed to connect to the MCP Server. Check the server's docs for troubleshooting. Original error: {e}"
+            ) from e
 
     @asynccontextmanager
     async def _create_local_mcp_session(
@@ -196,25 +175,21 @@ class MCPSessionManager:
                     await session.initialize()
                     yield session
         except Exception as e:
-            # Handle local MCP server startup errors with user-friendly messages
-
-            # Check for FileNotFoundError (command not found)
-            file_not_found = self._extract_first_exception(e, FileNotFoundError)
-            if file_not_found and isinstance(file_not_found, FileNotFoundError):
-                raise ValueError(
-                    f"Command '{command}' not found. Please follow the instructions in the MCP server documentation to install it."
-                )
-
-            # Check for MCP errors (from session initialization)
+            # Check for MCP errors. Things like wrong arguments would fall here.
             mcp_error = self._extract_first_exception(e, McpError)
             if mcp_error and isinstance(mcp_error, McpError):
-                error_message = str(mcp_error).strip()
-                raise ValueError(
-                    f"MCP server failed to start due to: '{error_message}'. Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup."
-                )
+                self._raise_local_mcp_error(mcp_error)
 
-            # If no known error types found, re-raise the original exception
-            raise
+            # Re-raise the original error but with a friendlier message
+            self._raise_local_mcp_error(e)
+
+    def _raise_local_mcp_error(self, e: Exception):
+        """
+        Raise a ValueError with a friendlier message for local MCP errors.
+        """
+        raise RuntimeError(
+            f"MCP server failed to start. Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup. Original error: {e}"
+        ) from e
 
     def _get_path(self) -> str:
         """
