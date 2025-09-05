@@ -131,6 +131,23 @@ class Task(
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
     )
 
+    default_run_config_id: str | None = Field(
+        default=None,
+        description="ID of the run config to use for this task by default. Must exist in saved run configs for this task.",
+    )
+
+    @model_validator(mode="after")
+    def validate_default_run_config_id(self) -> "Task":
+        if self.default_run_config_id is None:
+            return self
+
+        run_configs = self.run_configs(readonly=True)
+        run_config_ids = [rc.id for rc in run_configs]
+        if self.default_run_config_id in run_config_ids:
+            return self
+        else:
+            raise ValueError("Run config not found in task run configs.")
+
     def output_schema(self) -> Dict | None:
         if self.output_json_schema is None:
             return None
