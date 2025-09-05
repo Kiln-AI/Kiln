@@ -366,7 +366,28 @@ def connect_tool_servers_api(app: FastAPI):
         project_id: str, tool_data: ExternalToolServerCreationRequest
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
+        return await create_tool_server(tool_data, project)
 
+    @app.patch("/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}")
+    async def edit_remote_mcp(
+        project_id: str,
+        tool_server_id: str,
+        tool_data: ExternalToolServerCreationRequest,
+    ) -> ExternalToolServer:
+        project = project_from_id(project_id)
+        existing_tool_server = tool_server_from_id(project_id, tool_server_id)
+        if existing_tool_server.type != ToolServerType.remote_mcp:
+            raise HTTPException(
+                status_code=400,
+                detail="Existing tool server is not a remote MCP server. You can't edit a non-remote MCP server with this endpoint.",
+            )
+        return await create_tool_server(tool_data, project, existing_tool_server)
+
+    async def create_tool_server(
+        tool_data: ExternalToolServerCreationRequest,
+        project: Project,
+        existing_tool_server: ExternalToolServer | None = None,
+    ) -> ExternalToolServer:
         # Create the ExternalToolServer with all data for validation
         properties = {
             "server_url": tool_data.server_url,
@@ -374,13 +395,19 @@ def connect_tool_servers_api(app: FastAPI):
             "secret_header_keys": tool_data.secret_header_keys,
         }
 
-        tool_server = ExternalToolServer(
-            name=tool_data.name,
-            type=ToolServerType.remote_mcp,
-            description=tool_data.description,
-            properties=properties,
-            parent=project,
-        )
+        if existing_tool_server:
+            tool_server = existing_tool_server
+            tool_server.name = tool_data.name
+            tool_server.description = tool_data.description
+            tool_server.properties = properties
+        else:
+            tool_server = ExternalToolServer(
+                name=tool_data.name,
+                type=ToolServerType.remote_mcp,
+                description=tool_data.description,
+                properties=properties,
+                parent=project,
+            )
 
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(tool_server)

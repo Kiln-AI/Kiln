@@ -9,6 +9,12 @@
   import { onMount } from "svelte"
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
+  import type { ExternalToolServerApiDescription } from "$lib/types"
+  import Warning from "$lib/ui/warning.svelte"
+
+  // The existing tool server, if we're editing
+  export let editing_tool_server: ExternalToolServerApiDescription | null = null
+  let editing_requires_secrets: boolean = false
 
   // Form fields
   let name = ""
@@ -22,8 +28,10 @@
   let submitting = false
 
   // Populate fields from parent page state if provided (only if fields are empty)
-  onMount(() => {
-    if ($page.state) {
+  onMount(async () => {
+    if (editing_tool_server) {
+      load_existing_tool_server()
+    } else if ($page.state) {
       const state = $page.state || {}
       if ("name" in state && typeof state["name"] === "string") {
         name = state.name
@@ -39,6 +47,56 @@
       }
     }
   })
+
+  function load_existing_tool_server() {
+    if (!editing_tool_server) {
+      return
+    }
+    name = editing_tool_server.name
+    description = editing_tool_server.description || ""
+
+    // TODO: fix the server type, so it's not "never" and we don't need a cast
+    const props = editing_tool_server.properties as Record<string, unknown>
+
+    if (props.server_url && typeof props.server_url === "string") {
+      server_url = props.server_url
+    }
+
+    if (props.headers && typeof props.headers === "object") {
+      for (const [key, value] of Object.entries(props.headers)) {
+        if (typeof key === "string" && typeof value === "string") {
+          headers.push({
+            key: key,
+            value: value,
+            is_secret: false,
+            placeholder: "",
+          })
+        } else {
+          error = new KilnError(
+            "Invalid header key or value when loading existing tool server",
+            null,
+          )
+          return
+        }
+      }
+      // For svelte reactivity, we need to set the headers array
+      headers = headers
+    }
+
+    if (props.secret_header_keys && Array.isArray(props.secret_header_keys)) {
+      for (const key of props.secret_header_keys) {
+        headers.push({
+          key: key,
+          value: "SECRET_VALUE",
+          is_secret: true,
+          placeholder: "",
+        })
+        editing_requires_secrets = true
+      }
+      // For svelte reactivity, we need to set the headers array
+      headers = headers
+    }
+  }
 
   function buildHeadersObject(): {
     headersObj: Record<string, string>
@@ -65,42 +123,81 @@
   }
 
   async function connect_remote_mcp() {
+    // Check if secrets are missing and need to be set
+    if (editing_requires_secrets) {
+      for (const header of headers) {
+        if (header.is_secret && header.value.includes("SECRET_VALUE")) {
+          error = new KilnError(
+            "Please enter the value for the secret headers anywhere it says 'SECRET_VALUE'.",
+            null,
+          )
+          submitting = false
+          return
+        }
+      }
+    }
+
     try {
       error = null
       submitting = true
 
       const headersData = buildHeadersObject()
 
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/connect_remote_mcp",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
+      const body = {
+        name: name,
+        server_url: server_url,
+        headers: headersData.headersObj,
+        secret_header_keys: headersData.secret_header_keys,
+        description: description || null,
+      }
+
+      let server_id: string | null | undefined = undefined
+      let api_error = null
+
+      if (editing_tool_server) {
+        const { data, error: resp_error } = await client.PATCH(
+          "/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}",
+          {
+            params: {
+              path: {
+                project_id: $page.params.project_id,
+                tool_server_id: editing_tool_server.id || "",
+              },
             },
+            body: body,
           },
-          body: {
-            name: name.trim(),
-            server_url: server_url.trim(),
-            headers: headersData.headersObj,
-            secret_header_keys: headersData.secret_header_keys,
-            description: description.trim() || null,
+        )
+        server_id = data?.id
+        api_error = resp_error
+      } else {
+        const { data, error: resp_error } = await client.POST(
+          "/api/projects/{project_id}/connect_remote_mcp",
+          {
+            params: {
+              path: {
+                project_id: $page.params.project_id,
+              },
+            },
+            body: body,
           },
-        },
-      )
+        )
+        server_id = data?.id
+        api_error = resp_error
+      }
 
       if (api_error) {
         throw api_error
       }
-
-      if (data?.id) {
-        // Delete the project_id from the available_tools, so next load it loads the updated list.
-        uncache_available_tools($page.params.project_id)
-        // Navigate to the tools page for the created tool
-        goto(
-          `/settings/manage_tools/${$page.params.project_id}/tool_servers/${data.id}`,
-        )
+      if (!server_id) {
+        throw new Error("Failed to get server id")
       }
+
+      // Delete the project_id from the available_tools, so next load it loads the updated list.
+      uncache_available_tools($page.params.project_id)
+      // Navigate to the tools page for the created tool
+      goto(
+        `/settings/manage_tools/${$page.params.project_id}/tool_servers/${server_id}`,
+      )
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -110,6 +207,14 @@
 </script>
 
 <div>
+  {#if editing_requires_secrets}
+    <div class="mb-6 max-w-lg">
+      <Warning
+        warning_message="This server requires secrets, such as API keys. You must enter them below wherever it says 'SECRET_VALUE' to edit this server."
+        large_icon={true}
+      />
+    </div>
+  {/if}
   <div class="max-w-4xl">
     <FormContainer
       submit_label="Connect"
