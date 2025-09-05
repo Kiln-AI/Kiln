@@ -116,8 +116,105 @@ class TestMCPSessionManager:
         result = manager._extract_first_exception(outer_group, FileNotFoundError)
         assert result is target_error
 
+        # Should find FileNotFoundError when searching for OSError (parent class)
+        result = manager._extract_first_exception(outer_group, OSError)
+        assert result is target_error
+
         # Should not find non-existent exception type
         result = manager._extract_first_exception(outer_group, KeyError)
+        assert result is None
+
+        # Should not find another unrelated exception type
+        result = manager._extract_first_exception(outer_group, LookupError)
+        assert result is None
+
+    def test_extract_first_exception_empty_exception_group(self):
+        """Test _extract_first_exception with ExceptionGroup - note that empty groups cannot be created."""
+        # ExceptionGroup constructor requires a non-empty sequence of exceptions
+        # This test documents that empty ExceptionGroups cannot be created in the first place
+
+        # Only run this test if ExceptionGroup is available
+        try:
+            # Check if ExceptionGroup is available
+            _ = ExceptionGroup
+        except NameError:
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Attempting to create empty ExceptionGroup should raise ValueError
+        with pytest.raises(ValueError, match="must be a non-empty sequence"):
+            ExceptionGroup("empty group", [])
+
+    def test_extract_first_exception_group_with_no_matching_types(self):
+        """Test _extract_first_exception with ExceptionGroup containing only non-matching types."""
+        manager = MCPSessionManager()
+
+        # Only run this test if ExceptionGroup is available
+        try:
+            # Check if ExceptionGroup is available
+            _ = ExceptionGroup
+        except NameError:
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create group with only non-matching exception types
+        group = ExceptionGroup(
+            "no matches", [TypeError("type error"), RuntimeError("runtime error")]
+        )
+
+        # Should return None when no matching types found
+        result = manager._extract_first_exception(group, ValueError)
+        assert result is None
+
+    def test_extract_first_exception_multiple_matching_exceptions(self):
+        """Test _extract_first_exception returns first matching exception from group."""
+        manager = MCPSessionManager()
+
+        # Only run this test if ExceptionGroup is available
+        try:
+            # Check if ExceptionGroup is available
+            _ = ExceptionGroup
+        except NameError:
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create group with multiple matching exceptions
+        first_value_error = ValueError("first error")
+        second_value_error = ValueError("second error")
+        group = ExceptionGroup(
+            "multiple matches",
+            [
+                TypeError("type error"),
+                first_value_error,
+                second_value_error,
+                RuntimeError("runtime error"),
+            ],
+        )
+
+        # Should return the first matching exception found
+        result = manager._extract_first_exception(group, ValueError)
+        assert result is first_value_error
+        assert result is not second_value_error
+
+    def test_extract_first_exception_deeply_nested_no_matches(self):
+        """Test _extract_first_exception with deeply nested ExceptionGroups but no matches."""
+        manager = MCPSessionManager()
+
+        # Only run this test if ExceptionGroup is available
+        try:
+            # Check if ExceptionGroup is available
+            _ = ExceptionGroup
+        except NameError:
+            pytest.skip("ExceptionGroup not available in this Python version")
+
+        # Create deeply nested structure with no matching exceptions
+        inner_group = ExceptionGroup(
+            "inner", [TypeError("type"), RuntimeError("runtime")]
+        )
+        middle_group = ExceptionGroup("middle", [OSError("os error"), inner_group])
+        outer_group = ExceptionGroup(
+            "outer", [ConnectionError("connection"), middle_group]
+        )
+
+        # Should return None when no matches found at any level
+        result = manager._extract_first_exception(outer_group, ValueError)
         assert result is None
 
     # Note: Testing invalid tool server types is not possible because:
