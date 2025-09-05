@@ -64,7 +64,7 @@ async def mock_mcp_success(tools=None):
     patch_obj, mock_client = create_mcp_session_manager_patch(mock_tools=tools)
 
     with patch_obj as mock_session_manager_shared:
-        mock_session_manager = AsyncMock()
+        mock_session_manager = Mock()
         mock_session_manager.mcp_client = mock_client
         mock_session_manager_shared.return_value = mock_session_manager
         yield
@@ -77,7 +77,7 @@ async def mock_mcp_connection_error(error_message="Connection failed"):
     patch_obj, mock_client = create_mcp_session_manager_patch(connection_error=error)
 
     with patch_obj as mock_session_manager_shared:
-        mock_session_manager = AsyncMock()
+        mock_session_manager = Mock()
         mock_session_manager.mcp_client = mock_client
         mock_session_manager_shared.return_value = mock_session_manager
         yield
@@ -90,7 +90,7 @@ async def mock_mcp_list_tools_error(error_message="list_tools failed"):
     patch_obj, mock_client = create_mcp_session_manager_patch(list_tools_error=error)
 
     with patch_obj as mock_session_manager_shared:
-        mock_session_manager = AsyncMock()
+        mock_session_manager = Mock()
         mock_session_manager.mcp_client = mock_client
         mock_session_manager_shared.return_value = mock_session_manager
         yield
@@ -501,7 +501,7 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
         with patch(
             "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
+            mock_session_manager = Mock()
             mock_session_manager.clear_shell_path_cache = Mock()
             mock_session_manager_shared.return_value = mock_session_manager
 
@@ -881,8 +881,9 @@ def test_get_available_tools_demo_tools_enabled(client, test_project):
         mock_project_from_id.return_value = test_project
 
         # Mock config to enable demo tools
-        mock_config_instance = AsyncMock()
+        mock_config_instance = Mock()
         mock_config_instance.enable_demo_tools = True
+        mock_config_instance.user_id = "test_user"
         mock_config.return_value = mock_config_instance
 
         response = client.get(f"/api/projects/{test_project.id}/available_tools")
@@ -934,8 +935,9 @@ def test_get_available_tools_demo_tools_disabled(client, test_project):
         mock_project_from_id.return_value = test_project
 
         # Mock config to disable demo tools (default behavior)
-        mock_config_instance = AsyncMock()
+        mock_config_instance = Mock()
         mock_config_instance.enable_demo_tools = False
+        mock_config_instance.user_id = "test_user"
         mock_config.return_value = mock_config_instance
 
         response = client.get(f"/api/projects/{test_project.id}/available_tools")
@@ -1520,7 +1522,7 @@ def test_get_tool_server_with_many_tools(client, test_project):
         with patch(
             "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
         ) as mock_session_manager_shared_create:
-            mock_session_manager_create = AsyncMock()
+            mock_session_manager_create = Mock()
             mock_session_manager_create.mcp_client = mock_mcp_client_create
             mock_session_manager_shared_create.return_value = (
                 mock_session_manager_create
@@ -4030,6 +4032,7 @@ async def test_connect_remote_mcp_with_secret_headers(client, test_project):
         # Mock config for storing secrets
         mock_config_instance = mock_config.return_value
         mock_config_instance.get_value.return_value = {}  # Empty mcp_secrets initially
+        mock_config_instance.user_id = "test_user"
 
         async with mock_mcp_success():
             response = client.post(
@@ -4092,6 +4095,7 @@ async def test_connect_remote_mcp_no_secret_headers(client, test_project):
     ):
         mock_project_from_id.return_value = test_project
         mock_config_instance = mock_config.return_value
+        mock_config_instance.user_id = "test_user"
 
         async with mock_mcp_success():
             response = client.post(
@@ -4141,6 +4145,7 @@ async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
         # Mock config with existing secrets
         mock_config_instance = mock_config.return_value
         mock_config_instance.get_value.return_value = existing_secrets.copy()
+        mock_config_instance.user_id = "test_user"
 
         async with mock_mcp_success():
             response = client.post(
@@ -4342,6 +4347,7 @@ async def test_connect_local_mcp_with_secret_env_vars(client, test_project):
         # Mock config for storing secrets
         mock_config_instance = mock_config.return_value
         mock_config_instance.get_value.return_value = {}  # Empty mcp_secrets initially
+        mock_config_instance.user_id = "test_user"
 
         async with mock_mcp_success():
             response = client.post(
@@ -4408,6 +4414,7 @@ async def test_connect_local_mcp_no_secret_env_vars(client, test_project):
     ):
         mock_project_from_id.return_value = test_project
         mock_config_instance = mock_config.return_value
+        mock_config_instance.user_id = "test_user"
 
         async with mock_mcp_success():
             response = client.post(
@@ -4458,6 +4465,7 @@ async def test_connect_local_mcp_existing_mcp_secrets(client, test_project):
         # Mock config with existing secrets
         mock_config_instance = mock_config.return_value
         mock_config_instance.get_value.return_value = existing_secrets.copy()
+        mock_config_instance.user_id = "test_user"
 
         async with mock_mcp_success():
             response = client.post(
