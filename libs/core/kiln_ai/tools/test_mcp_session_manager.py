@@ -99,7 +99,10 @@ class TestMCPSessionManager:
         manager = MCPSessionManager()
 
         # Only run this test if ExceptionGroup is available
-        if "ExceptionGroup" not in globals():
+        try:
+            # Check if ExceptionGroup is available
+            _ = ExceptionGroup
+        except NameError:
             pytest.skip("ExceptionGroup not available in this Python version")
 
         # Create deeply nested exception structure
@@ -114,7 +117,7 @@ class TestMCPSessionManager:
         assert result is target_error
 
         # Should not find non-existent exception type
-        result = manager._extract_first_exception(outer_group, OSError)
+        result = manager._extract_first_exception(outer_group, KeyError)
         assert result is None
 
     # Note: Testing invalid tool server types is not possible because:
