@@ -296,18 +296,16 @@
     try {
       const referrerPath = $lastPageUrl.pathname
 
-      // Check if the referrer matches the pattern /dataset/{project_id}/{task_id}
+      // Check if the referrer path is /dataset/{project_id}/{task_id}
+      // since we only want to breadcrumb back to that page
       const expectedPath = `/dataset/${$page.params.project_id}/${$page.params.task_id}`
 
       if (referrerPath === expectedPath) {
-        // Include the full URL with search params
-        const navUrl = $lastPageUrl.search
-          ? $lastPageUrl.pathname + "?" + $lastPageUrl.search
-          : $lastPageUrl.pathname
         return [
           {
             label: "Dataset",
-            href: navUrl,
+            // Include the full URL with search params to a
+            href: $lastPageUrl.pathname + $lastPageUrl.search,
           },
         ]
       }
