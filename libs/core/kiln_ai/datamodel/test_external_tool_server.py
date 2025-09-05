@@ -5,6 +5,7 @@ import pytest
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class TestExternalToolServer:
@@ -398,7 +399,9 @@ class TestExternalToolServer:
         assert secrets == {"Authorization": "Bearer config-token"}
         assert missing == []
 
-    def test_retrieve_secrets_missing(self, mock_config, remote_mcp_base_props):
+    def test_retrieve_secrets_with_missing_values(
+        self, mock_config, remote_mcp_base_props
+    ):
         """Test retrieving secrets when some are missing."""
         server = ExternalToolServer(
             name="test-server",
@@ -488,7 +491,9 @@ class TestExternalToolServer:
         ):
             server._save_secrets()
 
-    def test_save_secrets_no_unsaved_secrets(self, mock_config, remote_mcp_base_props):
+    def test_save_secrets_with_no_unsaved_secrets(
+        self, mock_config, remote_mcp_base_props
+    ):
         """Test that saving secrets with no unsaved secrets does nothing."""
         server = ExternalToolServer(
             name="test-server",
@@ -499,6 +504,7 @@ class TestExternalToolServer:
             },
         )
         server.id = "server-123"
+
         # No _unsaved_secrets set
 
         server._save_secrets()
@@ -534,7 +540,7 @@ class TestExternalToolServer:
             {MCP_SECRETS_KEY: expected_secrets}
         )
 
-    def test_delete_secrets_no_existing_secrets(
+    def test_delete_secrets_with_no_existing_secrets(
         self, mock_config, remote_mcp_base_props
     ):
         """Test deleting secrets when none exist in config."""
@@ -614,42 +620,44 @@ class TestExternalToolServer:
         assert server._config_secret_key("Authorization") == "server-123::Authorization"
         assert server._config_secret_key("X-API-Key") == "server-123::X-API-Key"
 
-    @pytest.mark.parametrize(
-        "server_type", [ToolServerType.remote_mcp, ToolServerType.local_mcp]
-    )
-    def test_model_serialization_excludes_secrets(self, mock_config, server_type):
-        """Test that model serialization excludes _unsaved_secrets private attribute."""
-        if server_type == ToolServerType.remote_mcp:
-            properties = {
-                "server_url": "https://api.example.com/mcp",
-                "headers": {"Authorization": "Bearer secret"},
-                "secret_header_keys": ["Authorization"],
-            }
-        else:
-            properties = {
-                "command": "python",
-                "args": ["-m", "server"],
-                "env_vars": {"API_KEY": "secret"},
-                "secret_env_var_keys": ["API_KEY"],
-            }
+    def test_model_serialization_excludes_secrets(self, mock_config):
+        """Test that model serialization excludes _unsaved_secrets private attribute and secrets from properties."""
+        # Test all server types to ensure we update this test when new types are added
+        for server_type in ToolServerType:
+            match server_type:
+                case ToolServerType.remote_mcp:
+                    server = ExternalToolServer(
+                        name="test-remote-server",
+                        type=server_type,
+                        properties={
+                            "server_url": "https://api.example.com/mcp",
+                            "headers": {"Authorization": "Bearer secret"},
+                            "secret_header_keys": ["Authorization"],
+                        },
+                    )
+                    data = server.model_dump()
+                    assert "_unsaved_secrets" not in data
+                    assert "Authorization" not in data["properties"]["headers"]
 
-        server = ExternalToolServer(
-            name="test-server", type=server_type, properties=properties
-        )
+                case ToolServerType.local_mcp:
+                    server = ExternalToolServer(
+                        name="test-local-server",
+                        type=server_type,
+                        properties={
+                            "command": "python",
+                            "args": ["-m", "server"],
+                            "env_vars": {"API_KEY": "secret"},
+                            "secret_env_var_keys": ["API_KEY"],
+                        },
+                    )
+                    data = server.model_dump()
+                    assert "_unsaved_secrets" not in data
+                    assert "API_KEY" not in data["properties"]["env_vars"]
 
-        # Serialize to dict
-        data = server.model_dump()
+                case _:
+                    raise_exhaustive_enum_error(server_type)
 
-        # Should not contain private _unsaved_secrets
-        assert "_unsaved_secrets" not in data
-
-        # Should not contain secrets in properties
-        if server_type == ToolServerType.remote_mcp:
-            assert "Authorization" not in data["properties"]["headers"]
-        else:
-            assert "API_KEY" not in data["properties"]["env_vars"]
-
-    def test_edge_case_empty_secret_keys_list(self, mock_config, remote_mcp_base_props):
+    def test_empty_secret_keys_list(self, mock_config, remote_mcp_base_props):
         """Test behavior with empty secret_header_keys list."""
         properties = {**remote_mcp_base_props, "secret_header_keys": []}
 
@@ -662,9 +670,7 @@ class TestExternalToolServer:
         assert secrets == {}
         assert missing == []
 
-    def test_edge_case_none_mcp_secrets_in_config(
-        self, mock_config, remote_mcp_base_props
-    ):
+    def test_none_mcp_secrets_in_config(self, mock_config, remote_mcp_base_props):
         """Test behavior when MCP_SECRETS_KEY returns None from config."""
         server = ExternalToolServer(
             name="test-server",
