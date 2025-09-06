@@ -36,6 +36,7 @@ from kiln_ai.datamodel import (
     Usage,
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.prompt import ChainOfThoughtThinkingStrategy
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 
 logger = logging.getLogger(__name__)
@@ -372,7 +373,7 @@ def test_prompt_builder_from_id(task_with_examples):
     prompt = Prompt(
         name="test_prompt_name",
         prompt="test_prompt",
-        chain_of_thought_instructions="coti",
+        thinkingStrategy=ChainOfThoughtThinkingStrategy(instructions="coti"),
         parent=task,
     )
     prompt.save_to_file()
@@ -533,7 +534,9 @@ def test_saved_prompt_builder_with_chain_of_thought(tmp_path):
     prompt = Prompt(
         name="test_prompt_name",
         prompt="test_prompt",
-        chain_of_thought_instructions="Think step by step",
+        thinkingStrategy=ChainOfThoughtThinkingStrategy(
+            instructions="Think step by step"
+        ),
         parent=task,
     )
     prompt.save_to_file()
@@ -610,7 +613,9 @@ def test_task_run_config_prompt_builder(tmp_path):
         prompt=Prompt(
             name="test prompt name",
             prompt="test prompt content",
-            chain_of_thought_instructions="test step by step",
+            thinkingStrategy=ChainOfThoughtThinkingStrategy(
+                instructions="test step by step"
+            ),
         ),
     )
     run_config.save_to_file()

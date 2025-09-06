@@ -281,7 +281,7 @@ class SavedPromptBuilder(BasePromptBuilder):
         return self.prompt_model.prompt
 
     def chain_of_thought_prompt(self) -> str | None:
-        return self.prompt_model.chain_of_thought_instructions
+        return self.prompt_model.get_thinking_instructions()
 
 
 class TaskRunConfigPromptBuilder(BasePromptBuilder):
@@ -320,7 +320,7 @@ class TaskRunConfigPromptBuilder(BasePromptBuilder):
 
         # Load the prompt from the model
         self.prompt = run_config.prompt.prompt
-        self.cot_prompt = run_config.prompt.chain_of_thought_instructions
+        self.cot_prompt = run_config.prompt.get_thinking_instructions()
         self.id = run_config_prompt_id
 
         super().__init__(task)

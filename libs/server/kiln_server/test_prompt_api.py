@@ -47,7 +47,10 @@ def test_create_prompt_success(client, project_and_task):
         "name": "Test Prompt",
         "prompt": "This is a test prompt",
         "description": "This is a test prompt description",
-        "chain_of_thought_instructions": "Think step by step, explaining your reasoning.",
+        "thinkingStrategy": {
+            "type": "chain_of_thought",
+            "instructions": "Think step by step, explaining your reasoning.",
+        },
     }
 
     with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
@@ -68,7 +71,7 @@ def test_create_prompt_success(client, project_and_task):
     assert prompts[0].name == "Test Prompt"
     assert prompts[0].prompt == "This is a test prompt"
     assert (
-        prompts[0].chain_of_thought_instructions
+        prompts[0].get_thinking_instructions()
         == "Think step by step, explaining your reasoning."
     )
 

@@ -398,7 +398,7 @@ def connect_evals_api(app: FastAPI):
                 description=f"Frozen copy of prompt '{prompt_id}', created for evaluations.",
                 generator_id=prompt_id,
                 prompt=prompt_builder.build_base_prompt(),
-                chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
+                thinkingStrategy=prompt_builder.thinkingStrategy,  # TODO: fix this
             )
 
         run_config_properties = request.run_config_properties

@@ -2,6 +2,10 @@ from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
+from kiln_ai.datamodel.prompt import (
+    ChainOfThoughtThinkingStrategy,
+    ReActThinkingStrategy,
+)
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
@@ -35,7 +39,7 @@ class PromptCreateRequest(BaseModel):
     name: str
     description: str | None = None
     prompt: str
-    chain_of_thought_instructions: str | None = None
+    thinkingStrategy: dict | None = None
 
 
 class PromptGenerator(BaseModel):
@@ -62,12 +66,30 @@ def connect_prompt_api(app: FastAPI):
         project_id: str, task_id: str, prompt_data: PromptCreateRequest
     ) -> Prompt:
         parent_task = task_from_id(project_id, task_id)
+        # Convert thinkingStrategy dict to proper object
+        thinking_strategy = None
+        if prompt_data.thinkingStrategy:
+            strategy_type = prompt_data.thinkingStrategy.get("type")
+            if strategy_type == "chain_of_thought":
+                thinking_strategy = ChainOfThoughtThinkingStrategy(
+                    instructions=prompt_data.thinkingStrategy.get(
+                        "instructions", "Think step by step, explaining your reasoning."
+                    )
+                )
+            elif strategy_type == "react":
+                thinking_strategy = ReActThinkingStrategy(
+                    instructions=prompt_data.thinkingStrategy.get(
+                        "instructions",
+                        "Think step by step. For each step, first think about what to do, then take an action.",
+                    ),
+                )
+
         prompt = Prompt(
             parent=parent_task,
             name=prompt_data.name,
             description=prompt_data.description,
             prompt=prompt_data.prompt,
-            chain_of_thought_instructions=prompt_data.chain_of_thought_instructions,
+            thinkingStrategy=thinking_strategy,
         )
         prompt.save_to_file()
         return prompt
