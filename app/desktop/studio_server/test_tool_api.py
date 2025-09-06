@@ -5327,7 +5327,7 @@ def edit_local_server_data():
     }
 
 
-async def test_edit_local_mcp_404(client, test_project, edit_data):
+async def test_edit_local_mcp_404(client, test_project, edit_local_server_data):
     """Test edit_local_mcp returns 404 when the tool server does not exist"""
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
@@ -5335,7 +5335,7 @@ async def test_edit_local_mcp_404(client, test_project, edit_data):
         mock_project_from_id.return_value = test_project
         response = client.patch(
             f"/api/projects/{test_project.id}/edit_local_mcp/123",
-            json=edit_data,
+            json=edit_local_server_data,
         )
         assert response.status_code == 404
         assert response.json() == {"detail": "Tool server not found"}
