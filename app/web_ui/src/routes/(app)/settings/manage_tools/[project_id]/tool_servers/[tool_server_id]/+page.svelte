@@ -165,6 +165,7 @@
           name: key,
           value: "Value missing",
           error: true,
+          link: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server_id}`,
         })
       } else if (!(key in nonSecretProperties)) {
         // Only add if not already in regular values
@@ -250,6 +251,10 @@
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
     action_buttons={[
+      {
+        label: "Edit",
+        href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
+      },
       {
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
