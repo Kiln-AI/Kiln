@@ -51,15 +51,13 @@
 
 ## Demo
 
-[Watch a 2 minute overview of Kiln:](https://kiln.tech#demo)
+[Watch a 2 minute overview of Kiln](https://kiln.tech#demo) or our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
 
 <kbd>
 <a href="https://kiln.tech#demo">
 <img alt="Kiln Preview" src="guides/kiln_preview.gif">
 </a>
 </kbd>
-
-Or watch our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
 
 ## People in Our Community Work For
 
