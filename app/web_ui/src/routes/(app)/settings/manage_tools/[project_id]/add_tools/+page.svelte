@@ -62,7 +62,7 @@
         {
           key: "Authorization",
           value: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
-          placeholder: "Bearer REPLACE_WITH_GITHUB_PERSONAL_ACCESS_TOKEN",
+          placeholder: "Format: 'Bearer your-token-here'",
           is_secret: true,
         },
       ],
@@ -76,13 +76,13 @@
         {
           key: "Authorization",
           value: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
-          placeholder: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
+          placeholder: "Format: 'apikey your-api-key-here'",
           is_secret: true,
         },
         {
           key: "X-OpenAPI-Key",
           value: "",
-          placeholder: "REPLACE_WITH_YOUR_OPENAI_API_KEY",
+          placeholder: "Your OpenAI API Key",
           is_secret: true,
         },
       ],
@@ -100,7 +100,7 @@
         {
           key: "FIRECRAWL_API_KEY",
           value: "",
-          placeholder: "FIRECRAWL_API_KEY",
+          placeholder: "Your Firecrawl API Key",
           is_secret: true,
         },
       ],
@@ -133,7 +133,7 @@
       args: [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "<Other Allowed Directories e.g. /Users/username/Desktop>",
+        "REPLACE_WITH_LIST_OF_ALLOWED_DIRECTORIES",
       ],
       env_vars: [],
       installation_instruction:
@@ -182,7 +182,19 @@
   }
 </script>
 
-<AppPage title="Add Tools">
+<AppPage
+  title="Add Tools"
+  breadcrumbs={[
+    {
+      label: "Settings",
+      href: `/settings`,
+    },
+    {
+      label: "Manage Tools",
+      href: `/settings/manage_tools/${project_id}`,
+    },
+  ]}
+>
   <div>
     <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
     <div

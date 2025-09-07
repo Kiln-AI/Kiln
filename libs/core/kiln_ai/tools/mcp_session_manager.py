@@ -5,10 +5,12 @@ import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+import httpx
 from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared.exceptions import McpError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.utils.config import Config
@@ -51,6 +53,27 @@ class MCPSessionManager:
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 
+    def _extract_first_exception(
+        self, exception: Exception, target_type: type | tuple[type, ...]
+    ) -> Exception | None:
+        """
+        Extract first relevant exception from ExceptionGroup or handle direct exceptions
+        """
+        # Check if the exception itself is of the target type
+        if isinstance(exception, target_type):
+            return exception
+
+        # Handle ExceptionGroup
+        if hasattr(exception, "exceptions"):
+            exceptions_attr = getattr(exception, "exceptions", None)
+            if exceptions_attr:
+                for nested_exc in exceptions_attr:
+                    result = self._extract_first_exception(nested_exc, target_type)
+                    if result:
+                        return result
+
+        return None
+
     @asynccontextmanager
     async def _create_remote_mcp_session(
         self,
@@ -71,15 +94,42 @@ class MCPSessionManager:
         secret_headers, _ = tool_server.retrieve_secrets()
         headers.update(secret_headers)
 
-        async with streamablehttp_client(server_url, headers=headers) as (
-            read_stream,
-            write_stream,
-            _,
-        ):
-            # Create a session using the client streams
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
+        try:
+            async with streamablehttp_client(server_url, headers=headers) as (
+                read_stream,
+                write_stream,
+                _,
+            ):
+                # Create a session using the client streams
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    yield session
+        except Exception as e:
+            # Handle HTTP errors with user-friendly messages
+
+            # Check for HTTPStatusError
+            http_error = self._extract_first_exception(e, httpx.HTTPStatusError)
+            if http_error and isinstance(http_error, httpx.HTTPStatusError):
+                raise ValueError(
+                    f"The MCP server rejected the request. "
+                    f"Status {http_error.response.status_code}. "
+                    f"Response from server:\n{http_error.response.reason_phrase}"
+                )
+
+            # Check for connection errors
+            connection_error_types = (ConnectionError, OSError, httpx.RequestError)
+            connection_error = self._extract_first_exception(e, connection_error_types)
+            if connection_error and isinstance(
+                connection_error, connection_error_types
+            ):
+                raise RuntimeError(
+                    f"Unable to connect to MCP server. Please verify the configurations are correct, the server is running, and your network connection is working. Original error: {connection_error}"
+                ) from e
+
+            # If no known error types found, re-raise the original exception
+            raise RuntimeError(
+                f"Failed to connect to the MCP Server. Check the server's docs for troubleshooting. Original error: {e}"
+            ) from e
 
     @asynccontextmanager
     async def _create_local_mcp_session(
@@ -119,10 +169,27 @@ class MCPSessionManager:
             env=env_vars,
         )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                yield session
+        try:
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+        except Exception as e:
+            # Check for MCP errors. Things like wrong arguments would fall here.
+            mcp_error = self._extract_first_exception(e, McpError)
+            if mcp_error and isinstance(mcp_error, McpError):
+                self._raise_local_mcp_error(mcp_error)
+
+            # Re-raise the original error but with a friendlier message
+            self._raise_local_mcp_error(e)
+
+    def _raise_local_mcp_error(self, e: Exception):
+        """
+        Raise a ValueError with a friendlier message for local MCP errors.
+        """
+        raise RuntimeError(
+            f"MCP server failed to start. Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup. Original error: {e}"
+        ) from e
 
     def _get_path(self) -> str:
         """

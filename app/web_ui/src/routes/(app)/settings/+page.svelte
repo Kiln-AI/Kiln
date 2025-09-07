@@ -60,7 +60,7 @@
       ],
     },
     {
-      category: "Tools",
+      category: "Tools & MCP",
       items: [
         {
           name: "Manage Tools",

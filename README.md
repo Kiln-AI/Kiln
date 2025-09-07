@@ -63,7 +63,9 @@ Or watch our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/
 
 ## People in Our Community Work For
 
-<img width="500" alt="Logo Grid" src="https://github.com/user-attachments/assets/f85a16af-37ae-41bf-95f7-11e13f8a5e47" />
+<img width="600" alt="Logo Grid" src="https://github.com/user-attachments/assets/b1550659-11b5-4c0b-8505-b89ab6f34e2e" />
+
+<sub>For privacy, Kiln doesn't track the identity of who uses it. People from these companies have joined our communities on Github & Discord.</sub>
 
 ## Download Kiln Desktop Apps
 

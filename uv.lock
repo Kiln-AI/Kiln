@@ -1006,6 +1006,7 @@ source = { editable = "libs/core" }
 dependencies = [
     { name = "boto3" },
     { name = "coverage" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "google-cloud-aiplatform" },
     { name = "jsonschema" },
     { name = "litellm" },
@@ -1034,6 +1035,7 @@ dev = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.37.10" },
     { name = "coverage", specifier = ">=7.6.4" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.0.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "litellm", specifier = ">=1.72.6" },
