@@ -45,5 +45,3 @@ Our colors are named, a Daisy UI convention. For example the color “primary”
   - font-light: stylish light text often used for subtitles
   - font-bold: usually not needed, use medium
 - You may set font size using daisyUI sizes: text-xs, text-sm, text-lg, text-xl, text-2xl
-
-### Controls

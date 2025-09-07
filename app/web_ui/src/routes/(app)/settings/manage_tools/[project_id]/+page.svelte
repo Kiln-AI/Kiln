@@ -99,6 +99,12 @@
   <AppPage
     title="Manage Tools"
     subtitle="Connect your project to tools with MCP servers"
+    breadcrumbs={[
+      {
+        label: "Settings",
+        href: `/settings`,
+      },
+    ]}
     action_buttons={is_empty
       ? []
       : [

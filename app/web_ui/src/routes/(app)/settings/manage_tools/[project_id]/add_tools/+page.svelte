@@ -182,7 +182,19 @@
   }
 </script>
 
-<AppPage title="Add Tools">
+<AppPage
+  title="Add Tools"
+  breadcrumbs={[
+    {
+      label: "Settings",
+      href: `/settings`,
+    },
+    {
+      label: "Manage Tools",
+      href: `/settings/manage_tools/${project_id}`,
+    },
+  ]}
+>
   <div>
     <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
     <div

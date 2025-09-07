@@ -30,6 +30,7 @@
   <AppPage
     title="Edit Task"
     subtitle={task_id ? `Task ID: ${task_id}` : undefined}
+    breadcrumbs={[{ label: "Settings", href: "/settings" }]}
     action_buttons={[
       {
         icon: "/images/delete.svg",
