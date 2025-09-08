@@ -11,25 +11,27 @@
 </h3>
 
 <p align="center">
+  Kiln is a free and intuitive app for building AI systems and products
+</p>
+
+<p align="center">
   <strong>Guides:</strong>
-  <a href="https://docs.kiln.tech/docs/quickstart"><strong>Quick Start</strong></a> • 
   <a href="https://docs.kiln.tech/docs/evaluations"><strong>Evals</strong></a> • 
   <a href="https://docs.kiln.tech/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •
   <a href="https://docs.kiln.tech/docs/synthetic-data-generation"><strong>Synthetic Data</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/quickstart"><strong>Quick Start</strong></a> • 
   <a href="https://docs.kiln.tech"><strong>All Docs</strong></a>
 </p>
-<div align="center">
+<p align="center">
   <a href="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml"><img src="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml/badge.svg" alt="Build and Test"></a>
   <a href="https://github.com/Kiln-AI/kiln/actions/workflows/test_count.yml"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/scosman/57742c1b1b60d597a6aba5d5148d728e/raw/test_count_kiln.json" alt="Test Count Badge"></a>
   <a href="https://kiln.tech/discord"><img src="https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white" alt="Discord"></a>
   <a href="https://kiln.tech/blog"><img src="https://img.shields.io/badge/Newsletter-subscribe-blue?logo=mailboxdotorg&logoColor=white" alt="Newsletter"></a>
-</div>
-
-## What is Kiln?
-
-[Kiln](https://kiln.tech) is a free and easy-to-use app for building AI systems and products. It integrates evals, synthetic data, fine-tuning, [and more](#key-features).
-
-[<img width="180" alt="Download button" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0">](https://kiln.tech/download) [<img width="180" alt="Quick start button" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359">](https://docs.kiln.tech/getting-started/quickstart)
+</p>
+<p align="center">
+  <a href="https://kiln.tech/download"><img width="180" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0" alt="Download Button"></a>
+  <a href="https://docs.kiln.tech/getting-started/quickstart"><img width="180" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359" alt="Quickstart Button"></a>
+</p>
 
 ## Key Features
 
@@ -49,7 +51,7 @@
 
 ## Demo
 
-[Watch a 2 minute overview of Kiln:](https://kiln.tech#demo)
+[Watch a 2 minute overview of Kiln](https://kiln.tech#demo) or our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
 
 <kbd>
 <a href="https://kiln.tech#demo">
@@ -57,11 +59,11 @@
 </a>
 </kbd>
 
-Or watch our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
-
 ## People in Our Community Work For
 
-<img width="500" alt="Logo Grid" src="https://github.com/user-attachments/assets/f85a16af-37ae-41bf-95f7-11e13f8a5e47" />
+<img width="600" alt="Logo Grid" src="https://github.com/user-attachments/assets/b1550659-11b5-4c0b-8505-b89ab6f34e2e" />
+
+<sub>For privacy, Kiln doesn't track the identity of who uses it. People from these companies have joined our communities on Github & Discord.</sub>
 
 ## Download Kiln Desktop Apps
 
