@@ -2,6 +2,11 @@ import logging
 from collections import defaultdict
 from typing import Dict, Literal
 
+from kiln_ai.adapters.rag.deduplication import (
+    deduplicate_chunk_embeddings,
+    deduplicate_chunked_documents,
+    deduplicate_extractions,
+)
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
 )
@@ -153,15 +158,18 @@ async def compute_current_progress_for_rag_configs(
         )
 
     for document in project.documents(readonly=True):
-        for extraction in document.extractions(readonly=True):
-            # increment the extraction count for every rag config that has this extractor
+        for extraction in deduplicate_extractions(document.extractions(readonly=True)):
             extraction_path_prefix = str(extraction.extractor_config_id)
+
+            # increment the extraction count for every rag config that has this extractor
             for matching_rag_config_id in path_prefixes[extraction_path_prefix]:
                 rag_config_progress_map[
                     matching_rag_config_id
                 ].total_document_extracted_count += 1
 
-            for chunked_document in extraction.chunked_documents(readonly=True):
+            for chunked_document in deduplicate_chunked_documents(
+                extraction.chunked_documents(readonly=True)
+            ):
                 # increment the chunked count for every rag config that has this extractor+chunker combo
                 chunking_path_prefix = (
                     f"{extraction_path_prefix}::{chunked_document.chunker_config_id}"
@@ -175,11 +183,14 @@ async def compute_current_progress_for_rag_configs(
                         matching_rag_config_id
                     ].total_chunk_count += len(chunked_document.chunks)
 
-                for embedding in chunked_document.chunk_embeddings(readonly=True):
+                for embedding in deduplicate_chunk_embeddings(
+                    chunked_document.chunk_embeddings(readonly=True)
+                ):
                     # increment the embedding count for every rag config that has this extractor+chunker+embedding combo
                     embedding_path_prefix = (
                         f"{chunking_path_prefix}::{embedding.embedding_config_id}"
                     )
+
                     for matching_rag_config_id in path_prefixes[embedding_path_prefix]:
                         rag_config_progress_map[
                             matching_rag_config_id

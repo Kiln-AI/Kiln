@@ -35,6 +35,7 @@ def create_mock_embedding(embedding_config_id):
     """Helper to create a mock embedding with the specified config ID"""
     mock_embedding = MagicMock(spec=ChunkEmbeddings)
     mock_embedding.embedding_config_id = embedding_config_id
+    mock_embedding.created_at = "2024-01-01T00:00:00Z"
     return mock_embedding
 
 
@@ -46,6 +47,7 @@ def create_mock_chunked_document(chunker_config_id, embeddings=None, num_chunks=
     mock_chunked_doc = MagicMock(spec=ChunkedDocument)
     mock_chunked_doc.chunker_config_id = chunker_config_id
     mock_chunked_doc.chunk_embeddings.return_value = embeddings
+    mock_chunked_doc.created_at = "2024-01-01T00:00:00Z"
     # Mock the chunks attribute to return a list with the specified number of chunks
     mock_chunked_doc.chunks = [MagicMock() for _ in range(num_chunks)]
     return mock_chunked_doc
@@ -59,6 +61,7 @@ def create_mock_extraction(extractor_config_id, chunked_documents=None):
     mock_extraction = MagicMock(spec=Extraction)
     mock_extraction.extractor_config_id = extractor_config_id
     mock_extraction.chunked_documents.return_value = chunked_documents
+    mock_extraction.created_at = "2024-01-01T00:00:00Z"
     return mock_extraction
 
 

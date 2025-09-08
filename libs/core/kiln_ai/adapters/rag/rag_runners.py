@@ -10,6 +10,11 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapt
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
+from kiln_ai.adapters.rag.deduplication import (
+    deduplicate_chunk_embeddings,
+    deduplicate_chunked_documents,
+    deduplicate_extractions,
+)
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
@@ -317,7 +322,9 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         for document in self.project.documents(readonly=True):
             if document_ids is not None and document.id not in document_ids:
                 continue
-            for extraction in document.extractions(readonly=True):
+            for extraction in deduplicate_extractions(
+                document.extractions(readonly=True)
+            ):
                 if extraction.extractor_config_id == target_extractor_config_id:
                     if not self.has_chunks(extraction, target_chunker_config_id):
                         jobs.append(
@@ -402,10 +409,13 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         for document in self.project.documents(readonly=True):
             if document_ids is not None and document.id not in document_ids:
                 continue
-            extractions = document.extractions(readonly=True)
-            for extraction in extractions:
+            for extraction in deduplicate_extractions(
+                document.extractions(readonly=True)
+            ):
                 if extraction.extractor_config_id == target_extractor_config_id:
-                    for chunked_document in extraction.chunked_documents(readonly=True):
+                    for chunked_document in deduplicate_chunked_documents(
+                        extraction.chunked_documents(readonly=True)
+                    ):
                         if (
                             chunked_document.chunker_config_id
                             == target_chunker_config_id
@@ -501,16 +511,19 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         for document in self.project.documents(readonly=True):
             if document_ids is not None and document.id not in document_ids:
                 continue
-            extractions = document.extractions(readonly=True)
-            for extraction in extractions:
+            for extraction in deduplicate_extractions(
+                document.extractions(readonly=True)
+            ):
                 if extraction.extractor_config_id == target_extractor_config_id:
-                    for chunked_document in extraction.chunked_documents(readonly=True):
+                    for chunked_document in deduplicate_chunked_documents(
+                        extraction.chunked_documents(readonly=True)
+                    ):
                         if (
                             chunked_document.chunker_config_id
                             == target_chunker_config_id
                         ):
-                            for chunk_embedding in chunked_document.chunk_embeddings(
-                                readonly=True
+                            for chunk_embedding in deduplicate_chunk_embeddings(
+                                chunked_document.chunk_embeddings(readonly=True)
                             ):
                                 if (
                                     chunk_embedding.embedding_config_id

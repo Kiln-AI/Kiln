@@ -1101,6 +1101,298 @@ async def test_deterministic_chunk_id_consistency(
         pytest.fail("Generated IDs are not valid UUIDs")
 
 
+@pytest.mark.asyncio
+async def test_chunk_replacement_triggers_deletion(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test that adding different chunks for the same document triggers deletion of old chunks."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create initial document with 2 chunks
+    initial_doc_data = {
+        "test_doc": [
+            {"vector": [1.0, 1.0], "text": "Initial chunk 1"},
+            {"vector": [2.0, 2.0], "text": "Initial chunk 2"},
+        ]
+    }
+    initial_records = dicts_to_indexable_docs(initial_doc_data, tmp_path)
+
+    # Add initial chunks
+    await adapter.add_chunks_with_embeddings(initial_records)
+
+    # Verify initial chunks are there
+    initial_count = await adapter.count_records()
+    assert initial_count == 2
+
+    # Create modified document with 3 different chunks (more chunks than original)
+    # This will trigger deletion because len(chunk_ids_in_database) != chunk_count_for_document (2 != 3)
+    modified_doc_data = {
+        "test_doc": [
+            {"vector": [10.0, 10.0], "text": "Modified chunk 1"},
+            {"vector": [20.0, 20.0], "text": "Modified chunk 2"},
+            {"vector": [30.0, 30.0], "text": "Modified chunk 3"},
+        ]
+    }
+    modified_records = dicts_to_indexable_docs(modified_doc_data, tmp_path)
+
+    # Mock the delete_nodes_by_document_id method to verify it gets called
+    delete_called = []
+    original_delete = adapter.delete_nodes_by_document_id
+
+    async def mock_delete(document_id: str):
+        delete_called.append(document_id)
+        return await original_delete(document_id)
+
+    adapter.delete_nodes_by_document_id = mock_delete
+
+    # Add modified chunks - this should trigger deletion of old chunks
+    await adapter.add_chunks_with_embeddings(modified_records)
+
+    # Verify delete was called for the document
+    assert "test_doc" in delete_called
+
+    # Verify final count is correct (only 2 new chunks)
+    final_count = await adapter.count_records()
+    assert final_count == 3
+
+    # Verify the chunks are the new ones, not the old ones
+    results = await adapter.search(KilnVectorStoreQuery(query_string="Modified"))
+    assert len(results) == 3
+    assert all("Modified" in result.chunk_text for result in results)
+
+    # Verify old chunks are gone - LanceDB raises a Warning for empty results
+    try:
+        old_results = await adapter.search(KilnVectorStoreQuery(query_string="Initial"))
+        assert len(old_results) == 0
+    except Warning as w:
+        # This is expected - LanceDB raises a Warning for empty results
+        assert "query results are empty" in str(w)
+
+
+@pytest.mark.asyncio
+async def test_chunk_deletion_ensures_complete_cleanup_and_other_docs_unaffected(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test that deletion completely cleans up all old chunks and other documents are unaffected."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create initial document with 5 chunks
+    initial_doc_data = {
+        "target_doc": [
+            {"vector": [1.0, 1.0], "text": "Original chunk 1"},
+            {"vector": [2.0, 2.0], "text": "Original chunk 2"},
+            {"vector": [3.0, 3.0], "text": "Original chunk 3"},
+            {"vector": [4.0, 4.0], "text": "Original chunk 4"},
+            {"vector": [5.0, 5.0], "text": "Original chunk 5"},
+        ]
+    }
+    initial_records = dicts_to_indexable_docs(initial_doc_data, tmp_path)
+
+    # Create another document that should remain unaffected
+    other_doc_data = {
+        "other_doc": [
+            {"vector": [10.0, 10.0], "text": "Other doc chunk 1"},
+            {"vector": [20.0, 20.0], "text": "Other doc chunk 2"},
+            {"vector": [30.0, 30.0], "text": "Other doc chunk 3"},
+        ]
+    }
+    other_records = dicts_to_indexable_docs(other_doc_data, tmp_path)
+
+    # Add both documents
+    await adapter.add_chunks_with_embeddings(initial_records)
+    await adapter.add_chunks_with_embeddings(other_records)
+
+    # Verify both documents are there (5 + 3 = 8 chunks)
+    initial_count = await adapter.count_records()
+    assert initial_count == 8
+
+    # Verify we can find chunks from both documents
+    target_results = await adapter.search(KilnVectorStoreQuery(query_string="Original"))
+    assert len(target_results) == 5
+
+    other_results = await adapter.search(KilnVectorStoreQuery(query_string="Other"))
+    assert len(other_results) == 3
+
+    # Create modified target document with 7 chunks (more than the original 5)
+    # This will trigger deletion because len(chunk_ids_in_database) != chunk_count_for_document (5 != 7)
+    # After deletion, we'll have 7 new chunks, demonstrating that the old 5 chunks were completely removed
+    modified_doc_data = {
+        "target_doc": [
+            {"vector": [100.0, 100.0], "text": "New target chunk 1"},
+            {"vector": [200.0, 200.0], "text": "New target chunk 2"},
+            {"vector": [300.0, 300.0], "text": "New target chunk 3"},
+            {"vector": [400.0, 400.0], "text": "New target chunk 4"},
+            {"vector": [500.0, 500.0], "text": "New target chunk 5"},
+            {"vector": [600.0, 600.0], "text": "New target chunk 6"},
+            {"vector": [700.0, 700.0], "text": "New target chunk 7"},
+        ]
+    }
+    modified_records = dicts_to_indexable_docs(modified_doc_data, tmp_path)
+
+    # Mock the delete_nodes_by_document_id method to verify it gets called
+    delete_called = []
+    original_delete = adapter.delete_nodes_by_document_id
+
+    async def mock_delete(document_id: str):
+        delete_called.append(document_id)
+        return await original_delete(document_id)
+
+    adapter.delete_nodes_by_document_id = mock_delete
+
+    # Add modified chunks - this should trigger deletion of old target_doc chunks only
+    await adapter.add_chunks_with_embeddings(modified_records)
+
+    # Verify delete was called for the target document only
+    assert "target_doc" in delete_called
+    assert "other_doc" not in delete_called
+
+    # Verify final count: 7 new target chunks + 3 other chunks = 10 total
+    final_count = await adapter.count_records()
+    assert final_count == 10
+
+    # Verify the target document now has the new chunks
+    new_target_results = await adapter.search(
+        KilnVectorStoreQuery(query_string="New target")
+    )
+    assert len(new_target_results) == 7
+    assert all("New target" in result.chunk_text for result in new_target_results)
+
+    # Verify old target chunks are completely gone
+    try:
+        old_target_results = await adapter.search(
+            KilnVectorStoreQuery(query_string="Original")
+        )
+        # Should find no results since "Original" was only in the old chunks
+        assert len(old_target_results) == 0
+    except Warning as w:
+        # This is expected - LanceDB raises a Warning for empty results
+        assert "query results are empty" in str(w)
+
+    # Verify other document is completely unaffected
+    final_other_results = await adapter.search(
+        KilnVectorStoreQuery(query_string="Other")
+    )
+    assert len(final_other_results) == 3
+    assert all("Other doc" in result.chunk_text for result in final_other_results)
+
+    # Verify all other document chunks still have the same content
+    other_texts = [result.chunk_text for result in final_other_results]
+    expected_other_texts = [
+        "Other doc chunk 1",
+        "Other doc chunk 2",
+        "Other doc chunk 3",
+    ]
+    for expected_text in expected_other_texts:
+        assert any(expected_text in text for text in other_texts)
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_by_document_id_direct(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test delete_nodes_by_document_id method directly."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create two documents with multiple chunks each
+    doc1_data = {
+        "document_1": [
+            {"vector": [1.0, 1.0], "text": "Alpha content part 1"},
+            {"vector": [2.0, 2.0], "text": "Alpha content part 2"},
+            {"vector": [3.0, 3.0], "text": "Alpha content part 3"},
+        ]
+    }
+    doc1_records = dicts_to_indexable_docs(doc1_data, tmp_path)
+
+    doc2_data = {
+        "document_2": [
+            {"vector": [10.0, 10.0], "text": "Beta content section 1"},
+            {"vector": [20.0, 20.0], "text": "Beta content section 2"},
+        ]
+    }
+    doc2_records = dicts_to_indexable_docs(doc2_data, tmp_path)
+
+    # Add both documents
+    await adapter.add_chunks_with_embeddings(doc1_records)
+    await adapter.add_chunks_with_embeddings(doc2_records)
+
+    # Verify both documents are in the database (3 + 2 = 5 chunks)
+    initial_count = await adapter.count_records()
+    assert initial_count == 5
+
+    # Verify we can find chunks from both documents
+    doc1_results = await adapter.search(KilnVectorStoreQuery(query_string="Alpha"))
+    assert len(doc1_results) == 3
+
+    doc2_results = await adapter.search(KilnVectorStoreQuery(query_string="Beta"))
+    assert len(doc2_results) == 2
+
+    # Test deleting document_1 chunks using delete_nodes_by_document_id
+    await adapter.delete_nodes_by_document_id("document_1")
+
+    # Verify document_1 chunks are gone
+    count_after_delete = await adapter.count_records()
+    assert count_after_delete == 2  # Only document_2 chunks remain
+
+    # Verify document_1 chunks are no longer searchable
+    try:
+        doc1_results_after = await adapter.search(
+            KilnVectorStoreQuery(query_string="Alpha")
+        )
+        assert len(doc1_results_after) == 0
+    except Warning as w:
+        # LanceDB raises a Warning for empty results
+        assert "query results are empty" in str(w)
+
+    # Verify document_2 chunks are still there and unaffected
+    doc2_results_after = await adapter.search(KilnVectorStoreQuery(query_string="Beta"))
+    assert len(doc2_results_after) == 2
+    assert all("Beta" in result.chunk_text for result in doc2_results_after)
+
+    # Test deleting the remaining document
+    await adapter.delete_nodes_by_document_id("document_2")
+
+    # Verify all chunks are gone
+    final_count = await adapter.count_records()
+    assert final_count == 0
+
+    # Test deleting from non-existent document (should not error)
+    await adapter.delete_nodes_by_document_id("non_existent_document")
+
+    # Count should still be 0
+    count_after_non_existent = await adapter.count_records()
+    assert count_after_non_existent == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_by_document_id_empty_table(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test delete_nodes_by_document_id on empty/non-existent table."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Test deleting from empty table (should not error due to TableNotFoundError handling)
+    await adapter.delete_nodes_by_document_id("some_document_id")
+
+    # Verify count is still 0
+    count = await adapter.count_records()
+    assert count == 0
+
+
 def generate_benchmark_data(
     doc_count: int,
     chunks_per_doc: int,

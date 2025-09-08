@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -589,11 +590,13 @@ class TestRagChunkingStepRunner:
         # Extraction with matching extractor config but no chunks
         mock_extraction1 = MagicMock(spec=Extraction)
         mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
         mock_extraction1.chunked_documents.return_value = []
 
         # Extraction with matching extractor config and existing chunks
         mock_extraction2 = MagicMock(spec=Extraction)
         mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
         mock_chunked_doc = MagicMock()
         mock_chunked_doc.chunker_config_id = "chunker-123"
         mock_extraction2.chunked_documents.return_value = [mock_chunked_doc]
@@ -601,6 +604,7 @@ class TestRagChunkingStepRunner:
         # Extraction with different extractor config
         mock_extraction3 = MagicMock(spec=Extraction)
         mock_extraction3.extractor_config_id = "different-extractor"
+        mock_extraction3.created_at = datetime(2023, 1, 3)
         mock_extraction3.chunked_documents.return_value = []
 
         mock_doc.extractions.return_value = [
@@ -669,15 +673,18 @@ class TestRagEmbeddingStepRunner:
 
         mock_extraction = MagicMock(spec=Extraction)
         mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
 
         # Chunked document with matching chunker config but no embeddings
         mock_chunked_doc1 = MagicMock(spec=ChunkedDocument)
         mock_chunked_doc1.chunker_config_id = "chunker-123"
+        mock_chunked_doc1.created_at = datetime(2023, 1, 1)
         mock_chunked_doc1.chunk_embeddings.return_value = []
 
         # Chunked document with matching chunker config and existing embeddings
         mock_chunked_doc2 = MagicMock(spec=ChunkedDocument)
         mock_chunked_doc2.chunker_config_id = "chunker-123"
+        mock_chunked_doc2.created_at = datetime(2023, 1, 2)
         mock_chunk_embeddings = MagicMock()
         mock_chunk_embeddings.embedding_config_id = "embedding-123"
         mock_chunked_doc2.chunk_embeddings.return_value = [mock_chunk_embeddings]
