@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Dict
+from typing import Annotated, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -609,6 +609,101 @@ def connect_document_api(app: FastAPI):
         run_all_extractors_and_rag_workflows_no_wait(project, document)
 
         return document
+
+    @app.post("/api/projects/{project_id}/documents/bulk")
+    async def create_documents_bulk(
+        project_id: str,
+        files: Annotated[List[UploadFile], File(...)],
+        names: Annotated[List[str] | None, Form()] = None,
+    ) -> List[Document]:
+        project = project_from_id(project_id)
+
+        if not files:
+            raise HTTPException(
+                status_code=422,
+                detail="At least one file must be provided",
+            )
+
+        # If names are provided, ensure they match the number of files
+        if names and len(names) != len(files):
+            raise HTTPException(
+                status_code=422,
+                detail="Number of names must match number of files",
+            )
+
+        created_documents: List[Document] = []
+        failed_files: List[str] = []
+
+        for i, file in enumerate(files):
+            try:
+                if not file.filename:
+                    failed_files.append(f"File at index {i}: no filename provided")
+                    continue
+
+                file_data = await file.read()
+
+                # Use provided name or fall back to filename
+                document_name = names[i] if names and i < len(names) else file.filename
+
+                # we cannot use content_type from UploadFile because it is not always set correctly
+                # depending on the browser and the file type (for example, audio/ogg sent via Safari)
+                mime_type = guess_mime_type(file.filename)
+
+                # application/octet-stream is a catch-all for unknown mime types
+                if not mime_type or mime_type == "application/octet-stream":
+                    failed_files.append(
+                        f"File {file.filename}: Unable to determine mime type. Ensure the file name has a valid extension."
+                    )
+                    continue
+
+                kind = get_kind_from_mime_type(mime_type)
+                if not kind:
+                    failed_files.append(
+                        f"File {file.filename}: Unsupported mime type: {mime_type}"
+                    )
+                    continue
+
+                document = Document(
+                    parent=project,
+                    name=string_to_valid_name(document_name),
+                    description="",  # No description support in bulk upload
+                    kind=kind,
+                    original_file=FileInfo(
+                        filename=file.filename,
+                        mime_type=mime_type,
+                        attachment=KilnAttachmentModel.from_data(file_data, mime_type),
+                        size=len(file_data),
+                    ),
+                )
+                document.save_to_file()
+                created_documents.append(document)
+
+            except Exception as e:
+                failed_files.append(
+                    f"File {file.filename if file.filename else f'at index {i!s}'}: {e!s}"
+                )
+                continue
+
+        # If no documents were created successfully, return an error
+        if not created_documents:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "failed_files": failed_files,
+                    "error": "No files could be processed successfully",
+                },
+            )
+
+        # Run extractors and RAG workflows for each successfully created document
+        # We don't want the client to wait for these to complete
+        for document in created_documents:
+            run_all_extractors_and_rag_workflows_no_wait(project, document)
+
+        # Log any failed files but still return the successful ones
+        if failed_files:
+            logger.warning(f"Some files failed to upload: {failed_files}")
+
+        return created_documents
 
     @app.get("/api/projects/{project_id}/documents")
     async def get_documents(

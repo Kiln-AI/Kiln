@@ -2327,3 +2327,283 @@ async def test_search_rag_config_invalid_request_body(
         )
 
     assert response.status_code == 422, response.text
+
+
+# Tests for bulk document upload endpoint
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_success(client, mock_project):
+    """Test successful bulk upload of multiple documents"""
+    project = mock_project
+    test_content_1 = b"test file content 1"
+    test_content_2 = b"test file content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
+    ):
+        mock_project_from_id.return_value = project
+        mock_run_workflows.return_value = None
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+        data = [
+            ("names", "Custom Name 1"),
+            ("names", "Custom Name 2"),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 2
+
+    # Check first document
+    assert result[0]["name"] == "Custom Name 1"
+    assert result[0]["kind"] == "document"
+    assert result[0]["original_file"]["filename"] == "test1.txt"
+    assert result[0]["original_file"]["mime_type"] == "text/plain"
+    assert result[0]["original_file"]["size"] == len(test_content_1)
+
+    # Check second document
+    assert result[1]["name"] == "Custom Name 2"
+    assert result[1]["kind"] == "document"
+    assert result[1]["original_file"]["filename"] == "test2.txt"
+    assert result[1]["original_file"]["mime_type"] == "text/plain"
+    assert result[1]["original_file"]["size"] == len(test_content_2)
+
+    # Verify both documents were created and workflows triggered
+    assert mock_run_workflows.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_without_names(client, mock_project):
+    """Test bulk upload without providing custom names (should use filenames)"""
+    project = mock_project
+    test_content_1 = b"test file content 1"
+    test_content_2 = b"test file content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
+    ):
+        mock_project_from_id.return_value = project
+        mock_run_workflows.return_value = None
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 2
+
+    # Should use filenames as names (with dots converted to underscores)
+    assert result[0]["name"] == "test1_txt"
+    assert result[1]["name"] == "test2_txt"
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_mixed_file_types(
+    client, mock_project, mock_file_factory
+):
+    """Test bulk upload with mixed valid file types"""
+    project = mock_project
+    test_text_content = b"test text content"
+    test_image_file = mock_file_factory(MockFileFactoryMimeType.JPEG)
+    test_image_content = Path(test_image_file).read_bytes()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
+    ):
+        mock_project_from_id.return_value = project
+        mock_run_workflows.return_value = None
+
+        files = [
+            ("files", ("document.txt", io.BytesIO(test_text_content), "text/plain")),
+            ("files", ("image.jpg", io.BytesIO(test_image_content), "image/jpeg")),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 2
+
+    # Check document types
+    assert result[0]["kind"] == "document"
+    assert result[1]["kind"] == "image"
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_some_invalid_files(client, mock_project):
+    """Test bulk upload where some files are invalid (should skip invalid, process valid)"""
+    project = mock_project
+    test_content_valid = b"valid test content"
+    test_content_invalid = b"invalid test content"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
+    ):
+        mock_project_from_id.return_value = project
+        mock_run_workflows.return_value = None
+
+        files = [
+            ("files", ("valid.txt", io.BytesIO(test_content_valid), "text/plain")),
+            (
+                "files",
+                (
+                    "invalid.xyz",
+                    io.BytesIO(test_content_invalid),
+                    "application/octet-stream",
+                ),
+            ),
+            (
+                "files",
+                ("unsupported.csv", io.BytesIO(test_content_invalid), "text/csv"),
+            ),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+
+    # Should only have the valid file
+    assert len(result) == 1
+    assert result[0]["name"] == "valid_txt"
+    assert result[0]["kind"] == "document"
+
+    # Should have triggered workflow for the valid file
+    assert mock_run_workflows.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_no_files(client, mock_project):
+    """Test bulk upload with no files provided"""
+    project = mock_project
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        response = client.post(f"/api/projects/{project.id}/documents/bulk")
+
+    assert response.status_code == 422, response.text
+    assert "At least one file must be provided" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_all_invalid_files(client, mock_project):
+    """Test bulk upload where all files are invalid"""
+    project = mock_project
+    test_content = b"test content"
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        files = [
+            (
+                "files",
+                ("invalid1.xyz", io.BytesIO(test_content), "application/octet-stream"),
+            ),
+            (
+                "files",
+                ("invalid2.abc", io.BytesIO(test_content), "application/octet-stream"),
+            ),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 422, response.text
+    result = response.json()
+    assert "No files could be processed successfully" in result["message"]["error"]
+    assert "failed_files" in result["message"]
+    assert len(result["message"]["failed_files"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_mismatched_names_count(client, mock_project):
+    """Test bulk upload with mismatched number of names and files"""
+    project = mock_project
+    test_content = b"test content"
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content), "text/plain")),
+        ]
+        data = [
+            ("names", "Only One Name"),  # Only one name for two files
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 422, response.text
+    assert "Number of names must match number of files" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
+    """Test bulk upload with files that have the same filename"""
+    project = mock_project
+    test_content_1 = b"test content 1"
+    test_content_2 = b"test content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
+    ):
+        mock_project_from_id.return_value = project
+        mock_run_workflows.return_value = None
+
+        files = [
+            ("files", ("duplicate.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("duplicate.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+
+    # Both files should be processed (they have different content)
+    assert len(result) == 2
+    assert result[0]["name"] == "duplicate_txt"
+    assert result[1]["name"] == "duplicate_txt"
+
+    # Both should have triggered workflows
+    assert mock_run_workflows.call_count == 2

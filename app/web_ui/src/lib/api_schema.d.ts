@@ -387,6 +387,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Documents Bulk */
+        post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -1680,6 +1697,13 @@ export interface components {
              * @default
              */
             description: string;
+        };
+        /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
+        Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+            /** Files */
+            files: string[];
+            /** Names */
+            names?: string[];
         };
         /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
         Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
@@ -4169,6 +4193,11 @@ export interface components {
              * @description A name for your own reference to identify the vector store config.
              */
             name: string;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
             /** @description The type of vector store to use. */
             store_type: components["schemas"]["VectorStoreType"];
             /**
@@ -5106,6 +5135,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"][];
                 };
             };
             /** @description Validation Error */
