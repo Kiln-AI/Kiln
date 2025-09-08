@@ -1843,21 +1843,6 @@ async def test_validate_tool_server_connectivity_empty_headers():
         await validate_tool_server_connectivity(tool_server)
 
 
-# Tests for new validation logic
-def test_external_tool_server_creation_request_non_http_schemes_accepted():
-    """Test ExternalToolServerCreationRequest currently accepts non-http schemes (urlparse is lenient)"""
-    # This test documents current behavior - non-http schemes are accepted
-    request = ExternalToolServerCreationRequest(
-        name="ftp_scheme_server",
-        server_url="ftp://example.com/mcp",  # Non-HTTP scheme currently accepted
-        headers={},
-        description="Server with FTP URL scheme",
-    )
-
-    # URL is preserved as-is
-    assert request.server_url == "ftp://example.com/mcp"
-
-
 def test_external_tool_server_creation_request_invalid_url_format():
     """Test ExternalToolServerCreationRequest rejects malformed URLs"""
 
@@ -2234,35 +2219,21 @@ def test_external_tool_server_creation_request_various_schemes_accepted():
     """Test that various URL schemes are currently accepted (urlparse is lenient)"""
 
     # These schemes are currently accepted due to lenient urlparse validation
-    valid_schemes = [
+    invalid_schemes = [
         "ftp://example.com",
         "ssh://user@example.com",
         "tcp://example.com:1234",
+        "file:///path/to/file",
+        "mailto:user@example.com",
     ]
 
-    for url in valid_schemes:
-        request = ExternalToolServerCreationRequest(
-            name="Various Scheme Server",
-            server_url=url,
-        )
-        # URL is preserved as-is
-        assert request.server_url == url
-
-    # Test specific cases that might have different error messages
-    special_cases = [
-        ("file:///path/to/file", "Server URL is not a valid URL"),
-        ("mailto:user@example.com", "Server URL is not a valid URL"),
-    ]
-
-    for invalid_url, expected_error in special_cases:
+    for url in invalid_schemes:
         with pytest.raises(ValidationError) as exc_info:
             ExternalToolServerCreationRequest(
-                name="Invalid Scheme Server",
-                server_url=invalid_url,
+                name="Various Scheme Server",
+                server_url=url,
             )
-
-        error_str = str(exc_info.value)
-        assert expected_error in error_str
+        assert "Server URL must start with http:// or https://" in str(exc_info.value)
 
 
 def test_external_tool_server_creation_request_invalid_header_characters():

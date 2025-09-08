@@ -49,8 +49,7 @@ class ExternalToolServerCreationRequest(BaseModel):
         # Check for leading whitespace in URL
         if server_url != server_url.lstrip():
             raise ValueError("Server URL must not have leading whitespace")
-        # Check if the URL is valid without stripping
-        if not urlparse(server_url).scheme:
+        if urlparse(server_url).scheme not in ["http", "https"]:
             raise ValueError("Server URL must start with http:// or https://")
         if not urlparse(server_url).netloc:
             raise ValueError("Server URL is not a valid URL")
