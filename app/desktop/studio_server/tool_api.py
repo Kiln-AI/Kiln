@@ -455,7 +455,6 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server = existing_tool_server
         tool_server.name = tool_data.name
         tool_server.description = tool_data.description
-        # TODO: the setter here isn't updating the properties for the for secrets. Need to make that logic reusable
         tool_server.properties = _local_tool_server_properties(tool_data)
 
         # Validate the tool server connectivity

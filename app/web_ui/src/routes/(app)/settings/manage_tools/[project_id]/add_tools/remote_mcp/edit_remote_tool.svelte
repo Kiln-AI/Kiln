@@ -55,7 +55,7 @@
     name = editing_tool_server.name
     description = editing_tool_server.description || ""
 
-    // TODO: fix the server type, so it's not "never" and we don't need a cast
+    // We should fix the server type, so it's not "never" and we don't need a cast
     const props = editing_tool_server.properties as Record<string, unknown>
 
     if (props.server_url && typeof props.server_url === "string") {
