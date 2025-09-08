@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import EditRemoteTool from "./edit_remote_tool.svelte"
+  import { page } from "$app/stores"
 </script>
 
 <AppPage
