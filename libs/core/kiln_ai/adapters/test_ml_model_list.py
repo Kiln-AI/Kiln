@@ -134,7 +134,7 @@ class TestDefaultStructuredOutputModeForModelProvider:
             ("llama_3_1_8b", ModelProviderName.groq, StructuredOutputMode.default),
             (
                 "qwq_32b",
-                ModelProviderName.fireworks_ai,
+                ModelProviderName.together_ai,
                 StructuredOutputMode.json_instructions,
             ),
         ],
