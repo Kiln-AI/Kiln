@@ -66,7 +66,7 @@
     }
 
     const model_id = run?.output?.source?.properties?.model_name
-    if (model_id) {
+    if (model_id && typeof model_id === "string") {
       properties.push({
         name: "Output Model",
         value: model_name(model_id, model_info),

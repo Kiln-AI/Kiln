@@ -22,6 +22,7 @@ from kiln_ai.datamodel.dataset_split import (
     DatasetSplit,
     DatasetSplitDefinition,
 )
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.finetune import (
     Finetune,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "DataSourceType",
     "DatasetSplit",
     "DatasetSplitDefinition",
+    "ExternalToolServer",
     "FineTuneStatusType",
     "Finetune",
     "Priority",

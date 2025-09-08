@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "boto3>=1.37.10",
     "coverage>=7.6.4",
+    "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
     "jsonschema>=4.23.0",
     "litellm>=1.72.6",

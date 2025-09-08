@@ -36,6 +36,7 @@
   import AddRunMethod from "./add_run_method.svelte"
   import posthog from "posthog-js"
   import { prompt_link } from "$lib/utils/link_builder"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -229,11 +230,6 @@
     if (selected_id) {
       get_score_summary()
     }
-  }
-
-  type UiProperty = {
-    name: string
-    value: string
   }
 
   // A dropdown name for the eval config that is human readable and helpful

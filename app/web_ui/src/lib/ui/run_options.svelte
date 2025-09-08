@@ -3,12 +3,83 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type { StructuredOutputMode } from "$lib/types"
   import { structuredOutputModeToString } from "$lib/utils/formatters"
+  import { available_tools, load_available_tools } from "$lib/stores"
+  import { onMount } from "svelte"
+  import type { ToolSetApiDescription } from "$lib/types"
+  import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0
   export let top_p: number = 1.0
   export let structured_output_mode: StructuredOutputMode = "default"
   export let has_structured_output: boolean = false
+  export let project_id: string
+  export let task_id: string
+  export let tools: string[] = []
+
+  onMount(async () => {
+    await load_tools(project_id, task_id)
+  })
+
+  let tools_store_loaded_task_id: string | null = null
+  async function load_tools(project_id: string, task_id: string) {
+    // Load available tools
+    if (project_id) {
+      load_available_tools(project_id)
+    }
+
+    // load selected tools for this task from tools_store
+    if (task_id !== tools_store_loaded_task_id) {
+      await tools_store_initialized
+      tools = $tools_store.selected_tool_ids_by_task_id[task_id] || []
+      tools_store_loaded_task_id = task_id
+    }
+  }
+  // Load tools if project_id or task_id changes
+  $: load_tools(project_id, task_id)
+
+  // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
+  $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
+    tools_store.update((state) => ({
+      ...state,
+      selected_tool_ids_by_task_id: {
+        ...state.selected_tool_ids_by_task_id,
+        [task_id]: tools,
+      },
+    }))
+  }
+
+  // filter out tools that are not in the available tools (server offline, tool removed, etc)
+  function filter_unavailable_tools(
+    available_tools: ToolSetApiDescription[] | undefined,
+    current_tools: string[],
+  ) {
+    if (
+      !available_tools ||
+      !project_id ||
+      !tools_store_loaded_task_id ||
+      !current_tools ||
+      current_tools.length === 0
+    ) {
+      return
+    }
+
+    const available_tool_ids = new Set(
+      available_tools.flatMap((tool_set) =>
+        tool_set.tools.map((tool) => tool.id),
+      ),
+    )
+
+    const unavailable_tools = tools.filter(
+      (tool_id) => !available_tool_ids.has(tool_id),
+    )
+
+    if (unavailable_tools.length > 0) {
+      console.warn("Removing unavailable tools:", unavailable_tools)
+      tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
+    }
+  }
+  $: filter_unavailable_tools($available_tools[project_id], tools)
 
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
@@ -112,33 +183,64 @@
       ],
     },
   ]
+
+  function get_tool_options(
+    available_tools: ToolSetApiDescription[],
+  ): OptionGroup[] {
+    let option_groups: OptionGroup[] = []
+
+    available_tools?.forEach((tool_set) => {
+      option_groups.push({
+        label: tool_set.set_name,
+        options: tool_set.tools.map((tool) => ({
+          value: tool.id,
+          label: tool.name,
+          description: tool.description || undefined,
+        })),
+      })
+    })
+    return option_groups
+  }
 </script>
 
-<FormElement
-  id="temperature"
-  label="Temperature"
-  inputType="input"
-  info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
-  bind:value={temperature}
-  validator={validate_temperature}
-/>
+<div>
+  {#if $available_tools[project_id]?.length > 0}
+    <FormElement
+      id="tools"
+      label="Tools"
+      inputType="multi_select"
+      info_description="Select the tools available to the model. The model may or may not choose to use them."
+      bind:value={tools}
+      fancy_select_options={get_tool_options($available_tools[project_id])}
+    />
+  {/if}
 
-<FormElement
-  id="top_p"
-  label="Top P"
-  inputType="input"
-  info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
-  bind:value={top_p}
-  validator={validate_top_p}
-/>
-
-{#if has_structured_output}
   <FormElement
-    id="structured_output_mode"
-    label="Structured Output"
-    inputType="fancy_select"
-    bind:value={structured_output_mode}
-    fancy_select_options={structured_output_options}
-    info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
+    id="temperature"
+    label="Temperature"
+    inputType="input"
+    info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    bind:value={temperature}
+    validator={validate_temperature}
   />
-{/if}
+
+  <FormElement
+    id="top_p"
+    label="Top P"
+    inputType="input"
+    info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    bind:value={top_p}
+    validator={validate_top_p}
+  />
+
+  {#if has_structured_output}
+    <FormElement
+      id="structured_output_mode"
+      label="Structured Output"
+      inputType="fancy_select"
+      bind:value={structured_output_mode}
+      fancy_select_options={structured_output_options}
+      info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
+    />
+  {/if}
+</div>

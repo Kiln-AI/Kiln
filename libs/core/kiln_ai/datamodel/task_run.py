@@ -8,6 +8,7 @@ from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -34,6 +35,42 @@ class Usage(BaseModel):
         description="The cost of the task run in US dollars, saved at runtime (prices can change over time).",
         ge=0,
     )
+
+    def __add__(self, other: "Usage") -> "Usage":
+        """Add two Usage objects together, handling None values gracefully.
+
+        None + None = None
+        None + value = value
+        value + None = value
+        value1 + value2 = value1 + value2
+        """
+        if not isinstance(other, Usage):
+            raise TypeError(f"Cannot add Usage with {type(other).__name__}")
+
+        def _add_optional_int(a: int | None, b: int | None) -> int | None:
+            if a is None and b is None:
+                return None
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return a + b
+
+        def _add_optional_float(a: float | None, b: float | None) -> float | None:
+            if a is None and b is None:
+                return None
+            if a is None:
+                return b
+            if b is None:
+                return a
+            return a + b
+
+        return Usage(
+            input_tokens=_add_optional_int(self.input_tokens, other.input_tokens),
+            output_tokens=_add_optional_int(self.output_tokens, other.output_tokens),
+            total_tokens=_add_optional_int(self.total_tokens, other.total_tokens),
+            cost=_add_optional_float(self.cost, other.cost),
+        )
 
 
 class TaskRun(KilnParentedModel):
@@ -71,6 +108,10 @@ class TaskRun(KilnParentedModel):
     usage: Usage | None = Field(
         default=None,
         description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
+    )
+    trace: list[ChatCompletionMessageParam] | None = Field(
+        default=None,
+        description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
 
     def thinking_training_data(self) -> str | None:

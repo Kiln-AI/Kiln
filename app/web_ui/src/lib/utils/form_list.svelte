@@ -4,6 +4,7 @@
   export let start_with_one: boolean = true
   export let empty_content: unknown = {}
   export let frozen: boolean = false
+  export let empty_description: string | null = null
 
   // Unique ID for the list, for scrolling to top after removal
   let id = "form_list_" + Math.random().toString(36).substring(2, 15)
@@ -89,6 +90,10 @@
         <slot {item} {item_index} />
       </div>
     {/each}
+  </div>
+{:else if empty_description}
+  <div class="text-xs font-medium text-left">
+    {empty_description}
   </div>
 {/if}
 

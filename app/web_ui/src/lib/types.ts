@@ -41,3 +41,12 @@ export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
 export type FinetuneDatasetInfo = components["schemas"]["FinetuneDatasetInfo"]
 export type StructuredOutputMode = components["schemas"]["StructuredOutputMode"]
 export type ModelProviderName = components["schemas"]["ModelProviderName"]
+export type KilnToolServerDescription =
+  components["schemas"]["KilnToolServerDescription"]
+export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
+export type ExternalToolServerApiDescription =
+  components["schemas"]["ExternalToolServerApiDescription"]
+export type ToolServerType = components["schemas"]["ToolServerType"]
+export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
+export type ToolSetApiDescription =
+  components["schemas"]["ToolSetApiDescription"]
