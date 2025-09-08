@@ -44,9 +44,8 @@ class ExternalToolServer(KilnParentedModel):
     # Private variable to store unsaved secrets
     _unsaved_secrets: dict[str, str] = PrivateAttr(default_factory=dict)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Process secrets after initialization
+    def model_post_init(self, __context: Any) -> None:
+        # Process secrets after initialization (pydantic v2 hook)
         self._process_secrets_from_properties()
 
     def _process_secrets_from_properties(self) -> None:
