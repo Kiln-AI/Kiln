@@ -9,6 +9,9 @@
   } from "$lib/stores"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
@@ -45,8 +48,77 @@
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
 
+  let prompt_type_selector: PromptTypeSelector
   let response: TaskRun | null = null
   $: run_focus = !response
+
+  // Quick start state
+  let selected_tab: "default" | "new" | "saved" = "new"
+  let selected_saved_config: string | null = null
+  let dropdown_open: boolean = false
+  let selectedElement: HTMLElement
+  let dropdownElement: HTMLElement
+
+  // Create select options with section headers
+  const quick_start_options: OptionGroup[] = [
+    {
+      label: "Task Default",
+      options: [{ value: "default", label: "Run options 2" }],
+    },
+    {
+      label: "Saved Run Options",
+      options: [
+        { value: "saved_config1", label: "Run options 1" },
+        { value: "saved_config3", label: "Run options 3" },
+      ],
+    },
+  ]
+
+  // Handle changes to selected_tab from the fancy select
+  $: if (selected_tab) {
+    if (selected_tab.startsWith("saved_")) {
+      selected_saved_config = selected_tab
+      selected_tab = "saved"
+    } else if (selected_tab === "default") {
+      selected_saved_config = null
+    } else if (selected_tab === "new") {
+      selected_saved_config = null
+    }
+  }
+
+  function getSavedConfigName(): string {
+    if (!selected_saved_config) return "Saved Configuration"
+
+    // Find the saved config name from the options
+    for (const group of quick_start_options) {
+      for (const option of group.options) {
+        if (option.value === selected_saved_config) {
+          return option.label
+        }
+      }
+    }
+    return "Saved Configuration"
+  }
+
+  // Handle click outside to close dropdown
+  function handleDocumentClick(event: MouseEvent) {
+    if (
+      dropdown_open &&
+      selectedElement &&
+      !selectedElement.contains(event.target as Node) &&
+      dropdownElement &&
+      !dropdownElement.contains(event.target as Node)
+    ) {
+      dropdown_open = false
+    }
+  }
+
+  // Add/remove event listener when dropdown state changes
+  $: if (dropdown_open) {
+    document.addEventListener("click", handleDocumentClick)
+  } else {
+    document.removeEventListener("click", handleDocumentClick)
+  }
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
   $: input_schema = $current_task?.input_json_schema
@@ -199,37 +271,197 @@
         </FormContainer>
       </div>
       <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
-        <div class="text-xl font-bold">Options</div>
-        <div>
-          <PromptTypeSelector
-            bind:prompt_method
-            info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-            bind:linked_model_selection={model}
-          />
-        </div>
-        <AvailableModelsDropdown
-          bind:model
-          bind:requires_structured_output
-          bind:requires_tool_support={requires_tools}
-          bind:error_message={model_dropdown_error_message}
-          bind:this={model_dropdown}
-        />
-        {#if $current_project?.id}
-          <Collapse
-            title="Advanced Options"
-            badge={tools.length > 0 ? "" + tools.length : null}
-          >
-            <RunOptions
-              bind:tools
-              bind:temperature
-              bind:top_p
-              bind:structured_output_mode
-              has_structured_output={requires_structured_output}
-              project_id={$current_project?.id}
-              task_id={$current_task?.id || ""}
+        <div class="text-xl font-bold">Run Options</div>
+
+        <!-- Run Options Container with Border -->
+        <div
+          class="rounded-lg border border-base-300 p-4 flex flex-col gap-4 min-w-[400px]"
+        >
+          <div>
+            <PromptTypeSelector
+              bind:prompt_method
+              info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+              bind:linked_model_selection={model}
+              bind:this={prompt_type_selector}
+              read_only={selected_tab === "default" || selected_tab === "saved"}
             />
-          </Collapse>
-        {/if}
+          </div>
+          <div>
+            <AvailableModelsDropdown
+              bind:model
+              bind:requires_structured_output
+              bind:requires_tool_support={requires_tools}
+              bind:error_message={model_dropdown_error_message}
+              bind:this={model_dropdown}
+              read_only={selected_tab === "default" || selected_tab === "saved"}
+            />
+          </div>
+          {#if $current_project?.id}
+            <div
+              class={selected_tab === "default" || selected_tab === "saved"
+                ? "pointer-events-auto"
+                : ""}
+            >
+              <Collapse
+                title="Advanced Options"
+                badge={tools.length > 0 ? "" + tools.length : null}
+              >
+                <div>
+                  <RunOptions
+                    bind:tools
+                    bind:temperature
+                    bind:top_p
+                    bind:structured_output_mode
+                    has_structured_output={requires_structured_output}
+                    project_id={$current_project?.id}
+                    task_id={$current_task?.id || ""}
+                    read_only={selected_tab === "default" ||
+                      selected_saved_config}
+                  />
+                </div>
+              </Collapse>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex justify-end items-center gap-2 min-w-[400px]">
+          <button
+            class="btn btn-sm flex-1 {selected_tab === 'new'
+              ? 'btn-primary'
+              : 'btn-disabled'}"
+            disabled={selected_tab !== "new"}
+          >
+            Save Configuration
+          </button>
+          <button
+            class="btn btn-sm flex-1 {selected_tab === 'new' ||
+            selected_tab === 'saved'
+              ? 'hover:btn-error active:btn-error'
+              : 'btn-disabled'}"
+            disabled={selected_tab !== "new" && selected_tab !== "saved"}
+          >
+            Promote to Default
+          </button>
+        </div>
+
+        <!-- Quick Select -->
+        <div class="mt-4 min-w-[400px]">
+          <div class="text-sm font-medium mb-1">Quick Select</div>
+          <div
+            class="text-xs text-gray-500 mb-2 flex items-center justify-between"
+          >
+            <span
+              >Select a saved configuration to override the current options.</span
+            >
+            <div class="text-gray-500">
+              <InfoTooltip
+                tooltip_text="Selected options will be read-only."
+                position="bottom"
+              />
+            </div>
+          </div>
+
+          <!-- Custom dropdown with clear button inside -->
+          <div class="dropdown w-full relative">
+            <div
+              tabindex="0"
+              role="listbox"
+              class="select select-bordered w-full flex items-center cursor-pointer"
+              bind:this={selectedElement}
+              on:click={() => {
+                dropdown_open = !dropdown_open
+              }}
+            >
+              <span class="truncate flex-1">
+                {#if selected_tab === "new"}
+                  Select an option
+                {:else if selected_tab === "default"}
+                  Task Default: Run options 2
+                {:else if selected_tab === "saved"}
+                  Saved Run Options: {selected_saved_config ||
+                    "Saved configuration"}
+                {:else}
+                  Select an option
+                {/if}
+              </span>
+            </div>
+
+            {#if dropdown_open}
+              <div
+                bind:this={dropdownElement}
+                class="bg-base-100 rounded-box z-[1000] p-2 shadow border flex flex-col fixed mt-1"
+                style="width: {selectedElement?.offsetWidth || 0}px;"
+              >
+                <!-- Clear button at the top -->
+                {#if selected_tab === "default" || selected_tab === "saved"}
+                  <div class="p-2 border-b border-base-200">
+                    <button
+                      class="pointer-events-auto w-full text-left px-2 py-1 hover:bg-base-200 rounded text-sm flex items-center"
+                      on:click={() => {
+                        selected_tab = "new"
+                        selected_saved_config = null
+                        dropdown_open = false
+                      }}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="mr-2"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                      Clear Selection
+                    </button>
+                  </div>
+                {/if}
+
+                <!-- Options -->
+                <ul class="menu overflow-y-auto flex-1">
+                  {#each quick_start_options as option_group}
+                    {#if option_group.label}
+                      <li class="menu-title pl-1">
+                        {option_group.label}
+                      </li>
+                    {/if}
+                    {#each option_group.options as option}
+                      <li>
+                        <button
+                          class="pointer-events-auto {(selected_tab ===
+                            'saved' &&
+                            selected_saved_config === option.label) ||
+                          selected_tab === option.value
+                            ? 'active'
+                            : ''}"
+                          on:click={() => {
+                            if (option.value.startsWith("saved_")) {
+                              selected_tab = "saved"
+                              selected_saved_config = option.label
+                            } else {
+                              selected_tab = option.value
+                              selected_saved_config = null
+                            }
+                            dropdown_open = false
+                          }}
+                        >
+                          {option.label}
+                        </button>
+                      </li>
+                    {/each}
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+          </div>
+        </div>
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}

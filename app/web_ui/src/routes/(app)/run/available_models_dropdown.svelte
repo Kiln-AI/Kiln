@@ -19,6 +19,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   const LOGPROBS_WARNING =
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
@@ -35,6 +36,7 @@
     | "evals"
     | "uncensored_data_gen"
     | null = null
+  export let read_only: boolean = false
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || [],
@@ -243,19 +245,48 @@
   $: selected_model_suggested_evals =
     available_model_details(model_name, provider_name, $available_models)
       ?.suggested_for_evals || false
+
+  // Get display name for selected model
+  $: selected_model_name = get_selected_model_name(model, model_options)
+
+  function get_selected_model_name(
+    selected_value: string,
+    option_groups: OptionGroup[],
+  ): string {
+    for (const group of option_groups) {
+      for (const option of group.options) {
+        if (option.value === selected_value) {
+          return option.label
+        }
+      }
+    }
+    return selected_value
+  }
 </script>
 
 <div>
-  <FormElement
-    label="Model"
-    bind:value={model}
-    id="model"
-    inputType="fancy_select"
-    on_select={confirm_model_select}
-    bind:error_message
-    fancy_select_options={model_options}
-    placeholder="Select a model"
-  />
+  {#if read_only}
+    <FormElement label="Model" inputType="header_only" id="model_readonly" />
+    <div class="relative">
+      <div
+        class="select select-bordered w-full flex items-center bg-base-200/50 text-base-content/70"
+        style="background-image: none;"
+      >
+        <span class="truncate">{selected_model_name}</span>
+      </div>
+    </div>
+  {:else}
+    <FormElement
+      label="Model"
+      bind:value={model}
+      id="model"
+      inputType="fancy_select"
+      on_select={confirm_model_select}
+      bind:error_message
+      fancy_select_options={model_options}
+      placeholder="Select a model"
+    />
+  {/if}
 
   {#if selected_model_untested}
     <Warning

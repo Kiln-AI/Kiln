@@ -71,7 +71,7 @@
       (!run_config_ids || run_config_ids.length === 0)
     ) {
       eval_run_error = new KilnError(
-        "Select at least one run config to run the eval.",
+        "Select at least one run option to run the eval.",
         null,
       )
       eval_state = "complete_with_errors"

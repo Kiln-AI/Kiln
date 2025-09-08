@@ -7,6 +7,7 @@
   import { onMount } from "svelte"
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0
@@ -16,6 +17,7 @@
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
+  export let read_only: boolean = false
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -201,46 +203,143 @@
     })
     return option_groups
   }
+
+  // Get display names for selected values
+  $: selected_tools_names = get_selected_tools_names(
+    tools,
+    $available_tools[project_id],
+  )
+  $: selected_structured_output_name = structuredOutputModeToString(
+    structured_output_mode,
+  )
+
+  function get_selected_tools_names(
+    selected_tool_ids: string[],
+    available_tools: ToolSetApiDescription[],
+  ): string[] {
+    if (!available_tools) return []
+    return selected_tool_ids.map((id) => {
+      for (const tool_set of available_tools) {
+        const tool = tool_set.tools.find((t) => t.id === id)
+        if (tool) return tool.name
+      }
+      return id
+    })
+  }
 </script>
 
 <div>
   {#if $available_tools[project_id]?.length > 0}
+    {#if read_only}
+      <FormElement
+        id="tools_readonly"
+        label="Tools"
+        inputType="header_only"
+        info_description="Select the tools available to the model. The model may or may not choose to use them."
+      />
+      <div class="relative">
+        <div
+          class="select select-bordered w-full flex items-center min-h-12 bg-base-200/50 text-base-content/70"
+          style="background-image: none;"
+        >
+          <span class="truncate">
+            {#if selected_tools_names.length > 0}
+              {selected_tools_names.join(", ")}
+            {:else}
+              No tools selected
+            {/if}
+          </span>
+        </div>
+      </div>
+    {:else}
+      <FormElement
+        id="tools"
+        label="Tools"
+        inputType="multi_select"
+        info_description="Select the tools available to the model. The model may or may not choose to use them."
+        bind:value={tools}
+        fancy_select_options={get_tool_options($available_tools[project_id])}
+      />
+    {/if}
+  {/if}
+
+  {#if read_only}
     <FormElement
-      id="tools"
-      label="Tools"
-      inputType="multi_select"
-      info_description="Select the tools available to the model. The model may or may not choose to use them."
-      bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
+      id="temperature_readonly"
+      label="Temperature"
+      inputType="header_only"
+      info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    />
+    <div class="relative">
+      <div
+        class="select select-bordered w-full flex items-center bg-base-200/50 text-base-content/70"
+        style="background-image: none;"
+      >
+        <span class="truncate">{temperature}</span>
+      </div>
+    </div>
+  {:else}
+    <FormElement
+      id="temperature"
+      label="Temperature"
+      inputType="input"
+      info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+      bind:value={temperature}
+      validator={validate_temperature}
     />
   {/if}
 
-  <FormElement
-    id="temperature"
-    label="Temperature"
-    inputType="input"
-    info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
-    bind:value={temperature}
-    validator={validate_temperature}
-  />
-
-  <FormElement
-    id="top_p"
-    label="Top P"
-    inputType="input"
-    info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
-    bind:value={top_p}
-    validator={validate_top_p}
-  />
+  {#if read_only}
+    <FormElement
+      id="top_p_readonly"
+      label="Top P"
+      inputType="header_only"
+      info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    />
+    <div class="relative">
+      <div
+        class="select select-bordered w-full flex items-center bg-base-200/50 text-base-content/70"
+        style="background-image: none;"
+      >
+        <span class="truncate">{top_p}</span>
+      </div>
+    </div>
+  {:else}
+    <FormElement
+      id="top_p"
+      label="Top P"
+      inputType="input"
+      info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+      bind:value={top_p}
+      validator={validate_top_p}
+    />
+  {/if}
 
   {#if has_structured_output}
-    <FormElement
-      id="structured_output_mode"
-      label="Structured Output"
-      inputType="fancy_select"
-      bind:value={structured_output_mode}
-      fancy_select_options={structured_output_options}
-      info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
-    />
+    {#if read_only}
+      <FormElement
+        id="structured_output_readonly"
+        label="Structured Output"
+        inputType="header_only"
+        info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
+      />
+      <div class="relative">
+        <div
+          class="select select-bordered w-full flex items-center bg-base-200/50 text-base-content/70"
+          style="background-image: none;"
+        >
+          <span class="truncate">{selected_structured_output_name}</span>
+        </div>
+      </div>
+    {:else}
+      <FormElement
+        id="structured_output_mode"
+        label="Structured Output"
+        inputType="fancy_select"
+        bind:value={structured_output_mode}
+        fancy_select_options={structured_output_options}
+        info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
+      />
+    {/if}
   {/if}
 </div>
