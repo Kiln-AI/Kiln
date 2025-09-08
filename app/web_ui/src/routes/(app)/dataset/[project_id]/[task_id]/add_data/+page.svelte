@@ -46,6 +46,15 @@
         : "Add Data for Fine-tuning"
   $: reason_name =
     reason === "generic" ? "dataset" : reason === "eval" ? "eval" : "fine tune"
+  $: breadcrumbs =
+    reason === "eval"
+      ? [
+          {
+            label: "Evals",
+            href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+          },
+        ]
+      : []
 
   $: data_source_descriptions = [
     {
@@ -120,7 +129,7 @@
   }
 </script>
 
-<AppPage {title} sub_subtitle={splits_subtitle}>
+<AppPage {title} sub_subtitle={splits_subtitle} {breadcrumbs}>
   {#if completed}
     <Completed
       title="Data Added"

@@ -8,6 +8,7 @@
   title="AI Providers"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
+  breadcrumbs={[{ label: "Settings", href: "/settings" }]}
   action_buttons={[
     {
       label: "Custom Models",

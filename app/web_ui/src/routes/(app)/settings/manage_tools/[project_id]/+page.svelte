@@ -99,6 +99,12 @@
   <AppPage
     title="Manage Tools"
     subtitle="Connect your project to tools with MCP servers"
+    breadcrumbs={[
+      {
+        label: "Settings",
+        href: `/settings`,
+      },
+    ]}
     action_buttons={is_empty
       ? []
       : [
@@ -134,6 +140,8 @@
           </thead>
           <tbody>
             {#each tools || [] as tool}
+              {@const missing_secrets =
+                tool.missing_secrets && tool.missing_secrets.length > 0}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolServer(tool)}
@@ -146,16 +154,18 @@
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">{tool.description || "N/A"}</td>
                 <td class="text-sm">
-                  {#if tool.missing_secrets && tool.missing_secrets.length > 0}
+                  {#if missing_secrets}
                     <Warning
                       warning_message="Action Required"
                       warning_color="warning"
+                      tight={true}
                     />
                   {:else}
                     <Warning
                       warning_message="Ready"
                       warning_color="success"
                       warning_icon="check"
+                      tight={true}
                     />
                   {/if}
                 </td>
@@ -179,6 +189,7 @@
                     warning_message="Ready"
                     warning_color="success"
                     warning_icon="check"
+                    tight={true}
                   />
                 </td>
               </tr>
