@@ -99,6 +99,8 @@
   <AppPage
     title="Manage Tools"
     subtitle="Connect your project to tools with MCP servers"
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp"
     breadcrumbs={[
       {
         label: "Settings",

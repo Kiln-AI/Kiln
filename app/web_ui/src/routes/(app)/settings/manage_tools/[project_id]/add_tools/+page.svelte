@@ -184,6 +184,8 @@
 
 <AppPage
   title="Add Tools"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#connecting-tools"
   breadcrumbs={[
     {
       label: "Settings",
