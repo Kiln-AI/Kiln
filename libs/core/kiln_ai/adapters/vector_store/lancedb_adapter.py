@@ -52,6 +52,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             kwargs["nprobes"] = vector_store_config.lancedb_properties.nprobes
 
         self.lancedb_vector_store = LanceDBVectorStore(
+            mode="create",
             uri=LanceDBAdapter.lancedb_path_for_config(rag_config),
             query_type=self.query_type,
             overfetch_factor=vector_store_config.lancedb_properties.overfetch_factor,
@@ -99,7 +100,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     async def delete_nodes_by_document_id(self, document_id: str) -> None:
         # higher level operation that requires ref_doc_id to be set on the nodes
         # which is set through the source node relationship
-        self.index.delete_ref_doc(document_id)
+        try:
+            self.index.delete_ref_doc(document_id)
+        except TableNotFoundError:
+            # Table doesn't exist yet, so there's nothing to delete
+            logger.debug(
+                f"Table not found while deleting nodes for document {document_id}, which is expected if the table does not exist yet"
+            )
 
     async def get_nodes_by_ids(self, node_ids: List[str]) -> List[BaseNode]:
         try:
@@ -146,8 +153,12 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 await asyncio.sleep(0)
                 continue
             else:
-                # otherwise, we just insert all the chunks for this document again
-                pass
+                # the chunks are different, which is because either:
+                # - an upstream sync conflict caused multiple chunked documents to be created and the incoming one
+                # is different; we need to delete all the chunks for this document otherwise there can be lingering stale chunks
+                # that are not in the incoming batch if current is longer than incoming
+                # - an incomplete indexing of this same chunked doc, upserting is enough to overwrite the current chunked doc fully
+                await self.delete_nodes_by_document_id(document_id)
 
             chunks_text = await chunked_document.load_chunks_text()
             for chunk_idx, (chunk_text, embedding) in enumerate(
