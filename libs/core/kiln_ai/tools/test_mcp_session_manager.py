@@ -1555,8 +1555,6 @@ class TestMCPServerIntegration:
         ) as session:
             tools = await session.list_tools()
 
-        print("Test tools:", tools)
-
         assert tools is not None
         assert len(tools.tools) > 0
         assert "echo" in [tool.name for tool in tools.tools]
@@ -1581,8 +1579,6 @@ class TestMCPServerIntegration:
             external_tool_server
         ) as session:
             tools = await session.list_tools()
-
-        print("Test tools:", tools)
 
         assert tools is not None
         assert len(tools.tools) > 0
