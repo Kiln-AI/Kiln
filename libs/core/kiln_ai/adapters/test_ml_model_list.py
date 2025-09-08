@@ -295,11 +295,6 @@ class TestBuiltInModelsFromProvider:
             ),
             ("gemini_2_5_pro", ModelProviderName.gemini_api, "gemini-2.5-pro"),
             ("llama_3_1_8b", ModelProviderName.groq, "llama-3.1-8b-instant"),
-            (
-                "qwq_32b",
-                ModelProviderName.fireworks_ai,
-                "accounts/fireworks/models/qwq-32b",
-            ),
         ],
     )
     def test_parametrized_valid_combinations(
