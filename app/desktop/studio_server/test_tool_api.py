@@ -5281,3 +5281,226 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
             # Verify available_tools is empty when secrets are missing
             assert "available_tools" in result
             assert result["available_tools"] == []
+
+
+@pytest.fixture
+def edit_local_server_data():
+    return {
+        "name": "edited name",
+        "command": "python",
+        "args": ["-m", "my_server"],
+        "env_vars": {
+            "PORT": "3000",
+            "DATABASE_PASSWORD": "1234",
+        },
+        "secret_env_var_keys": ["DATABASE_PASSWORD"],
+        "description": "edited description",
+    }
+
+
+async def test_edit_local_mcp_404(client, test_project, edit_local_server_data):
+    """Test edit_local_mcp returns 404 when the tool server does not exist"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_local_mcp/123",
+            json=edit_local_server_data,
+        )
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Tool server not found"}
+
+
+@pytest.fixture
+def existing_local_tool_server(test_project):
+    existing_tool_server = ExternalToolServer(
+        parent=test_project,
+        type=ToolServerType.local_mcp,
+        name="test_local_mcp",
+        properties={
+            "command": "echo",
+            "args": ["hello"],
+        },
+    )
+    existing_tool_server.save_to_file()
+    return existing_tool_server
+
+
+@pytest.fixture
+def existing_remote_tool_server(test_project):
+    existing_tool_server = ExternalToolServer(
+        parent=test_project,
+        type=ToolServerType.remote_mcp,
+        name="test_remote_mcp",
+        properties={
+            "server_url": "https://example.com",
+            "headers": {},
+        },
+    )
+    existing_tool_server.save_to_file()
+    return existing_tool_server
+
+
+async def test_edit_local_mcp_wrong_type(
+    client, test_project, edit_local_server_data, existing_remote_tool_server
+):
+    """Test edit_local_mcp returns 400 when the tool server is not a local MCP server"""
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_local_mcp/{existing_remote_tool_server.id}",
+            json=edit_local_server_data,
+        )
+        assert response.status_code == 400
+        assert response.json() == {
+            "detail": "Existing tool server is not a local MCP server. You can't edit a non-local MCP server with this endpoint."
+        }
+
+
+async def test_edit_local_mcp(
+    client, test_project, edit_local_server_data, existing_local_tool_server
+):
+    """Test edit_local_mcp updates the tool server"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create the local MCP tool server
+        async with mock_mcp_success():
+            edit_response = client.patch(
+                f"/api/projects/{test_project.id}/edit_local_mcp/{existing_local_tool_server.id}",
+                json=edit_local_server_data,
+            )
+            assert edit_response.status_code == 200
+            response_json = edit_response.json()
+            assert response_json["name"] == "edited name"
+            assert response_json["type"] == ToolServerType.local_mcp
+            assert response_json["description"] == "edited description"
+            assert response_json["properties"]["command"] == "python"
+            assert response_json["properties"]["args"] == ["-m", "my_server"]
+            assert response_json["properties"]["env_vars"].keys() == {
+                "PORT",
+            }
+            assert response_json["properties"]["env_vars"]["PORT"] == "3000"
+            assert response_json["properties"]["secret_env_var_keys"] == [
+                "DATABASE_PASSWORD",
+            ]
+
+            # Verify the tool server changes were saved to file
+            loaded_tool_server = ExternalToolServer.load_from_file(
+                existing_local_tool_server.path
+            )
+            assert loaded_tool_server.name == "edited name"
+            assert loaded_tool_server.type == ToolServerType.local_mcp
+            assert loaded_tool_server.description == "edited description"
+            assert loaded_tool_server.properties["command"] == "python"
+            assert loaded_tool_server.properties["args"] == ["-m", "my_server"]
+            assert loaded_tool_server.properties["env_vars"].keys() == {
+                "PORT",
+            }
+            assert loaded_tool_server.properties["env_vars"]["PORT"] == "3000"
+            assert loaded_tool_server.properties["secret_env_var_keys"] == [
+                "DATABASE_PASSWORD",
+            ]
+
+
+@pytest.fixture
+def edit_remote_server_data():
+    return {
+        "name": "edited name",
+        "description": "edited description",
+        "server_url": "https://example.com/edited",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer token",
+        },
+        "secret_header_keys": ["Authorization"],
+    }
+
+
+async def test_edit_remote_mcp_404(client, test_project, edit_remote_server_data):
+    """Test edit_remote_mcp returns 404 when the tool server does not exist"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_remote_mcp/123",
+            json=edit_remote_server_data,
+        )
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Tool server not found"}
+
+
+async def test_edit_remote_mcp_wrong_type(
+    client, test_project, edit_remote_server_data, existing_local_tool_server
+):
+    """Test edit_local_mcp returns 400 when the tool server is not a local MCP server"""
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_remote_mcp/{existing_local_tool_server.id}",
+            json=edit_remote_server_data,
+        )
+        assert response.status_code == 400
+        assert response.json() == {
+            "detail": "Existing tool server is not a remote MCP server. You can't edit a non-remote MCP server with this endpoint."
+        }
+
+
+async def test_edit_remote_mcp(
+    client, test_project, edit_remote_server_data, existing_remote_tool_server
+):
+    """Test edit_local_mcp updates the tool server"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create the local MCP tool server
+        async with mock_mcp_success():
+            edit_response = client.patch(
+                f"/api/projects/{test_project.id}/edit_remote_mcp/{existing_remote_tool_server.id}",
+                json=edit_remote_server_data,
+            )
+            assert edit_response.status_code == 200
+            response_json = edit_response.json()
+            assert response_json["name"] == "edited name"
+            assert response_json["type"] == ToolServerType.remote_mcp
+            assert response_json["description"] == "edited description"
+            assert (
+                response_json["properties"]["server_url"]
+                == "https://example.com/edited"
+            )
+            assert response_json["properties"]["headers"] == {
+                "Content-Type": "application/json",
+            }
+            assert response_json["properties"]["secret_header_keys"] == [
+                "Authorization"
+            ]
+
+            # Verify the tool server changes were saved to file
+            loaded_tool_server = ExternalToolServer.load_from_file(
+                existing_remote_tool_server.path
+            )
+            assert loaded_tool_server.name == "edited name"
+            assert loaded_tool_server.type == ToolServerType.remote_mcp
+            assert loaded_tool_server.description == "edited description"
+            assert (
+                loaded_tool_server.properties["server_url"]
+                == "https://example.com/edited"
+            )
+            assert loaded_tool_server.properties["headers"] == {
+                "Content-Type": "application/json",
+            }
+            assert loaded_tool_server.properties["secret_header_keys"] == [
+                "Authorization",
+            ]

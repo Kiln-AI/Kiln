@@ -365,18 +365,11 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with all data for validation
-        properties = {
-            "server_url": tool_data.server_url,
-            "headers": tool_data.headers,
-            "secret_header_keys": tool_data.secret_header_keys,
-        }
-
         tool_server = ExternalToolServer(
             name=tool_data.name,
             type=ToolServerType.remote_mcp,
             description=tool_data.description,
-            properties=properties,
+            properties=_remote_tool_server_properties(tool_data),
             parent=project,
         )
 
@@ -388,25 +381,53 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
+    @app.patch("/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}")
+    async def edit_remote_mcp(
+        project_id: str,
+        tool_server_id: str,
+        tool_data: ExternalToolServerCreationRequest,
+    ) -> ExternalToolServer:
+        existing_tool_server = tool_server_from_id(project_id, tool_server_id)
+        if existing_tool_server.type != ToolServerType.remote_mcp:
+            raise HTTPException(
+                status_code=400,
+                detail="Existing tool server is not a remote MCP server. You can't edit a non-remote MCP server with this endpoint.",
+            )
+
+        existing_tool_server = existing_tool_server
+        existing_tool_server.name = tool_data.name
+        existing_tool_server.description = tool_data.description
+        existing_tool_server.properties = _remote_tool_server_properties(tool_data)
+
+        # Validate the tool server connectivity
+        await validate_tool_server_connectivity(existing_tool_server)
+
+        # Save the tool to file
+        existing_tool_server.save_to_file()
+
+        return existing_tool_server
+
+    def _remote_tool_server_properties(
+        tool_data: ExternalToolServerCreationRequest,
+    ) -> dict[str, str | Dict[str, str] | List[str]]:
+        # Create the ExternalToolServer with all data for validation
+        return {
+            "server_url": tool_data.server_url,
+            "headers": tool_data.headers,
+            "secret_header_keys": tool_data.secret_header_keys,
+        }
+
     @app.post("/api/projects/{project_id}/connect_local_mcp")
     async def connect_local_mcp(
         project_id: str, tool_data: LocalToolServerCreationRequest
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
-        # Create the ExternalToolServer with all data for validation
-        properties = {
-            "command": tool_data.command,
-            "args": tool_data.args,
-            "env_vars": tool_data.env_vars,
-            "secret_env_var_keys": tool_data.secret_env_var_keys,
-        }
-
         tool_server = ExternalToolServer(
             name=tool_data.name,
             type=ToolServerType.local_mcp,
             description=tool_data.description,
-            properties=properties,
+            properties=_local_tool_server_properties(tool_data),
             parent=project,
         )
 
@@ -418,6 +439,41 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server.save_to_file()
 
         return tool_server
+
+    @app.patch("/api/projects/{project_id}/edit_local_mcp/{tool_server_id}")
+    async def edit_local_mcp(
+        project_id: str, tool_server_id: str, tool_data: LocalToolServerCreationRequest
+    ) -> ExternalToolServer:
+        existing_tool_server = tool_server_from_id(project_id, tool_server_id)
+        if existing_tool_server.type != ToolServerType.local_mcp:
+            raise HTTPException(
+                status_code=400,
+                detail="Existing tool server is not a local MCP server. You can't edit a non-local MCP server with this endpoint.",
+            )
+
+        tool_server = existing_tool_server
+        tool_server.name = tool_data.name
+        tool_server.description = tool_data.description
+        tool_server.properties = _local_tool_server_properties(tool_data)
+
+        # Validate the tool server connectivity
+        MCPSessionManager.shared().clear_shell_path_cache()
+        await validate_tool_server_connectivity(tool_server)
+
+        # Save the tool to file
+        tool_server.save_to_file()
+
+        return tool_server
+
+    def _local_tool_server_properties(
+        tool_data: LocalToolServerCreationRequest,
+    ) -> dict[str, str | Dict[str, str] | List[str]]:
+        return {
+            "command": tool_data.command,
+            "args": tool_data.args,
+            "env_vars": tool_data.env_vars,
+            "secret_env_var_keys": tool_data.secret_env_var_keys,
+        }
 
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):
