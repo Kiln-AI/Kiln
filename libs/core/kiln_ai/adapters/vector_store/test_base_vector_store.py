@@ -26,9 +26,6 @@ class TestBaseVectorStoreAdapter:
             ) -> None:
                 pass
 
-            async def delete_chunks_by_document_id(self, document_id: str) -> None:
-                pass
-
             async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
                 return []
 

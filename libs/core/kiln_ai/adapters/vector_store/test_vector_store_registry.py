@@ -178,3 +178,20 @@ class TestVectorStoreAdapterForConfig:
         assert adapter.vector_store_config == lancedb_knn_vector_store_config
         assert adapter.vector_store_config.name == "test_config"
         assert adapter.vector_store_config.store_type == VectorStoreType.LANCE_DB_VECTOR
+
+    async def test_vector_store_adapter_for_config_missing_id(
+        self,
+        create_rag_config_factory,
+        lancedb_fts_vector_store_config,
+        embedding_config,
+    ):
+        rag_config = create_rag_config_factory(
+            lancedb_fts_vector_store_config, embedding_config
+        )
+
+        lancedb_fts_vector_store_config.id = None
+
+        with pytest.raises(ValueError, match="Vector store config ID is required"):
+            await vector_store_adapter_for_config(
+                rag_config, lancedb_fts_vector_store_config
+            )

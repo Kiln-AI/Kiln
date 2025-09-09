@@ -10,7 +10,7 @@ def mock_project(tmp_path):
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
-    project = Project(name="Test Project", path=str(project_path))
+    project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
     return project
@@ -304,3 +304,30 @@ def test_project_has_rag_configs(mock_project):
 
     for rag_config in child_rag_configs:
         assert rag_config.id in [rag_config_1.id, rag_config_2.id]
+
+
+def test_parent_project(mock_project):
+    """Test that parent project is returned correctly."""
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test Config",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+
+    assert rag_config.parent_project() is mock_project
+
+
+def test_rag_config_parent_project_none():
+    """Test that parent project is None if not set."""
+    rag_config = RagConfig(
+        name="Test Config",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+
+    assert rag_config.parent_project() is None

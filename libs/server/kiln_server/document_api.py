@@ -14,6 +14,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 )
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.rag.progress import (
+    LogMessage,
     RagProgress,
     compute_current_progress_for_rag_config,
     compute_current_progress_for_rag_configs,
@@ -135,18 +136,25 @@ async def run_all_extractors_and_rag_workflows(
     for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
 
         async def run_rag(rag_config=rag_config):
-            # no need to lock here, each rag step runner gets a lock when it starts running
-            rag_runner = await build_rag_workflow_runner(project, str(rag_config.id))
-            async for progress in rag_runner.run(
-                stages_to_run=[
-                    # we skip extracting here because we already ran the extractors independently higher up
-                    RagWorkflowStepNames.CHUNKING,
-                    RagWorkflowStepNames.EMBEDDING,
-                    RagWorkflowStepNames.INDEXING,
-                ],
-                document_ids=[document.id],
-            ):
-                pass
+            try:
+                # no need to lock here, each rag step runner gets a lock when it starts running
+                rag_runner = await build_rag_workflow_runner(
+                    project, str(rag_config.id)
+                )
+                async for progress in rag_runner.run(
+                    stages_to_run=[
+                        # we skip extracting here because we already ran the extractors independently higher up
+                        RagWorkflowStepNames.CHUNKING,
+                        RagWorkflowStepNames.EMBEDDING,
+                        RagWorkflowStepNames.INDEXING,
+                    ],
+                    document_ids=[document.id],
+                ):
+                    pass
+            except asyncio.TimeoutError:
+                logger.info(
+                    f"RAG config {rag_config.id} or a sub step of it is locked, skipping"
+                )
 
         rag_tasks.append(asyncio.create_task(run_rag()))
 
@@ -182,7 +190,9 @@ async def run_rag_workflow_runner_with_status(
     runner: RagWorkflowRunner,
 ) -> StreamingResponse:
     async def event_generator():
-        async for progress in runner.run():
+        latest_progress = RagProgress()
+
+        def serialize_progress(progress: RagProgress):
             logs = []
             for log in progress.logs or []:
                 logs.append(
@@ -207,7 +217,24 @@ async def run_rag_workflow_runner_with_status(
                 "total_chunks_indexed_error_count": progress.total_chunks_indexed_error_count,
                 "logs": logs,
             }
+            return data
+
+        try:
+            async for progress in runner.run():
+                latest_progress = progress.model_copy()
+                data = serialize_progress(progress)
+                yield f"data: {json.dumps(data)}\n\n"
+        except asyncio.TimeoutError:
+            logger.info("RAG workflow runner cancelled")
+            latest_progress.logs = [
+                LogMessage(
+                    level="error",
+                    message="Timed out after waiting for the lock to be acquired. This may be due to a concurrent RAG workflow running. You may retry in a few minutes.",
+                )
+            ]
+            data = serialize_progress(latest_progress)
             yield f"data: {json.dumps(data)}\n\n"
+            return
 
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
@@ -467,6 +494,7 @@ async def build_rag_workflow_runner(
         rag_config.extractor_config_id is None
         or rag_config.chunker_config_id is None
         or rag_config.embedding_config_id is None
+        or rag_config.vector_store_config_id is None
     ):
         raise HTTPException(
             status_code=400,
@@ -501,7 +529,7 @@ async def build_rag_workflow_runner(
         )
 
     vector_store_config = VectorStoreConfig.from_id_and_parent_path(
-        str(rag_config.vector_store_config_id), project.path
+        rag_config.vector_store_config_id, project.path
     )
     if vector_store_config is None:
         raise HTTPException(
@@ -613,7 +641,7 @@ def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents/bulk")
     async def create_documents_bulk(
         project_id: str,
-        files: Annotated[List[UploadFile], File(...)],
+        files: Annotated[List[UploadFile] | None, File()] = None,
         names: Annotated[List[str] | None, Form()] = None,
     ) -> List[Document]:
         project = project_from_id(project_id)

@@ -37,6 +37,7 @@
 <AppPage
   title="Manage Projects"
   subtitle="Add or remove projects"
+  breadcrumbs={[{ label: "Settings", href: "/settings" }]}
   action_buttons={[
     { label: "Create Project", href: "/settings/create_project" },
     {

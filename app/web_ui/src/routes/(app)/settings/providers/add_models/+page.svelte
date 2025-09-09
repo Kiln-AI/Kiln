@@ -6,6 +6,8 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { provider_name_from_id } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { getContext } from "svelte"
+  import type { Writable } from "svelte/store"
 
   let connected_providers: [string, string][] = []
   let loading_providers = true
@@ -158,11 +160,24 @@
     let [provider, ..._] = model_id.split("::")
     return provider_name_from_id(provider)
   }
+
+  // You can get here 2 ways, build a breadcrumb for each
+  const lastPageUrl = getContext<Writable<URL | undefined>>("lastPageUrl")
+  function get_breadcrumbs() {
+    const breadcrumbs = [{ label: "Settings", href: "/settings" }]
+
+    if ($lastPageUrl && $lastPageUrl.pathname === "/settings/providers") {
+      breadcrumbs.push({ label: "AI Providers", href: "/settings/providers" })
+    }
+
+    return breadcrumbs
+  }
 </script>
 
 <AppPage
   title="Manage Custom Models"
   sub_subtitle="Add/remove additional models from your connected AI providers, on top of those already included with Kiln."
+  breadcrumbs={get_breadcrumbs()}
   action_buttons={custom_models && custom_models.length > 0
     ? [
         {
