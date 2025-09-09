@@ -7,6 +7,17 @@
   import { onMount } from "svelte"
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
+  import ReadOnlyField from "$lib/ui/read_only_field.svelte"
+
+  // Common descriptions to avoid duplication
+  const TEMPERATURE_DESCRIPTION =
+    "A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+  const TOP_P_DESCRIPTION =
+    "A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+  const TOOLS_DESCRIPTION =
+    "Select the tools available to the model. The model may or may not choose to use them."
+  const STRUCTURED_OUTPUT_DESCRIPTION =
+    "Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   export let temperature: number = 1.0
@@ -16,6 +27,7 @@
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
+  export let read_only: boolean = false
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -79,7 +91,7 @@
       tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
     }
   }
-  $: filter_unavailable_tools($available_tools[project_id], tools)
+  $: filter_unavailable_tools(project_available_tools, tools)
 
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
@@ -201,46 +213,98 @@
     })
     return option_groups
   }
+
+  $: project_available_tools = $available_tools[project_id]
+
+  // Get display names for selected tools
+  $: selected_tools_names = (() => {
+    if (!project_available_tools) return []
+    return tools.map((id) => {
+      for (const tool_set of project_available_tools) {
+        const tool = tool_set.tools.find((t) => t.id === id)
+        if (tool) return tool.name
+      }
+      return id
+    })
+  })()
 </script>
 
 <div>
-  {#if $available_tools[project_id]?.length > 0}
+  {#if project_available_tools?.length > 0}
+    {#if read_only}
+      <ReadOnlyField
+        id="tools_readonly"
+        label="Tools"
+        value={selected_tools_names.length > 0
+          ? selected_tools_names.join(", ")
+          : "No tools selected"}
+        info_description={TOOLS_DESCRIPTION}
+      />
+    {:else}
+      <FormElement
+        id="tools"
+        label="Tools"
+        inputType="multi_select"
+        info_description={TOOLS_DESCRIPTION}
+        bind:value={tools}
+        fancy_select_options={get_tool_options(project_available_tools)}
+      />
+    {/if}
+  {/if}
+
+  {#if read_only}
+    <ReadOnlyField
+      id="temperature_readonly"
+      label="Temperature"
+      value={temperature}
+      info_description={TEMPERATURE_DESCRIPTION}
+    />
+  {:else}
     <FormElement
-      id="tools"
-      label="Tools"
-      inputType="multi_select"
-      info_description="Select the tools available to the model. The model may or may not choose to use them."
-      bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
+      id="temperature"
+      label="Temperature"
+      inputType="input"
+      info_description={TEMPERATURE_DESCRIPTION}
+      bind:value={temperature}
+      validator={validate_temperature}
     />
   {/if}
 
-  <FormElement
-    id="temperature"
-    label="Temperature"
-    inputType="input"
-    info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
-    bind:value={temperature}
-    validator={validate_temperature}
-  />
-
-  <FormElement
-    id="top_p"
-    label="Top P"
-    inputType="input"
-    info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
-    bind:value={top_p}
-    validator={validate_top_p}
-  />
+  {#if read_only}
+    <ReadOnlyField
+      id="top_p_readonly"
+      label="Top P"
+      value={top_p}
+      info_description={TOP_P_DESCRIPTION}
+    />
+  {:else}
+    <FormElement
+      id="top_p"
+      label="Top P"
+      inputType="input"
+      info_description={TOP_P_DESCRIPTION}
+      bind:value={top_p}
+      validator={validate_top_p}
+    />
+  {/if}
 
   {#if has_structured_output}
-    <FormElement
-      id="structured_output_mode"
-      label="Structured Output"
-      inputType="fancy_select"
-      bind:value={structured_output_mode}
-      fancy_select_options={structured_output_options}
-      info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
-    />
+    {#if read_only}
+      <ReadOnlyField
+        id="structured_output_mode_readonly"
+        label="Structured Output"
+        value={structuredOutputModeToString(structured_output_mode) ?? "N/A"}
+        info_description={STRUCTURED_OUTPUT_DESCRIPTION}
+      />
+    {:else}
+      <FormElement
+        id="structured_output_mode"
+        label="Structured Output"
+        inputType="fancy_select"
+        bind:value={structured_output_mode}
+        fancy_select_options={structured_output_options}
+        info_description={STRUCTURED_OUTPUT_DESCRIPTION}
+      />
+    {/if}
   {/if}
 </div>
