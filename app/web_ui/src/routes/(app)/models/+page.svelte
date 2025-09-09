@@ -432,7 +432,7 @@
   <title>Models - Kiln</title>
 </svelte:head>
 
-<div class="max-w-[1400px]">
+<div class="max-w-[1400px] overflow-x-hidden">
   <AppPage
     title="Model Library"
     subtitle="Browse available models"
