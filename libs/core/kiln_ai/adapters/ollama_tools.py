@@ -4,6 +4,7 @@ import httpx
 import requests
 from pydantic import BaseModel, Field
 
+from kiln_ai.adapters.ml_embedding_model_list import built_in_embedding_models
 from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.utils.config import Config
 
@@ -41,9 +42,13 @@ class OllamaConnection(BaseModel):
     version: str | None = None
     supported_models: List[str]
     untested_models: List[str] = Field(default_factory=list)
+    supported_embedding_models: List[str] = Field(default_factory=list)
 
     def all_models(self) -> List[str]:
         return self.supported_models + self.untested_models
+
+    def all_embedding_models(self) -> List[str]:
+        return self.supported_embedding_models
 
 
 # Parse the Ollama /api/tags response
@@ -60,6 +65,21 @@ def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
         [
             alias
             for model in built_in_models
+            for provider in model.providers
+            for alias in provider.ollama_model_aliases or []
+        ]
+    )
+
+    supported_ollama_embedding_models = [
+        provider.model_id
+        for model in built_in_embedding_models
+        for provider in model.providers
+        if provider.name == ModelProviderName.ollama
+    ]
+    supported_ollama_embedding_models.extend(
+        [
+            alias
+            for model in built_in_embedding_models
             for provider in model.providers
             for alias in provider.ollama_model_aliases or []
         ]
@@ -83,17 +103,34 @@ def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
                 else:
                     untested_models.append(model)
 
-            if available_supported_models or untested_models:
+            available_supported_embedding_models = []
+            supported_embedding_models_latest_aliases = [
+                f"{m}:latest" for m in supported_ollama_embedding_models
+            ]
+            for model in model_names:
+                if (
+                    model in supported_ollama_embedding_models
+                    or model in supported_embedding_models_latest_aliases
+                ):
+                    available_supported_embedding_models.append(model)
+
+            if (
+                available_supported_models
+                or untested_models
+                or available_supported_embedding_models
+            ):
                 return OllamaConnection(
                     message="Ollama connected",
                     supported_models=available_supported_models,
                     untested_models=untested_models,
+                    supported_embedding_models=available_supported_embedding_models,
                 )
 
     return OllamaConnection(
         message="Ollama is running, but no supported models are installed. Install one or more supported model, like 'ollama pull phi3.5'.",
         supported_models=[],
         untested_models=[],
+        supported_embedding_models=[],
     )
 
 

@@ -15,6 +15,7 @@ class KilnEmbeddingModelFamily(str, Enum):
     # as provider name, but it does not have to be
     openai = "openai"
     gemini = "gemini"
+    gemma = "gemma"
 
 
 class EmbeddingModelName(str, Enum):
@@ -28,7 +29,8 @@ class EmbeddingModelName(str, Enum):
     openai_text_embedding_3_small = "openai_text_embedding_3_small"
     openai_text_embedding_3_large = "openai_text_embedding_3_large"
     gemini_text_embedding_004 = "gemini_text_embedding_004"
-    gemini_embedding_001 = "gemini-embedding-001"
+    gemini_embedding_001 = "gemini_embedding_001"
+    embedding_gemma_300m = "embedding_gemma_300m"
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -56,6 +58,8 @@ class KilnEmbeddingModelProvider(BaseModel):
         default=False,
         description="Whether the model is particularly good for chunk embedding.",
     )
+
+    ollama_model_aliases: List[str] | None = None
 
 
 class KilnEmbeddingModel(BaseModel):
@@ -119,11 +123,28 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.gemini_api,
-                model_id="gemini-embedding-001",
+                model_id="gemini_embedding_001",
                 n_dimensions=3072,
                 max_input_tokens=2048,
                 supports_custom_dimensions=True,
                 suggested_for_chunk_embedding=True,
+            ),
+        ],
+    ),
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.gemma,
+        name=EmbeddingModelName.embedding_gemma_300m,
+        friendly_name="EmbeddingGemma:300m",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="embeddinggemma:300m",
+                n_dimensions=768,
+                max_input_tokens=2048,
+                # the model itself does support custom dimensions, but
+                # not sure if ollama supports it
+                supports_custom_dimensions=False,
+                ollama_model_aliases=["embeddinggemma"],
             ),
         ],
     ),
