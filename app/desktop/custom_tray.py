@@ -2,6 +2,7 @@ import io
 import logging
 import sys
 from typing import Any, Type
+
 from PIL import Image
 
 logger = logging.getLogger(__name__)
