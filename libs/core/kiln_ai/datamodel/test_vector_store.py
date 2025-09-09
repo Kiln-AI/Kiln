@@ -20,6 +20,29 @@ def mock_project(tmp_path):
     return project
 
 
+@pytest.fixture
+def mock_vector_store_fts_config_properties():
+    return {
+        "similarity_top_k": 10,
+        "overfetch_factor": 2,
+        "vector_column_name": "vector",
+        "text_key": "text",
+        "doc_id_key": "doc_id",
+    }
+
+
+@pytest.fixture
+def mock_vector_store_vector_config_properties():
+    return {
+        "similarity_top_k": 10,
+        "overfetch_factor": 2,
+        "vector_column_name": "vector",
+        "text_key": "text",
+        "doc_id_key": "doc_id",
+        "nprobes": 1,
+    }
+
+
 class TestVectorStoreType:
     def test_vector_store_type_values(self):
         """Test that VectorStoreType enum has expected values."""
@@ -62,33 +85,35 @@ class TestLanceDBConfigBaseProperties:
 
 
 class TestVectorStoreConfig:
-    def test_invalid_store_type(self):
+    def test_invalid_store_type(self, mock_vector_store_fts_config_properties):
         """Test creating VectorStoreConfig with invalid store type."""
         with pytest.raises(ValidationError, match="Input should be"):
             VectorStoreConfig(
                 name="test_store",
                 store_type="invalid_type",  # type: ignore
-                properties={
-                    "similarity_top_k": 10,
-                    "overfetch_factor": 2,
-                    "vector_column_name": "vector",
-                    "text_key": "text",
-                    "doc_id_key": "doc_id",
-                },
+                properties=mock_vector_store_fts_config_properties,
             )
 
-    def test_valid_lance_db_fts_vector_store_config(self):
+    def test_invalid_store_type_after_creation(
+        self, mock_vector_store_fts_config_properties
+    ):
+        """Test creating VectorStoreConfig with invalid store type after creation."""
+        config = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties=mock_vector_store_fts_config_properties,
+        )
+        with pytest.raises(ValidationError, match="Input should be"):
+            config.store_type = "invalid_type"  # type: ignore
+
+    def test_valid_lance_db_fts_vector_store_config(
+        self, mock_vector_store_fts_config_properties
+    ):
         """Test creating valid VectorStoreConfig with LanceDB FTS."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+            properties=mock_vector_store_fts_config_properties,
         )
 
         assert config.name == "test_store"
@@ -99,19 +124,14 @@ class TestVectorStoreConfig:
         assert config.properties["text_key"] == "text"
         assert config.properties["doc_id_key"] == "doc_id"
 
-    def test_valid_lance_db_vector_store_config(self):
+    def test_valid_lance_db_vector_store_config(
+        self, mock_vector_store_vector_config_properties
+    ):
         """Test creating valid VectorStoreConfig with LanceDB Vector."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_VECTOR,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-                "nprobes": 1,
-            },
+            properties=mock_vector_store_vector_config_properties,
         )
 
         assert config.name == "test_store"
@@ -119,27 +139,25 @@ class TestVectorStoreConfig:
         assert config.properties["similarity_top_k"] == 10
         assert config.properties["nprobes"] == 1
 
-    def test_valid_lance_db_hybrid_store_config(self):
+    def test_valid_lance_db_hybrid_store_config(
+        self, mock_vector_store_vector_config_properties
+    ):
         """Test creating valid VectorStoreConfig with LanceDB Hybrid."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_HYBRID,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-                "nprobes": 1,
-            },
+            properties=mock_vector_store_vector_config_properties,
         )
 
         assert config.name == "test_store"
         assert config.store_type == VectorStoreType.LANCE_DB_HYBRID
         assert config.properties["nprobes"] == 1
 
-    def test_vector_store_config_missing_required_property(self):
+    def test_vector_store_config_missing_required_property(
+        self, mock_vector_store_fts_config_properties
+    ):
         """Test VectorStoreConfig validation fails when required property is missing."""
+        mock_vector_store_fts_config_properties.pop("similarity_top_k")
         with pytest.raises(
             ValidationError,
             match="similarity_top_k is a required property for LanceDB vector store configs",
@@ -147,16 +165,14 @@ class TestVectorStoreConfig:
             VectorStoreConfig(
                 name="test_store",
                 store_type=VectorStoreType.LANCE_DB_FTS,
-                properties={
-                    "overfetch_factor": 2,
-                    "vector_column_name": "vector",
-                    "text_key": "text",
-                    "doc_id_key": "doc_id",
-                },
+                properties=mock_vector_store_fts_config_properties,
             )
 
-    def test_vector_store_config_invalid_property_type(self):
+    def test_vector_store_config_invalid_property_type(
+        self, mock_vector_store_fts_config_properties
+    ):
         """Test VectorStoreConfig validation fails when property has wrong type."""
+        mock_vector_store_fts_config_properties["similarity_top_k"] = "not_an_int"
         with pytest.raises(
             ValidationError,
             match="similarity_top_k is a required property for LanceDB vector store configs",
@@ -164,47 +180,25 @@ class TestVectorStoreConfig:
             VectorStoreConfig(
                 name="test_store",
                 store_type=VectorStoreType.LANCE_DB_FTS,
-                properties={
-                    "similarity_top_k": "not_an_int",
-                    "overfetch_factor": 2,
-                    "vector_column_name": "vector",
-                    "text_key": "text",
-                    "doc_id_key": "doc_id",
-                },
+                properties=mock_vector_store_fts_config_properties,
             )
 
-    def test_vector_store_config_invalid_store_type(self):
-        """Test VectorStoreConfig validation fails with invalid store type."""
-        with pytest.raises(ValidationError, match="Input should be"):
-            VectorStoreConfig(
-                name="test_store",
-                store_type="invalid_type",  # type: ignore
-                properties={
-                    "similarity_top_k": 10,
-                    "overfetch_factor": 2,
-                    "vector_column_name": "vector",
-                    "text_key": "text",
-                    "doc_id_key": "doc_id",
-                },
-            )
-
-    def test_vector_store_config_fts_missing_nprobes_is_valid(self):
+    def test_vector_store_config_fts_missing_nprobes_is_valid(
+        self, mock_vector_store_fts_config_properties
+    ):
         """Test VectorStoreConfig with FTS type doesn't require nprobes."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+            properties=mock_vector_store_fts_config_properties,
         )
         assert config.store_type == VectorStoreType.LANCE_DB_FTS
 
-    def test_vector_store_config_vector_missing_nprobes_fails(self):
+    def test_vector_store_config_vector_missing_nprobes_fails(
+        self, mock_vector_store_vector_config_properties
+    ):
         """Test VectorStoreConfig with VECTOR type requires nprobes."""
+        mock_vector_store_vector_config_properties.pop("nprobes")
         with pytest.raises(
             ValidationError,
             match="nprobes is a required property for LanceDB vector store configs",
@@ -212,28 +206,15 @@ class TestVectorStoreConfig:
             VectorStoreConfig(
                 name="test_store",
                 store_type=VectorStoreType.LANCE_DB_VECTOR,
-                properties={
-                    "similarity_top_k": 10,
-                    "overfetch_factor": 2,
-                    "vector_column_name": "vector",
-                    "text_key": "text",
-                    "doc_id_key": "doc_id",
-                },
+                properties=mock_vector_store_vector_config_properties,
             )
 
-    def test_lancedb_properties(self):
+    def test_lancedb_properties(self, mock_vector_store_vector_config_properties):
         """Test lancedb_properties method returns correct LanceDBConfigBaseProperties."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_VECTOR,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-                "nprobes": 1,
-            },
+            properties=mock_vector_store_vector_config_properties,
         )
 
         props = config.lancedb_properties
@@ -246,18 +227,14 @@ class TestVectorStoreConfig:
         assert props.doc_id_key == "doc_id"
         assert props.nprobes == 1
 
-    def test_vector_store_config_inherits_from_kiln_parented_model(self):
+    def test_vector_store_config_inherits_from_kiln_parented_model(
+        self, mock_vector_store_fts_config_properties
+    ):
         """Test that VectorStoreConfig inherits from KilnParentedModel."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+            properties=mock_vector_store_fts_config_properties,
         )
 
         # Check that it has the expected base fields
@@ -271,18 +248,14 @@ class TestVectorStoreConfig:
         "name",
         ["valid_name", "valid name", "valid-name", "valid_name_123", "VALID_NAME"],
     )
-    def test_vector_store_config_valid_names(self, name):
+    def test_vector_store_config_valid_names(
+        self, name, mock_vector_store_fts_config_properties
+    ):
         """Test VectorStoreConfig accepts valid names."""
         config = VectorStoreConfig(
             name=name,
             store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+            properties=mock_vector_store_fts_config_properties,
         )
         assert config.name == name
 
@@ -293,34 +266,55 @@ class TestVectorStoreConfig:
             "a" * 121,  # Too long
         ],
     )
-    def test_vector_store_config_invalid_names(self, name):
+    def test_vector_store_config_invalid_names(
+        self, name, mock_vector_store_fts_config_properties
+    ):
         """Test VectorStoreConfig rejects invalid names."""
         with pytest.raises(ValidationError):
             VectorStoreConfig(
                 name=name,
                 store_type=VectorStoreType.LANCE_DB_FTS,
-                properties={
-                    "similarity_top_k": 10,
-                    "overfetch_factor": 2,
-                    "vector_column_name": "vector",
-                    "text_key": "text",
-                    "doc_id_key": "doc_id",
-                },
+                properties=mock_vector_store_fts_config_properties,
             )
 
-    def test_parent_project(self, mock_project):
+    def test_parent_project(
+        self, mock_project, mock_vector_store_fts_config_properties
+    ):
         """Test that parent project is returned correctly."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_FTS,
-            properties={
-                "similarity_top_k": 10,
-                "overfetch_factor": 2,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-            },
+            properties=mock_vector_store_fts_config_properties,
             parent=mock_project,
         )
 
         assert config.parent_project() is mock_project
+
+    def test_vector_store_config_parent_project_none(
+        self, mock_vector_store_fts_config_properties
+    ):
+        """Test that parent project is None if not set."""
+        config = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties=mock_vector_store_fts_config_properties,
+        )
+
+        assert config.parent_project() is None
+
+    def test_project_has_vector_store_configs(
+        self, mock_project, mock_vector_store_fts_config_properties
+    ):
+        """Test that project has vector store configs."""
+        config = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties=mock_vector_store_fts_config_properties,
+            parent=mock_project,
+        )
+        config.save_to_file()
+
+        assert len(mock_project.vector_store_configs(readonly=True)) == 1
+        assert config.id in [
+            vc.id for vc in mock_project.vector_store_configs(readonly=True)
+        ]

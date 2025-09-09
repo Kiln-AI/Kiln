@@ -318,3 +318,16 @@ def test_parent_project(mock_project):
     )
 
     assert rag_config.parent_project() is mock_project
+
+
+def test_rag_config_parent_project_none():
+    """Test that parent project is None if not set."""
+    rag_config = RagConfig(
+        name="Test Config",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+
+    assert rag_config.parent_project() is None

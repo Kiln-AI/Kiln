@@ -6,6 +6,8 @@ from kiln_ai.adapters.rag.progress import (
     RagProgress,
     compute_current_progress_for_rag_config,
     compute_current_progress_for_rag_configs,
+    count_records_in_vector_store,
+    count_records_in_vector_store_for_rag_config,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
@@ -15,9 +17,20 @@ from kiln_ai.datamodel.rag import RagConfig
 
 
 @pytest.fixture
-def mock_project():
-    project = MagicMock(spec=Project)
+def mock_project(tmp_path):
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
     return project
+
+
+@pytest.fixture
+def mock_project_magic():
+    """This mock is more flexible than the mock_project fixture. Can mock the base model methods easily"""
+    return MagicMock(spec=Project)
 
 
 @pytest.fixture
@@ -151,24 +164,24 @@ class TestRagProgress:
 class TestComputeCurrentProgressForRagConfigs:
     @pytest.mark.asyncio
     async def test_empty_project_empty_configs(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test with no documents and no RAG configs"""
-        mock_project.documents.return_value = []
+        mock_project_magic.documents.return_value = []
 
-        result = await compute_current_progress_for_rag_configs(mock_project, [])
+        result = await compute_current_progress_for_rag_configs(mock_project_magic, [])
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_empty_project_with_config(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test with no documents but with a RAG config"""
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
-        mock_project.documents.return_value = []
+        mock_project_magic.documents.return_value = []
 
         result = await compute_current_progress_for_rag_configs(
-            mock_project, [rag_config]
+            mock_project_magic, [rag_config]
         )
 
         assert "rag1" in result
@@ -184,15 +197,15 @@ class TestComputeCurrentProgressForRagConfigs:
 
     @pytest.mark.asyncio
     async def test_documents_no_extractions(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test with documents but no extractions"""
         documents = [create_mock_document() for _ in range(3)]
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
-        mock_project.documents.return_value = documents
+        mock_project_magic.documents.return_value = documents
 
         result = await compute_current_progress_for_rag_configs(
-            mock_project, [rag_config]
+            mock_project_magic, [rag_config]
         )
 
         assert "rag1" in result
@@ -206,7 +219,7 @@ class TestComputeCurrentProgressForRagConfigs:
 
     @pytest.mark.asyncio
     async def test_full_pipeline_single_config(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test complete pipeline with one RAG config"""
         # Create documents with separate extraction trees
@@ -223,9 +236,9 @@ class TestComputeCurrentProgressForRagConfigs:
 
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
 
-        mock_project.documents.return_value = documents
+        mock_project_magic.documents.return_value = documents
         result = await compute_current_progress_for_rag_configs(
-            mock_project, [rag_config]
+            mock_project_magic, [rag_config]
         )
 
         assert "rag1" in result
@@ -243,7 +256,7 @@ class TestComputeCurrentProgressForRagConfigs:
 
     @pytest.mark.asyncio
     async def test_partial_pipeline_progress(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test pipeline where some steps are incomplete"""
         # Document 1: fully processed
@@ -270,9 +283,9 @@ class TestComputeCurrentProgressForRagConfigs:
 
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
 
-        mock_project.documents.return_value = [doc1, doc2, doc3, doc4]
+        mock_project_magic.documents.return_value = [doc1, doc2, doc3, doc4]
         result = await compute_current_progress_for_rag_configs(
-            mock_project, [rag_config]
+            mock_project_magic, [rag_config]
         )
 
         assert "rag1" in result
@@ -288,7 +301,7 @@ class TestComputeCurrentProgressForRagConfigs:
 
     @pytest.mark.asyncio
     async def test_multiple_rag_configs_shared_prefixes(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test multiple RAG configs that share common path prefixes"""
         # Create data that matches multiple configs
@@ -305,9 +318,9 @@ class TestComputeCurrentProgressForRagConfigs:
         rag_config1 = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
         rag_config2 = create_mock_rag_config("rag2", "ext1", "chunk1", "embed2")
 
-        mock_project.documents.return_value = [document]
+        mock_project_magic.documents.return_value = [document]
         result = await compute_current_progress_for_rag_configs(
-            mock_project, [rag_config1, rag_config2]
+            mock_project_magic, [rag_config1, rag_config2]
         )
 
         # Both configs should have same extraction and chunking counts
@@ -331,7 +344,7 @@ class TestComputeCurrentProgressForRagConfigs:
 
     @pytest.mark.asyncio
     async def test_multiple_rag_configs_different_extractors(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test multiple RAG configs with different extractors"""
         # Create extractions for different extractors
@@ -347,9 +360,9 @@ class TestComputeCurrentProgressForRagConfigs:
         rag_config1 = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
         rag_config2 = create_mock_rag_config("rag2", "ext2", "chunk1", "embed1")
 
-        mock_project.documents.return_value = [document]
+        mock_project_magic.documents.return_value = [document]
         result = await compute_current_progress_for_rag_configs(
-            mock_project, [rag_config1, rag_config2]
+            mock_project_magic, [rag_config1, rag_config2]
         )
 
         # Both should show progress since document has extractions for both extractors
@@ -370,7 +383,9 @@ class TestComputeCurrentProgressForRagConfigs:
             )  # min of extraction, chunking, embedding
 
     @pytest.mark.asyncio
-    async def test_complex_tree_structure(self, mock_project, mock_vector_store_count):
+    async def test_complex_tree_structure(
+        self, mock_project_magic, mock_vector_store_count
+    ):
         """Test a complex tree with multiple documents, extractors, chunkers, and embeddings"""
         # Document 1: ext1 -> chunk1 -> embed1, embed2
         embedding1_1 = create_mock_embedding("embed1")
@@ -410,8 +425,10 @@ class TestComputeCurrentProgressForRagConfigs:
             ),  # Should match doc1 only
         ]
 
-        mock_project.documents.return_value = [doc1, doc2]
-        result = await compute_current_progress_for_rag_configs(mock_project, configs)  # type: ignore
+        mock_project_magic.documents.return_value = [doc1, doc2]
+        result = await compute_current_progress_for_rag_configs(
+            mock_project_magic, configs
+        )  # type: ignore
 
         # rag1: ext1->chunk1->embed1 appears in both documents
         progress1 = result["rag1"]
@@ -457,7 +474,9 @@ class TestComputeCurrentProgressForRagConfigs:
 
 class TestComputeCurrentProgressForRagConfig:
     @pytest.mark.asyncio
-    async def test_single_config_success(self, mock_project, mock_vector_store_count):
+    async def test_single_config_success(
+        self, mock_project_magic, mock_vector_store_count
+    ):
         """Test computing progress for a single RAG config"""
         embedding = create_mock_embedding("embed1")
         chunked_doc = create_mock_chunked_document("chunk1", [embedding], num_chunks=3)
@@ -466,8 +485,10 @@ class TestComputeCurrentProgressForRagConfig:
 
         rag_config = create_mock_rag_config("rag1", "ext1", "chunk1", "embed1")
 
-        mock_project.documents.return_value = [document]
-        result = await compute_current_progress_for_rag_config(mock_project, rag_config)
+        mock_project_magic.documents.return_value = [document]
+        result = await compute_current_progress_for_rag_config(
+            mock_project_magic, rag_config
+        )
 
         assert isinstance(result, RagProgress)
         assert result.total_document_count == 1
@@ -479,7 +500,7 @@ class TestComputeCurrentProgressForRagConfig:
 
     @pytest.mark.asyncio
     async def test_single_config_not_found_error(
-        self, mock_project, mock_vector_store_count
+        self, mock_project_magic, mock_vector_store_count
     ):
         """Test error case when RAG config is not found in results"""
         # Create a config that won't be found (this shouldn't happen in practice)
@@ -495,4 +516,86 @@ class TestComputeCurrentProgressForRagConfig:
                 ValueError,
                 match="Failed to compute progress for rag config nonexistent",
             ):
-                await compute_current_progress_for_rag_config(mock_project, rag_config)
+                await compute_current_progress_for_rag_config(
+                    mock_project_magic, rag_config
+                )
+
+
+class TestCountRecordsInVectorStore:
+    @pytest.mark.asyncio
+    async def test_count_records_success(self):
+        """Test successful counting of records in vector store"""
+        mock_rag_config = MagicMock()
+        mock_vector_store_config = MagicMock()
+        mock_vector_store = AsyncMock()
+        mock_vector_store.count_records.return_value = 42
+
+        with patch(
+            "kiln_ai.adapters.rag.progress.vector_store_adapter_for_config",
+            new_callable=AsyncMock,
+            return_value=mock_vector_store,
+        ) as mock_adapter:
+            result = await count_records_in_vector_store(
+                mock_rag_config, mock_vector_store_config
+            )
+
+            assert result == 42
+            mock_adapter.assert_called_once_with(
+                mock_rag_config, mock_vector_store_config
+            )
+            mock_vector_store.count_records.assert_called_once()
+
+
+class TestCountRecordsInVectorStoreForRagConfig:
+    @pytest.mark.asyncio
+    async def test_count_records_success(self, mock_project):
+        """Test successful counting of records for RAG config"""
+
+        mock_rag_config = MagicMock()
+        mock_rag_config.id = "rag1"
+        mock_rag_config.vector_store_config_id = "vector_store_1"
+
+        mock_vector_store_config = MagicMock()
+
+        with (
+            patch(
+                "kiln_ai.adapters.rag.progress.VectorStoreConfig.from_id_and_parent_path",
+                return_value=mock_vector_store_config,
+            ) as mock_from_id,
+            patch(
+                "kiln_ai.adapters.rag.progress.count_records_in_vector_store",
+                new_callable=AsyncMock,
+                return_value=25,
+            ) as mock_count,
+        ):
+            result = await count_records_in_vector_store_for_rag_config(
+                mock_project, mock_rag_config
+            )
+
+            assert result == 25
+            mock_from_id.assert_called_once_with("vector_store_1", mock_project.path)
+            mock_count.assert_called_once_with(
+                mock_rag_config, mock_vector_store_config
+            )
+
+    @pytest.mark.asyncio
+    async def test_count_records_no_vector_store_config_error(self, mock_project):
+        """Test error case when vector store config is None"""
+
+        mock_rag_config = MagicMock()
+        mock_rag_config.id = "rag1"
+        mock_rag_config.vector_store_config_id = "vector_store_1"
+
+        with patch(
+            "kiln_ai.adapters.rag.progress.VectorStoreConfig.from_id_and_parent_path",
+            return_value=None,
+        ) as mock_from_id:
+            with pytest.raises(
+                ValueError,
+                match="Rag config rag1 has no vector store config",
+            ):
+                await count_records_in_vector_store_for_rag_config(
+                    mock_project, mock_rag_config
+                )
+
+            mock_from_id.assert_called_once_with("vector_store_1", mock_project.path)
