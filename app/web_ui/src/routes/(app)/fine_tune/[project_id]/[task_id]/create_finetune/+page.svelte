@@ -443,6 +443,9 @@
   <AppPage
     title="Create a New Fine Tune"
     subtitle="Fine-tuned models learn from your dataset."
+    breadcrumbs={[
+      { label: "Fine Tunes", href: `/fine_tune/${project_id}/${task_id}` },
+    ]}
   >
     {#if $available_models_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

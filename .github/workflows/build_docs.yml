@@ -32,7 +32,7 @@ jobs:
 
       - name: Build Python Core Docs
         working-directory: ./libs/core
-        run: uv run pdoc -o ./docs/kiln_core_docs kiln_ai --logo https://github.com/user-attachments/assets/046f44ae-28cf-4c78-85c3-c3e5ad744fd7 --logo-link https://getkiln.ai
+        run: uv run pdoc -o ./docs/kiln_core_docs kiln_ai --logo https://github.com/user-attachments/assets/046f44ae-28cf-4c78-85c3-c3e5ad744fd7 --logo-link https://kiln.tech
 
       - name: Install Redoc CLI
         run: npm install -g @redocly/cli

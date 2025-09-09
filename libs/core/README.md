@@ -20,7 +20,7 @@ pip install kiln_ai
 
 ## About
 
-This package is the Kiln AI core library. There is also a separate desktop application and server package. Learn more about Kiln AI at [getkiln.ai](https://getkiln.ai) and on Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln).
+This package is the Kiln AI core library. There is also a separate desktop application and server package. Learn more about Kiln AI at [kiln.tech](https://kiln.tech) and on Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln).
 
 # Guide: Using the Kiln Python Library
 
@@ -273,8 +273,8 @@ You can add additional AI models and providers to Kiln.
 
 See our docs for more information, including how to add these from the UI:
 
-- [Custom Models From Existing Providers](https://docs.getkiln.ai/docs/models-and-ai-providers#custom-models-from-existing-providers)
-- [Custom OpenAI Compatible Servers](https://docs.getkiln.ai/docs/models-and-ai-providers#custom-openai-compatible-servers)
+- [Custom Models From Existing Providers](https://docs.kiln.tech/docs/models-and-ai-providers#custom-models-from-existing-providers)
+- [Custom OpenAI Compatible Servers](https://docs.kiln.tech/docs/models-and-ai-providers#custom-openai-compatible-servers)
 
 You can also add these from code. The kiln_ai.utils.Config class helps you manage the Kiln config file (stored at `~/.kiln_settings/config.yaml`):
 

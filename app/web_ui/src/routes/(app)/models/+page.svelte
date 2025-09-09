@@ -24,6 +24,8 @@
     supports_structured_output: "Supports structured output (JSON).",
     supports_logprobs:
       "Supports logprobs, a feature needed for the advanced eval method G-Eval.",
+    supports_function_calling:
+      "Supports function calling and tool use for enhanced capabilities.",
     uncensored:
       "Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals.",
     reasoning_capable:
@@ -37,6 +39,7 @@
     supports_data_gen: boolean
     supports_logprobs: boolean
     supports_structured_output: boolean
+    supports_function_calling: boolean
     suggested_for_data_gen: boolean
     suggested_for_evals: boolean
     suggested_for_uncensored_data_gen: boolean
@@ -77,6 +80,7 @@
     { value: "data_gen", label: "Data Generation" },
     { value: "structured_output", label: "Structured Output" },
     { value: "logprobs", label: "Logprobs" },
+    { value: "tools", label: "Tools" },
     { value: "uncensored", label: "Uncensored" },
     { value: "finetune", label: "Finetune" },
     { value: "reasoning_capable", label: "Reasoning" },
@@ -152,7 +156,7 @@
       error = null
 
       const response = await fetch(
-        "https://remote-config.getkiln.ai/kiln_config.json",
+        "https://remote-config.getkiln.ai/kiln_config_v2.json",
       )
       if (!response.ok) {
         throw new Error(`Failed to fetch models: ${response.status}`)
@@ -205,6 +209,8 @@
               return p.supports_structured_output
             case "logprobs":
               return p.supports_logprobs
+            case "tools":
+              return p.supports_function_calling
             case "uncensored":
               return p.uncensored
             case "finetune":
@@ -344,6 +350,13 @@
         tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_structured_output,
       })
     }
+    if (providers.some((p) => p.supports_function_calling)) {
+      trailing_badges.push({
+        text: "Tools",
+        color: "bg-indigo-100 text-indigo-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_function_calling,
+      })
+    }
     if (providers.some((p) => p.supports_logprobs)) {
       trailing_badges.push({
         text: "Logprobs",
@@ -424,7 +437,7 @@
     title="Model Library"
     subtitle="Browse available models"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
+    sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
     action_buttons={[
       {
         label: "Manage Providers",
@@ -784,6 +797,12 @@
                             <span
                               class="w-2 h-2 bg-teal-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
                               data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_structured_output}
+                            ></span>
+                          {/if}
+                          {#if provider.supports_function_calling}
+                            <span
+                              class="w-2 h-2 bg-indigo-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_function_calling}
                             ></span>
                           {/if}
                           {#if provider.supports_logprobs}

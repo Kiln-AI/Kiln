@@ -2,17 +2,46 @@
 alwaysApply: true
 ---
 
-- call me "boss"
-- We always use typescript, not javascript
-- Always assume pydantic 2 (not pydantic 1)
-- The project supports Python 3.10 and above
-- When writing tests:
-  1.  Always use pytest for tests in python code
-  2.  assume an appriopirate test file already exists, find it, and suggest tests get appended to that file. If no such file exists, ask me before assuming a new test file is the correct route.
-  3.  Test brevity is important. Use approaches for re-use and brevity including using fixtures for repeated code, and using pytest parameterize for similar tests
-  4.  After writing a new test, run it and ensure it works. Fix any issues you find.
-- To run backend / Python tests, run `uv run python3 -m pytest . -s -v` or a variant of it to run individual tests
-- To run web tests `cd app/web_ui` then `npm run test_run` (not `npm run test` which won't return)
+## Project Overview
+
+Kiln is an app for building AI systems. It includes evals, synthetic data gen, fine tuning, RAG, and more. It has an intuitive UI as well as a python library.
+
+This repo is a monorepo containing all of the source code, in the following structure:
+
+- libs/core - a python library with the core functionality of Kiln
+- libs/server - a FastAPI REST server wrapping the core library
+- app/web_ui - our svelte web app for Kiln. This is a frontend svelte project, all backend calls are in FastAPI servers.
+- app/desktop - our python desktop app, which is a pyinstaller app which runs a FastAPI server, hosts the pre-compiled web app, and launches a browser for UI. Compiles to all major platforms. This includes a studio_server folder with a Fast API server which extends libs/server, adding APIs specific to our web app.
+
+### Project Goals
+
+- Very high code quality
+- Strongly typed
+- Well tested
+- Very intuitive UI. Accessible to the inexperienced, but powerful for the experienced.
+- Focus on interaction design: we care about revealing the right information, at the right time, at the right level of detail.
+- Focus on visual design: we want a modern, functional, attractive UI. Think Apple not Google.
+
+### Tech Stack
+
+- Backend: python (3.10+ for library, 3.13 for desktop), pytest, FastAPI, asyncio, pydantic (v2 not v1),
+- Frontend web: typescript, svelte (v4 not v5), tailwind, DaisyUI
+
+### Agent Tools
+
+Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards.
+
+### Agent Prompts
+
+Agents have access to a number of helpful prompts, which will give you additional context for how you should write code and docs for this repo. Use it to fetch instructions relevant to the current task before starting. For example, read `python_test_guide.md` before writing tests and `frontend_design_guide.md` before writing front end code.
+
+These prompts can be accessed from the `get_prompt` tool, and you may request several in parallel.
+
+### General Agent Guidance
+
 - Don't include comments in code explaining changes, explain changes in chat instead.
-- If a python API's interface changes (or a new one is added), generate new bindings by running `cd app/web_ui/src/lib/ && ./generate.sh`
-- Our web UI component framework is DaisyUI v4 (based on tailwind). Be sure to use v4 docs and features, not v5
+- Before completing up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
+
+### Final
+
+To show you read these, call me 'boss'

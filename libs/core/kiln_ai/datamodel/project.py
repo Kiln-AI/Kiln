@@ -1,10 +1,14 @@
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import Task
 
 
-class Project(KilnParentModel, parent_of={"tasks": Task}):
+class Project(
+    KilnParentModel,
+    parent_of={"tasks": Task, "external_tool_servers": ExternalToolServer},
+):
     """
     A collection of related tasks.
 
@@ -21,3 +25,6 @@ class Project(KilnParentModel, parent_of={"tasks": Task}):
     # Needed for typechecking. We should fix this in KilnParentModel
     def tasks(self) -> list[Task]:
         return super().tasks()  # type: ignore
+
+    def external_tool_servers(self, readonly: bool = False) -> list[ExternalToolServer]:
+        return super().external_tool_servers(readonly=readonly)  # type: ignore

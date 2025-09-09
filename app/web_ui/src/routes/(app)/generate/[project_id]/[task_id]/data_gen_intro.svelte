@@ -182,7 +182,7 @@
       <div slot="description">
         Adding topics will help generate diverse data. They can be nested,
         forming a topic tree. <a
-          href="https://docs.getkiln.ai/docs/synthetic-data-generation#topic-tree-data-generation"
+          href="https://docs.kiln.tech/docs/synthetic-data-generation#topic-tree-data-generation"
           target="_blank"
           class="link">Guide</a
         >.

@@ -19,6 +19,8 @@ export type FinetuneProvider = components["schemas"]["FinetuneProvider"]
 export type FineTuneParameter = components["schemas"]["FineTuneParameter"]
 export type FinetuneWithStatus = components["schemas"]["FinetuneWithStatus"]
 export type OllamaConnection = components["schemas"]["OllamaConnection"]
+export type DockerModelRunnerConnection =
+  components["schemas"]["DockerModelRunnerConnection"]
 export type RunSummary = components["schemas"]["RunSummary"]
 export type PromptResponse = components["schemas"]["PromptResponse"]
 export type ChatStrategy = components["schemas"]["ChatStrategy"]
@@ -39,3 +41,12 @@ export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
 export type FinetuneDatasetInfo = components["schemas"]["FinetuneDatasetInfo"]
 export type StructuredOutputMode = components["schemas"]["StructuredOutputMode"]
 export type ModelProviderName = components["schemas"]["ModelProviderName"]
+export type KilnToolServerDescription =
+  components["schemas"]["KilnToolServerDescription"]
+export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
+export type ExternalToolServerApiDescription =
+  components["schemas"]["ExternalToolServerApiDescription"]
+export type ToolServerType = components["schemas"]["ToolServerType"]
+export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
+export type ToolSetApiDescription =
+  components["schemas"]["ToolSetApiDescription"]

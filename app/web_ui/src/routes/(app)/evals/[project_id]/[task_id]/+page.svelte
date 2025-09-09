@@ -136,7 +136,7 @@
   title="Evals"
   subtitle="Evaluate the quality of your prompts, models and tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
-  sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
     ? []
     : [
@@ -165,10 +165,10 @@
       </div>
     </div>
   {:else if evals}
-    <a href={`/evals/${project_id}/${task_id}/compare`}>
+    <a href={`/evals/${project_id}/${task_id}/compare`} class="group">
       <div class="card border p-3 mb-4 rounded-md hover:bg-gray-50">
-        <div class="flex flex-row gap-4">
-          <div class="rounded-lg bg-blue-50 py-2 px-4">
+        <div class="flex flex-row gap-4 items-center">
+          <div class="rounded-lg bg-blue-50 p-4">
             <svg
               class="h-12 aspect-760/621"
               viewBox="0 0 760 621"
@@ -222,6 +222,10 @@
             <span class="text-sm font-light mt-1"
               >Find the best way to run this task by comparing models, prompts
               and fine-tunes using evals, cost and performance.</span
+            >
+            <button
+              class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"
+              >Compare Run Methods</button
             >
           </div>
         </div>

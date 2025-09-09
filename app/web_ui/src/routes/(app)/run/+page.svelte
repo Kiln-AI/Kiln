@@ -23,21 +23,25 @@
   import RunOptions from "$lib/ui/run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import posthog from "posthog-js"
+  import { tick } from "svelte"
 
   let error: KilnError | null = null
   let submitting = false
   let run_complete = false
 
   let input_form: RunInputForm
+  let output_section: HTMLElement | null = null
 
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
   let temperature: number
   let top_p: number
   let structured_output_mode: StructuredOutputMode
+  let tools: string[] = []
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
+
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
 
@@ -47,6 +51,7 @@
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
   $: input_schema = $current_task?.input_json_schema
   $: requires_structured_output = !!$current_task?.output_json_schema
+  $: requires_tools = tools.length > 0
 
   // Model defaults come from available_models store
 
@@ -60,6 +65,44 @@
     structured_output_mode =
       available_model_details(model_name, provider, available_models)
         ?.structured_output_mode || "default"
+  }
+
+  // Check if the Output section headers are visible in the viewport
+  // We only care about the top portion being visible (headers + some buffer)
+  function isElementPartiallyVisible(element: HTMLElement): boolean {
+    const rect = element.getBoundingClientRect()
+    const viewportHeight =
+      window.innerHeight || document.documentElement.clientHeight
+
+    // Check if the top of the element is visible and there's enough buffer
+    // We want to see the headers (roughly 100px from top) plus some buffer
+    // If the element is smaller than 100px, just check if it's fully visible
+    const bufferSize = Math.min(100, rect.height)
+    return rect.top >= 0 && rect.top <= viewportHeight - bufferSize
+  }
+
+  // Smooth scroll to output section if it's not visible
+  function scrollToOutputIfNeeded() {
+    if (output_section && !isElementPartiallyVisible(output_section)) {
+      // Calculate the target scroll position to show just the headers + buffer
+      const rect = output_section.getBoundingClientRect()
+      const currentScrollTop =
+        window.pageYOffset || document.documentElement.scrollTop
+      const viewportHeight =
+        window.innerHeight || document.documentElement.clientHeight
+
+      // Position the Output section so that 200px of it is visible from the top
+      // This shows the headers and some buffer, but not the entire section
+      // If the element is smaller than 200px, show the entire element
+      const visibleHeight = Math.min(200, rect.height)
+      const targetScrollTop =
+        currentScrollTop + rect.top - (viewportHeight - visibleHeight)
+
+      window.scrollTo({
+        top: targetScrollTop,
+        behavior: "smooth",
+      })
+    }
   }
 
   async function run_task() {
@@ -93,6 +136,9 @@
             temperature: temperature,
             top_p: top_p,
             structured_output_mode: structured_output_mode,
+            tools_config: {
+              tools: tools,
+            },
           },
           plaintext_input: input_form.get_plaintext_input_data(),
           // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
@@ -113,6 +159,8 @@
       error = createKilnError(e)
     } finally {
       submitting = false
+      await tick() // ensure {#if !submitting && response} has rendered
+      if (response) scrollToOutputIfNeeded()
     }
   }
 
@@ -162,21 +210,30 @@
         <AvailableModelsDropdown
           bind:model
           bind:requires_structured_output
+          bind:requires_tool_support={requires_tools}
           bind:error_message={model_dropdown_error_message}
           bind:this={model_dropdown}
         />
-        <Collapse title="Advanced Options">
-          <RunOptions
-            bind:temperature
-            bind:top_p
-            bind:structured_output_mode
-            has_structured_output={requires_structured_output}
-          />
-        </Collapse>
+        {#if $current_project?.id}
+          <Collapse
+            title="Advanced Options"
+            badge={tools.length > 0 ? "" + tools.length : null}
+          >
+            <RunOptions
+              bind:tools
+              bind:temperature
+              bind:top_p
+              bind:structured_output_mode
+              has_structured_output={requires_structured_output}
+              project_id={$current_project?.id}
+              task_id={$current_task?.id || ""}
+            />
+          </Collapse>
+        {/if}
       </div>
     </div>
     {#if $current_task && !submitting && response != null && $current_project?.id}
-      <div class="mt-10 xl:mt-24">
+      <div class="mt-8 xl:mt-12" bind:this={output_section} id="output-section">
         <Run
           initial_run={response}
           task={$current_task}

@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from kiln_ai.adapters.docker_model_runner_tools import DockerModelRunnerConnection
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     ModelName,
@@ -931,3 +932,57 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     # Verify the model_id is transformed into openai/endpoint_id format
     assert provider.model_id == "openai/456"
     assert provider.structured_output_mode == StructuredOutputMode.json_mode
+
+
+@pytest.mark.asyncio
+async def test_provider_enabled_docker_model_runner_success():
+    """Test provider_enabled for Docker Model Runner with successful connection"""
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_docker_model_runner_connection",
+        new_callable=AsyncMock,
+    ) as mock_get_docker:
+        # Mock successful Docker Model Runner connection with models
+        mock_get_docker.return_value = DockerModelRunnerConnection(
+            message="Connected",
+            supported_models=["llama-3.2-3b-instruct"],
+            untested_models=[],
+        )
+
+        result = await provider_enabled(ModelProviderName.docker_model_runner)
+        assert result is True
+
+
+@pytest.mark.asyncio
+async def test_provider_enabled_docker_model_runner_no_models():
+    """Test provider_enabled for Docker Model Runner with no models"""
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_docker_model_runner_connection",
+        new_callable=AsyncMock,
+    ) as mock_get_docker:
+        # Mock Docker Model Runner connection but with no models
+        mock_get_docker.return_value = DockerModelRunnerConnection(
+            message="Connected but no models", supported_models=[], untested_models=[]
+        )
+
+        result = await provider_enabled(ModelProviderName.docker_model_runner)
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_provider_enabled_docker_model_runner_connection_error():
+    """Test provider_enabled for Docker Model Runner with connection error"""
+    with patch(
+        "kiln_ai.adapters.provider_tools.get_docker_model_runner_connection",
+        new_callable=AsyncMock,
+    ) as mock_get_docker:
+        # Mock Docker Model Runner connection failure
+        mock_get_docker.side_effect = Exception("Connection failed")
+
+        result = await provider_enabled(ModelProviderName.docker_model_runner)
+        assert result is False
+
+
+def test_provider_name_from_id_docker_model_runner():
+    """Test provider_name_from_id for Docker Model Runner"""
+    result = provider_name_from_id(ModelProviderName.docker_model_runner)
+    assert result == "Docker Model Runner"

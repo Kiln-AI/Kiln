@@ -1,13 +1,17 @@
 <script lang="ts">
   import { fade } from "svelte/transition"
   import { onMount } from "svelte"
-  import type { OllamaConnection } from "$lib/types"
+  import type {
+    OllamaConnection,
+    DockerModelRunnerConnection,
+  } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client, base_url } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
+  import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
 
@@ -56,6 +60,12 @@
       name: "Ollama",
       id: "ollama",
       description: "Run models locally. No API key required.",
+      featured: false,
+    },
+    {
+      name: "Docker Model Runner",
+      id: "docker_model_runner",
+      description: "Run models locally with Docker. No API key required.",
       featured: false,
     },
     {
@@ -119,7 +129,7 @@
       ],
       api_key_fields: ["API Key", "Endpoint URL"],
       api_key_warning:
-        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#azure-openai-api",
+        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.kiln.tech/docs/models-and-ai-providers#azure-openai-api",
     },
     {
       name: "Hugging Face",
@@ -150,7 +160,7 @@
       ],
       api_key_fields: ["Project ID", "Project Location"],
       api_key_warning:
-        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#google-vertex-ai",
+        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.kiln.tech/docs/models-and-ai-providers#google-vertex-ai",
     },
     {
       name: "Together.ai",
@@ -236,6 +246,12 @@
   }
   let status: { [key: string]: ProviderStatus } = {
     ollama: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    docker_model_runner: {
       connected: false,
       connecting: false,
       error: null,
@@ -381,6 +397,8 @@
 
       // Clear the available models list
       available_tuning_models.set(null)
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
     } catch (e) {
       console.error("disconnect_provider error", e)
       alert("Failed to disconnect provider. Unknown error.")
@@ -395,6 +413,9 @@
     if (provider.id === "ollama") {
       connect_ollama()
     }
+    if (provider.id === "docker_model_runner") {
+      connect_docker_model_runner()
+    }
     if (provider.id === "openai_compatible") {
       show_custom_api_dialog()
     }
@@ -406,9 +427,9 @@
 
   let custom_ollama_url: string | null = null
 
-  const connect_ollama = async (user_initated: boolean = true) => {
+  const connect_ollama = async (user_initiated: boolean = true) => {
     status.ollama.connected = false
-    status.ollama.connecting = user_initated
+    status.ollama.connecting = user_initiated
 
     let data: OllamaConnection | null = null
     try {
@@ -466,6 +487,8 @@
     }
     status.ollama.error = null
     status.ollama.connected = true
+    // Clear the available models cache so it refreshes next time
+    clear_available_models_cache()
     const supported_models_str =
       data.supported_models.length > 0
         ? "The following supported models are available: " +
@@ -484,6 +507,86 @@
         : "Custom Ollama URL: " + custom_ollama_url
     status.ollama.custom_description =
       "Ollama connected. " +
+      supported_models_str +
+      untested_models_str +
+      custom_url_str
+  }
+
+  let docker_model_runner_custom_url: string | null = null
+
+  const connect_docker_model_runner = async (
+    user_initiated: boolean = true,
+  ) => {
+    status.docker_model_runner.connected = false
+    status.docker_model_runner.connecting = user_initiated
+
+    let data: DockerModelRunnerConnection | null = null
+    try {
+      const { data: req_data, error: req_error } = await client.GET(
+        "/api/provider/docker_model_runner/connect",
+        {
+          params: {
+            query: {
+              docker_model_runner_custom_url:
+                docker_model_runner_custom_url || undefined,
+            },
+          },
+        },
+      )
+      if (req_error) {
+        throw req_error
+      }
+      data = req_data
+    } catch (e) {
+      if (
+        e &&
+        typeof e === "object" &&
+        "message" in e &&
+        typeof e.message === "string"
+      ) {
+        status.docker_model_runner.error = e.message
+      } else {
+        status.docker_model_runner.error =
+          "Failed to connect. Ensure Docker Model Runner is running."
+      }
+      status.docker_model_runner.connected = false
+      return
+    } finally {
+      status.docker_model_runner.connecting = false
+    }
+
+    if (
+      data.supported_models.length === 0 &&
+      (!data.untested_models || data.untested_models.length === 0)
+    ) {
+      status.docker_model_runner.error =
+        "Docker Model Runner running, but no models available. Pull some models first: https://hub.docker.com/u/ai"
+      return
+    }
+    status.docker_model_runner.error = null
+    status.docker_model_runner.connected = true
+    // Clear the available models cache so it refreshes next time
+    clear_available_models_cache()
+    const supported_models_str =
+      data.supported_models.length > 0
+        ? "The following supported models are available: " +
+          data.supported_models.join(", ") +
+          ". "
+        : "No supported models are loaded. "
+    const untested_models_str =
+      data.untested_models && data.untested_models.length > 0
+        ? "The following untested models are loaded: " +
+          data.untested_models.join(", ") +
+          ". "
+        : ""
+    const custom_url_str =
+      docker_model_runner_custom_url &&
+      docker_model_runner_custom_url !==
+        "http://localhost:12434/engines/llama.cpp"
+        ? "Custom Docker Model Runner URL: " + docker_model_runner_custom_url
+        : ""
+    status.docker_model_runner.custom_description =
+      "Docker Model Runner connected. " +
       supported_models_str +
       untested_models_str +
       custom_url_str
@@ -544,6 +647,8 @@
 
       // Clear the available models list
       available_tuning_models.set(null)
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
     } catch (e) {
       console.error("submit_api_key error", e)
       api_key_message = "Failed to connect to provider (Exception: " + e + ")"
@@ -586,6 +691,9 @@
       }
       if (data["ollama_base_url"]) {
         custom_ollama_url = data["ollama_base_url"]
+      }
+      if (data["docker_model_runner_base_url"]) {
+        docker_model_runner_custom_url = data["docker_model_runner_base_url"]
       }
       if (data["anthropic_api_key"]) {
         status.anthropic.connected = true
@@ -633,11 +741,21 @@
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
     })
+    // Check Docker Model Runner every load, as it can be closed. More ephemeral (and local/cheap/fast)
+    connect_docker_model_runner(false).then(() => {
+      // Clear the error as the user didn't initiate this run
+      status["docker_model_runner"].error = null
+    })
   })
 
   function show_custom_ollama_url_dialog() {
     // @ts-expect-error showModal is not a method on HTMLElement
     document.getElementById("ollama_dialog")?.showModal()
+  }
+
+  function show_docker_model_runner_custom_url_dialog() {
+    // @ts-expect-error showModal is not a method on HTMLElement
+    document.getElementById("docker_model_runner_dialog")?.showModal()
   }
 
   function show_custom_api_dialog() {
@@ -690,6 +808,8 @@
       new_provider_error = null
 
       status.openai_compatible.connected = true
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
       // @ts-expect-error daisyui does not add types
       document.getElementById("openai_compatible_dialog")?.close()
     } catch (e) {
@@ -728,6 +848,8 @@
       if (custom_openai_compatible_providers.length === 0) {
         status.openai_compatible.connected = false
       }
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
     } catch (e) {
       alert("Failed to remove provider: " + e)
     }
@@ -849,6 +971,14 @@
                 Set Custom Ollama URL
               </button>
             {/if}
+            {#if provider.id === "docker_model_runner" && status[provider.id] && status[provider.id].error}
+              <button
+                class="link text-left text-sm text-gray-500"
+                on:click={show_docker_model_runner_custom_url_dialog}
+              >
+                Set Docker Model Runner Custom URL
+              </button>
+            {/if}
           </div>
 
           {#if loading_initial_providers}
@@ -931,6 +1061,50 @@
           connect_ollama(true)
           // @ts-expect-error showModal is not a method on HTMLElement
           document.getElementById("ollama_dialog")?.close()
+        }}
+      >
+        Connect
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>
+
+<dialog id="docker_model_runner_dialog" class="modal">
+  <div class="modal-box">
+    <form method="dialog">
+      <button
+        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
+        >✕</button
+      >
+    </form>
+
+    <h3 class="text-lg font-bold">Custom Docker Model Runner URL</h3>
+    <p class="text-sm font-light mb-8">
+      By default, Kiln attempts to connect to Docker Model Runner at
+      http://localhost:12434/engines. If you run it on a different host or port,
+      enter the full base URL here.
+    </p>
+    <FormElement
+      id="docker_model_runner_url"
+      label="Docker Model Runner URL"
+      info_description="It should include the http prefix, host, port and engine path. For example, http://localhost:12434/engines/llama.cpp"
+      bind:value={docker_model_runner_custom_url}
+      placeholder="http://localhost:12434/engines"
+    />
+    <div class="flex flex-row gap-4 items-center mt-4 justify-end">
+      <form method="dialog">
+        <button class="btn">Cancel</button>
+      </form>
+      <button
+        class="btn btn-primary"
+        disabled={!docker_model_runner_custom_url}
+        on:click={() => {
+          connect_docker_model_runner(true)
+          // @ts-expect-error showModal is not a method on HTMLElement
+          document.getElementById("docker_model_runner_dialog")?.close()
         }}
       >
         Connect

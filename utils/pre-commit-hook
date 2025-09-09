@@ -4,5 +4,6 @@
 #
 
 cd "$(dirname "$0")"
-uv run ../../checks.sh
+# --staged-only is useful to only run checks on the files that are staged for commit
+uv run ../../checks.sh --staged-only
 
