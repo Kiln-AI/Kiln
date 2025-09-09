@@ -5514,82 +5514,61 @@ async def test_edit_remote_mcp(
             ]
 
 
-async def test_edit_remote_mcp_does_not_keep_bad_data_in_memory(
-    client, test_project, existing_remote_tool_server
+@pytest.mark.parametrize(
+    "fixture_name, endpoint, property_key, bad_data",
+    [
+        # Test 1: Remote MCP with bad url
+        (
+            "existing_remote_tool_server",
+            "edit_remote_mcp",
+            "server_url",
+            {"server_url": "http://invalid-url.com"},
+        ),
+        # Test 2: Local MCP with bad command
+        (
+            "existing_local_tool_server",
+            "edit_local_mcp",
+            "command",
+            {"command": "invalid-command", "args": []},
+        ),
+    ],
+    ids=["remote_mcp", "local_mcp"],
+)
+async def test_edit_mcp_does_not_keep_bad_data_in_memory(
+    client,
+    test_project,
+    request,
+    fixture_name,
+    endpoint,
+    property_key,
+    bad_data,
 ):
-    """Test edit_remote_mcp with validation failure and ensure in-memory tool server remains unchanged"""
+    """Test editing mcp servers with validation failure will not keep bad data in memory"""
+
+    test_server = request.getfixturevalue(fixture_name)
+
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
 
-        # Step 1: Load ExternalToolServer in memory via tool_server_from_id
-        original_tool_server = tool_server_from_id(
-            test_project.id, existing_remote_tool_server.id
-        )
-        original_tool_server_url = original_tool_server.properties["server_url"]
+        # Load ExternalToolServer in memory via tool_server_from_id and store the original value
+        original_server = tool_server_from_id(test_project.id, test_server.id)
+        original_value = original_server.properties[property_key]
 
-        # Step 2: Call edit_remote_mcp with bad url
+        # Call patch endpoint with bad data and force validation failure
         bad_data = {
-            "name": existing_remote_tool_server.name,
-            "description": existing_remote_tool_server.description,
-            "server_url": "http://invalid-url.com",
+            "name": test_server.name,
+            "description": test_server.description,
+            **bad_data,
         }
-
-        # Step 3: Force connectivity validation to fail and call edit_remote_mcp
         async with mock_mcp_connection_error():
             with pytest.raises(Exception, match="Connection failed"):
-                _ = client.patch(
-                    f"/api/projects/{test_project.id}/edit_remote_mcp/{existing_remote_tool_server.id}",
+                await client.patch(
+                    f"/api/projects/{test_project.id}/{endpoint}/{test_server.id}",
                     json=bad_data,
                 )
 
-        # Get the tool server from memory after failed validation
-        tool_server_failed_validation = tool_server_from_id(
-            test_project.id, existing_remote_tool_server.id
-        )
-
-        # Server url should not have changed even after failed validation
-        failed_validation_url = tool_server_failed_validation.properties["server_url"]
-        assert failed_validation_url == original_tool_server_url
-
-
-async def test_edit_local_mcp_does_not_keep_bad_data_in_memory(
-    client, test_project, existing_local_tool_server
-):
-    """Test edit_local_mcp with validation failure and ensure in-memory tool server remains unchanged"""
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # Step 1: Load ExternalToolServer in memory via tool_server_from_id
-        original_tool_server = tool_server_from_id(
-            test_project.id, existing_local_tool_server.id
-        )
-        original_command = original_tool_server.properties["command"]
-
-        # Step 2: Call edit_local_mcp with bad command
-        bad_data = {
-            "name": existing_local_tool_server.name,
-            "description": existing_local_tool_server.description,
-            "command": "invalid-command",
-            "args": existing_local_tool_server.properties["args"],
-        }
-
-        # Step 3: Force connectivity validation to fail and call edit_local_mcp
-        async with mock_mcp_connection_error():
-            with pytest.raises(Exception, match="Connection failed"):
-                _ = client.patch(
-                    f"/api/projects/{test_project.id}/edit_local_mcp/{existing_local_tool_server.id}",
-                    json=bad_data,
-                )
-
-        # Get the tool server from memory after failed validation
-        tool_server_failed_validation = tool_server_from_id(
-            test_project.id, existing_local_tool_server.id
-        )
-
-        # Command should not have changed even after failed validation
-        failed_validation_command = tool_server_failed_validation.properties["command"]
-        assert failed_validation_command == original_command
+        # Read the server from memory again and ensure it's not changed
+        post_validation_server = tool_server_from_id(test_project.id, test_server.id)
+        assert post_validation_server.properties[property_key] == original_value
