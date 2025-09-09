@@ -426,6 +426,7 @@ async def build_rag_workflow_runner(
         rag_config.extractor_config_id is None
         or rag_config.chunker_config_id is None
         or rag_config.embedding_config_id is None
+        or rag_config.vector_store_config_id is None
     ):
         raise HTTPException(
             status_code=400,
@@ -460,7 +461,7 @@ async def build_rag_workflow_runner(
         )
 
     vector_store_config = VectorStoreConfig.from_id_and_parent_path(
-        str(rag_config.vector_store_config_id), project.path
+        rag_config.vector_store_config_id, project.path
     )
     if vector_store_config is None:
         raise HTTPException(

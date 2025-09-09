@@ -1,11 +1,23 @@
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.vector_store import (
     LanceDBConfigBaseProperties,
     VectorStoreConfig,
     VectorStoreType,
 )
+
+
+@pytest.fixture
+def mock_project(tmp_path):
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    return project
 
 
 class TestVectorStoreType:
@@ -50,6 +62,21 @@ class TestLanceDBConfigBaseProperties:
 
 
 class TestVectorStoreConfig:
+    def test_invalid_store_type(self):
+        """Test creating VectorStoreConfig with invalid store type."""
+        with pytest.raises(ValidationError, match="Input should be"):
+            VectorStoreConfig(
+                name="test_store",
+                store_type="invalid_type",  # type: ignore
+                properties={
+                    "similarity_top_k": 10,
+                    "overfetch_factor": 2,
+                    "vector_column_name": "vector",
+                    "text_key": "text",
+                    "doc_id_key": "doc_id",
+                },
+            )
+
     def test_valid_lance_db_fts_vector_store_config(self):
         """Test creating valid VectorStoreConfig with LanceDB FTS."""
         config = VectorStoreConfig(
@@ -280,3 +307,20 @@ class TestVectorStoreConfig:
                     "doc_id_key": "doc_id",
                 },
             )
+
+    def test_parent_project(self, mock_project):
+        """Test that parent project is returned correctly."""
+        config = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties={
+                "similarity_top_k": 10,
+                "overfetch_factor": 2,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+            },
+            parent=mock_project,
+        )
+
+        assert config.parent_project() is mock_project

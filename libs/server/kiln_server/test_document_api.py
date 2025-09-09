@@ -29,6 +29,7 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
+    build_rag_workflow_runner,
     connect_document_api,
     run_rag_workflow_runner_with_status,
 )
@@ -1793,3 +1794,146 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
     # Should have only 1 data event (complete message)
     assert len(data_lines) == 1
     assert data_lines[0] == "data: complete"
+
+
+@pytest.mark.parametrize(
+    "missing_sub_config_type,error_message",
+    [
+        ("extractor_config", "Extractor config not found"),
+        ("chunker_config", "Chunker config not found"),
+        ("embedding_config", "Embedding config not found"),
+        ("vector_store_config", "Vector store config not found"),
+    ],
+)
+async def test_build_rag_workflow_runner_sub_configs_not_found(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+    missing_sub_config_type,
+    error_message,
+):
+    """Test build_rag_workflow_runner when sub configs are not found"""
+    # Create a rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+        patch(
+            "kiln_ai.datamodel.extraction.ExtractorConfig.from_id_and_parent_path"
+        ) as mock_extractor_from_id,
+        patch(
+            "kiln_ai.datamodel.chunk.ChunkerConfig.from_id_and_parent_path"
+        ) as mock_chunker_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+    ):
+        mock_rag_from_id.return_value = rag_config
+
+        mock_extractor_from_id.return_value = (
+            None
+            if missing_sub_config_type == "extractor_config"
+            else mock_extractor_config
+        )
+        mock_chunker_from_id.return_value = (
+            None if missing_sub_config_type == "chunker_config" else mock_chunker_config
+        )
+        mock_embedding_from_id.return_value = (
+            None
+            if missing_sub_config_type == "embedding_config"
+            else mock_embedding_config
+        )
+        mock_vector_store_from_id.return_value = (
+            None
+            if missing_sub_config_type == "vector_store_config"
+            else mock_vector_store_config
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await build_rag_workflow_runner(mock_project, str(rag_config.id))
+
+        assert exc_info.value.status_code == 404
+        assert error_message in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_build_rag_workflow_runner_success_with_progress(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test build_rag_workflow_runner success path including progress computation"""
+    # Create a rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    mock_progress = RagProgress(
+        total_document_count=5,
+        total_document_completed_count=2,
+        total_document_extracted_count=3,
+        total_document_chunked_count=2,
+        total_document_embedded_count=1,
+    )
+
+    with (
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+        patch(
+            "kiln_ai.datamodel.extraction.ExtractorConfig.from_id_and_parent_path"
+        ) as mock_extractor_from_id,
+        patch(
+            "kiln_ai.datamodel.chunk.ChunkerConfig.from_id_and_parent_path"
+        ) as mock_chunker_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_config"
+        ) as mock_compute_progress,
+        patch("kiln_server.document_api.RagWorkflowRunner") as mock_runner_class,
+    ):
+        mock_rag_from_id.return_value = rag_config
+        mock_extractor_from_id.return_value = mock_extractor_config
+        mock_chunker_from_id.return_value = mock_chunker_config
+        mock_embedding_from_id.return_value = mock_embedding_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config
+        mock_compute_progress.return_value = mock_progress
+
+        mock_runner = MagicMock()
+        mock_runner_class.return_value = mock_runner
+
+        result = await build_rag_workflow_runner(mock_project, str(rag_config.id))
+
+        assert result == mock_runner
+        mock_compute_progress.assert_called_once_with(mock_project, rag_config)
+        mock_runner_class.assert_called_once()
