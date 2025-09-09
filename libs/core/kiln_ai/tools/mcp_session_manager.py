@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import AsyncGenerator
 
 import httpx
@@ -171,7 +172,9 @@ class MCPSessionManager:
 
         try:
             async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
+                async with ClientSession(
+                    read, write, read_timeout_seconds=timedelta(seconds=30)
+                ) as session:
                     await session.initialize()
                     yield session
         except Exception as e:
