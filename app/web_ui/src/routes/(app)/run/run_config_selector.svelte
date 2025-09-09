@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   export let selected_run_config: string | null = null
   export let onConfigChange: (config: string | null) => void
@@ -77,17 +76,6 @@
 </script>
 
 <div class="flex flex-col gap-2">
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      <span class="text-sm font-medium">Quick Select</span>
-      <div class="text-gray-500">
-        <InfoTooltip
-          tooltip_text="Select a saved configuration to override the current options."
-        />
-      </div>
-    </div>
-  </div>
-
   <!-- Custom dropdown with clear button inside -->
   <div class="dropdown w-full relative">
     <div

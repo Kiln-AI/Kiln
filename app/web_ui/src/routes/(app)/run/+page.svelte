@@ -53,9 +53,6 @@
   // Quick start state
   let selected_run_config: string | null = null
 
-  // Helper to check if we're in read-only mode
-  $: is_read_only = selected_run_config !== null
-
   // TODO: Update UI to use the selected run config model etc. instead of UI selection
   function handleConfigChange(config: string | null) {
     selected_run_config = config
@@ -214,17 +211,22 @@
       <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
         <div class="text-xl font-bold">Options</div>
 
-        <!-- Options Container with Border -->
-        <div
-          class="rounded-lg border border-base-300 p-4 flex flex-col gap-4 min-w-[400px]"
-        >
+        <!-- Quick Select -->
+        <div class="min-w-[400px]">
+          <RunConfigSelector
+            bind:selected_run_config
+            onConfigChange={handleConfigChange}
+          />
+        </div>
+
+        <!-- Options Container -->
+        <div class="flex flex-col gap-4 min-w-[400px]">
           <div>
             <PromptTypeSelector
               bind:prompt_method
               info_description="Choose a prompt. Learn more on the 'Prompts' tab."
               bind:linked_model_selection={model}
               bind:this={prompt_type_selector}
-              read_only={is_read_only}
             />
           </div>
           <div>
@@ -234,58 +236,26 @@
               bind:requires_tool_support={requires_tools}
               bind:error_message={model_dropdown_error_message}
               bind:this={model_dropdown}
-              read_only={is_read_only}
             />
           </div>
           {#if $current_project?.id}
-            <div class={is_read_only ? "pointer-events-auto" : ""}>
-              <Collapse
-                title="Advanced Options"
-                badge={tools.length > 0 ? "" + tools.length : null}
-              >
-                <div>
-                  <AdvancedRunOptions
-                    bind:tools
-                    bind:temperature
-                    bind:top_p
-                    bind:structured_output_mode
-                    has_structured_output={requires_structured_output}
-                    project_id={$current_project?.id}
-                    task_id={$current_task?.id || ""}
-                    read_only={is_read_only}
-                  />
-                </div>
-              </Collapse>
-            </div>
+            <Collapse
+              title="Advanced Options"
+              badge={tools.length > 0 ? "" + tools.length : null}
+            >
+              <div>
+                <AdvancedRunOptions
+                  bind:tools
+                  bind:temperature
+                  bind:top_p
+                  bind:structured_output_mode
+                  has_structured_output={requires_structured_output}
+                  project_id={$current_project?.id}
+                  task_id={$current_task?.id || ""}
+                />
+              </div>
+            </Collapse>
           {/if}
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="flex justify-end items-center gap-2 min-w-[400px]">
-          <button
-            class="btn btn-sm flex-1 {!is_read_only
-              ? 'btn-primary'
-              : 'btn-disabled'}"
-            disabled={is_read_only}
-          >
-            Save Configuration
-          </button>
-          <button
-            class="btn btn-sm flex-1 {is_read_only
-              ? 'hover:btn-error active:btn-error'
-              : 'btn-disabled'}"
-            disabled={!is_read_only}
-          >
-            Promote to Default
-          </button>
-        </div>
-
-        <!-- Quick Select -->
-        <div class="mt-4 min-w-[400px]">
-          <RunConfigSelector
-            bind:selected_run_config
-            onConfigChange={handleConfigChange}
-          />
         </div>
       </div>
     </div>
