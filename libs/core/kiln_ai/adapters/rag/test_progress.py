@@ -427,8 +427,9 @@ class TestComputeCurrentProgressForRagConfigs:
 
         mock_project_magic.documents.return_value = [doc1, doc2]
         result = await compute_current_progress_for_rag_configs(
-            mock_project_magic, configs
-        )  # type: ignore
+            mock_project_magic,
+            configs,  # type: ignore
+        )
 
         # rag1: ext1->chunk1->embed1 appears in both documents
         progress1 = result["rag1"]

@@ -239,7 +239,11 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         jobs: list[ExtractorJob] = []
         target_extractor_config_id = self.extractor_config.id
         for document in self.project.documents(readonly=True):
-            if document_ids is not None and document.id not in document_ids:
+            if (
+                document_ids is not None
+                and len(document_ids) > 0
+                and document.id not in document_ids
+            ):
                 continue
             if not self.has_extraction(document, target_extractor_config_id):
                 jobs.append(
@@ -320,7 +324,11 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
 
         jobs: list[ChunkerJob] = []
         for document in self.project.documents(readonly=True):
-            if document_ids is not None and document.id not in document_ids:
+            if (
+                document_ids is not None
+                and len(document_ids) > 0
+                and document.id not in document_ids
+            ):
                 continue
             for extraction in deduplicate_extractions(
                 document.extractions(readonly=True)
@@ -407,7 +415,11 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
 
         jobs: list[EmbeddingJob] = []
         for document in self.project.documents(readonly=True):
-            if document_ids is not None and document.id not in document_ids:
+            if (
+                document_ids is not None
+                and len(document_ids) > 0
+                and document.id not in document_ids
+            ):
                 continue
             for extraction in deduplicate_extractions(
                 document.extractions(readonly=True)
@@ -509,7 +521,11 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         # (document_id, chunked_document, embedding)
         jobs: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]] = []
         for document in self.project.documents(readonly=True):
-            if document_ids is not None and document.id not in document_ids:
+            if (
+                document_ids is not None
+                and len(document_ids) > 0
+                and document.id not in document_ids
+            ):
                 continue
             for extraction in deduplicate_extractions(
                 document.extractions(readonly=True)
