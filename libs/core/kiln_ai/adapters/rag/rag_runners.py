@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -112,6 +113,7 @@ class RagWorkflowStepNames(str, Enum):
 
 
 async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> bool:
+    await asyncio.sleep(20)
     if job.doc.path is None:
         raise ValueError("Document path is not set")
 
@@ -758,9 +760,9 @@ class RagWorkflowRunner:
         :param stages_to_run: The stages to run. If None, all stages will be run.
         :param document_ids: The document ids to run the workflow for. If None, all documents will be run.
         """
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
-            yield self.initial_progress
+        yield self.initial_progress
 
+        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
             for step in self.step_runners:
                 if stages_to_run is not None and step.stage() not in stages_to_run:
                     continue
