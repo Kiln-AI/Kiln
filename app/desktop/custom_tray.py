@@ -3,8 +3,6 @@ import logging
 import sys
 from typing import Any, Type
 
-from PIL import Image
-
 logger = logging.getLogger(__name__)
 
 try:
@@ -19,9 +17,6 @@ except Exception:
 
 class KilnTray(IconBase):  # type: ignore
     def __init__(self, *args, **kwargs):
-        # Scale icon properly on Linux before passing it to pystray
-        if sys.platform.startswith("linux") and "icon" in kwargs:
-            kwargs["icon"] = self._scale_linux_icon(kwargs["icon"])
         super().__init__(*args, **kwargs)
 
         # On Linux, bind left click to open the menu
@@ -55,13 +50,6 @@ class KilnTray(IconBase):  # type: ignore
             logger.error("Mac Tray Error", exc_info=True)
         self._status_item.button().setImage_(self._icon_image)  # type: ignore
 
-    # --- Linux-specific helpers ---
-    def _scale_linux_icon(self, icon):
-        """Force scale tray icon to 24x24 for Linux DEs"""
-        if isinstance(icon, Image.Image):
-            return icon.resize((24, 24), Image.LANCZOS)
-        return icon
-
     def _setup_linux_click_menu(self):
         """Bind left click to open tray menu"""
         try:
@@ -75,3 +63,7 @@ class KilnTray(IconBase):  # type: ignore
         """Force show the menu when left-clicked"""
         if self.menu:
             self.menu(self)  # show context menu
+
+
+class KilnMenuItem(MenuItemBase):  # type: ignore - our dynamic type trips up pyright
+    pass

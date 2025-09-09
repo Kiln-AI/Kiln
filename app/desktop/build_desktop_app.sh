@@ -60,7 +60,7 @@ elif [[ "$(uname)" =~ ^MINGW64_NT-10.0 ]] || [[ "$(uname)" =~ ^MSYS_NT-10.0 ]]; 
   PLATFORM_OPTS="--windowed --splash=../win_splash.png --icon=../win_icon.ico"
 elif [ "$(uname)" == "Linux" ]; then
   echo "Building Linux App"
-  cp desktop/mac_taskbar.png desktop/build/taskbar.png
+  cp desktop/linux_taskbar.png desktop/build/taskbar.png
   PLATFORM_OPTS="--windowed --onefile --splash=../win_splash.png --icon=../mac_icon.png"
 else
   echo "Unsupported operating system: $(uname)"
