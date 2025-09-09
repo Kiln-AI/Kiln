@@ -93,9 +93,9 @@
           on_click: view_logs,
         },
         {
-          name: "App Updates",
+          name: "Check for Update",
           description:
-            "Check for the latest version of Kiln AI and install updates when available.",
+            "Check if there is a newer version of the Kiln app available.",
           href: "/settings/check_for_update",
           button_text: "Check for Update",
         },
