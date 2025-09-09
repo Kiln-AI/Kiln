@@ -22,6 +22,15 @@ from app.desktop.studio_server.tool_api import (
 )
 
 
+@pytest.fixture
+def mock_project_from_id(test_project):
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id",
+        return_value=test_project,
+    ) as mock:
+        yield mock
+
+
 def create_mcp_session_manager_patch(
     mock_tools=None, connection_error=None, list_tools_error=None
 ):
@@ -5538,6 +5547,7 @@ async def test_edit_mcp_does_not_keep_bad_data_in_memory(
     client,
     test_project,
     request,
+    mock_project_from_id,
     fixture_name,
     endpoint,
     property_key,
@@ -5547,28 +5557,25 @@ async def test_edit_mcp_does_not_keep_bad_data_in_memory(
 
     test_server = request.getfixturevalue(fixture_name)
 
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
+    # Load ExternalToolServer in memory via tool_server_from_id and store the original value
+    # tool_server_from_id needs project_from_id to be mocked to return properly
+    mock_project_from_id(test_project)
+    original_server = tool_server_from_id(test_project.id, test_server.id)
+    original_value = original_server.properties[property_key]
 
-        # Load ExternalToolServer in memory via tool_server_from_id and store the original value
-        original_server = tool_server_from_id(test_project.id, test_server.id)
-        original_value = original_server.properties[property_key]
+    # Call patch endpoint with bad data and force validation failure
+    bad_data = {
+        "name": test_server.name,
+        "description": test_server.description,
+        **bad_data,
+    }
+    async with mock_mcp_connection_error():
+        with pytest.raises(Exception, match="Connection failed"):
+            await client.patch(
+                f"/api/projects/{test_project.id}/{endpoint}/{test_server.id}",
+                json=bad_data,
+            )
 
-        # Call patch endpoint with bad data and force validation failure
-        bad_data = {
-            "name": test_server.name,
-            "description": test_server.description,
-            **bad_data,
-        }
-        async with mock_mcp_connection_error():
-            with pytest.raises(Exception, match="Connection failed"):
-                await client.patch(
-                    f"/api/projects/{test_project.id}/{endpoint}/{test_server.id}",
-                    json=bad_data,
-                )
-
-        # Read the server from memory again and ensure it's not changed
-        post_validation_server = tool_server_from_id(test_project.id, test_server.id)
-        assert post_validation_server.properties[property_key] == original_value
+    # Read the server from memory again and ensure it's not changed
+    post_validation_server = tool_server_from_id(test_project.id, test_server.id)
+    assert post_validation_server.properties[property_key] == original_value
