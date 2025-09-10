@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -113,7 +112,6 @@ class RagWorkflowStepNames(str, Enum):
 
 
 async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> bool:
-    await asyncio.sleep(20)
     if job.doc.path is None:
         raise ValueError("Document path is not set")
 
