@@ -547,9 +547,7 @@ async def test_search_with_table_not_found_error(
     adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Mock the aquery method directly on the LanceDBVectorStore class
-    with patch(
-        "llama_index.vector_stores.lancedb.LanceDBVectorStore.aquery"
-    ) as mock_aquery:
+    with patch.object(adapter.lancedb_vector_store.__class__, "aquery") as mock_aquery:
         mock_aquery.side_effect = TableNotFoundError("Table vectors is not initialized")
 
         # Search should return empty list instead of raising error
@@ -573,9 +571,7 @@ async def test_search_with_empty_results_error(
     adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Mock the aquery method directly on the LanceDBVectorStore class
-    with patch(
-        "llama_index.vector_stores.lancedb.LanceDBVectorStore.aquery"
-    ) as mock_aquery:
+    with patch.object(adapter.lancedb_vector_store.__class__, "aquery") as mock_aquery:
         mock_aquery.side_effect = Exception("query results are empty")
 
         # Search should return empty list instead of raising error

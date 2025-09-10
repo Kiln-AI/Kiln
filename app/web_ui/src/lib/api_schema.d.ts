@@ -1701,9 +1701,9 @@ export interface components {
         /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
         Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
             /** Files */
-            files: string[];
+            files?: string[] | null;
             /** Names */
-            names?: string[];
+            names?: string[] | null;
         };
         /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
         Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
@@ -5157,7 +5157,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_create_documents_bulk_api_projects__project_id__documents_bulk_post"];
             };

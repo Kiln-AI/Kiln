@@ -1499,6 +1499,10 @@ def connect_document_api(app: FastAPI):
                 detail="RAG config not found",
             )
 
+        # Empty query - return empty results
+        if not request.query.strip():
+            return RagSearchResponse(results=[])
+
         # Get the vector store config
         vector_store_config = VectorStoreConfig.from_id_and_parent_path(
             str(rag_config.vector_store_config_id), project.path
