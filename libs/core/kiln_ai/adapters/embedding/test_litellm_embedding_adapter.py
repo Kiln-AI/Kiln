@@ -923,7 +923,7 @@ def test_litellm_model_id_custom_provider_ollama_without_base_url():
 
         with pytest.raises(
             ValueError,
-            match="Provider ModelProviderName.ollama must have an explicit base URL",
+            match="Provider ollama must have an explicit base URL",
         ):
             adapter.litellm_model_id
 
@@ -990,7 +990,7 @@ def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
 
         with pytest.raises(
             ValueError,
-            match="Provider ModelProviderName.openai_compatible must have an explicit base URL",
+            match="Provider openai_compatible must have an explicit base URL",
         ):
             adapter.litellm_model_id
 

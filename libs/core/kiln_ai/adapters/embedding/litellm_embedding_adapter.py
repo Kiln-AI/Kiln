@@ -193,7 +193,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         provider_info = get_litellm_provider_info(self.model_provider)
         if provider_info.is_custom and self.litellm_core_config.base_url is None:
             raise ValueError(
-                f"Provider {self.model_provider.name} must have an explicit base URL"
+                f"Provider {self.model_provider.name.value} must have an explicit base URL"
             )
 
         return provider_info.litellm_model_id
