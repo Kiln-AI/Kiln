@@ -39,6 +39,8 @@ class ModelFamily(str, Enum):
     ernie = "ernie"
     minimax = "minimax"
     pangu = "pangu"
+    bytedance = "bytedance"
+    stepfun = "stepfun"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -158,6 +160,7 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
+    kimi_k2_0905 = "kimi_k2_0905"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_5 = "glm_4_5"
     glm_4_5_air = "glm_4_5_air"
@@ -169,6 +172,8 @@ class ModelName(str, Enum):
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
+    bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
+    stepfun_step3 = "stepfun_step3"
 
 
 class ModelParserID(str, Enum):
@@ -2107,13 +2112,19 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="deepseek/deepseek-chat-v3.1",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v3p1",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/deepseek-ai/DeepSeek-V3.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
         ],
@@ -3222,6 +3233,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-4.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
         ],
     ),
     # GLM 4.5 AIR
@@ -3249,6 +3267,13 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-4.5-Air",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
         ],
     ),
     # Kimi K2 Instruct
@@ -3260,8 +3285,9 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-instruct",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                # Ignoring json mode for now, so not suggested for evals
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3281,12 +3307,57 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.groq,
                 model_id="moonshotai/kimi-k2-instruct",
                 supports_data_gen=True,
-                structured_output_mode=StructuredOutputMode.function_calling,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/moonshotai/Kimi-K2-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # Kimi K2 Instruct 0905
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_0905,
+        friendly_name="Kimi K2 0905",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2-0905",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-instruct-0905",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K2-Instruct-0905",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+                # this model on this provider currently fails the tool call test, but might work in the future
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="moonshotai/kimi-k2-instruct-0905",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/moonshotai/Kimi-K2-Instruct-0905",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 suggested_for_evals=True,
@@ -3438,6 +3509,53 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Bytedance
+    KilnModel(
+        family=ModelFamily.bytedance,
+        name=ModelName.bytedance_seed_oss_36b,
+        friendly_name="ByteDance Seed OSS 36B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="bytedance/seed-oss-36b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="ByteDance-Seed/Seed-OSS-36B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                supports_function_calling=False,
+                reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # StepFun
+    KilnModel(
+        family=ModelFamily.stepfun,
+        name=ModelName.stepfun_step3,
+        friendly_name="StepFun Step3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="stepfun-ai/step3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="stepfun-ai/step3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
                 supports_function_calling=False,
             ),
         ],

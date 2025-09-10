@@ -105,7 +105,7 @@ def connect_repair_api(app: FastAPI):
     async def post_repair_run(
         project_id: str, task_id: str, run_id: str, input: RepairRunPost
     ) -> TaskRun:
-        task, run = task_and_run_from_id(project_id, task_id, run_id)
+        _, run = task_and_run_from_id(project_id, task_id, run_id)
 
         # manually edited runs are human but the user id is not set
         source = input.repair_run.output.source
