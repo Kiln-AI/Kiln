@@ -201,7 +201,7 @@ def test_save_sample_success_paid_run(
     return
 
 
-def test_save_sample_success_with_mock_invoke(
+def test_generate_sample_success_with_mock_invoke(
     mock_task_from_id,
     mock_langchain_adapter,
     client,
@@ -223,7 +223,7 @@ def test_save_sample_success_with_mock_invoke(
     # Act
 
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/save_sample?session_id=1234",
+        "/api/projects/proj-ID/tasks/task-ID/generate_sample?session_id=1234",
         json=input_data.model_dump(),
     )
 
@@ -243,6 +243,19 @@ def test_save_sample_success_with_mock_invoke(
     assert response.status_code == 200
     # Verify TaskRun was created with correct properties
     mock_task_from_id.assert_called_once_with("proj-ID", "task-ID")
+
+    # Check none are saved before calling save
+    saved_runs = test_task.runs()
+    assert len(saved_runs) == 0
+
+    # Call save
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/save_sample",
+        json=response.json(),
+    )
+    assert response.status_code == 200
+
+    # Check one is saved after calling save
     saved_runs = test_task.runs()
     assert len(saved_runs) == 1
     saved_run = saved_runs[0]
@@ -260,7 +273,7 @@ def test_save_sample_success_with_mock_invoke(
     assert response.json()["id"] == saved_run.id
 
 
-def test_save_sample_success_with_topic_path(
+def test_generate_sample_success_with_topic_path(
     mock_task_from_id,
     mock_langchain_adapter,
     client,
@@ -279,7 +292,7 @@ def test_save_sample_success_with_topic_path(
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/save_sample",
+        "/api/projects/proj-ID/tasks/task-ID/generate_sample",
         json=input_data.model_dump(),
     )
 
@@ -378,7 +391,7 @@ The topic path for this sample is:
         "empty_guidance",
     ],
 )
-def test_save_sample_guidance_generation(
+def test_generate_sample_guidance_generation(
     mock_task_from_id,
     mock_langchain_adapter,
     client,
@@ -413,7 +426,7 @@ def test_save_sample_guidance_generation(
         )
 
         response = client.post(
-            "/api/projects/proj-ID/tasks/task-ID/save_sample",
+            "/api/projects/proj-ID/tasks/task-ID/generate_sample",
             json=input_data.model_dump(),
         )
 
