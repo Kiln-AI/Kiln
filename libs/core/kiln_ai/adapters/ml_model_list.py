@@ -172,7 +172,7 @@ class ModelName(str, Enum):
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
-    bytedance_seed_oss_36b = "bytedance_seed_oss_36b_instruct"
+    bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     stepfun_step3 = "stepfun_step3"
 
 
