@@ -123,7 +123,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.gemini_api,
-                model_id="gemini_embedding_001",
+                model_id="gemini-embedding-001",
                 n_dimensions=3072,
                 max_input_tokens=2048,
                 supports_custom_dimensions=True,
