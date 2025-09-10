@@ -52,16 +52,18 @@ class OllamaConnection(BaseModel):
 
 
 # Parse the Ollama /api/tags response
-def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
+def parse_ollama_tags(tags: Any) -> OllamaConnection:
     # Build a list of models we support for Ollama from the built-in model list
-    supported_ollama_models = [
-        provider.model_id
-        for model in built_in_models
-        for provider in model.providers
-        if provider.name == ModelProviderName.ollama
-    ]
+    supported_ollama_models = set(
+        [
+            provider.model_id
+            for model in built_in_models
+            for provider in model.providers
+            if provider.name == ModelProviderName.ollama
+        ]
+    )
     # Append model_aliases to supported_ollama_models
-    supported_ollama_models.extend(
+    supported_ollama_models.update(
         [
             alias
             for model in built_in_models
@@ -70,13 +72,15 @@ def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
         ]
     )
 
-    supported_ollama_embedding_models = [
-        provider.model_id
-        for model in built_in_embedding_models
-        for provider in model.providers
-        if provider.name == ModelProviderName.ollama
-    ]
-    supported_ollama_embedding_models.extend(
+    supported_ollama_embedding_models = set(
+        [
+            provider.model_id
+            for model in built_in_embedding_models
+            for provider in model.providers
+            if provider.name == ModelProviderName.ollama
+        ]
+    )
+    supported_ollama_embedding_models.update(
         [
             alias
             for model in built_in_embedding_models
@@ -91,10 +95,21 @@ def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
             model_names = [model["model"] for model in models]
             available_supported_models = []
             untested_models = []
-            supported_models_latest_aliases = [
-                f"{m}:latest" for m in supported_ollama_models
-            ]
+            supported_models_latest_aliases = set(
+                [f"{m}:latest" for m in supported_ollama_models]
+            )
+            supported_embedding_models_latest_aliases = set(
+                [f"{m}:latest" for m in supported_ollama_embedding_models]
+            )
+
             for model in model_names:
+                # Skip embedding models - they should only appear in supported_embedding_models
+                if (
+                    model in supported_ollama_embedding_models
+                    or model in supported_embedding_models_latest_aliases
+                ):
+                    continue
+
                 if (
                     model in supported_ollama_models
                     or model in supported_models_latest_aliases
@@ -104,9 +119,6 @@ def parse_ollama_tags(tags: Any) -> OllamaConnection | None:
                     untested_models.append(model)
 
             available_supported_embedding_models = []
-            supported_embedding_models_latest_aliases = [
-                f"{m}:latest" for m in supported_ollama_embedding_models
-            ]
             for model in model_names:
                 if (
                     model in supported_ollama_embedding_models
@@ -150,3 +162,11 @@ async def get_ollama_connection() -> OllamaConnection | None:
 def ollama_model_installed(conn: OllamaConnection, model_name: str) -> bool:
     all_models = conn.all_models()
     return model_name in all_models or f"{model_name}:latest" in all_models
+
+
+def ollama_embedding_model_installed(conn: OllamaConnection, model_name: str) -> bool:
+    all_embedding_models = conn.all_embedding_models()
+    return (
+        model_name in all_embedding_models
+        or f"{model_name}:latest" in all_embedding_models
+    )
