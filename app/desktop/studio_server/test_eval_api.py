@@ -520,7 +520,7 @@ async def test_eval_config_from_id(
     assert eval_config.config_type == EvalConfigType.g_eval
     assert eval_config.properties == {"eval_steps": ["step1", "step2"]}
 
-    with pytest.raises(HTTPException, match="Eval config not found. ID: non_existent"):
+    with pytest.raises(HTTPException, match=r"Eval config not found. ID: non_existent"):
         eval_config_from_id("project1", "task1", "eval1", "non_existent")
 
 
@@ -537,7 +537,7 @@ async def test_task_run_config_from_id(
     assert run_config.description == "Test Description"
 
     with pytest.raises(
-        HTTPException, match="Task run config not found. ID: non_existent"
+        HTTPException, match=r"Task run config not found. ID: non_existent"
     ):
         task_run_config_from_id("project1", "task1", "non_existent")
 
