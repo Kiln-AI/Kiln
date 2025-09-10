@@ -307,9 +307,7 @@ async def test_run_method():
     evaluator = EvalTester(eval_config, run_config.run_config())
 
     # Run the evaluation
-    task_run, eval_scores, intermediate_outputs = await evaluator.run_task_and_eval(
-        "test input"
-    )
+    task_run, eval_scores, _ = await evaluator.run_task_and_eval("test input")
 
     # Verify task run was created
     assert task_run.input == "test input"
@@ -380,7 +378,7 @@ async def test_run_task_and_eval():
         async def run_eval(self, task_run):
             return {"overall_rating": 5, "quality": 4}, {"thinking": "test thinking"}
 
-    evaluator = MockEval(eval_config, run_config.run_config())
+    evaluator = MockEval(eval_config, run_config.run_config_properties)
 
     # Mock dependencies
     mock_adapter = AsyncMock()

@@ -402,13 +402,13 @@ def test_eval_run_five_star_score_validation(valid_eval_config, valid_eval_run_d
     assert run.scores["accuracy"] == 4.5
 
     # Invalid scores
-    with pytest.raises(ValueError, match="must be a float between 1.0 and 5.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 1.0 and 5.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 0.5}},
         )
 
-    with pytest.raises(ValueError, match="must be a float between 1.0 and 5.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 1.0 and 5.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 5.5}},
@@ -442,13 +442,13 @@ def test_eval_run_pass_fail_score_validation(valid_eval_config, valid_eval_run_d
     assert run.scores["check"] == 0.0
 
     # Invalid scores
-    with pytest.raises(ValueError, match="must be a float between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 0.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"check": -0.1}},
         )
 
-    with pytest.raises(ValueError, match="must be a float between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 0.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"check": 1.1}},
@@ -485,13 +485,13 @@ def test_eval_run_pass_fail_critical_score_validation(
     assert run.scores["critical"] == -1.0
 
     # Invalid scores
-    with pytest.raises(ValueError, match="must be a float between -1.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between -1.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"critical": -1.1}},
         )
 
-    with pytest.raises(ValueError, match="must be a float between -1.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between -1.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"critical": 1.1}},

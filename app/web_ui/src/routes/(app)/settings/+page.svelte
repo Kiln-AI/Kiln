@@ -2,6 +2,7 @@
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
   import { client } from "$lib/api_client"
+  import SettingsSection from "$lib/ui/settings_section.svelte"
 
   async function view_logs() {
     try {
@@ -59,6 +60,17 @@
       ],
     },
     {
+      category: "Tools & MCP",
+      items: [
+        {
+          name: "Manage Tools",
+          description: "Connect your project to tools with MCP servers",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
+          button_text: "Manage Tools",
+        },
+      ],
+    },
+    {
       category: "Projects",
       items: [
         {
@@ -71,7 +83,7 @@
       ],
     },
     {
-      category: "Tools & Support",
+      category: "Help & Resources",
       items: [
         {
           name: "Application Logs",
@@ -81,9 +93,9 @@
           on_click: view_logs,
         },
         {
-          name: "App Updates",
+          name: "Check for Update",
           description:
-            "Check for the latest version of Kiln AI and install updates when available.",
+            "Check if there is a newer version of the Kiln app available.",
           href: "/settings/check_for_update",
           button_text: "Check for Update",
         },
@@ -111,81 +123,7 @@
 <AppPage title="Settings">
   <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
-      <div class="space-y-6">
-        <!-- Category Header -->
-        <div class="pb-3 border-b border-gray-200">
-          <h2 class="text-lg font-medium text-gray-900">{section.category}</h2>
-        </div>
-
-        <!-- Category Items -->
-        <div class="space-y-1">
-          {#each section.items as item}
-            {#if item.href}
-              <a
-                href={item.href}
-                target={item.is_external ? "_blank" : null}
-                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer"
-              >
-                <div class="flex-1 min-w-0">
-                  <h3 class="text-base font-medium text-gray-900 mb-1">
-                    {item.name}
-                  </h3>
-                  <p class="text-sm font-light text-gray-500 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div class="flex-shrink-0 ml-6">
-                  <div
-                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
-                    style="min-width: 12rem;"
-                  >
-                    {item.button_text}
-                    {#if item.is_external}
-                      <svg
-                        class="w-3 h-3"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                        ></path>
-                      </svg>
-                    {/if}
-                  </div>
-                </div>
-              </a>
-            {:else if item.on_click}
-              <button
-                on:click={item.on_click}
-                class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
-              >
-                <div class="flex-1 min-w-0">
-                  <h3 class="text-base font-medium text-gray-900 mb-1">
-                    {item.name}
-                  </h3>
-                  <p class="text-sm font-light text-gray-500 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div class="flex-shrink-0 ml-6">
-                  <div
-                    class="btn btn-mid group-hover:btn-primary transition-colors duration-200"
-                    style="min-width: 12rem;"
-                  >
-                    {item.button_text}
-                  </div>
-                </div>
-              </button>
-            {/if}
-          {/each}
-        </div>
-      </div>
+      <SettingsSection title={section.category} items={section.items} />
     {/each}
   </div>
 </AppPage>

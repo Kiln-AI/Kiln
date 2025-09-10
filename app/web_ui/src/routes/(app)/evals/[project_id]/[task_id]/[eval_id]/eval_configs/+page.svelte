@@ -24,6 +24,7 @@
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
   import posthog from "posthog-js"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   let score_legend_dialog: Dialog | null = null
 
@@ -275,11 +276,6 @@
     }
   }
 
-  type UiProperty = {
-    name: string
-    value: string
-  }
-
   function get_eval_properties(
     evaluator: Eval,
     score_summary: EvalConfigCompareSummary | null,
@@ -421,6 +417,16 @@
   subtitle="Find the judge that best matches human preferences"
   sub_subtitle="Read the docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
+  breadcrumbs={[
+    {
+      label: "Evals",
+      href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+    },
+    {
+      label: evaluator?.name || "Eval",
+      href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+    },
+  ]}
   action_buttons={eval_configs?.length
     ? [
         {

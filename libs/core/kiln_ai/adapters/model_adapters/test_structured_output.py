@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 from typing import Dict
+from unittest.mock import Mock, patch
 
 import pytest
+from litellm.types.utils import ModelResponse
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -11,7 +13,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput,
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
 
@@ -40,8 +42,8 @@ async def test_structured_output_ollama(tmp_path, model_name):
 class MockAdapter(BaseAdapter):
     def __init__(self, kiln_task: datamodel.Task, response: Dict | str | None):
         super().__init__(
-            run_config=RunConfig(
-                task=kiln_task,
+            task=kiln_task,
+            run_config=RunConfigProperties(
                 model_name="phi_3_5",
                 model_provider_name="ollama",
                 prompt_id="simple_chain_of_thought_prompt_builder",
@@ -259,6 +261,7 @@ async def run_structured_input_task(
     model_name: str,
     provider: str,
     prompt_id: PromptId,
+    verify_trace_cot: bool = False,
 ):
     response, a, run = await run_structured_input_task_no_validation(
         task, model_name, provider, prompt_id
@@ -282,6 +285,32 @@ async def run_structured_input_task(
         assert "reasoning" in run.intermediate_outputs
         assert isinstance(run.intermediate_outputs["reasoning"], str)
 
+    # Check the trace
+    trace = run.trace
+    assert trace is not None
+    if verify_trace_cot:
+        assert len(trace) == 5
+        assert trace[0]["role"] == "system"
+        assert "You are an assistant which classifies a triangle" in trace[0]["content"]
+        assert trace[1]["role"] == "user"
+        assert trace[2]["role"] == "assistant"
+        assert trace[2].get("tool_calls") is None
+        assert trace[3]["role"] == "user"
+        assert trace[4]["role"] == "assistant"
+        assert trace[4].get("tool_calls") is None
+    else:
+        assert len(trace) == 3
+        assert trace[0]["role"] == "system"
+        assert "You are an assistant which classifies a triangle" in trace[0]["content"]
+        assert trace[1]["role"] == "user"
+        json_content = json.loads(trace[1]["content"])
+        assert json_content["a"] == 2
+        assert json_content["b"] == 2
+        assert json_content["c"] == 2
+        assert trace[2]["role"] == "assistant"
+        assert trace[2].get("tool_calls") is None
+        assert "[[equilateral]]" in trace[2]["content"]
+
 
 @pytest.mark.paid
 async def test_structured_input_gpt_4o_mini(tmp_path):
@@ -299,14 +328,91 @@ async def test_all_built_in_models_structured_input(
     )
 
 
+async def test_all_built_in_models_structured_input_mocked(tmp_path):
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "The answer is [[equilateral]]",
+                }
+            }
+        ],
+    )
+
+    # Mock the Config.shared() method to return a mock config with required attributes
+    mock_config = Mock()
+    mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.user_id = "test_user"
+
+    with (
+        patch(
+            "litellm.acompletion",
+            side_effect=[mock_response],
+        ),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
+    ):
+        await run_structured_input_test(
+            tmp_path, "llama_3_1_8b", "groq", "simple_prompt_builder"
+        )
+
+
 @pytest.mark.paid
 @pytest.mark.ollama
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
 async def test_structured_input_cot_prompt_builder(tmp_path, model_name, provider_name):
     task = build_structured_input_test_task(tmp_path)
     await run_structured_input_task(
-        task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
+        task,
+        model_name,
+        provider_name,
+        "simple_chain_of_thought_prompt_builder",
+        verify_trace_cot=True,
     )
+
+
+async def test_structured_input_cot_prompt_builder_mocked(tmp_path):
+    task = build_structured_input_test_task(tmp_path)
+    mock_response_1 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "I'm thinking real hard... oh!",
+                }
+            }
+        ],
+    )
+    mock_response_2 = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "After thinking, I've decided the answer is [[equilateral]]",
+                }
+            }
+        ],
+    )
+
+    # Mock the Config.shared() method to return a mock config with required attributes
+    mock_config = Mock()
+    mock_config.open_ai_api_key = "mock_api_key"
+    mock_config.user_id = "test_user"
+
+    with (
+        patch(
+            "litellm.acompletion",
+            side_effect=[mock_response_1, mock_response_2],
+        ),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
+    ):
+        await run_structured_input_task(
+            task,
+            "llama_3_1_8b",
+            "groq",
+            "simple_chain_of_thought_prompt_builder",
+            verify_trace_cot=True,
+        )
 
 
 @pytest.mark.paid
@@ -350,7 +456,7 @@ When asked for a final result, this is the format (for an equilateral example):
 """
     task.output_json_schema = json.dumps(triangle_schema)
     task.save_to_file()
-    response, adapter, _ = await run_structured_input_task_no_validation(
+    response, _, _ = await run_structured_input_task_no_validation(
         task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
     )
 

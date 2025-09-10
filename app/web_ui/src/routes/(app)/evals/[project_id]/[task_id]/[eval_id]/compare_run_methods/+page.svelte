@@ -36,6 +36,7 @@
   import AddRunMethod from "./add_run_method.svelte"
   import posthog from "posthog-js"
   import { prompt_link } from "$lib/utils/link_builder"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -231,11 +232,6 @@
     }
   }
 
-  type UiProperty = {
-    name: string
-    value: string
-  }
-
   // A dropdown name for the eval config that is human readable and helpful
   // Combine's it's name with it's properties
   function get_eval_config_name(
@@ -411,6 +407,16 @@
   subtitle="Find the best method of running your task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
+  breadcrumbs={[
+    {
+      label: "Evals",
+      href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+    },
+    {
+      label: evaluator?.name || "Eval",
+      href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+    },
+  ]}
   action_buttons={[
     {
       label: "Compare Judges",
