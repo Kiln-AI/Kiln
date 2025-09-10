@@ -3345,6 +3345,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 suggested_for_evals=True,
+                # this model on this provider currently fails the tool call test, but might work in the future
+                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.groq,
@@ -3547,12 +3549,14 @@ built_in_models: List[KilnModel] = [
                 model_id="stepfun-ai/step3",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="stepfun-ai/step3",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+                supports_function_calling=False,
             ),
         ],
     ),
