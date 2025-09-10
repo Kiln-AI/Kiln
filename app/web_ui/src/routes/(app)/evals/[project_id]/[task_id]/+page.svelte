@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import EmptyEvaluator from "./empty_eval.svelte"
-  import type { Eval, TaskRunConfig } from "$lib/types"
+  import type { Eval } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
@@ -14,10 +14,15 @@
     prompt_name_from_id,
     current_task_prompts,
   } from "$lib/stores"
+  import {
+    load_task_run_configs,
+    task_run_configs_by_task_id,
+  } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
+  $: current_task_run_configs = $task_run_configs_by_task_id[task_id] || []
 
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
@@ -42,7 +47,7 @@
     // Usually cached and fast
     load_model_info()
     // Load the evals and run configs in parallel
-    Promise.all([get_evals(), get_run_configs()])
+    Promise.all([get_evals(), load_task_run_configs(project_id, task_id)])
   })
 
   async function get_evals() {
@@ -70,40 +75,10 @@
     }
   }
 
-  let run_configs: TaskRunConfig[] | null = null
-  let run_configs_error: KilnError | null = null
-  let run_configs_loading = true
-
-  async function get_run_configs() {
-    // "/api/projects/{project_id}/tasks/{task_id}/task_run_configs"
-    try {
-      run_configs_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      run_configs = data
-    } catch (error) {
-      run_configs_error = createKilnError(error)
-    } finally {
-      run_configs_loading = false
-    }
-  }
-
   let toggle_eval_favourite_error: KilnError | null = null
 
-  $: loading = evals_loading || run_configs_loading
-  $: error = evals_error || run_configs_error || toggle_eval_favourite_error
+  $: loading = evals_loading
+  $: error = evals_error || toggle_eval_favourite_error
 
   async function toggle_eval_favourite(evaluator: Eval) {
     try {
@@ -245,7 +220,7 @@
         </thead>
         <tbody>
           {#each sorted_evals as evaluator}
-            {@const run_config = run_configs?.find(
+            {@const run_config = current_task_run_configs?.find(
               (run_config) => run_config.id === evaluator.current_run_config_id,
             )}
             {@const prompt_href = run_config?.run_config_properties.prompt_id

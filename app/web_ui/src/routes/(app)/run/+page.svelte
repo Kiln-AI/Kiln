@@ -7,6 +7,10 @@
     available_models,
     available_model_details,
   } from "$lib/stores"
+  import {
+    load_task_run_configs,
+    run_config_from_id,
+  } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
@@ -17,13 +21,15 @@
     TaskRun,
     StructuredOutputMode,
     AvailableModels,
+    TaskRunConfig,
   } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import RunInputForm from "./run_input_form.svelte"
-  import RunOptions from "$lib/ui/run_options.svelte"
+  import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import posthog from "posthog-js"
   import { tick } from "svelte"
+  import RunOptionsDropdown from "./run_options_dropdown.svelte"
 
   let error: KilnError | null = null
   let submitting = false
@@ -32,15 +38,80 @@
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
 
-  let prompt_method = "simple_prompt_builder"
-  let model: string = $ui_state.selected_model
-  let temperature: number
-  let top_p: number
-  let structured_output_mode: StructuredOutputMode
-  let tools: string[] = []
+  let selected_run_config: string = "custom"
+  // Options object to encapsulate all run configuration values
+  let options = createDefaultCustomOptions()
 
-  $: model_name = model ? model.split("/").slice(1).join("/") : ""
-  $: provider = model ? model.split("/")[0] : ""
+  $: model_name = options.model
+    ? options.model.split("/").slice(1).join("/")
+    : ""
+  $: provider = options.model ? options.model.split("/")[0] : ""
+
+  // Update form values when selected_run_config changes
+  $: if (selected_run_config) {
+    if (selected_run_config === "custom") {
+      // Reset to default values
+      options = createDefaultCustomOptions()
+    } else {
+      // Populate values from saved configuration
+      const task_run_config = run_config_from_id(selected_run_config, task_id)
+      if (task_run_config) {
+        options = createOptionsFromConfig(task_run_config)
+      }
+    }
+  }
+
+  // Helper function to create default custom options
+  function createDefaultCustomOptions() {
+    return {
+      prompt_method: "simple_prompt_builder",
+      model: $ui_state.selected_model,
+      // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
+      temperature: 1.0,
+      top_p: 1.0,
+      structured_output_mode: "default" as StructuredOutputMode,
+      tools: [] as string[],
+    }
+  }
+
+  // Helper function to create options from a task run config
+  function createOptionsFromConfig(task_run_config: TaskRunConfig) {
+    return {
+      model: `${task_run_config.run_config_properties.model_provider_name}/${task_run_config.run_config_properties.model_name}`,
+      prompt_method: task_run_config.run_config_properties.prompt_id,
+      temperature: task_run_config.run_config_properties.temperature,
+      top_p: task_run_config.run_config_properties.top_p,
+      structured_output_mode:
+        task_run_config.run_config_properties.structured_output_mode,
+      tools: task_run_config.run_config_properties.tools_config?.tools || [],
+    }
+  }
+
+  // Function to check if current values differ from selected run config
+  function checkForManualChanges() {
+    if (selected_run_config !== "custom") {
+      const task_run_config = run_config_from_id(selected_run_config, task_id)
+      if (task_run_config) {
+        const config_options = createOptionsFromConfig(task_run_config)
+
+        // Check if any values have changed from the saved config
+        if (
+          options.model !== config_options.model ||
+          options.prompt_method !== config_options.prompt_method ||
+          options.temperature !== config_options.temperature ||
+          options.top_p !== config_options.top_p ||
+          options.structured_output_mode !==
+            config_options.structured_output_mode ||
+          JSON.stringify(options.tools) !== JSON.stringify(config_options.tools)
+        ) {
+          selected_run_config = "custom"
+        }
+      }
+    }
+  }
+
+  // Check for manual changes when form values change
+  $: options, checkForManualChanges()
 
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
@@ -51,7 +122,13 @@
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
   $: input_schema = $current_task?.input_json_schema
   $: requires_structured_output = !!$current_task?.output_json_schema
-  $: requires_tools = tools.length > 0
+  $: requires_tool_support = options.tools.length > 0
+  $: task_id = $current_task?.id || ""
+
+  // Load run configs when both project and task are available
+  $: if ($current_project?.id && $current_task?.id) {
+    load_task_run_configs($current_project.id, $current_task.id)
+  }
 
   // Model defaults come from available_models store
 
@@ -62,7 +139,7 @@
     provider: string,
     available_models: AvailableModels[],
   ) {
-    structured_output_mode =
+    options.structured_output_mode =
       available_model_details(model_name, provider, available_models)
         ?.structured_output_mode || "default"
   }
@@ -113,7 +190,7 @@
       run_complete = false
       model_dropdown_error_message = null
       let selected_model = model_dropdown.get_selected_model()
-      if (!selected_model || selected_model != model) {
+      if (!selected_model || selected_model != options.model) {
         model_dropdown_error_message = "Required"
         throw new Error("You must select a model before running")
       }
@@ -124,20 +201,19 @@
         params: {
           path: {
             project_id: $current_project?.id || "",
-            task_id: $current_task?.id || "",
+            task_id: task_id,
           },
         },
         body: {
           run_config_properties: {
             model_name: model_name,
-            // @ts-expect-error server will catch if enum is not valid
             model_provider_name: provider,
-            prompt_id: prompt_method,
-            temperature: temperature,
-            top_p: top_p,
-            structured_output_mode: structured_output_mode,
+            prompt_id: options.prompt_method,
+            temperature: options.temperature,
+            top_p: options.top_p,
+            structured_output_mode: options.structured_output_mode,
             tools_config: {
-              tools: tools,
+              tools: options.tools,
             },
           },
           plaintext_input: input_form.get_plaintext_input_data(),
@@ -152,7 +228,7 @@
       posthog.capture("run_task", {
         model_name: model_name,
         provider: provider,
-        prompt_method: prompt_method,
+        prompt_method: options.prompt_method,
       })
       response = data
     } catch (e) {
@@ -201,32 +277,35 @@
       <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
         <div class="text-xl font-bold">Options</div>
         <div>
-          <PromptTypeSelector
-            bind:prompt_method
-            info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-            bind:linked_model_selection={model}
-          />
+          <RunOptionsDropdown bind:selected_run_config />
         </div>
         <AvailableModelsDropdown
-          bind:model
+          bind:model={options.model}
           bind:requires_structured_output
-          bind:requires_tool_support={requires_tools}
+          bind:requires_tool_support
           bind:error_message={model_dropdown_error_message}
           bind:this={model_dropdown}
         />
+        <div>
+          <PromptTypeSelector
+            bind:prompt_method={options.prompt_method}
+            info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+            bind:linked_model_selection={options.model}
+          />
+        </div>
         {#if $current_project?.id}
           <Collapse
             title="Advanced Options"
-            badge={tools.length > 0 ? "" + tools.length : null}
+            badge={options.tools.length > 0 ? "" + options.tools.length : null}
           >
-            <RunOptions
-              bind:tools
-              bind:temperature
-              bind:top_p
-              bind:structured_output_mode
+            <AdvancedRunOptions
+              bind:tools={options.tools}
+              bind:temperature={options.temperature}
+              bind:top_p={options.top_p}
+              bind:structured_output_mode={options.structured_output_mode}
               has_structured_output={requires_structured_output}
               project_id={$current_project?.id}
-              task_id={$current_task?.id || ""}
+              {task_id}
             />
           </Collapse>
         {/if}

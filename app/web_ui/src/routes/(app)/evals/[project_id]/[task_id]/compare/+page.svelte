@@ -6,7 +6,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
-  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { createKilnError } from "$lib/utils/error_handlers"
   import type {
     AvailableModels,
     PromptResponse,
@@ -30,6 +30,10 @@
     available_models,
   } from "$lib/stores"
   import {
+    load_task_run_configs,
+    task_run_configs_by_task_id,
+  } from "$lib/stores/run_configs_store"
+  import {
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
@@ -44,9 +48,7 @@
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
 
   // Run configs state
-  let task_run_configs: TaskRunConfig[] | null = null
   let loading = true
-  let error: KilnError | null = null
 
   // Eval scores cache and state
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
@@ -75,7 +77,7 @@
 
   // Restore model selections from URL after data is loaded
   function restoreStateFromURL() {
-    if (!task_run_configs) return
+    if (!current_task_run_configs) return
 
     const urlParams = new URLSearchParams($page.url.search)
     const urlModels = urlParams.get("models")
@@ -88,7 +90,7 @@
         const modelId = modelIds[i]
         if (
           modelId &&
-          task_run_configs.find((config) => config.id === modelId)
+          current_task_run_configs.find((config) => config.id === modelId)
         ) {
           selectedModels[i] = modelId
         }
@@ -132,7 +134,7 @@
       load_available_prompts(),
       load_available_models(),
     ])
-    await get_task_run_configs()
+    await load_task_run_configs(project_id, task_id)
 
     // Now that data is loaded, restore full state from URL
     restoreStateFromURL()
@@ -140,31 +142,6 @@
     // Mark initialization as complete
     isInitializing = false
   })
-
-  async function get_task_run_configs() {
-    try {
-      loading = true
-      const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-        },
-      )
-      if (fetch_error) {
-        throw fetch_error
-      }
-      task_run_configs = data
-    } catch (err) {
-      error = createKilnError(err)
-    } finally {
-      loading = false
-    }
-  }
 
   async function fetch_eval_scores(run_config_id: string) {
     if (
@@ -293,8 +270,10 @@
   }
 
   // Generate dropdown options from run configs
+  $: current_task_run_configs = $task_run_configs_by_task_id[task_id] || []
+
   $: modelOptions = generateRunConfigOptions(
-    task_run_configs,
+    current_task_run_configs,
     $current_task_prompts,
     $available_models,
   )
@@ -467,8 +446,10 @@
   }
 
   function getSelectedRunConfig(modelKey: string | null): TaskRunConfig | null {
-    if (!modelKey || !task_run_configs) return null
-    return task_run_configs.find((config) => config.id === modelKey) || null
+    if (!modelKey || !current_task_run_configs) return null
+    return (
+      current_task_run_configs.find((config) => config.id === modelKey) || null
+    )
   }
 
   function getPercentageDifference(
@@ -523,15 +504,6 @@
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Run Methods</div>
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
-      </div>
     </div>
   {:else}
     {@const hasSelectedModels = selectedModels.filter((m) => m !== null)}
@@ -864,6 +836,6 @@
     ) {
       selectedModels[target_new_run_config_col] = task_run_config.id || null
     }
-    get_task_run_configs()
+    load_task_run_configs(project_id, task_id)
   }}
 />
