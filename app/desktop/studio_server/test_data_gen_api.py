@@ -51,7 +51,7 @@ def test_task(tmp_path) -> Task:
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
-    project = Project(name="Test Project", path=str(project_path))
+    project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
     task = Task(name="Test Task", instruction="Test Instruction", parent=project)
@@ -101,7 +101,7 @@ def test_generate_categories_success(
     input_data = DataGenCategoriesApiInput(
         node_path=["parent", "child"],
         num_subtopics=4,
-        human_guidance="Generate tech categories",
+        guidance="Generate tech categories",
         gen_type="eval",
         model_name="gpt-4",
         provider="openai",
