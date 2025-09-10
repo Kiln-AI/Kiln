@@ -39,16 +39,37 @@
     expandedSamples = new Array(data.samples.length).fill(false)
   }
 
-  function formatExpandedSample(sample: SampleData): string {
+  function formatExpandedSample(data: string): string {
     // If JSON, pretty format it
     try {
-      const json = JSON.parse(sample.input)
+      const json = JSON.parse(data)
       return JSON.stringify(json, null, 2)
     } catch (e) {
       // Not JSON
     }
 
-    return sample.input
+    return data
+  }
+
+  function formatSampleOutput(
+    response: SampleData,
+    format_json: boolean,
+  ): string {
+    if (response.saved_id && !response.output) {
+      // Special case for people upgrading with partly saved datasets in their indexedDB.
+      // We know it's been saved and should say so, but not available for preview.
+      return "Output previously saved to dataset, but not available for preview."
+    }
+
+    let output = response.output?.output.output || null
+    if (!output) {
+      return "Not Generated"
+    }
+
+    if (format_json) {
+      return formatExpandedSample(output)
+    }
+    return output
   }
 
   // Export these so we can share a var across all nodes -- makes it nicer if the UI saves the last value
@@ -309,10 +330,20 @@
         class="w-full block text-left flex-1 font-mono text-sm overflow-hidden py-2"
       >
         {#if expandedSamples[index]}
-          <pre class="whitespace-pre-wrap">{formatExpandedSample(sample)}</pre>
+          <pre class="whitespace-pre-wrap">Input: {formatExpandedSample(
+              sample.input,
+            )}</pre>
+          <pre class="whitespace-pre-wrap">Output: {formatSampleOutput(
+              sample,
+              true,
+            )}</pre>
         {:else}
-          <div class="truncate w-0 min-w-full">{sample.input}</div>
+          <div class="truncate w-0 min-w-full">Input: {sample.input}</div>
+          <div class="truncate w-0 min-w-full">
+            Output: {formatSampleOutput(sample, false)}
+          </div>
         {/if}
+        <div class="text-xs text-gray-500">Saved ID: {sample.saved_id}</div>
       </button>
       <div
         class="hover-action flex flex-row text-sm gap-x-4 gap-y-1 text-gray-500 font-light px-4"

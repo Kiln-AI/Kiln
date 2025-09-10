@@ -65,6 +65,7 @@
       if (input) {
         topic.samples.push({
           input: input,
+          output: null,
           saved_id: null,
           model_name,
           model_provider,

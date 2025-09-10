@@ -25,6 +25,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { get } from "svelte/store"
   import posthog from "posthog-js"
+  import type { TaskRunOutput } from "$lib/types"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -113,7 +114,7 @@
   }
 
   // Function to trigger save when data changes
-  function triggerSave() {
+  function triggerSaveUiState() {
     saved_state.update((s) => s)
   }
 
@@ -301,12 +302,24 @@
     }
   }
 
+  function show_generate_all_modal() {
+    // Reset the modal state unless it was already running
+    if (!generate_all_running) {
+      generate_all_completed = false
+      generate_all_error = null
+      update_status()
+    }
+
+    // @ts-expect-error showModal is not a method on HTMLElement
+    document.getElementById("generate_all_dialog")?.showModal()
+  }
+
   function show_save_all_modal() {
     // Reset the modal state unless it was already running
     if (!save_all_running) {
       save_all_completed = false
       save_all_error = null
-      update_data_for_save()
+      update_status()
     }
 
     // @ts-expect-error showModal is not a method on HTMLElement
@@ -314,17 +327,25 @@
   }
 
   // Two functions for recursive collection of data to save.
+  let already_generated_count = 0
+  let samples_to_generate: SampleData[] = []
+  let generated_count = 0
   let already_saved_count = 0
-  let samples_to_save: SampleData[] = []
   let saved_count = 0
+  let samples_to_save: SampleData[] = []
   function visit_node_for_collection(node: SampleDataNode, path: string[]) {
     const topic_path = node.topic ? [...path, node.topic] : path
     node.samples.forEach((sample) => {
-      if (sample.saved_id) {
-        already_saved_count++
+      if (sample.output) {
+        already_generated_count++
       } else {
         // Path may not have been set yet
         sample.topic_path = topic_path
+        samples_to_generate.push(sample)
+      }
+      if (sample.saved_id) {
+        already_saved_count++
+      } else if (sample.output) {
         samples_to_save.push(sample)
       }
     })
@@ -333,13 +354,20 @@
     })
   }
 
-  function update_data_for_save() {
-    saved_count = 0
+  function update_status() {
+    generated_count = 0
+    already_generated_count = 0
+    samples_to_generate = []
     already_saved_count = 0
+    saved_count = 0
     samples_to_save = []
     visit_node_for_collection($saved_state.root_node, [])
   }
 
+  let generate_all_running = false
+  let generate_all_error: KilnError | null = null
+  let generate_all_sub_errors: KilnError[] = []
+  let generate_all_completed = false
   let save_all_running = false
   let save_all_error: KilnError | null = null
   let save_all_sub_errors: KilnError[] = []
@@ -347,7 +375,7 @@
   let ui_show_errors = false
 
   // Worker function that processes items until queue is empty
-  async function worker(
+  async function generate_worker(
     queue: SampleData[],
     model_name: string,
     provider: string,
@@ -355,7 +383,7 @@
   ) {
     while (queue.length > 0) {
       const sample = queue.shift()!
-      const result = await save_sample(
+      const result = await generate_sample(
         sample,
         model_name,
         provider,
@@ -364,18 +392,47 @@
       )
 
       if (result.error) {
-        save_all_sub_errors.push(result.error)
+        generate_all_sub_errors.push(result.error)
         // Trigger reactivity
-        save_all_sub_errors = save_all_sub_errors
-      } else if (!result.saved_id) {
-        save_all_sub_errors.push(new KilnError("No ID returned from server"))
+        generate_all_sub_errors = generate_all_sub_errors
+      } else if (!result.output) {
+        generate_all_sub_errors.push(
+          new KilnError("No output returned from server"),
+        )
         // Trigger reactivity
-        save_all_sub_errors = save_all_sub_errors
+        generate_all_sub_errors = generate_all_sub_errors
       } else {
-        sample.saved_id = result.saved_id
-        saved_count++
-        triggerSave()
+        sample.output = result.output
+        generated_count++
+        triggerSaveUiState()
       }
+    }
+  }
+
+  async function generate_all_samples() {
+    try {
+      generate_all_running = true
+      generate_all_error = null
+      generate_all_completed = false
+      generate_all_sub_errors = []
+      const provider = model.split("/")[0]
+      const model_name = model.split("/").slice(1).join("/")
+
+      const queue = [...samples_to_generate]
+
+      // Create and start 5 workers
+      // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
+      const workers = Array(5)
+        .fill(null)
+        .map(() => generate_worker(queue, model_name, provider, prompt_method))
+
+      // Wait for all workers to complete
+      await Promise.all(workers)
+    } catch (e) {
+      generate_all_error = createKilnError(e)
+    } finally {
+      generate_all_running = false
+      generate_all_completed = true
     }
   }
 
@@ -385,19 +442,42 @@
       save_all_error = null
       save_all_completed = false
       save_all_sub_errors = []
-      const provider = model.split("/")[0]
-      const model_name = model.split("/").slice(1).join("/")
+      for (const sample of samples_to_save) {
+        try {
+          if (!sample.output) {
+            continue
+          }
+          const { data, error } = await client.POST(
+            "/api/projects/{project_id}/tasks/{task_id}/save_sample",
+            {
+              params: {
+                path: { project_id, task_id },
+              },
+              body: sample.output,
+            },
+          )
 
-      const queue = [...samples_to_save]
-
-      // Create and start 5 workers
-      // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
-      const workers = Array(5)
-        .fill(null)
-        .map(() => worker(queue, model_name, provider, prompt_method))
-
-      // Wait for all workers to complete
-      await Promise.all(workers)
+          if (error) {
+            save_all_sub_errors.push(createKilnError(error))
+            // Trigger reactivity
+            save_all_sub_errors = save_all_sub_errors
+          } else if (!data || !data.id) {
+            save_all_sub_errors.push(
+              new KilnError("Unknow error saving sample"),
+            )
+            // Trigger reactivity
+            save_all_sub_errors = save_all_sub_errors
+          } else {
+            sample.saved_id = data.id
+            saved_count++
+            triggerSaveUiState()
+          }
+        } catch (e) {
+          save_all_sub_errors.push(createKilnError(e))
+          // Trigger reactivity
+          save_all_sub_errors = save_all_sub_errors
+        }
+      }
     } catch (e) {
       save_all_error = createKilnError(e)
     } finally {
@@ -406,18 +486,18 @@
     }
   }
 
-  type SaveSampleResponse = {
-    saved_id: string | null
+  type GenerateSampleResponse = {
+    output: TaskRunOutput | null
     error: KilnError | null
   }
 
-  async function save_sample(
+  async function generate_sample(
     sample: SampleData,
     model_name: string,
     provider: string,
     prompt_method: string,
     topic_path: string[] | undefined,
-  ): Promise<SaveSampleResponse> {
+  ): Promise<GenerateSampleResponse> {
     try {
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
@@ -431,7 +511,7 @@
         data,
         response,
       } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/save_sample",
+        "/api/projects/{project_id}/tasks/{task_id}/generate_sample",
         {
           params: {
             path: {
@@ -467,10 +547,10 @@
         prompt_method: prompt_method,
       })
 
-      return { saved_id: data.id, error: null }
+      return { output: data, error: null }
     } catch (e) {
       const error = createKilnError(e)
-      return { saved_id: null, error }
+      return { output: null, error }
     }
   }
 
@@ -568,9 +648,15 @@
           </button>
           <button
             class="btn btn-mid btn-outline btn-primary"
+            on:click={show_generate_all_modal}
+          >
+            Generate All Model Outputs
+          </button>
+          <button
+            class="btn btn-mid btn-outline btn-primary"
             on:click={show_save_all_modal}
           >
-            Save All Model Outputs
+            Save All to Dataset
           </button>
         </div>
       {/if}
@@ -579,7 +665,7 @@
           data={$saved_state.root_node}
           path={[]}
           {guidance_data}
-          {triggerSave}
+          triggerSave={triggerSaveUiState}
           bind:num_subtopics_to_generate
           bind:num_samples_to_generate
           bind:this={root_node_component}
@@ -606,6 +692,138 @@
     {/if}
   </AppPage>
 </div>
+
+<dialog id="generate_all_dialog" class="modal">
+  <div class="modal-box">
+    <form method="dialog">
+      <button
+        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
+        >✕</button
+      >
+    </form>
+
+    {#if generate_all_running}
+      <div class="min-h-[200px] flex flex-col justify-center items-center">
+        <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+        <progress
+          class="progress w-56 progress-success"
+          value={generated_count}
+          max={samples_to_generate.length}
+        ></progress>
+        <div class="font-light text-xs text-center mt-1">
+          {generated_count} of {samples_to_generate.length}
+          {#if generate_all_sub_errors && generate_all_sub_errors.length > 0}
+            complete — {generate_all_sub_errors.length} failed
+          {/if}
+        </div>
+      </div>
+    {:else if generate_all_completed}
+      <div
+        class="text-center flex flex-col items-center justify-center min-h-[150px] p-12"
+      >
+        {#if generated_count > 0}
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+          <svg
+            fill="currentColor"
+            class="size-10 text-success mb-2"
+            viewBox="0 0 56 56"
+            xmlns="http://www.w3.org/2000/svg"
+            ><path
+              d="M 27.9999 51.9063 C 41.0546 51.9063 51.9063 41.0781 51.9063 28 C 51.9063 14.9453 41.0312 4.0937 27.9765 4.0937 C 14.8983 4.0937 4.0937 14.9453 4.0937 28 C 4.0937 41.0781 14.9218 51.9063 27.9999 51.9063 Z M 27.9999 47.9219 C 16.9374 47.9219 8.1014 39.0625 8.1014 28 C 8.1014 16.9609 16.9140 8.0781 27.9765 8.0781 C 39.0155 8.0781 47.8983 16.9609 47.9219 28 C 47.9454 39.0625 39.0390 47.9219 27.9999 47.9219 Z M 25.0468 39.7188 C 25.8202 39.7188 26.4530 39.3437 26.9452 38.6172 L 38.5234 20.4063 C 38.8046 19.9375 39.0858 19.3984 39.0858 18.8828 C 39.0858 17.8047 38.1483 17.1484 37.1640 17.1484 C 36.5312 17.1484 35.9452 17.5 35.5234 18.2031 L 24.9296 35.1484 L 19.4921 28.1172 C 18.9765 27.4141 18.4140 27.1563 17.7812 27.1563 C 16.7499 27.1563 15.9296 28 15.9296 29.0547 C 15.9296 29.5703 16.1405 30.0625 16.4687 30.5078 L 23.0312 38.6172 C 23.6640 39.3906 24.2733 39.7188 25.0468 39.7188 Z"
+            /></svg
+          >
+        {/if}
+        <div class="font-medium">Generated {generated_count} new items.</div>
+        <div class="font-light text-sm">
+          You can view them below. Once happy, select "Save All".
+        </div>
+        {#if generate_all_sub_errors.length > 0}
+          <div class="text-error font-light text-sm mt-4">
+            {generate_all_sub_errors.length} samples failed to generate. Running
+            again may resolve transient issues.
+            <button
+              class="link"
+              on:click={() => (ui_show_errors = !ui_show_errors)}
+            >
+              {ui_show_errors ? "Hide Errors" : "Show Errors"}
+            </button>
+          </div>
+          <div
+            class="flex flex-col gap-2 mt-4 text-xs text-error {ui_show_errors
+              ? ''
+              : 'hidden'}"
+          >
+            {#each generate_all_sub_errors as error}
+              <div>{error.getMessage()}</div>
+            {/each}
+          </div>
+        {/if}
+        {#if generate_all_error}
+          <div class="text-error font-light text-sm mt-4">
+            Error message: {generate_all_error.getMessage() ||
+              "An unknown error occurred"}
+          </div>
+        {/if}
+      </div>
+    {:else if samples_to_generate.length == 0}
+      <div
+        class="flex flex-col items-center justify-center min-h-[150px] gap-2"
+      >
+        <div class="font-medium">No Items to Save</div>
+        <div class="font-light">
+          Generate model inputs before attempting to save model outputs.
+        </div>
+        {#if already_generated_count > 0}
+          <div class="font-light text-sm">
+            {already_generated_count} existing items already generated.
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <h3 class="text-lg font-bold">Generate Model Outputs</h3>
+      <p class="text-sm font-light mb-5">
+        Run your task on each generated model input to generate model outputs.
+      </p>
+      <FormContainer
+        submit_label="Generate"
+        bind:submitting={generate_all_running}
+        bind:error={generate_all_error}
+        on:submit={generate_all_samples}
+      >
+        <div>
+          <div class="font-medium text-sm">Status</div>
+          <div class="font-light">
+            {samples_to_generate.length} items pending
+            {#if already_generated_count > 0}
+              / {already_generated_count} already generated
+            {/if}
+          </div>
+        </div>
+        <AvailableModelsDropdown
+          requires_data_gen={true}
+          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
+            $selected_template,
+          )}
+          requires_structured_output={task?.output_json_schema ? true : false}
+          suggested_mode={guidance_data.suggest_uncensored($selected_template)
+            ? "uncensored_data_gen"
+            : "data_gen"}
+          bind:model
+        />
+        <div>
+          <SynthDataGuidance guidance_type="outputs" {guidance_data} />
+        </div>
+
+        <div class="mb-2">
+          <PromptTypeSelector bind:prompt_method />
+        </div>
+      </FormContainer>
+    {/if}
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>
 
 <dialog id="save_all_dialog" class="modal">
   <div class="modal-box">
@@ -649,12 +867,13 @@
         {/if}
         <div class="font-medium">Saved {saved_count} new items.</div>
         <div class="font-light text-sm">
-          Use the <a href={`/dataset/${project_id}/${task_id}`} class="link"
-            >dataset tab</a
-          > to review and manage.
+          These are now available in the <a
+            href={`/dataset/${project_id}/${task_id}`}
+            class="link">dataset tab</a
+          >.
         </div>
         <div class="font-light text-xs mt-4 text-gray-500">
-          Set tagged with &quot;synthetic_session_{session_id}&quot;
+          All items are tagged with &quot;synthetic_session_{session_id}&quot;
         </div>
         {#if save_all_sub_errors.length > 0}
           <div class="text-error font-light text-sm mt-4">
@@ -690,7 +909,8 @@
       >
         <div class="font-medium">No Items to Save</div>
         <div class="font-light">
-          Generate model inputs before attempting to save model outputs.
+          Generate model inputs and outputs before attempting to save synthetic
+          data.
         </div>
         {#if already_saved_count > 0}
           <div class="font-light text-sm">
@@ -699,13 +919,12 @@
         {/if}
       </div>
     {:else}
-      <h3 class="text-lg font-bold">Generate Model Outputs</h3>
+      <h3 class="text-lg font-bold">Save Synthetic Data to Dataset</h3>
       <p class="text-sm font-light mb-5">
-        Run your task on each generated model input, saving the resulting
-        input/output pairs to your dataset.
+        Save the synthetic data below into your dataset.
       </p>
       <FormContainer
-        submit_label="Generate and Save"
+        submit_label="Save All"
         bind:submitting={save_all_running}
         bind:error={save_all_error}
         on:submit={save_all_samples}
@@ -718,24 +937,6 @@
               / {already_saved_count} already saved
             {/if}
           </div>
-        </div>
-        <AvailableModelsDropdown
-          requires_data_gen={true}
-          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
-            $selected_template,
-          )}
-          requires_structured_output={task?.output_json_schema ? true : false}
-          suggested_mode={guidance_data.suggest_uncensored($selected_template)
-            ? "uncensored_data_gen"
-            : "data_gen"}
-          bind:model
-        />
-        <div>
-          <SynthDataGuidance guidance_type="outputs" {guidance_data} />
-        </div>
-
-        <div class="mb-2">
-          <PromptTypeSelector bind:prompt_method />
         </div>
       </FormContainer>
     {/if}

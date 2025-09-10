@@ -157,6 +157,20 @@ def connect_data_gen_api(app: FastAPI):
     async def save_sample(
         project_id: str,
         task_id: str,
+        task_run: TaskRun,
+    ) -> TaskRun:
+        task = task_from_id(project_id, task_id)
+        print(f"Task run path: {task_run.path}")
+        print(f"Saving sample: {task_run}")
+        task_run.parent = task
+        print(f"Task run path 2: {task_run.path}")
+        task_run.save_to_file()
+        return task_run
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_sample")
+    async def generate_sample(
+        project_id: str,
+        task_id: str,
         sample: DataGenSaveSamplesApiInput,
         session_id: str | None = None,
     ) -> TaskRun:
@@ -212,7 +226,6 @@ The topic path for this sample is:
             tags.extend(sample.tags)
         run.tags = tags
 
-        run.save_to_file()
         return run
 
 
