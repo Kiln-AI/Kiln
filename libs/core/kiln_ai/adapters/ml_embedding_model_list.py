@@ -16,6 +16,7 @@ class KilnEmbeddingModelFamily(str, Enum):
     openai = "openai"
     gemini = "gemini"
     gemma = "gemma"
+    nomic = "nomic"
 
 
 class EmbeddingModelName(str, Enum):
@@ -31,6 +32,7 @@ class EmbeddingModelName(str, Enum):
     gemini_text_embedding_004 = "gemini_text_embedding_004"
     gemini_embedding_001 = "gemini_embedding_001"
     embedding_gemma_300m = "embedding_gemma_300m"
+    nomic_text_embedding_v1_5 = "nomic_text_embedding_v1_5"
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -74,6 +76,7 @@ class KilnEmbeddingModel(BaseModel):
 
 
 built_in_embedding_models: List[KilnEmbeddingModel] = [
+    # openai
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.openai,
         name=EmbeddingModelName.openai_text_embedding_3_small,
@@ -103,6 +106,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
+    # gemini
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemini,
         name=EmbeddingModelName.gemini_text_embedding_004,
@@ -131,6 +135,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
+    # gemma
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemma,
         name=EmbeddingModelName.embedding_gemma_300m,
@@ -145,6 +150,24 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # not sure if ollama supports it
                 supports_custom_dimensions=False,
                 ollama_model_aliases=["embeddinggemma"],
+            ),
+        ],
+    ),
+    # nomic
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.nomic,
+        name=EmbeddingModelName.nomic_text_embedding_v1_5,
+        friendly_name="nomic-embed-text:v1.5",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="nomic-embed-text:v1.5",
+                n_dimensions=768,
+                max_input_tokens=2048,
+                # the model itself does support custom dimensions, but
+                # not sure if ollama supports it
+                supports_custom_dimensions=False,
+                ollama_model_aliases=["nomic-embed-text"],
             ),
         ],
     ),
