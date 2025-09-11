@@ -479,8 +479,10 @@ def test_format_query_result_error_conditions(
 
     # Test with mismatched lengths where some arrays are empty - should return empty list
     query_result = VectorStoreQueryResult(ids=["1", "2"], nodes=[], similarities=[])
-    result = adapter.format_query_result(query_result)
-    assert result == []
+    with pytest.raises(
+        ValueError, match="ids, nodes, and similarities must have the same length"
+    ):
+        adapter.format_query_result(query_result)
 
     # Test with mismatched lengths where all arrays are non-empty - should raise ValueError
     from llama_index.core.schema import TextNode

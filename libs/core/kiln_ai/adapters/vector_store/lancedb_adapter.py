@@ -242,8 +242,8 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         # If all fields exist but are empty lists, that's a valid empty result
         if (
             len(query_result.ids) == 0
-            or len(query_result.nodes) == 0
-            or len(query_result.similarities) == 0
+            and len(query_result.nodes) == 0
+            and len(query_result.similarities) == 0
         ):
             return []
 
