@@ -68,7 +68,7 @@ class RagStepRunnerProgress(BaseModel):
     )
     logs: list[LogMessage] = Field(
         description="A list of log messages to display to the user",
-        default=[],
+        default_factory=list,
     )
 
 
@@ -576,7 +576,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
             # infer dimensionality - we peek into the first record to get the vector dimensions
             # vector dimensions are not stored in the config because they are derived from the model
-            # and in some cases dynamic shortening of the vector (OpenAI has this)
+            # and in some cases dynamic shortening of the vector (called Matryoshka Representation Learning)
             async for records in self.collect_records(
                 batch_size=1,
             ):
