@@ -11,6 +11,7 @@ import type {
   ModelDetails,
   EmbeddingProvider,
   EmbeddingModelDetails,
+  VectorStoreType,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
@@ -380,6 +381,22 @@ export function embedding_model_name(
     return model.name
   }
   return "Model ID: " + model_id
+}
+
+export function vector_store_name(store_type: VectorStoreType | null): string {
+  if (!store_type) {
+    return "Unknown"
+  }
+  switch (store_type) {
+    case "lancedb_fts":
+      return "LanceDB - Full Text Search"
+    case "lancedb_vector":
+      return "LanceDB - Vector Search"
+    case "lancedb_hybrid":
+      return "LanceDB - Hybrid Search"
+    default:
+      return "Unknown"
+  }
 }
 
 export function provider_name_from_id(provider_id: string): string {

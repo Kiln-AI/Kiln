@@ -6,6 +6,7 @@
     embedding_model_name,
     model_name,
     provider_name_from_id,
+    vector_store_name,
   } from "$lib/stores"
   import {
     ragProgressStore,
@@ -103,6 +104,11 @@
             Embedding: {embedding_model_name(
               rag_config.embedding_config.model_name,
               rag_config.embedding_config.model_provider_name,
+            ) || "N/A"}
+          </div>
+          <div>
+            Vector Store: {vector_store_name(
+              rag_config.vector_store_config.store_type,
             ) || "N/A"}
           </div>
           <div class="text-xs text-gray-500">
