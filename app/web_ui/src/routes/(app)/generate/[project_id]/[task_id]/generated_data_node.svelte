@@ -300,12 +300,14 @@
             <span class="text-xs relative" style="top: -3px">⮑</span>
           {/if}
           {data.topic}
-          <span class="text-xs text-gray-500">
-            <InfoTooltip
-              tooltip_text={"The topic: " + path.join(" → ")}
-              position="bottom"
-              no_pad={true}
-            />
+          <span class="relative inline-block w-3 h-3">
+            <div class="absolute top-[-3px] left-0">
+              <InfoTooltip
+                tooltip_text={"The topic: " + path.join(" → ")}
+                position="bottom"
+                no_pad={true}
+              />
+            </div>
           </span>
         </div>
       </div>
