@@ -69,6 +69,11 @@ logger = logging.getLogger(__name__)
 background_tasks: set[asyncio.Task] = set()
 
 
+class BulkCreateDocumentsResponse(BaseModel):
+    created_documents: List[Document]
+    failed_files: List[str]
+
+
 async def run_extractor_runner_with_status(
     extractor_runner: ExtractorRunner,
 ) -> StreamingResponse:
@@ -94,7 +99,7 @@ async def run_extractor_runner_with_status(
 
 async def run_all_extractors_and_rag_workflows(
     project: Project,
-    document: Document,
+    documents: list[Document],
 ):
     # extractors are a step in the RAG workflow, so we run them first otherwise we would have the
     # RAG workflows try to run the same extractors at the same time
@@ -111,7 +116,7 @@ async def run_all_extractors_and_rag_workflows(
                 ):
                     extractor_runner = ExtractorRunner(
                         extractor_configs=[extractor_config],
-                        documents=[document],
+                        documents=documents,
                     )
                     async for progress in extractor_runner.run():
                         pass
@@ -148,7 +153,7 @@ async def run_all_extractors_and_rag_workflows(
                         RagWorkflowStepNames.EMBEDDING,
                         RagWorkflowStepNames.INDEXING,
                     ],
-                    document_ids=[document.id],
+                    document_ids=[document.id for document in documents],
                 ):
                     pass
             except asyncio.TimeoutError:
@@ -172,7 +177,7 @@ async def run_all_extractors_and_rag_workflows(
 
 def run_all_extractors_and_rag_workflows_no_wait(
     project: Project,
-    document: Document,
+    documents: list[Document],
 ) -> None:
     """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
     Needed to make mocking easier in tests.
@@ -181,7 +186,7 @@ def run_all_extractors_and_rag_workflows_no_wait(
     # so we need to add a reference to the task (here in the background_tasks set) to prevent it
     # from being garbage collected
     # https://docs.astral.sh/ruff/rules/asyncio-dangling-task/
-    task = asyncio.create_task(run_all_extractors_and_rag_workflows(project, document))
+    task = asyncio.create_task(run_all_extractors_and_rag_workflows(project, documents))
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
 
@@ -589,7 +594,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         files: Annotated[List[UploadFile] | None, File()] = None,
         names: Annotated[List[str] | None, Form()] = None,
-    ) -> List[Document]:
+    ) -> BulkCreateDocumentsResponse:
         project = project_from_id(project_id)
 
         if not files:
@@ -616,7 +621,7 @@ def connect_document_api(app: FastAPI):
 
                 file_data = await file.read()
 
-                # Use provided name or fall back to filename
+                # use provided name if there is one, otherwise use the filename
                 document_name = names[i] if names and i < len(names) else file.filename
 
                 # we cannot use content_type from UploadFile because it is not always set correctly
@@ -658,7 +663,6 @@ def connect_document_api(app: FastAPI):
                 )
                 continue
 
-        # If no documents were created successfully, return an error
         if not created_documents:
             raise HTTPException(
                 status_code=422,
@@ -668,16 +672,13 @@ def connect_document_api(app: FastAPI):
                 },
             )
 
-        # Run extractors and RAG workflows for each successfully created document
-        # We don't want the client to wait for these to complete
-        for document in created_documents:
-            run_all_extractors_and_rag_workflows_no_wait(project, document)
+        # we don't wait for this to complete
+        run_all_extractors_and_rag_workflows_no_wait(project, created_documents)
 
-        # Log any failed files but still return the successful ones
-        if failed_files:
-            logger.warning(f"Some files failed to upload: {failed_files}")
-
-        return created_documents
+        return BulkCreateDocumentsResponse(
+            created_documents=created_documents,
+            failed_files=failed_files,
+        )
 
     @app.get("/api/projects/{project_id}/documents")
     async def get_documents(

@@ -369,24 +369,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/documents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Documents */
-        get: operations["get_documents_api_projects__project_id__documents_get"];
-        put?: never;
-        /** Create Document */
-        post: operations["create_document_api_projects__project_id__documents_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -398,6 +380,23 @@ export interface paths {
         put?: never;
         /** Create Documents Bulk */
         post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Documents */
+        get: operations["get_documents_api_projects__project_id__documents_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1680,24 +1679,6 @@ export interface components {
             /** Splits */
             splits?: string | null;
         };
-        /** Body_create_document_api_projects__project_id__documents_post */
-        Body_create_document_api_projects__project_id__documents_post: {
-            /**
-             * File
-             * Format: binary
-             */
-            file: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-            /**
-             * Description
-             * @default
-             */
-            description: string;
-        };
         /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
         Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
             /** Files */
@@ -1722,6 +1703,13 @@ export interface components {
             add_tags?: string[] | null;
             /** Remove Tags */
             remove_tags?: string[] | null;
+        };
+        /** BulkCreateDocumentsResponse */
+        BulkCreateDocumentsResponse: {
+            /** Created Documents */
+            created_documents: components["schemas"]["Document"][];
+            /** Failed Files */
+            failed_files: string[];
         };
         /** BulkUploadResponse */
         BulkUploadResponse: {
@@ -5082,72 +5070,6 @@ export interface operations {
             };
         };
     };
-    get_documents_api_projects__project_id__documents_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Document"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_document_api_projects__project_id__documents_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_create_document_api_projects__project_id__documents_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Document"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     create_documents_bulk_api_projects__project_id__documents_bulk_post: {
         parameters: {
             query?: never;
@@ -5162,6 +5084,37 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["Body_create_documents_bulk_api_projects__project_id__documents_bulk_post"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkCreateDocumentsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_documents_api_projects__project_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

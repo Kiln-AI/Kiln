@@ -2220,9 +2220,11 @@ async def test_create_document_content_type_detection(
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert isinstance(result, list)
-    assert len(result) == 1
-    doc = result[0]
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 1
+    assert len(result["failed_files"]) == 0
+    doc = result["created_documents"][0]
     assert doc["name"] == "Test File"
     assert doc["kind"] == expected_kind
     assert doc["original_file"]["filename"] == filename
@@ -2258,24 +2260,35 @@ async def test_create_documents_bulk_success(client, mock_project):
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert len(result) == 2
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
 
     # Check first document
-    assert result[0]["name"] == "Custom Name 1"
-    assert result[0]["kind"] == "document"
-    assert result[0]["original_file"]["filename"] == "test1.txt"
-    assert result[0]["original_file"]["mime_type"] == "text/plain"
-    assert result[0]["original_file"]["size"] == len(test_content_1)
+    assert result["created_documents"][0]["name"] == "Custom Name 1"
+    assert result["created_documents"][0]["kind"] == "document"
+    assert result["created_documents"][0]["original_file"]["filename"] == "test1.txt"
+    assert result["created_documents"][0]["original_file"]["mime_type"] == "text/plain"
+    assert result["created_documents"][0]["original_file"]["size"] == len(
+        test_content_1
+    )
 
     # Check second document
-    assert result[1]["name"] == "Custom Name 2"
-    assert result[1]["kind"] == "document"
-    assert result[1]["original_file"]["filename"] == "test2.txt"
-    assert result[1]["original_file"]["mime_type"] == "text/plain"
-    assert result[1]["original_file"]["size"] == len(test_content_2)
+    assert result["created_documents"][1]["name"] == "Custom Name 2"
+    assert result["created_documents"][1]["kind"] == "document"
+    assert result["created_documents"][1]["original_file"]["filename"] == "test2.txt"
+    assert result["created_documents"][1]["original_file"]["mime_type"] == "text/plain"
+    assert result["created_documents"][1]["original_file"]["size"] == len(
+        test_content_2
+    )
 
     # Verify both documents were created and workflows triggered
-    assert mock_run_workflows.call_count == 2
+    assert mock_run_workflows.call_count == 1
+    # Verify it was called with both documents
+    call_args = mock_run_workflows.call_args[0]
+    assert call_args[0] == project
+    assert len(call_args[1]) == 2
 
 
 @pytest.mark.asyncio
@@ -2305,11 +2318,14 @@ async def test_create_documents_bulk_without_names(client, mock_project):
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert len(result) == 2
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
 
     # Should use filenames as names (with dots converted to underscores)
-    assert result[0]["name"] == "test1_txt"
-    assert result[1]["name"] == "test2_txt"
+    assert result["created_documents"][0]["name"] == "test1_txt"
+    assert result["created_documents"][1]["name"] == "test2_txt"
 
 
 @pytest.mark.asyncio
@@ -2342,11 +2358,14 @@ async def test_create_documents_bulk_mixed_file_types(
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert len(result) == 2
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
 
     # Check document types
-    assert result[0]["kind"] == "document"
-    assert result[1]["kind"] == "image"
+    assert result["created_documents"][0]["kind"] == "document"
+    assert result["created_documents"][1]["kind"] == "image"
 
 
 @pytest.mark.asyncio
@@ -2387,11 +2406,14 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
 
     assert response.status_code == 200, response.text
     result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
 
     # Should only have the valid file
-    assert len(result) == 1
-    assert result[0]["name"] == "valid_txt"
-    assert result[0]["kind"] == "document"
+    assert len(result["created_documents"]) == 1
+    assert len(result["failed_files"]) == 2  # Two invalid files
+    assert result["created_documents"][0]["name"] == "valid_txt"
+    assert result["created_documents"][0]["kind"] == "document"
 
     # Should have triggered workflow for the valid file
     assert mock_run_workflows.call_count == 1
@@ -2494,14 +2516,21 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
 
     assert response.status_code == 200, response.text
     result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
 
     # Both files should be processed (they have different content)
-    assert len(result) == 2
-    assert result[0]["name"] == "duplicate_txt"
-    assert result[1]["name"] == "duplicate_txt"
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+    assert result["created_documents"][0]["name"] == "duplicate_txt"
+    assert result["created_documents"][1]["name"] == "duplicate_txt"
 
     # Both should have triggered workflows
-    assert mock_run_workflows.call_count == 2
+    assert mock_run_workflows.call_count == 1
+    # Verify it was called with both documents
+    call_args = mock_run_workflows.call_args[0]
+    assert call_args[0] == project
+    assert len(call_args[1]) == 2
 
 
 @pytest.mark.parametrize(
