@@ -322,9 +322,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             logger.info("Vector store search returned no results: %s", e)
             return []
         except Warning as e:
-            # we get a Warning raised as
-            logger.info("Vector store search returned no results: %s", e)
-            return []
+            msg = str(e).lower()
+            if ("query results are empty" in msg) or (
+                "empty" in msg and "result" in msg
+            ):
+                logger.warning("Vector store search returned no results: %s", e)
+                return []
+            raise
 
     def compute_deterministic_chunk_id(self, document_id: str, chunk_idx: int) -> str:
         # the id_ of the Node must be a UUID string, otherwise llama_index / LanceDB fails downstream

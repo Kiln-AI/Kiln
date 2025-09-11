@@ -1196,11 +1196,11 @@ def connect_document_api(app: FastAPI):
             description=request.description,
             store_type=request.store_type,
             properties={
-                **request.properties,
                 "overfetch_factor": 1,
                 "vector_column_name": "vector",
                 "text_key": "text",
                 "doc_id_key": "doc_id",
+                **request.properties,
             },
         )
         vector_store_config.save_to_file()
