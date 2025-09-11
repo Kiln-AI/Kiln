@@ -160,6 +160,7 @@
 
     load_initial_state()
     update_status()
+    load_initial_step()
   })
 
   let clear_all_dialog: Dialog | null = null
@@ -229,6 +230,31 @@
       return
     }
     // Case 5: No state - wait for the user to setup via UI
+  }
+
+  function load_initial_step() {
+    // Load which step to start on based on status
+
+    // Nothing! Start at step 1 for topics
+    if ($saved_state.root_node.sub_topics.length === 0) {
+      set_current_step(1)
+      return
+    }
+
+    // Has topics, but some inputs are missing
+    if (leaf_topics_missing_inputs > 0) {
+      set_current_step(2)
+      return
+    }
+
+    // Has topics, but some inputs are missing
+    if (samples_to_generate.length > 0) {
+      set_current_step(3)
+      return
+    }
+
+    // Made it this far!
+    set_current_step(4)
   }
 
   function setup(
@@ -815,8 +841,7 @@
                         >step 3</button
                       > to generate outputs.
                     </div>
-                  {/if}
-                  {#if samples_to_save.length > 0}
+                  {:else if samples_to_save.length > 0}
                     <button
                       class="btn btn-sm btn-primary"
                       on:click={show_save_all_modal}
