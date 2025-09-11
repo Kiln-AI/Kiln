@@ -318,7 +318,6 @@
           tabindex="0"
           class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
         >
-          <h2 class="menu-title">Topic Actions</h2>
           <li>
             <button on:click={delete_topic}>Delete Topic</button>
           </li>
@@ -386,52 +385,22 @@
         No Output
       {/if}
     </td>
-    <td class="py-2 px-0">
-      <button
-        class="btn btn-square btn-sm btn-ghost"
-        aria-label="Delete"
-        on:click|stopPropagation={() => delete_sample(sample)}
-      >
-        <img src="/images/delete.svg" alt="Delete" class="w-4 h-4 opacity-70" />
-      </button>
-    </td>
-
-    <!--
-        <div
-          style="padding-left: {depth * 25 + 20}px"
-          class="{expandedSamples[index]
-            ? 'data-row-expanded'
-            : 'data-row-collapsed'} data-row flex flex-row items-center border-b-2 border-base-200"
+    <td class="p-0">
+      <div class="dropdown dropdown-end dropdown-hover">
+        <TableButton />
+        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+        <ul
+          tabindex="0"
+          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
         >
-          <button
-            on:click={() => toggleExpand(index)}
-            class="w-full block text-left flex-1 font-mono text-sm overflow-hidden py-2"
-          >
-            {#if expandedSamples[index]}
-              <pre class="whitespace-pre-wrap">Input: {formatExpandedSample(
-                  sample.input,
-                )}</pre>
-              <pre class="whitespace-pre-wrap">Output: {formatSampleOutput(
-                  sample,
-                  true,
-                )}</pre>
-            {:else}
-              <div class="truncate w-0 min-w-full">Input: {sample.input}</div>
-              <div class="truncate w-0 min-w-full">
-                Output: {formatSampleOutput(sample, false)}
-              </div>
-            {/if}
-            <div class="text-xs text-gray-500">Saved ID: {sample.saved_id}</div>
-          </button>
-          <div
-            class="hover-action flex flex-row text-sm gap-x-4 gap-y-1 text-gray-500 font-light px-4"
-            style={expandedSamples[index] ? "display: flex" : ""}
-          >
-
-          </div>
-        </div>
-
-            -->
+          <li>
+            <button on:click|stopPropagation={() => delete_sample(sample)}>
+              Delete Sample
+            </button>
+          </li>
+        </ul>
+      </div>
+    </td>
   </tr>
 {/each}
 {#if data.sub_topics}
