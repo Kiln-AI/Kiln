@@ -13,6 +13,8 @@
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import { get } from "svelte/store"
   import posthog from "posthog-js"
+  import TableButton from "./table_button.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   let custom_topic_mode: boolean = false
 
@@ -279,104 +281,173 @@
     generate_samples_modal = false
 
     // Scroll to bottom of added samples
+    // TODO: P0
     scroll_to_bottom_of_element_by_id(`${id}-samples`)
   }
 </script>
 
+<!-- Topic Header Row-->
 {#if path.length != 0}
-  <div
-    class="data-row-collapsed bg-base-200 font-medium flex flex-row pr-4 border-b-2 border-base-100"
-    style="padding-left: {(depth - 1) * 25 + 20}px"
-  >
-    <div class="flex-1 py-1">
-      {#if depth > 1}
-        <span class="text-xs relative" style="top: -3px">⮑</span>
-      {/if}
-      {data.topic}
-    </div>
-    <div
-      class="hover-action flex flex-row gap-4 text-gray-500 font-light text-sm items-center"
+  <tr class="bg-base-200 border-b-2 border-base-100"
+    ><td
+      colspan="3"
+      class="py-2"
+      style="padding-left: {(depth - 1) * 25 + 20}px"
     >
-      <button class="link" on:click={delete_topic}>Delete</button>
-      <button class="link" on:click={() => open_generate_subtopics_modal()}>
-        Add Subtopics
-      </button>
-
-      {#if data.sub_topics.length > 0}
-        <button class="link" on:click={() => open_generate_samples_modal()}>
-          Generate Model Inputs (Only This Topic)
-        </button>
-        <button class="link" on:click={() => open_generate_samples_modal(true)}>
-          Generate Model Inputs (All Subtopics)
-        </button>
-      {:else}
-        <button class="link" on:click={() => open_generate_samples_modal()}>
-          Generate Model Inputs
-        </button>
-      {/if}
-    </div>
-  </div>
-{/if}
-<div id={`${id}-samples`}>
-  {#each data.samples as sample, index}
-    <div
-      style="padding-left: {depth * 25 + 20}px"
-      class="{expandedSamples[index]
-        ? 'data-row-expanded'
-        : 'data-row-collapsed'} data-row flex flex-row items-center border-b-2 border-base-200"
-    >
-      <button
-        on:click={() => toggleExpand(index)}
-        class="w-full block text-left flex-1 font-mono text-sm overflow-hidden py-2"
-      >
-        {#if expandedSamples[index]}
-          <pre class="whitespace-pre-wrap">Input: {formatExpandedSample(
-              sample.input,
-            )}</pre>
-          <pre class="whitespace-pre-wrap">Output: {formatSampleOutput(
-              sample,
-              true,
-            )}</pre>
-        {:else}
-          <div class="truncate w-0 min-w-full">Input: {sample.input}</div>
-          <div class="truncate w-0 min-w-full">
-            Output: {formatSampleOutput(sample, false)}
-          </div>
-        {/if}
-        <div class="text-xs text-gray-500">Saved ID: {sample.saved_id}</div>
-      </button>
-      <div
-        class="hover-action flex flex-row text-sm gap-x-4 gap-y-1 text-gray-500 font-light px-4"
-        style={expandedSamples[index] ? "display: flex" : ""}
-      >
-        <button class="link flex" on:click={() => toggleExpand(index)}>
-          {#if expandedSamples[index]}
-            - Collapse
-          {:else}
-            + Expand
+      <div class="font-medium flex flex-row pr-4 w-full">
+        <div class="flex-1">
+          {#if depth > 1}
+            <span class="text-xs relative" style="top: -3px">⮑</span>
           {/if}
-        </button>
-        <button class="link flex" on:click={() => delete_sample(sample)}>
-          Delete
-        </button>
+          {data.topic}
+          <span class="text-xs text-gray-500">
+            <InfoTooltip
+              tooltip_text={"The topic: " + path.join(" → ")}
+              position="bottom"
+              no_pad={true}
+            />
+          </span>
+        </div>
       </div>
-    </div>
-  {/each}
-</div>
+    </td>
+    <td class="p-0">
+      <div class="dropdown dropdown-end dropdown-hover">
+        <TableButton />
+        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+        <ul
+          tabindex="0"
+          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+        >
+          <h2 class="menu-title">Topic Actions</h2>
+          <li>
+            <button on:click={delete_topic}>Delete Topic</button>
+          </li>
+          <li>
+            <button on:click={() => open_generate_subtopics_modal()}>
+              Add Subtopics
+            </button>
+          </li>
+
+          {#if data.sub_topics.length > 0}
+            <li>
+              <button on:click={() => open_generate_samples_modal()}>
+                Generate Model Inputs (Only This Topic)
+              </button>
+            </li>
+            <li>
+              <button on:click={() => open_generate_samples_modal(true)}>
+                Generate Model Inputs (All Subtopics)
+              </button>
+            </li>
+          {:else}
+            <li>
+              <button on:click={() => open_generate_samples_modal()}>
+                Generate Model Inputs
+              </button>
+            </li>
+          {/if}
+        </ul>
+      </div>
+    </td>
+  </tr>
+{/if}
+{#each data.samples as sample, index}
+  <tr on:click={() => toggleExpand(index)} class="cursor-pointer">
+    <td style="padding-left: {depth * 25 + 20}px" class="py-2">
+      {#if expandedSamples[index]}
+        <pre class="whitespace-pre-wrap">{formatExpandedSample(
+            sample.input,
+          )}</pre>
+      {:else}
+        <div class="truncate w-0 min-w-full">{sample.input}</div>
+      {/if}
+    </td>
+    <td class="py-2">
+      {#if expandedSamples[index]}
+        <pre class="whitespace-pre-wrap">{formatSampleOutput(
+            sample,
+            true,
+          )}</pre>
+      {:else}
+        <div class="truncate w-0 min-w-full">
+          {formatSampleOutput(sample, false)}
+        </div>
+      {/if}
+    </td>
+    <td class="text-center py-2">
+      {#if sample.saved_id}
+        <a
+          href={`/dataset/${guidance_data.project_id}/${guidance_data.task_id}/${sample.saved_id}/run`}
+          class="hover:underline">Saved</a
+        >
+      {:else if sample.output}
+        Unsaved
+      {:else}
+        No Output
+      {/if}
+    </td>
+    <td class="py-2 px-0">
+      <button
+        class="btn btn-square btn-sm btn-ghost"
+        aria-label="Delete"
+        on:click|stopPropagation={() => delete_sample(sample)}
+      >
+        <img src="/images/delete.svg" alt="Delete" class="w-4 h-4 opacity-70" />
+      </button>
+    </td>
+
+    <!--
+        <div
+          style="padding-left: {depth * 25 + 20}px"
+          class="{expandedSamples[index]
+            ? 'data-row-expanded'
+            : 'data-row-collapsed'} data-row flex flex-row items-center border-b-2 border-base-200"
+        >
+          <button
+            on:click={() => toggleExpand(index)}
+            class="w-full block text-left flex-1 font-mono text-sm overflow-hidden py-2"
+          >
+            {#if expandedSamples[index]}
+              <pre class="whitespace-pre-wrap">Input: {formatExpandedSample(
+                  sample.input,
+                )}</pre>
+              <pre class="whitespace-pre-wrap">Output: {formatSampleOutput(
+                  sample,
+                  true,
+                )}</pre>
+            {:else}
+              <div class="truncate w-0 min-w-full">Input: {sample.input}</div>
+              <div class="truncate w-0 min-w-full">
+                Output: {formatSampleOutput(sample, false)}
+              </div>
+            {/if}
+            <div class="text-xs text-gray-500">Saved ID: {sample.saved_id}</div>
+          </button>
+          <div
+            class="hover-action flex flex-row text-sm gap-x-4 gap-y-1 text-gray-500 font-light px-4"
+            style={expandedSamples[index] ? "display: flex" : ""}
+          >
+
+          </div>
+        </div>
+
+            -->
+  </tr>
+{/each}
 {#if data.sub_topics}
-  <div id={`${id}-subtopics`}>
-    {#each data.sub_topics as sub_node}
-      <svelte:self
-        data={sub_node}
-        path={[...path, sub_node.topic]}
-        {guidance_data}
-        {triggerSave}
-        bind:num_subtopics_to_generate
-        bind:num_samples_to_generate
-        on:delete_topic={handleChildDeleteTopic}
-      />
-    {/each}
-  </div>
+  <!-- <div id={`${id}-subtopics`}> -->
+  {#each data.sub_topics as sub_node}
+    <svelte:self
+      data={sub_node}
+      path={[...path, sub_node.topic]}
+      {guidance_data}
+      {triggerSave}
+      bind:num_subtopics_to_generate
+      bind:num_samples_to_generate
+      on:delete_topic={handleChildDeleteTopic}
+    />
+  {/each}
+  <!-- </div> -->
 {/if}
 
 {#if generate_subtopics}
@@ -478,14 +549,3 @@
     cascade_mode={generate_samples_cascade_mode}
   />
 {/if}
-
-<style>
-  .data-row-collapsed .hover-action {
-    display: none;
-    visibility: hidden;
-  }
-  .data-row-collapsed:hover .hover-action {
-    display: flex;
-    visibility: visible;
-  }
-</style>
