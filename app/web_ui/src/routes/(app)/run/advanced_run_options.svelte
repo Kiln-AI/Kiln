@@ -4,15 +4,17 @@
   import type { StructuredOutputMode } from "$lib/types"
   import { structuredOutputModeToString } from "$lib/utils/formatters"
   import { available_tools, load_available_tools } from "$lib/stores"
-  import { onMount } from "svelte"
+  import { onMount, createEventDispatcher } from "svelte"
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
 
-  // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
-  export let temperature: number = 1.0
-  export let top_p: number = 1.0
-  export let structured_output_mode: StructuredOutputMode = "default"
-  export let has_structured_output: boolean = false
+  const dispatch = createEventDispatcher()
+
+  export let temperature: number
+  export let top_p: number
+  export let structured_output_mode: StructuredOutputMode
+  export let has_structured_output: boolean
+  export let show_save_button: boolean = false
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
@@ -201,6 +203,10 @@
     })
     return option_groups
   }
+
+  function saveRunOptions() {
+    dispatch("saveRunOptions")
+  }
 </script>
 
 <div>
@@ -242,5 +248,17 @@
       fancy_select_options={structured_output_options}
       info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
     />
+  {/if}
+
+  {#if show_save_button}
+    <div class="mt-4 text-right">
+      <button
+        type="button"
+        class="link link-primary text-sm"
+        on:click={saveRunOptions}
+      >
+        Save new run options
+      </button>
+    </div>
   {/if}
 </div>

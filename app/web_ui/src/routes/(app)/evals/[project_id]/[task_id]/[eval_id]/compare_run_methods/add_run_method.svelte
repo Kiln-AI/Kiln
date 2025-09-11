@@ -3,6 +3,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import type { StructuredOutputMode, AvailableModels } from "$lib/types"
+  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
   import {
     load_available_prompts,
     load_available_models,
@@ -75,34 +76,18 @@
     }
 
     try {
-      const { error, data } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-          body: {
-            run_config_properties: {
-              model_name: task_run_config_model_name,
-              // @ts-expect-error not checking types here, server will check them
-              model_provider_name: task_run_config_provider_name,
-              prompt_id: task_run_config_prompt_method,
-              temperature: task_run_config_temperature,
-              top_p: task_run_config_top_p,
-              structured_output_mode: task_run_config_structured_output_mode,
-              tools_config: {
-                tools: task_run_config_tools,
-              },
-            },
-          },
+      const data = await save_new_task_run_config(project_id, task_id, {
+        model_name: task_run_config_model_name,
+        // @ts-expect-error not checking types here, server will check them
+        model_provider_name: task_run_config_provider_name,
+        prompt_id: task_run_config_prompt_method,
+        temperature: task_run_config_temperature,
+        top_p: task_run_config_top_p,
+        structured_output_mode: task_run_config_structured_output_mode,
+        tools_config: {
+          tools: task_run_config_tools,
         },
-      )
-      if (error) {
-        throw error
-      }
+      })
       posthog.capture("add_run_method", {
         model_name: task_run_config_model_name,
         provider_name: task_run_config_provider_name,

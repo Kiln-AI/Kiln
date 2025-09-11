@@ -7,43 +7,60 @@
     ProviderModels,
   } from "$lib/types"
   import {
-    current_task,
-    current_task_prompts,
-    prompt_name_from_id,
     model_name,
     model_info,
+    provider_name_from_id,
+    current_project,
+    current_task,
+    load_available_prompts,
+    current_task_prompts,
   } from "$lib/stores"
-  import { task_run_configs_by_task_id } from "$lib/stores/run_configs_store"
+  import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
+  import { onMount } from "svelte"
+  import {
+    load_task_run_configs,
+    task_run_configs_by_task_id,
+  } from "$lib/stores/run_configs_store"
 
-  export let selected_run_config: string | null = "default"
+  export let selected_run_config: TaskRunConfig | "custom"
+  export let project_id: string
+  export let task_id: string
+
+  onMount(async () => {
+    await load_task_run_configs(
+      $current_project?.id ?? "",
+      $current_task?.id ?? "",
+    )
+    await load_available_prompts()
+  })
 
   // Build the options for the dropdown
   $: options = build_run_config_options(
-    $task_run_configs_by_task_id[$current_task?.id ?? ""],
+    $task_run_configs_by_task_id[task_id] ?? [],
     $current_task_prompts,
     $model_info,
   )
 
   function build_run_config_options(
-    task_run_configs: TaskRunConfig[] | null,
-    prompts: PromptResponse | null,
+    task_run_configs: TaskRunConfig[],
+    all_task_prompts: PromptResponse | null,
     model_info: ProviderModels | null,
   ): OptionGroup[] {
     const options: OptionGroup[] = []
 
-    // Add default configuration if it exists
-    if ($current_task?.default_run_config_id) {
-      options.push({
-        label: "",
-        options: [
-          {
-            value: $current_task?.default_run_config_id || "",
-            label: "Default",
-            description: "The saved default configuration for this task.",
-          },
-        ],
-      })
-    }
+    // // Add default configuration first if it exists
+    // if (default_task_run_config) {
+    //   options.push({
+    //     label: "",
+    //     options: [
+    //       {
+    //         value: default_task_run_config,
+    //         label: "Default",
+    //         description: "The saved default configuration for this task.",
+    //       },
+    //     ],
+    //   })
+    // }
 
     // Add custom configuration option
     options.push({
@@ -58,16 +75,16 @@
     })
 
     // Add saved configurations if they exist
-    if (task_run_configs && task_run_configs.length > 0) {
+    if (task_run_configs.length > 0) {
       options.push({
         label: "Saved Configurations",
         options: task_run_configs.map((config) => ({
-          value: config.id || "",
+          value: config,
           label: config.name,
           description:
             config.description ||
-            `Model: ${model_name(config.run_config_properties.model_name, model_info)}
-            Prompt: ${prompt_name_from_id(config.run_config_properties.prompt_id || "", prompts)}`,
+            `Model: ${model_name(config.run_config_properties.model_name, model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})
+            Prompt: ${getRunConfigPromptDisplayName(config, all_task_prompts)}`,
         })),
       })
     }
