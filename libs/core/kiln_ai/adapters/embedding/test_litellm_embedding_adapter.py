@@ -325,7 +325,7 @@ class TestLitellmEmbeddingAdapter:
         ):
             with pytest.raises(
                 RuntimeError,
-                match="Expected the number of embeddings in the response to be 2, got 1.",
+                match=r"Expected the number of embeddings in the response to be 2, got 1.",
             ):
                 await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
@@ -898,7 +898,7 @@ def test_validate_map_to_embeddings_invalid_length():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Expected the number of embeddings in the response to be 2, got 1.",
+        match=r"Expected the number of embeddings in the response to be 2, got 1.",
     ):
         validate_map_to_embeddings(mock_response, 2)
 
@@ -910,7 +910,7 @@ def test_validate_map_to_embeddings_invalid_object_type():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'object' is not 'embedding'. Got not_embedding.",
+        match=r"Embedding response data has an unexpected shape. Property 'object' is not 'embedding'. Got not_embedding.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -923,7 +923,7 @@ def test_validate_map_to_embeddings_invalid_embedding_type():
     mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'embedding' is not a list. Got <class 'str'>.",
+        match=r"Embedding response data has an unexpected shape. Property 'embedding' is not a list. Got <class 'str'>.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -934,7 +934,7 @@ def test_validate_map_to_embeddings_invalid_embedding_type():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'embedding' is None in response data item.",
+        match=r"Embedding response data has an unexpected shape. Property 'embedding' is None in response data item.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -947,7 +947,7 @@ def test_validate_map_to_embeddings_invalid_index_type():
     mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'index' is not an integer. Got <class 'str'>.",
+        match=r"Embedding response data has an unexpected shape. Property 'index' is not an integer. Got <class 'str'>.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -958,7 +958,7 @@ def test_validate_map_to_embeddings_invalid_index_type():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'index' is None in response data item.",
+        match=r"Embedding response data has an unexpected shape. Property 'index' is None in response data item.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -985,6 +985,6 @@ def test_generate_embeddings_response_not_embedding_response():
     response.usage = Usage(prompt_tokens=5, total_tokens=5)
     with pytest.raises(
         RuntimeError,
-        match="Expected EmbeddingResponse, got <class 'unittest.mock.AsyncMock'>.",
+        match=r"Expected EmbeddingResponse, got <class 'unittest.mock.AsyncMock'>.",
     ):
         validate_map_to_embeddings(response, 1)

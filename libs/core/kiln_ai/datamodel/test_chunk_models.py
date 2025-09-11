@@ -112,7 +112,7 @@ class TestFixedWindowChunkerProperties:
 
     def test_validation_chunk_size_without_overlap(self):
         """Test that chunk size without overlap will raise an error."""
-        with pytest.raises(ValueError, match="Chunk overlap is required."):
+        with pytest.raises(ValueError, match=r"Chunk overlap is required."):
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
