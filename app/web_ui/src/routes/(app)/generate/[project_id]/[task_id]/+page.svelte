@@ -117,6 +117,10 @@
   // Function to trigger save when data changes
   function triggerSaveUiState() {
     saved_state.update((s) => s)
+  }
+
+  function saveUiStateAndUpdateStatus() {
+    triggerSaveUiState()
     update_status()
   }
 
@@ -415,7 +419,6 @@
         sample.output = result.output
         generated_count++
         triggerSaveUiState()
-        update_status()
       }
     }
   }
@@ -568,8 +571,6 @@
     } catch (e) {
       const error = createKilnError(e)
       return { output: null, error }
-    } finally {
-      update_status()
     }
   }
 
@@ -728,7 +729,7 @@
                     Next Step
                   </button>
                 {:else if current_step == 2}
-                  {@const next_primary =
+                  {@const done_generating =
                     input_generated_count > 0 &&
                     leaf_topics_missing_inputs === 0}
                   {#if leaf_topics_missing_inputs > 0}
@@ -740,28 +741,33 @@
                       no inputs
                     </div>
                   {/if}
-                  <button
-                    class="btn btn-sm btn-primary {next_primary
-                      ? 'btn-outline'
-                      : ''}"
-                    on:click={() => {
-                      root_node_component?.open_generate_samples_modal(true)
-                    }}
-                  >
-                    {#if $saved_state.root_node.sub_topics.length > 0}
-                      Generate Model Inputs (All Topics)
-                    {:else}
-                      Generate Model Inputs
-                    {/if}
-                  </button>
-                  <button
-                    class="btn btn-sm btn-primary {next_primary
-                      ? ''
-                      : 'btn-outline'}"
-                    on:click={() => set_current_step(3)}
-                  >
-                    Next Step
-                  </button>
+                  {#if !done_generating}
+                    <button
+                      class="btn btn-sm btn-primary"
+                      on:click={() => {
+                        root_node_component?.open_generate_samples_modal(true)
+                      }}
+                    >
+                      Generate Inputs
+                    </button>
+                  {:else}
+                    <button
+                      class="btn btn-sm btn-primary"
+                      on:click={() => set_current_step(3)}
+                    >
+                      Next Step
+                    </button>
+                    <div class="mt-1 text-sm font-light">
+                      or <button
+                        on:click={() => {
+                          root_node_component?.open_generate_samples_modal(true)
+                        }}
+                        class="link"
+                      >
+                        generate additional inputs on all topics</button
+                      >
+                    </div>
+                  {/if}
                 {:else if current_step == 3}
                   {@const no_inputs = input_generated_count === 0}
                   {@const output_gen_complete =
@@ -787,16 +793,28 @@
                         : ''}"
                       on:click={show_generate_all_modal}
                     >
-                      Generate All Model Outputs
+                      Generate Outputs
                     </button>
                   {/if}
                 {:else if current_step == 4}
+                  {#if samples_to_generate.length > 0}
+                    <div class="text-error text-sm my-2">
+                      {samples_to_generate.length}
+                      {samples_to_generate.length === 1
+                        ? "item has"
+                        : "items have"}
+                      no outputs. Return to
+                      <button on:click={() => set_current_step(3)} class="link"
+                        >step 3</button
+                      > to generate outputs.
+                    </div>
+                  {/if}
                   {#if samples_to_save.length > 0}
                     <button
                       class="btn btn-sm btn-primary"
                       on:click={show_save_all_modal}
                     >
-                      Save All Items to Dataset
+                      Save All
                     </button>
                   {:else}
                     <div class="flex flex-row justify-center">
@@ -840,7 +858,7 @@
               data={$saved_state.root_node}
               path={[]}
               {guidance_data}
-              triggerSave={triggerSaveUiState}
+              triggerSave={saveUiStateAndUpdateStatus}
               bind:num_subtopics_to_generate
               bind:num_samples_to_generate
               bind:this={root_node_component}
