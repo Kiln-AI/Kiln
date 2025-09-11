@@ -2,7 +2,7 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.schema import (
@@ -20,11 +20,10 @@ from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
+    DocumentWithChunksAndEmbeddings,
     SearchResult,
     VectorStoreQuery,
 )
-from kiln_ai.datamodel.chunk import ChunkedDocument
-from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import (
     VectorStoreConfig,
@@ -127,24 +126,28 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
     async def add_chunks_with_embeddings(
         self,
-        records: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
+        doc_batch: list[DocumentWithChunksAndEmbeddings],
         nodes_batch_size: int = 100,
     ) -> None:
-        if len(records) == 0:
+        if len(doc_batch) == 0:
             return
 
         node_batch: List[TextNode] = []
-        for document_id, chunked_document, chunk_embeddings in records:
+        for doc in doc_batch:
+            document_id = doc.document_id
+            chunks = doc.chunks
+            embeddings = doc.embeddings
+
             # the lancedb vector store implementation is sync (even though it has an async API)
             # so we sleep to avoid blocking the event loop - that allows other async ops to run
             await asyncio.sleep(0)
 
-            if len(chunk_embeddings.embeddings) != len(chunked_document.chunks):
+            if len(embeddings) != len(chunks):
                 raise RuntimeError(
-                    f"Number of embeddings ({len(chunk_embeddings.embeddings)}) does not match number of chunks ({len(chunked_document.chunks)}) for document {document_id}"
+                    f"Number of embeddings ({len(embeddings)}) does not match number of chunks ({len(chunks)}) for document {document_id}"
                 )
 
-            chunk_count_for_document = len(chunked_document.chunks)
+            chunk_count_for_document = len(chunks)
             deterministic_chunk_ids = [
                 self.compute_deterministic_chunk_id(document_id, chunk_idx)
                 for chunk_idx in range(chunk_count_for_document)
@@ -168,9 +171,9 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 # - an incomplete indexing of this same chunked doc, upserting is enough to overwrite the current chunked doc fully
                 await self.delete_nodes_by_document_id(document_id)
 
-            chunks_text = await chunked_document.load_chunks_text()
+            chunks_text = await doc.chunked_document.load_chunks_text()
             for chunk_idx, (chunk_text, embedding) in enumerate(
-                zip(chunks_text, chunk_embeddings.embeddings)
+                zip(chunks_text, embeddings)
             ):
                 node_batch.append(
                     TextNode(

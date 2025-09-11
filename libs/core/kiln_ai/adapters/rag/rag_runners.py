@@ -16,6 +16,9 @@ from kiln_ai.adapters.rag.deduplication import (
     deduplicate_extractions,
 )
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
+    DocumentWithChunksAndEmbeddings,
+)
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
 )
@@ -513,13 +516,13 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         self,
         batch_size: int,
         document_ids: list[ID_TYPE] | None = None,
-    ) -> AsyncGenerator[list[Tuple[str, ChunkedDocument, ChunkEmbeddings]], None]:
+    ) -> AsyncGenerator[list[DocumentWithChunksAndEmbeddings], None]:
         target_extractor_config_id = self.extractor_config.id
         target_chunker_config_id = self.chunker_config.id
         target_embedding_config_id = self.embedding_config.id
 
         # (document_id, chunked_document, embedding)
-        jobs: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]] = []
+        jobs: list[DocumentWithChunksAndEmbeddings] = []
         for document in self.project.documents(readonly=True):
             if (
                 document_ids is not None
@@ -546,10 +549,10 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                                     == target_embedding_config_id
                                 ):
                                     jobs.append(
-                                        (
-                                            str(document.id),
-                                            chunked_document,
-                                            chunk_embedding,
+                                        DocumentWithChunksAndEmbeddings(
+                                            document_id=str(document.id),
+                                            chunked_document=chunked_document,
+                                            chunk_embeddings=chunk_embedding,
                                         )
                                     )
 
@@ -563,9 +566,8 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
     async def count_total_chunks(self) -> int:
         total_chunk_count = 0
-        async for records in self.collect_records(batch_size=1):
-            _, chunked_doc, _ = records[0]
-            total_chunk_count += len(chunked_doc.chunks)
+        async for documents in self.collect_records(batch_size=1):
+            total_chunk_count += len(documents[0].chunks)
         return total_chunk_count
 
     async def run(
@@ -577,14 +579,15 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             # infer dimensionality - we peek into the first record to get the vector dimensions
             # vector dimensions are not stored in the config because they are derived from the model
             # and in some cases dynamic shortening of the vector (called Matryoshka Representation Learning)
-            async for records in self.collect_records(
+            async for doc_batch in self.collect_records(
                 batch_size=1,
             ):
-                if len(records) == 0:
+                if len(doc_batch) == 0:
                     # there are no records, because there may be nothing in the upstream steps at all yet
                     return
                 else:
-                    embedding = records[0][2].embeddings[0]
+                    doc = doc_batch[0]
+                    embedding = doc.embeddings[0]
                     vector_dimensions = len(embedding.vector)
                     break
 
@@ -601,21 +604,21 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 error_count=0,
             )
 
-            async for records in self.collect_records(
+            async for doc_batch in self.collect_records(
                 batch_size=self.batch_size, document_ids=document_ids
             ):
                 chunk_count = 0
-                for record in records:
-                    chunk_count += len(record[1].chunks)
+                for doc in doc_batch:
+                    chunk_count += len(doc.chunks)
 
                 try:
-                    await vector_store.add_chunks_with_embeddings(records)
+                    await vector_store.add_chunks_with_embeddings(doc_batch)
                     yield RagStepRunnerProgress(
                         success_count=chunk_count,
                         error_count=0,
                     )
                 except Exception as e:
-                    error_msg = f"Error indexing document batch starting with {records[0][0]}: {e}"
+                    error_msg = f"Error indexing document batch starting with {doc_batch[0].document_id}: {e}"
                     logger.error(error_msg, exc_info=True)
                     yield RagStepRunnerProgress(
                         success_count=0,

@@ -1167,9 +1167,7 @@ class TestRagIndexingStepRunner:
 
         # Should only have records for doc-1 and doc-3
         assert len(collected_records) == 2
-        record_doc_ids = {
-            record[0] for record in collected_records
-        }  # record[0] is document_id
+        record_doc_ids = {record.document_id for record in collected_records}
         assert record_doc_ids == {"doc-1", "doc-3"}
 
     @pytest.mark.asyncio
@@ -1233,8 +1231,8 @@ class TestRagIndexingStepRunner:
         assert len(records_none) == 2
 
         # Should have same document IDs
-        empty_doc_ids = {record[0] for record in records_empty}
-        none_doc_ids = {record[0] for record in records_none}
+        empty_doc_ids = {record.document_id for record in records_empty}
+        none_doc_ids = {record.document_id for record in records_none}
         assert empty_doc_ids == none_doc_ids == {"doc-1", "doc-2"}
 
     @pytest.mark.asyncio

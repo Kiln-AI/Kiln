@@ -11,6 +11,7 @@ from llama_index.core.schema import MetadataMode, NodeRelationship
 from llama_index.core.vector_stores.types import VectorStoreQueryResult
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
+    DocumentWithChunksAndEmbeddings,
     SearchResult,
     VectorStoreQuery,
 )
@@ -127,7 +128,7 @@ def create_rag_config_factory() -> Callable[
 
 def dicts_to_indexable_docs(
     docs: dict[str, list[dict[str, str | list[float]]]], tmp_path: Path
-) -> list[tuple[str, ChunkedDocument, ChunkEmbeddings]]:
+) -> list[DocumentWithChunksAndEmbeddings]:
     results = []
     for doc_id, doc in docs.items():
         chunked_documents = ChunkedDocument(
@@ -157,7 +158,13 @@ def dicts_to_indexable_docs(
                     )
                 )
             )
-        results.append((doc_id, chunked_documents, chunk_embeddings))
+        results.append(
+            DocumentWithChunksAndEmbeddings(
+                document_id=doc_id,
+                chunked_document=chunked_documents,
+                chunk_embeddings=chunk_embeddings,
+            )
+        )
 
     return results
 

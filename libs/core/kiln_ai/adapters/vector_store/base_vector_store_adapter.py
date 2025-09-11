@@ -1,12 +1,28 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.datamodel.chunk import ChunkedDocument
-from kiln_ai.datamodel.embedding import ChunkEmbeddings
+from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
+from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
+
+
+@dataclass
+class DocumentWithChunksAndEmbeddings:
+    document_id: str
+    chunked_document: ChunkedDocument
+    chunk_embeddings: ChunkEmbeddings
+
+    @property
+    def chunks(self) -> list[Chunk]:
+        return self.chunked_document.chunks
+
+    @property
+    def embeddings(self) -> list[Embedding]:
+        return self.chunk_embeddings.embeddings
 
 
 class SearchResult(BaseModel):
@@ -37,7 +53,7 @@ class BaseVectorStoreAdapter(ABC):
     @abstractmethod
     async def add_chunks_with_embeddings(
         self,
-        records: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
+        doc_batch: list[DocumentWithChunksAndEmbeddings],
     ) -> None:
         pass
 
