@@ -60,7 +60,8 @@
     if (response.saved_id && !response.output) {
       // Special case for people upgrading with partly saved datasets in their indexedDB.
       // We know it's been saved and should say so, but not available for preview.
-      return "Output previously saved to dataset, but not available for preview."
+      // They can click the "Saved" link to view the output in the dataset.
+      return "Preview not available"
     }
 
     let output = response.output?.output.output || null

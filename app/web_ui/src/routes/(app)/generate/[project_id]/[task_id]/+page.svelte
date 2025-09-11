@@ -372,7 +372,8 @@
   function visit_node_for_collection(node: SampleDataNode, path: string[]) {
     const topic_path = node.topic ? [...path, node.topic] : path
     node.samples.forEach((sample) => {
-      if (sample.output) {
+      // Rare case: already saved on old UI so saved_id is set, but no output
+      if (sample.output || sample.saved_id) {
         already_generated_count++
       } else {
         // Path may not have been set yet
