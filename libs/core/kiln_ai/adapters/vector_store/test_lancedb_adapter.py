@@ -577,15 +577,11 @@ async def test_search_with_empty_results_error(
     # Create the adapter normally
     adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
-    # Mock the aquery method directly on the LanceDBVectorStore class
-    with patch.object(adapter.lancedb_vector_store.__class__, "aquery") as mock_aquery:
-        mock_aquery.side_effect = Exception("query results are empty")
+    # Search should return empty list instead of raising error
+    query = VectorStoreQuery(query_string="test query")
+    results = await adapter.search(query)
 
-        # Search should return empty list instead of raising error
-        query = VectorStoreQuery(query_string="test query")
-        results = await adapter.search(query)
-
-        assert results == []
+    assert results == []
 
 
 async def test_destroy(

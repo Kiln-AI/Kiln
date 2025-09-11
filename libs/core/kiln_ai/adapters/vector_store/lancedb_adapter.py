@@ -321,19 +321,10 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         except TableNotFoundError as e:
             logger.info("Vector store search returned no results: %s", e)
             return []
-        except Exception as e:
-            # Handle various error conditions that can occur with empty or non-existent tables
-            error_msg = str(e).lower()
-            if (
-                "query results are empty" in error_msg
-                or "table is not initialized" in error_msg
-                or "table does not exist" in error_msg
-                or "no data" in error_msg
-                or ("empty" in error_msg and "result" in error_msg)
-            ):
-                logger.info("Vector store search returned no results: %s", e)
-                return []
-            raise
+        except Warning as e:
+            # we get a Warning raised as
+            logger.info("Vector store search returned no results: %s", e)
+            return []
 
     def compute_deterministic_chunk_id(self, document_id: str, chunk_idx: int) -> str:
         # the id_ of the Node must be a UUID string, otherwise llama_index / LanceDB fails downstream
