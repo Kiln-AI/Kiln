@@ -153,6 +153,7 @@
     }
 
     load_initial_state()
+    update_status()
   })
 
   let clear_all_dialog: Dialog | null = null
@@ -355,11 +356,9 @@
   }
 
   function update_status() {
-    generated_count = 0
     already_generated_count = 0
     samples_to_generate = []
     already_saved_count = 0
-    saved_count = 0
     samples_to_save = []
     visit_node_for_collection($saved_state.root_node, [])
   }
@@ -405,12 +404,15 @@
         sample.output = result.output
         generated_count++
         triggerSaveUiState()
+        update_status()
       }
     }
   }
 
   async function generate_all_samples() {
     try {
+      saved_count = 0
+      generated_count = 0
       generate_all_running = true
       generate_all_error = null
       generate_all_completed = false
@@ -483,6 +485,7 @@
     } finally {
       save_all_running = false
       save_all_completed = true
+      update_status()
     }
   }
 
@@ -551,6 +554,8 @@
     } catch (e) {
       const error = createKilnError(e)
       return { output: null, error }
+    } finally {
+      update_status()
     }
   }
 
@@ -582,6 +587,8 @@
   <AppPage
     title="Synthetic Data Generation"
     no_y_padding
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     action_buttons={[
       ...(is_setup
         ? [
@@ -652,12 +659,14 @@
           >
             Generate All Model Outputs
           </button>
-          <button
-            class="btn btn-mid btn-outline btn-primary"
-            on:click={show_save_all_modal}
-          >
-            Save All to Dataset
-          </button>
+          {#if samples_to_save.length > 0}
+            <button
+              class="btn btn-mid btn-outline btn-primary"
+              on:click={show_save_all_modal}
+            >
+              Save All to Dataset
+            </button>
+          {/if}
         </div>
       {/if}
       <div class="flex flex-col">
@@ -733,9 +742,10 @@
             /></svg
           >
         {/if}
-        <div class="font-medium">Generated {generated_count} new items.</div>
+        <div class="font-medium">Generated {generated_count} new items</div>
         <div class="font-light text-sm">
-          You can view them below. Once happy, select "Save All".
+          You can view them and delete any you don't want to save. Once ready,
+          select "Save All".
         </div>
         {#if generate_all_sub_errors.length > 0}
           <div class="text-error font-light text-sm mt-4">
@@ -909,8 +919,7 @@
       >
         <div class="font-medium">No Items to Save</div>
         <div class="font-light">
-          Generate model inputs and outputs before attempting to save synthetic
-          data.
+          Generate synthetic inputs and outputs before attempting to save.
         </div>
         {#if already_saved_count > 0}
           <div class="font-light text-sm">
