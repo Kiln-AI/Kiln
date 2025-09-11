@@ -117,6 +117,7 @@
   // Function to trigger save when data changes
   function triggerSaveUiState() {
     saved_state.update((s) => s)
+    update_status()
   }
 
   onMount(async () => {

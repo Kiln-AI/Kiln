@@ -288,7 +288,7 @@
 
 <!-- Topic Header Row-->
 {#if path.length != 0}
-  <tr class="bg-base-200 border-b-2 border-base-100"
+  <tr class="bg-base-200 border-t-2 border-base-100"
     ><td
       colspan="3"
       class="py-2"
