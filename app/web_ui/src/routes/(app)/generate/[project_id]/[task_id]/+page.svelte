@@ -203,7 +203,8 @@
         } else {
           // Case 3: Saved state and URL state are different.
           // Show a dialog to the user asking if they want to replace the saved state with the URL state
-          clear_all_dialog?.show()
+          // TODO: re-enable this
+          //clear_all_dialog?.show()
           return
         }
       }
@@ -217,7 +218,8 @@
         task_id,
         $saved_state.splits,
       )
-      clear_existing_state_no_url_dialog?.show()
+      // TODO: re-enable this
+      //clear_existing_state_no_url_dialog?.show()
       return
     }
     // Case 5: No state - wait for the user to setup via UI
@@ -330,10 +332,10 @@
   // Two functions for recursive collection of data to save.
   let already_generated_count = 0
   let samples_to_generate: SampleData[] = []
-  let generated_count = 0
   let already_saved_count = 0
-  let saved_count = 0
   let samples_to_save: SampleData[] = []
+  let input_generated_count = 0
+  let leaf_topics_missing_inputs = 0
   function visit_node_for_collection(node: SampleDataNode, path: string[]) {
     const topic_path = node.topic ? [...path, node.topic] : path
     node.samples.forEach((sample) => {
@@ -349,7 +351,12 @@
       } else if (sample.output) {
         samples_to_save.push(sample)
       }
+      // All samples have inputs
+      input_generated_count++
     })
+    if (node.sub_topics.length === 0 && node.samples.length === 0) {
+      leaf_topics_missing_inputs++
+    }
     node.sub_topics.forEach((sub_topic) => {
       visit_node_for_collection(sub_topic, topic_path)
     })
@@ -360,6 +367,8 @@
     samples_to_generate = []
     already_saved_count = 0
     samples_to_save = []
+    leaf_topics_missing_inputs = 0
+    input_generated_count = 0
     visit_node_for_collection($saved_state.root_node, [])
   }
 
@@ -409,9 +418,9 @@
     }
   }
 
+  let generated_count = 0
   async function generate_all_samples() {
     try {
-      saved_count = 0
       generated_count = 0
       generate_all_running = true
       generate_all_error = null
@@ -435,11 +444,14 @@
     } finally {
       generate_all_running = false
       generate_all_completed = true
+      update_status()
     }
   }
 
+  let saved_count = 0
   async function save_all_samples() {
     try {
+      saved_count = 0
       save_all_running = true
       save_all_error = null
       save_all_completed = false
@@ -581,6 +593,31 @@
     // Fallback (should never reach here if splits sum to 1)
     return Object.keys(splits)[0]
   }
+
+  type StepNumber = 1 | 2 | 3 | 4
+  const step_numbers: StepNumber[] = [1, 2, 3, 4]
+  let current_step: StepNumber = 1
+  const step_names: Record<StepNumber, string> = {
+    1: "Add Topics",
+    2: "Generate Inputs",
+    3: "Generate Outputs",
+    4: "Save Data",
+  }
+  const step_descriptions: Record<StepNumber, string> = {
+    1: "Add topics to ensure synthetic data is diverse",
+    2: "Generate synthetic inputs: data provided as input to the task",
+    3: "Run the task on synthetic inputs, generating outputs",
+    4: "Save this data into your dataset",
+  }
+  const learn_more_step_links: Record<StepNumber, string> = {
+    1: "https://docs.kiln.tech/docs/synthetic-data-generation#topic-tree-data-generation-for-content-breadth",
+    2: "https://docs.kiln.tech/docs/synthetic-data-generation#generate-model-inputs",
+    3: "https://docs.kiln.tech/docs/synthetic-data-generation#generate-model-outputs",
+    4: "https://docs.kiln.tech/docs/synthetic-data-generation#save-synthetic-data-into-dataset",
+  }
+  function set_current_step(step: StepNumber) {
+    current_step = step
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -639,37 +676,143 @@
         </div>
       {:else}
         <div
-          class="flex flex-row py-1 mt-4 mb-4 gap-2 justify-center sticky top-0 z-2 backdrop-blur"
+          class="py-1 mt-12 mb-4 gap-2 sticky top-0 z-2 backdrop-blur bg-white/70"
         >
-          <button
-            class="btn btn-mid btn-outline btn-primary"
-            on:click={() => {
-              root_node_component?.open_generate_samples_modal(true)
-            }}
-          >
-            {#if $saved_state.root_node.sub_topics.length > 0}
-              Generate Model Inputs (All Topics)
-            {:else}
-              Generate Model Inputs (Root Topic)
-            {/if}
-          </button>
-          <button
-            class="btn btn-mid btn-outline btn-primary"
-            on:click={show_generate_all_modal}
-          >
-            Generate All Model Outputs
-          </button>
-          {#if samples_to_save.length > 0}
-            <button
-              class="btn btn-mid btn-outline btn-primary"
-              on:click={show_save_all_modal}
-            >
-              Save All to Dataset
-            </button>
-          {/if}
+          <div class="flex flex-col">
+            <div class="flex justify-center">
+              <ul class="steps">
+                {#each step_numbers as step}
+                  <li class="step {current_step >= step ? 'step-primary' : ''}">
+                    <button
+                      class="px-4 text-sm {current_step == step
+                        ? 'font-medium cursor-default'
+                        : 'text-gray-500 hover:underline hover:text-gray-700'}"
+                      on:click={() => set_current_step(step)}
+                      aria-label={`Go to step ${step} - ${step_names[step]}`}
+                    >
+                      {step_names[step]}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+            <div class="max-w-3xl mx-auto mt-6 text-center">
+              <div class="font-light">
+                <span class="font-medium">Step {current_step}:</span>
+                {step_descriptions[current_step]}
+                {#if learn_more_step_links[current_step]}
+                  <a
+                    href={learn_more_step_links[current_step]}
+                    target="_blank"
+                    class="link pl-1">Learn More</a
+                  >
+                {/if}
+              </div>
+              <div class="mt-2">
+                {#if current_step == 1}
+                  {#if $saved_state.root_node.sub_topics.length == 0}
+                    <button
+                      class="btn btn-sm btn-outline btn-primary mr-2"
+                      on:click={() =>
+                        root_node_component?.open_generate_subtopics_modal()}
+                    >
+                      Add Topics
+                    </button>
+                  {/if}
+                  <button
+                    class="btn btn-sm btn-primary"
+                    on:click={() => set_current_step(2)}
+                  >
+                    Next Step
+                  </button>
+                {:else if current_step == 2}
+                  {@const next_primary =
+                    input_generated_count > 0 &&
+                    leaf_topics_missing_inputs === 0}
+                  {#if leaf_topics_missing_inputs > 0}
+                    <div class="text-error text-sm my-2">
+                      {leaf_topics_missing_inputs}
+                      {leaf_topics_missing_inputs === 1
+                        ? "topic has"
+                        : "topics have"}
+                      no inputs
+                    </div>
+                  {/if}
+                  <button
+                    class="btn btn-sm btn-primary {next_primary
+                      ? 'btn-outline'
+                      : ''}"
+                    on:click={() => {
+                      root_node_component?.open_generate_samples_modal(true)
+                    }}
+                  >
+                    {#if $saved_state.root_node.sub_topics.length > 0}
+                      Generate Model Inputs (All Topics)
+                    {:else}
+                      Generate Model Inputs
+                    {/if}
+                  </button>
+                  <button
+                    class="btn btn-sm btn-primary {next_primary
+                      ? ''
+                      : 'btn-outline'}"
+                    on:click={() => set_current_step(3)}
+                  >
+                    Next Step
+                  </button>
+                {:else if current_step == 3}
+                  {@const no_inputs = input_generated_count === 0}
+                  {@const output_gen_complete =
+                    samples_to_generate.length === 0}
+                  {#if no_inputs}
+                    <div class="text-error text-sm my-2">
+                      No inputs available. Return to <button
+                        on:click={() => set_current_step(2)}
+                        class="link">step 2</button
+                      > to add inputs.
+                    </div>
+                  {:else if output_gen_complete}
+                    <button
+                      class="btn btn-sm btn-primary"
+                      on:click={() => set_current_step(4)}
+                    >
+                      Next Step
+                    </button>
+                  {:else}
+                    <button
+                      class="btn btn-sm btn-primary {output_gen_complete
+                        ? 'hidden'
+                        : ''}"
+                      on:click={show_generate_all_modal}
+                    >
+                      Generate All Model Outputs
+                    </button>
+                  {/if}
+                {:else if current_step == 4}
+                  {#if samples_to_save.length > 0}
+                    <button
+                      class="btn btn-sm btn-primary"
+                      on:click={show_save_all_modal}
+                    >
+                      Save All Items to Dataset
+                    </button>
+                  {:else}
+                    <div class="flex flex-row justify-center">
+                      <Warning
+                        warning_message="All items saved into the dataset!"
+                        warning_color="success"
+                        warning_icon="check"
+                        tight
+                      />
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            </div>
+          </div>
         </div>
       {/if}
-      <div class="flex flex-col">
+      <div class="flex flex-col mt-12">
         <GeneratedDataNode
           data={$saved_state.root_node}
           path={[]}
