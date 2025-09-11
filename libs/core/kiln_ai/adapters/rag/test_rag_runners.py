@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -130,6 +131,7 @@ def real_rag_config(mock_project):
         extractor_config_id="extractor-123",
         chunker_config_id="chunker-123",
         embedding_config_id="embedding-123",
+        vector_store_config_id="vector-store-123",
         parent=mock_project,
     )
 
@@ -544,6 +546,176 @@ class TestRagExtractionStepRunner:
         assert jobs[0].doc == mock_doc1
         assert jobs[0].extractor_config == extraction_runner.extractor_config
 
+    @pytest.mark.asyncio
+    async def test_collect_jobs_with_document_ids_filters_documents(
+        self, extraction_runner
+    ):
+        # Setup mock documents with specific IDs
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.extractions.return_value = []  # No extractions
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.extractions.return_value = []  # No extractions
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_doc3.extractions.return_value = []  # No extractions
+
+        extraction_runner.project.documents.return_value = [
+            mock_doc1,
+            mock_doc2,
+            mock_doc3,
+        ]
+
+        # Only process doc-1 and doc-3
+        jobs = await extraction_runner.collect_jobs(document_ids=["doc-1", "doc-3"])
+
+        # Should only create jobs for doc-1 and doc-3
+        assert len(jobs) == 2
+        job_doc_ids = {job.doc.id for job in jobs}
+        assert job_doc_ids == {"doc-1", "doc-3"}
+
+    @pytest.mark.asyncio
+    async def test_collect_jobs_with_empty_document_ids_processes_all_documents(
+        self, extraction_runner
+    ):
+        # Setup mock documents
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.extractions.return_value = []
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.extractions.return_value = []
+
+        extraction_runner.project.documents.return_value = [mock_doc1, mock_doc2]
+
+        # Empty list should behave like None
+        jobs_empty = await extraction_runner.collect_jobs(document_ids=[])
+        jobs_none = await extraction_runner.collect_jobs(document_ids=None)
+
+        # Both should process all documents
+        assert len(jobs_empty) == 2
+        assert len(jobs_none) == 2
+
+        # Should have same document IDs
+        empty_doc_ids = {job.doc.id for job in jobs_empty}
+        none_doc_ids = {job.doc.id for job in jobs_none}
+        assert empty_doc_ids == none_doc_ids == {"doc-1", "doc-2"}
+
+    @pytest.mark.asyncio
+    async def test_run_with_document_ids_filters_documents(self, extraction_runner):
+        # Setup mock documents with specific IDs
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.extractions.return_value = []
+        mock_doc1.path = Path("doc1.txt")
+        mock_doc1.original_file = MagicMock()
+        mock_doc1.original_file.attachment = MagicMock()
+        mock_doc1.original_file.attachment.resolve_path.return_value = "doc1_path"
+        mock_doc1.original_file.mime_type = "text/plain"
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.extractions.return_value = []
+        mock_doc2.path = Path("doc2.txt")
+        mock_doc2.original_file = MagicMock()
+        mock_doc2.original_file.attachment = MagicMock()
+        mock_doc2.original_file.attachment.resolve_path.return_value = "doc2_path"
+        mock_doc2.original_file.mime_type = "text/plain"
+
+        extraction_runner.project.documents.return_value = [mock_doc1, mock_doc2]
+
+        with (
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.extractor_adapter_from_type"
+            ) as mock_adapter_factory,
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.AsyncJobRunner"
+            ) as mock_job_runner_class,
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+        ):
+            mock_extractor = MagicMock(spec=BaseExtractor)
+            mock_adapter_factory.return_value = mock_extractor
+
+            mock_job_runner = MagicMock()
+            mock_job_runner_class.return_value = mock_job_runner
+
+            async def mock_runner_progress():
+                yield MagicMock(complete=1)
+
+            mock_job_runner.run.return_value = mock_runner_progress()
+
+            # Run with specific document IDs
+            progress_values = []
+            async for progress in extraction_runner.run(document_ids=["doc-1"]):
+                progress_values.append(progress)
+
+            # Verify job runner was created with only one job (for doc-1)
+            mock_job_runner_class.assert_called_once()
+            call_args = mock_job_runner_class.call_args
+            jobs = call_args.kwargs["jobs"]
+            assert len(jobs) == 1
+            assert jobs[0].doc.id == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_run_with_empty_document_ids_behaves_like_none(
+        self, extraction_runner
+    ):
+        # Setup mock documents
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.extractions.return_value = []
+        mock_doc1.path = Path("doc1.txt")
+        mock_doc1.original_file = MagicMock()
+        mock_doc1.original_file.attachment = MagicMock()
+        mock_doc1.original_file.attachment.resolve_path.return_value = "doc1_path"
+        mock_doc1.original_file.mime_type = "text/plain"
+
+        extraction_runner.project.documents.return_value = [mock_doc1]
+
+        with (
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.extractor_adapter_from_type"
+            ) as mock_adapter_factory,
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.AsyncJobRunner"
+            ) as mock_job_runner_class,
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+        ):
+            mock_extractor = MagicMock(spec=BaseExtractor)
+            mock_adapter_factory.return_value = mock_extractor
+
+            mock_job_runner = MagicMock()
+            mock_job_runner_class.return_value = mock_job_runner
+
+            async def mock_runner_progress():
+                yield MagicMock(complete=1)
+
+            mock_job_runner.run.return_value = mock_runner_progress()
+
+            # Test with empty list
+            jobs_with_empty = None
+            async for _ in extraction_runner.run(document_ids=[]):
+                pass
+            call_args_empty = mock_job_runner_class.call_args
+            jobs_with_empty = call_args_empty.kwargs["jobs"]
+
+            # Reset mock
+            mock_job_runner_class.reset_mock()
+
+            # Test with None
+            jobs_with_none = None
+            async for _ in extraction_runner.run(document_ids=None):
+                pass
+            call_args_none = mock_job_runner_class.call_args
+            jobs_with_none = call_args_none.kwargs["jobs"]
+
+            # Both should have same number of jobs
+            assert len(jobs_with_empty) == len(jobs_with_none) == 1
+
 
 class TestRagChunkingStepRunner:
     @pytest.fixture
@@ -588,11 +760,13 @@ class TestRagChunkingStepRunner:
         # Extraction with matching extractor config but no chunks
         mock_extraction1 = MagicMock(spec=Extraction)
         mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
         mock_extraction1.chunked_documents.return_value = []
 
         # Extraction with matching extractor config and existing chunks
         mock_extraction2 = MagicMock(spec=Extraction)
         mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
         mock_chunked_doc = MagicMock()
         mock_chunked_doc.chunker_config_id = "chunker-123"
         mock_extraction2.chunked_documents.return_value = [mock_chunked_doc]
@@ -600,6 +774,7 @@ class TestRagChunkingStepRunner:
         # Extraction with different extractor config
         mock_extraction3 = MagicMock(spec=Extraction)
         mock_extraction3.extractor_config_id = "different-extractor"
+        mock_extraction3.created_at = datetime(2023, 1, 3)
         mock_extraction3.chunked_documents.return_value = []
 
         mock_doc.extractions.return_value = [
@@ -615,6 +790,91 @@ class TestRagChunkingStepRunner:
         assert len(jobs) == 1
         assert jobs[0].extraction == mock_extraction1
         assert jobs[0].chunker_config == chunking_runner.chunker_config
+
+    @pytest.mark.asyncio
+    async def test_collect_jobs_with_document_ids_filters_documents(
+        self, chunking_runner
+    ):
+        # Setup mock documents with specific IDs
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_extraction1 = MagicMock(spec=Extraction)
+        mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
+        mock_extraction1.chunked_documents.return_value = []
+        mock_doc1.extractions.return_value = [mock_extraction1]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_extraction2 = MagicMock(spec=Extraction)
+        mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
+        mock_extraction2.chunked_documents.return_value = []
+        mock_doc2.extractions.return_value = [mock_extraction2]
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_extraction3 = MagicMock(spec=Extraction)
+        mock_extraction3.extractor_config_id = "extractor-123"
+        mock_extraction3.created_at = datetime(2023, 1, 3)
+        mock_extraction3.chunked_documents.return_value = []
+        mock_doc3.extractions.return_value = [mock_extraction3]
+
+        chunking_runner.project.documents.return_value = [
+            mock_doc1,
+            mock_doc2,
+            mock_doc3,
+        ]
+
+        # Only process doc-1 and doc-3
+        jobs = await chunking_runner.collect_jobs(document_ids=["doc-1", "doc-3"])
+
+        # Should only create jobs for doc-1 and doc-3
+        assert len(jobs) == 2
+        job_doc_ids = {job.extraction.extractor_config_id for job in jobs}
+        assert job_doc_ids == {
+            "extractor-123"
+        }  # Both should have matching extractor config
+
+        # Verify the extractions come from the right documents
+        extraction_times = {job.extraction.created_at for job in jobs}
+        assert extraction_times == {datetime(2023, 1, 1), datetime(2023, 1, 3)}
+
+    @pytest.mark.asyncio
+    async def test_collect_jobs_with_empty_document_ids_processes_all_documents(
+        self, chunking_runner
+    ):
+        # Setup mock documents
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_extraction1 = MagicMock(spec=Extraction)
+        mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
+        mock_extraction1.chunked_documents.return_value = []
+        mock_doc1.extractions.return_value = [mock_extraction1]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_extraction2 = MagicMock(spec=Extraction)
+        mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
+        mock_extraction2.chunked_documents.return_value = []
+        mock_doc2.extractions.return_value = [mock_extraction2]
+
+        chunking_runner.project.documents.return_value = [mock_doc1, mock_doc2]
+
+        # Empty list should behave like None
+        jobs_empty = await chunking_runner.collect_jobs(document_ids=[])
+        jobs_none = await chunking_runner.collect_jobs(document_ids=None)
+
+        # Both should process all documents
+        assert len(jobs_empty) == 2
+        assert len(jobs_none) == 2
+
+        # Should have same extraction times
+        empty_times = {job.extraction.created_at for job in jobs_empty}
+        none_times = {job.extraction.created_at for job in jobs_none}
+        assert empty_times == none_times == {datetime(2023, 1, 1), datetime(2023, 1, 2)}
 
 
 class TestRagEmbeddingStepRunner:
@@ -668,15 +928,18 @@ class TestRagEmbeddingStepRunner:
 
         mock_extraction = MagicMock(spec=Extraction)
         mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
 
         # Chunked document with matching chunker config but no embeddings
         mock_chunked_doc1 = MagicMock(spec=ChunkedDocument)
         mock_chunked_doc1.chunker_config_id = "chunker-123"
+        mock_chunked_doc1.created_at = datetime(2023, 1, 1)
         mock_chunked_doc1.chunk_embeddings.return_value = []
 
         # Chunked document with matching chunker config and existing embeddings
         mock_chunked_doc2 = MagicMock(spec=ChunkedDocument)
         mock_chunked_doc2.chunker_config_id = "chunker-123"
+        mock_chunked_doc2.created_at = datetime(2023, 1, 2)
         mock_chunk_embeddings = MagicMock()
         mock_chunk_embeddings.embedding_config_id = "embedding-123"
         mock_chunked_doc2.chunk_embeddings.return_value = [mock_chunk_embeddings]
@@ -694,6 +957,464 @@ class TestRagEmbeddingStepRunner:
         assert len(jobs) == 1
         assert jobs[0].chunked_document == mock_chunked_doc1
         assert jobs[0].embedding_config == embedding_runner.embedding_config
+
+    @pytest.mark.asyncio
+    async def test_collect_jobs_with_document_ids_filters_documents(
+        self, embedding_runner
+    ):
+        # Setup mock documents with specific IDs
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_extraction1 = MagicMock(spec=Extraction)
+        mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc1 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc1.chunker_config_id = "chunker-123"
+        mock_chunked_doc1.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc1.chunk_embeddings.return_value = []
+        mock_extraction1.chunked_documents.return_value = [mock_chunked_doc1]
+        mock_doc1.extractions.return_value = [mock_extraction1]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_extraction2 = MagicMock(spec=Extraction)
+        mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
+        mock_chunked_doc2 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc2.chunker_config_id = "chunker-123"
+        mock_chunked_doc2.created_at = datetime(2023, 1, 2)
+        mock_chunked_doc2.chunk_embeddings.return_value = []
+        mock_extraction2.chunked_documents.return_value = [mock_chunked_doc2]
+        mock_doc2.extractions.return_value = [mock_extraction2]
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_extraction3 = MagicMock(spec=Extraction)
+        mock_extraction3.extractor_config_id = "extractor-123"
+        mock_extraction3.created_at = datetime(2023, 1, 3)
+        mock_chunked_doc3 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc3.chunker_config_id = "chunker-123"
+        mock_chunked_doc3.created_at = datetime(2023, 1, 3)
+        mock_chunked_doc3.chunk_embeddings.return_value = []
+        mock_extraction3.chunked_documents.return_value = [mock_chunked_doc3]
+        mock_doc3.extractions.return_value = [mock_extraction3]
+
+        embedding_runner.project.documents.return_value = [
+            mock_doc1,
+            mock_doc2,
+            mock_doc3,
+        ]
+
+        # Only process doc-1 and doc-3
+        jobs = await embedding_runner.collect_jobs(document_ids=["doc-1", "doc-3"])
+
+        # Should only create jobs for doc-1 and doc-3
+        assert len(jobs) == 2
+        job_doc_times = {job.chunked_document.created_at for job in jobs}
+        assert job_doc_times == {datetime(2023, 1, 1), datetime(2023, 1, 3)}
+
+    @pytest.mark.asyncio
+    async def test_collect_jobs_with_empty_document_ids_processes_all_documents(
+        self, embedding_runner
+    ):
+        # Setup mock documents
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_extraction1 = MagicMock(spec=Extraction)
+        mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc1 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc1.chunker_config_id = "chunker-123"
+        mock_chunked_doc1.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc1.chunk_embeddings.return_value = []
+        mock_extraction1.chunked_documents.return_value = [mock_chunked_doc1]
+        mock_doc1.extractions.return_value = [mock_extraction1]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_extraction2 = MagicMock(spec=Extraction)
+        mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
+        mock_chunked_doc2 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc2.chunker_config_id = "chunker-123"
+        mock_chunked_doc2.created_at = datetime(2023, 1, 2)
+        mock_chunked_doc2.chunk_embeddings.return_value = []
+        mock_extraction2.chunked_documents.return_value = [mock_chunked_doc2]
+        mock_doc2.extractions.return_value = [mock_extraction2]
+
+        embedding_runner.project.documents.return_value = [mock_doc1, mock_doc2]
+
+        # Empty list should behave like None
+        jobs_empty = await embedding_runner.collect_jobs(document_ids=[])
+        jobs_none = await embedding_runner.collect_jobs(document_ids=None)
+
+        # Both should process all documents
+        assert len(jobs_empty) == 2
+        assert len(jobs_none) == 2
+
+        # Should have same chunked document times
+        empty_times = {job.chunked_document.created_at for job in jobs_empty}
+        none_times = {job.chunked_document.created_at for job in jobs_none}
+        assert empty_times == none_times == {datetime(2023, 1, 1), datetime(2023, 1, 2)}
+
+
+class TestRagIndexingStepRunner:
+    @pytest.fixture
+    def indexing_runner(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+        mock_rag_config,
+    ):
+        from kiln_ai.adapters.rag.rag_runners import RagIndexingStepRunner
+        from kiln_ai.datamodel.vector_store import VectorStoreConfig
+
+        # Create a mock vector store config
+        mock_vector_store_config = MagicMock(spec=VectorStoreConfig)
+        mock_vector_store_config.id = "vector-store-123"
+
+        return RagIndexingStepRunner(
+            project=mock_project,
+            extractor_config=mock_extractor_config,
+            chunker_config=mock_chunker_config,
+            embedding_config=mock_embedding_config,
+            vector_store_config=mock_vector_store_config,
+            rag_config=mock_rag_config,
+            concurrency=2,
+            batch_size=5,
+        )
+
+    def test_stage_returns_indexing(self, indexing_runner):
+        assert indexing_runner.stage() == RagWorkflowStepNames.INDEXING
+
+    def test_lock_key_property(self, indexing_runner):
+        expected_key = f"rag:index:{indexing_runner.vector_store_config.id}"
+        assert indexing_runner.lock_key == expected_key
+
+    @pytest.mark.asyncio
+    async def test_collect_records_with_document_ids_filters_documents(
+        self, indexing_runner
+    ):
+        # Setup mock documents with specific IDs and complete pipeline data
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_extraction1 = MagicMock(spec=Extraction)
+        mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc1 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc1.chunker_config_id = "chunker-123"
+        mock_chunked_doc1.created_at = datetime(2023, 1, 1)
+
+        mock_chunk_embeddings1 = MagicMock()
+        mock_chunk_embeddings1.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings1.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc1.chunk_embeddings.return_value = [mock_chunk_embeddings1]
+
+        mock_extraction1.chunked_documents.return_value = [mock_chunked_doc1]
+        mock_doc1.extractions.return_value = [mock_extraction1]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_extraction2 = MagicMock(spec=Extraction)
+        mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
+
+        mock_chunked_doc2 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc2.chunker_config_id = "chunker-123"
+        mock_chunked_doc2.created_at = datetime(2023, 1, 2)
+
+        mock_chunk_embeddings2 = MagicMock()
+        mock_chunk_embeddings2.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings2.created_at = datetime(2023, 1, 2)
+        mock_chunked_doc2.chunk_embeddings.return_value = [mock_chunk_embeddings2]
+
+        mock_extraction2.chunked_documents.return_value = [mock_chunked_doc2]
+        mock_doc2.extractions.return_value = [mock_extraction2]
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_extraction3 = MagicMock(spec=Extraction)
+        mock_extraction3.extractor_config_id = "extractor-123"
+        mock_extraction3.created_at = datetime(2023, 1, 3)
+
+        mock_chunked_doc3 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc3.chunker_config_id = "chunker-123"
+        mock_chunked_doc3.created_at = datetime(2023, 1, 3)
+
+        mock_chunk_embeddings3 = MagicMock()
+        mock_chunk_embeddings3.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings3.created_at = datetime(2023, 1, 3)
+        mock_chunked_doc3.chunk_embeddings.return_value = [mock_chunk_embeddings3]
+
+        mock_extraction3.chunked_documents.return_value = [mock_chunked_doc3]
+        mock_doc3.extractions.return_value = [mock_extraction3]
+
+        indexing_runner.project.documents.return_value = [
+            mock_doc1,
+            mock_doc2,
+            mock_doc3,
+        ]
+
+        # Collect records for doc-1 and doc-3 only
+        collected_records = []
+        async for records in indexing_runner.collect_records(
+            batch_size=10, document_ids=["doc-1", "doc-3"]
+        ):
+            collected_records.extend(records)
+
+        # Should only have records for doc-1 and doc-3
+        assert len(collected_records) == 2
+        record_doc_ids = {record.document_id for record in collected_records}
+        assert record_doc_ids == {"doc-1", "doc-3"}
+
+    @pytest.mark.asyncio
+    async def test_collect_records_with_empty_document_ids_processes_all_documents(
+        self, indexing_runner
+    ):
+        # Setup mock documents
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_extraction1 = MagicMock(spec=Extraction)
+        mock_extraction1.extractor_config_id = "extractor-123"
+        mock_extraction1.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc1 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc1.chunker_config_id = "chunker-123"
+        mock_chunked_doc1.created_at = datetime(2023, 1, 1)
+
+        mock_chunk_embeddings1 = MagicMock()
+        mock_chunk_embeddings1.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings1.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc1.chunk_embeddings.return_value = [mock_chunk_embeddings1]
+
+        mock_extraction1.chunked_documents.return_value = [mock_chunked_doc1]
+        mock_doc1.extractions.return_value = [mock_extraction1]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_extraction2 = MagicMock(spec=Extraction)
+        mock_extraction2.extractor_config_id = "extractor-123"
+        mock_extraction2.created_at = datetime(2023, 1, 2)
+
+        mock_chunked_doc2 = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc2.chunker_config_id = "chunker-123"
+        mock_chunked_doc2.created_at = datetime(2023, 1, 2)
+
+        mock_chunk_embeddings2 = MagicMock()
+        mock_chunk_embeddings2.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings2.created_at = datetime(2023, 1, 2)
+        mock_chunked_doc2.chunk_embeddings.return_value = [mock_chunk_embeddings2]
+
+        mock_extraction2.chunked_documents.return_value = [mock_chunked_doc2]
+        mock_doc2.extractions.return_value = [mock_extraction2]
+
+        indexing_runner.project.documents.return_value = [mock_doc1, mock_doc2]
+
+        # Empty list should behave like None
+        records_empty = []
+        async for records in indexing_runner.collect_records(
+            batch_size=10, document_ids=[]
+        ):
+            records_empty.extend(records)
+
+        records_none = []
+        async for records in indexing_runner.collect_records(
+            batch_size=10, document_ids=None
+        ):
+            records_none.extend(records)
+
+        # Both should process all documents
+        assert len(records_empty) == 2
+        assert len(records_none) == 2
+
+        # Should have same document IDs
+        empty_doc_ids = {record.document_id for record in records_empty}
+        none_doc_ids = {record.document_id for record in records_none}
+        assert empty_doc_ids == none_doc_ids == {"doc-1", "doc-2"}
+
+    @pytest.mark.asyncio
+    async def test_count_total_chunks(self, indexing_runner):
+        # Setup mock documents with chunked documents
+        mock_doc = MagicMock(spec=Document)
+        mock_doc.id = "doc-1"
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock(), MagicMock(), MagicMock()]  # 3 chunks
+
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc.extractions.return_value = [mock_extraction]
+
+        indexing_runner.project.documents.return_value = [mock_doc]
+
+        total_chunks = await indexing_runner.count_total_chunks()
+        assert total_chunks == 3
+
+    @pytest.mark.asyncio
+    async def test_run_vector_dimensions_inference(self, indexing_runner):
+        # Setup mock documents with embeddings
+        mock_doc = MagicMock(spec=Document)
+        mock_doc.id = "doc-1"
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock()]
+
+        # Mock embeddings with specific vector dimensions
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3, 0.4, 0.5]  # 5 dimensions
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc.extractions.return_value = [mock_extraction]
+
+        indexing_runner.project.documents.return_value = [mock_doc]
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            progress_values = []
+            async for progress in indexing_runner.run():
+                progress_values.append(progress)
+
+            # Should create vector store and process records
+            mock_vector_store_factory.assert_called_once_with(
+                indexing_runner.rag_config, indexing_runner.vector_store_config
+            )
+            assert len(progress_values) >= 2  # Initial progress + at least one batch
+
+    @pytest.mark.asyncio
+    async def test_run_successful_indexing_flow(self, indexing_runner):
+        # Setup mock documents with embeddings
+        mock_doc = MagicMock(spec=Document)
+        mock_doc.id = "doc-1"
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock(), MagicMock()]  # 2 chunks
+
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3]  # 3 dimensions
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc.extractions.return_value = [mock_extraction]
+
+        indexing_runner.project.documents.return_value = [mock_doc]
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            progress_values = []
+            async for progress in indexing_runner.run():
+                progress_values.append(progress)
+
+            # Should yield initial progress and success progress
+            assert len(progress_values) >= 2
+            # Initial progress should have 0 counts
+            assert progress_values[0].success_count == 0
+            assert progress_values[0].error_count == 0
+            # Should have at least one success progress
+            success_progress = [
+                p for p in progress_values if p.success_count and p.success_count > 0
+            ]
+            assert len(success_progress) >= 1
+            assert success_progress[0].success_count == 2  # 2 chunks
+
+    @pytest.mark.asyncio
+    async def test_run_error_handling_during_indexing(self, indexing_runner):
+        # Setup mock documents with embeddings
+        mock_doc = MagicMock(spec=Document)
+        mock_doc.id = "doc-1"
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock(), MagicMock()]  # 2 chunks
+
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3]  # 3 dimensions
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc.extractions.return_value = [mock_extraction]
+
+        indexing_runner.project.documents.return_value = [mock_doc]
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            # Make the vector store raise an exception
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock(
+                side_effect=Exception("Vector store error")
+            )
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            progress_values = []
+            async for progress in indexing_runner.run():
+                progress_values.append(progress)
+
+            # Should yield initial progress and error progress
+            assert len(progress_values) >= 2
+            # Should have error progress with logs
+            error_progress = [
+                p for p in progress_values if p.error_count and p.error_count > 0
+            ]
+            assert len(error_progress) >= 1
+            assert error_progress[0].error_count == 2  # 2 chunks failed
+            assert len(error_progress[0].logs) > 0
+            assert "error" in error_progress[0].logs[0].level.lower()
+            assert "Vector store error" in error_progress[0].logs[0].message
 
 
 # Tests for workflow runner
@@ -721,18 +1442,7 @@ class TestRagWorkflowRunner:
     ):
         return RagWorkflowRunnerConfiguration(
             step_runners=[mock_step_runner],
-            rag_config=real_rag_config,
-            extractor_config=real_extractor_config,
-            chunker_config=real_chunker_config,
-            embedding_config=real_embedding_config,
-        )
-
-    @pytest.fixture
-    def workflow_runner(self, mock_project, workflow_config):
-        with patch(
-            "kiln_ai.adapters.rag.rag_runners.compute_current_progress_for_rag_config"
-        ) as mock_compute:
-            mock_initial_progress = RagProgress(
+            initial_progress=RagProgress(
                 total_document_count=10,
                 total_document_extracted_count=0,
                 total_document_chunked_count=0,
@@ -742,12 +1452,16 @@ class TestRagWorkflowRunner:
                 total_document_chunked_error_count=0,
                 total_document_embedded_error_count=0,
                 logs=[],
-            )
-            mock_compute.return_value = mock_initial_progress
+            ),
+            rag_config=real_rag_config,
+            extractor_config=real_extractor_config,
+            chunker_config=real_chunker_config,
+            embedding_config=real_embedding_config,
+        )
 
-            return RagWorkflowRunner(
-                project=mock_project, configuration=workflow_config
-            )
+    @pytest.fixture
+    def workflow_runner(self, mock_project, workflow_config):
+        return RagWorkflowRunner(project=mock_project, configuration=workflow_config)
 
     def test_lock_key_generation(self, workflow_runner):
         expected_key = f"rag:run:{workflow_runner.configuration.rag_config.id}"
@@ -783,10 +1497,39 @@ class TestRagWorkflowRunner:
         assert result.total_document_embedded_count == 2
         assert result.total_document_embedded_error_count == 0
 
+    def test_update_workflow_progress_indexing(self, workflow_runner):
+        step_progress = RagStepRunnerProgress(success_count=10, error_count=2)
+
+        result = workflow_runner.update_workflow_progress(
+            RagWorkflowStepNames.INDEXING, step_progress
+        )
+
+        # For indexing, success_count is added (not max) because it's chunks, not documents
+        assert result.total_chunks_indexed_count == 10
+        assert result.total_chunks_indexed_error_count == 2
+
+    def test_update_workflow_progress_indexing_accumulates_chunks(
+        self, workflow_runner
+    ):
+        # First batch of chunks
+        step_progress1 = RagStepRunnerProgress(success_count=5, error_count=0)
+        result1 = workflow_runner.update_workflow_progress(
+            RagWorkflowStepNames.INDEXING, step_progress1
+        )
+        assert result1.total_chunks_indexed_count == 5
+
+        # Second batch of chunks - should accumulate
+        step_progress2 = RagStepRunnerProgress(success_count=3, error_count=1)
+        result2 = workflow_runner.update_workflow_progress(
+            RagWorkflowStepNames.INDEXING, step_progress2
+        )
+        assert result2.total_chunks_indexed_count == 8  # 5 + 3
+        assert result2.total_chunks_indexed_error_count == 1  # max(0, 1)
+
     def test_update_workflow_progress_unknown_step_raises_error(self, workflow_runner):
         step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
 
-        with pytest.raises(ValueError, match="Unknown step name"):
+        with pytest.raises(ValueError, match="Unhandled enum value"):
             workflow_runner.update_workflow_progress("unknown_step", step_progress)
 
     def test_update_workflow_progress_calculates_completed_count(self, workflow_runner):
@@ -794,14 +1537,19 @@ class TestRagWorkflowRunner:
         workflow_runner.current_progress.total_document_extracted_count = 10
         workflow_runner.current_progress.total_document_chunked_count = 8
         workflow_runner.current_progress.total_document_embedded_count = 5
+        workflow_runner.current_progress.total_chunks_indexed_count = 3
 
         step_progress = RagStepRunnerProgress(success_count=1, error_count=0)
         result = workflow_runner.update_workflow_progress(
             RagWorkflowStepNames.EXTRACTING, step_progress
         )
 
-        # Completed count should be the minimum of all step counts
+        # Completed count should be the minimum of all document-related step counts
         assert result.total_document_completed_count == 5
+
+        # chunks are tracked separately (so we can compare them against the total chunk count
+        # to determine completion)
+        assert result.total_chunk_completed_count == 3
 
     @pytest.mark.asyncio
     async def test_run_yields_initial_progress_and_step_progress(self, workflow_runner):
@@ -838,6 +1586,75 @@ class TestRagWorkflowRunner:
             # Should only execute the extracting runner, not the chunking runner
             chunking_runner.run.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_run_with_document_ids_passes_to_step_runners(self, workflow_runner):
+        # Mock the step runner to capture the document_ids parameter
+        mock_step_runner = workflow_runner.step_runners[0]
+
+        async def mock_run_with_doc_ids(document_ids=None):
+            # Store the document_ids for verification
+            mock_run_with_doc_ids.called_with_document_ids = document_ids
+            yield RagStepRunnerProgress(success_count=1, error_count=0)
+
+        mock_step_runner.run = mock_run_with_doc_ids
+
+        with patch("kiln_ai.utils.lock.shared_async_lock_manager"):
+            # Run with specific document IDs
+            async for _ in workflow_runner.run(document_ids=["doc-1", "doc-2"]):
+                pass
+
+            # Verify the document_ids were passed to the step runner
+            assert mock_run_with_doc_ids.called_with_document_ids == ["doc-1", "doc-2"]
+
+    @pytest.mark.asyncio
+    async def test_run_with_empty_document_ids_passes_empty_list_to_step_runners(
+        self, workflow_runner
+    ):
+        # Mock the step runner to capture the document_ids parameter
+        mock_step_runner = workflow_runner.step_runners[0]
+
+        async def mock_run_with_doc_ids(document_ids=None):
+            # Store the document_ids for verification
+            mock_run_with_doc_ids.called_with_document_ids = document_ids
+            yield RagStepRunnerProgress(success_count=1, error_count=0)
+
+        mock_step_runner.run = mock_run_with_doc_ids
+
+        with patch("kiln_ai.utils.lock.shared_async_lock_manager"):
+            # Run with empty document IDs list
+            async for _ in workflow_runner.run(document_ids=[]):
+                pass
+
+            # Verify the empty list was passed to the step runner
+            assert mock_run_with_doc_ids.called_with_document_ids == []
+
+    @pytest.mark.asyncio
+    async def test_run_calls_count_total_chunks_for_indexing_step(
+        self, workflow_runner
+    ):
+        # Add an indexing step runner
+        from kiln_ai.adapters.rag.rag_runners import RagIndexingStepRunner
+
+        indexing_runner = MagicMock(spec=RagIndexingStepRunner)
+        indexing_runner.stage.return_value = RagWorkflowStepNames.INDEXING
+        indexing_runner.count_total_chunks = AsyncMock(return_value=42)
+
+        async def mock_indexing_run():
+            yield RagStepRunnerProgress(success_count=1, error_count=0)
+
+        indexing_runner.run.return_value = mock_indexing_run()
+        workflow_runner.step_runners.append(indexing_runner)
+
+        with patch("kiln_ai.utils.lock.shared_async_lock_manager"):
+            progress_values = []
+            async for progress in workflow_runner.run():
+                progress_values.append(progress)
+
+            # Should call count_total_chunks for indexing step
+            indexing_runner.count_total_chunks.assert_called_once()
+            # Should set total_chunk_count in progress
+            assert workflow_runner.current_progress.total_chunk_count == 42
+
 
 class TestRagWorkflowRunnerConfiguration:
     def test_configuration_creation(
@@ -851,6 +1668,7 @@ class TestRagWorkflowRunnerConfiguration:
 
         config = RagWorkflowRunnerConfiguration(
             step_runners=[mock_step_runner],
+            initial_progress=RagProgress(),
             rag_config=real_rag_config,
             extractor_config=real_extractor_config,
             chunker_config=real_chunker_config,
@@ -862,7 +1680,7 @@ class TestRagWorkflowRunnerConfiguration:
         assert config.extractor_config == real_extractor_config
         assert config.chunker_config == real_chunker_config
         assert config.embedding_config == real_embedding_config
-        assert config.initial_progress is None
+        assert isinstance(config.initial_progress, RagProgress)
 
     def test_configuration_with_initial_progress(
         self,

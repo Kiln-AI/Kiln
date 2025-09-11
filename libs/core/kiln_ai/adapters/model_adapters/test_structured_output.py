@@ -350,7 +350,7 @@ When asked for a final result, this is the format (for an equilateral example):
 """
     task.output_json_schema = json.dumps(triangle_schema)
     task.save_to_file()
-    response, adapter, _ = await run_structured_input_task_no_validation(
+    response, _, _ = await run_structured_input_task_no_validation(
         task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
     )
 
