@@ -188,7 +188,7 @@ async def test_run_g_eval_e2e(
     g_eval = GEval(test_eval_config, test_run_config)
 
     # Run the evaluation
-    task_run, scores, intermediate_outputs = await g_eval.run_task_and_eval("chickens")
+    _, scores, intermediate_outputs = await g_eval.run_task_and_eval("chickens")
 
     # Verify the evaluation results
     assert isinstance(scores, dict)

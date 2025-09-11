@@ -83,7 +83,7 @@ class TestDesktopApp:
 
             # Verify dock callback is registered
             mock_tk_root.createcommand.assert_called_once()
-            command_name, callback = mock_tk_root.createcommand.call_args[0]
+            command_name, _ = mock_tk_root.createcommand.call_args[0]
             assert command_name == "tk::mac::ReopenApplication"
 
             # Verify tray is started

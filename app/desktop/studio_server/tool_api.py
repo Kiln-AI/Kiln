@@ -394,7 +394,8 @@ def connect_tool_servers_api(app: FastAPI):
                 detail="Existing tool server is not a remote MCP server. You can't edit a non-remote MCP server with this endpoint.",
             )
 
-        existing_tool_server = existing_tool_server
+        # Create a deep copy of the existing tool server so if any validation fails we don't cache the bad data in memory
+        existing_tool_server = existing_tool_server.model_copy(deep=True)
         existing_tool_server.name = tool_data.name
         existing_tool_server.description = tool_data.description
         existing_tool_server.properties = _remote_tool_server_properties(tool_data)
@@ -451,7 +452,8 @@ def connect_tool_servers_api(app: FastAPI):
                 detail="Existing tool server is not a local MCP server. You can't edit a non-local MCP server with this endpoint.",
             )
 
-        tool_server = existing_tool_server
+        # Create a deep copy of the existing tool server so if any validation fails we don't cache the bad data in memory
+        tool_server = existing_tool_server.model_copy(deep=True)
         tool_server.name = tool_data.name
         tool_server.description = tool_data.description
         tool_server.properties = _local_tool_server_properties(tool_data)

@@ -137,7 +137,7 @@ class BulkUploadResponse(BaseModel):
 
 
 def run_from_id(project_id: str, task_id: str, run_id: str) -> TaskRun:
-    task, run = task_and_run_from_id(project_id, task_id, run_id)
+    _, run = task_and_run_from_id(project_id, task_id, run_id)
     return run
 
 

@@ -1053,7 +1053,7 @@ async def test_fetch_all_deployments_invalid_json(fireworks_finetune, mock_api_k
 
         with pytest.raises(
             ValueError,
-            match="Invalid response from Fireworks. Expected list of deployments in 'deployments' key",
+            match=r"Invalid response from Fireworks. Expected list of deployments in 'deployments' key",
         ):
             await fireworks_finetune._fetch_all_deployments()
 

@@ -105,7 +105,7 @@
         },
       ],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org",
+        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
     },
     {
       name: "Run Python Code",
@@ -123,7 +123,7 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must have deno, a JavaScript runtime, installed: https://deno.com",
+        "You must have deno, a JavaScript runtime, installed: https://deno.com. If you had to install deno, restart Kiln before connecting the server.",
     },
     {
       name: "Access Files",
@@ -137,7 +137,7 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org",
+        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
     },
   ]
 
@@ -184,6 +184,8 @@
 
 <AppPage
   title="Add Tools"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#connecting-tools"
   breadcrumbs={[
     {
       label: "Settings",
