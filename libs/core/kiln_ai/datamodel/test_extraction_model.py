@@ -368,7 +368,7 @@ def test_invalid_tags(valid_document):
     with pytest.raises(ValueError, match="Tags cannot be empty strings"):
         valid_document.tags = ["test", ""]
     with pytest.raises(
-        ValueError, match="Tags cannot contain spaces. Try underscores."
+        ValueError, match=r"Tags cannot contain spaces. Try underscores."
     ):
         valid_document.tags = ["test", "document new"]
 

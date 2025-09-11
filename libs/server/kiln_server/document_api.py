@@ -29,8 +29,8 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagWorkflowStepNames,
 )
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
-    KilnVectorStoreQuery,
     SearchResult,
+    VectorStoreQuery,
 )
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
@@ -1529,11 +1529,11 @@ def connect_document_api(app: FastAPI):
         )
 
         # Prepare the search query based on vector store type
-        search_query: KilnVectorStoreQuery
+        search_query: VectorStoreQuery
 
         if vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS:
             # For FTS, just use the text query
-            search_query = KilnVectorStoreQuery(
+            search_query = VectorStoreQuery(
                 query_string=request.query,
                 query_embedding=None,
             )
@@ -1557,13 +1557,13 @@ def connect_document_api(app: FastAPI):
 
             if vector_store_config.store_type == VectorStoreType.LANCE_DB_VECTOR:
                 # Pure vector search
-                search_query = KilnVectorStoreQuery(
+                search_query = VectorStoreQuery(
                     query_string=None,
                     query_embedding=query_embedding,
                 )
             else:
                 # Hybrid search
-                search_query = KilnVectorStoreQuery(
+                search_query = VectorStoreQuery(
                     query_string=request.query,
                     query_embedding=query_embedding,
                 )

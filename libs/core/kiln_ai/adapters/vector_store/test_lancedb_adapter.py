@@ -12,8 +12,9 @@ from llama_index.core.vector_stores.types import VectorStoreQueryResult
 from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
-    KilnVectorStoreQuery,
+    DocumentWithChunksAndEmbeddings,
     SearchResult,
+    VectorStoreQuery,
 )
 from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
 from kiln_ai.adapters.vector_store.vector_store_registry import (
@@ -128,7 +129,7 @@ def create_rag_config_factory() -> Callable[
 
 def dicts_to_indexable_docs(
     docs: dict[str, list[dict[str, str | list[float]]]], tmp_path: Path
-) -> list[tuple[str, ChunkedDocument, ChunkEmbeddings]]:
+) -> list[DocumentWithChunksAndEmbeddings]:
     results = []
     for doc_id, doc in docs.items():
         chunked_documents = ChunkedDocument(
@@ -158,7 +159,13 @@ def dicts_to_indexable_docs(
                     )
                 )
             )
-        results.append((doc_id, chunked_documents, chunk_embeddings))
+        results.append(
+            DocumentWithChunksAndEmbeddings(
+                document_id=doc_id,
+                chunked_document=chunked_documents,
+                chunk_embeddings=chunk_embeddings,
+            )
+        )
 
     return results
 
@@ -232,7 +239,7 @@ async def test_add_chunks_with_embeddings_and_similarity_search(
     query_vector = [55.0, 55.0]
     print(f"Searching for similar vectors to {query_vector}")
 
-    results = await adapter.search(KilnVectorStoreQuery(query_embedding=query_vector))
+    results = await adapter.search(VectorStoreQuery(query_embedding=query_vector))
     print(f"Similarity search returned {len(results)} results:")
 
     for i, result in enumerate(results):
@@ -270,7 +277,7 @@ async def test_fts_search(
     query_text = "london"
     print(f"Searching for text containing: '{query_text}'")
 
-    results = await adapter.search(KilnVectorStoreQuery(query_string=query_text))
+    results = await adapter.search(VectorStoreQuery(query_string=query_text))
     print(f"FTS search returned {len(results)} results:")
 
     for i, result in enumerate(results):
@@ -310,7 +317,7 @@ async def test_hybrid_search(
     print(f"Hybrid search for text: '{query_text}' and vector: {query_vector}")
 
     results = await adapter.search(
-        KilnVectorStoreQuery(query_string=query_text, query_embedding=query_vector)
+        VectorStoreQuery(query_string=query_text, query_embedding=query_vector)
     )
     print(f"Hybrid search returned {len(results)} results:")
 
@@ -346,7 +353,7 @@ async def test_upsert_behavior(
     await adapter.add_chunks_with_embeddings(first_doc)
 
     # Search to verify it's there
-    results1 = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    results1 = await adapter.search(VectorStoreQuery(query_string="Tokyo"))
     print(f"After first add: {len(results1)} Tokyo results")
 
     # Add the same document again
@@ -354,7 +361,7 @@ async def test_upsert_behavior(
     await adapter.add_chunks_with_embeddings(first_doc)
 
     # Search again - should still find the same chunks (not duplicated)
-    results2 = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    results2 = await adapter.search(VectorStoreQuery(query_string="Tokyo"))
     print(f"After second add: {len(results2)} Tokyo results")
 
     # Print all results to see what we got
@@ -371,7 +378,7 @@ async def test_upsert_behavior(
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
     # Final search
-    results3 = await adapter.search(KilnVectorStoreQuery(query_string="population"))
+    results3 = await adapter.search(VectorStoreQuery(query_string="population"))
     print(f"After adding all documents: {len(results3)} population results")
 
     for i, result in enumerate(results3):
@@ -502,7 +509,7 @@ def test_build_kwargs_for_query_validation_errors(
     adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
 
     # Test FTS search without query_string
-    query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
+    query = VectorStoreQuery(query_string=None, query_embedding=None)
     with pytest.raises(
         ValueError, match="query_string must be provided for fts search"
     ):
@@ -511,14 +518,14 @@ def test_build_kwargs_for_query_validation_errors(
     # Test HYBRID search without required parameters
     adapter = LanceDBAdapter(rag_config, hybrid_vector_store_config)
 
-    query = KilnVectorStoreQuery(query_string=None, query_embedding=[1.0, 2.0])
+    query = VectorStoreQuery(query_string=None, query_embedding=[1.0, 2.0])
     with pytest.raises(
         ValueError,
         match="query_string and query_embedding must be provided for hybrid search",
     ):
         adapter.build_kwargs_for_query(query)
 
-    query = KilnVectorStoreQuery(query_string="test", query_embedding=None)
+    query = VectorStoreQuery(query_string="test", query_embedding=None)
     with pytest.raises(
         ValueError,
         match="query_string and query_embedding must be provided for hybrid search",
@@ -528,7 +535,7 @@ def test_build_kwargs_for_query_validation_errors(
     # Test VECTOR search without embedding
     adapter = LanceDBAdapter(rag_config, knn_vector_store_config)
 
-    query = KilnVectorStoreQuery(query_string=None, query_embedding=None)
+    query = VectorStoreQuery(query_string=None, query_embedding=None)
     with pytest.raises(
         ValueError, match="query_embedding must be provided for vector search"
     ):
@@ -551,7 +558,7 @@ async def test_search_with_table_not_found_error(
         mock_aquery.side_effect = TableNotFoundError("Table vectors is not initialized")
 
         # Search should return empty list instead of raising error
-        query = KilnVectorStoreQuery(query_string="test query")
+        query = VectorStoreQuery(query_string="test query")
         results = await adapter.search(query)
 
         assert results == []
@@ -575,7 +582,7 @@ async def test_search_with_empty_results_error(
         mock_aquery.side_effect = Exception("query results are empty")
 
         # Search should return empty list instead of raising error
-        query = KilnVectorStoreQuery(query_string="test query")
+        query = VectorStoreQuery(query_string="test query")
         results = await adapter.search(query)
 
         assert results == []
@@ -736,10 +743,10 @@ async def test_adapter_reuse_preserves_data(
     #     Exception,
     #     match="lance error: Retryable commit conflict for version 4: This CreateIndex transaction was preempted by concurrent transaction Rewrite at version 4. Please retry.",
     # ):
-    await adapter1.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    await adapter1.search(VectorStoreQuery(query_string="Tokyo"))
 
     # but we can query adapter2
-    results2 = await adapter2.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    results2 = await adapter2.search(VectorStoreQuery(query_string="Tokyo"))
     assert len(results2) > 0
 
 
@@ -771,7 +778,7 @@ async def test_skip_existing_chunks_when_count_matches(
     assert count_after_second == 4
 
     # Verify the chunks are still there and retrievable
-    results = await adapter.search(KilnVectorStoreQuery(query_string="Tokyo"))
+    results = await adapter.search(VectorStoreQuery(query_string="Tokyo"))
     assert len(results) > 0
     assert "Tokyo" in results[0].chunk_text
 
@@ -824,7 +831,7 @@ async def test_batching_functionality(
     assert count == 15
 
     # Verify we can search and find chunks
-    results = await adapter.search(KilnVectorStoreQuery(query_string="Chunk"))
+    results = await adapter.search(VectorStoreQuery(query_string="Chunk"))
     assert len(results) > 0  # Should find chunks containing "Chunk"
     assert len(results) <= 15  # Should not exceed total number of chunks
 
@@ -1022,15 +1029,13 @@ async def test_delete_nodes_by_document_id(
     assert count_after == 4  # Only doc_002 chunks remain
 
     # Verify we can still find doc_002 chunks but not doc_001
-    results_doc2 = await adapter.search(KilnVectorStoreQuery(query_string="area"))
+    results_doc2 = await adapter.search(VectorStoreQuery(query_string="area"))
     assert len(results_doc2) > 0
 
     # Try to search for population (which was in doc_001) - should find no results
     # LanceDB raises a Warning when no results are found, so we catch it
     try:
-        results_doc1 = await adapter.search(
-            KilnVectorStoreQuery(query_string="population")
-        )
+        results_doc1 = await adapter.search(VectorStoreQuery(query_string="population"))
         assert len(results_doc1) == 0
     except Warning as w:
         # This is expected - LanceDB raises a Warning for empty results
@@ -1215,13 +1220,13 @@ async def test_chunk_replacement_triggers_deletion(
     assert final_count == 3
 
     # Verify the chunks are the new ones, not the old ones
-    results = await adapter.search(KilnVectorStoreQuery(query_string="Modified"))
+    results = await adapter.search(VectorStoreQuery(query_string="Modified"))
     assert len(results) == 3
     assert all("Modified" in result.chunk_text for result in results)
 
     # Verify old chunks are gone - LanceDB raises a Warning for empty results
     try:
-        old_results = await adapter.search(KilnVectorStoreQuery(query_string="Initial"))
+        old_results = await adapter.search(VectorStoreQuery(query_string="Initial"))
         assert len(old_results) == 0
     except Warning as w:
         # This is expected - LanceDB raises a Warning for empty results
@@ -1270,10 +1275,10 @@ async def test_chunk_deletion_ensures_complete_cleanup_and_other_docs_unaffected
     assert initial_count == 8
 
     # Verify we can find chunks from both documents
-    target_results = await adapter.search(KilnVectorStoreQuery(query_string="Original"))
+    target_results = await adapter.search(VectorStoreQuery(query_string="Original"))
     assert len(target_results) == 5
 
-    other_results = await adapter.search(KilnVectorStoreQuery(query_string="Other"))
+    other_results = await adapter.search(VectorStoreQuery(query_string="Other"))
     assert len(other_results) == 3
 
     # Create modified target document with 7 chunks (more than the original 5)
@@ -1315,7 +1320,7 @@ async def test_chunk_deletion_ensures_complete_cleanup_and_other_docs_unaffected
 
     # Verify the target document now has the new chunks
     new_target_results = await adapter.search(
-        KilnVectorStoreQuery(query_string="New target")
+        VectorStoreQuery(query_string="New target")
     )
     assert len(new_target_results) == 7
     assert all("New target" in result.chunk_text for result in new_target_results)
@@ -1323,7 +1328,7 @@ async def test_chunk_deletion_ensures_complete_cleanup_and_other_docs_unaffected
     # Verify old target chunks are completely gone
     try:
         old_target_results = await adapter.search(
-            KilnVectorStoreQuery(query_string="Original")
+            VectorStoreQuery(query_string="Original")
         )
         # Should find no results since "Original" was only in the old chunks
         assert len(old_target_results) == 0
@@ -1332,9 +1337,7 @@ async def test_chunk_deletion_ensures_complete_cleanup_and_other_docs_unaffected
         assert "query results are empty" in str(w)
 
     # Verify other document is completely unaffected
-    final_other_results = await adapter.search(
-        KilnVectorStoreQuery(query_string="Other")
-    )
+    final_other_results = await adapter.search(VectorStoreQuery(query_string="Other"))
     assert len(final_other_results) == 3
     assert all("Other doc" in result.chunk_text for result in final_other_results)
 
@@ -1387,10 +1390,10 @@ async def test_delete_nodes_by_document_id_direct(
     assert initial_count == 5
 
     # Verify we can find chunks from both documents
-    doc1_results = await adapter.search(KilnVectorStoreQuery(query_string="Alpha"))
+    doc1_results = await adapter.search(VectorStoreQuery(query_string="Alpha"))
     assert len(doc1_results) == 3
 
-    doc2_results = await adapter.search(KilnVectorStoreQuery(query_string="Beta"))
+    doc2_results = await adapter.search(VectorStoreQuery(query_string="Beta"))
     assert len(doc2_results) == 2
 
     # Test deleting document_1 chunks using delete_nodes_by_document_id
@@ -1403,7 +1406,7 @@ async def test_delete_nodes_by_document_id_direct(
     # Verify document_1 chunks are no longer searchable
     try:
         doc1_results_after = await adapter.search(
-            KilnVectorStoreQuery(query_string="Alpha")
+            VectorStoreQuery(query_string="Alpha")
         )
         assert len(doc1_results_after) == 0
     except Warning as w:
@@ -1411,7 +1414,7 @@ async def test_delete_nodes_by_document_id_direct(
         assert "query results are empty" in str(w)
 
     # Verify document_2 chunks are still there and unaffected
-    doc2_results_after = await adapter.search(KilnVectorStoreQuery(query_string="Beta"))
+    doc2_results_after = await adapter.search(VectorStoreQuery(query_string="Beta"))
     assert len(doc2_results_after) == 2
     assert all("Beta" in result.chunk_text for result in doc2_results_after)
 

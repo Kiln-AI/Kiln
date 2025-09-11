@@ -605,7 +605,7 @@ async def test_invoke_parsing_flow(adapter):
         mock_provider.reasoning_capable = True
         with pytest.raises(
             RuntimeError,
-            match="Reasoning is required for this model, but no reasoning was returned.",
+            match=r"Reasoning is required for this model, but no reasoning was returned.",
         ):
             await adapter.invoke("test input")
 

@@ -10,12 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-from kiln_ai.datamodel import (
-    Task,
-    TaskOutputRating,
-    TaskOutputRatingType,
-    TaskRun,
-)
+from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.dataset_import import (
@@ -137,7 +132,7 @@ class BulkUploadResponse(BaseModel):
 
 
 def run_from_id(project_id: str, task_id: str, run_id: str) -> TaskRun:
-    task, run = task_and_run_from_id(project_id, task_id, run_id)
+    _, run = task_and_run_from_id(project_id, task_id, run_id)
     return run
 
 

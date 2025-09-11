@@ -1,9 +1,8 @@
 import asyncio
 import logging
-import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.schema import (
@@ -13,19 +12,18 @@ from llama_index.core.schema import (
     TextNode,
 )
 from llama_index.core.vector_stores.types import (
-    VectorStoreQuery,
-    VectorStoreQueryResult,
+    VectorStoreQuery as LlamaIndexVectorStoreQuery,
 )
+from llama_index.core.vector_stores.types import VectorStoreQueryResult
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
 from llama_index.vector_stores.lancedb.base import TableNotFoundError
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
-    KilnVectorStoreQuery,
+    DocumentWithChunksAndEmbeddings,
     SearchResult,
+    VectorStoreQuery,
 )
-from kiln_ai.datamodel.chunk import ChunkedDocument
-from kiln_ai.datamodel.embedding import ChunkEmbeddings
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import (
     VectorStoreConfig,
@@ -33,9 +31,16 @@ from kiln_ai.datamodel.vector_store import (
     raise_exhaustive_enum_error,
 )
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.env import temporary_env
 from kiln_ai.utils.uuid import string_to_uuid
 
 logger = logging.getLogger(__name__)
+
+
+class LanceDBAdapterQueryKwargs(TypedDict):
+    similarity_top_k: int
+    query_str: Optional[str]
+    query_embedding: Optional[List[float]]
 
 
 class LanceDBAdapter(BaseVectorStoreAdapter):
@@ -66,6 +71,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
     @property
     def index(self) -> VectorStoreIndex:
+        """
+        - VectorStoreIndex is a wrapper around the underlying LanceDBVectorStore.
+        It exposes higher level operations, and you need to make sure our
+        implementation mirrors the upstream llama_index logic that it expects to have available (e.g. ref_doc_id)
+        - VectorStoreIndex throws on initialization if the underlying vector store is empty due to schema mismatch;
+        make sure there is data in the underlying vector store before calling this
+        """
         if self._index is not None:
             return self._index
 
@@ -73,27 +85,19 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             vector_store=self.lancedb_vector_store
         )
 
-        # FIXME:
-        # embed_model=None should be valid and result in llama_index initializing it
-        # to a mock (like it does elsewhere) but there is a fallback in the
-        # VectorStoreIndex constructor that overrides None with "default"
-        # and tries to load OpenAI and throws if the OPENAI_API_KEY is not set
-        # maybe should open an issue on their repo
-        if "OPENAI_API_KEY" not in os.environ:
-            os.environ["OPENAI_API_KEY"] = "dummy"
-
-        # - VectorStoreIndex is a wrapper around a vector store
-        # it exposes higher level operations (that rely on internal
-        # fields like ref_doc_id); make sure implementation mirrors
-        # the upstream llama_index logic that we do not use
-        # - Make sure you do not initialize the VectorStoreIndex before
-        # having data in the underlying vector store, otherwise downstream
-        # operations will fail due to schema mismatch
-        self._index = VectorStoreIndex(
-            [],
-            storage_context=storage_context,
-            embed_model=None,
-        )
+        # embed_model=None in the constructor should initialize the embed model to a mock
+        # like it does elsewhere in llama_index. However, that is not happening for VectorStoreIndex
+        # because the constructor overrides None with "default" and tries to load OpenAI and
+        # expects OPENAI_API_KEY to be set
+        #
+        # Since our own implementation does not actually use OpenAI, we set a fake API key just to
+        # avoid the error
+        with temporary_env("OPENAI_API_KEY", "fake-api-key"):
+            self._index = VectorStoreIndex(
+                [],
+                storage_context=storage_context,
+                embed_model=None,
+            )
 
         return self._index
 
@@ -122,20 +126,28 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
     async def add_chunks_with_embeddings(
         self,
-        records: list[Tuple[str, ChunkedDocument, ChunkEmbeddings]],
+        doc_batch: list[DocumentWithChunksAndEmbeddings],
         nodes_batch_size: int = 100,
     ) -> None:
-        if len(records) == 0:
+        if len(doc_batch) == 0:
             return
 
         node_batch: List[TextNode] = []
-        for document_id, chunked_document, chunk_embeddings in records:
-            if len(chunk_embeddings.embeddings) != len(chunked_document.chunks):
+        for doc in doc_batch:
+            document_id = doc.document_id
+            chunks = doc.chunks
+            embeddings = doc.embeddings
+
+            # the lancedb vector store implementation is sync (even though it has an async API)
+            # so we sleep to avoid blocking the event loop - that allows other async ops to run
+            await asyncio.sleep(0)
+
+            if len(embeddings) != len(chunks):
                 raise RuntimeError(
-                    f"Number of embeddings ({len(chunk_embeddings.embeddings)}) does not match number of chunks ({len(chunked_document.chunks)}) for document {document_id}"
+                    f"Number of embeddings ({len(embeddings)}) does not match number of chunks ({len(chunks)}) for document {document_id}"
                 )
 
-            chunk_count_for_document = len(chunked_document.chunks)
+            chunk_count_for_document = len(chunks)
             deterministic_chunk_ids = [
                 self.compute_deterministic_chunk_id(document_id, chunk_idx)
                 for chunk_idx in range(chunk_count_for_document)
@@ -150,7 +162,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 # without any real async ops releasing the event loop at all
                 # (get_nodes_by_ids implementation in llama_index is actually sync
                 # and it is slow)
-                await asyncio.sleep(0)
                 continue
             else:
                 # the chunks are different, which is because either:
@@ -160,9 +171,9 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 # - an incomplete indexing of this same chunked doc, upserting is enough to overwrite the current chunked doc fully
                 await self.delete_nodes_by_document_id(document_id)
 
-            chunks_text = await chunked_document.load_chunks_text()
+            chunks_text = await doc.chunked_document.load_chunks_text()
             for chunk_idx, (chunk_text, embedding) in enumerate(
-                zip(chunks_text, chunk_embeddings.embeddings)
+                zip(chunks_text, embeddings)
             ):
                 node_batch.append(
                     TextNode(
@@ -210,8 +221,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                     # avoid calling with too many nodes at once
                     await self.lancedb_vector_store.async_add(node_batch)
                     node_batch.clear()
-
-            await asyncio.sleep(0)
 
         if node_batch:
             await self.lancedb_vector_store.async_add(node_batch)
@@ -269,9 +278,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             )
         return results
 
-    def build_kwargs_for_query(self, query: KilnVectorStoreQuery) -> Dict[str, Any]:
-        kwargs: Dict[str, Any] = {
+    def build_kwargs_for_query(
+        self, query: VectorStoreQuery
+    ) -> LanceDBAdapterQueryKwargs:
+        kwargs: LanceDBAdapterQueryKwargs = {
             "similarity_top_k": self.config_properties.similarity_top_k,
+            "query_str": None,
+            "query_embedding": None,
         }
 
         match self.query_type:
@@ -296,10 +309,10 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 raise_exhaustive_enum_error(self.query_type)
         return kwargs
 
-    async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
+    async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
         try:
             query_result = await self.lancedb_vector_store.aquery(
-                VectorStoreQuery(
+                LlamaIndexVectorStoreQuery(
                     **self.build_kwargs_for_query(query),
                 ),
                 query_type=self.query_type,

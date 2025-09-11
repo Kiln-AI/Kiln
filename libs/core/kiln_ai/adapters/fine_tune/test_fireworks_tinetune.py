@@ -14,11 +14,7 @@ from kiln_ai.adapters.fine_tune.fireworks_finetune import (
     DeployStatus,
     FireworksFinetune,
 )
-from kiln_ai.datamodel import (
-    DatasetSplit,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
@@ -1053,7 +1049,7 @@ async def test_fetch_all_deployments_invalid_json(fireworks_finetune, mock_api_k
 
         with pytest.raises(
             ValueError,
-            match="Invalid response from Fireworks. Expected list of deployments in 'deployments' key",
+            match=r"Invalid response from Fireworks. Expected list of deployments in 'deployments' key",
         ):
             await fireworks_finetune._fetch_all_deployments()
 

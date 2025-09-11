@@ -206,7 +206,7 @@ def test_generate_chat_message_toolcall(mock_training_chat_two_step_json):
 
 def test_generate_chat_message_toolcall_invalid_json(mock_training_chat_two_step_json):
     mock_training_chat_two_step_json[-1].content = "invalid json"
-    with pytest.raises(ValueError, match="^Last message is not JSON"):
+    with pytest.raises(ValueError, match=r"^Last message is not JSON"):
         generate_chat_message_toolcall(mock_training_chat_two_step_json)
 
 
@@ -536,7 +536,7 @@ def test_generate_huggingface_chat_template_toolcall_invalid_json(
 ):
     mock_training_chat_two_step_json[-1].content = "invalid json"
 
-    with pytest.raises(ValueError, match="^Last message is not JSON"):
+    with pytest.raises(ValueError, match=r"^Last message is not JSON"):
         generate_huggingface_chat_template_toolcall(mock_training_chat_two_step_json)
 
 

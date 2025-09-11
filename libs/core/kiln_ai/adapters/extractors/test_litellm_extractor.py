@@ -672,7 +672,7 @@ async def test_provider_bad_request(tmp_path, model_name, provider_name):
         model_name=model_name, provider_name=provider_name
     )
 
-    with pytest.raises(ValueError, match="Error extracting .*corrupted_file.pdf: "):
+    with pytest.raises(ValueError, match=r"Error extracting .*corrupted_file.pdf: "):
         await extractor.extract(
             extraction_input=ExtractionInput(
                 path=temp_file.as_posix(),
