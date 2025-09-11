@@ -342,6 +342,7 @@
   let samples_to_save: SampleData[] = []
   let input_generated_count = 0
   let leaf_topics_missing_inputs = 0
+  let leaf_topics_has_inputs = 0
   function visit_node_for_collection(node: SampleDataNode, path: string[]) {
     const topic_path = node.topic ? [...path, node.topic] : path
     node.samples.forEach((sample) => {
@@ -363,6 +364,9 @@
     if (node.sub_topics.length === 0 && node.samples.length === 0) {
       leaf_topics_missing_inputs++
     }
+    if (node.sub_topics.length === 0 && node.samples.length > 0) {
+      leaf_topics_has_inputs++
+    }
     node.sub_topics.forEach((sub_topic) => {
       visit_node_for_collection(sub_topic, topic_path)
     })
@@ -374,6 +378,7 @@
     already_saved_count = 0
     samples_to_save = []
     leaf_topics_missing_inputs = 0
+    leaf_topics_has_inputs = 0
     input_generated_count = 0
     visit_node_for_collection($saved_state.root_node, [])
   }
@@ -503,6 +508,7 @@
       save_all_running = false
       save_all_completed = true
       update_status()
+      triggerSaveUiState()
     }
   }
 
@@ -732,7 +738,8 @@
                   {@const done_generating =
                     input_generated_count > 0 &&
                     leaf_topics_missing_inputs === 0}
-                  {#if leaf_topics_missing_inputs > 0}
+                  {#if leaf_topics_missing_inputs > 0 && leaf_topics_has_inputs > 0}
+                    <!-- Only show the error if partly populated but missing some. New/empty shouldn't be an error. -->
                     <div class="text-error text-sm my-2">
                       {leaf_topics_missing_inputs}
                       {leaf_topics_missing_inputs === 1
@@ -816,6 +823,13 @@
                     >
                       Save All
                     </button>
+                  {:else if already_saved_count === 0}
+                    <div class="text-error text-sm my-2">
+                      No items to save. Return to <button
+                        on:click={() => set_current_step(2)}
+                        class="link">step 2</button
+                      > to generate data.
+                    </div>
                   {:else}
                     <div class="flex flex-row justify-center">
                       <Warning
