@@ -2,7 +2,7 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.schema import (
@@ -36,6 +36,12 @@ from kiln_ai.utils.env import temporary_env
 from kiln_ai.utils.uuid import string_to_uuid
 
 logger = logging.getLogger(__name__)
+
+
+class LanceDBAdapterQueryKwargs(TypedDict):
+    similarity_top_k: int
+    query_str: Optional[str]
+    query_embedding: Optional[List[float]]
 
 
 class LanceDBAdapter(BaseVectorStoreAdapter):
@@ -257,9 +263,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             )
         return results
 
-    def build_kwargs_for_query(self, query: VectorStoreQuery) -> Dict[str, Any]:
-        kwargs: Dict[str, Any] = {
+    def build_kwargs_for_query(
+        self, query: VectorStoreQuery
+    ) -> LanceDBAdapterQueryKwargs:
+        kwargs: LanceDBAdapterQueryKwargs = {
             "similarity_top_k": self.config_properties.similarity_top_k,
+            "query_str": None,
+            "query_embedding": None,
         }
 
         match self.query_type:
