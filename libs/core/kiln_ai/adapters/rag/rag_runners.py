@@ -640,7 +640,7 @@ class RagWorkflowRunnerConfiguration(BaseModel):
     )
 
     initial_progress: RagProgress = Field(
-        description="The state of the workflow before starting, if left empty the initial progress will be computed on initialization",
+        description="Initial progress state provided by the caller - progress will build on top of this",
     )
 
     rag_config: RagConfig = Field(
