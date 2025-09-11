@@ -21,7 +21,7 @@
   let similarity_top_k: number = 10
 
   // Properties specific to vector and hybrid stores
-  let nprobes: number = 10
+  let nprobes: number = 20
 
   export let keyboard_submit: boolean = false
 
@@ -143,7 +143,7 @@
   {#if showVectorProperties}
     <FormElement
       label="Number of Probes"
-      description="Number of partitions to search for vector queries (higher = more accurate but slower)"
+      description="The number of probes used. A higher number makes search more accurate but also slower."
       inputType="input_number"
       id="nprobes"
       bind:value={nprobes}
