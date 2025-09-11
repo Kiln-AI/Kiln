@@ -584,60 +584,6 @@ async def build_rag_workflow_runner(
 
 
 def connect_document_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/documents")
-    async def create_document(
-        project_id: str,
-        file: Annotated[UploadFile, File(...)],
-        name: Annotated[str, Form()] = "",
-        description: Annotated[str, Form()] = "",
-    ) -> Document:
-        file_data = await file.read()
-        project = project_from_id(project_id)
-
-        if not file.filename:
-            raise HTTPException(
-                status_code=422,
-                detail="File must have a filename",
-            )
-
-        # we cannot use content_type from UploadFile because it is not always set correctly
-        # depending on the browser and the file type (for example, audio/ogg sent via Safari)
-        mime_type = guess_mime_type(file.filename)
-
-        # application/octet-stream is a catch-all for unknown mime types
-        if not mime_type or mime_type == "application/octet-stream":
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unable to determine mime type for {file.filename}. Ensure the file name has a valid extension.",
-            )
-
-        kind = get_kind_from_mime_type(mime_type)
-        if not kind:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unsupported mime type: {mime_type} for file {file.filename}",
-            )
-
-        document = Document(
-            parent=project,
-            name=string_to_valid_name(name or file.filename),
-            description=description,
-            kind=kind,
-            original_file=FileInfo(
-                filename=file.filename,
-                mime_type=mime_type,
-                attachment=KilnAttachmentModel.from_data(file_data, mime_type),
-                size=len(file_data),
-            ),
-        )
-        document.save_to_file()
-
-        # we don't want the client to wait for these to complete - worst case the jobs fail and
-        # will try again on the next document creation or when the user runs them manually
-        run_all_extractors_and_rag_workflows_no_wait(project, document)
-
-        return document
-
     @app.post("/api/projects/{project_id}/documents/bulk")
     async def create_documents_bulk(
         project_id: str,

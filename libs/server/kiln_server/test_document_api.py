@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import anyio
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -188,80 +187,6 @@ def check_attachment_saved(document: Document, test_content: bytes):
     assert attachment_path.exists()
     with open(attachment_path, "rb") as f:
         assert f.read() == test_content
-
-
-@pytest.mark.asyncio
-async def test_create_document_success(client, mock_project):
-    project = mock_project
-    test_content = b"test file content"
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
-    ):
-        mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
-
-        files = {"file": ("test.txt", io.BytesIO(test_content), "text/plain")}
-        data = {"name": "Test Document", "description": "Test description"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["id"] is not None
-    assert result["name"] == "Test Document"
-    assert result["description"] == "Test description"
-    assert result["kind"] == "document"
-    assert result["original_file"]["filename"] == "test.txt"
-    assert result["original_file"]["mime_type"] == "text/plain"
-    assert result["original_file"]["size"] == len(test_content)
-
-    # check the attachment was saved with the document
-    document = Document.from_id_and_parent_path(result["id"], project.path)
-    assert document is not None
-    check_attachment_saved(document, test_content)
-
-    # check that we triggered the workflows
-    mock_run_workflows.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_create_document_image_kind(client, mock_project, mock_file_factory):
-    project = mock_project
-    test_image_file = mock_file_factory(MockFileFactoryMimeType.JPEG)
-    test_image_file_bytes = Path(test_image_file).read_bytes()
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
-    ):
-        mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
-
-        files = {"file": ("image.jpg", io.BytesIO(test_image_file_bytes), "image/jpeg")}
-        data = {"name": "Test Image", "description": "Test image"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["kind"] == "image"
-
-    # check the attachment was saved with the document
-    document = Document.from_id_and_parent_path(result["id"], project.path)
-    assert document is not None
-    check_attachment_saved(document, test_image_file_bytes)
-
-    # check that we triggered the workflows
-    mock_run_workflows.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -606,84 +531,6 @@ async def test_delete_documents_success(client, mock_document):
     assert response.status_code == 200
     result = response.json()
     assert document.id in result["message"]
-
-
-@pytest.mark.parametrize(
-    "filename,expected_content_type,expected_kind",
-    [
-        ("document.pdf", "application/pdf", "document"),
-        ("document.txt", "text/plain", "document"),
-        ("document.md", "text/markdown", "document"),
-        ("document.html", "text/html", "document"),
-        ("image.png", "image/png", "image"),
-        ("image.jpeg", "image/jpeg", "image"),
-        ("video.mp4", "video/mp4", "video"),
-        ("video.mov", "video/quicktime", "video"),
-        ("audio.mp3", "audio/mpeg", "audio"),
-        ("audio.wav", "audio/wav", "audio"),
-        ("audio.ogg", "audio/ogg", "audio"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_create_document_content_type_detection(
-    client, mock_project, filename, expected_content_type, expected_kind
-):
-    project = mock_project
-    test_content = b"test content"
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
-    ):
-        mock_project_from_id.return_value = project
-        mock_save.return_value = None
-        mock_run_workflows.return_value = None
-
-        files = {"file": (filename, io.BytesIO(test_content), expected_content_type)}
-        data = {"name": "Test File", "description": "Test description"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 200, response.text
-    result = response.json()
-    assert result["kind"] == expected_kind
-    assert result["original_file"]["mime_type"] == expected_content_type
-
-
-@pytest.mark.asyncio
-async def test_create_document_filetype_not_supported(
-    client, mock_project, mock_file_factory
-):
-    project = mock_project
-    test_content = await anyio.Path(
-        mock_file_factory(MockFileFactoryMimeType.CSV)
-    ).read_bytes()
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-    ):
-        mock_project_from_id.return_value = project
-
-        files = {
-            "file": (
-                "file.csv",
-                io.BytesIO(test_content),
-                "text/csv",
-            )
-        }
-        data = {"name": "Test File", "description": "Test description"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 422, response.text
-    assert "Unsupported mime type: text/csv" in response.json()["message"]
 
 
 # test for create chunker config
@@ -2330,7 +2177,57 @@ async def test_search_rag_config_invalid_request_body(
     assert response.status_code == 422, response.text
 
 
-# Tests for bulk document upload endpoint
+@pytest.mark.parametrize(
+    "filename,expected_content_type,expected_kind",
+    [
+        ("document.pdf", "application/pdf", "document"),
+        ("document.txt", "text/plain", "document"),
+        ("document.md", "text/markdown", "document"),
+        ("document.html", "text/html", "document"),
+        ("image.png", "image/png", "image"),
+        ("image.jpeg", "image/jpeg", "image"),
+        ("video.mp4", "video/mp4", "video"),
+        ("video.mov", "video/quicktime", "video"),
+        ("audio.mp3", "audio/mpeg", "audio"),
+        ("audio.wav", "audio/wav", "audio"),
+        ("audio.ogg", "audio/ogg", "audio"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_document_content_type_detection(
+    client, mock_project, filename, expected_content_type, expected_kind
+):
+    project = mock_project
+    test_content = b"test content"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
+        patch(
+            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
+        ) as mock_run_workflows,
+    ):
+        mock_project_from_id.return_value = project
+        mock_save.return_value = None
+        mock_run_workflows.return_value = None
+
+        files = [("files", (filename, io.BytesIO(test_content), expected_content_type))]
+        data = {"names": ["Test File"]}
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert isinstance(result, list)
+    assert len(result) == 1
+    doc = result[0]
+    assert doc["name"] == "Test File"
+    assert doc["kind"] == expected_kind
+    assert doc["original_file"]["filename"] == filename
+    assert doc["original_file"]["mime_type"] == expected_content_type
+    assert doc["original_file"]["size"] == len(test_content)
 
 
 @pytest.mark.asyncio
