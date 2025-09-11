@@ -18,7 +18,7 @@ class SearchResult(BaseModel):
     )
 
 
-class KilnVectorStoreQuery(BaseModel):
+class VectorStoreQuery(BaseModel):
     query_string: Optional[str] = Field(
         description="The query string to search for.",
         default=None,
@@ -42,7 +42,7 @@ class BaseVectorStoreAdapter(ABC):
         pass
 
     @abstractmethod
-    async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
+    async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
         pass
 
     @abstractmethod

@@ -103,8 +103,9 @@ class TestStringToUuid:
         result_uuid = string_to_uuid(test_string)
 
         # Manually generate the same UUID using uuid.uuid5 to verify behavior
-        expected_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, test_string)
-        assert result_uuid == expected_uuid
+        assert str(result_uuid) == "cea6b86d-3f0b-5b2f-b6f2-1174f00da196", (
+            f"Expected {test_string} to produce {result_uuid}. You may have changed the mapping from string to UUID5 - that will break backwards compatibility with code relying on the mapping being deterministic."
+        )
 
         # Verify it's using the DNS namespace as expected
         assert result_uuid.version == 5

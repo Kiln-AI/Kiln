@@ -160,7 +160,7 @@ class TestVectorStoreConfig:
         mock_vector_store_fts_config_properties.pop("similarity_top_k")
         with pytest.raises(
             ValidationError,
-            match="similarity_top_k is a required property for LanceDB vector store configs",
+            match=".*similarity_top_k is a required property",
         ):
             VectorStoreConfig(
                 name="test_store",
@@ -175,7 +175,7 @@ class TestVectorStoreConfig:
         mock_vector_store_fts_config_properties["similarity_top_k"] = "not_an_int"
         with pytest.raises(
             ValidationError,
-            match="similarity_top_k is a required property for LanceDB vector store configs",
+            match=".*similarity_top_k must be of type",
         ):
             VectorStoreConfig(
                 name="test_store",
@@ -201,7 +201,7 @@ class TestVectorStoreConfig:
         mock_vector_store_vector_config_properties.pop("nprobes")
         with pytest.raises(
             ValidationError,
-            match="nprobes is a required property for LanceDB vector store configs",
+            match=".*nprobes is a required property",
         ):
             VectorStoreConfig(
                 name="test_store",

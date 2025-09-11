@@ -56,46 +56,78 @@ class VectorStoreConfig(KilnParentedModel):
     @model_validator(mode="after")
     def validate_properties(self):
         match self.store_type:
-            case VectorStoreType.LANCE_DB_FTS:
-                return self.validate_lancedb_properties(VectorStoreType.LANCE_DB_FTS)
-            case VectorStoreType.LANCE_DB_HYBRID:
-                return self.validate_lancedb_properties(VectorStoreType.LANCE_DB_HYBRID)
-            case VectorStoreType.LANCE_DB_VECTOR:
-                return self.validate_lancedb_properties(VectorStoreType.LANCE_DB_VECTOR)
+            case (
+                VectorStoreType.LANCE_DB_FTS
+                | VectorStoreType.LANCE_DB_HYBRID
+                | VectorStoreType.LANCE_DB_VECTOR
+            ):
+                return self.validate_lancedb_properties(self.store_type)
             case _:
                 raise_exhaustive_enum_error(self.store_type)
 
     def validate_lancedb_properties(self, store_type: VectorStoreType):
-        validate_return_dict_prop(self.properties, "similarity_top_k", int)
-        validate_return_dict_prop(self.properties, "overfetch_factor", int)
-        validate_return_dict_prop(self.properties, "vector_column_name", str)
-        validate_return_dict_prop(self.properties, "text_key", str)
-        validate_return_dict_prop(self.properties, "doc_id_key", str)
+        err_msg_prefix = f"LanceDB vector store configs properties for {store_type}:"
+        validate_return_dict_prop(
+            self.properties, "similarity_top_k", int, err_msg_prefix
+        )
+        validate_return_dict_prop(
+            self.properties, "overfetch_factor", int, err_msg_prefix
+        )
+        validate_return_dict_prop(
+            self.properties, "vector_column_name", str, err_msg_prefix
+        )
+        validate_return_dict_prop(self.properties, "text_key", str, err_msg_prefix)
+        validate_return_dict_prop(self.properties, "doc_id_key", str, err_msg_prefix)
 
         # nprobes is only used for vector and hybrid queries
         if (
             store_type == VectorStoreType.LANCE_DB_VECTOR
             or store_type == VectorStoreType.LANCE_DB_HYBRID
         ):
-            validate_return_dict_prop(self.properties, "nprobes", int)
+            validate_return_dict_prop(self.properties, "nprobes", int, err_msg_prefix)
 
         return self
 
     @property
     def lancedb_properties(self) -> LanceDBConfigBaseProperties:
+        err_msg_prefix = "LanceDB vector store configs properties:"
         return LanceDBConfigBaseProperties(
             similarity_top_k=validate_return_dict_prop(
-                self.properties, "similarity_top_k", int
+                self.properties,
+                "similarity_top_k",
+                int,
+                err_msg_prefix,
             ),
             overfetch_factor=validate_return_dict_prop(
-                self.properties, "overfetch_factor", int
+                self.properties,
+                "overfetch_factor",
+                int,
+                err_msg_prefix,
             ),
             vector_column_name=validate_return_dict_prop(
-                self.properties, "vector_column_name", str
+                self.properties,
+                "vector_column_name",
+                str,
+                err_msg_prefix,
             ),
-            text_key=validate_return_dict_prop(self.properties, "text_key", str),
-            doc_id_key=validate_return_dict_prop(self.properties, "doc_id_key", str),
-            nprobes=validate_return_dict_prop_optional(self.properties, "nprobes", int),
+            text_key=validate_return_dict_prop(
+                self.properties,
+                "text_key",
+                str,
+                err_msg_prefix,
+            ),
+            doc_id_key=validate_return_dict_prop(
+                self.properties,
+                "doc_id_key",
+                str,
+                err_msg_prefix,
+            ),
+            nprobes=validate_return_dict_prop_optional(
+                self.properties,
+                "nprobes",
+                int,
+                err_msg_prefix,
+            ),
         )
 
     # Workaround to return typed parent without importing Project

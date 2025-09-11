@@ -601,7 +601,6 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                 error_count=0,
             )
 
-            indexed_count = 0
             async for records in self.collect_records(
                 batch_size=self.batch_size, document_ids=document_ids
             ):
@@ -611,7 +610,6 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
                 try:
                     await vector_store.add_chunks_with_embeddings(records)
-                    indexed_count += chunk_count
                     yield RagStepRunnerProgress(
                         success_count=chunk_count,
                         error_count=0,

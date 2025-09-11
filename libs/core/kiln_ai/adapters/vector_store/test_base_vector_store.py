@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
-    KilnVectorStoreQuery,
     SearchResult,
+    VectorStoreQuery,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
@@ -26,7 +26,7 @@ class TestBaseVectorStoreAdapter:
             ) -> None:
                 pass
 
-            async def search(self, query: KilnVectorStoreQuery) -> List[SearchResult]:
+            async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
                 return []
 
             async def count_records(self) -> int:
@@ -40,34 +40,32 @@ class TestBaseVectorStoreAdapter:
         assert adapter.vector_store_config is config
 
 
-class TestKilnVectorStoreQuery:
-    """Test the KilnVectorStoreQuery model."""
+class TestVectorStoreQuery:
+    """Test the VectorStoreQuery model."""
 
     def test_default_values(self):
         """Test that the query model has correct default values."""
-        query = KilnVectorStoreQuery()
+        query = VectorStoreQuery()
         assert query.query_string is None
         assert query.query_embedding is None
 
     def test_with_query_string(self):
         """Test creating a query with a query string."""
-        query = KilnVectorStoreQuery(query_string="test query")
+        query = VectorStoreQuery(query_string="test query")
         assert query.query_string == "test query"
         assert query.query_embedding is None
 
     def test_with_query_embedding(self):
         """Test creating a query with an embedding."""
         embedding = [0.1, 0.2, 0.3]
-        query = KilnVectorStoreQuery(query_embedding=embedding)
+        query = VectorStoreQuery(query_embedding=embedding)
         assert query.query_string is None
         assert query.query_embedding == embedding
 
     def test_with_both_values(self):
         """Test creating a query with both string and embedding."""
         embedding = [0.1, 0.2, 0.3]
-        query = KilnVectorStoreQuery(
-            query_string="test query", query_embedding=embedding
-        )
+        query = VectorStoreQuery(query_string="test query", query_embedding=embedding)
         assert query.query_string == "test query"
         assert query.query_embedding == embedding
 

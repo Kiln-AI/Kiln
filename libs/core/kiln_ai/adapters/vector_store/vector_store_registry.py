@@ -20,17 +20,11 @@ async def vector_store_adapter_for_config(
         raise ValueError("Vector store config ID is required")
 
     match vector_store_config.store_type:
-        case VectorStoreType.LANCE_DB_FTS:
-            return LanceDBAdapter(
-                rag_config,
-                vector_store_config,
-            )
-        case VectorStoreType.LANCE_DB_HYBRID:
-            return LanceDBAdapter(
-                rag_config,
-                vector_store_config,
-            )
-        case VectorStoreType.LANCE_DB_VECTOR:
+        case (
+            VectorStoreType.LANCE_DB_FTS
+            | VectorStoreType.LANCE_DB_HYBRID
+            | VectorStoreType.LANCE_DB_VECTOR
+        ):
             return LanceDBAdapter(
                 rag_config,
                 vector_store_config,
