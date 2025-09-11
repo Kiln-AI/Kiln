@@ -354,7 +354,8 @@ async def test_extract_failure_from_bytes_read(mock_litellm_extractor):
     ):
         # test the extract method
         with pytest.raises(
-            ValueError, match="Error extracting test.pdf: Failed to split PDF test.pdf:"
+            ValueError,
+            match=r"Error extracting test.pdf: Failed to split PDF test.pdf:",
         ):
             await mock_litellm_extractor.extract(
                 extraction_input=ExtractionInput(
