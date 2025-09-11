@@ -144,7 +144,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             completion_kwargs.update(self.litellm_core_config.additional_body_options)
 
         if self.litellm_core_config.base_url:
-            completion_kwargs["base_url"] = self.litellm_core_config.base_url
+            completion_kwargs["api_base"] = self.litellm_core_config.base_url
 
         if self.litellm_core_config.default_headers:
             completion_kwargs["default_headers"] = (
@@ -191,9 +191,9 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
     @cached_property
     def litellm_model_id(self) -> str:
         provider_info = get_litellm_provider_info(self.model_provider)
-        if provider_info.is_custom:
+        if provider_info.is_custom and self.litellm_core_config.base_url is None:
             raise ValueError(
-                f"Provider {self.model_provider.name} is not supported by litellm for embeddings"
+                f"Provider {self.model_provider.name.value} must have an explicit base URL"
             )
 
         return provider_info.litellm_model_id

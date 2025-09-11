@@ -32,6 +32,7 @@ from app.desktop.studio_server.provider_api import (
     OllamaConnection,
     OpenAICompatibleProviderCache,
     all_fine_tuned_models,
+    available_ollama_embedding_models,
     available_ollama_models,
     connect_anthropic,
     connect_azure_openai,
@@ -48,6 +49,7 @@ from app.desktop.studio_server.provider_api import (
     connect_vertex,
     connect_wandb,
     custom_models,
+    embedding_models_from_ollama_tag,
     models_from_ollama_tag,
     openai_compatible_providers,
     openai_compatible_providers_load_cache,
@@ -3106,3 +3108,158 @@ def test_get_providers_models_handles_remote_models(client):
         assert data["models"]["remote-model-abc"]["name"] == "Remote Model ABC"
         assert data["models"]["remote-model-xyz"]["id"] == "remote-model-xyz"
         assert data["models"]["remote-model-xyz"]["name"] == "Remote Model XYZ"
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.built_in_embedding_models",
+    [
+        KilnEmbeddingModel(
+            family="gemma",
+            name="embeddinggemma",
+            friendly_name="embeddinggemma",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.ollama,
+                    model_id="embeddinggemma:300m",
+                    n_dimensions=768,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=False,
+                    suggested_for_chunk_embedding=True,
+                    ollama_model_aliases=["embeddinggemma"],
+                ),
+            ],
+        ),
+        KilnEmbeddingModel(
+            family="another-family",
+            name="another-embedding-model",
+            friendly_name="another-embedding-model",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.ollama,
+                    model_id="another-embedding-model:300m",
+                    n_dimensions=768,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=False,
+                    suggested_for_chunk_embedding=True,
+                    ollama_model_aliases=["another-embedding-model"],
+                ),
+            ],
+        ),
+    ],
+)
+def test_embedding_models_from_ollama_tag_mapping():
+    # Exact tag
+    pairs = embedding_models_from_ollama_tag("embeddinggemma:300m")
+    assert len(pairs) == 1
+    model, provider = pairs[0]
+    assert model is not None and provider is not None
+    assert model.name == "embeddinggemma"
+    assert provider.model_id == "embeddinggemma:300m"
+
+    # Latest alias
+    pairs = embedding_models_from_ollama_tag("embeddinggemma:latest")
+    assert len(pairs) == 1
+
+    # Plain alias
+    pairs = embedding_models_from_ollama_tag("embeddinggemma")
+    assert len(pairs) == 1
+
+    # check other model
+    pairs = embedding_models_from_ollama_tag("another-embedding-model")
+    assert len(pairs) == 1
+
+    # check other model with latest alias
+    pairs = embedding_models_from_ollama_tag("another-embedding-model:latest")
+    assert len(pairs) == 1
+
+    # Unknown
+    pairs = embedding_models_from_ollama_tag("unknown-embed")
+    assert pairs == []
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.built_in_embedding_models",
+    [
+        KilnEmbeddingModel(
+            family="gemma",
+            name="embeddinggemma",
+            friendly_name="embeddinggemma",
+            providers=[
+                KilnEmbeddingModelProvider(
+                    name=ModelProviderName.ollama,
+                    model_id="embeddinggemma:300m",
+                    n_dimensions=768,
+                    max_input_tokens=8192,
+                    supports_custom_dimensions=False,
+                    suggested_for_chunk_embedding=True,
+                    ollama_model_aliases=["embeddinggemma"],
+                )
+            ],
+        )
+    ],
+)
+@pytest.mark.asyncio
+async def test_available_ollama_embedding_models_unit():
+    with patch(
+        "app.desktop.studio_server.provider_api.connect_ollama",
+        return_value=OllamaConnection(
+            message="Connected",
+            supported_models=[],
+            untested_models=[],
+            supported_embedding_models=["embeddinggemma:300m", "embeddinggemma:latest"],
+        ),
+    ):
+        provider = await available_ollama_embedding_models()
+
+    assert provider is not None
+    assert provider.provider_id == "ollama"
+    assert provider.provider_name == "Ollama"
+    # Should map to built-in embedding model by name
+    assert any(m.id == "embeddinggemma" for m in provider.models)
+    # Dimensions and metadata from provider config
+    model = next(m for m in provider.models if m.id == "embeddinggemma")
+    assert model.n_dimensions == 768
+    assert model.max_input_tokens == 8192
+    assert model.supports_custom_dimensions is False
+    assert model.suggested_for_chunk_embedding is True
+
+
+def test_available_embedding_models_endpoint_includes_ollama(client):
+    # Return only the Ollama provider, no key-required providers
+    fake_provider = {
+        "provider_name": "Ollama",
+        "provider_id": "ollama",
+        "models": [
+            {
+                "id": "embeddinggemma",
+                "name": "embeddinggemma",
+                "n_dimensions": 768,
+                "max_input_tokens": 8192,
+                "supports_custom_dimensions": False,
+                "suggested_for_chunk_embedding": True,
+            }
+        ],
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.available_ollama_embedding_models",
+            return_value=fake_provider,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            {},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=MagicMock(),
+        ),
+    ):
+        resp = client.get("/api/available_embedding_models")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    # Should contain only the Ollama provider entry
+    assert isinstance(data, list) and len(data) == 1
+    assert data[0]["provider_id"] == "ollama"
+    assert any(m["id"] == "embeddinggemma" for m in data[0]["models"])

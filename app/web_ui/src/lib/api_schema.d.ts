@@ -2260,7 +2260,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini-embedding-001";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -3047,6 +3047,8 @@ export interface components {
             supported_models: string[];
             /** Untested Models */
             untested_models?: string[];
+            /** Supported Embedding Models */
+            supported_embedding_models?: string[];
         };
         /** OpenFileResponse */
         OpenFileResponse: {
