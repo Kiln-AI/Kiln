@@ -846,9 +846,9 @@
           </div>
         </div>
       {/if}
-      <div class="rounded-lg border">
-        <table class="table table-fixed">
-          <thead class="text-center">
+      <div class={is_empty ? "" : "rounded-lg border"}>
+        <table class={is_empty ? "" : "table table-fixed"}>
+          <thead class="text-center {is_empty ? 'hidden' : ''}">
             <tr>
               <!-- 70 + 110 = 180 (the width of the last two columns)-->
               <th style="width: calc(50% - 70px)"
