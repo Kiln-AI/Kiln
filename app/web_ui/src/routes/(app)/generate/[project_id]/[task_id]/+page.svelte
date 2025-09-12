@@ -1250,7 +1250,15 @@
     overflow: hidden;
     visibility: hidden;
   }
-  .hidden-header th,
+  .hidden-header th {
+    height: 0;
+    padding: 0;
+    border: 0;
+    font-size: 0;
+    line-height: 0;
+    visibility: hidden !important;
+    height: 0 !important;
+  }
   .hidden-header th *,
   .hidden-header th * * {
     display: none !important;
