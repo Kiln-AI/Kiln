@@ -19,6 +19,7 @@
     provider_name_from_id,
   } from "$lib/stores"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Output from "../../../../../run/output.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -34,6 +35,7 @@
   let lastSearchQuery: string | null = null
   let searchResults: Array<{
     document_id: string
+    chunk_idx: number
     chunk_text: string
     similarity: number | null
   }> = []
@@ -201,29 +203,41 @@
             {/if}
 
             {#if searchResults.length > 0}
-              <div class="mt-6">
-                <h3 class="text-xl font-bold mb-1">
-                  Search Results for "{lastSearchQuery}"
-                </h3>
-                <div class="text-sm text-gray-500 mb-4">
-                  {searchResults.length > 1
-                    ? `${searchResults.length} results found`
-                    : "1 result found"}
+              <div class="mt-12">
+                <div class="flex flex-row justify-between items-center mb-6">
+                  <h3 class="text-xl font-bold">
+                    Search Results for "{lastSearchQuery}"
+                  </h3>
+                  <div class="text-sm text-gray-500">
+                    {searchResults.length > 1
+                      ? `${searchResults.length} results found`
+                      : "1 result found"}
+                  </div>
                 </div>
 
-                <div class="space-y-4">
+                <div class="space-y-12">
                   {#each searchResults as result}
-                    <div
-                      class="bg-base-100 rounded-lg p-4 border border-base-300"
-                    >
-                      <div class="flex justify-between items-start mb-2">
-                        <div class="text-sm text-gray-500">
-                          Document: {result.document_id}
+                    <div>
+                      <div class="mb-2 flex flex-row text-sm text-gray-500">
+                        <div class="flex-grow">
+                          <a
+                            href={`/docs/library/${project_id}/${result.document_id}`}
+                            class="hover:link"
+                          >
+                            Document: {result.document_id}
+                          </a>
+                          (Chunk #{result.chunk_idx})
+                        </div>
+                        <div>
+                          Score: {result.similarity !== null
+                            ? result.similarity.toFixed(2)
+                            : "N/A"}
                         </div>
                       </div>
-                      <div class="text-base text-base-content">
-                        {result.chunk_text}
-                      </div>
+                      <Output
+                        raw_output={result.chunk_text}
+                        max_height="300px"
+                      />
                     </div>
                   {/each}
                 </div>
