@@ -25,6 +25,7 @@
 <AppPage
   title="Documents"
   subtitle="Add knowledge to your project with documents"
+  limit_max_width
   action_buttons={[
     {
       label: "Manage Extractors",
