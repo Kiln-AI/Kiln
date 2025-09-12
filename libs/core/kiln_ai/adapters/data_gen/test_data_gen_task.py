@@ -111,7 +111,9 @@ async def test_data_gen_all_models_providers(
     _, provider = get_model_and_provider(model_name, provider_name)
     if not provider.supports_data_gen:
         # pass if the model doesn't support data gen (testing the support flag is part of this)
-        return
+        pytest.skip(
+            f"Skipping {model_name} {provider_name} because it does not support data gen"
+        )
 
     data_gen_task = DataGenCategoriesTask(gen_type="training", guidance=None)
     data_gen_input = DataGenCategoriesTaskInput.from_task(base_task, num_subtopics=6)
@@ -257,7 +259,9 @@ async def test_data_gen_sample_all_models_providers(
     _, provider = get_model_and_provider(model_name, provider_name)
     if provider is None or not provider.supports_data_gen:
         # pass if the model doesn't support data gen (testing the support flag is part of this)
-        return
+        pytest.skip(
+            f"Skipping {model_name} {provider_name} because it does not support data gen"
+        )
 
     data_gen_task = DataGenSampleTask(
         target_task=base_task, gen_type="training", guidance=None
@@ -313,7 +317,9 @@ async def test_data_gen_sample_all_models_providers_with_structured_output(
     _, provider = get_model_and_provider(model_name, provider_name)
     if not provider.supports_data_gen:
         # pass if the model doesn't support data gen (testing the support flag is part of this)
-        return
+        pytest.skip(
+            f"Skipping {model_name} {provider_name} because it does not support data gen"
+        )
 
     data_gen_task = DataGenSampleTask(
         target_task=task, gen_type="training", guidance=None
