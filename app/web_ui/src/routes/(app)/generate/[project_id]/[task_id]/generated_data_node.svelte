@@ -332,18 +332,18 @@
           {#if data.sub_topics.length > 0}
             <li>
               <button on:click={() => open_generate_samples_modal()}>
-                Generate Model Inputs (Only This Topic)
+                Generate Inputs (Only This Topic)
               </button>
             </li>
             <li>
               <button on:click={() => open_generate_samples_modal(true)}>
-                Generate Model Inputs (All Subtopics)
+                Generate Inputs (All Subtopics)
               </button>
             </li>
           {:else}
             <li>
               <button on:click={() => open_generate_samples_modal()}>
-                Generate Model Inputs
+                Generate Inputs
               </button>
             </li>
           {/if}

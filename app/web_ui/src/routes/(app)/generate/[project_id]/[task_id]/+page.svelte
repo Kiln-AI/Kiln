@@ -872,7 +872,11 @@
       {/if}
       <div class={is_empty ? "" : "rounded-lg border"}>
         <table class={is_empty ? "" : "table table-fixed"}>
-          <thead class="text-center {is_empty ? 'hidden' : ''}">
+          <thead
+            class="text-center {is_empty
+              ? 'hidden'
+              : ''} {input_generated_count === 0 ? 'hidden-header' : ''}"
+          >
             <tr>
               <!-- 70 + 110 = 180 (the width of the last two columns)-->
               <th style="width: calc(50% - 70px)"
@@ -1239,3 +1243,18 @@
     <div class="flex flex-row gap-2"></div>
   </div></Dialog
 >
+
+<style>
+  .hidden-header {
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+  .hidden-header th,
+  .hidden-header th *,
+  .hidden-header th * * {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+  }
+</style>
