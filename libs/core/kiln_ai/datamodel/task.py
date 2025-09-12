@@ -138,15 +138,14 @@ class Task(
 
     @model_validator(mode="after")
     def validate_default_run_config_id(self) -> "Task":
-        return self
-        # if self.default_run_config_id is None:
-        #     return self
+        if self.default_run_config_id is None:
+            return self
 
-        # run_config_ids = [rc.id for rc in self.run_configs(readonly=True)]
-        # if self.default_run_config_id in run_config_ids:
-        #     return self
-        # else:
-        #     raise ValueError("Run config not found in task run configs.")
+        run_config_ids = [rc.id for rc in self.run_configs(readonly=True)]
+        if self.default_run_config_id in run_config_ids:
+            return self
+        else:
+            raise ValueError("Run config not found in task run configs.")
 
     def output_schema(self) -> Dict | None:
         if self.output_json_schema is None:

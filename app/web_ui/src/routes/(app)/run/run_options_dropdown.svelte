@@ -10,10 +10,11 @@
     model_name,
     model_info,
     provider_name_from_id,
-    current_project,
-    current_task,
     load_available_prompts,
     current_task_prompts,
+    load_model_info,
+    current_task,
+    current_project,
   } from "$lib/stores"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { onMount } from "svelte"
@@ -22,17 +23,29 @@
     task_run_configs_by_task_id,
   } from "$lib/stores/run_configs_store"
 
-  export let selected_run_config: TaskRunConfig | "custom"
-  export let project_id: string
-  export let task_id: string
+  export let selected_run_config: TaskRunConfig | "custom" = "custom"
+
+  $: task_id = $current_task?.id ?? ""
 
   onMount(async () => {
-    await load_task_run_configs(
-      $current_project?.id ?? "",
-      $current_task?.id ?? "",
-    )
+    await load_task_run_configs($current_project?.id ?? "", task_id)
     await load_available_prompts()
+    await load_model_info()
+    let default_run_config = get_default_run_config()
+    if (default_run_config) {
+      selected_run_config = default_run_config
+    }
   })
+
+  function get_default_run_config(): TaskRunConfig | null {
+    if ($current_task?.default_run_config_id) {
+      let default_task_run_config = $task_run_configs_by_task_id[task_id]?.find(
+        (config) => config.id === $current_task?.default_run_config_id,
+      )
+      return default_task_run_config ?? null
+    }
+    return null
+  }
 
   // Build the options for the dropdown
   $: options = build_run_config_options(
@@ -48,19 +61,20 @@
   ): OptionGroup[] {
     const options: OptionGroup[] = []
 
-    // // Add default configuration first if it exists
-    // if (default_task_run_config) {
-    //   options.push({
-    //     label: "",
-    //     options: [
-    //       {
-    //         value: default_task_run_config,
-    //         label: "Default",
-    //         description: "The saved default configuration for this task.",
-    //       },
-    //     ],
-    //   })
-    // }
+    // Add default configuration first if it exists
+    let default_run_config = get_default_run_config()
+    if (default_run_config) {
+      options.push({
+        label: "",
+        options: [
+          {
+            value: default_run_config,
+            label: "Default",
+            description: "The saved default configuration for this task.",
+          },
+        ],
+      })
+    }
 
     // Add custom configuration option
     options.push({

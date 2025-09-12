@@ -42,9 +42,8 @@
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
 
-  let selected_run_config: TaskRunConfig | "custom" = "custom"
-  let switching_to_custom_due_to_changes = false
-  let updating_options_from_selected_run_config = false
+  let selected_run_config: TaskRunConfig | "custom"
+  let updating_current_run_options = false
 
   // let current_task_run_configs: TaskRunConfig[] = []
   // let default_task_run_config: TaskRunConfig | null = null
@@ -87,90 +86,6 @@
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
-
-  // Update form values when selected_run_config changes
-  $: selected_run_config, update_run_options_from_selected_run_config()
-  function update_run_options_from_selected_run_config() {
-    if (switching_to_custom_due_to_changes) {
-      switching_to_custom_due_to_changes = false
-      return
-    }
-
-    // // Reset the flag when user manually changes selection
-    // did_set_default_run_config = true
-
-    updating_options_from_selected_run_config = true
-
-    if (selected_run_config !== "custom") {
-      // Populate values from saved configuration
-      const config = selected_run_config as TaskRunConfig
-      prompt_method = config.run_config_properties.prompt_id
-      model =
-        config.run_config_properties.model_provider_name +
-        "/" +
-        config.run_config_properties.model_name
-      temperature = config.run_config_properties.temperature
-      top_p = config.run_config_properties.top_p
-      structured_output_mode =
-        config.run_config_properties.structured_output_mode
-      tools = config.run_config_properties.tools_config?.tools ?? []
-    } else {
-      // Reset to default custom options
-      prompt_method = "simple_prompt_builder"
-      model = $ui_state.selected_model
-      temperature = 1.0
-      top_p = 1.0
-      structured_output_mode = "default"
-      tools = []
-    }
-
-    updating_options_from_selected_run_config = false
-  }
-
-  // Check for manual changes when options change in case user values differ from selected run config to reset to custom options
-  $: model_name,
-    provider,
-    prompt_method,
-    temperature,
-    top_p,
-    structured_output_mode,
-    tools,
-    updating_options_from_selected_run_config,
-    check_for_manual_changes()
-  async function check_for_manual_changes() {
-    if (updating_options_from_selected_run_config) {
-      return
-    }
-
-    // Wait for all reactive statements to complete
-    await tick()
-    if (selected_run_config !== "custom") {
-      const selected_run_config_properties =
-        selected_run_config.run_config_properties
-      // Check if any values have changed from the saved config properties
-      if (
-        selected_run_config_properties.model_name !== model_name ||
-        selected_run_config_properties.model_provider_name !== provider ||
-        selected_run_config_properties.prompt_id !== prompt_method ||
-        selected_run_config_properties.temperature !== temperature ||
-        selected_run_config_properties.top_p !== top_p ||
-        selected_run_config_properties.structured_output_mode !==
-          structured_output_mode ||
-        !arraysEqual(
-          selected_run_config_properties.tools_config?.tools ?? [],
-          tools,
-        )
-      ) {
-        switching_to_custom_due_to_changes = true
-        selected_run_config = "custom"
-      }
-    }
-  }
-
-  // Helper function to compare tools arrays efficiently
-  function arraysEqual(a: string[], b: string[]): boolean {
-    return a.length === b.length && a.every((val, index) => val === b[index])
-  }
 
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
@@ -296,12 +211,92 @@
     clear_all()
   }
 
+  // RunOptionsDropdown Logic
+
+  // Update form values when selected_run_config changes
+  $: if (selected_run_config !== "custom") {
+    update_current_run_options()
+  }
+
+  async function update_current_run_options() {
+    updating_current_run_options = true
+
+    // Populate values from saved configuration
+    const config = selected_run_config as TaskRunConfig
+    prompt_method = config.run_config_properties.prompt_id
+    model =
+      config.run_config_properties.model_provider_name +
+      "/" +
+      config.run_config_properties.model_name
+    temperature = config.run_config_properties.temperature
+    top_p = config.run_config_properties.top_p
+    structured_output_mode = config.run_config_properties.structured_output_mode
+    tools = [...(config.run_config_properties.tools_config?.tools ?? [])]
+
+    updating_current_run_options = false
+  }
+
+  // Check for manual changes when options change in case user values differ from selected run config to reset to custom options
+  $: model,
+    prompt_method,
+    temperature,
+    top_p,
+    structured_output_mode,
+    tools,
+    updating_current_run_options,
+    check_for_manual_changes()
+
+  async function check_for_manual_changes() {
+    if (updating_current_run_options) {
+      return
+    }
+
+    // Wait for all reactive statements to complete
+    await tick()
+
+    if (selected_run_config !== "custom") {
+      const config_properties = selected_run_config.run_config_properties
+      // Check if any values have changed from the saved config properties
+      if (
+        config_properties.model_name !== model_name ||
+        config_properties.model_provider_name !== provider ||
+        config_properties.prompt_id !== prompt_method ||
+        config_properties.temperature !== temperature ||
+        config_properties.top_p !== top_p ||
+        config_properties.structured_output_mode !== structured_output_mode ||
+        !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
+      ) {
+        selected_run_config = "custom"
+      }
+    }
+  }
+
+  // Helper function to compare tools arrays efficiently
+  function arrays_equal(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((val, index) => val === b[index])
+  }
+
+  // Helper function to convert run options to server run_config_properties format
+  function run_options_as_run_config_properties(): RunConfigProperties {
+    return {
+      model_name: model_name,
+      // @ts-expect-error server will catch if enum is not valid
+      model_provider_name: provider,
+      prompt_id: prompt_method,
+      temperature: temperature,
+      top_p: top_p,
+      structured_output_mode: structured_output_mode,
+      tools_config: {
+        tools: tools,
+      },
+    }
+  }
+
   // Handle save run options button clicked from AdvancedRunOptions component
   async function handle_save_run_options() {
     if (!$current_project?.id || !$current_task?.id) {
       return
     }
-
     try {
       const saved_config = await save_new_task_run_config(
         $current_project.id,
@@ -311,7 +306,6 @@
       await load_available_prompts()
       // Wait for all reactive updates to complete (including dropdown options rebuild)
       await tick()
-
       // Now set the selected config after
       if (saved_config) {
         // Find the matching run config from the loaded options to ensure reference equality
@@ -329,22 +323,6 @@
     } catch (e) {
       error = createKilnError(e)
       // TODO: Show error to user
-    }
-  }
-
-  // Helper function to convert run options to server run_config_properties format
-  function run_options_as_run_config_properties(): RunConfigProperties {
-    return {
-      model_name: model_name,
-      // @ts-expect-error server will catch if enum is not valid
-      model_provider_name: provider,
-      prompt_id: prompt_method,
-      temperature: temperature,
-      top_p: top_p,
-      structured_output_mode: structured_output_mode,
-      tools_config: {
-        tools: tools,
-      },
     }
   }
 </script>
@@ -373,11 +351,7 @@
         <div class="text-xl font-bold">Options</div>
         <div>
           {#if $current_project?.id && $current_task?.id}
-            <RunOptionsDropdown
-              bind:selected_run_config
-              project_id={$current_project?.id ?? ""}
-              task_id={$current_task?.id ?? ""}
-            />
+            <RunOptionsDropdown bind:selected_run_config />
           {/if}
         </div>
         <AvailableModelsDropdown
