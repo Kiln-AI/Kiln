@@ -359,19 +359,6 @@
                   ),
                   tooltip: "The number of top search results returned",
                 },
-                ...(rag_config.vector_store_config.store_type !== "lancedb_fts"
-                  ? [
-                      {
-                        name: "Vector Probes",
-                        value: String(
-                          rag_config.vector_store_config.properties.nprobes ||
-                            10,
-                        ),
-                        tooltip:
-                          "Number of partitions to search for vector queries (higher = more accurate but slower)",
-                      },
-                    ]
-                  : []),
               ]}
             />
           </div>
