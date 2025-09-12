@@ -79,7 +79,7 @@
       run_rag_dialog?.show()
     }}
   >
-    Details
+    View Status
   </button>
 {/if}
 
