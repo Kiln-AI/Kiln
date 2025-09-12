@@ -20,9 +20,6 @@
   // Properties for all vector store types
   let similarity_top_k: number = 10
 
-  // Properties specific to vector and hybrid stores
-  let nprobes: number = 20
-
   export let keyboard_submit: boolean = false
 
   const dispatch = createEventDispatcher<{
@@ -55,10 +52,6 @@
     },
   ]
 
-  $: showVectorProperties =
-    selectedStoreType === "lancedb_vector" ||
-    selectedStoreType === "lancedb_hybrid"
-
   async function create_vector_store_config() {
     try {
       loading = true
@@ -74,11 +67,6 @@
 
       const properties: Record<string, string | number | boolean> = {
         similarity_top_k,
-      }
-
-      // Add nprobes for vector and hybrid search
-      if (showVectorProperties) {
-        properties.nprobes = nprobes
       }
 
       const { error: create_error, data } = await client.POST(
@@ -139,17 +127,6 @@
     bind:value={similarity_top_k}
     validator={number_validator({ min: 1, label: "Results to Return" })}
   />
-
-  {#if showVectorProperties}
-    <FormElement
-      label="Number of Probes"
-      description="The number of probes used. A higher number makes search more accurate but also slower."
-      inputType="input_number"
-      id="nprobes"
-      bind:value={nprobes}
-      validator={number_validator({ min: 1, label: "Number of Probes" })}
-    />
-  {/if}
 
   <!-- Advanced Options -->
   <div class="collapse collapse-arrow bg-base-200">

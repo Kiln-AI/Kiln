@@ -1200,6 +1200,7 @@ def connect_document_api(app: FastAPI):
                 "vector_column_name": "vector",
                 "text_key": "text",
                 "doc_id_key": "doc_id",
+                "nprobes": 20,
                 **request.properties,
             },
         )
