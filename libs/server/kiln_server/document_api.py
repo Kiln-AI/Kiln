@@ -703,9 +703,6 @@ def connect_document_api(app: FastAPI):
                 },
             )
 
-        # we don't wait for this to complete
-        run_all_extractors_and_rag_workflows_no_wait(project, created_documents)
-
         return BulkCreateDocumentsResponse(
             created_documents=created_documents,
             failed_files=failed_files,

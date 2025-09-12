@@ -4,6 +4,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import TrashIcon from "$lib/ui/trash_icon.svelte"
   import UploadIcon from "$lib/ui/upload_icon.svelte"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
 
   export let onUploadCompleted: () => void
 
@@ -125,6 +126,8 @@
 
     selected_files = []
     onUploadCompleted()
+
+    ragProgressStore.run_all_rag_configs(project_id)
 
     return true
   }
