@@ -512,7 +512,7 @@
             save_all_sub_errors = save_all_sub_errors
           } else if (!data || !data.id) {
             save_all_sub_errors.push(
-              new KilnError("Unknow error saving sample"),
+              new KilnError("Unknown error saving sample"),
             )
             // Trigger reactivity
             save_all_sub_errors = save_all_sub_errors
