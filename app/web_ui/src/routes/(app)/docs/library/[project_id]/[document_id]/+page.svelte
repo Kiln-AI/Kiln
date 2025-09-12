@@ -184,6 +184,7 @@
 <AppPage
   title="Document"
   subtitle={`${document?.name || document?.original_file.filename}`}
+  limit_max_width
   action_buttons={[
     {
       icon: "/images/download.svg",
@@ -273,35 +274,18 @@
                         </div>
                       </td>
                       <td>
-                        <div class="min-w-[200px]">
-                          {#if result.output_content.length > 200}
-                            <button
-                              class="w-full h-[160px] overflow-y-hidden relative text-start justify-start items-start flex"
-                              on:click={() => {
-                                dialog_extraction = result
-                                output_dialog?.show()
-                              }}
-                            >
-                              {result.output_content}
-                              <div class="absolute bottom-0 left-0 w-full">
-                                <div
-                                  class="h-36 bg-gradient-to-t from-white to-transparent"
-                                ></div>
-                                <div
-                                  class="text-center bg-white font-medium font-sm text-gray-500"
-                                >
-                                  <span class="text-gray-500"> See all </span>
-                                </div>
-                              </div>
-                            </button>
-                          {:else}
-                            <div
-                              class="text-sm text-gray-500 font-mono text-xs"
-                            >
-                              {result.output_content}
-                            </div>
-                          {/if}
-                        </div>
+                        <button
+                          on:click={() => {
+                            dialog_extraction = result
+                            output_dialog?.show()
+                          }}
+                        >
+                          <Output
+                            raw_output={result.output_content}
+                            max_height="200px"
+                            hide_toggle={true}
+                          />
+                        </button>
                       </td>
                     </tr>
                   {/each}
@@ -409,6 +393,7 @@
 <Dialog
   bind:this={output_dialog}
   title="Extraction Output"
+  width="wide"
   action_buttons={[
     {
       label: "Close",

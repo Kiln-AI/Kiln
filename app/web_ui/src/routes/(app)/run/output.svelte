@@ -5,6 +5,7 @@
 
   export let raw_output: string
   export let max_height: string | null = null
+  export let hide_toggle: boolean = false
 
   let formatted_json_html: string | null = null
   let is_expanded = false
@@ -71,7 +72,7 @@
     <!-- eslint-enable svelte/no-at-html-tags -->
     <div class="flex-none">
       <button
-        on:click={copy_to_clipboard}
+        on:click|stopPropagation={copy_to_clipboard}
         class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
       >
         <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
@@ -99,7 +100,9 @@
     >
       <button
         on:click={toggle_expansion}
-        class="btn btn-sm btn-outline pointer-events-auto bg-base-200"
+        class="btn btn-sm btn-outline pointer-events-auto bg-base-200 {hide_toggle
+          ? 'hidden'
+          : ''}"
       >
         Show All
       </button>
@@ -107,7 +110,7 @@
   {/if}
 
   <!-- Hide toggle when expanded -->
-  {#if max_height && is_expanded}
+  {#if max_height && is_expanded && !hide_toggle}
     <div class="flex justify-center pt-2">
       <button on:click={toggle_expansion} class="btn btn-sm btn-outline">
         Collapse
