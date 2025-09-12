@@ -92,16 +92,31 @@ def test_get_kind_from_mime_type_unsupported(mock_litellm_extractor):
     )
 
 
-async def test_extract_success(mock_file_factory, mock_litellm_extractor):
-    """Test successful extraction."""
-    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
-    test_pdf_file_bytes = Path(test_file).read_bytes()
-    base64_url = to_base64_url("application/pdf", test_pdf_file_bytes)
+@pytest.mark.parametrize(
+    "mime_type, expected_content",
+    [
+        (MockFileFactoryMimeType.TXT, "Content from text file"),
+        (MockFileFactoryMimeType.MD, "Content from markdown file"),
+        (MockFileFactoryMimeType.HTML, "Content from html file"),
+        (MockFileFactoryMimeType.CSV, "Content from csv file"),
+        (MockFileFactoryMimeType.PNG, "Content from image file"),
+        (MockFileFactoryMimeType.JPG, "Content from image file"),
+        (MockFileFactoryMimeType.MP4, "Content from video file"),
+        (MockFileFactoryMimeType.MP3, "Content from audio file"),
+    ],
+)
+async def test_extract_success(
+    mock_file_factory, mock_litellm_extractor, mime_type, expected_content
+):
+    """Test successful extraction for non-PDF file types."""
+    # Create a mock file of the specified type
+    test_file = mock_file_factory(mime_type)
 
+    # Mock response for single file extraction
     mock_response = AsyncMock(spec=ModelResponse)
     mock_choice = AsyncMock(spec=Choices)
     mock_message = AsyncMock()
-    mock_message.content = "Extracted content from PDF"
+    mock_message.content = expected_content
     mock_choice.message = mock_message
     mock_response.choices = [mock_choice]
 
@@ -109,30 +124,18 @@ async def test_extract_success(mock_file_factory, mock_litellm_extractor):
         result = await mock_litellm_extractor.extract(
             ExtractionInput(
                 path=str(test_file),
-                mime_type="application/pdf",
+                mime_type=mime_type.value,
             )
         )
 
-    # Verify the completion was called with the correct arguments
-    call_args = mock_acompletion.call_args
-    assert call_args[1]["model"] == "openai/gpt-4o"
-    assert call_args[1]["base_url"] == "https://test.com"
-    assert call_args[1]["api_key"] == "test-key"
-    # default_headers is not included when it's empty (falsy)
-    assert "default_headers" not in call_args[1]
+    # Verify that the completion was called once (single file)
+    assert mock_acompletion.call_count == 1
 
-    # Verify the messages structure
-    messages = call_args[1]["messages"]
-    assert len(messages) == 1
-    assert messages[0]["role"] == "user"
-    assert len(messages[0]["content"]) == 2
-    assert messages[0]["content"][0]["type"] == "text"
-    assert messages[0]["content"][0]["text"] == "prompt for documents"
-    assert messages[0]["content"][1]["type"] == "file"
-    assert messages[0]["content"][1]["file"]["file_data"] == base64_url
+    # Verify the output contains the expected content
+    assert expected_content in result.content
 
-    assert result.content == "Extracted content from PDF"
-    assert result.is_passthrough is False
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
 
 
 def test_build_completion_kwargs_with_all_options(mock_file_factory):
@@ -350,7 +353,10 @@ async def test_extract_failure_from_bytes_read(mock_litellm_extractor):
         ),
     ):
         # test the extract method
-        with pytest.raises(ValueError, match="error from read_bytes"):
+        with pytest.raises(
+            ValueError,
+            match=r"Error extracting test.pdf: Failed to split PDF test.pdf:",
+        ):
             await mock_litellm_extractor.extract(
                 extraction_input=ExtractionInput(
                     path="test.pdf",
@@ -657,6 +663,69 @@ async def test_extract_document_success_pdf(
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
     assert expected_substring_in_output.lower() in output.content.lower()
+
+
+async def test_extract_pdf_page_by_page(mock_file_factory, mock_litellm_extractor):
+    """Test that PDFs are processed page by page with page numbers in output."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock responses for each page (PDF has 2 pages)
+    mock_responses = []
+    for i in range(2):  # PDF has 2 pages
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        result = await mock_litellm_extractor.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that the completion was called multiple times (once per page)
+    assert mock_acompletion.call_count == 2
+
+    # Verify the output contains content from both pages
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
+
+
+async def test_extract_pdf_page_by_page_error_handling(
+    mock_file_factory, mock_litellm_extractor
+):
+    """Test that PDF page processing handles errors gracefully."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock the first page to succeed, second to fail
+    mock_response1 = AsyncMock(spec=ModelResponse)
+    mock_choice1 = AsyncMock(spec=Choices)
+    mock_message1 = AsyncMock()
+    mock_message1.content = "Content from page 1"
+    mock_choice1.message = mock_message1
+    mock_response1.choices = [mock_choice1]
+
+    with patch(
+        "litellm.acompletion", side_effect=[mock_response1, Exception("API Error")]
+    ) as mock_acompletion:
+        with pytest.raises(Exception, match="API Error"):
+            await mock_litellm_extractor.extract(
+                ExtractionInput(
+                    path=str(test_file),
+                    mime_type="application/pdf",
+                )
+            )
+
+    # Verify that the completion was called at least once before failing
+    assert mock_acompletion.call_count >= 1
 
 
 @pytest.mark.paid
