@@ -199,10 +199,10 @@
             options: vector_store_configs.map((config) => ({
               label:
                 config.store_type === "lancedb_fts"
-                  ? "LanceDB - Full Text Search"
+                  ? "Full Text Search"
                   : config.store_type === "lancedb_vector"
-                    ? "LanceDB - Vector Search"
-                    : "LanceDB - Hybrid Search",
+                    ? "Vector Search"
+                    : "Hybrid Search",
               value: config.id,
               description:
                 config.name +

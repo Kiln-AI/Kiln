@@ -31,19 +31,19 @@
       label: "Vector Store Types",
       options: [
         {
-          label: "LanceDB - Full Text Search",
+          label: "Full Text Search",
           value: "lancedb_fts",
           description:
             "Search using text matching only - fastest for keyword searches",
         },
         {
-          label: "LanceDB - Vector Search",
+          label: "Vector Search",
           value: "lancedb_vector",
           description:
             "Search using semantic similarity vectors - best for meaning-based searches",
         },
         {
-          label: "LanceDB - Hybrid Search",
+          label: "Hybrid Search",
           value: "lancedb_hybrid",
           description:
             "Combines text and vector search - best overall accuracy",
