@@ -211,11 +211,6 @@
                         <div class="text-sm text-gray-500">
                           Document: {result.document_id}
                         </div>
-                        {#if result.similarity !== null}
-                          <div class="text-sm text-gray-500">
-                            Score: {result.similarity.toFixed(3)}
-                          </div>
-                        {/if}
                       </div>
                       <div class="text-base text-base-content">
                         {result.chunk_text}
