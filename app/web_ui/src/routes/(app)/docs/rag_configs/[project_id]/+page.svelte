@@ -67,7 +67,7 @@
   }
 </script>
 
-<div class="max-w-[900px]">
+<div class="max-w-[1400px]">
   <AppPage
     title="Search Tools (RAG)"
     subtitle="Enable tasks to search your documents for knowledge."
