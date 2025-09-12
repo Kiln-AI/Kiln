@@ -227,44 +227,6 @@
   ]}
 >
   <div class="flex flex-col gap-6">
-    <!-- Overall RAG Progress Header -->
-    <div class="text-center">
-      <div class="flex flex-col items-center gap-4">
-        <div class="text-center">
-          <div
-            class="inline-flex items-center gap-2 px-3 py-1 rounded-full {docs_completed_pct ===
-              100 && chunks_completed_pct === 100
-              ? 'bg-success/10 text-success'
-              : docs_completed_pct > 0
-                ? 'bg-warning/10 text-warning'
-                : 'bg-base-200 text-gray-500'}"
-          >
-            {#if docs_completed_pct === 100 && chunks_completed_pct === 100}
-              <div class="w-4 h-4">
-                <Checkmark />
-              </div>
-              <span class="text-xs font-medium">Complete</span>
-            {:else if is_running}
-              <div class="bg-current rounded-full loading loading-sm"></div>
-              <span class="text-xs font-medium">Processing...</span>
-            {:else if has_error_logs}
-              <div class="bg-error rounded-full"></div>
-              <span class="text-xs font-medium text-error"
-                >Completed with errors</span
-              >
-            {:else}
-              <div class="bg-current rounded-full"></div>
-              <span class="text-xs font-medium">Ready to start</span>
-            {/if}
-          </div>
-          <div class="mt-2 text-xs text-gray-500">
-            {config_progress?.total_document_completed_count || 0} of
-            {config_progress?.total_document_count || 0} documents
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Processing Steps -->
     <div class="flex flex-col gap-4 max-w-md mx-auto">
       {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }, { name: "indexing", label: "Indexing", progress: indexing_progress_value, pct: indexing_progress_pct }] as step}
