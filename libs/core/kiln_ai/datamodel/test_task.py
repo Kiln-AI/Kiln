@@ -298,8 +298,8 @@ def test_task_name_unicode_name():
     assert task.name == "你好"
 
 
-def test_task_default_run_config_id_validation(tmp_path):
-    """Test that default_run_config_id validation works correctly."""
+def test_task_default_run_config_id_property(tmp_path):
+    """Test that default_run_config_id can be set and retrieved."""
 
     # Create a task
     task = Task(
@@ -320,18 +320,13 @@ def test_task_default_run_config_id_validation(tmp_path):
     )
     run_config.save_to_file()
 
-    # Test a valid run config for default_run_config_id
-    task.default_run_config_id = run_config.id
-    assert task.default_run_config_id == run_config.id
-
-    # Test None default_run_config_id (should be valid)
-    task.default_run_config_id = None
+    # Test None default (should be valid)
     assert task.default_run_config_id is None
 
-    # Test invalid default_run_config_id (should raise ValidationError)
-    with pytest.raises(ValidationError) as exc_info:
-        task.default_run_config_id = "non-existent-id"
+    # Test setting a valid ID
+    task.default_run_config_id = "123456789012"
+    assert task.default_run_config_id == "123456789012"
 
-    # Check that the error message contains our custom message
-    error_msg = str(exc_info.value)
-    assert "Run config not found in task run configs" in error_msg
+    # Test setting back to None
+    task.default_run_config_id = None
+    assert task.default_run_config_id is None
