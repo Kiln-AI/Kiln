@@ -351,11 +351,15 @@ async def test_extract_failure_from_bytes_read(mock_litellm_extractor):
             "kiln_ai.adapters.extractors.litellm_extractor.LitellmExtractor.litellm_model_slug",
             return_value="provider-name/model-name",
         ),
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.split_pdf_into_pages",
+            side_effect=Exception("error from split_pdf_into_pages"),
+        ),
     ):
         # test the extract method
         with pytest.raises(
             ValueError,
-            match=r"Error extracting test.pdf: Failed to split PDF test.pdf:",
+            match=r"Error extracting test.pdf: error from split_pdf_into_pages",
         ):
             await mock_litellm_extractor.extract(
                 extraction_input=ExtractionInput(

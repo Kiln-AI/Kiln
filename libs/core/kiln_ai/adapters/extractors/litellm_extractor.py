@@ -123,11 +123,18 @@ class LitellmExtractor(BaseExtractor):
             # this ensures the model stays focused on the current page and does not
             # start summarizing the later pages
             for i, page_path in enumerate(page_paths):
-                page_input = ExtractionInput(
-                    path=str(page_path), mime_type="application/pdf"
-                )
-                completion_kwargs = self._build_completion_kwargs(prompt, page_input)
-                response = await litellm.acompletion(**completion_kwargs)
+                try:
+                    page_input = ExtractionInput(
+                        path=str(page_path), mime_type="application/pdf"
+                    )
+                    completion_kwargs = self._build_completion_kwargs(
+                        prompt, page_input
+                    )
+                    response = await litellm.acompletion(**completion_kwargs)
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Error extracting page {i + 1} in file {pdf_path}: {e}"
+                    ) from e
 
                 if (
                     not isinstance(response, ModelResponse)
