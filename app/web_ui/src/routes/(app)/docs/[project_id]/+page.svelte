@@ -19,20 +19,19 @@
       href: `/docs/rag_configs/${project_id}`,
       img: "/images/card-search.svg",
     },
-    {
-      name: "Extractors",
-      description:
-        "Extractors convert files like PDFs or images into text your models can use.",
-      button_text: "Manage Extractors",
-      href: `/docs/extractors/${project_id}`,
-      img: "/images/scanner.svg",
-    },
   ]
 </script>
 
 <AppPage
   title="Documents"
   subtitle="Add knowledge to your project with documents"
+  action_buttons={[
+    {
+      label: "Manage Extractors",
+      href: `/docs/extractors/${project_id}`,
+      primary: false,
+    },
+  ]}
 >
   <div class="flex flex-col gap-4">
     {#each sections as section}
