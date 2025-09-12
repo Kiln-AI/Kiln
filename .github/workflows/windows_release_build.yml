@@ -49,7 +49,7 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Build Windows Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: ./app/desktop/WinInnoSetup.iss
 

@@ -364,7 +364,7 @@ class TestMCPSessionManager:
 
         # Should extract the HTTP error from the nested structure
         with pytest.raises(
-            ValueError, match="The MCP server rejected the request. Status 401"
+            ValueError, match=r"The MCP server rejected the request. Status 401"
         ):
             async with manager.mcp_client(tool_server):
                 pass

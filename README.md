@@ -39,6 +39,7 @@
 - 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations): Evaluate the quality of your models/tasks using state of the art evaluators.
 - 🎛️ [**Fine Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide): Zero-code fine-tuning for Llama, GPT-4o, and more. Automatic serverless deployment of models.
 - 🤖 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation): Generate eval datasets or fine-tuning data with our interactive visual tooling.
+- 🛠 [**Tools & MCP**](https://docs.kiln.tech/docs/tools-and-mcp): Connect powerful tools to your Kiln tasks
 - 🧠 [**Reasoning Models**](https://docs.kiln.tech/docs/guide-train-a-reasoning-model): Train or distill your own custom reasoning models.
 - 📝 [**Prompt Generation**](https://docs.kiln.tech/docs/prompts): Automatically generate prompts including chain-of-thought, few-shot, and multi-shot, and more.
 - 🌐 [**Comprehensive Model Support**](https://kiln.tech/model_library): Skip the guesswork — we've tested over 100 models' capabilities. Use any model via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, any OpenAI compatible API, and more.
@@ -61,7 +62,7 @@
 
 ## People in Our Community Work For
 
-<img width="600" alt="Logo Grid" src="https://github.com/user-attachments/assets/b1550659-11b5-4c0b-8505-b89ab6f34e2e" />
+<img width="600" alt="Logo Grid" src="https://github.com/user-attachments/assets/fa633000-d0db-4140-b3be-485e4c4a71c0" />
 
 <sub>For privacy, Kiln doesn't track the identity of who uses it. People from these companies have joined our communities on Github & Discord.</sub>
 

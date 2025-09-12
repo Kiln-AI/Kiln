@@ -460,7 +460,7 @@ def test_create_dataset_split(
         # Verify the mocks were called correctly
         mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
         from_task_mock.assert_called_once()
-        args, kwargs = from_task_mock.call_args
+        _, kwargs = from_task_mock.call_args
         assert kwargs["filter_id"] == "high_rating"
         save_mock.assert_called_once()
 
@@ -818,7 +818,7 @@ def test_create_finetune_prompt_builder_error(
     mock_prompt_builder,
 ):
     mock_finetune_registry["test_provider"] = mock_finetune_adapter
-    prompt_builder_mock, builder = mock_prompt_builder
+    _, builder = mock_prompt_builder
 
     # Make the prompt builder raise an error
     builder.build_prompt.side_effect = ValueError("Invalid prompt configuration")

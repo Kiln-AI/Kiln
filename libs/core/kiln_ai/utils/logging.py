@@ -11,7 +11,7 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from kiln_ai.utils.config import Config
 
 
-def get_default_formatter() -> str:
+def get_default_log_file_formatter() -> str:
     return "%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s"
 
 
@@ -21,8 +21,7 @@ def get_log_file_path(filename: str) -> str:
     Returns:
         str: The path to the log file
     """
-    log_path_default = os.path.join(Config.settings_dir(), "logs", filename)
-    log_path = os.getenv("KILN_LOG_FILE", log_path_default)
+    log_path = os.path.join(Config.settings_dir(), "logs", filename)
 
     # Ensure the log directory exists
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -133,7 +132,7 @@ class CustomLiteLLMLogger(CustomLogger):
         self.logger.info(f"LiteLLM Failure: {response_obj}")
 
 
-def setup_litellm_logging(filename: str = "model_calls.log"):
+def setup_litellm_logging(filename: str | None):
     # Check if we already have a custom litellm logger
     for callback in litellm.callbacks or []:
         if isinstance(callback, CustomLiteLLMLogger):
@@ -146,14 +145,14 @@ def setup_litellm_logging(filename: str = "model_calls.log"):
 
     # Create a logger that logs to files, with a max size of 5MB and 3 backup files
     handler = logging.handlers.RotatingFileHandler(
-        get_log_file_path(filename),
+        get_log_file_path(filename or "model_calls.log"),
         maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=3,
         encoding="utf-8",
     )
 
     # Set formatter to match the default formatting
-    formatter = logging.Formatter(get_default_formatter())
+    formatter = logging.Formatter(get_default_log_file_formatter())
     handler.setFormatter(formatter)
 
     # Create a new logger for model calls

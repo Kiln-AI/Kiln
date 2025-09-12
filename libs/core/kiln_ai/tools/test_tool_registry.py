@@ -143,7 +143,7 @@ class TestToolRegistry:
         tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}test_server::test_tool"
         with pytest.raises(
             ValueError,
-            match="Unable to resolve tool from id.*Requires a parent project/task",
+            match=r"Unable to resolve tool from id.*Requires a parent project/task",
         ):
             tool_from_id(tool_id, task=None)
 
@@ -406,7 +406,7 @@ class TestToolRegistry:
 
         with pytest.raises(
             ValueError,
-            match="Unable to resolve tool from id.*Requires a parent project/task",
+            match=r"Unable to resolve tool from id.*Requires a parent project/task",
         ):
             tool_from_id(mcp_tool_id, task=None)
 

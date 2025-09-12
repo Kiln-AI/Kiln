@@ -8,6 +8,8 @@
   title="Connect Remote MCP Server"
   subtitle="Connect to a remote Model Context Protocol (MCP) server to add external
         tools to your project."
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#connecting-remote-mcp-servers"
   breadcrumbs={[
     {
       label: "Settings",

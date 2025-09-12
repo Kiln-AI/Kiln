@@ -105,7 +105,7 @@ def mock_api_key():
 def test_init_missing_api_key(finetune):
     with patch.object(Config, "shared") as mock_config:
         mock_config.return_value.together_api_key = None
-        with pytest.raises(ValueError, match="Together.ai API key not set"):
+        with pytest.raises(ValueError, match=r"Together.ai API key not set"):
             TogetherFinetune(datamodel=finetune)
 
 
