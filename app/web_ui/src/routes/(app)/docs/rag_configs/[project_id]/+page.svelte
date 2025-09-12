@@ -67,7 +67,7 @@
   }
 </script>
 
-<div class="max-w-[900px]">
+<div class="max-w-[1400px]">
   <AppPage
     title="Search Tools (RAG)"
     subtitle="Enable tasks to search your documents for knowledge."
@@ -77,6 +77,7 @@
       : [
           {
             label: "Add Search Tool",
+            primary: true,
             href: `/docs/rag_configs/${project_id}/create_rag_config`,
           },
         ]}
@@ -96,7 +97,7 @@
             <thead>
               <tr>
                 <th class="w-auto">Details</th>
-                <th class="w-[400px]">Status</th>
+                <th class="w-[300px]">Processing Status</th>
               </tr>
             </thead>
             <tbody>

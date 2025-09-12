@@ -10,7 +10,7 @@
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
   import { replaceState } from "$app/navigation"
-  import TagDropdown from "../../../run/tag_dropdown.svelte"
+  import TagDropdown from "../../../../../lib/ui/tag_dropdown.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
 
   let runs: RunSummary[] | null = null

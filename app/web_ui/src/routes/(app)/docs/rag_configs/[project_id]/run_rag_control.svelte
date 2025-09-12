@@ -75,11 +75,12 @@
 {:else}
   <button
     class="link text-sm text-gray-500"
-    on:click={() => {
+    on:click={(event) => {
+      event.stopPropagation()
       run_rag_dialog?.show()
     }}
   >
-    Details
+    View Status
   </button>
 {/if}
 

@@ -62,6 +62,33 @@ function createRagProgressStore() {
     )
   }
 
+  async function run_all_rag_configs(project_id: string): Promise<boolean> {
+    // retrieve all rag configs
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/rag_configs",
+      {
+        params: {
+          path: {
+            project_id,
+          },
+        },
+      },
+    )
+
+    if (error) {
+      return false
+    }
+
+    for (const rag_config of data) {
+      if (!rag_config.id) {
+        continue
+      }
+      run_rag_config(project_id, rag_config.id)
+    }
+
+    return true
+  }
+
   function run_rag_config(project_id: string, rag_config_id: string): boolean {
     update((state) => ({
       ...state,
@@ -238,6 +265,7 @@ function createRagProgressStore() {
     subscribe,
     set,
     update,
+    run_all_rag_configs,
     run_rag_config,
     reset: () =>
       set({

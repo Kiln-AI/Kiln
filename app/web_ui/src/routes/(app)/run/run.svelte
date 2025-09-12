@@ -15,7 +15,7 @@
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
-  import TagDropdown from "./tag_dropdown.svelte"
+  import TagDropdown from "../../../lib/ui/tag_dropdown.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { components } from "../../../lib/api_schema"
   import Warning from "../../../lib/ui/warning.svelte"

@@ -229,12 +229,24 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     def format_query_result(
         self, query_result: VectorStoreQueryResult
     ) -> List[SearchResult]:
+        # Handle case where no results are found - return empty list
         if (
             query_result.ids is None
             or query_result.nodes is None
             or query_result.similarities is None
         ):
-            raise ValueError("ids, nodes, and similarities must not be None")
+            # If any of the fields are None (which shouldn't happen normally),
+            # return empty results instead of raising an error
+            return []
+
+        # If all fields exist but are empty lists, that's a valid empty result
+        if (
+            len(query_result.ids) == 0
+            and len(query_result.nodes) == 0
+            and len(query_result.similarities) == 0
+        ):
+            return []
+
         if not (
             len(query_result.ids)
             == len(query_result.nodes)
@@ -298,13 +310,25 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         return kwargs
 
     async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
-        query_result = await self.lancedb_vector_store.aquery(
-            LlamaIndexVectorStoreQuery(
-                **self.build_kwargs_for_query(query),
-            ),
-            query_type=self.query_type,
-        )
-        return self.format_query_result(query_result)
+        try:
+            query_result = await self.lancedb_vector_store.aquery(
+                LlamaIndexVectorStoreQuery(
+                    **self.build_kwargs_for_query(query),
+                ),
+                query_type=self.query_type,
+            )
+            return self.format_query_result(query_result)
+        except TableNotFoundError as e:
+            logger.info("Vector store search returned no results: %s", e)
+            return []
+        except Warning as e:
+            msg = str(e).lower()
+            if ("query results are empty" in msg) or (
+                "empty" in msg and "result" in msg
+            ):
+                logger.warning("Vector store search returned no results: %s", e)
+                return []
+            raise
 
     def compute_deterministic_chunk_id(self, document_id: str, chunk_idx: int) -> str:
         # the id_ of the Node must be a UUID string, otherwise llama_index / LanceDB fails downstream
