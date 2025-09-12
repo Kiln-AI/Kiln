@@ -97,7 +97,7 @@
             <thead>
               <tr>
                 <th class="w-auto">Details</th>
-                <th class="w-[400px]">Status</th>
+                <th class="w-[300px]">Processing Status</th>
               </tr>
             </thead>
             <tbody>

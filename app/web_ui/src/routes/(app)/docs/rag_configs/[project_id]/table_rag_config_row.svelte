@@ -37,6 +37,7 @@
       case "complete": {
         return {
           text: "Complete",
+          primary: true,
         }
       }
       case "incomplete": {
@@ -128,13 +129,16 @@
           <!-- Status and Action Row -->
           <div class="flex items-center justify-between gap-4">
             <div
-              class={`badge badge-outline px-3 py-1 ${status_badge_props?.warning ? "badge-warning" : ""} ${status_badge_props?.running ? "badge-success" : ""} ${status_badge_props?.error ? "badge-error" : ""}`}
+              class="badge badge-outline px-3 py-1 {status_badge_props?.warning
+                ? 'badge-warning'
+                : ''} {status_badge_props?.running
+                ? 'badge-success'
+                : ''} {status_badge_props?.error
+                ? 'badge-error'
+                : ''} {status_badge_props?.primary ? 'badge-primary' : ''}"
             >
               {status_badge_props?.text}
             </div>
-            <span role="presentation" on:click|stopPropagation>
-              <RunRagControl {rag_config} {project_id} />
-            </span>
           </div>
 
           <!-- Progress Bar (only when running) -->
@@ -165,6 +169,10 @@
               {/if}
             </div>
           {/if}
+
+          <div role="presentation" on:click|stopPropagation>
+            <RunRagControl {rag_config} {project_id} />
+          </div>
         </div>
       </td>
     {:else}
