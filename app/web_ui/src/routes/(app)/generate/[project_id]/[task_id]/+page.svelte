@@ -83,7 +83,7 @@
 
   function clear_all_with_confirm() {
     let msg =
-      "Are you sure you want to clear all synthetic data gen state? This action cannot be undone."
+      "Are you sure you want to clear all synthetic data gen state? This cannot be undone."
 
     if (confirm(msg)) {
       clear_all_state()
@@ -210,8 +210,7 @@
         } else {
           // Case 3: Saved state and URL state are different.
           // Show a dialog to the user asking if they want to replace the saved state with the URL state
-          // TODO: re-enable this
-          //clear_all_dialog?.show()
+          clear_all_dialog?.show()
           return
         }
       }
@@ -225,8 +224,7 @@
         task_id,
         $saved_state.splits,
       )
-      // TODO: re-enable this
-      //clear_existing_state_no_url_dialog?.show()
+      clear_existing_state_no_url_dialog?.show()
       return
     }
     // Case 5: No state - wait for the user to setup via UI
