@@ -419,6 +419,37 @@ class CreateExtractorConfigRequest(BaseModel):
         return self
 
 
+class PatchDocumentRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this document.",
+        default=None,
+    )
+    description: str | None = Field(
+        description="The description of the document",
+        default=None,
+    )
+    tags: list[str] | None = Field(
+        description="Tags for the document",
+        default=None,
+    )
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self):
+        if all(field is None for field in [self.name, self.description, self.tags]):
+            raise ValueError("At least one field must be provided")
+        return self
+
+    @model_validator(mode="after")
+    def validate_tags(self):
+        if self.tags is not None:
+            for tag in self.tags:
+                if not tag:
+                    raise ValueError("Tags cannot be empty strings")
+                if " " in tag:
+                    raise ValueError("Tags cannot contain spaces. Try underscores.")
+        return self
+
+
 class PatchExtractorConfigRequest(BaseModel):
     name: FilenameString | None = Field(
         description="A name for this entity.",
@@ -699,6 +730,31 @@ def connect_document_api(app: FastAPI):
                 status_code=404,
                 detail="Document not found",
             )
+        return document
+
+    @app.patch("/api/projects/{project_id}/documents/{document_id}")
+    async def patch_document(
+        project_id: str,
+        document_id: str,
+        request: PatchDocumentRequest,
+    ) -> Document:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found",
+            )
+
+        if request.name is not None:
+            document.name = request.name
+        if request.description is not None:
+            document.description = request.description
+        if request.tags is not None:
+            document.tags = request.tags
+
+        document.save_to_file()
+
         return document
 
     @app.post("/api/projects/{project_id}/documents/edit_tags")

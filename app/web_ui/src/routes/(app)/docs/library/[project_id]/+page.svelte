@@ -18,7 +18,7 @@
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
   // TODO: move to shared folder
-  import TagDropdown from "../../../run/tag_dropdown.svelte"
+  import TagDropdown from "../../../../../lib/ui/tag_dropdown.svelte"
 
   let upload_file_dialog: UploadFileDialog | null = null
 

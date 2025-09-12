@@ -13,8 +13,11 @@
   import { goto } from "$app/navigation"
   import Output from "../../../../run/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
+  import TagDropdown from "../../../../../../lib/ui/tag_dropdown.svelte"
 
-  let document: KilnDocument | null = null
+  let initial_document: KilnDocument | null = null
+  let updated_document: KilnDocument | null = null
+  $: document = updated_document || initial_document
   let error: KilnError | null = null
   let loading = true
   let results: ExtractionSummary[] | null = null
@@ -53,7 +56,7 @@
       if (get_error) {
         throw get_error
       }
-      document = document_response
+      updated_document = document_response
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
@@ -124,6 +127,57 @@
   $: delete_extraction_url = `/api/projects/${project_id}/documents/${document_id}/extractions/${delete_extraction_id}`
   async function after_delete_extraction() {
     get_extractions()
+  }
+
+  let show_create_tag = false
+  let tags_error: KilnError | null = null
+  function add_tags(tags: string[]) {
+    let prior_tags = document?.tags || []
+    let new_tags = [...prior_tags, ...tags]
+    let unique_tags = [...new Set(new_tags)]
+    save_tags(unique_tags)
+  }
+
+  function remove_tag(tag: string) {
+    let prior_tags = document?.tags || []
+    let new_tags = prior_tags.filter((t) => t !== tag)
+    save_tags(new_tags)
+  }
+
+  async function patch_document(patch_body: {
+    name?: string
+    description?: string
+    tags?: string[]
+  }) {
+    const { data: document_response, error: patch_error } = await client.PATCH(
+      "/api/projects/{project_id}/documents/{document_id}",
+      {
+        params: {
+          path: {
+            project_id,
+            document_id,
+          },
+        },
+        body: patch_body,
+      },
+    )
+    if (patch_error) {
+      throw patch_error
+    }
+    return document_response
+  }
+
+  async function save_tags(tags: string[]) {
+    try {
+      let patch_body = {
+        tags: tags,
+      }
+      updated_document = await patch_document(patch_body)
+      show_create_tag = false
+      tags_error = null
+    } catch (err) {
+      tags_error = createKilnError(err)
+    }
   }
 </script>
 
@@ -275,22 +329,67 @@
               name: "Kind",
               value: capitalize(document.kind),
             },
-            { name: "MIME Type", value: document.original_file.mime_type },
-            { name: "Created At", value: formatDate(document.created_at) },
-            { name: "Created By", value: document.created_by || "Unknown" },
-            { name: "Description", value: document.description || "None" },
+            {
+              name: "MIME Type",
+              value: document.original_file.mime_type,
+            },
+            {
+              name: "Created At",
+              value: formatDate(document.created_at),
+            },
+            {
+              name: "Created By",
+              value: document.created_by || "Unknown",
+            },
+            {
+              name: "Description",
+              value: document.description || "None",
+            },
           ]}
           title="Properties"
         />
-        <div class="mt-4 flex flex-row items-center gap-2">
-          {#if document.tags}
-            {#each document.tags as tag}
-              <div
-                class="badge bg-gray-200 py-3 px-3 max-w-full text-sm text-gray-500"
-              >
-                {tag}
+        <div class="mt-8 mb-4">
+          <div class="text-xl font-bold">Tags</div>
+          <div class="flex flex-row flex-wrap gap-2 mt-2">
+            {#each (document.tags || []).sort() as tag}
+              <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
+                <span class="truncate">{tag}</span>
+                <button
+                  class="pl-3 font-medium shrink-0"
+                  on:click={() => remove_tag(tag)}>✕</button
+                >
               </div>
             {/each}
+            <button
+              class="badge bg-gray-200 text-gray-500 p-3 font-medium {show_create_tag
+                ? 'hidden'
+                : ''}"
+              on:click={() => (show_create_tag = true)}>+</button
+            >
+          </div>
+          {#if show_create_tag}
+            <div
+              class="mt-3 flex flex-row gap-2 items-center {show_create_tag
+                ? ''
+                : 'hidden'}"
+            >
+              <TagDropdown
+                on_select={(tag) => add_tags([tag])}
+                on_escape={() => (show_create_tag = false)}
+                focus_on_mount={true}
+              />
+              <div class="flex-none">
+                <button
+                  class="btn btn-sm btn-circle text-xl font-medium"
+                  on:click={() => (show_create_tag = false)}>✕</button
+                >
+              </div>
+            </div>
+          {/if}
+          {#if tags_error}
+            <div class="text-error text-sm mt-2">
+              {tags_error.getMessage() || "Error updating tags"}
+            </div>
           {/if}
         </div>
       </div>
