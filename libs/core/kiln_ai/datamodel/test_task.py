@@ -296,3 +296,37 @@ def test_run_config_upgrade_old_entries():
 def test_task_name_unicode_name():
     task = Task(name="你好", instruction="Do something")
     assert task.name == "你好"
+
+
+def test_task_default_run_config_id_property(tmp_path):
+    """Test that default_run_config_id can be set and retrieved."""
+
+    # Create a task
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    # Create a run config for the task
+    run_config = TaskRunConfig(
+        name="Test Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Test None default (should be valid)
+    assert task.default_run_config_id is None
+
+    # Test setting a valid ID
+    task.default_run_config_id = "123456789012"
+    assert task.default_run_config_id == "123456789012"
+
+    # Test setting back to None
+    task.default_run_config_id = None
+    assert task.default_run_config_id is None
