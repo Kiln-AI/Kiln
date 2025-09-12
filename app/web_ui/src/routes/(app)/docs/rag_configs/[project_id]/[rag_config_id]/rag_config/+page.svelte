@@ -18,6 +18,7 @@
     model_name,
     provider_name_from_id,
   } from "$lib/stores"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -30,6 +31,7 @@
   let searchQuery: string = ""
   let searchLoading: boolean = false
   let searchError: KilnError | null = null
+  let lastSearchQuery: string | null = null
   let searchResults: Array<{
     document_id: string
     chunk_text: string
@@ -115,9 +117,9 @@
       }
 
       searchResults = search_data?.results || []
+      lastSearchQuery = searchQuery
     } catch (err) {
       searchError = createKilnError(err)
-      searchResults = []
     } finally {
       searchLoading = false
     }
@@ -157,15 +159,17 @@
       <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
         <!-- Main Content - Search Section -->
         <div class="flex-1">
+          <div class="text-xl font-bold mb-1">Test Search Tool</div>
+          <div class="font-light mb-2">
+            Experiment with your search tool, without running an AI task.
+            <InfoTooltip
+              tooltip_text="This UI runs your search tool (RAG) without sending the results to an AI task. You can use the search tool in an AI task by selecting it from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
+              no_pad={true}
+            />
+          </div>
           <div class="mb-8">
             <form on:submit={handleSearchSubmit}>
               <div class="form-control">
-                <label class="label" for="search-query">
-                  <span class="label-text">Search Query</span>
-                  <span class="label-text-alt text-gray-500">
-                    Enter text to search through the indexed documents
-                  </span>
-                </label>
                 <div class="flex gap-2">
                   <input
                     id="search-query"
@@ -198,9 +202,14 @@
 
             {#if searchResults.length > 0}
               <div class="mt-6">
-                <h3 class="text-lg font-medium mb-4">
-                  Search Results ({searchResults.length})
+                <h3 class="text-xl font-bold mb-1">
+                  Search Results for "{lastSearchQuery}"
                 </h3>
+                <div class="text-sm text-gray-500 mb-4">
+                  {searchResults.length > 1
+                    ? `${searchResults.length} results found`
+                    : "1 result found"}
+                </div>
 
                 <div class="space-y-4">
                   {#each searchResults as result}
@@ -219,9 +228,9 @@
                   {/each}
                 </div>
               </div>
-            {:else if searchQuery && !searchLoading && !searchError}
+            {:else if lastSearchQuery && searchResults.length === 0}
               <div class="text-center text-gray-500 mt-6">
-                No results found for "{searchQuery}"
+                No results found for "{lastSearchQuery}"
               </div>
             {/if}
           </div>
