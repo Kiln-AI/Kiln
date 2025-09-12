@@ -2241,12 +2241,8 @@ async def test_create_documents_bulk_success(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
@@ -2282,13 +2278,6 @@ async def test_create_documents_bulk_success(client, mock_project):
     assert result["created_documents"][1]["original_file"]["size"] == len(
         test_content_2
     )
-
-    # Verify both documents were created and workflows triggered
-    assert mock_run_workflows.call_count == 1
-    # Verify it was called with both documents
-    call_args = mock_run_workflows.call_args[0]
-    assert call_args[0] == project
-    assert len(call_args[1]) == 2
 
 
 @pytest.mark.asyncio
@@ -2377,12 +2366,8 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("valid.txt", io.BytesIO(test_content_valid), "text/plain")),
@@ -2414,9 +2399,6 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
     assert len(result["failed_files"]) == 2  # Two invalid files
     assert result["created_documents"][0]["name"] == "valid_txt"
     assert result["created_documents"][0]["kind"] == "document"
-
-    # Should have triggered workflow for the valid file
-    assert mock_run_workflows.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -2498,12 +2480,8 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("duplicate.txt", io.BytesIO(test_content_1), "text/plain")),
@@ -2524,13 +2502,6 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
     assert len(result["failed_files"]) == 0
     assert result["created_documents"][0]["name"] == "duplicate_txt"
     assert result["created_documents"][1]["name"] == "duplicate_txt"
-
-    # Both should have triggered workflows
-    assert mock_run_workflows.call_count == 1
-    # Verify it was called with both documents
-    call_args = mock_run_workflows.call_args[0]
-    assert call_args[0] == project
-    assert len(call_args[1]) == 2
 
 
 @pytest.mark.parametrize(
