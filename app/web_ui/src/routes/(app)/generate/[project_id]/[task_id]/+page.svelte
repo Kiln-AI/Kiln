@@ -1007,10 +1007,8 @@
       <div
         class="flex flex-col items-center justify-center min-h-[150px] gap-2"
       >
-        <div class="font-medium">No Model Inputs</div>
-        <div class="font-light">
-          Generate model inputs before generating model outputs.
-        </div>
+        <div class="font-medium">No Inputs</div>
+        <div class="font-light">Generate inputs before generating outputs.</div>
         {#if already_generated_count > 0}
           <div class="font-light text-sm">
             {already_generated_count} existing items already generated.
@@ -1018,9 +1016,9 @@
         {/if}
       </div>
     {:else}
-      <h3 class="text-lg font-bold">Generate Model Outputs</h3>
+      <h3 class="text-lg font-bold">Generate Outputs</h3>
       <p class="text-sm font-light mb-5">
-        Run your task on each generated model input to generate model outputs.
+        Run your task on each input to generate outputs.
       </p>
       <FormContainer
         submit_label="Generate"
