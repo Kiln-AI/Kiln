@@ -275,6 +275,7 @@
                       </td>
                       <td>
                         <button
+                          class="text-left"
                           on:click={() => {
                             dialog_extraction = result
                             output_dialog?.show()
