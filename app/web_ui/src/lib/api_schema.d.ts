@@ -1884,6 +1884,8 @@ export interface components {
              * @description The description of the extractor config
              */
             description?: string | null;
+            /** @description The type of extractor to use */
+            extractor_type: components["schemas"]["ExtractorType"];
             /** @description The name of the model provider to use for the extractor config. */
             model_provider_name: components["schemas"]["ModelProviderName"];
             /**
@@ -2350,7 +2352,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -2722,12 +2724,12 @@ export interface components {
              * Model Provider Name
              * @description The name of the model provider to use for the extractor config.
              */
-            model_provider_name: string;
+            model_provider_name: string | null;
             /**
              * Model Name
              * @description The name of the model to use for the extractor config.
              */
-            model_name: string;
+            model_name: string | null;
             /**
              * @description The format to use for the output.
              * @default text/markdown
@@ -2769,7 +2771,7 @@ export interface components {
          * ExtractorType
          * @enum {string}
          */
-        ExtractorType: "litellm";
+        ExtractorType: "litellm" | "llama_pdf_reader";
         /** FileInfo */
         FileInfo: {
             /**

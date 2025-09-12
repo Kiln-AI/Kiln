@@ -1,7 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { ModelProviderName, OutputFormat } from "$lib/types"
+  import type {
+    ModelProviderName,
+    OutputFormat,
+    ExtractorType,
+  } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -48,6 +52,7 @@
             model_provider_name: model_provider_name as ModelProviderName,
             model_name: model_name,
             output_format: output_format as OutputFormat,
+            extractor_type: "litellm" as ExtractorType,
             properties: {
               model_name,
               prompt_document: prompt_document || null,
