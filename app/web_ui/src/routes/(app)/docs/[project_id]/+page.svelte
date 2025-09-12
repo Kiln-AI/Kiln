@@ -7,8 +7,8 @@
 </script>
 
 <AppPage
-  title="Documents"
-  subtitle="Add knowledge to your project with documents"
+  title="Documents & Search"
+  subtitle="Add searchable knowledge to your tasks"
   limit_max_width
   action_buttons={[
     {
@@ -22,7 +22,8 @@
     intros={[
       {
         title: "Document Library",
-        description: "Add or Browse Documents",
+        description:
+          "Add or browse documents. Docs can be queried by Search Tools.",
         action_buttons: [
           {
             label: "View Library",
