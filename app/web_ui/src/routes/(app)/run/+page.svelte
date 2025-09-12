@@ -45,37 +45,6 @@
   let selected_run_config: TaskRunConfig | "custom"
   let updating_current_run_options = false
 
-  // let current_task_run_configs: TaskRunConfig[] = []
-  // let default_task_run_config: TaskRunConfig | null = null
-
-  // TODO: Get default task run config testable / working
-  // onMount(async () => {
-  //   if (!$current_project?.id || !$current_task?.id) {
-  //     return
-  //   }
-
-  //   // Load task run configs if they are not already loaded
-  //   await load_task_run_configs($current_project?.id, $current_task?.id)
-  // })
-
-  // $: current_task_run_configs =
-  //   $task_run_configs_by_task_id[$current_task?.id ?? ""] || []
-
-  // $: default_task_run_config =
-  //   current_task_run_configs.find(
-  //     (config) => config.id === $current_task?.default_run_config_id,
-  //   ) ?? null
-
-  // // Set default run config when it becomes available (only during initial load)
-  // $: if (
-  //   default_task_run_config &&
-  //   selected_run_config === "custom" &&
-  //   !did_set_default_run_config
-  // ) {
-  //   selected_run_config = default_task_run_config
-  //   did_set_default_run_config = true
-  // }
-
   let prompt_method = "simple_prompt_builder"
   let model: string = $ui_state.selected_model
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
