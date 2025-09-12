@@ -718,7 +718,7 @@
                 {#each step_numbers as step}
                   <li class="step {current_step >= step ? 'step-primary' : ''}">
                     <button
-                      class="px-4 text-sm {current_step == step
+                      class="px-4 text-sm md:min-w-[155px] {current_step == step
                         ? 'font-medium cursor-default'
                         : 'text-gray-500 hover:underline hover:text-gray-700'}"
                       on:click={() => set_current_step(step)}

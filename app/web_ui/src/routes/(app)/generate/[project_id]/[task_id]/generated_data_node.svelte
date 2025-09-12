@@ -303,7 +303,10 @@
           <span class="relative inline-block w-3 h-3">
             <div class="absolute top-[-3px] left-0">
               <InfoTooltip
-                tooltip_text={"The topic: " + path.join(" → ")}
+                tooltip_text={"This is a topic. Content inside of it should relate to this theme." +
+                  (path.length > 1
+                    ? " The full topic path is: " + path.join(" → ")
+                    : "")}
                 position="bottom"
                 no_pad={true}
               />
