@@ -77,6 +77,7 @@
       : [
           {
             label: "Add Search Tool",
+            primary: true,
             href: `/docs/rag_configs/${project_id}/create_rag_config`,
           },
         ]}
