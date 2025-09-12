@@ -349,7 +349,7 @@
         </div>
         <div class="">
           <p class="">
-            Generate high-quality, diverse training examples for fine-tuning.
+            Generate high-quality and diverse training data for fine-tuning.
           </p>
         </div>
 
