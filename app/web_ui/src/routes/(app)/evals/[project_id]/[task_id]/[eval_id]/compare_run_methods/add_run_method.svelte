@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import type { StructuredOutputMode, AvailableModels } from "$lib/types"

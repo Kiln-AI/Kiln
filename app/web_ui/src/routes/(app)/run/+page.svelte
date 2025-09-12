@@ -7,10 +7,9 @@
     available_models,
     available_model_details,
     load_available_prompts,
-    current_task_prompts,
+    load_current_task,
   } from "$lib/stores"
   import {
-    load_task_run_configs,
     save_new_task_run_config,
     task_run_configs_by_task_id,
   } from "$lib/stores/run_configs_store"
@@ -42,7 +41,7 @@
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
 
-  let selected_run_config: TaskRunConfig | "custom"
+  let selected_run_config: TaskRunConfig | "custom" = "custom"
   let updating_current_run_options = false
 
   let prompt_method = "simple_prompt_builder"
@@ -76,9 +75,11 @@
     provider: string,
     available_models: AvailableModels[],
   ) {
-    structured_output_mode =
-      available_model_details(model_name, provider, available_models)
-        ?.structured_output_mode || "default"
+    if (requires_structured_output) {
+      structured_output_mode =
+        available_model_details(model_name, provider, available_models)
+          ?.structured_output_mode || "default"
+    }
   }
 
   // Check if the Output section headers are visible in the viewport
@@ -226,9 +227,13 @@
     if (selected_run_config !== "custom") {
       const config_properties = selected_run_config.run_config_properties
       // Check if any values have changed from the saved config properties
+      const current_model_name = model
+        ? model.split("/").slice(1).join("/")
+        : ""
+      const current_provider_name = model ? model.split("/")[0] : ""
       if (
-        config_properties.model_name !== model_name ||
-        config_properties.model_provider_name !== provider ||
+        config_properties.model_name !== current_model_name ||
+        config_properties.model_provider_name !== current_provider_name ||
         config_properties.prompt_id !== prompt_method ||
         config_properties.temperature !== temperature ||
         config_properties.top_p !== top_p ||
@@ -294,6 +299,60 @@
       // TODO: Show error to user
     }
   }
+
+  $: show_set_as_default_button = (() => {
+    if (selected_run_config === "custom") {
+      return false
+    }
+    return (
+      $current_task?.default_run_config_id !==
+      (selected_run_config as TaskRunConfig).id
+    )
+  })()
+
+  async function handle_set_as_default() {
+    if (!$current_project?.id || !$current_task?.id) {
+      return
+    }
+    // Update task default run config
+    try {
+      await client.PATCH("/api/projects/{project_id}/task/{task_id}", {
+        params: {
+          path: {
+            project_id: $current_project?.id ?? "",
+            task_id: $current_task?.id ?? "",
+          },
+        },
+        body: {
+          // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
+          default_run_config_id: (selected_run_config as TaskRunConfig).id,
+        },
+      })
+      await load_current_task($current_project)
+      await tick()
+      if (default_run_config) {
+        selected_run_config = default_run_config
+      }
+    } catch (e) {
+      error = createKilnError(e)
+      // TODO: Show error to user
+    }
+  }
+
+  let default_run_config: TaskRunConfig | null
+
+  $: $current_task, $task_run_configs_by_task_id, update_default_run_config()
+
+  function update_default_run_config() {
+    if ($current_task?.default_run_config_id) {
+      let default_task_run_config = $task_run_configs_by_task_id[
+        $current_task?.id ?? ""
+      ]?.find((config) => config.id === $current_task?.default_run_config_id)
+      default_run_config = default_task_run_config ?? null
+    } else {
+      default_run_config = null
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -320,7 +379,10 @@
         <div class="text-xl font-bold">Options</div>
         <div>
           {#if $current_project?.id && $current_task?.id}
-            <RunOptionsDropdown bind:selected_run_config />
+            <RunOptionsDropdown
+              bind:selected_run_config
+              bind:default_run_config
+            />
           {/if}
         </div>
         <AvailableModelsDropdown
@@ -351,7 +413,9 @@
               project_id={$current_project?.id}
               task_id={$current_task?.id || ""}
               on:saveRunOptions={handle_save_run_options}
+              on:setToDefault={handle_set_as_default}
               show_save_button={selected_run_config === "custom"}
+              {show_set_as_default_button}
             />
           </Collapse>
         {/if}

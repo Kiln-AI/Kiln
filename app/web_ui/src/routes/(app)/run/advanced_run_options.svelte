@@ -15,6 +15,7 @@
   export let structured_output_mode: StructuredOutputMode
   export let has_structured_output: boolean
   export let show_save_button: boolean = false
+  export let show_set_as_default_button: boolean = false
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
@@ -207,6 +208,10 @@
   function saveRunOptions() {
     dispatch("saveRunOptions")
   }
+
+  function setToDefault() {
+    dispatch("setToDefault")
+  }
 </script>
 
 <div>
@@ -258,6 +263,18 @@
         on:click={saveRunOptions}
       >
         Save new run options
+      </button>
+    </div>
+  {/if}
+
+  {#if show_set_as_default_button}
+    <div class="mt-4 text-right">
+      <button
+        type="button"
+        class="link link-primary text-sm"
+        on:click={setToDefault}
+      >
+        Set as task default
       </button>
     </div>
   {/if}

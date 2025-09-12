@@ -1,11 +1,7 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import type {
-    TaskRunConfig,
-    PromptResponse,
-    ProviderModels,
-  } from "$lib/types"
+  import type { TaskRunConfig } from "$lib/types"
   import {
     model_name,
     model_info,
@@ -23,7 +19,8 @@
     task_run_configs_by_task_id,
   } from "$lib/stores/run_configs_store"
 
-  export let selected_run_config: TaskRunConfig | "custom" = "custom"
+  export let selected_run_config: TaskRunConfig | "custom"
+  export let default_run_config: TaskRunConfig | null
 
   $: task_id = $current_task?.id ?? ""
 
@@ -31,45 +28,23 @@
     await load_task_run_configs($current_project?.id ?? "", task_id)
     await load_available_prompts()
     await load_model_info()
-    let default_run_config = get_default_run_config()
     if (default_run_config) {
       selected_run_config = default_run_config
     }
   })
 
-  function get_default_run_config(): TaskRunConfig | null {
-    if ($current_task?.default_run_config_id) {
-      let default_task_run_config = $task_run_configs_by_task_id[task_id]?.find(
-        (config) => config.id === $current_task?.default_run_config_id,
-      )
-      return default_task_run_config ?? null
-    }
-    return null
-  }
-
   // Build the options for the dropdown
-  $: options = build_run_config_options(
-    $task_run_configs_by_task_id[task_id] ?? [],
-    $current_task_prompts,
-    $model_info,
-  )
-
-  function build_run_config_options(
-    task_run_configs: TaskRunConfig[],
-    all_task_prompts: PromptResponse | null,
-    model_info: ProviderModels | null,
-  ): OptionGroup[] {
+  $: options = (() => {
     const options: OptionGroup[] = []
 
     // Add default configuration first if it exists
-    let default_run_config = get_default_run_config()
     if (default_run_config) {
       options.push({
         label: "",
         options: [
           {
             value: default_run_config,
-            label: "Default",
+            label: `Default (${default_run_config.name})`,
             description: "The saved default configuration for this task.",
           },
         ],
@@ -89,22 +64,25 @@
     })
 
     // Add saved configurations if they exist
-    if (task_run_configs.length > 0) {
+    const other_task_run_configs = (
+      $task_run_configs_by_task_id[task_id] ?? ([] as TaskRunConfig[])
+    ).filter((config) => config.id !== default_run_config?.id)
+    if (other_task_run_configs.length > 0) {
       options.push({
         label: "Saved Configurations",
-        options: task_run_configs.map((config) => ({
+        options: other_task_run_configs.map((config) => ({
           value: config,
           label: config.name,
           description:
             config.description ||
-            `Model: ${model_name(config.run_config_properties.model_name, model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})
-            Prompt: ${getRunConfigPromptDisplayName(config, all_task_prompts)}`,
+            `Model: ${model_name(config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})
+            Prompt: ${getRunConfigPromptDisplayName(config, $current_task_prompts)}`,
         })),
       })
     }
 
     return options
-  }
+  })()
 </script>
 
 <FormElement

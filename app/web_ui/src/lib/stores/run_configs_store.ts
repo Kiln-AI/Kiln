@@ -1,5 +1,5 @@
 import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
-import { get, writable } from "svelte/store"
+import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
 
