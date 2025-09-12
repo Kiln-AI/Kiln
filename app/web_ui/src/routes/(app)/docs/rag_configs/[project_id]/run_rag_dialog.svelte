@@ -254,7 +254,7 @@
             {/if}
           </div>
           <div class="flex-1 min-w-0">
-            <div class="font-medium text-sm text-base-content">
+            <div class="font-medium text-xs">
               {step.label}
             </div>
             {#if step.name === "indexing"}
@@ -266,21 +266,6 @@
                 {step.progress} / {document_progress_max} documents
               </div>
             {/if}
-          </div>
-          <div
-            class="radial-progress {is_step_completed(
-              step.name,
-              config_progress,
-            )
-              ? 'text-primary'
-              : is_running
-                ? 'text-warning'
-                : 'text-base-300'}"
-            style="--value:{step.pct}; --size:2.5rem; --thickness:3px;"
-            aria-valuenow={step.pct}
-            role="progressbar"
-          >
-            <span class="text-xs font-medium">{step.pct}%</span>
           </div>
         </div>
       {/each}
