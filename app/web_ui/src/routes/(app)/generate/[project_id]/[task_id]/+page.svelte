@@ -1007,9 +1007,9 @@
       <div
         class="flex flex-col items-center justify-center min-h-[150px] gap-2"
       >
-        <div class="font-medium">No Items to Save</div>
+        <div class="font-medium">No Model Inputs</div>
         <div class="font-light">
-          Generate model inputs before attempting to save model outputs.
+          Generate model inputs before generating model outputs.
         </div>
         {#if already_generated_count > 0}
           <div class="font-light text-sm">
