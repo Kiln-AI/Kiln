@@ -45,6 +45,7 @@ class OutputFormat(str, Enum):
 
 class ExtractorType(str, Enum):
     LITELLM = "litellm"
+    LLAMA_PDF_READER = "llama_pdf_reader"
 
 
 SUPPORTED_MIME_TYPES = {
@@ -137,10 +138,10 @@ class ExtractorConfig(KilnParentedModel):
     description: str | None = Field(
         default=None, description="The description of the extractor config"
     )
-    model_provider_name: str = Field(
+    model_provider_name: str | None = Field(
         description="The name of the model provider to use for the extractor config.",
     )
-    model_name: str = Field(
+    model_name: str | None = Field(
         description="The name of the model to use for the extractor config.",
     )
     output_format: OutputFormat = Field(
@@ -165,41 +166,52 @@ class ExtractorConfig(KilnParentedModel):
         cls, properties: dict[str, Any], info: ValidationInfo
     ) -> dict[str, Any]:
         output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
+        if info.data.get("extractor_type") == ExtractorType.LLAMA_PDF_READER:
+            return properties
+        elif info.data.get("extractor_type") == ExtractorType.LITELLM:
+            if (
+                info.data.get("model_provider_name") is None
+                or info.data.get("model_provider_name") == ""
+            ):
+                raise ValueError("model_provider_name is required for LitellmExtractor")
+            if info.data.get("model_name") is None or info.data.get("model_name") == "":
+                raise ValueError("model_name is required for LitellmExtractor")
 
-        def get_property(key: str, default: str) -> str:
-            value = properties.get(key)
-            if value is None or value == "":
-                return default
-            if not isinstance(value, str):
-                raise ValueError(f"Prompt for {key} must be a string")
-            return value
+            def get_prompt_property(key: str, default: str) -> str:
+                value = properties.get(key)
+                if value is None or value == "":
+                    return default
+                if not isinstance(value, str):
+                    raise ValueError(f"Prompt for {key} must be a string")
+                return value
 
-        return {
-            "prompt_document": get_property(
-                "prompt_document",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.DOCUMENT, output_format=output_format
+            return {
+                "prompt_document": get_prompt_property(
+                    "prompt_document",
+                    default=ExtractionPromptBuilder.prompt_for_kind(
+                        kind=Kind.DOCUMENT, output_format=output_format
+                    ),
                 ),
-            ),
-            "prompt_image": get_property(
-                "prompt_image",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.IMAGE, output_format=output_format
+                "prompt_image": get_prompt_property(
+                    "prompt_image",
+                    default=ExtractionPromptBuilder.prompt_for_kind(
+                        kind=Kind.IMAGE, output_format=output_format
+                    ),
                 ),
-            ),
-            "prompt_video": get_property(
-                "prompt_video",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.VIDEO, output_format=output_format
+                "prompt_video": get_prompt_property(
+                    "prompt_video",
+                    default=ExtractionPromptBuilder.prompt_for_kind(
+                        kind=Kind.VIDEO, output_format=output_format
+                    ),
                 ),
-            ),
-            "prompt_audio": get_property(
-                "prompt_audio",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.AUDIO, output_format=output_format
+                "prompt_audio": get_prompt_property(
+                    "prompt_audio",
+                    default=ExtractionPromptBuilder.prompt_for_kind(
+                        kind=Kind.AUDIO, output_format=output_format
+                    ),
                 ),
-            ),
-        }
+            }
+        raise ValueError(f"Invalid extractor_type: {info.data.get('extractor_type')}")
 
     def prompt_document(self) -> str | None:
         prompt = self.properties.get("prompt_document")
