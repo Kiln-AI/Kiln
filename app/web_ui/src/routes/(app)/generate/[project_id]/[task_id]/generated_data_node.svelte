@@ -282,8 +282,7 @@
     generate_samples_modal = false
 
     // Scroll to bottom of added samples
-    // TODO: P0
-    scroll_to_bottom_of_element_by_id(`${id}-samples`)
+    scroll_to_bottom_of_element_by_id(`${id}-samples-end`)
   }
 </script>
 
@@ -406,8 +405,9 @@
     </td>
   </tr>
 {/each}
+<!-- Hidden element purely for scroll targeting, not 'hidden' as that breaks scrolling -->
+<tr class="h-0" id={`${id}-samples-end`}></tr>
 {#if data.sub_topics}
-  <!-- <div id={`${id}-subtopics`}> -->
   {#each data.sub_topics as sub_node}
     <svelte:self
       data={sub_node}
@@ -419,7 +419,8 @@
       on:delete_topic={handleChildDeleteTopic}
     />
   {/each}
-  <!-- </div> -->
+  <!-- Hidden element purely for scroll targeting, not 'hidden' as that breaks scrolling -->
+  <tr class="h-0" id={`${id}-subtopics`}></tr>
 {/if}
 
 {#if generate_subtopics}
