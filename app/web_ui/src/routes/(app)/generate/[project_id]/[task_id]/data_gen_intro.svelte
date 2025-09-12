@@ -173,7 +173,7 @@
           is_primary: true,
         },
         {
-          label: "Generate Model Inputs",
+          label: "Generate Without Topics",
           onClick: () => generate_samples(),
           is_primary: false,
         },
