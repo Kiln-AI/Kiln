@@ -130,20 +130,6 @@
       })
     }
 
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
-      })
-    }
-
     if (run?.output?.source?.properties?.temperature !== undefined) {
       properties.push({
         name: "Temperature",

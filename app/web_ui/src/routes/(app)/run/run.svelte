@@ -26,6 +26,7 @@
   } from "$lib/stores"
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -380,6 +381,26 @@
     updated_run = repair_run_edited
     repair_run = null
   }
+
+  function get_usage_properties(run: TaskRun | null) {
+    let properties = []
+
+    if (run?.usage?.cost) {
+      properties.push({
+        name: "Cost",
+        value: `$${run.usage.cost.toFixed(6)}`,
+      })
+    }
+
+    if (run?.usage?.total_tokens) {
+      properties.push({
+        name: "Tokens",
+        value: run.usage.total_tokens,
+      })
+    }
+
+    return properties
+  }
 </script>
 
 <div>
@@ -675,6 +696,9 @@
             </div>
           </div>
         {/if}
+      </div>
+      <div>
+        <PropertyList properties={get_usage_properties(run)} title="Usage" />
       </div>
     </div>
   </div>
