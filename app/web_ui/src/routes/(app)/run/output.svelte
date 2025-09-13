@@ -4,6 +4,7 @@
   hljs.registerLanguage("json", json)
 
   export let raw_output: string
+  export let no_padding: boolean = false
   let formatted_json_html: string | null = null
   $: {
     try {
@@ -29,10 +30,12 @@
   <link rel="stylesheet" href="/styles/highlightjs.min.css" />
 </head>
 
-<div class="flex flex-row gap-2 bg-base-200 p-1 rounded-lg">
+<div
+  class="flex flex-row gap-2 bg-base-200 rounded-lg {no_padding ? '' : 'p-1'}"
+>
   <!-- eslint-disable svelte/no-at-html-tags -->
   <pre
-    class="grow p-3 whitespace-pre-wrap text-xs min-w-0"
+    class="grow whitespace-pre-wrap text-xs min-w-0 {no_padding ? '' : 'p-3'}"
     style="overflow-wrap: anywhere;">{#if formatted_json_html}{@html formatted_json_html}{:else}{raw_output}{/if}</pre>
   <!-- eslint-enable svelte/no-at-html-tags -->
   <div class="flex-none">

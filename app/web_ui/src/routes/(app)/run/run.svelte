@@ -384,7 +384,7 @@
 
 <div>
   <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-    <div class="grow">
+    <div class="grow min-w-0 overflow-hidden">
       <div class="text-xl font-bold mb-1">Output</div>
       {#if task.output_json_schema}
         <div class="text-xs font-medium text-gray-500 flex flex-row mb-2">
@@ -401,7 +401,12 @@
         </div>
       {/if}
       {#if run.trace}
-        <TraceComponent trace={run.trace} />
+        <!-- Render the output, but leave the COT and other intermediate output rendering to the trace -->
+        <Output raw_output={run.output.output} />
+        <div>
+          <div class="font-bold mt-6 mb-1">All Messages</div>
+          <TraceComponent trace={run.trace} />
+        </div>
       {:else}
         <Output raw_output={run.output.output} />
         {#if run.intermediate_outputs}
