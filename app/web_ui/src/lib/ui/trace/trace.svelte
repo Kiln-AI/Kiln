@@ -161,8 +161,13 @@
                   Requested Tool Calls
                 </div>
                 <div class="flex flex-col gap-2">
-                  {#each tool_calls as tool_call}
-                    <ToolCall {tool_call} />
+                  {#each tool_calls as tool_call, index}
+                    <ToolCall
+                      {tool_call}
+                      nameTag={tool_calls.length > 1
+                        ? `Tool Call #${index + 1}`
+                        : "Tool Call"}
+                    />
                   {/each}
                 </div>
               </div>
@@ -184,7 +189,7 @@
               {#if origin_tool_call}
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
-                    Origin Tool Call
+                    Triggered Tool Call
                   </div>
                   <ToolCall tool_call={origin_tool_call} />
                 </div>
