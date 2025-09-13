@@ -28,12 +28,17 @@
 
   function getMessagePreview(message: TraceMessage): string {
     let content = content_from_message(message)
+    let truncated_content = content
+    // Truncate to keep DOM reasonable for unexpanded messages. The CSS separately truncates and adds ellipsis
+    if (content && content.length > 200) {
+      truncated_content = content.slice(0, 200)
+    }
     let tool_calls = tool_calls_from_message(message)
     let reasoning_content = reasoning_content_from_message(message)
 
     // Tool result
     if (message.role === "tool" && content) {
-      return "Tool result: " + content
+      return "Tool result: " + truncated_content
     }
 
     // Mixed content
@@ -52,12 +57,8 @@
     }
 
     // Typical content message - just show the content
-    if (content) {
-      // Truncate to keep DOM reasonable for unexpanded messages. The CSS separately truncates
-      if (content.length > 200) {
-        return content.slice(0, 200)
-      }
-      return content
+    if (truncated_content) {
+      return truncated_content
     }
 
     // Tool calls - show the number of tool calls
@@ -180,17 +181,19 @@
               {@const origin_tool_call = origin_tool_call_by_id(
                 message.tool_call_id,
               )}
+              {#if origin_tool_call}
+                <div>
+                  <div class="text-xs text-gray-500 font-bold mb-1">
+                    Origin Tool Call
+                  </div>
+                  <ToolCall tool_call={origin_tool_call} />
+                </div>
+              {/if}
               <div>
                 <div class="text-xs text-gray-500 font-bold mb-1">
                   Tool Result
                 </div>
                 <Output raw_output={content} no_padding={true} />
-                {#if origin_tool_call}
-                  <div class="text-xs text-gray-500 font-bold mb-1">
-                    Origin Tool Call
-                  </div>
-                  <ToolCall tool_call={origin_tool_call} />
-                {/if}
               </div>
             {:else if content}
               <div>
