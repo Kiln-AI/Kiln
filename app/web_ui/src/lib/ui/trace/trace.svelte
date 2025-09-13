@@ -189,7 +189,7 @@
               {#if origin_tool_call}
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
-                    Triggered Tool Call
+                    Invoked Tool Call
                   </div>
                   <ToolCall tool_call={origin_tool_call} />
                 </div>
