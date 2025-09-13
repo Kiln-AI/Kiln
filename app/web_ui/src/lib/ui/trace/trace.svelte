@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { Trace, TraceMessage } from "$lib/types"
+  import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "../../../routes/(app)/run/output.svelte"
+  import ToolCall from "./tool_call.svelte"
 
   export let trace: Trace
 
@@ -63,7 +64,9 @@
     return "Unrenderable message"
   }
 
-  function tool_calls_from_message(message: TraceMessage) {
+  function tool_calls_from_message(
+    message: TraceMessage,
+  ): ToolCallMessageParam[] | undefined {
     if (
       "tool_calls" in message &&
       message.tool_calls &&
@@ -81,6 +84,20 @@
       typeof message.content === "string"
     ) {
       return message.content
+    }
+    return undefined
+  }
+
+  function origin_tool_call_by_id(tool_call_id: string) {
+    for (const message of trace) {
+      const tool_calls = tool_calls_from_message(message)
+      if (tool_calls) {
+        for (const tool_call of tool_calls) {
+          if (tool_call.id === tool_call_id) {
+            return tool_call
+          }
+        }
+      }
     }
     return undefined
   }
@@ -118,35 +135,50 @@
           {@const tool_calls = tool_calls_from_message(message)}
           {@const content = content_from_message(message)}
           <!-- Expanded View -->
-          {#if tool_calls}
-            <div class="mt-3 font-light">
-              <div class="text-xs text-gray-500 font-bold">Tool Calls</div>
-              <ol class="list-decimal list-inside font-light text-sm">
-                {#each tool_calls as tool_call}
-                  <li>
-                    <span class="text-sm">
-                      {tool_call.function.name}:
-                    </span>
-                    <span class="text-sm font-mono"
-                      >{tool_call.function.arguments}</span
-                    >
-                  </li>
-                {/each}
-              </ol>
-            </div>
-          {/if}
-          <!-- TODO Reasoning content -->
-          {#if content}
-            <div class="mt-4">
-              {#if tool_calls}
-                <!-- Only show header if other content is present -->
-                <div class="text-xs text-gray-500 font-bold mt-2">
-                  Message Content
+          <div class="mt-3 flex flex-col gap-3">
+            {#if tool_calls}
+              <div>
+                <div class="text-xs text-gray-500 font-bold mb-1">
+                  Requested Tool Calls
                 </div>
-              {/if}
-              <Output raw_output={content} no_padding={true} />
-            </div>
-          {/if}
+                <div class="flex flex-col gap-2">
+                  {#each tool_calls as tool_call}
+                    <ToolCall {tool_call} />
+                  {/each}
+                </div>
+              </div>
+            {/if}
+            <!-- TODO Reasoning content -->
+
+            <!-- Message content cases -->
+            {#if content && message.role === "tool"}
+              {@const origin_tool_call = origin_tool_call_by_id(
+                message.tool_call_id,
+              )}
+              <div>
+                <div class="text-xs text-gray-500 font-bold mb-1">
+                  Tool Result
+                </div>
+                <Output raw_output={content} no_padding={true} />
+                {#if origin_tool_call}
+                  <div class="text-xs text-gray-500 font-bold mb-1">
+                    Origin Tool Call
+                  </div>
+                  <ToolCall tool_call={origin_tool_call} />
+                {/if}
+              </div>
+            {:else if content}
+              <div>
+                <!-- Header logic: skip if only a message, just for a cleaner ui -->
+                {#if tool_calls}
+                  <div class="text-xs text-gray-500 font-bold mb-1">
+                    Message Content
+                  </div>
+                {/if}
+                <Output raw_output={content} no_padding={true} />
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>

@@ -59,3 +59,5 @@ export type TraceMessage =
   | components["schemas"]["ChatCompletionToolMessageParam"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
+export type ToolCallMessageParam =
+  components["schemas"]["ChatCompletionMessageToolCallParam"]
