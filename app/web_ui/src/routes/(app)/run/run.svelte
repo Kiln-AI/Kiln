@@ -25,6 +25,7 @@
     current_task_rating_options,
   } from "$lib/stores"
   import posthog from "posthog-js"
+  import TraceComponent from "$lib/ui/trace/trace.svelte"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -399,19 +400,23 @@
           Structure Valid
         </div>
       {/if}
-      <Output raw_output={run.output.output} />
-      {#if run.intermediate_outputs}
-        {#each Object.entries(run.intermediate_outputs) as [name, intermediate_output]}
-          <div
-            class="text-xs font-bold text-gray-500 mt-4 mb-1 flex flex-row items-center gap-1"
-          >
-            {get_intermediate_output_title(name)}
-            <InfoTooltip
-              tooltip_text={`This is intermediate output from the model, and not considered part of the final answer. This thinking helped formulate the final answer above. This is known as 'chain of thought', 'thinking output', or 'inference time compute'.`}
-            />
-          </div>
-          <Output raw_output={intermediate_output} />
-        {/each}
+      {#if run.trace}
+        <TraceComponent trace={run.trace} />
+      {:else}
+        <Output raw_output={run.output.output} />
+        {#if run.intermediate_outputs}
+          {#each Object.entries(run.intermediate_outputs) as [name, intermediate_output]}
+            <div
+              class="text-xs font-bold text-gray-500 mt-4 mb-1 flex flex-row items-center gap-1"
+            >
+              {get_intermediate_output_title(name)}
+              <InfoTooltip
+                tooltip_text={`This is intermediate output from the model, and not considered part of the final answer. This thinking helped formulate the final answer above. This is known as 'chain of thought', 'thinking output', or 'inference time compute'.`}
+              />
+            </div>
+            <Output raw_output={intermediate_output} />
+          {/each}
+        {/if}
       {/if}
       <div>
         <div class="mt-2">

@@ -50,3 +50,12 @@ export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =
   components["schemas"]["ToolSetApiDescription"]
+
+export type Trace = (
+  | components["schemas"]["ChatCompletionDeveloperMessageParam"]
+  | components["schemas"]["ChatCompletionSystemMessageParam"]
+  | components["schemas"]["ChatCompletionUserMessageParam-Input"]
+  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
+  | components["schemas"]["ChatCompletionToolMessageParam"]
+  | components["schemas"]["ChatCompletionFunctionMessageParam"]
+)[]
