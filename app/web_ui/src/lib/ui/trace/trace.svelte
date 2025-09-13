@@ -29,6 +29,7 @@
   function getMessagePreview(message: TraceMessage): string {
     let content = content_from_message(message)
     let tool_calls = tool_calls_from_message(message)
+    let reasoning_content = reasoning_content_from_message(message)
 
     // Tool result
     if (message.role === "tool" && content) {
@@ -43,8 +44,11 @@
     if (content) {
       content_types.push("message")
     }
+    if (reasoning_content) {
+      content_types.push("reasoning")
+    }
     if (content_types.length > 1) {
-      return "Multiple content types: " + content_types.join(", ")
+      return "Multi-content: " + content_types.join(", ")
     }
 
     // Typical content message - just show the content
@@ -101,6 +105,15 @@
     }
     return undefined
   }
+
+  function reasoning_content_from_message(
+    message: TraceMessage,
+  ): string | undefined {
+    if ("reasoning_content" in message && message.reasoning_content) {
+      return message.reasoning_content
+    }
+    return undefined
+  }
 </script>
 
 <div class="flex flex-col gap-3 w-full">
@@ -134,6 +147,7 @@
         {#if !collapsedStates[index]}
           {@const tool_calls = tool_calls_from_message(message)}
           {@const content = content_from_message(message)}
+          {@const reasoning_content = reasoning_content_from_message(message)}
           <!-- Expanded View -->
           <div class="mt-3 flex flex-col gap-3">
             {#if tool_calls}
@@ -148,7 +162,14 @@
                 </div>
               </div>
             {/if}
-            <!-- TODO Reasoning content -->
+            {#if reasoning_content}
+              <div>
+                <div class="text-xs text-gray-500 font-bold mb-1">
+                  Reasoning Content
+                </div>
+                <Output raw_output={reasoning_content} no_padding={true} />
+              </div>
+            {/if}
 
             <!-- Message content cases -->
             {#if content && message.role === "tool"}
@@ -170,7 +191,7 @@
             {:else if content}
               <div>
                 <!-- Header logic: skip if only a message, just for a cleaner ui -->
-                {#if tool_calls}
+                {#if tool_calls || reasoning_content}
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Message Content
                   </div>
