@@ -401,6 +401,7 @@
 
     return properties
   }
+  $: usage_properties = get_usage_properties(run)
 </script>
 
 <div>
@@ -698,7 +699,9 @@
         {/if}
       </div>
       <div>
-        <PropertyList properties={get_usage_properties(run)} title="Usage" />
+        {#if usage_properties && usage_properties.length > 0}
+          <PropertyList properties={usage_properties} title="Usage" />
+        {/if}
       </div>
     </div>
   </div>
