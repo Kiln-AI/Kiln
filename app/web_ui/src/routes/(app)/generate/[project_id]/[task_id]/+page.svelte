@@ -710,7 +710,7 @@
         </div>
       {:else}
         <div
-          class="py-1 mt-12 mb-4 gap-2 sticky top-0 z-2 backdrop-blur bg-white/70 z-10"
+          class="pb-1 2xl:pt-1 mt-12 mb-4 gap-2 sticky top-0 z-2 backdrop-blur bg-white/70 z-10"
         >
           <div class="flex flex-col">
             <div class="flex justify-center">
@@ -730,7 +730,7 @@
                 {/each}
               </ul>
             </div>
-            <div class="max-w-3xl mx-auto mt-6 text-center">
+            <div class="max-w-3xl mx-auto mt-2 2xl:mt-4 text-center">
               <div class="font-light">
                 <span class="font-medium">Step {current_step}:</span>
                 {step_descriptions[current_step]}
@@ -742,7 +742,7 @@
                   >
                 {/if}
               </div>
-              <div class="mt-2">
+              <div class="mt-1 2xl:mt-2">
                 {#if current_step == 1}
                   {#if $saved_state.root_node.sub_topics.length == 0}
                     <button
@@ -765,7 +765,7 @@
                     leaf_topics_missing_inputs === 0}
                   {#if leaf_topics_missing_inputs > 0 && leaf_topics_has_inputs > 0}
                     <!-- Only show the error if partly populated but missing some. New/empty shouldn't be an error. -->
-                    <div class="text-error text-sm my-2">
+                    <div class="text-error text-sm mb-1">
                       {leaf_topics_missing_inputs}
                       {leaf_topics_missing_inputs === 1
                         ? "topic has"
