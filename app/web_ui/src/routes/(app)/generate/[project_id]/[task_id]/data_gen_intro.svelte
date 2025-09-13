@@ -173,7 +173,7 @@
           is_primary: true,
         },
         {
-          label: "Generate Model Inputs",
+          label: "Generate Without Topics",
           onClick: () => generate_samples(),
           is_primary: false,
         },
@@ -349,7 +349,7 @@
         </div>
         <div class="">
           <p class="">
-            Generate high-quality, diverse training examples for fine-tuning.
+            Generate high-quality and diverse training data for fine-tuning.
           </p>
         </div>
 

@@ -4,6 +4,7 @@ import type { components } from "./api_schema"
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
 export type TaskRun = components["schemas"]["TaskRun-Input"]
+export type TaskRunOutput = components["schemas"]["TaskRun-Output"]
 export type TaskRequirement = components["schemas"]["TaskRequirement"]
 export type TaskOutputRating = components["schemas"]["TaskOutputRating-Output"]
 export type TaskOutputRatingType = components["schemas"]["TaskOutputRatingType"]

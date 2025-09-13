@@ -83,7 +83,7 @@
 </script>
 
 {#if guidance_data.gen_type}
-  <div class="card flex-row border px-6 py-3 my-2 shadow-sm text-sm">
+  <div class="card flex-row border px-6 py-3 mt-3 mb-2 shadow-sm text-sm">
     <div class="flex flex-row items-center gap-3 flex-grow">
       <div>
         <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
