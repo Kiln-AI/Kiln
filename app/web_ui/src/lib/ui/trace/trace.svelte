@@ -53,6 +53,10 @@
 
     // Typical content message - just show the content
     if (content) {
+      // Truncate to keep DOM reasonable for unexpanded messages. The CSS separately truncates
+      if (content.length > 200) {
+        return content.slice(0, 200)
+      }
       return content
     }
 
@@ -165,7 +169,7 @@
             {#if reasoning_content}
               <div>
                 <div class="text-xs text-gray-500 font-bold mb-1">
-                  Reasoning Content
+                  Reasoning
                 </div>
                 <Output raw_output={reasoning_content} no_padding={true} />
               </div>
@@ -193,7 +197,7 @@
                 <!-- Header logic: skip if only a message, just for a cleaner ui -->
                 {#if tool_calls || reasoning_content}
                   <div class="text-xs text-gray-500 font-bold mb-1">
-                    Message Content
+                    Content
                   </div>
                 {/if}
                 <Output raw_output={content} no_padding={true} />
