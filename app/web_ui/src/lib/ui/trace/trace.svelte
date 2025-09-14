@@ -5,13 +5,8 @@
 
   export let trace: Trace
 
-  // Track collapsed state for each message
-  let collapsedStates: boolean[] = trace.map(() => true)
-
-  function toggleCollapsed(index: number) {
-    collapsedStates[index] = !collapsedStates[index]
-    collapsedStates = [...collapsedStates] // Trigger reactivity
-  }
+  // Track collapsed state for each message (true = expanded, false = collapsed)
+  let messageExpanded: boolean[] = trace.map(() => false)
 
   function getRoleDisplayName(role: string): string {
     return (
@@ -125,94 +120,98 @@
   {#each trace as message, index}
     <!-- Message Bubble -->
     <div class="">
-      <div class="bg-base-200 rounded-lg p-3">
+      <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+        <input
+          type="checkbox"
+          class="peer"
+          bind:checked={messageExpanded[index]}
+        />
         <div
-          class="flex items-center justify-between cursor-pointer"
+          class="collapse-title flex items-center justify-between cursor-pointer min-w-0"
           role="presentation"
-          on:click={() => toggleCollapsed(index)}
         >
           <span class="font-medium text-xs min-w-[80px] text-gray-500 uppercase"
             >{getRoleDisplayName(message.role)}</span
           >
           <!-- Collapsed Preview -->
           <div
-            class="px-2 text-sm text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap grow {collapsedStates[
+            class="px-2 text-sm text-gray-600 overflow-hidden text-ellipsis whitespace-nowrap grow {messageExpanded[
               index
             ]
-              ? ''
-              : 'hidden'}"
+              ? 'hidden'
+              : ''}"
           >
             {getMessagePreview(message)}
           </div>
-          <span class="text-gray-500 text-xs">
-            {collapsedStates[index] ? "▼" : "▲"}
-          </span>
         </div>
 
-        {#if !collapsedStates[index]}
-          {@const tool_calls = tool_calls_from_message(message)}
-          {@const content = content_from_message(message)}
-          {@const reasoning_content = reasoning_content_from_message(message)}
-          <!-- Expanded View -->
-          <div class="mt-3 flex flex-col gap-3">
-            {#if tool_calls}
-              <div>
-                <div class="text-xs text-gray-500 font-bold mb-1">
-                  Requested Tool Calls
-                </div>
-                <div class="flex flex-col gap-2">
-                  {#each tool_calls as tool_call, index}
-                    <ToolCall
-                      {tool_call}
-                      nameTag={tool_calls.length > 1
-                        ? `Tool Call #${index + 1}`
-                        : "Tool Call"}
-                    />
-                  {/each}
-                </div>
-              </div>
-            {/if}
-            {#if reasoning_content}
-              <div>
-                <div class="text-xs text-gray-500 font-bold mb-1">
-                  Reasoning
-                </div>
-                <Output raw_output={reasoning_content} no_padding={true} />
-              </div>
-            {/if}
-
-            <!-- Message content cases -->
-            {#if content && message.role === "tool"}
-              {@const origin_tool_call = origin_tool_call_by_id(
-                message.tool_call_id,
-              )}
-              {#if origin_tool_call}
+        <div class="collapse-content">
+          <!-- Don't render unless they expand. There's a lot of content here in a long list. -->
+          {#if messageExpanded[index]}
+            {@const tool_calls = tool_calls_from_message(message)}
+            {@const content = content_from_message(message)}
+            {@const reasoning_content = reasoning_content_from_message(message)}
+            <!-- Expanded View -->
+            <div class="flex flex-col gap-3">
+              {#if tool_calls}
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
-                    Invoked Tool Call
+                    Requested Tool Calls
                   </div>
-                  <ToolCall tool_call={origin_tool_call} />
+                  <div class="flex flex-col gap-2">
+                    {#each tool_calls as tool_call, index}
+                      <ToolCall
+                        {tool_call}
+                        nameTag={tool_calls.length > 1
+                          ? `Tool Call #${index + 1}`
+                          : "Tool Call"}
+                      />
+                    {/each}
+                  </div>
                 </div>
               {/if}
-              <div>
-                <div class="text-xs text-gray-500 font-bold mb-1">
-                  Tool Result
-                </div>
-                <Output raw_output={content} no_padding={true} />
-              </div>
-            {:else if content}
-              <div>
-                <!-- Header logic: skip if only a message, just for a cleaner ui -->
-                {#if tool_calls || reasoning_content}
+              {#if reasoning_content}
+                <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
-                    Content
+                    Reasoning
+                  </div>
+                  <Output raw_output={reasoning_content} no_padding={true} />
+                </div>
+              {/if}
+
+              <!-- Message content cases -->
+              {#if content && message.role === "tool"}
+                {@const origin_tool_call = origin_tool_call_by_id(
+                  message.tool_call_id,
+                )}
+                {#if origin_tool_call}
+                  <div>
+                    <div class="text-xs text-gray-500 font-bold mb-1">
+                      Invoked Tool Call
+                    </div>
+                    <ToolCall tool_call={origin_tool_call} />
                   </div>
                 {/if}
-                <Output raw_output={content} no_padding={true} />
-              </div>
-            {/if}
-          </div>
-        {/if}
+                <div>
+                  <div class="text-xs text-gray-500 font-bold mb-1">
+                    Tool Result
+                  </div>
+                  <Output raw_output={content} no_padding={true} />
+                </div>
+              {:else if content}
+                <div>
+                  <!-- Header logic: skip if only a message, just for a cleaner ui -->
+                  {#if tool_calls || reasoning_content}
+                    <div class="text-xs text-gray-500 font-bold mb-1">
+                      Content
+                    </div>
+                  {/if}
+                  <Output raw_output={content} no_padding={true} />
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   {/each}

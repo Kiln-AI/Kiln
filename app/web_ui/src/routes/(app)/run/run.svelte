@@ -426,7 +426,7 @@
         <!-- Render the output, but leave the COT and other intermediate output rendering to the trace -->
         <Output raw_output={run.output.output} />
         <div>
-          <div class="font-bold mt-6 mb-1">All Messages</div>
+          <div class="font-bold mt-6 mb-2">All Messages</div>
           <TraceComponent trace={run.trace} />
         </div>
       {:else}
