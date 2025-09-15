@@ -762,6 +762,8 @@
       >
         <TagDropdown
           bind:tag={current_tag}
+          {project_id}
+          {task_id}
           on_select={(tag) => {
             add_tags.add(tag)
             add_tags = add_tags
