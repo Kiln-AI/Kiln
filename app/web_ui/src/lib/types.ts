@@ -55,7 +55,10 @@ export type EmbeddingModelName = components["schemas"]["EmbeddingModelName"]
 export type ChunkerConfig = components["schemas"]["ChunkerConfig"]
 export type ChunkerType = components["schemas"]["ChunkerType"]
 export type ModelProviderName = components["schemas"]["ModelProviderName"]
-export type RagProgress = components["schemas"]["RagProgress"]
+export type RagStepRunnerProgress =
+  components["schemas"]["RagStepRunnerProgress"]
+export type RagStepRunnerStatus = components["schemas"]["RagStepRunnerStatus"]
+export type RagWorkflowStepNames = components["schemas"]["RagWorkflowStepNames"]
 export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
 export type VectorStoreConfig = components["schemas"]["VectorStoreConfig"]

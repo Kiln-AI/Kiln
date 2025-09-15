@@ -54,7 +54,7 @@
     }
   }
 
-  $: status = $ragProgressStore.status[rag_config_id]
+  $: status = $ragProgressStore.orchestration_progress[rag_config_id]?.status
 
   $: btn_props = status_to_btn_props(status)
 </script>

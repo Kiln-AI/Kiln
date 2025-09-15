@@ -2,8 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from kiln_ai.adapters.rag.progress import (
-    LogMessage,
-    RagProgress,
     compute_current_progress_for_rag_config,
     compute_current_progress_for_rag_configs,
     count_records_in_vector_store,

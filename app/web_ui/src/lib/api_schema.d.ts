@@ -730,6 +730,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Config */
+        get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Rag Config */
+        patch: operations["update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/rag_configs/create_rag_config": {
         parameters: {
             query?: never;
@@ -756,23 +774,6 @@ export interface paths {
         };
         /** Get Rag Configs */
         get: operations["get_rag_configs_api_projects__project_id__rag_configs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/rag_configs/{rag_config_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Rag Config */
-        get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3451,86 +3452,6 @@ export interface components {
             embedding_config: components["schemas"]["EmbeddingConfig"];
             vector_store_config: components["schemas"]["VectorStoreConfig"];
         };
-        /** RagProgress */
-        RagProgress: {
-            /**
-             * Total Document Count
-             * @description The total number of items to process
-             * @default 0
-             */
-            total_document_count: number;
-            /**
-             * Total Document Completed Count
-             * @description The number of items that have been processed
-             * @default 0
-             */
-            total_document_completed_count: number;
-            /**
-             * Total Chunk Count
-             * @description The number of chunks that should be indexed for the indexing to be completed.
-             * @default 0
-             */
-            total_chunk_count: number;
-            /**
-             * Total Chunk Completed Count
-             * @description The number of chunks that have been indexed
-             * @default 0
-             */
-            total_chunk_completed_count: number;
-            /**
-             * Total Document Extracted Count
-             * @description The number of items that have been extracted
-             * @default 0
-             */
-            total_document_extracted_count: number;
-            /**
-             * Total Document Extracted Error Count
-             * @description The number of items that have errored during extraction
-             * @default 0
-             */
-            total_document_extracted_error_count: number;
-            /**
-             * Total Document Chunked Count
-             * @description The number of items that have been chunked
-             * @default 0
-             */
-            total_document_chunked_count: number;
-            /**
-             * Total Document Chunked Error Count
-             * @description The number of items that have errored during chunking
-             * @default 0
-             */
-            total_document_chunked_error_count: number;
-            /**
-             * Total Document Embedded Count
-             * @description The number of items that have been embedded
-             * @default 0
-             */
-            total_document_embedded_count: number;
-            /**
-             * Total Document Embedded Error Count
-             * @description The number of items that have errored during embedding
-             * @default 0
-             */
-            total_document_embedded_error_count: number;
-            /**
-             * Total Chunks Indexed Count
-             * @description The number of chunks that have been indexed
-             * @default 0
-             */
-            total_chunks_indexed_count: number;
-            /**
-             * Total Chunks Indexed Error Count
-             * @description The number of chunks that have errored during indexing
-             * @default 0
-             */
-            total_chunks_indexed_error_count: number;
-            /**
-             * Logs
-             * @description A list of log messages to display to the user
-             */
-            logs?: components["schemas"]["LogMessage"][] | null;
-        };
         /** RagSearchRequest */
         RagSearchRequest: {
             /**
@@ -3547,6 +3468,46 @@ export interface components {
              */
             results: components["schemas"]["SearchResult"][];
         };
+        /** RagStepRunnerProgress */
+        RagStepRunnerProgress: {
+            /** @description The name of the step runner */
+            step_name: components["schemas"]["RagWorkflowStepNames"];
+            /**
+             * @description The status of the step runner
+             * @default running
+             */
+            status: components["schemas"]["RagStepRunnerStatus"];
+            /**
+             * Expected Count
+             * @description The number of items that are expected to be processed. None if not known.
+             */
+            expected_count?: number | null;
+            /**
+             * Success Count
+             * @description The number of items that have been processed
+             */
+            success_count?: number | null;
+            /**
+             * Error Count
+             * @description The number of items that have errored
+             */
+            error_count?: number | null;
+            /**
+             * Logs
+             * @description A list of log messages to display to the user
+             */
+            logs?: components["schemas"]["LogMessage"][];
+        };
+        /**
+         * RagStepRunnerStatus
+         * @enum {string}
+         */
+        RagStepRunnerStatus: "pending" | "running" | "complete" | "completed_with_errors" | "incomplete";
+        /**
+         * RagWorkflowStepNames
+         * @enum {string}
+         */
+        RagWorkflowStepNames: "extracting" | "chunking" | "embedding" | "indexing" | "orchestration";
         /** RatingOption */
         RatingOption: {
             requirement: components["schemas"]["TaskRequirement"];
@@ -4142,6 +4103,13 @@ export interface components {
          * @description Request to update a finetune
          */
         UpdateFinetuneRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
+        /** UpdateRagConfigRequest */
+        UpdateRagConfigRequest: {
             /** Name */
             name: string;
             /** Description */
@@ -5931,6 +5899,74 @@ export interface operations {
             };
         };
     };
+    get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRagConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post: {
         parameters: {
             query?: never;
@@ -5984,38 +6020,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagConfigWithSubConfigs"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                rag_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
                 };
             };
             /** @description Validation Error */
@@ -6083,7 +6087,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["RagProgress"];
+                        [key: string]: {
+                            [key: string]: components["schemas"]["RagStepRunnerProgress"];
+                        };
                     };
                 };
             };

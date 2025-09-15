@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Dict, List
+from typing import Annotated, Dict, List, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -13,17 +13,15 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models_from_provider,
 )
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
-from kiln_ai.adapters.rag.progress import (
-    LogMessage,
-    RagProgress,
-    compute_current_progress_for_rag_config,
-    compute_current_progress_for_rag_configs,
-)
+from kiln_ai.adapters.rag.progress import compute_current_progress_for_rag_configs
 from kiln_ai.adapters.rag.rag_runners import (
+    LogMessage,
     RagChunkingStepRunner,
     RagEmbeddingStepRunner,
     RagExtractionStepRunner,
     RagIndexingStepRunner,
+    RagStepRunnerProgress,
+    RagStepRunnerStatus,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
     RagWorkflowStepNames,
@@ -195,9 +193,10 @@ async def run_rag_workflow_runner_with_status(
     runner: RagWorkflowRunner,
 ) -> StreamingResponse:
     async def event_generator():
-        latest_progress = RagProgress()
-
-        def serialize_progress(progress: RagProgress):
+        def serialize_progress(
+            progress: RagStepRunnerProgress,
+            event_type: Literal["progress", "log", "orchestration"],
+        ):
             logs = []
             for log in progress.logs or []:
                 logs.append(
@@ -208,36 +207,36 @@ async def run_rag_workflow_runner_with_status(
                 )
 
             data = {
-                "total_document_completed_count": progress.total_document_completed_count,
-                "total_document_count": progress.total_document_count,
-                "total_chunk_count": progress.total_chunk_count,
-                "total_chunk_completed_count": progress.total_chunk_completed_count,
-                "total_document_extracted_count": progress.total_document_extracted_count,
-                "total_document_chunked_count": progress.total_document_chunked_count,
-                "total_document_embedded_count": progress.total_document_embedded_count,
-                "total_document_extracted_error_count": progress.total_document_extracted_error_count,
-                "total_document_chunked_error_count": progress.total_document_chunked_error_count,
-                "total_document_embedded_error_count": progress.total_document_embedded_error_count,
-                "total_chunks_indexed_count": progress.total_chunks_indexed_count,
-                "total_chunks_indexed_error_count": progress.total_chunks_indexed_error_count,
+                "event_type": event_type,
+                "step_name": progress.step_name,
+                "status": progress.status,
+                "expected_count": progress.expected_count,
+                "success_count": progress.success_count,
+                "error_count": progress.error_count,
                 "logs": logs,
             }
             return data
 
         try:
             async for progress in runner.run():
-                latest_progress = progress.model_copy()
-                data = serialize_progress(progress)
+                if progress.step_name == RagWorkflowStepNames.ORCHESTRATION:
+                    data = serialize_progress(progress, "orchestration")
+                else:
+                    data = serialize_progress(progress, "progress")
                 yield f"data: {json.dumps(data)}\n\n"
         except asyncio.TimeoutError:
             logger.info("RAG workflow runner cancelled")
-            latest_progress.logs = [
-                LogMessage(
-                    level="error",
-                    message="Timed out after waiting for the lock to be acquired. This may be due to a concurrent RAG workflow running. You may retry in a few minutes.",
-                )
-            ]
-            data = serialize_progress(latest_progress)
+            latest_progress = RagStepRunnerProgress(
+                step_name=RagWorkflowStepNames.ORCHESTRATION,
+                status=RagStepRunnerStatus.COMPLETED_WITH_ERRORS,
+                logs=[
+                    LogMessage(
+                        level="error",
+                        message="Timed out after waiting for the lock to be acquired. This may be due to a concurrent RAG workflow running. You may retry in a few minutes.",
+                    )
+                ],
+            )
+            data = serialize_progress(latest_progress, "log")
             yield f"data: {json.dumps(data)}\n\n"
             return
 
@@ -578,10 +577,6 @@ async def build_rag_workflow_runner(
             detail="Vector store config not found",
         )
 
-    initial_progress = await compute_current_progress_for_rag_config(
-        project, rag_config
-    )
-
     runner = RagWorkflowRunner(
         project,
         RagWorkflowRunnerConfiguration(
@@ -617,7 +612,6 @@ async def build_rag_workflow_runner(
                     rag_config,
                 ),
             ],
-            initial_progress=initial_progress,
         ),
     )
 
@@ -1479,7 +1473,7 @@ def connect_document_api(app: FastAPI):
     async def get_rag_config_progress(
         project_id: str,
         request: GetRagConfigProgressRequest,
-    ) -> Dict[str, RagProgress]:
+    ) -> Dict[str, Dict[RagWorkflowStepNames, RagStepRunnerProgress]]:
         project = project_from_id(project_id)
         rag_configs: list[RagConfig] = []
 
@@ -1498,8 +1492,15 @@ def connect_document_api(app: FastAPI):
             rag_configs = project.rag_configs(readonly=True)
 
         progress_map: Dict[
-            str, RagProgress
+            str, Dict[RagWorkflowStepNames, RagStepRunnerProgress]
         ] = await compute_current_progress_for_rag_configs(project, rag_configs)
+
+        for rag_config_id, progress in progress_map.items():
+            for step_name, step_progress in progress.items():
+                logger.info(
+                    f"RAG config {rag_config_id} {step_name} progress: {json.dumps(step_progress.model_dump(), indent=2)}"
+                )
+
         return progress_map
 
     @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/search")

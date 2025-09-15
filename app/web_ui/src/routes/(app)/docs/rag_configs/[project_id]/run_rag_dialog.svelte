@@ -2,10 +2,13 @@
   import type {
     LogMessage,
     RagConfigWithSubConfigs,
-    RagProgress,
+    RagWorkflowStepNames,
   } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import {
+    ragProgressStore,
+    type StepProgress,
+  } from "$lib/stores/rag_progress_store"
   import Checkmark from "$lib/ui/checkmark.svelte"
 
   export let dialog: Dialog | null = null
@@ -13,8 +16,21 @@
   export let rag_config_id: string
   export let rag_config: RagConfigWithSubConfigs
 
-  $: config_progress = $ragProgressStore.progress[rag_config_id] || null
-  $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
+  $: orchestration_progress =
+    $ragProgressStore.orchestration_progress[rag_config_id] || null
+
+  $: is_running =
+    $ragProgressStore.orchestration_progress[rag_config_id]?.status ===
+    "running"
+
+  $: extraction_progress =
+    $ragProgressStore.substep_progress[rag_config_id]?.extracting || null
+  $: chunking_progress =
+    $ragProgressStore.substep_progress[rag_config_id]?.chunking || null
+  $: embedding_progress =
+    $ragProgressStore.substep_progress[rag_config_id]?.embedding || null
+  $: indexing_progress =
+    $ragProgressStore.substep_progress[rag_config_id]?.indexing || null
 
   let log_container: HTMLPreElement
   $: log_messages = $ragProgressStore.logs[rag_config_id] || []
@@ -54,142 +70,12 @@
     URL.revokeObjectURL(url)
   }
 
-  $: extraction_progress_value = get_step_progress_value(
-    "extraction",
-    config_progress,
-  )
-  $: chunking_progress_value = get_step_progress_value(
-    "chunking",
-    config_progress,
-  )
-  $: embedding_progress_value = get_step_progress_value(
-    "embedding",
-    config_progress,
-  )
-  $: indexing_progress_value = get_step_progress_value(
-    "indexing",
-    config_progress,
-  )
-
-  $: document_progress_max = config_progress?.total_document_count || 100
-  $: extraction_progress_pct = Math.round(
-    (extraction_progress_value / document_progress_max) * 100,
-  )
-  $: chunking_progress_pct = Math.round(
-    (chunking_progress_value / document_progress_max) * 100,
-  )
-  $: embedding_progress_pct = Math.round(
-    (embedding_progress_value / document_progress_max) * 100,
-  )
-
-  $: chunk_progress_max = config_progress?.total_chunk_count || 100
-  $: indexing_progress_pct = Math.round(
-    (indexing_progress_value / chunk_progress_max) * 100,
-  )
-
-  $: total_docs = config_progress?.total_document_count || 0
-  $: docs_completed_pct =
-    total_docs > 0
-      ? Math.round(
-          ((config_progress?.total_document_completed_count || 0) /
-            total_docs) *
-            100,
-        )
-      : 0
-
-  $: total_chunks = config_progress?.total_chunk_count || 0
-  $: chunks_completed_pct =
-    total_chunks > 0
-      ? Math.round(
-          ((config_progress?.total_chunk_completed_count || 0) / total_chunks) *
-            100,
-        )
-      : 0
-
   // autoscroll to the bottom of the logs when the logs change
   $: if (log_messages && log_container && end_of_logs) {
     end_of_logs?.scrollIntoView({
       behavior: "smooth",
       block: "end",
     })
-  }
-
-  function is_step_completed(
-    step: string,
-    config_progress: RagProgress | null,
-  ): boolean {
-    return get_status_for_step(step, config_progress) === "completed"
-  }
-
-  function get_status_for_step(
-    step: string,
-    config_progress: RagProgress | null,
-  ) {
-    if (!config_progress) return "pending"
-
-    switch (step) {
-      case "extraction": {
-        if (config_progress.total_document_count === 0) {
-          return "pending"
-        }
-        return config_progress.total_document_extracted_count >=
-          config_progress.total_document_count
-          ? "completed"
-          : "pending"
-      }
-      case "chunking": {
-        if (config_progress.total_document_count === 0) {
-          return "pending"
-        }
-        return config_progress.total_document_chunked_count >=
-          config_progress.total_document_count
-          ? "completed"
-          : "pending"
-      }
-      case "embedding": {
-        if (config_progress.total_document_count === 0) {
-          return "pending"
-        }
-        return config_progress.total_document_embedded_count >=
-          config_progress.total_document_count
-          ? "completed"
-          : "pending"
-      }
-      case "indexing": {
-        if (
-          config_progress.total_document_count === 0 ||
-          config_progress.total_chunk_count === 0
-        ) {
-          return "pending"
-        }
-        return config_progress.total_chunks_indexed_count >=
-          config_progress.total_chunk_count
-          ? "completed"
-          : "pending"
-      }
-      default:
-        return "pending"
-    }
-  }
-
-  function get_step_progress_value(
-    step: string,
-    config_progress: RagProgress | null,
-  ) {
-    if (!config_progress) return 0
-
-    switch (step) {
-      case "extraction":
-        return config_progress.total_document_extracted_count
-      case "chunking":
-        return config_progress.total_document_chunked_count
-      case "embedding":
-        return config_progress.total_document_embedded_count
-      case "indexing":
-        return config_progress.total_chunks_indexed_count
-      default:
-        return 0
-    }
   }
 
   function get_log_color(level: "info" | "error" | "warning"): string {
@@ -203,6 +89,51 @@
       default:
         return "text-base-content"
     }
+  }
+
+  function get_step_percentage(step: StepProgress | null): number {
+    if (!step) {
+      return 0
+    }
+    if (step.expected_count === 0) {
+      return 0
+    }
+    if (step.expected_count === null) {
+      return 0
+    }
+    if (step.success_count === null) {
+      return 0
+    }
+
+    return (step.success_count / step.expected_count) * 100
+  }
+
+  $: is_step_completed = (step: string): boolean => {
+    if (!(step in ["extracting", "chunking", "embedding", "indexing"])) {
+      return false
+    }
+    const step_progress =
+      $ragProgressStore.substep_progress[rag_config_id]?.[
+        step as RagWorkflowStepNames
+      ]
+    if (!step_progress) {
+      return false
+    }
+    return step_progress.status === "complete"
+  }
+
+  $: is_step_pending = (step: string): boolean => {
+    if (!(step in ["extracting", "chunking", "embedding", "indexing"])) {
+      return false
+    }
+    const step_progress =
+      $ragProgressStore.substep_progress[rag_config_id]?.[
+        step as RagWorkflowStepNames
+      ]
+    if (!step_progress) {
+      return false
+    }
+    return step_progress.status === "pending"
   }
 </script>
 
@@ -222,28 +153,27 @@
         return false
       },
       loading: is_running,
-      hide: docs_completed_pct === 100 && chunks_completed_pct === 100,
+      hide: orchestration_progress.status === "complete",
     },
   ]}
 >
   <div class="flex flex-col gap-6">
     <!-- Processing Steps -->
     <div class="flex flex-col gap-4 max-w-md mx-auto">
-      {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }, { name: "indexing", label: "Indexing", progress: indexing_progress_value, pct: indexing_progress_pct }] as step}
+      {#each [{ name: "extracting", label: "Extraction", progress: extraction_progress, pct: get_step_percentage(extraction_progress) }, { name: "chunking", label: "Chunking", progress: chunking_progress, pct: get_step_percentage(chunking_progress) }, { name: "embedding", label: "Embedding", progress: embedding_progress, pct: get_step_percentage(embedding_progress) }, { name: "indexing", label: "Indexing", progress: indexing_progress, pct: get_step_percentage(indexing_progress) }] as step}
         <div
           class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
         >
           <div
             class="flex items-center justify-center w-8 h-8 rounded-full {is_step_completed(
               step.name,
-              config_progress,
             )
               ? 'bg-primary/10 text-primary'
               : is_running
                 ? 'bg-warning/10 text-warning'
                 : 'bg-base-200 text-gray-500'}"
           >
-            {#if is_step_completed(step.name, config_progress)}
+            {#if is_step_completed(step.name)}
               <div class="w-4 h-4">
                 <Checkmark />
               </div>
@@ -257,14 +187,22 @@
             <div class="font-medium text-xs">
               {step.label}
             </div>
-            {#if step.name === "indexing"}
-              <div class="text-xs text-gray-500">
-                {step.progress} / {chunk_progress_max} chunks
-              </div>
+            {#if step.progress && !is_step_pending(step.name)}
+              {#if step.name === "indexing"}
+                <div class="text-xs text-gray-500">
+                  {step.progress.success_count || 0} / {step.progress
+                    .expected_count || 0} chunks
+                </div>
+              {:else}
+                <div class="text-xs text-gray-500">
+                  {step.progress.success_count || 0} / {step.progress
+                    .expected_count || 0} documents
+                </div>
+              {/if}
+            {:else if is_step_pending(step.name)}
+              <div class="text-xs text-gray-500">Pending</div>
             {:else}
-              <div class="text-xs text-gray-500">
-                {step.progress} / {document_progress_max} documents
-              </div>
+              <div class="text-xs text-gray-500">Not started</div>
             {/if}
           </div>
         </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RagConfigWithSubConfigs } from "$lib/types"
+  import type { RagConfigWithSubConfigs, RagStepRunnerStatus } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import RunRagControl from "./run_rag_control.svelte"
   import {
@@ -8,31 +8,32 @@
     provider_name_from_id,
     vector_store_name,
   } from "$lib/stores"
-  import {
-    ragProgressStore,
-    type RagConfigurationStatus,
-  } from "$lib/stores/rag_progress_store"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import { goto } from "$app/navigation"
 
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
-  $: rag_progress = $ragProgressStore.progress[rag_config.id || ""]
+
+  $: orchestration_progress =
+    $ragProgressStore.orchestration_progress[rag_config.id || ""]
 
   let row_hovered = false
 
-  // Calculate percentages for progress bar
-  $: total_docs = rag_progress?.total_document_count || 0
+  // get number of docs from the extraction step progress
+  $: extraction_progress =
+    $ragProgressStore.substep_progress[rag_config.id || ""]?.extracting
+  $: total_docs = extraction_progress?.expected_count || 0
+
   $: completed_pct =
     total_docs > 0
       ? Math.round(
-          ((rag_progress?.total_document_completed_count || 0) / total_docs) *
-            100,
+          ((orchestration_progress?.success_count || 0) / total_docs) * 100,
         )
       : 0
 
-  $: status = $ragProgressStore.status[rag_config.id || ""]
+  $: status = orchestration_progress?.status
 
-  function status_to_badge_props(status: RagConfigurationStatus) {
+  function status_to_badge_props(status: RagStepRunnerStatus) {
     switch (status) {
       case "complete": {
         return {
@@ -50,6 +51,13 @@
         return {
           text: "Running",
           running: true,
+        }
+      }
+      case "pending": {
+        // pending is when the rag workflow is running but this step has not started yet
+        return {
+          text: "Pending",
+          warning: true,
         }
       }
       case "completed_with_errors": {
@@ -73,7 +81,7 @@
   }
 </script>
 
-{#if rag_progress && rag_config}
+{#if orchestration_progress && rag_config}
   <tr
     class="{row_hovered ? 'hover' : ''} cursor-pointer hover:bg-base-200"
     on:click|stopPropagation={open}
@@ -147,24 +155,25 @@
               <div class="flex items-center justify-between">
                 <span class="text-gray-500">{completed_pct}% Complete</span>
                 <span class="text-gray-500">
-                  {rag_progress.total_document_completed_count || 0} of {total_docs}
+                  {orchestration_progress.success_count || 0} of
+                  {total_docs}
                   documents
                 </span>
               </div>
               <progress
                 class="progress progress-primary bg-base-200 w-full h-2"
-                value={rag_progress.total_document_completed_count || 0}
+                value={orchestration_progress.success_count || 0}
                 max={total_docs || 100}
               ></progress>
             </div>
           {:else if total_docs > 0}
             <!-- Document count for non-running states -->
             <div class="text-gray-500">
-              {#if rag_progress.total_document_completed_count < total_docs}
-                {rag_progress.total_document_completed_count || 0} of {total_docs}
+              {#if (orchestration_progress.success_count || 0) < total_docs}
+                {orchestration_progress.success_count || 0} of {total_docs}
                 documents
               {:else}
-                {rag_progress.total_document_completed_count || 0}
+                {orchestration_progress.success_count || 0}
                 documents
               {/if}
             </div>

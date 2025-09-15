@@ -1,22 +1,36 @@
 import { get, writable, derived } from "svelte/store"
 import { base_url, client } from "$lib/api_client"
-import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
+import type {
+  LogMessage,
+  RagConfigWithSubConfigs,
+  RagStepRunnerProgress,
+  RagStepRunnerStatus,
+  RagWorkflowStepNames,
+} from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
 import { progress_ui_state } from "./progress_ui_store"
 
 export type RagConfigurationStatus =
   | "not_started"
-  | "incomplete"
+  | "pending"
   | "running"
+  | "incomplete"
   | "complete"
   | "completed_with_errors"
 
+export type StepProgress = {
+  step_name: RagWorkflowStepNames
+  status: RagStepRunnerStatus
+  expected_count: number | null
+  success_count: number | null
+  error_count: number | null
+}
+
 interface RagConfigurationProgressState {
   rag_configs: Record<string, RagConfigWithSubConfigs>
-  progress: Record<string, RagProgress>
+  orchestration_progress: Record<string, StepProgress>
+  substep_progress: Record<string, Record<RagWorkflowStepNames, StepProgress>>
   logs: Record<string, LogMessage[]>
-  status: Record<string, RagConfigurationStatus>
-  running_rag_configs: Record<string, boolean>
   error: KilnError | null
   last_started_rag_config_id: string | null
 }
@@ -32,17 +46,14 @@ function createRagProgressStore() {
     // rag configuration id -> rag config
     rag_configs: {},
 
-    // rag configuration id -> progress; only applies to rag configurations that are running
-    progress: {},
+    // rag configuration id -> orchestration progress; only applies to rag configurations that are running
+    orchestration_progress: {},
+
+    // rag configuration id -> stepname -> substep progress; only applies to rag configurations that are running
+    substep_progress: {},
 
     // rag configuration id -> logs
     logs: {},
-
-    // rag configuration id -> status
-    status: {},
-
-    // rag configuration id -> is_running
-    running_rag_configs: {},
 
     // error
     error: null,
@@ -50,17 +61,6 @@ function createRagProgressStore() {
     // last started rag config id
     last_started_rag_config_id: null,
   })
-
-  function has_errors(rag_config_id: string): boolean {
-    const progress = get(ragProgressStore).progress[rag_config_id]
-    if (!progress) return false
-    return (
-      (progress.total_document_extracted_error_count ?? 0) > 0 ||
-      (progress.total_document_chunked_error_count ?? 0) > 0 ||
-      (progress.total_document_embedded_error_count ?? 0) > 0 ||
-      (progress.total_chunks_indexed_error_count ?? 0) > 0
-    )
-  }
 
   async function run_all_rag_configs(project_id: string): Promise<boolean> {
     // retrieve all rag configs
@@ -92,11 +92,6 @@ function createRagProgressStore() {
   function run_rag_config(project_id: string, rag_config_id: string): boolean {
     update((state) => ({
       ...state,
-      status: { ...state.status, [rag_config_id]: "running" },
-      running_rag_configs: {
-        ...state.running_rag_configs,
-        [rag_config_id]: true,
-      },
       logs: {
         ...state.logs,
         [rag_config_id]: [],
@@ -125,16 +120,6 @@ function createRagProgressStore() {
           update((state) => {
             return {
               ...state,
-              running_rag_configs: {
-                ...state.running_rag_configs,
-                [rag_config_id]: false,
-              },
-              status: {
-                ...state.status,
-                [rag_config_id]: has_errors(rag_config_id)
-                  ? "completed_with_errors"
-                  : "complete",
-              },
             }
           })
 
@@ -145,23 +130,58 @@ function createRagProgressStore() {
               title: "Processing Documents",
               body: "",
               link: `/docs/rag_configs/${project_id}`,
-              cta: has_errors(rag_config_id) ? "View Errors" : "View Results",
+              cta:
+                get(ragProgressStore).orchestration_progress[rag_config_id]
+                  .status === "completed_with_errors"
+                  ? "View Errors"
+                  : "View Results",
               progress: 100,
               step_count: null,
               current_step: 0,
             })
           }
         } else {
-          const payload = JSON.parse(event.data) as RagProgress
+          const payload = JSON.parse(event.data) as RagStepRunnerProgress
           update((state) => {
             const currentLogs = state.logs[rag_config_id] || []
             const newLogs = payload.logs || []
 
+            if (payload.step_name === "orchestration") {
+              const newState = {
+                ...state,
+                orchestration_progress: {
+                  ...state.orchestration_progress,
+                  [rag_config_id]: {
+                    step_name: payload.step_name,
+                    status: payload.status,
+                    expected_count: payload.expected_count ?? null,
+                    success_count: payload.success_count ?? null,
+                    error_count: payload.error_count ?? null,
+                  },
+                },
+                logs: {
+                  ...state.logs,
+                  [rag_config_id]: [...currentLogs, ...newLogs],
+                },
+              }
+
+              return newState
+            }
+
             return {
               ...state,
-              progress: {
-                ...state.progress,
-                [rag_config_id]: payload,
+              substep_progress: {
+                ...state.substep_progress,
+                [rag_config_id]: {
+                  ...state.substep_progress[rag_config_id],
+                  [payload.step_name]: {
+                    step_name: payload.step_name,
+                    status: payload.status,
+                    expected_count: payload.expected_count ?? null,
+                    success_count: payload.success_count ?? null,
+                    error_count: payload.error_count ?? null,
+                  },
+                },
               },
               logs: {
                 ...state.logs,
@@ -179,8 +199,8 @@ function createRagProgressStore() {
               link: `/docs/rag_configs/${project_id}`,
               cta: "View Progress",
               progress:
-                (payload.total_document_completed_count /
-                  Math.max(payload.total_document_count, 1)) *
+                ((payload.success_count ?? 0) /
+                  Math.max(payload.expected_count ?? 1, 1)) *
                 100,
               step_count: null,
               current_step: null,
@@ -191,10 +211,15 @@ function createRagProgressStore() {
         eventSource.close()
         update((state) => ({
           ...state,
-          status: { ...state.status, [rag_config_id]: "completed_with_errors" },
-          running_rag_configs: {
-            ...state.running_rag_configs,
-            [rag_config_id]: false,
+          orchestration_progress: {
+            ...state.orchestration_progress,
+            [rag_config_id]: {
+              step_name: "orchestration",
+              status: "completed_with_errors",
+              expected_count: null,
+              success_count: null,
+              error_count: null,
+            },
           },
           logs: {
             ...state.logs,
@@ -229,10 +254,15 @@ function createRagProgressStore() {
       eventSource.close()
       update((state) => ({
         ...state,
-        status: { ...state.status, [rag_config_id]: "completed_with_errors" },
-        running_rag_configs: {
-          ...state.running_rag_configs,
-          [rag_config_id]: false,
+        orchestration_progress: {
+          ...state.orchestration_progress,
+          [rag_config_id]: {
+            step_name: "orchestration",
+            status: "completed_with_errors",
+            expected_count: null,
+            success_count: null,
+            error_count: null,
+          },
         },
         logs: {
           ...state.logs,
@@ -269,12 +299,11 @@ function createRagProgressStore() {
     run_rag_config,
     reset: () =>
       set({
-        progress: {},
-        status: {},
-        logs: {},
-        running_rag_configs: {},
+        orchestration_progress: {},
+        substep_progress: {},
         rag_configs: {},
         error: null,
+        logs: {},
         last_started_rag_config_id: null,
       }),
   }
@@ -295,57 +324,14 @@ function sortRagConfigs(
   })
 }
 
-function calculateStatus(progress: RagProgress): RagConfigurationStatus {
-  if (
-    progress.total_document_completed_count === progress.total_document_count &&
-    progress.total_chunk_completed_count === progress.total_chunk_count
-  ) {
-    return "complete"
-  }
-
-  const max_step_completion = Math.max(
-    progress.total_document_extracted_count,
-    progress.total_document_chunked_count,
-    progress.total_document_embedded_count,
-    progress.total_chunks_indexed_count,
-  )
-  if (max_step_completion === 0) {
-    return "not_started"
-  }
-
-  const min_step_completion = Math.min(
-    progress.total_document_extracted_count,
-    progress.total_document_chunked_count,
-    progress.total_document_embedded_count,
-  )
-  if (min_step_completion < progress.total_document_count) {
-    return "incomplete"
-  }
-
-  const has_errors = [
-    progress.total_document_extracted_error_count,
-    progress.total_document_chunked_error_count,
-    progress.total_document_embedded_error_count,
-    progress.total_chunks_indexed_error_count,
-  ].some((count) => count > 0)
-  if (has_errors) {
-    return "completed_with_errors"
-  }
-
-  // indexing is tracked in terms of chunks, not documents
-  if (progress.total_chunks_indexed_count < progress.total_chunk_count) {
-    return "incomplete"
-  }
-
-  return "complete"
-}
-
-export const formatProgressPercentage = (progress: RagProgress): string => {
-  if (progress.total_document_count === 0) {
+export const formatProgressPercentage = (
+  progress: RagStepRunnerProgress,
+): string => {
+  if (progress.expected_count === 0) {
     return "0%"
   }
 
-  return `${((progress.total_document_completed_count / progress.total_document_count) * 100).toFixed(0)}%`
+  return `${(((progress.success_count ?? 0) / (progress.expected_count || 1)) * 100).toFixed(0)}%`
 }
 
 export async function load_all_rag_config_progress(projectId: string) {
@@ -365,27 +351,39 @@ export async function load_all_rag_config_progress(projectId: string) {
     if (!error && data) {
       for (const [rag_config_id, progress] of Object.entries(data)) {
         ragProgressStore.update((state) => {
-          const newProgress = {
-            ...state.progress,
-            [rag_config_id]: {
-              ...state.progress[rag_config_id],
-              ...progress,
-            },
+          const orchestration_progress = {
+            step_name: "orchestration" as RagWorkflowStepNames,
+            status: progress.orchestration.status,
+            expected_count: progress.orchestration.expected_count ?? null,
+            success_count: progress.orchestration.success_count ?? null,
+            error_count: progress.orchestration.error_count ?? null,
           }
 
-          // we need to make sure not to overwrite the client-side status, otherwise we will
-          // lose the progress state when navigating out and back into the pages that
-          const newStatus = {
-            ...state.status,
-            [rag_config_id]:
-              state.status[rag_config_id] ||
-              calculateStatus(newProgress[rag_config_id]),
-          }
+          delete progress.orchestration
+          const otherSteps = Object.entries(progress).reduce(
+            (acc, [step_name, step_progress]) => {
+              acc[step_name as RagWorkflowStepNames] = {
+                step_name: step_name as RagWorkflowStepNames,
+                status: step_progress.status,
+                expected_count: step_progress.expected_count ?? null,
+                success_count: step_progress.success_count ?? null,
+                error_count: step_progress.error_count ?? null,
+              }
+              return acc
+            },
+            {} as Record<RagWorkflowStepNames, StepProgress>,
+          )
 
           return {
             ...state,
-            progress: newProgress,
-            status: newStatus,
+            substep_progress: {
+              ...state.substep_progress,
+              [rag_config_id]: otherSteps,
+            },
+            orchestration_progress: {
+              ...state.orchestration_progress,
+              [rag_config_id]: orchestration_progress,
+            },
           }
         })
       }
