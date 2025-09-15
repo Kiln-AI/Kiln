@@ -1093,6 +1093,62 @@ async def test_get_rag_config_not_found(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_update_rag_config_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test successful update of RAG config"""
+    # Create a rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Original RAG Config",
+        description="Original description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_rag_from_id.return_value = rag_config
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}",
+            json={
+                "name": "Updated RAG Config",
+                "description": "Updated description",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["name"] == "Updated RAG Config"
+    assert result["description"] == "Updated description"
+    assert result["id"] == rag_config.id
+
+    # Verify the config was updated
+    assert rag_config.name == "Updated RAG Config"
+    assert rag_config.description == "Updated description"
+
+    # Load from disk and verify the change
+    assert rag_config.path is not None
+    rag_config_from_disk = RagConfig.load_from_file(rag_config.path)
+    assert rag_config_from_disk.name == "Updated RAG Config"
+    assert rag_config_from_disk.description == "Updated description"
+
+
+@pytest.mark.asyncio
 async def test_create_extractor_config_model_not_supported_for_extraction(
     client, mock_project
 ):

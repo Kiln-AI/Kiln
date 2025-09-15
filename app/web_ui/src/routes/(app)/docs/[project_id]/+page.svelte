@@ -34,7 +34,7 @@
       },
       {
         title: "Search Tools (RAG)",
-        description: "Enable tasks to search your documents for knowledge.",
+        description: "Enable tasks to search documents for knowledge.",
         action_buttons: [
           {
             label: "Manage Search Tools",

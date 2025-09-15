@@ -473,6 +473,11 @@ class PatchExtractorConfigRequest(BaseModel):
         return self
 
 
+class UpdateRagConfigRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
 def build_extraction_summary(
     extraction: Extraction,
     output_content: str | None,
@@ -1268,6 +1273,17 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.vector_store_configs(readonly=True)
 
+    @app.patch("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    async def update_rag_config(
+        project_id: str, rag_config_id: str, request: UpdateRagConfigRequest
+    ) -> RagConfig:
+        project = project_from_id(project_id)
+        rag_config = get_rag_config_from_id(project, rag_config_id)
+        rag_config.name = request.name
+        rag_config.description = request.description
+        rag_config.save_to_file()
+        return rag_config
+
     @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
     async def create_rag_config(
         project_id: str,
@@ -1383,19 +1399,22 @@ def connect_document_api(app: FastAPI):
 
         return rag_configs
 
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
-    async def get_rag_config(
-        project_id: str,
-        rag_config_id: str,
-    ) -> RagConfigWithSubConfigs:
-        project = project_from_id(project_id)
+    def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
         rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
         if rag_config is None:
             raise HTTPException(
                 status_code=404,
                 detail="RAG config not found",
             )
+        return rag_config
 
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    async def get_rag_config(
+        project_id: str,
+        rag_config_id: str,
+    ) -> RagConfigWithSubConfigs:
+        project = project_from_id(project_id)
+        rag_config = get_rag_config_from_id(project, rag_config_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             str(rag_config.extractor_config_id), project.path
         )

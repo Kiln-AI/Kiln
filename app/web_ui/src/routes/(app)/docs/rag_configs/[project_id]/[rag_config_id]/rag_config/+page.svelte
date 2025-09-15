@@ -20,6 +20,7 @@
   } from "$lib/stores"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Output from "../../../../../run/output.svelte"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -27,6 +28,8 @@
   let loading: boolean = false
   let error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
+
+  let edit_dialog: EditDialog | null = null
 
   // Search state
   let searchQuery: string = ""
@@ -137,7 +140,14 @@
   <AppPage
     title="Search Tool (RAG)"
     subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
-    action_buttons={[]}
+    action_buttons={[
+      {
+        label: "Edit",
+        handler: () => {
+          edit_dialog?.show()
+        },
+      },
+    ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -164,10 +174,12 @@
           <div class="text-xl font-bold mb-1">Test Search Tool</div>
           <div class="font-light mb-2">
             Experiment with your search tool, without running an AI task.
-            <InfoTooltip
-              tooltip_text="This UI runs your search tool (RAG) without sending the results to an AI task. You can use the search tool in an AI task by selecting it from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
-              no_pad={true}
-            />
+            <span class="text-gray-500">
+              <InfoTooltip
+                tooltip_text="This UI runs your search tool (RAG) without sending the results to an AI task. You can use the search tool in an AI task by selecting it from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
+                no_pad={true}
+              />
+            </span>
           </div>
           <div class="mb-8">
             <form on:submit={handleSearchSubmit}>
@@ -254,7 +266,7 @@
         <div class="w-full lg:w-80 xl:w-96 flex-shrink-0">
           <div class="flex flex-col gap-6">
             <PropertyList
-              title="Details"
+              title="Properties"
               properties={[
                 { name: "ID", value: rag_config.id || "N/A" },
                 { name: "Name", value: rag_config.name || "N/A" },
@@ -294,8 +306,8 @@
                     ) || "N/A",
                 },
                 {
-                  name: "Details",
-                  value: "View Extractor Configuration",
+                  name: "Configuration",
+                  value: "View Extractor",
                   link: `/docs/extractors/${project_id}/${rag_config.extractor_config.id}/extractor`,
                 },
               ]}
@@ -390,3 +402,26 @@
     {/if}
   </AppPage>
 </div>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Search Tool"
+  patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
+  fields={[
+    {
+      label: "Search Tool Name",
+      description: "A name to identify this search tool.",
+      api_name: "name",
+      value: rag_config?.name || "",
+      input_type: "input",
+    },
+    {
+      label: "Description",
+      description: "A description of the search tool for you and your team.",
+      api_name: "description",
+      value: rag_config?.description || "",
+      input_type: "textarea",
+      optional: true,
+    },
+  ]}
+/>

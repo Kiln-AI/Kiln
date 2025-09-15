@@ -70,7 +70,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Search Tools (RAG)"
-    subtitle="Enable tasks to search your documents for knowledge."
+    subtitle="Enable tasks to search documents for knowledge."
     no_y_padding={!!(rag_configs && rag_configs.length == 0)}
     action_buttons={rag_configs && rag_configs.length == 0
       ? []
