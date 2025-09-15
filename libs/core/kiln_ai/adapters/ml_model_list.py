@@ -138,6 +138,9 @@ class ModelName(str, Enum):
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
     grok_4 = "grok_4"
+    qwen_3_next_80b_a3b = "qwen_3_next_80b_a3b"
+    qwen_3_next_80b_a3b_thinking = "qwen_3_next_80b_a3b_thinking"
+    qwen_3_max = "qwen_3_max"
     qwen_3_0p6b = "qwen_3_0p6b"
     qwen_3_0p6b_no_thinking = "qwen_3_0p6b_no_thinking"
     qwen_3_1p7b = "qwen_3_1p7b"
@@ -2529,6 +2532,53 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Qwen 3 Next 80B A3B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_next_80b_a3b,
+        friendly_name="Qwen 3 Next 80B A3B (Instruct)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-next-80b-a3b-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+        ],
+    ),
+    # Qwen 3 Next 80B A3B (Thinking)
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_next_80b_a3b_thinking,
+        friendly_name="Qwen 3 Next 80B A3B (Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-next-80b-a3b-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+            ),
+        ],
+    ),
+    # Qwen 3 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_max,
+        friendly_name="Qwen 3 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
             ),
         ],
     ),
