@@ -761,6 +761,7 @@
             current_tag = ""
           }}
           on_escape={() => (show_add_tag_dropdown = false)}
+          example_tag_set="doc"
           focus_on_mount={true}
         />
         <div class="flex-none">

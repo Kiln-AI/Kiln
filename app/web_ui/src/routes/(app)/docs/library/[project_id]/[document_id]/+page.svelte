@@ -372,6 +372,7 @@
                 on_select={(tag) => add_tags([tag])}
                 on_escape={() => (show_create_tag = false)}
                 focus_on_mount={true}
+                example_tag_set="doc"
               />
               <div class="flex-none">
                 <button
