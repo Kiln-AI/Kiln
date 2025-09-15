@@ -23,13 +23,9 @@ class LlamaPdfReader(BaseExtractor):
             extraction_input.path = Path(extraction_input.path)
 
         text = self.reader.load_data(extraction_input.path)
-        if not text or len(text) != 1:
-            raise ValueError(
-                f"No text returned from PDFReader for {extraction_input.path}"
-            )
 
         return ExtractionOutput(
             is_passthrough=False,
-            content=text[0].get_content(),
+            content="\n\n".join([text_i.get_content() for text_i in text]),
             content_format=self.extractor_config.output_format,
         )

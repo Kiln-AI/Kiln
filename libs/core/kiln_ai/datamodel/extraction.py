@@ -160,31 +160,29 @@ class ExtractorConfig(KilnParentedModel):
         description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
     )
 
-    @field_validator("properties")
-    @classmethod
-    def validate_properties(
-        cls, properties: dict[str, Any], info: ValidationInfo
-    ) -> dict[str, Any]:
-        def get_property(key: str) -> str:
-            value = properties.get(key)
+    @model_validator(mode="after")
+    def validate_properties(self) -> Self:
+        def validate_property(key: str) -> str:
+            value = self.properties.get(key)
             if value is None or value == "" or not isinstance(value, str):
                 raise ValueError(f"Prompt for {key} must be a string")
             return value
 
-        return {
-            "prompt_document": get_property(
+        if self.extractor_type == ExtractorType.LLAMA_PDF_READER:
+            return self
+
+        if self.extractor_type == ExtractorType.LITELLM:
+            for key in [
                 "prompt_document",
-            ),
-            "prompt_image": get_property(
                 "prompt_image",
-            ),
-            "prompt_video": get_property(
                 "prompt_video",
-            ),
-            "prompt_audio": get_property(
                 "prompt_audio",
-            ),
-        }
+            ]:
+                validate_property(key)
+
+            return self
+
+        raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
     def prompt_document(self) -> str | None:
         prompt = self.properties.get("prompt_document")
