@@ -840,12 +840,13 @@
                         >step 3</button
                       > to generate outputs.
                     </div>
-                  {:else if samples_to_save.length > 0}
+                  {/if}
+                  {#if samples_to_save.length > 0}
                     <button
                       class="btn btn-sm btn-primary"
                       on:click={show_save_all_modal}
                     >
-                      Save All
+                      Save All ({samples_to_save.length})
                     </button>
                   {:else if already_saved_count === 0}
                     <div class="text-error text-sm my-2">
