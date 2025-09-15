@@ -7,6 +7,8 @@
   import { onMount } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
+  import { page } from "$app/stores"
+  import { progress_ui_state } from "$lib/stores/progress_ui_store"
 
   let requires_api_keys_dialog: Dialog | null = null
   type RequiredApiKeysSets = "OpenaiOrOpenRouter" | "GeminiOrOpenRouter"
@@ -124,6 +126,18 @@
     goto(
       `/settings/providers?required_providers=${selected_providers.join(",")}`,
     )
+
+    // Show UI to return to this page and continue
+    progress_ui_state.set({
+      title: "Creating Search Tool",
+      body: "When done adding API keys, ",
+      link: $page.url.pathname,
+      cta: "return to create search tool",
+      progress: null,
+      step_count: null,
+      current_step: null,
+    })
+
     return true
   }
 </script>
