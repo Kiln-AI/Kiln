@@ -15,6 +15,7 @@
   export let focus_on_mount: boolean = false
   let error: string | null = null
   let id = crypto.randomUUID()
+  let datalist_id = `${id}_options`
 
   function handle_keyup(event: KeyboardEvent) {
     if (event.key === "Enter") {
@@ -64,14 +65,14 @@
 <div class="w-full">
   <input
     {id}
-    list="tag_options"
+    list={datalist_id}
     type="text"
     class="w-full input input-bordered py-2 {error ? 'input-error' : ''}"
     placeholder="Add a tag"
     bind:value={tag}
     on:keyup={handle_keyup}
   />
-  <datalist id="tag_options">
+  <datalist id={datalist_id}>
     {#each sorted_tag_counts as tag}
       <option value={tag} />
     {/each}
