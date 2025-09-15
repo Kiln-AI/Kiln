@@ -929,15 +929,15 @@
             on:click={() =>
               root_node_component?.open_generate_subtopics_modal()}
           >
-            Add top level topics
+            Add topics
           </button>
           or
           <button
             class="link"
             on:click={() => root_node_component?.open_generate_samples_modal()}
           >
-            add top level inputs
-          </button>.
+            add inputs
+          </button> to the top level.
         </div>
       {/if}
     {/if}
