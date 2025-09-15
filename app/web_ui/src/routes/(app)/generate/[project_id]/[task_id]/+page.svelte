@@ -770,12 +770,13 @@
                     leaf_topics_missing_inputs === 0}
                   {#if leaf_topics_missing_inputs > 0 && leaf_topics_has_inputs > 0}
                     <!-- Only show the error if partly populated but missing some. New/empty shouldn't be an error. -->
-                    <div class="text-error text-sm mb-1">
-                      {leaf_topics_missing_inputs}
-                      {leaf_topics_missing_inputs === 1
-                        ? "topic has"
-                        : "topics have"}
-                      no inputs
+                    <div class="flex justify-center mb-2">
+                      <Warning
+                        warning_message={`${leaf_topics_missing_inputs} ${leaf_topics_missing_inputs === 1 ? "topic has" : "topics have"} no inputs`}
+                        warning_color="warning"
+                        warning_icon="exclaim"
+                        tight
+                      />
                     </div>
                   {/if}
                   {#if !done_generating}
