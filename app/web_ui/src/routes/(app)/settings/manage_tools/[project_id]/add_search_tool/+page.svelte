@@ -92,10 +92,6 @@
       }
     }
 
-    // TODO: remove test code
-    missing_api_keys = "GeminiOrOpenRouter"
-    requires_api_keys_dialog?.show()
-
     // TODO: we have needed keys, create the search tool
   }
 
