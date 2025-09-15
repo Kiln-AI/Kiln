@@ -56,23 +56,24 @@
   function formatSampleOutput(
     response: SampleData,
     format_json: boolean,
-  ): string {
+  ): { status: string; output: string | null } {
     if (response.saved_id && !response.output) {
       // Special case for people upgrading with partly saved datasets in their indexedDB.
       // We know it's been saved and should say so, but not available for preview.
       // They can click the "Saved" link to view the output in the dataset.
-      return "Preview not available"
+      return { status: "Preview not available", output: null }
     }
 
     let output = response.output?.output.output || null
     if (!output) {
-      return "Not Generated"
+      return { status: "Not Generated", output: null }
     }
 
+    let formatted_output = output
     if (format_json) {
-      return formatExpandedSample(output)
+      formatted_output = formatExpandedSample(output)
     }
-    return output
+    return { status: "Generated", output: formatted_output }
   }
 
   // Export these so we can share a var across all nodes -- makes it nicer if the UI saves the last value
@@ -271,6 +272,24 @@
     triggerSave()
   }
 
+  function remove_sample_output(sample_to_remove: SampleData) {
+    sample_to_remove.output = null
+    collapseAll()
+
+    // Trigger reactivity
+    data = data
+
+    // Trigger save to localStorage
+    triggerSave()
+  }
+
+  function open_sample(sample_to_open: SampleData) {
+    window.open(
+      `/dataset/${guidance_data.project_id}/${guidance_data.task_id}/${sample_to_open.saved_id}/run`,
+      "_blank",
+    )
+  }
+
   function handleGenerateSamplesCompleted() {
     // Trigger reactivity
     data = data
@@ -356,6 +375,8 @@
   </tr>
 {/if}
 {#each data.samples as sample, index}
+  {@const { status: output_status, output: formatted_output } =
+    formatSampleOutput(sample, expandedSamples[index])}
   <tr on:click={() => toggleExpand(index)} class="cursor-pointer">
     <td style="padding-left: {depth * 25 + 20}px" class="py-2">
       {#if expandedSamples[index]}
@@ -367,14 +388,13 @@
       {/if}
     </td>
     <td class="py-2">
-      {#if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap">{formatSampleOutput(
-            sample,
-            true,
-          )}</pre>
+      {#if !formatted_output}
+        {output_status}
+      {:else if expandedSamples[index]}
+        <pre class="whitespace-pre-wrap">{formatted_output}</pre>
       {:else}
         <div class="truncate w-0 min-w-full">
-          {formatSampleOutput(sample, false)}
+          {formatted_output}
         </div>
       {/if}
     </td>
@@ -398,11 +418,29 @@
           tabindex="0"
           class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
         >
-          <li>
-            <button on:click|stopPropagation={() => delete_sample(sample)}>
-              Delete Sample
-            </button>
-          </li>
+          {#if !sample.saved_id}
+            <li>
+              <button on:click|stopPropagation={() => delete_sample(sample)}>
+                Remove Sample
+              </button>
+            </li>
+          {/if}
+          {#if !sample.saved_id && sample.output}
+            <li>
+              <button
+                on:click|stopPropagation={() => remove_sample_output(sample)}
+              >
+                Remove Output
+              </button>
+            </li>
+          {/if}
+          {#if sample.saved_id}
+            <li>
+              <button on:click|stopPropagation={() => open_sample(sample)}>
+                View in Dataset
+              </button>
+            </li>
+          {/if}
         </ul>
       </div>
     </td>
