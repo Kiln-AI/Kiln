@@ -26,7 +26,6 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagIndexingStepRunner,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
-    RagWorkflowStepNames,
 )
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     SearchResult,
@@ -95,100 +94,6 @@ async def run_extractor_runner_with_status(
         content=event_generator(),
         media_type="text/event-stream",
     )
-
-
-async def run_all_extractors_and_rag_workflows(
-    project: Project,
-    documents: list[Document],
-):
-    # extractors are a step in the RAG workflow, so we run them first otherwise we would have the
-    # RAG workflows try to run the same extractors at the same time
-    extractor_tasks: list[asyncio.Task] = []
-    for extractor_config in [
-        ec for ec in project.extractor_configs(readonly=True) if not ec.is_archived
-    ]:
-
-        async def run_extractor(extractor_config=extractor_config):
-            try:
-                async with shared_async_lock_manager.acquire(
-                    f"docs:extract:{extractor_config.id}",
-                    timeout=20,
-                ):
-                    extractor_runner = ExtractorRunner(
-                        extractor_configs=[extractor_config],
-                        documents=documents,
-                    )
-                    async for progress in extractor_runner.run():
-                        pass
-            except asyncio.TimeoutError:
-                # this lock may be held by a concurrent rag run that uses this extractor
-                # in which case we will skip the processing here, and user may need to
-                # manually Run the rag config; relatively rare
-                logger.info(f"Extractor {extractor_config.id} is locked, skipping")
-
-        extractor_tasks.append(asyncio.create_task(run_extractor()))
-
-    if extractor_tasks:
-        results = await asyncio.gather(*extractor_tasks, return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(
-                    f"Error running extractor: {type(result).__name__}: {result}",
-                    exc_info=(type(result), result, result.__traceback__),
-                )
-
-    rag_tasks: list[asyncio.Task] = []
-    for rag_config in [rc for rc in project.rag_configs(readonly=True)]:
-
-        async def run_rag(rag_config=rag_config):
-            try:
-                # no need to lock here, each rag step runner gets a lock when it starts running
-                rag_runner = await build_rag_workflow_runner(
-                    project, str(rag_config.id)
-                )
-                async for progress in rag_runner.run(
-                    stages_to_run=[
-                        # we skip extracting here because we already ran the extractors independently higher up
-                        RagWorkflowStepNames.CHUNKING,
-                        RagWorkflowStepNames.EMBEDDING,
-                        RagWorkflowStepNames.INDEXING,
-                    ],
-                    document_ids=[document.id for document in documents],
-                ):
-                    pass
-            except asyncio.TimeoutError:
-                logger.info(
-                    f"RAG config {rag_config.id} or a sub step of it is locked, skipping"
-                )
-
-        rag_tasks.append(asyncio.create_task(run_rag()))
-
-    if rag_tasks:
-        results = await asyncio.gather(*rag_tasks, return_exceptions=True)
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(
-                    f"Error running RAG workflow: {type(result).__name__}: {result}",
-                    exc_info=(type(result), result, result.__traceback__),
-                )
-
-    return None
-
-
-def run_all_extractors_and_rag_workflows_no_wait(
-    project: Project,
-    documents: list[Document],
-) -> None:
-    """Wrapper around triggering the extraction and RAG workflows without waiting for them to complete.
-    Needed to make mocking easier in tests.
-    """
-    # dangling async tasks with no reference can be garbage collected at any time (even while running)
-    # so we need to add a reference to the task (here in the background_tasks set) to prevent it
-    # from being garbage collected
-    # https://docs.astral.sh/ruff/rules/asyncio-dangling-task/
-    task = asyncio.create_task(run_all_extractors_and_rag_workflows(project, documents))
-    background_tasks.add(task)
-    task.add_done_callback(background_tasks.discard)
 
 
 async def run_rag_workflow_runner_with_status(
@@ -422,6 +327,37 @@ class CreateExtractorConfigRequest(BaseModel):
         return self
 
 
+class PatchDocumentRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this document.",
+        default=None,
+    )
+    description: str | None = Field(
+        description="The description of the document",
+        default=None,
+    )
+    tags: list[str] | None = Field(
+        description="Tags for the document",
+        default=None,
+    )
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self):
+        if all(field is None for field in [self.name, self.description, self.tags]):
+            raise ValueError("At least one field must be provided")
+        return self
+
+    @model_validator(mode="after")
+    def validate_tags(self):
+        if self.tags is not None:
+            for tag in self.tags:
+                if not tag:
+                    raise ValueError("Tags cannot be empty strings")
+                if " " in tag:
+                    raise ValueError("Tags cannot contain spaces. Try underscores.")
+        return self
+
+
 class PatchExtractorConfigRequest(BaseModel):
     name: FilenameString | None = Field(
         description="A name for this entity.",
@@ -443,6 +379,11 @@ class PatchExtractorConfigRequest(BaseModel):
         ):
             raise ValueError("At least one field must be provided")
         return self
+
+
+class UpdateRagConfigRequest(BaseModel):
+    name: FilenameString
+    description: str | None = None
 
 
 def build_extraction_summary(
@@ -675,9 +616,6 @@ def connect_document_api(app: FastAPI):
                 },
             )
 
-        # we don't wait for this to complete
-        run_all_extractors_and_rag_workflows_no_wait(project, created_documents)
-
         return BulkCreateDocumentsResponse(
             created_documents=created_documents,
             failed_files=failed_files,
@@ -702,6 +640,31 @@ def connect_document_api(app: FastAPI):
                 status_code=404,
                 detail="Document not found",
             )
+        return document
+
+    @app.patch("/api/projects/{project_id}/documents/{document_id}")
+    async def patch_document(
+        project_id: str,
+        document_id: str,
+        request: PatchDocumentRequest,
+    ) -> Document:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found",
+            )
+
+        if request.name is not None:
+            document.name = request.name
+        if request.description is not None:
+            document.description = request.description
+        if request.tags is not None:
+            document.tags = request.tags
+
+        document.save_to_file()
+
         return document
 
     @app.post("/api/projects/{project_id}/documents/edit_tags")
@@ -1218,6 +1181,17 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.vector_store_configs(readonly=True)
 
+    @app.patch("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    async def update_rag_config(
+        project_id: str, rag_config_id: str, request: UpdateRagConfigRequest
+    ) -> RagConfig:
+        project = project_from_id(project_id)
+        rag_config = get_rag_config_from_id(project, rag_config_id)
+        rag_config.name = request.name
+        rag_config.description = request.description
+        rag_config.save_to_file()
+        return rag_config
+
     @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
     async def create_rag_config(
         project_id: str,
@@ -1333,19 +1307,22 @@ def connect_document_api(app: FastAPI):
 
         return rag_configs
 
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
-    async def get_rag_config(
-        project_id: str,
-        rag_config_id: str,
-    ) -> RagConfigWithSubConfigs:
-        project = project_from_id(project_id)
+    def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
         rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
         if rag_config is None:
             raise HTTPException(
                 status_code=404,
                 detail="RAG config not found",
             )
+        return rag_config
 
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    async def get_rag_config(
+        project_id: str,
+        rag_config_id: str,
+    ) -> RagConfigWithSubConfigs:
+        project = project_from_id(project_id)
+        rag_config = get_rag_config_from_id(project, rag_config_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
             str(rag_config.extractor_config_id), project.path
         )

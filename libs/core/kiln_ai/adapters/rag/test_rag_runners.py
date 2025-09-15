@@ -95,7 +95,12 @@ def real_extractor_config(mock_project):
         model_name="test-model",
         extractor_type=ExtractorType.LITELLM,
         output_format=OutputFormat.MARKDOWN,
-        properties={},
+        properties={
+            "prompt_document": "Transcribe the document.",
+            "prompt_audio": "Transcribe the audio.",
+            "prompt_video": "Transcribe the video.",
+            "prompt_image": "Describe the image.",
+        },
         parent=mock_project,
     )
 

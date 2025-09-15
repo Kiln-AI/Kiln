@@ -8,6 +8,7 @@
   export let sub_subtitle_link: string | undefined = undefined
   export let no_y_padding: boolean = false
   export let action_buttons: ActionButton[] = []
+  export let limit_max_width: boolean = false
 
   type Breadcrumb = {
     label: string
@@ -62,7 +63,7 @@
     </ul>
   </div>
 {/if}
-<div class="flex flex-row">
+<div class="flex flex-row {limit_max_width ? 'max-w-[1400px]' : ''}">
   <div class="flex flex-col grow">
     <h1 class="text-2xl font-bold">{title}</h1>
     {#if subtitle}
@@ -107,6 +108,10 @@
   </div>
 </div>
 
-<div class={no_y_padding ? "" : "mt-8 mb-12"}>
+<div
+  class="{no_y_padding ? '' : 'mt-8 mb-12'} {limit_max_width
+    ? 'max-w-[1400px]'
+    : ''}"
+>
   <slot />
 </div>

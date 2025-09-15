@@ -199,10 +199,10 @@
             options: vector_store_configs.map((config) => ({
               label:
                 config.store_type === "lancedb_fts"
-                  ? "LanceDB - Full Text Search"
+                  ? "Full Text Search"
                   : config.store_type === "lancedb_vector"
-                    ? "LanceDB - Vector Search"
-                    : "LanceDB - Hybrid Search",
+                    ? "Vector Search"
+                    : "Hybrid Search",
               value: config.id,
               description:
                 config.name +
@@ -440,6 +440,16 @@
 <AppPage
   title="Create Search Tool (RAG)"
   subtitle="A configuration for searching your docs, including extracting, chunking and embeddings."
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Search Tools",
+      href: `/docs/rag_configs/${project_id}`,
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">

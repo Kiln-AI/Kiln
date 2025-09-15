@@ -18,6 +18,9 @@
     model_name,
     provider_name_from_id,
   } from "$lib/stores"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Output from "../../../../../run/output.svelte"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -26,12 +29,16 @@
   let error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
+  let edit_dialog: EditDialog | null = null
+
   // Search state
   let searchQuery: string = ""
   let searchLoading: boolean = false
   let searchError: KilnError | null = null
+  let lastSearchQuery: string | null = null
   let searchResults: Array<{
     document_id: string
+    chunk_idx: number
     chunk_text: string
     similarity: number | null
   }> = []
@@ -115,9 +122,9 @@
       }
 
       searchResults = search_data?.results || []
+      lastSearchQuery = searchQuery
     } catch (err) {
       searchError = createKilnError(err)
-      searchResults = []
     } finally {
       searchLoading = false
     }
@@ -133,7 +140,24 @@
   <AppPage
     title="Search Tool (RAG)"
     subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
-    action_buttons={[]}
+    breadcrumbs={[
+      {
+        label: "Docs & Search",
+        href: `/docs/${project_id}`,
+      },
+      {
+        label: "Search Tools",
+        href: `/docs/rag_configs/${project_id}`,
+      },
+    ]}
+    action_buttons={[
+      {
+        label: "Edit",
+        handler: () => {
+          edit_dialog?.show()
+        },
+      },
+    ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -157,15 +181,19 @@
       <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
         <!-- Main Content - Search Section -->
         <div class="flex-1">
+          <div class="text-xl font-bold mb-1">Test Search Tool</div>
+          <div class="font-light mb-2">
+            Experiment with your search tool, without running an AI task.
+            <span class="text-gray-500">
+              <InfoTooltip
+                tooltip_text="This UI runs your search tool (RAG) without sending the results to an AI task. You can use the search tool in an AI task by selecting it from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
+                no_pad={true}
+              />
+            </span>
+          </div>
           <div class="mb-8">
             <form on:submit={handleSearchSubmit}>
               <div class="form-control">
-                <label class="label" for="search-query">
-                  <span class="label-text">Search Query</span>
-                  <span class="label-text-alt text-gray-500">
-                    Enter text to search through the indexed documents
-                  </span>
-                </label>
                 <div class="flex gap-2">
                   <input
                     id="search-query"
@@ -197,36 +225,48 @@
             {/if}
 
             {#if searchResults.length > 0}
-              <div class="mt-6">
-                <h3 class="text-lg font-medium mb-4">
-                  Search Results ({searchResults.length})
-                </h3>
+              <div class="mt-12">
+                <div class="flex flex-row justify-between items-center mb-6">
+                  <h3 class="text-xl font-bold">
+                    Search Results for "{lastSearchQuery}"
+                  </h3>
+                  <div class="text-sm text-gray-500">
+                    {searchResults.length > 1
+                      ? `${searchResults.length} results found`
+                      : "1 result found"}
+                  </div>
+                </div>
 
-                <div class="space-y-4">
+                <div class="space-y-12">
                   {#each searchResults as result}
-                    <div
-                      class="bg-base-100 rounded-lg p-4 border border-base-300"
-                    >
-                      <div class="flex justify-between items-start mb-2">
-                        <div class="text-sm text-gray-500">
-                          Document: {result.document_id}
+                    <div>
+                      <div class="mb-2 flex flex-row text-sm text-gray-500">
+                        <div class="flex-grow">
+                          <a
+                            href={`/docs/library/${project_id}/${result.document_id}`}
+                            class="hover:link"
+                          >
+                            Document: {result.document_id}
+                          </a>
+                          (Chunk #{result.chunk_idx})
                         </div>
-                        {#if result.similarity !== null}
-                          <div class="text-sm text-gray-500">
-                            Score: {result.similarity.toFixed(3)}
-                          </div>
-                        {/if}
+                        <div>
+                          Score: {result.similarity !== null
+                            ? result.similarity.toFixed(2)
+                            : "N/A"}
+                        </div>
                       </div>
-                      <div class="text-base text-base-content">
-                        {result.chunk_text}
-                      </div>
+                      <Output
+                        raw_output={result.chunk_text}
+                        max_height="300px"
+                      />
                     </div>
                   {/each}
                 </div>
               </div>
-            {:else if searchQuery && !searchLoading && !searchError}
+            {:else if lastSearchQuery && searchResults.length === 0}
               <div class="text-center text-gray-500 mt-6">
-                No results found for "{searchQuery}"
+                No results found for "{lastSearchQuery}"
               </div>
             {/if}
           </div>
@@ -236,7 +276,7 @@
         <div class="w-full lg:w-80 xl:w-96 flex-shrink-0">
           <div class="flex flex-col gap-6">
             <PropertyList
-              title="Details"
+              title="Properties"
               properties={[
                 { name: "ID", value: rag_config.id || "N/A" },
                 { name: "Name", value: rag_config.name || "N/A" },
@@ -276,8 +316,8 @@
                     ) || "N/A",
                 },
                 {
-                  name: "Details",
-                  value: "View Extractor Configuration",
+                  name: "Configuration",
+                  value: "View Extractor",
                   link: `/docs/extractors/${project_id}/${rag_config.extractor_config.id}/extractor`,
                 },
               ]}
@@ -364,19 +404,6 @@
                   ),
                   tooltip: "The number of top search results returned",
                 },
-                ...(rag_config.vector_store_config.store_type !== "lancedb_fts"
-                  ? [
-                      {
-                        name: "Vector Probes",
-                        value: String(
-                          rag_config.vector_store_config.properties.nprobes ||
-                            10,
-                        ),
-                        tooltip:
-                          "Number of partitions to search for vector queries (higher = more accurate but slower)",
-                      },
-                    ]
-                  : []),
               ]}
             />
           </div>
@@ -385,3 +412,26 @@
     {/if}
   </AppPage>
 </div>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Search Tool"
+  patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
+  fields={[
+    {
+      label: "Search Tool Name",
+      description: "A name to identify this search tool.",
+      api_name: "name",
+      value: rag_config?.name || "",
+      input_type: "input",
+    },
+    {
+      label: "Description",
+      description: "A description of the search tool for you and your team.",
+      api_name: "description",
+      value: rag_config?.description || "",
+      input_type: "textarea",
+      optional: true,
+    },
+  ]}
+/>

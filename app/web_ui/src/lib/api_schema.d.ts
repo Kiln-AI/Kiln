@@ -418,7 +418,8 @@ export interface paths {
         delete: operations["delete_document_api_projects__project_id__documents__document_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Document */
+        patch: operations["patch_document_api_projects__project_id__documents__document_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/documents/edit_tags": {
@@ -3152,6 +3153,24 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** PatchDocumentRequest */
+        PatchDocumentRequest: {
+            /**
+             * Name
+             * @description A name for this document.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the document
+             */
+            description?: string | null;
+            /**
+             * Tags
+             * @description Tags for the document
+             */
+            tags?: string[] | null;
+        };
         /** PatchExtractorConfigRequest */
         PatchExtractorConfigRequest: {
             /**
@@ -5193,6 +5212,42 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_document_api_projects__project_id__documents__document_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Validation Error */

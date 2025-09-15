@@ -1093,6 +1093,62 @@ async def test_get_rag_config_not_found(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_update_rag_config_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test successful update of RAG config"""
+    # Create a rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Original RAG Config",
+        description="Original description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_rag_from_id.return_value = rag_config
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}",
+            json={
+                "name": "Updated RAG Config",
+                "description": "Updated description",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["name"] == "Updated RAG Config"
+    assert result["description"] == "Updated description"
+    assert result["id"] == rag_config.id
+
+    # Verify the config was updated
+    assert rag_config.name == "Updated RAG Config"
+    assert rag_config.description == "Updated description"
+
+    # Load from disk and verify the change
+    assert rag_config.path is not None
+    rag_config_from_disk = RagConfig.load_from_file(rag_config.path)
+    assert rag_config_from_disk.name == "Updated RAG Config"
+    assert rag_config_from_disk.description == "Updated description"
+
+
+@pytest.mark.asyncio
 async def test_create_extractor_config_model_not_supported_for_extraction(
     client, mock_project
 ):
@@ -2203,13 +2259,9 @@ async def test_create_document_content_type_detection(
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
         mock_save.return_value = None
-        mock_run_workflows.return_value = None
 
         files = [("files", (filename, io.BytesIO(test_content), expected_content_type))]
         data = {"names": ["Test File"]}
@@ -2241,12 +2293,8 @@ async def test_create_documents_bulk_success(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
@@ -2283,13 +2331,6 @@ async def test_create_documents_bulk_success(client, mock_project):
         test_content_2
     )
 
-    # Verify both documents were created and workflows triggered
-    assert mock_run_workflows.call_count == 1
-    # Verify it was called with both documents
-    call_args = mock_run_workflows.call_args[0]
-    assert call_args[0] == project
-    assert len(call_args[1]) == 2
-
 
 @pytest.mark.asyncio
 async def test_create_documents_bulk_without_names(client, mock_project):
@@ -2300,12 +2341,8 @@ async def test_create_documents_bulk_without_names(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
@@ -2340,12 +2377,8 @@ async def test_create_documents_bulk_mixed_file_types(
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("document.txt", io.BytesIO(test_text_content), "text/plain")),
@@ -2377,12 +2410,8 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("valid.txt", io.BytesIO(test_content_valid), "text/plain")),
@@ -2414,9 +2443,6 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
     assert len(result["failed_files"]) == 2  # Two invalid files
     assert result["created_documents"][0]["name"] == "valid_txt"
     assert result["created_documents"][0]["kind"] == "document"
-
-    # Should have triggered workflow for the valid file
-    assert mock_run_workflows.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -2498,12 +2524,8 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("duplicate.txt", io.BytesIO(test_content_1), "text/plain")),
@@ -2524,13 +2546,6 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
     assert len(result["failed_files"]) == 0
     assert result["created_documents"][0]["name"] == "duplicate_txt"
     assert result["created_documents"][1]["name"] == "duplicate_txt"
-
-    # Both should have triggered workflows
-    assert mock_run_workflows.call_count == 1
-    # Verify it was called with both documents
-    call_args = mock_run_workflows.call_args[0]
-    assert call_args[0] == project
-    assert len(call_args[1]) == 2
 
 
 @pytest.mark.parametrize(
@@ -2674,3 +2689,211 @@ async def test_build_rag_workflow_runner_success_with_progress(
         assert result == mock_runner
         mock_compute_progress.assert_called_once_with(mock_project, rag_config)
         mock_runner_class.assert_called_once()
+
+
+def test_patch_document_success_name_only(client, mock_project, mock_document):
+    """Test PATCH document endpoint with name only"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": "Updated Document Name"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated Document Name"
+        assert (
+            data["description"] == mock_document["document"].description
+        )  # Should remain unchanged
+        assert data["tags"] == mock_document["document"].tags  # Should remain unchanged
+
+
+def test_patch_document_success_description_only(client, mock_project, mock_document):
+    """Test PATCH document endpoint with description only"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"description": "Updated description"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == mock_document["document"].name  # Should remain unchanged
+        assert data["description"] == "Updated description"
+        assert data["tags"] == mock_document["document"].tags  # Should remain unchanged
+
+
+def test_patch_document_success_tags_only(client, mock_project, mock_document):
+    """Test PATCH document endpoint with tags only"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        new_tags = ["tag1", "tag2", "tag3"]
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"tags": new_tags},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == mock_document["document"].name  # Should remain unchanged
+        assert (
+            data["description"] == mock_document["document"].description
+        )  # Should remain unchanged
+        assert data["tags"] == new_tags
+
+
+def test_patch_document_success_all_fields(client, mock_project, mock_document):
+    """Test PATCH document endpoint with all fields"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        new_name = "Completely New Name"
+        new_description = "Completely new description"
+        new_tags = ["new_tag1", "new_tag2"]
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": new_name, "description": new_description, "tags": new_tags},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == new_name
+        assert data["description"] == new_description
+        assert data["tags"] == new_tags
+
+
+def test_patch_document_not_found(client, mock_project):
+    """Test PATCH document endpoint with non-existent document"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/nonexistent_id",
+            json={"name": "Updated Name"},
+        )
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "Document not found" in data["message"]
+
+
+def test_patch_document_no_fields_provided(client, mock_project, mock_document):
+    """Test PATCH document endpoint with no fields provided"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={},
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "At least one field must be provided" in data["message"]
+
+
+def test_patch_document_invalid_tags_empty_string(client, mock_project, mock_document):
+    """Test PATCH document endpoint with empty string tag"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"tags": ["valid_tag", ""]},
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "Tags cannot be empty strings" in data["message"]
+
+
+def test_patch_document_invalid_tags_with_spaces(client, mock_project, mock_document):
+    """Test PATCH document endpoint with tag containing spaces"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"tags": ["valid_tag", "invalid tag"]},
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "Tags cannot contain spaces" in data["message"]
+
+
+def test_patch_document_invalid_name_too_long(client, mock_project, mock_document):
+    """Test PATCH document endpoint with name too long"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        long_name = "x" * 121  # Exceeds 120 character limit
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": long_name},
+        )
+
+        assert response.status_code == 422
+
+
+def test_patch_document_invalid_name_empty(client, mock_project, mock_document):
+    """Test PATCH document endpoint with empty name"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": ""},
+        )
+
+        assert response.status_code == 422
+
+
+def test_patch_document_invalid_name_forbidden_chars(
+    client, mock_project, mock_document
+):
+    """Test PATCH document endpoint with forbidden characters in name"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": "invalid/name"},
+        )
+
+        assert response.status_code == 422
+
+
+def test_patch_document_partial_update_preserves_other_fields(
+    client, mock_project, mock_document
+):
+    """Test that partial updates don't affect other fields"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        # First update just the name
+        response1 = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": "Updated Name Only"},
+        )
+        assert response1.status_code == 200
+
+        # Then update just the description
+        response2 = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"description": "Updated Description Only"},
+        )
+        assert response2.status_code == 200
+
+        data = response2.json()
+        assert (
+            data["name"] == "Updated Name Only"
+        )  # Should be preserved from first update
+        assert data["description"] == "Updated Description Only"  # Should be updated
+        assert data["tags"] == mock_document["document"].tags  # Should remain original

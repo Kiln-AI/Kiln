@@ -389,11 +389,11 @@ export function vector_store_name(store_type: VectorStoreType | null): string {
   }
   switch (store_type) {
     case "lancedb_fts":
-      return "LanceDB - Full Text Search"
+      return "Full Text Search"
     case "lancedb_vector":
-      return "LanceDB - Vector Search"
+      return "Vector Search"
     case "lancedb_hybrid":
-      return "LanceDB - Hybrid Search"
+      return "Hybrid Search"
     default:
       return "Unknown"
   }
