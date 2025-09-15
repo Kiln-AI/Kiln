@@ -818,11 +818,15 @@
                   {@const output_gen_complete =
                     samples_to_generate.length === 0}
                   {#if no_inputs}
-                    <div class="text-error text-sm my-2">
-                      No inputs available. Return to <button
-                        on:click={() => set_current_step(2)}
-                        class="link">step 2</button
-                      > to add inputs.
+                    <div class="flex justify-center mb-2">
+                      <button on:click={() => set_current_step(2)} class="link">
+                        <Warning
+                          warning_message="No inputs available. Return to step 2 to add inputs."
+                          warning_color="error"
+                          warning_icon="exclaim"
+                          tight
+                        />
+                      </button>
                     </div>
                   {:else if output_gen_complete}
                     <button class="btn btn-sm btn-disabled">
@@ -850,22 +854,28 @@
                 {:else if current_step == 4}
                   <!-- error message if no content to save -->
                   {#if samples_to_generate.length > 0}
-                    <div class="text-error text-sm my-2">
-                      {samples_to_generate.length}
-                      {samples_to_generate.length === 1
-                        ? "item has"
-                        : "items have"}
-                      no outputs. Return to
-                      <button on:click={() => set_current_step(3)} class="link"
-                        >step 3</button
-                      > to generate outputs.
+                    <div class="flex justify-center mb-2">
+                      <button on:click={() => set_current_step(3)} class="link">
+                        <Warning
+                          warning_message={`${samples_to_generate.length} ${samples_to_generate.length === 1 ? "item is" : "items are"} missing outputs. Return to step 3 to generate outputs.`}
+                          warning_color={samples_to_save.length > 0
+                            ? "warning"
+                            : "error"}
+                          warning_icon="exclaim"
+                          tight
+                        />
+                      </button>
                     </div>
                   {:else if samples_to_save.length === 0 && already_saved_count === 0}
-                    <div class="text-error text-sm my-2">
-                      No items to save. Return to <button
-                        on:click={() => set_current_step(2)}
-                        class="link">step 2</button
-                      > to generate data.
+                    <div class="flex justify-center mb-2">
+                      <button on:click={() => set_current_step(2)} class="link">
+                        <Warning
+                          warning_message="No items to save. Return to step 2 to generate data."
+                          warning_color="error"
+                          warning_icon="exclaim"
+                          tight
+                        />
+                      </button>
                     </div>
                   {/if}
                   {#if samples_to_save.length > 0}
