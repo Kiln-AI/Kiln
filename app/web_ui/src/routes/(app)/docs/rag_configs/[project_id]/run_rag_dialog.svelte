@@ -156,6 +156,15 @@
           : "pending"
       }
       case "indexing": {
+        // for indexing, we only know the total chunk count after chunking is complete
+        // so if any upstream step is not complete, we can't know if indexing is complete
+        if (
+          !is_step_completed("extraction", config_progress) ||
+          !is_step_completed("chunking", config_progress) ||
+          !is_step_completed("embedding", config_progress)
+        ) {
+          return "pending"
+        }
         if (
           config_progress.total_document_count === 0 ||
           config_progress.total_chunk_count === 0

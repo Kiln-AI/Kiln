@@ -607,14 +607,14 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             async for doc_batch in self.collect_records(
                 batch_size=self.batch_size, document_ids=document_ids
             ):
-                chunk_count = 0
+                batch_chunk_count = 0
                 for doc in doc_batch:
-                    chunk_count += len(doc.chunks)
+                    batch_chunk_count += len(doc.chunks)
 
                 try:
                     await vector_store.add_chunks_with_embeddings(doc_batch)
                     yield RagStepRunnerProgress(
-                        success_count=chunk_count,
+                        success_count=batch_chunk_count,
                         error_count=0,
                     )
                 except Exception as e:
@@ -622,7 +622,7 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                     logger.error(error_msg, exc_info=True)
                     yield RagStepRunnerProgress(
                         success_count=0,
-                        error_count=chunk_count,
+                        error_count=batch_chunk_count,
                         logs=[
                             LogMessage(
                                 level="error",
@@ -722,15 +722,12 @@ class RagWorkflowRunner:
                     )
             case RagWorkflowStepNames.INDEXING:
                 if step_progress.success_count is not None:
-                    self.current_progress.total_chunks_indexed_count = (
-                        self.current_progress.total_chunks_indexed_count
-                        + step_progress.success_count
+                    self.current_progress.total_chunks_indexed_count += (
+                        step_progress.success_count
                     )
                 if step_progress.error_count is not None:
-                    self.current_progress.total_chunks_indexed_error_count = max(
-                        self.current_progress.total_chunks_indexed_error_count,
+                    self.current_progress.total_chunks_indexed_error_count += (
                         step_progress.error_count
-                        + self.initial_progress.total_chunks_indexed_error_count,
                     )
             case _:
                 raise_exhaustive_enum_error(step_name)
@@ -773,6 +770,16 @@ class RagWorkflowRunner:
                 ):
                     self.current_progress.total_chunk_count = (
                         await step.count_total_chunks()
+                    )
+                    # reset the indexing progress to 0 since we go through all the chunks again
+                    self.initial_progress.total_chunks_indexed_count = 0
+                    self.current_progress.total_chunks_indexed_count = 0
+                    yield self.update_workflow_progress(
+                        step.stage(),
+                        RagStepRunnerProgress(
+                            success_count=0,
+                            error_count=0,
+                        ),
                     )
 
                 async for progress in step.run(document_ids=document_ids):
