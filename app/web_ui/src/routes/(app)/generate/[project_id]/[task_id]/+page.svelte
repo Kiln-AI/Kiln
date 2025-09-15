@@ -700,6 +700,7 @@
               root_node_component?.open_generate_subtopics_modal()
             }}
             generate_samples={() => {
+              set_current_step(2)
               root_node_component?.open_generate_samples_modal()
             }}
             {project_id}
