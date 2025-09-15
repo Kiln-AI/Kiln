@@ -4,12 +4,17 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { Eval, FinetuneDatasetInfo } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { onMount } from "svelte"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
   export let project_id: string
   export let task_id: string
   export let is_setup: boolean
+
+  onMount(async () => {
+    load_finetune_dataset_info()
+  })
 
   export let on_setup:
     | ((
@@ -116,12 +121,6 @@
       finetuning_tags = generate_fine_tuning_tags(
         finetune_dataset_info_response,
       )
-      const keys = Object.keys(finetuning_tags)
-      if (keys.length === 1 && keys[0] === "fine_tune_data") {
-        // Special case: there is only one tag, and it's the fine_tune_data tag.
-        // We don't need to show the dialog, just generate the data.
-        generate_fine_tuning_data_for_tag("fine_tune_data")
-      }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         finetune_dataset_info_error = new KilnError(
@@ -136,9 +135,21 @@
     }
   }
 
-  function show_fine_tuning_dialog() {
-    fine_tuning_dialog?.show()
-    load_finetune_dataset_info()
+  async function show_fine_tuning_dialog() {
+    // Special case: if loading or there is an error, show the dialog as it can handle these states. Usually it would alread be loaded by now since it's called onMount.
+    if (finetune_dataset_info_loading || finetune_dataset_info_error) {
+      fine_tuning_dialog?.show()
+      return
+    }
+
+    const keys = Object.keys(finetuning_tags)
+    if (keys.length === 1 && keys[0] === "fine_tune_data") {
+      // Special case: there is only one tag, and it's the fine_tune_data tag.
+      // We don't need to show the dialog, just generate the data.
+      generate_fine_tuning_data_for_tag("fine_tune_data")
+    } else {
+      fine_tuning_dialog?.show()
+    }
   }
 
   function generate_fine_tuning_data_for_tag(tag: string) {
@@ -173,7 +184,7 @@
           is_primary: true,
         },
         {
-          label: "Generate Model Inputs",
+          label: "Generate Without Topics",
           onClick: () => generate_samples(),
           is_primary: false,
         },
@@ -349,7 +360,7 @@
         </div>
         <div class="">
           <p class="">
-            Generate high-quality, diverse training examples for fine-tuning.
+            Generate high-quality and diverse training data for fine-tuning.
           </p>
         </div>
 
