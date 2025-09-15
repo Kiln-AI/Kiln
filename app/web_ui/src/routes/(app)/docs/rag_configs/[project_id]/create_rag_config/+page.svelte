@@ -440,6 +440,16 @@
 <AppPage
   title="Create Search Tool (RAG)"
   subtitle="A configuration for searching your docs, including extracting, chunking and embeddings."
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Search Tools",
+      href: `/docs/rag_configs/${project_id}`,
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">

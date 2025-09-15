@@ -8,6 +8,16 @@
 <AppPage
   title="Create Document Extractor"
   subtitle="A configuration for extracting data from your documents."
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${$page.params.project_id}`,
+    },
+    {
+      label: "Extractors",
+      href: `/docs/extractors/${$page.params.project_id}`,
+    },
+  ]}
 >
   <div class="max-w-[900px]">
     <CreateExtractorForm

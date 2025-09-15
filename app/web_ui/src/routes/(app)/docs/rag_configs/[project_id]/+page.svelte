@@ -72,6 +72,7 @@
     title="Search Tools (RAG)"
     subtitle="Enable tasks to search documents for knowledge."
     no_y_padding={!!(rag_configs && rag_configs.length == 0)}
+    breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={rag_configs && rag_configs.length == 0
       ? []
       : [

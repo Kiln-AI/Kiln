@@ -118,6 +118,12 @@
   title="Document Extractors"
   subtitle="Extract data from your documents"
   limit_max_width
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+  ]}
   no_y_padding={!!(extractor_configs && extractor_configs.length == 0)}
   action_buttons={extractor_configs && extractor_configs.length == 0
     ? []

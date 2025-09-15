@@ -185,6 +185,16 @@
   title="Document"
   subtitle={`${document?.name || document?.original_file.filename}`}
   limit_max_width
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Doc Library",
+      href: `/docs/library/${project_id}`,
+    },
+  ]}
   action_buttons={[
     {
       icon: "/images/download.svg",

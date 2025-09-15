@@ -474,6 +474,7 @@
     title="Document Library"
     subtitle="Add or Browse Documents"
     no_y_padding
+    breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={documents && documents.length == 0
       ? []
       : [

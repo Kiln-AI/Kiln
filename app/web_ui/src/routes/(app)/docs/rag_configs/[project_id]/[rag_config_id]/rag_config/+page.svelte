@@ -140,6 +140,16 @@
   <AppPage
     title="Search Tool (RAG)"
     subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
+    breadcrumbs={[
+      {
+        label: "Docs & Search",
+        href: `/docs/${project_id}`,
+      },
+      {
+        label: "Search Tools",
+        href: `/docs/rag_configs/${project_id}`,
+      },
+    ]}
     action_buttons={[
       {
         label: "Edit",
