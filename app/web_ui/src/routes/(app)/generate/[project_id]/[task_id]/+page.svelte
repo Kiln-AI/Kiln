@@ -745,17 +745,21 @@
               </div>
               <div class="mt-1 2xl:mt-2">
                 {#if current_step == 1}
-                  {#if $saved_state.root_node.sub_topics.length == 0}
-                    <button
-                      class="btn btn-sm btn-outline btn-primary mr-2"
-                      on:click={() =>
-                        root_node_component?.open_generate_subtopics_modal()}
-                    >
-                      Add Topics
-                    </button>
-                  {/if}
+                  {@const has_topics =
+                    $saved_state.root_node.sub_topics.length > 0}
                   <button
-                    class="btn btn-sm btn-primary"
+                    class="btn btn-sm btn-primary mr-2 {has_topics
+                      ? 'btn-outline'
+                      : ''}"
+                    on:click={() =>
+                      root_node_component?.open_generate_subtopics_modal()}
+                  >
+                    Add Topics
+                  </button>
+                  <button
+                    class="btn btn-sm btn-primary {has_topics
+                      ? ''
+                      : 'btn-outline'}"
                     on:click={() => set_current_step(2)}
                   >
                     Next Step
