@@ -787,7 +787,13 @@
                     >
                       Generate Inputs
                     </button>
-                    <button class="btn btn-sm btn-disabled ml-2">
+                    <button
+                      class="btn btn-sm ml-2 btn-primary {leaf_topics_has_inputs >
+                      0
+                        ? 'btn-outline'
+                        : 'btn-disabled'}"
+                      on:click={() => set_current_step(3)}
+                    >
                       Next Step
                     </button>
                   {:else}
