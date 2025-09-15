@@ -5,7 +5,7 @@ from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX, ToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.utils.project_utils import project_from_id
 
@@ -29,7 +29,9 @@ class KilnTaskTool(KilnToolInterface):
         self._task: Task | None = None
         self._run_config: TaskRunConfig | None = None
         self._parameters_schema: Dict[str, Any] | None = None
-        self._tool_id = f"kiln_task::{project_id}::{task_id}::{run_config_id}"
+        self._tool_id = (
+            f"{KILN_TASK_TOOL_ID_PREFIX}{project_id}::{task_id}::{run_config_id}"
+        )
 
     async def id(self) -> ToolId:
         return self._tool_id

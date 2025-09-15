@@ -309,9 +309,7 @@ def connect_tool_servers_api(app: FastAPI):
                 continue
 
             # Generate tool info for each task
-            tool_id = (
-                f"kiln_task::{project.id}::{task.id}::{task.default_run_config_id}"
-            )
+            tool_id = f"{KILN_TASK_TOOL_ID_PREFIX}{project.id}::{task.id}::{task.default_run_config_id}"
 
             description = f"Run the Kiln task '{task.name}'"
             if task.description:
