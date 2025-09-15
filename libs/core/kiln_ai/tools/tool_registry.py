@@ -1,8 +1,10 @@
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
+    KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
+    kiln_task_info_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface
@@ -12,6 +14,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
+from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -60,5 +63,10 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
             )
 
         return MCPServerTool(server, tool_name)
+
+    # Check Kiln Task Tools
+    if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+        task_id, project_id, run_config_id = kiln_task_info_from_tool_id(tool_id)
+        return KilnTaskTool(task_id, project_id, run_config_id)
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")

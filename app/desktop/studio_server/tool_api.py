@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
@@ -255,6 +256,16 @@ def connect_tool_servers_api(app: FastAPI):
                     )
                 )
 
+        # Add task tools
+        task_tools = _get_task_tools_for_project(project)
+        if task_tools:
+            tool_sets.append(
+                ToolSetApiDescription(
+                    set_name="Project Tasks",
+                    tools=task_tools,
+                )
+            )
+
         # Add demo tools if enabled
         if Config.shared().enable_demo_tools:
             tool_sets.append(
@@ -286,6 +297,36 @@ def connect_tool_servers_api(app: FastAPI):
             )
 
         return tool_sets
+
+    def _get_task_tools_for_project(project: Project) -> List[ToolApiDescription]:
+        """Get all tasks in a project that can be used as tools."""
+        task_tools = []
+        for task in project.tasks():
+            if project.id is None or task.id is None:
+                continue
+
+            if task.default_run_config_id is None:
+                continue
+
+            # Generate tool info for each task
+            tool_id = (
+                f"kiln_task::{project.id}::{task.id}::{task.default_run_config_id}"
+            )
+
+            description = f"Run the Kiln task '{task.name}'"
+            if task.description:
+                description += f": {task.description}"
+
+            if task.id is not None:
+                task_tools.append(
+                    ToolApiDescription(
+                        id=tool_id,
+                        name=task.name,
+                        description=description,
+                    )
+                )
+
+        return task_tools
 
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(
