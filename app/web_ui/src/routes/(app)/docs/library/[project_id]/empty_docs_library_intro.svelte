@@ -6,19 +6,19 @@
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
   <Intro
-    title="Add Documents to Your Project"
+    title="Add Documents"
     description_paragraphs={[]}
     action_buttons={[
       {
-        label: "Add Document",
+        label: "Add Documents",
         onClick: action,
         is_primary: true,
       },
     ]}
   >
     <div slot="description">
-      Documents can be used for generating synthetic data (question-answer
-      pairs), or for RAG (retrieval-augmented generation) in your tasks.
+      Documents add knowledge to your project, which can be searched by tasks
+      (RAG).
     </div>
     <div slot="icon">
       <img src="/images/doc_library.svg" alt="Library" class="w-10 h-10" />

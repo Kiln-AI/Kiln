@@ -479,7 +479,7 @@
       ? []
       : [
           {
-            label: "Add Document",
+            label: "Add Documents",
             handler: () => {
               upload_file_dialog?.show()
             },
