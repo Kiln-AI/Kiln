@@ -2259,13 +2259,9 @@ async def test_create_document_content_type_detection(
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
         mock_save.return_value = None
-        mock_run_workflows.return_value = None
 
         files = [("files", (filename, io.BytesIO(test_content), expected_content_type))]
         data = {"names": ["Test File"]}
@@ -2345,12 +2341,8 @@ async def test_create_documents_bulk_without_names(client, mock_project):
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
@@ -2385,12 +2377,8 @@ async def test_create_documents_bulk_mixed_file_types(
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
     ):
         mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
 
         files = [
             ("files", ("document.txt", io.BytesIO(test_text_content), "text/plain")),
