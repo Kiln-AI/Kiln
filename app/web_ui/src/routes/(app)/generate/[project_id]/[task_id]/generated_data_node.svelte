@@ -378,7 +378,7 @@
         </div>
       {/if}
     </td>
-    <td class="text-center py-2">
+    <td class="py-2">
       {#if sample.saved_id}
         <a
           href={`/dataset/${guidance_data.project_id}/${guidance_data.task_id}/${sample.saved_id}/run`}

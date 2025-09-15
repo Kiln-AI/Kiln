@@ -873,9 +873,9 @@
       <div class={is_empty ? "" : "rounded-lg border"}>
         <table class={is_empty ? "" : "table table-fixed"}>
           <thead
-            class="text-center {is_empty
-              ? 'hidden'
-              : ''} {input_generated_count === 0 ? 'hidden-header' : ''}"
+            class="{is_empty ? 'hidden' : ''} {input_generated_count === 0
+              ? 'hidden-header'
+              : ''}"
           >
             <tr>
               <!-- 70 + 110 = 180 (the width of the last two columns)-->
