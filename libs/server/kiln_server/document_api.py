@@ -379,7 +379,7 @@ class PatchExtractorConfigRequest(BaseModel):
 
 
 class UpdateRagConfigRequest(BaseModel):
-    name: str
+    name: FilenameString
     description: str | None = None
 
 
