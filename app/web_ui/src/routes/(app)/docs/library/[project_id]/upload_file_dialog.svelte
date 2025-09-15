@@ -163,7 +163,7 @@
 <Dialog
   bind:this={dialog}
   title={upload_in_progress ? "Processing Documents" : "Add Documents"}
-  sub_subtitle="Add files to your project's document store."
+  sub_subtitle="Add files to your project's document library"
   action_buttons={[
     { label: "Cancel", isCancel: true, action: () => handleCancel() },
     {
