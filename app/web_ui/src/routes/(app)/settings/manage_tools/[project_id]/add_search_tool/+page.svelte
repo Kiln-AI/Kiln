@@ -118,11 +118,11 @@
       selected_providers.push("openai")
       selected_providers.push("openrouter")
     } else if (missing_api_keys === "GeminiOrOpenRouter") {
-      selected_providers.push("gemini")
+      selected_providers.push("gemini_api")
       selected_providers.push("openrouter")
     }
     goto(
-      `/settings/providers?highlight_providers=${selected_providers.join(",")}`,
+      `/settings/providers?required_providers=${selected_providers.join(",")}`,
     )
     return true
   }
