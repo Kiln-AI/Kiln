@@ -772,8 +772,10 @@ class RagWorkflowRunner:
                         await step.count_total_chunks()
                     )
                     # reset the indexing progress to 0 since we go through all the chunks again
-                    self.initial_progress.total_chunks_indexed_count = 0
-                    self.current_progress.total_chunks_indexed_count = 0
+                    if not document_ids:
+                        self.initial_progress.total_chunks_indexed_count = 0
+                        self.current_progress.total_chunks_indexed_count = 0
+
                     yield self.update_workflow_progress(
                         step.stage(),
                         RagStepRunnerProgress(
