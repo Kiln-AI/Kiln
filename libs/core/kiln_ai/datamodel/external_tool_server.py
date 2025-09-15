@@ -1,5 +1,7 @@
+import re
 from enum import Enum
 from typing import Any, Dict
+from urllib.parse import urlparse
 
 from pydantic import Field, PrivateAttr, model_validator
 
@@ -93,31 +95,64 @@ class ExternalToolServer(KilnParentedModel):
         if name == "properties":
             self._process_secrets_from_properties()
 
-    @model_validator(mode="after")
-    def validate_required_fields(self) -> "ExternalToolServer":
-        """Validate that each tool type has the required configuration."""
-        match self.type:
+    # Validation Helpers
+
+    def validate_server_url(self, server_url: str) -> None:
+        """Validate Server URL"""
+        if not isinstance(server_url, str):
+            raise ValueError("Server URL must be a string")
+
+        # Check for leading whitespace in URL
+        if server_url != server_url.lstrip():
+            raise ValueError("Server URL must not have leading whitespace")
+        if urlparse(server_url).scheme not in ["http", "https"]:
+            raise ValueError("Server URL must start with http:// or https://")
+        if not urlparse(server_url).netloc:
+            raise ValueError("Server URL is not a valid URL")
+
+    @classmethod
+    def validate_headers(cls, headers: dict) -> None:
+        """Validate Headers"""
+        if not isinstance(headers, dict):
+            raise ValueError("headers must be a dictionary")
+
+        for key, value in headers.items():
+            if not key:
+                raise ValueError("Header name is required")
+            if not value:
+                raise ValueError("Header value is required")
+
+            # Reject invalid header names and CR/LF in names/values
+            token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+            if not token_re.match(key):
+                raise ValueError(f'Invalid header name: "{key}"')
+            if re.search(r"\r|\n", key) or re.search(r"\r|\n", value):
+                raise ValueError(
+                    "Header names/values must not contain invalid characters"
+                )
+
+    @model_validator(mode="before")
+    def validate_secrets(cls, data: dict) -> dict:
+        """
+        Validate secrets, these needs to be validated before model initlization because secrets will be processed and stripped
+        """
+        type = data.get("type", None)
+        if not type:
+            raise ValueError("type is required")
+
+        properties = data.get("properties", {})
+        if properties is None:
+            raise ValueError("properties is required")
+
+        match type:
             case ToolServerType.remote_mcp:
-                server_url = self.properties.get("server_url", None)
-                if not isinstance(server_url, str):
-                    raise ValueError(
-                        "server_url must be a string for external tools of type 'remote_mcp'"
-                    )
-                if not server_url:
-                    raise ValueError(
-                        "server_url is required to connect to a remote MCP server"
-                    )
+                # Validate headers
+                headers = properties.get("headers", None)
+                if headers is not None:
+                    ExternalToolServer.validate_headers(headers)
 
-                headers = self.properties.get("headers", None)
-                if headers is None:
-                    raise ValueError("headers must be set when type is 'remote_mcp'")
-                if not isinstance(headers, dict):
-                    raise ValueError(
-                        "headers must be a dictionary for external tools of type 'remote_mcp'"
-                    )
-
-                secret_header_keys = self.properties.get("secret_header_keys", None)
-                # Secret header keys are optional, but if they are set, they must be a list of strings
+                # Secret header keys are optional, validate if they are set
+                secret_header_keys = properties.get("secret_header_keys", None)
                 if secret_header_keys is not None:
                     if not isinstance(secret_header_keys, list):
                         raise ValueError(
@@ -125,6 +160,36 @@ class ExternalToolServer(KilnParentedModel):
                         )
                     if not all(isinstance(k, str) for k in secret_header_keys):
                         raise ValueError("secret_header_keys must contain only strings")
+
+                    for key in secret_header_keys:
+                        key = key if isinstance(key, str) else str(key)
+                        if not key:
+                            raise ValueError("Secret header key is required")
+
+                        # Check if the key is in the headers
+                        # if key not in headers:
+                        #     # raise ValueError(
+                        #     #     f"Secret header key {key} is not in the headers"
+                        #     # )
+
+            case ToolServerType.local_mcp:
+                pass
+            case _:
+                raise_exhaustive_enum_error(type)
+
+        return data
+
+    @model_validator(mode="after")
+    def validate_required_fields(self) -> "ExternalToolServer":
+        """Validate that each tool type has the required configuration."""
+        match self.type:
+            case ToolServerType.remote_mcp:
+                server_url = self.properties.get("server_url", None)
+                if not server_url:
+                    raise ValueError(
+                        "Server URL is required to connect to a remote MCP server"
+                    )
+                self.validate_server_url(server_url)
 
             case ToolServerType.local_mcp:
                 command = self.properties.get("command", None)
