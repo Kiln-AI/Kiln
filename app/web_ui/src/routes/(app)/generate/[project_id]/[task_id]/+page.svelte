@@ -787,23 +787,24 @@
                     >
                       Generate Inputs
                     </button>
+                    <button class="btn btn-sm btn-disabled ml-2">
+                      Next Step
+                    </button>
                   {:else}
+                    <button
+                      class="btn btn-sm btn-primary btn-outline"
+                      on:click={() => {
+                        root_node_component?.open_generate_samples_modal(true)
+                      }}
+                    >
+                      Generate Additional Inputs
+                    </button>
                     <button
                       class="btn btn-sm btn-primary"
                       on:click={() => set_current_step(3)}
                     >
                       Next Step
                     </button>
-                    <div class="mt-1 text-sm font-light">
-                      or <button
-                        on:click={() => {
-                          root_node_component?.open_generate_samples_modal(true)
-                        }}
-                        class="link"
-                      >
-                        generate additional inputs on all topics</button
-                      >
-                    </div>
                   {/if}
                 {:else if current_step == 3}
                   {@const no_inputs = input_generated_count === 0}
@@ -817,8 +818,11 @@
                       > to add inputs.
                     </div>
                   {:else if output_gen_complete}
+                    <button class="btn btn-sm btn-disabled">
+                      Generate Outputs
+                    </button>
                     <button
-                      class="btn btn-sm btn-primary"
+                      class="btn btn-sm btn-primary ml-2"
                       on:click={() => set_current_step(4)}
                     >
                       Next Step
@@ -832,8 +836,12 @@
                     >
                       Generate Outputs
                     </button>
+                    <button class="btn btn-sm btn-disabled ml-2">
+                      Next Step
+                    </button>
                   {/if}
                 {:else if current_step == 4}
+                  <!-- error message if no content to save -->
                   {#if samples_to_generate.length > 0}
                     <div class="text-error text-sm my-2">
                       {samples_to_generate.length}
@@ -845,6 +853,13 @@
                         >step 3</button
                       > to generate outputs.
                     </div>
+                  {:else if samples_to_save.length === 0 && already_saved_count === 0}
+                    <div class="text-error text-sm my-2">
+                      No items to save. Return to <button
+                        on:click={() => set_current_step(2)}
+                        class="link">step 2</button
+                      > to generate data.
+                    </div>
                   {/if}
                   {#if samples_to_save.length > 0}
                     <button
@@ -853,14 +868,7 @@
                     >
                       Save All ({samples_to_save.length})
                     </button>
-                  {:else if already_saved_count === 0}
-                    <div class="text-error text-sm my-2">
-                      No items to save. Return to <button
-                        on:click={() => set_current_step(2)}
-                        class="link">step 2</button
-                      > to generate data.
-                    </div>
-                  {:else}
+                  {:else if already_saved_count > 0 && samples_to_generate.length === 0}
                     <div class="flex flex-row justify-center">
                       <Warning
                         warning_message="All items saved into the dataset!"
