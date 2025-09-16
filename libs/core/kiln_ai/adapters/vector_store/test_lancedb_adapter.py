@@ -223,7 +223,6 @@ async def test_add_chunks_with_embeddings_and_similarity_search(
     create_rag_config_factory,
 ):
     """Test adding chunks and similarity search."""
-    print("=== Testing Add Chunks and Similarity Search ===")
 
     rag_config = create_rag_config_factory(knn_vector_store_config, embedding_config)
 
@@ -233,20 +232,10 @@ async def test_add_chunks_with_embeddings_and_similarity_search(
     # Add chunks to the vector store
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
-    print("Chunks added successfully!")
-
     # Test similarity search - search for a vector close to [55.0, 55.0] (NYC area chunk)
     query_vector = [55.0, 55.0]
-    print(f"Searching for similar vectors to {query_vector}")
 
     results = await adapter.search(VectorStoreQuery(query_embedding=query_vector))
-    print(f"Similarity search returned {len(results)} results:")
-
-    for i, result in enumerate(results):
-        print(f"  {i + 1}. Document ID: {result.document_id}")
-        print(f"     Similarity: {result.similarity}")
-        print(f"     Text: {result.chunk_text}")
-        print()
 
     # The closest should be NYC area chunk with vector [55.0, 55.0]
     assert len(results) > 0
@@ -262,7 +251,6 @@ async def test_fts_search(
     create_rag_config_factory,
 ):
     """Test full-text search functionality."""
-    print("=== Testing Full-Text Search ===")
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
     adapter = await vector_store_adapter_for_config(rag_config, fts_vector_store_config)
@@ -270,21 +258,11 @@ async def test_fts_search(
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
     assert isinstance(adapter, LanceDBAdapter)
-    all_chunks = get_all_nodes(adapter)
-    print(f"All chunks: {[chunk.chunk_text for chunk in all_chunks]}")
 
     # Test FTS search for "London"
     query_text = "london"
-    print(f"Searching for text containing: '{query_text}'")
 
     results = await adapter.search(VectorStoreQuery(query_string=query_text))
-    print(f"FTS search returned {len(results)} results:")
-
-    for i, result in enumerate(results):
-        print(f"  {i + 1}. Document ID: {result.document_id}")
-        print(f"     Similarity: {result.similarity}")
-        print(f"     Text: {result.chunk_text}")
-        print()
 
     # Should find both London chunks
     assert len(results) >= 2
@@ -301,8 +279,6 @@ async def test_hybrid_search(
     create_rag_config_factory,
 ):
     """Test hybrid search combining vector and text search."""
-    print("=== Testing Hybrid Search ===")
-
     rag_config = create_rag_config_factory(hybrid_vector_store_config, embedding_config)
 
     adapter = await vector_store_adapter_for_config(
@@ -314,18 +290,10 @@ async def test_hybrid_search(
     # Test hybrid search - combine text "Tokyo" with vector close to Tokyo population vector [1.1, 1.2]
     query_text = "Tokyo"
     query_vector = [1.1, 1.2]
-    print(f"Hybrid search for text: '{query_text}' and vector: {query_vector}")
 
     results = await adapter.search(
         VectorStoreQuery(query_string=query_text, query_embedding=query_vector)
     )
-    print(f"Hybrid search returned {len(results)} results:")
-
-    for i, result in enumerate(results):
-        print(f"  {i + 1}. Document ID: {result.document_id}")
-        print(f"     Similarity: {result.similarity}")
-        print(f"     Text: {result.chunk_text}")
-        print()
 
     # Should find Tokyo-related chunks, with population chunk being highly ranked
     assert len(results) > 0
@@ -340,7 +308,6 @@ async def test_upsert_behavior(
     create_rag_config_factory,
 ):
     """Test that adding the same chunks multiple times works (upsert behavior)."""
-    print("=== Testing Upsert Behavior ===")
 
     rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
 
@@ -349,42 +316,25 @@ async def test_upsert_behavior(
     # Extract first document only
     first_doc = [mock_chunked_documents[0]]
 
-    print("Adding first document...")
     await adapter.add_chunks_with_embeddings(first_doc)
 
     # Search to verify it's there
     results1 = await adapter.search(VectorStoreQuery(query_string="Tokyo"))
-    print(f"After first add: {len(results1)} Tokyo results")
 
     # Add the same document again
-    print("Adding same document again...")
     await adapter.add_chunks_with_embeddings(first_doc)
 
     # Search again - should still find the same chunks (not duplicated)
     results2 = await adapter.search(VectorStoreQuery(query_string="Tokyo"))
-    print(f"After second add: {len(results2)} Tokyo results")
-
-    # Print all results to see what we got
-    for i, result in enumerate(results2):
-        print(f"  {i + 1}. Document ID: {result.document_id}")
-        print(f"     Text: {result.chunk_text}")
-        print()
 
     # Should find Tokyo chunks but behavior may vary based on LanceDB implementation
     assert len(results2) == len(results1)
 
     # Add all documents
-    print("Adding all documents...")
     await adapter.add_chunks_with_embeddings(mock_chunked_documents)
 
     # Final search
     results3 = await adapter.search(VectorStoreQuery(query_string="population"))
-    print(f"After adding all documents: {len(results3)} population results")
-
-    for i, result in enumerate(results3):
-        print(f"  {i + 1}. Document ID: {result.document_id}")
-        print(f"     Text: {result.chunk_text}")
-        print()
 
     assert len(results3) > 0
 

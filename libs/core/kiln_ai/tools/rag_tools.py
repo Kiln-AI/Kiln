@@ -108,7 +108,6 @@ class RagTool(KilnToolInterface):
         }
 
     async def run(self, query: str) -> str:
-        print(f"Running RAG tool with query: {query}")
         _, embedding_adapter = self.embedding
 
         vector_store_adapter = await self.vector_store()
@@ -151,5 +150,4 @@ class RagTool(KilnToolInterface):
             ]
         )
 
-        print(f"RAG tool result: {result}")
         return result
