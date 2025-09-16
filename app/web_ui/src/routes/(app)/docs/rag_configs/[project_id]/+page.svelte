@@ -67,16 +67,18 @@
   }
 </script>
 
-<div class="max-w-[900px]">
+<div class="max-w-[1400px]">
   <AppPage
     title="Search Tools (RAG)"
-    subtitle="Enable tasks to search your documents for knowledge."
+    subtitle="Enable tasks to search documents for knowledge."
     no_y_padding={!!(rag_configs && rag_configs.length == 0)}
+    breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={rag_configs && rag_configs.length == 0
       ? []
       : [
           {
             label: "Add Search Tool",
+            primary: true,
             href: `/docs/rag_configs/${project_id}/create_rag_config`,
           },
         ]}
@@ -96,7 +98,7 @@
             <thead>
               <tr>
                 <th class="w-auto">Details</th>
-                <th class="w-[400px]">Status</th>
+                <th class="w-[300px]">Processing Status</th>
               </tr>
             </thead>
             <tbody>

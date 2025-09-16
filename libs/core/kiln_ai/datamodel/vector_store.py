@@ -46,6 +46,10 @@ class VectorStoreConfig(KilnParentedModel):
     name: FilenameString = Field(
         description="A name for your own reference to identify the vector store config.",
     )
+    description: str | None = Field(
+        description="A description for your own reference.",
+        default=None,
+    )
     store_type: VectorStoreType = Field(
         description="The type of vector store to use.",
     )

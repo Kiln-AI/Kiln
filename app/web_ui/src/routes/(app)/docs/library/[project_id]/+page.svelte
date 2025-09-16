@@ -18,7 +18,7 @@
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
   // TODO: move to shared folder
-  import TagDropdown from "../../../run/tag_dropdown.svelte"
+  import TagDropdown from "../../../../../lib/ui/tag_dropdown.svelte"
 
   let upload_file_dialog: UploadFileDialog | null = null
 
@@ -469,191 +469,194 @@
   }
 </script>
 
-<AppPage
-  title="Document Library"
-  subtitle="Add or Browse Documents"
-  no_y_padding
-  action_buttons={documents && documents.length == 0
-    ? []
-    : [
-        {
-          label: "Add Document",
-          handler: () => {
-            upload_file_dialog?.show()
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Document Library"
+    subtitle="Add or Browse Documents"
+    no_y_padding
+    breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
+    action_buttons={documents && documents.length == 0
+      ? []
+      : [
+          {
+            label: "Add Documents",
+            handler: () => {
+              upload_file_dialog?.show()
+            },
+            primary: true,
           },
-          primary: true,
-        },
-      ]}
->
-  {#if loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if documents && documents.length == 0}
-    <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyDocsLibraryIntro action={() => upload_file_dialog?.show()} />
-    </div>
-  {:else if documents}
-    <div class="mb-4">
-      <div
-        class="flex flex-row items-center justify-end py-2 gap-3 {select_mode
-          ? 'sticky top-0 z-10 backdrop-blur'
-          : ''}"
-      >
-        {#if select_mode}
-          <div class="font-light text-sm">
-            {selected_documents.size} selected
-          </div>
-          {#if selected_documents.size > 0}
-            <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class="btn btn-mid !px-3">
-                <img alt="tags" src="/images/tag.svg" class="w-5 h-5" />
-              </div>
-              <ul
-                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-              >
-                <li>
-                  <button tabindex="0" on:click={() => show_add_tags_modal()}>
-                    Add Tags
-                  </button>
-                </li>
-                <li>
-                  <button
-                    tabindex="0"
-                    on:click={() => show_remove_tags_modal()}
-                  >
-                    Remove Tags
-                  </button>
-                </li>
-              </ul>
+        ]}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if documents && documents.length == 0}
+      <div class="flex flex-col items-center justify-center min-h-[75vh]">
+        <EmptyDocsLibraryIntro action={() => upload_file_dialog?.show()} />
+      </div>
+    {:else if documents}
+      <div class="mb-4">
+        <div
+          class="flex flex-row items-center justify-end py-2 gap-3 {select_mode
+            ? 'sticky top-0 z-10 backdrop-blur'
+            : ''}"
+        >
+          {#if select_mode}
+            <div class="font-light text-sm">
+              {selected_documents.size} selected
             </div>
+            {#if selected_documents.size > 0}
+              <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-mid !px-3">
+                  <img alt="tags" src="/images/tag.svg" class="w-5 h-5" />
+                </div>
+                <ul
+                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                >
+                  <li>
+                    <button tabindex="0" on:click={() => show_add_tags_modal()}>
+                      Add Tags
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      tabindex="0"
+                      on:click={() => show_remove_tags_modal()}
+                    >
+                      Remove Tags
+                    </button>
+                  </li>
+                </ul>
+              </div>
+              <button
+                class="btn btn-mid !px-3"
+                on:click={() => show_delete_modal()}
+              >
+                <img alt="delete" src="/images/delete.svg" class="w-5 h-5" />
+              </button>
+            {/if}
+            <button class="btn btn-mid" on:click={() => (select_mode = false)}>
+              Cancel Selection
+            </button>
+          {:else}
+            <button class="btn btn-mid" on:click={() => (select_mode = true)}>
+              Select
+            </button>
             <button
               class="btn btn-mid !px-3"
-              on:click={() => show_delete_modal()}
+              on:click={() => filter_tags_dialog?.show()}
             >
-              <img alt="delete" src="/images/delete.svg" class="w-5 h-5" />
+              <img alt="filter" src="/images/filter.svg" class="w-5 h-5" />
+              {#if filter_tags.length > 0}
+                <span class="badge badge-primary badge-sm"
+                  >{filter_tags.length}</span
+                >
+              {/if}
             </button>
           {/if}
-          <button class="btn btn-mid" on:click={() => (select_mode = false)}>
-            Cancel Selection
-          </button>
-        {:else}
-          <button class="btn btn-mid" on:click={() => (select_mode = true)}>
-            Select
-          </button>
-          <button
-            class="btn btn-mid !px-3"
-            on:click={() => filter_tags_dialog?.show()}
-          >
-            <img alt="filter" src="/images/filter.svg" class="w-5 h-5" />
-            {#if filter_tags.length > 0}
-              <span class="badge badge-primary badge-sm"
-                >{filter_tags.length}</span
-              >
-            {/if}
-          </button>
-        {/if}
-      </div>
-      <div class="overflow-x-auto rounded-lg border">
-        <table class="table">
-          <thead>
-            <tr>
-              {#if select_mode}
-                <th>
-                  {#key select_document}
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-sm mt-1"
-                      checked={select_document === "all"}
-                      indeterminate={select_document === "some"}
-                      on:change={(e) => select_all_clicked(e)}
-                    />
-                  {/key}
-                </th>
-              {/if}
-              {#each columns as { key, label }}
-                <th
-                  on:click={() => handleSort(key)}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  {label}
-                  {sortColumn === key
-                    ? sortDirection === "asc"
-                      ? "▲"
-                      : "▼"
-                    : ""}
-                </th>
-              {/each}
-            </tr>
-          </thead>
-          <tbody>
-            {#each (filtered_documents || []).slice((page_number - 1) * page_size, page_number * page_size) as document}
-              <tr
-                class="{select_mode
-                  ? ''
-                  : 'hover'} cursor-pointer {select_mode &&
-                document.id &&
-                selected_documents.has(document.id)
-                  ? 'bg-base-200'
-                  : ''}"
-                on:click={(event) => {
-                  row_clicked(document.id || null, event)
-                }}
-              >
+        </div>
+        <div class="overflow-x-auto rounded-lg border">
+          <table class="table">
+            <thead>
+              <tr>
                 {#if select_mode}
-                  <td class="w-12">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-sm"
-                      checked={(document.id &&
-                        selected_documents.has(document.id)) ||
-                        false}
-                    />
-                  </td>
+                  <th>
+                    {#key select_document}
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm mt-1"
+                        checked={select_document === "all"}
+                        indeterminate={select_document === "some"}
+                        on:change={(e) => select_all_clicked(e)}
+                      />
+                    {/key}
+                  </th>
                 {/if}
-                <td>
-                  <div class="flex flex-row items-center gap-2">
-                    <FileIcon kind={document.kind} />
-                    <span class="text-sm">
-                      {mime_type_to_string(document.original_file.mime_type)}
-                    </span>
-                  </div>
-                </td>
-                <td>{document.name}</td>
-                <td>{formatSize(document.original_file.size)}</td>
-                <td>{formatDate(document.created_at)}</td>
+                {#each columns as { key, label }}
+                  <th
+                    on:click={() => handleSort(key)}
+                    class="hover:bg-base-200 cursor-pointer"
+                  >
+                    {label}
+                    {sortColumn === key
+                      ? sortDirection === "asc"
+                        ? "▲"
+                        : "▼"
+                      : ""}
+                  </th>
+                {/each}
               </tr>
-            {/each}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {#each (filtered_documents || []).slice((page_number - 1) * page_size, page_number * page_size) as document}
+                <tr
+                  class="{select_mode
+                    ? ''
+                    : 'hover'} cursor-pointer {select_mode &&
+                  document.id &&
+                  selected_documents.has(document.id)
+                    ? 'bg-base-200'
+                    : ''}"
+                  on:click={(event) => {
+                    row_clicked(document.id || null, event)
+                  }}
+                >
+                  {#if select_mode}
+                    <td class="w-12">
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={(document.id &&
+                          selected_documents.has(document.id)) ||
+                          false}
+                      />
+                    </td>
+                  {/if}
+                  <td>
+                    <div class="flex flex-row items-center gap-2">
+                      <FileIcon kind={document.kind} />
+                      <span class="text-sm">
+                        {mime_type_to_string(document.original_file.mime_type)}
+                      </span>
+                    </div>
+                  </td>
+                  <td>{document.name}</td>
+                  <td>{formatSize(document.original_file.size)}</td>
+                  <td>{formatDate(document.created_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
 
-    {#if page_number > 1 || (filtered_documents && filtered_documents.length > page_size)}
-      <div class="flex flex-row justify-center mt-10">
-        <div class="join">
-          {#each Array.from({ length: Math.ceil(documents.length / page_size) }, (_, i) => i + 1) as page}
-            <button
-              class="join-item btn {page_number == page ? 'btn-active' : ''}"
-              on:click={() => updateURL({ page: page })}
-            >
-              {page}
-            </button>
-          {/each}
+      {#if page_number > 1 || (filtered_documents && filtered_documents.length > page_size)}
+        <div class="flex flex-row justify-center mt-10">
+          <div class="join">
+            {#each Array.from({ length: Math.ceil(documents.length / page_size) }, (_, i) => i + 1) as page}
+              <button
+                class="join-item btn {page_number == page ? 'btn-active' : ''}"
+                on:click={() => updateURL({ page: page })}
+              >
+                {page}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    {:else if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Documents</div>
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
     {/if}
-  {:else if error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Documents</div>
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
-      </div>
-    </div>
-  {/if}
-</AppPage>
+  </AppPage>
+</div>
 
 <Dialog
   bind:this={filter_tags_dialog}
@@ -758,6 +761,7 @@
             current_tag = ""
           }}
           on_escape={() => (show_add_tag_dropdown = false)}
+          example_tag_set="doc"
           focus_on_mount={true}
         />
         <div class="flex-none">

@@ -164,40 +164,24 @@ class ExtractorConfig(KilnParentedModel):
     def validate_properties(
         cls, properties: dict[str, Any], info: ValidationInfo
     ) -> dict[str, Any]:
-        output_format = info.data.get("output_format", OutputFormat.MARKDOWN)
-
-        def get_property(key: str, default: str) -> str:
+        def get_property(key: str) -> str:
             value = properties.get(key)
-            if value is None or value == "":
-                return default
-            if not isinstance(value, str):
+            if value is None or value == "" or not isinstance(value, str):
                 raise ValueError(f"Prompt for {key} must be a string")
             return value
 
         return {
             "prompt_document": get_property(
                 "prompt_document",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.DOCUMENT, output_format=output_format
-                ),
             ),
             "prompt_image": get_property(
                 "prompt_image",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.IMAGE, output_format=output_format
-                ),
             ),
             "prompt_video": get_property(
                 "prompt_video",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.VIDEO, output_format=output_format
-                ),
             ),
             "prompt_audio": get_property(
                 "prompt_audio",
-                default=ExtractionPromptBuilder.prompt_for_kind(
-                    kind=Kind.AUDIO, output_format=output_format
-                ),
             ),
         }
 
@@ -313,62 +297,6 @@ class Document(
 
     def extractions(self, readonly: bool = False) -> list[Extraction]:
         return super().extractions(readonly=readonly)  # type: ignore
-
-
-class ExtractionPromptBuilder:
-    @classmethod
-    def prompt_document(cls, output_format: OutputFormat) -> str:
-        return f"""Transcribe the document into {output_format.value}.
-
-If the document contains images and figures, describe them in the output. For example, if the
-document contains an image, describe it in the output. If the document contains a table, format it 
-appropriately and add a sentence describing it as a whole.
-
-Format the output as valid {output_format.value}.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the document:'.
-"""
-
-    @classmethod
-    def prompt_image(cls, output_format: OutputFormat) -> str:
-        return f"""Describe the image in {output_format.value}.
-
-If the image contains text, transcribe it into {output_format.value}.
-
-Do NOT include any prefatory text such as 'Here is the description of the image:'.
-"""
-
-    @classmethod
-    def prompt_video(cls, output_format: OutputFormat) -> str:
-        return f"""Describe what happens in the video in {output_format.value}.
-
-Take into account the audio as well as the visual content. Your transcription must chronologically
-describe the events in the video and transcribe any speech.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the video:'.
-"""
-
-    @classmethod
-    def prompt_audio(cls, output_format: OutputFormat) -> str:
-        return f"""Transcribe the audio into {output_format.value}.
-If the audio contains speech, transcribe it into {output_format.value}.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the audio:'.
-"""
-
-    @classmethod
-    def prompt_for_kind(cls, kind: Kind, output_format: OutputFormat) -> str:
-        match kind:
-            case Kind.DOCUMENT:
-                return cls.prompt_document(output_format)
-            case Kind.IMAGE:
-                return cls.prompt_image(output_format)
-            case Kind.VIDEO:
-                return cls.prompt_video(output_format)
-            case Kind.AUDIO:
-                return cls.prompt_audio(output_format)
-            case _:
-                raise ValueError(f"Cannot build prompt for unknown kind: '{kind}'")
 
 
 def get_kind_from_mime_type(mime_type: str) -> Kind | None:

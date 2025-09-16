@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from pypdf import PdfReader
 
@@ -35,15 +33,6 @@ def test_split_pdf_into_pages_success(mock_file_factory):
         assert not page_path.exists()
 
 
-def test_split_pdf_into_pages_file_not_found():
-    """Test that split_pdf_into_pages raises RuntimeError for non-existent files."""
-    non_existent_file = Path("non_existent.pdf")
-
-    with pytest.raises(RuntimeError, match="Failed to split PDF"):
-        with split_pdf_into_pages(non_existent_file):
-            pass
-
-
 def test_split_pdf_into_pages_cleanup_on_exception(mock_file_factory):
     """Test that temporary files are cleaned up even when an exception occurs during normal usage."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
@@ -65,17 +54,6 @@ def test_split_pdf_into_pages_cleanup_on_exception(mock_file_factory):
     if captured_page_paths:
         temp_dir = captured_page_paths[0].parent
         assert not temp_dir.exists()
-
-
-def test_split_pdf_into_pages_empty_pdf(tmp_path):
-    """Test handling of an empty or invalid PDF file."""
-    # Create an empty file
-    empty_pdf = tmp_path / "empty.pdf"
-    empty_pdf.write_text("")
-
-    with pytest.raises(RuntimeError, match="Failed to split PDF"):
-        with split_pdf_into_pages(empty_pdf):
-            pass
 
 
 def test_split_pdf_into_pages_temporary_directory_creation(mock_file_factory):

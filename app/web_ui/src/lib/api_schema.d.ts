@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Documents Bulk */
+        post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents": {
         parameters: {
             query?: never;
@@ -379,8 +396,7 @@ export interface paths {
         /** Get Documents */
         get: operations["get_documents_api_projects__project_id__documents_get"];
         put?: never;
-        /** Create Document */
-        post: operations["create_document_api_projects__project_id__documents_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -402,7 +418,8 @@ export interface paths {
         delete: operations["delete_document_api_projects__project_id__documents__document_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Document */
+        patch: operations["patch_document_api_projects__project_id__documents__document_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/documents/edit_tags": {
@@ -679,6 +696,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_vector_store_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Vector Store Config */
+        post: operations["create_vector_store_config_api_projects__project_id__create_vector_store_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/vector_store_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vector Store Configs */
+        get: operations["get_vector_store_configs_api_projects__project_id__vector_store_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/rag_configs/create_rag_config": {
         parameters: {
             query?: never;
@@ -758,6 +809,26 @@ export interface paths {
         put?: never;
         /** Get Rag Config Progress */
         post: operations["get_rag_config_progress_api_projects__project_id__rag_configs_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Rag Config
+         * @description Search the vector store associated with a RAG config.
+         */
+        post: operations["search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1609,23 +1680,12 @@ export interface components {
             /** Splits */
             splits?: string | null;
         };
-        /** Body_create_document_api_projects__project_id__documents_post */
-        Body_create_document_api_projects__project_id__documents_post: {
-            /**
-             * File
-             * Format: binary
-             */
-            file: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-            /**
-             * Description
-             * @default
-             */
-            description: string;
+        /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
+        Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+            /** Files */
+            files?: string[] | null;
+            /** Names */
+            names?: string[] | null;
         };
         /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
         Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
@@ -1644,6 +1704,13 @@ export interface components {
             add_tags?: string[] | null;
             /** Remove Tags */
             remove_tags?: string[] | null;
+        };
+        /** BulkCreateDocumentsResponse */
+        BulkCreateDocumentsResponse: {
+            /** Created Documents */
+            created_documents: components["schemas"]["Document"][];
+            /** Failed Files */
+            failed_files: string[];
         };
         /** BulkUploadResponse */
         BulkUploadResponse: {
@@ -1897,6 +1964,11 @@ export interface components {
              * @description The embedding config to use for the RAG workflow.
              */
             embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The vector store config to use for the RAG workflow.
+             */
+            vector_store_config_id: string | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -1905,6 +1977,25 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /** CreateVectorStoreConfigRequest */
+        CreateVectorStoreConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the vector store config
+             */
+            description?: string | null;
+            /** @description The type of vector store to use */
+            store_type: components["schemas"]["VectorStoreType"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -2260,7 +2351,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -3060,6 +3151,24 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** PatchDocumentRequest */
+        PatchDocumentRequest: {
+            /**
+             * Name
+             * @description A name for this document.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the document
+             */
+            description?: string | null;
+            /**
+             * Tags
+             * @description Tags for the document
+             */
+            tags?: string[] | null;
+        };
         /** PatchExtractorConfigRequest */
         PatchExtractorConfigRequest: {
             /**
@@ -3340,6 +3449,7 @@ export interface components {
             extractor_config: components["schemas"]["ExtractorConfig"];
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
+            vector_store_config: components["schemas"]["VectorStoreConfig"];
         };
         /** RagProgress */
         RagProgress: {
@@ -3420,6 +3530,22 @@ export interface components {
              * @description A list of log messages to display to the user
              */
             logs?: components["schemas"]["LogMessage"][] | null;
+        };
+        /** RagSearchRequest */
+        RagSearchRequest: {
+            /**
+             * Query
+             * @description The search query text
+             */
+            query: string;
+        };
+        /** RagSearchResponse */
+        RagSearchResponse: {
+            /**
+             * Results
+             * @description The search results
+             */
+            results: components["schemas"]["SearchResult"][];
         };
         /** RatingOption */
         RatingOption: {
@@ -3555,6 +3681,29 @@ export interface components {
         ScoreSummary: {
             /** Mean Score */
             mean_score: number;
+        };
+        /** SearchResult */
+        SearchResult: {
+            /**
+             * Document Id
+             * @description The id of the Kiln document.
+             */
+            document_id: string;
+            /**
+             * Chunk Idx
+             * @description The index of the chunk.
+             */
+            chunk_idx: number;
+            /**
+             * Chunk Text
+             * @description The text of the chunk.
+             */
+            chunk_text: string;
+            /**
+             * Similarity
+             * @description The score of the chunk, which depends on the similarity metric used.
+             */
+            similarity: number | null;
         };
         /**
          * StructuredOutputMode
@@ -4030,6 +4179,51 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VectorStoreConfig */
+        VectorStoreConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for your own reference to identify the vector store config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /** @description The type of vector store to use. */
+            store_type: components["schemas"]["VectorStoreType"];
+            /**
+             * Properties
+             * @description The properties of the vector store config, specific to the selected store_type.
+             */
+            properties: {
+                [key: string]: string | number | null;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * VectorStoreType
+         * @enum {string}
+         */
+        VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
     };
     responses: never;
     parameters: never;
@@ -4897,6 +5091,41 @@ export interface operations {
             };
         };
     };
+    create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkCreateDocumentsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_documents_api_projects__project_id__documents_get: {
         parameters: {
             query?: never;
@@ -4915,41 +5144,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_document_api_projects__project_id__documents_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_create_document_api_projects__project_id__documents_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Validation Error */
@@ -5016,6 +5210,42 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_document_api_projects__project_id__documents__document_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Validation Error */
@@ -5635,6 +5865,72 @@ export interface operations {
             };
         };
     };
+    create_vector_store_config_api_projects__project_id__create_vector_store_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateVectorStoreConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vector_store_configs_api_projects__project_id__vector_store_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post: {
         parameters: {
             query?: never;
@@ -5789,6 +6085,42 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["RagProgress"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSearchResponse"];
                 };
             };
             /** @description Validation Error */

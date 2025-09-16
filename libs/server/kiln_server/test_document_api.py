@@ -3,13 +3,13 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import anyio
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -187,80 +187,6 @@ def check_attachment_saved(document: Document, test_content: bytes):
     assert attachment_path.exists()
     with open(attachment_path, "rb") as f:
         assert f.read() == test_content
-
-
-@pytest.mark.asyncio
-async def test_create_document_success(client, mock_project):
-    project = mock_project
-    test_content = b"test file content"
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
-    ):
-        mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
-
-        files = {"file": ("test.txt", io.BytesIO(test_content), "text/plain")}
-        data = {"name": "Test Document", "description": "Test description"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["id"] is not None
-    assert result["name"] == "Test Document"
-    assert result["description"] == "Test description"
-    assert result["kind"] == "document"
-    assert result["original_file"]["filename"] == "test.txt"
-    assert result["original_file"]["mime_type"] == "text/plain"
-    assert result["original_file"]["size"] == len(test_content)
-
-    # check the attachment was saved with the document
-    document = Document.from_id_and_parent_path(result["id"], project.path)
-    assert document is not None
-    check_attachment_saved(document, test_content)
-
-    # check that we triggered the workflows
-    mock_run_workflows.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_create_document_image_kind(client, mock_project, mock_file_factory):
-    project = mock_project
-    test_image_file = mock_file_factory(MockFileFactoryMimeType.JPEG)
-    test_image_file_bytes = Path(test_image_file).read_bytes()
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
-    ):
-        mock_project_from_id.return_value = project
-        mock_run_workflows.return_value = None
-
-        files = {"file": ("image.jpg", io.BytesIO(test_image_file_bytes), "image/jpeg")}
-        data = {"name": "Test Image", "description": "Test image"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["kind"] == "image"
-
-    # check the attachment was saved with the document
-    document = Document.from_id_and_parent_path(result["id"], project.path)
-    assert document is not None
-    check_attachment_saved(document, test_image_file_bytes)
-
-    # check that we triggered the workflows
-    mock_run_workflows.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -607,84 +533,6 @@ async def test_delete_documents_success(client, mock_document):
     assert document.id in result["message"]
 
 
-@pytest.mark.parametrize(
-    "filename,expected_content_type,expected_kind",
-    [
-        ("document.pdf", "application/pdf", "document"),
-        ("document.txt", "text/plain", "document"),
-        ("document.md", "text/markdown", "document"),
-        ("document.html", "text/html", "document"),
-        ("image.png", "image/png", "image"),
-        ("image.jpeg", "image/jpeg", "image"),
-        ("video.mp4", "video/mp4", "video"),
-        ("video.mov", "video/quicktime", "video"),
-        ("audio.mp3", "audio/mpeg", "audio"),
-        ("audio.wav", "audio/wav", "audio"),
-        ("audio.ogg", "audio/ogg", "audio"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_create_document_content_type_detection(
-    client, mock_project, filename, expected_content_type, expected_kind
-):
-    project = mock_project
-    test_content = b"test content"
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-        patch(
-            "kiln_server.document_api.run_all_extractors_and_rag_workflows_no_wait"
-        ) as mock_run_workflows,
-    ):
-        mock_project_from_id.return_value = project
-        mock_save.return_value = None
-        mock_run_workflows.return_value = None
-
-        files = {"file": (filename, io.BytesIO(test_content), expected_content_type)}
-        data = {"name": "Test File", "description": "Test description"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 200, response.text
-    result = response.json()
-    assert result["kind"] == expected_kind
-    assert result["original_file"]["mime_type"] == expected_content_type
-
-
-@pytest.mark.asyncio
-async def test_create_document_filetype_not_supported(
-    client, mock_project, mock_file_factory
-):
-    project = mock_project
-    test_content = await anyio.Path(
-        mock_file_factory(MockFileFactoryMimeType.CSV)
-    ).read_bytes()
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-    ):
-        mock_project_from_id.return_value = project
-
-        files = {
-            "file": (
-                "file.csv",
-                io.BytesIO(test_content),
-                "text/csv",
-            )
-        }
-        data = {"name": "Test File", "description": "Test description"}
-
-        response = client.post(
-            f"/api/projects/{project.id}/documents", files=files, data=data
-        )
-
-    assert response.status_code == 422, response.text
-    assert "Unsupported mime type: text/csv" in response.json()["message"]
-
-
 # test for create chunker config
 @pytest.mark.asyncio
 async def test_create_chunker_config_success(client, mock_project):
@@ -970,12 +818,82 @@ async def test_get_embedding_configs_no_embedding_configs(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_create_vector_store_config_success(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Test Vector Store",
+                "description": "Test vector store description",
+                "store_type": "lancedb_fts",
+                "properties": {
+                    "similarity_top_k": 10,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test Vector Store"
+    assert result["description"] == "Test vector store description"
+    assert result["store_type"] == "lancedb_fts"
+    assert result["properties"]["similarity_top_k"] == 10
+    assert result["properties"]["overfetch_factor"] == 1
+    assert result["properties"]["vector_column_name"] == "vector"
+    assert result["properties"]["text_key"] == "text"
+    assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+@pytest.mark.asyncio
+async def test_create_vector_store_config_with_hybrid_type(client, mock_project):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_vector_store_config",
+            json={
+                "name": "Test Hybrid Vector Store",
+                "store_type": "lancedb_hybrid",
+                "properties": {
+                    "similarity_top_k": 5,
+                    "nprobes": 20,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["store_type"] == "lancedb_hybrid"
+    assert result["properties"]["nprobes"] == 20
+
+    # these are set by default
+    assert result["properties"]["overfetch_factor"] == 1
+    assert result["properties"]["vector_column_name"] == "vector"
+    assert result["properties"]["text_key"] == "text"
+    assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+@pytest.mark.asyncio
+async def test_get_vector_store_configs(client, mock_project, mock_vector_store_config):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/vector_store_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 1
+    assert result[0]["name"] == "Test Vector Store"
+
+
+@pytest.mark.asyncio
 async def test_create_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
 ):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -989,6 +907,7 @@ async def test_create_rag_config_success(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
             },
         )
 
@@ -1000,11 +919,17 @@ async def test_create_rag_config_success(
     assert result["extractor_config_id"] is not None
     assert result["chunker_config_id"] is not None
     assert result["embedding_config_id"] is not None
+    assert result["vector_store_config_id"] is not None
 
 
 @pytest.mark.parametrize(
     "missing_config_type",
-    ["extractor_config_id", "chunker_config_id", "embedding_config_id"],
+    [
+        "extractor_config_id",
+        "chunker_config_id",
+        "embedding_config_id",
+        "vector_store_config_id",
+    ],
 )
 @pytest.mark.asyncio
 async def test_create_rag_config_missing_config(
@@ -1013,6 +938,7 @@ async def test_create_rag_config_missing_config(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
+    mock_vector_store_config,
     missing_config_type,
 ):
     project = mock_project
@@ -1028,6 +954,7 @@ async def test_create_rag_config_missing_config(
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
+            "vector_store_config_id": mock_vector_store_config.id,
         }
 
         # set one of the configs to a fake id - where we expect the error to be thrown
@@ -1163,6 +1090,62 @@ async def test_get_rag_config_not_found(client, mock_project):
 
     assert response.status_code == 404, response.text
     assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_update_rag_config_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test successful update of RAG config"""
+    # Create a rag config
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Original RAG Config",
+        description="Original description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_rag_from_id.return_value = rag_config
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}",
+            json={
+                "name": "Updated RAG Config",
+                "description": "Updated description",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["name"] == "Updated RAG Config"
+    assert result["description"] == "Updated description"
+    assert result["id"] == rag_config.id
+
+    # Verify the config was updated
+    assert rag_config.name == "Updated RAG Config"
+    assert rag_config.description == "Updated description"
+
+    # Load from disk and verify the change
+    assert rag_config.path is not None
+    rag_config_from_disk = RagConfig.load_from_file(rag_config.path)
+    assert rag_config_from_disk.name == "Updated RAG Config"
+    assert rag_config_from_disk.description == "Updated description"
 
 
 @pytest.mark.asyncio
@@ -1796,6 +1779,775 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
     assert data_lines[0] == "data: complete"
 
 
+# Tests for RAG search endpoint
+
+
+@pytest.fixture
+def mock_rag_config(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+    return rag_config
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_fts_success(client, mock_project, mock_rag_config):
+    """Test successful FTS search in RAG config"""
+    search_query = "test search query"
+    mock_search_results = [
+        {
+            "document_id": "doc_001",
+            "chunk_text": "This is a test document chunk containing the search query",
+            "similarity": None,
+        },
+        {
+            "document_id": "doc_002",
+            "chunk_text": "Another test chunk with relevant content",
+            "similarity": None,
+        },
+    ]
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = [
+            SearchResult(
+                chunk_idx=0,
+                document_id=result["document_id"],
+                chunk_text=result["chunk_text"],
+                similarity=result["similarity"],
+            )
+            for result in mock_search_results
+        ]
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 2
+    assert result["results"][0]["document_id"] == "doc_001"
+    assert (
+        result["results"][0]["chunk_text"]
+        == "This is a test document chunk containing the search query"
+    )
+    assert result["results"][0]["similarity"] is None
+    assert result["results"][1]["document_id"] == "doc_002"
+
+    # Verify search was called with correct parameters
+    mock_adapter.search.assert_called_once()
+    search_call = mock_adapter.search.call_args[0][0]
+    assert search_call.query_string == search_query
+    assert search_call.query_embedding is None
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_vector_success(
+    client, mock_project, mock_rag_config, mock_vector_store_config
+):
+    """Test successful vector search in RAG config"""
+    # Update vector store config to use vector search
+    mock_vector_store_config.properties.update(
+        {
+            "nprobes": 10,
+        }
+    )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+    mock_vector_store_config.save_to_file()
+
+    search_query = "test search query"
+    mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
+    mock_search_results = [
+        {
+            "document_id": "doc_001",
+            "chunk_text": "This is a test document chunk",
+            "similarity": 0.95,
+        },
+    ]
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+        patch(
+            "kiln_server.document_api.embedding_adapter_from_type"
+        ) as mock_embedding_adapter_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock embedding adapter
+        mock_embedding_adapter = AsyncMock()
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.embeddings = [MagicMock(vector=mock_embedding_vector)]
+        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
+        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = [
+            SearchResult(
+                chunk_idx=0,
+                document_id=result["document_id"],
+                chunk_text=result["chunk_text"],
+                similarity=result["similarity"],
+            )
+            for result in mock_search_results
+        ]
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert result["results"][0]["document_id"] == "doc_001"
+    assert result["results"][0]["similarity"] == 0.95
+
+    # Verify embedding generation was called
+    mock_embedding_adapter.generate_embeddings.assert_called_once_with([search_query])
+
+    # Verify search was called with correct parameters
+    mock_adapter.search.assert_called_once()
+    search_call = mock_adapter.search.call_args[0][0]
+    assert search_call.query_string is None
+    assert search_call.query_embedding == mock_embedding_vector
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_hybrid_success(
+    client, mock_project, mock_rag_config, mock_vector_store_config
+):
+    """Test successful hybrid search in RAG config"""
+    # Update vector store config to use hybrid search
+    mock_vector_store_config.properties.update(
+        {
+            "nprobes": 10,
+        }
+    )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_HYBRID
+    mock_vector_store_config.save_to_file()
+
+    search_query = "test search query"
+    mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
+    mock_search_results = [
+        {
+            "document_id": "doc_001",
+            "chunk_text": "This is a test document chunk",
+            "similarity": 0.88,
+        },
+    ]
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+        patch(
+            "kiln_server.document_api.embedding_adapter_from_type"
+        ) as mock_embedding_adapter_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock embedding adapter
+        mock_embedding_adapter = AsyncMock()
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.embeddings = [MagicMock(vector=mock_embedding_vector)]
+        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
+        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = [
+            SearchResult(
+                chunk_idx=0,
+                document_id=result["document_id"],
+                chunk_text=result["chunk_text"],
+                similarity=result["similarity"],
+            )
+            for result in mock_search_results
+        ]
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert result["results"][0]["document_id"] == "doc_001"
+    assert result["results"][0]["similarity"] == 0.88
+
+    # Verify embedding generation was called
+    mock_embedding_adapter.generate_embeddings.assert_called_once_with([search_query])
+
+    # Verify search was called with correct parameters
+    mock_adapter.search.assert_called_once()
+    search_call = mock_adapter.search.call_args[0][0]
+    assert search_call.query_string == search_query
+    assert search_call.query_embedding == mock_embedding_vector
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_not_found(client, mock_project):
+    """Test search with non-existent RAG config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/fake_id/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 404, response.text
+    assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_vector_store_not_found(
+    client, mock_project, mock_rag_config
+):
+    """Test search when vector store config is missing"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_vector_store_from_id.return_value = None  # Simulate missing config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Vector store config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_embedding_config_not_found(
+    client, mock_project, mock_rag_config
+):
+    """Test search when embedding config is missing"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_embedding_from_id.return_value = None  # Simulate missing config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Embedding config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_embedding_generation_failure(
+    client, mock_project, mock_rag_config, mock_vector_store_config
+):
+    """Test search when embedding generation fails"""
+    # Update vector store config to use vector search
+    mock_vector_store_config.properties.update(
+        {
+            "nprobes": 10,
+        }
+    )
+    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+    mock_vector_store_config.save_to_file()
+
+    search_query = "test search query"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+        patch(
+            "kiln_server.document_api.embedding_adapter_from_type"
+        ) as mock_embedding_adapter_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock embedding adapter to return empty embeddings
+        mock_embedding_adapter = AsyncMock()
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.embeddings = []  # Empty embeddings list
+        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
+        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 500, response.text
+    assert (
+        "Failed to generate embeddings for search query" in response.json()["message"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_vector_store_search_failure(
+    client, mock_project, mock_rag_config
+):
+    """Test search when vector store search fails"""
+    search_query = "test search query"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter to raise an exception
+        mock_adapter = AsyncMock()
+        mock_adapter.search.side_effect = Exception("Vector store connection failed")
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 500, response.text
+    assert "Search failed: Vector store connection failed" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config):
+    """Test search with empty query"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = []
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": ""},
+        )
+
+    # Should still work but return empty results
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_no_results(client, mock_project, mock_rag_config):
+    """Test search that returns no results (should return empty list, not error)"""
+    search_query = "nonexistent query that should return no results"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.vector_store_adapter_for_config"
+        ) as mock_vector_store_adapter,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        # Mock vector store adapter to return empty results
+        mock_adapter = AsyncMock()
+        mock_adapter.search.return_value = []  # Empty results
+        mock_vector_store_adapter.return_value = mock_adapter
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": search_query},
+        )
+
+    # Should return 200 with empty results, not a 500 error
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "results" in result
+    assert len(result["results"]) == 0
+    assert result["results"] == []
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_invalid_request_body(
+    client, mock_project, mock_rag_config
+):
+    """Test search with invalid request body"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"invalid_field": "test"},
+        )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize(
+    "filename,expected_content_type,expected_kind",
+    [
+        ("document.pdf", "application/pdf", "document"),
+        ("document.txt", "text/plain", "document"),
+        ("document.md", "text/markdown", "document"),
+        ("document.html", "text/html", "document"),
+        ("image.png", "image/png", "image"),
+        ("image.jpeg", "image/jpeg", "image"),
+        ("video.mp4", "video/mp4", "video"),
+        ("video.mov", "video/quicktime", "video"),
+        ("audio.mp3", "audio/mpeg", "audio"),
+        ("audio.wav", "audio/wav", "audio"),
+        ("audio.ogg", "audio/ogg", "audio"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_document_content_type_detection(
+    client, mock_project, filename, expected_content_type, expected_kind
+):
+    project = mock_project
+    test_content = b"test content"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
+    ):
+        mock_project_from_id.return_value = project
+        mock_save.return_value = None
+
+        files = [("files", (filename, io.BytesIO(test_content), expected_content_type))]
+        data = {"names": ["Test File"]}
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 1
+    assert len(result["failed_files"]) == 0
+    doc = result["created_documents"][0]
+    assert doc["name"] == "Test File"
+    assert doc["kind"] == expected_kind
+    assert doc["original_file"]["filename"] == filename
+    assert doc["original_file"]["mime_type"] == expected_content_type
+    assert doc["original_file"]["size"] == len(test_content)
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_success(client, mock_project):
+    """Test successful bulk upload of multiple documents"""
+    project = mock_project
+    test_content_1 = b"test file content 1"
+    test_content_2 = b"test file content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+        data = {"names": ["Custom Name 1", "Custom Name 2"]}
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+
+    # Check first document
+    assert result["created_documents"][0]["name"] == "Custom Name 1"
+    assert result["created_documents"][0]["kind"] == "document"
+    assert result["created_documents"][0]["original_file"]["filename"] == "test1.txt"
+    assert result["created_documents"][0]["original_file"]["mime_type"] == "text/plain"
+    assert result["created_documents"][0]["original_file"]["size"] == len(
+        test_content_1
+    )
+
+    # Check second document
+    assert result["created_documents"][1]["name"] == "Custom Name 2"
+    assert result["created_documents"][1]["kind"] == "document"
+    assert result["created_documents"][1]["original_file"]["filename"] == "test2.txt"
+    assert result["created_documents"][1]["original_file"]["mime_type"] == "text/plain"
+    assert result["created_documents"][1]["original_file"]["size"] == len(
+        test_content_2
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_without_names(client, mock_project):
+    """Test bulk upload without providing custom names (should use filenames)"""
+    project = mock_project
+    test_content_1 = b"test file content 1"
+    test_content_2 = b"test file content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+
+    # Should use filenames as names (with dots converted to underscores)
+    assert result["created_documents"][0]["name"] == "test1_txt"
+    assert result["created_documents"][1]["name"] == "test2_txt"
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_mixed_file_types(
+    client, mock_project, mock_file_factory
+):
+    """Test bulk upload with mixed valid file types"""
+    project = mock_project
+    test_text_content = b"test text content"
+    test_image_file = mock_file_factory(MockFileFactoryMimeType.JPEG)
+    test_image_content = Path(test_image_file).read_bytes()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("document.txt", io.BytesIO(test_text_content), "text/plain")),
+            ("files", ("image.jpg", io.BytesIO(test_image_content), "image/jpeg")),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+
+    # Check document types
+    assert result["created_documents"][0]["kind"] == "document"
+    assert result["created_documents"][1]["kind"] == "image"
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_some_invalid_files(client, mock_project):
+    """Test bulk upload where some files are invalid (should skip invalid, process valid)"""
+    project = mock_project
+    test_content_valid = b"valid test content"
+    test_content_invalid = b"invalid test content"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("valid.txt", io.BytesIO(test_content_valid), "text/plain")),
+            (
+                "files",
+                (
+                    "invalid.xyz",
+                    io.BytesIO(test_content_invalid),
+                    "application/octet-stream",
+                ),
+            ),
+            (
+                "files",
+                ("unsupported.csv", io.BytesIO(test_content_invalid), "text/csv"),
+            ),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+
+    # Should only have the valid file
+    assert len(result["created_documents"]) == 1
+    assert len(result["failed_files"]) == 2  # Two invalid files
+    assert result["created_documents"][0]["name"] == "valid_txt"
+    assert result["created_documents"][0]["kind"] == "document"
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_no_files(client, mock_project):
+    """Test bulk upload with no files provided"""
+    project = mock_project
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        response = client.post(f"/api/projects/{project.id}/documents/bulk")
+
+    assert response.status_code == 422, response.text
+    assert "At least one file must be provided" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_all_invalid_files(client, mock_project):
+    """Test bulk upload where all files are invalid"""
+    project = mock_project
+    test_content = b"test content"
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        files = [
+            (
+                "files",
+                ("invalid1.xyz", io.BytesIO(test_content), "application/octet-stream"),
+            ),
+            (
+                "files",
+                ("invalid2.abc", io.BytesIO(test_content), "application/octet-stream"),
+            ),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 422, response.text
+    result = response.json()
+    assert "No files could be processed successfully" in result["message"]["error"]
+    assert "failed_files" in result["message"]
+    assert len(result["message"]["failed_files"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_mismatched_names_count(client, mock_project):
+    """Test bulk upload with mismatched number of names and files"""
+    project = mock_project
+    test_content = b"test content"
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content), "text/plain")),
+        ]
+        data = {
+            "names": ["Only One Name"]  # Only one name for two files
+        }
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 422, response.text
+    assert "Number of names must match number of files" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
+    """Test bulk upload with files that have the same filename"""
+    project = mock_project
+    test_content_1 = b"test content 1"
+    test_content_2 = b"test content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("duplicate.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("duplicate.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+
+    # Both files should be processed (they have different content)
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+    assert result["created_documents"][0]["name"] == "duplicate_txt"
+    assert result["created_documents"][1]["name"] == "duplicate_txt"
+
+
 @pytest.mark.parametrize(
     "missing_sub_config_type,error_message",
     [
@@ -1937,3 +2689,211 @@ async def test_build_rag_workflow_runner_success_with_progress(
         assert result == mock_runner
         mock_compute_progress.assert_called_once_with(mock_project, rag_config)
         mock_runner_class.assert_called_once()
+
+
+def test_patch_document_success_name_only(client, mock_project, mock_document):
+    """Test PATCH document endpoint with name only"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": "Updated Document Name"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated Document Name"
+        assert (
+            data["description"] == mock_document["document"].description
+        )  # Should remain unchanged
+        assert data["tags"] == mock_document["document"].tags  # Should remain unchanged
+
+
+def test_patch_document_success_description_only(client, mock_project, mock_document):
+    """Test PATCH document endpoint with description only"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"description": "Updated description"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == mock_document["document"].name  # Should remain unchanged
+        assert data["description"] == "Updated description"
+        assert data["tags"] == mock_document["document"].tags  # Should remain unchanged
+
+
+def test_patch_document_success_tags_only(client, mock_project, mock_document):
+    """Test PATCH document endpoint with tags only"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        new_tags = ["tag1", "tag2", "tag3"]
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"tags": new_tags},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == mock_document["document"].name  # Should remain unchanged
+        assert (
+            data["description"] == mock_document["document"].description
+        )  # Should remain unchanged
+        assert data["tags"] == new_tags
+
+
+def test_patch_document_success_all_fields(client, mock_project, mock_document):
+    """Test PATCH document endpoint with all fields"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        new_name = "Completely New Name"
+        new_description = "Completely new description"
+        new_tags = ["new_tag1", "new_tag2"]
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": new_name, "description": new_description, "tags": new_tags},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == new_name
+        assert data["description"] == new_description
+        assert data["tags"] == new_tags
+
+
+def test_patch_document_not_found(client, mock_project):
+    """Test PATCH document endpoint with non-existent document"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/nonexistent_id",
+            json={"name": "Updated Name"},
+        )
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "Document not found" in data["message"]
+
+
+def test_patch_document_no_fields_provided(client, mock_project, mock_document):
+    """Test PATCH document endpoint with no fields provided"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={},
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "At least one field must be provided" in data["message"]
+
+
+def test_patch_document_invalid_tags_empty_string(client, mock_project, mock_document):
+    """Test PATCH document endpoint with empty string tag"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"tags": ["valid_tag", ""]},
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "Tags cannot be empty strings" in data["message"]
+
+
+def test_patch_document_invalid_tags_with_spaces(client, mock_project, mock_document):
+    """Test PATCH document endpoint with tag containing spaces"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"tags": ["valid_tag", "invalid tag"]},
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "Tags cannot contain spaces" in data["message"]
+
+
+def test_patch_document_invalid_name_too_long(client, mock_project, mock_document):
+    """Test PATCH document endpoint with name too long"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        long_name = "x" * 121  # Exceeds 120 character limit
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": long_name},
+        )
+
+        assert response.status_code == 422
+
+
+def test_patch_document_invalid_name_empty(client, mock_project, mock_document):
+    """Test PATCH document endpoint with empty name"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": ""},
+        )
+
+        assert response.status_code == 422
+
+
+def test_patch_document_invalid_name_forbidden_chars(
+    client, mock_project, mock_document
+):
+    """Test PATCH document endpoint with forbidden characters in name"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": "invalid/name"},
+        )
+
+        assert response.status_code == 422
+
+
+def test_patch_document_partial_update_preserves_other_fields(
+    client, mock_project, mock_document
+):
+    """Test that partial updates don't affect other fields"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        # First update just the name
+        response1 = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name": "Updated Name Only"},
+        )
+        assert response1.status_code == 200
+
+        # Then update just the description
+        response2 = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"description": "Updated Description Only"},
+        )
+        assert response2.status_code == 200
+
+        data = response2.json()
+        assert (
+            data["name"] == "Updated Name Only"
+        )  # Should be preserved from first update
+        assert data["description"] == "Updated Description Only"  # Should be updated
+        assert data["tags"] == mock_document["document"].tags  # Should remain original

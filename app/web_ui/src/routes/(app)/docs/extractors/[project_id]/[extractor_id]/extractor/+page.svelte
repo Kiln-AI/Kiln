@@ -106,6 +106,16 @@
 <AppPage
   title="Document Extractor"
   subtitle={loading ? "" : "Name: " + (extractor_config?.name || "Unknown")}
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Extractors",
+      href: `/docs/extractors/${project_id}`,
+    },
+  ]}
   action_buttons={[
     {
       label: extractor_config?.is_archived ? "Unarchive" : "Archive",
