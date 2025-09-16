@@ -47,6 +47,15 @@ class RagTool(KilnToolInterface):
             "required": ["query"],
         }
         self._rag_config = rag_config
+        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+            str(self._rag_config.vector_store_config_id), self.project.path
+        )
+        if vector_store_config is None:
+            raise ValueError(
+                f"Vector store config not found: {self._rag_config.vector_store_config_id}"
+            )
+        self._vector_store_config = vector_store_config
+        self._vector_store_adapter: BaseVectorStoreAdapter | None = None
 
     @cached_property
     def project(self) -> Project:
@@ -68,21 +77,15 @@ class RagTool(KilnToolInterface):
             )
         return embedding_config, embedding_adapter_from_type(embedding_config)
 
-    @cached_property
     async def vector_store(
         self,
-    ) -> tuple[VectorStoreConfig, BaseVectorStoreAdapter]:
-        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
-            str(self._rag_config.vector_store_config_id), self.project.path
-        )
-        if vector_store_config is None:
-            raise ValueError(
-                f"Vector store config not found: {self._rag_config.vector_store_config_id}"
+    ) -> BaseVectorStoreAdapter:
+        if self._vector_store_adapter is None:
+            self._vector_store_adapter = await vector_store_adapter_for_config(
+                vector_store_config=self._vector_store_config,
+                rag_config=self._rag_config,
             )
-        return vector_store_config, await vector_store_adapter_for_config(
-            vector_store_config=vector_store_config,
-            rag_config=self._rag_config,
-        )
+        return self._vector_store_adapter
 
     async def id(self) -> ToolId:
         return self._id
@@ -104,33 +107,27 @@ class RagTool(KilnToolInterface):
             },
         }
 
-    async def run(self, query_string: str) -> str:
-        print(f"Running RAG tool with query: {query_string}")
+    async def run(self, query: str) -> str:
+        print(f"Running RAG tool with query: {query}")
         _, embedding_adapter = self.embedding
 
-        # TODO: the vector store adapter should be singleton and we should rather be dealing with collection here
-        vector_store_config, vector_store_adapter = await self.vector_store
-
-        query: VectorStoreQuery | None = None
-        if vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS:
-            query = VectorStoreQuery(
-                query_embedding=None,
-                query_string=query_string,
-            )
-        else:
-            # embed query
+        vector_store_adapter = await self.vector_store()
+        store_query = VectorStoreQuery(
+            query_embedding=None,
+            query_string=query,
+        )
+        if self._vector_store_config.store_type in [
+            VectorStoreType.LANCE_DB_HYBRID,
+            VectorStoreType.LANCE_DB_FTS,
+        ]:
             query_embedding_result = await embedding_adapter.generate_embeddings(
-                [query_string]
+                [query]
             )
             if len(query_embedding_result.embeddings) == 0:
                 raise ValueError("No embeddings generated")
-            query_vec = query_embedding_result.embeddings[0].vector
-            query = VectorStoreQuery(
-                query_embedding=query_vec,
-                query_string=None,
-            )
+            store_query.query_embedding = query_embedding_result.embeddings[0].vector
 
-        knn_results = await vector_store_adapter.search(query)
+        knn_results = await vector_store_adapter.search(store_query)
 
         results: List[ChunkContext] = []
         for knn_result in knn_results:

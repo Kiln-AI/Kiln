@@ -256,13 +256,14 @@ def connect_tool_servers_api(app: FastAPI):
                     )
                 )
 
+        if project.rag_configs(readonly=True):
             tool_sets.append(
                 ToolSetApiDescription(
-                    set_name="RAG",
+                    set_name="RAG Search Tools",
                     tools=[
                         ToolApiDescription(
                             id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
-                            name=f"RAG: {rag_config.name}",
+                            name=f"{rag_config.name}",
                             description=rag_config.description,
                         )
                         for rag_config in project.rag_configs(readonly=True)
