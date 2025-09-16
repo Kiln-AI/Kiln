@@ -365,11 +365,12 @@
   }
 
   async function create_rag_config() {
+    // Special case for saving the template
     if (template && !customize_template_mode) {
-      // TODO implement this
-      loading = false
+      await save_template()
       return
     }
+
     try {
       loading = true
       error = null
@@ -487,6 +488,58 @@
     } catch (err) {
       error = createKilnError("Error customizing template: " + err)
       return
+    } finally {
+      loading = false
+    }
+  }
+
+  async function save_template() {
+    if (!template) {
+      return
+    }
+    try {
+      loading = true
+
+      // Fetch or build the sub configs
+      const {
+        extractor_config_id,
+        chunker_config_id,
+        embedding_config_id,
+        vector_store_config_id,
+      } = await build_rag_config_sub_configs(
+        template,
+        project_id,
+        extractor_configs,
+        chunker_configs,
+        embedding_configs,
+        vector_store_configs,
+      )
+
+      // Save the rag config
+      const { error: create_error } = await client.POST(
+        "/api/projects/{project_id}/rag_configs/create_rag_config",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+          body: {
+            name: template.rag_config_name,
+            extractor_config_id,
+            chunker_config_id,
+            embedding_config_id,
+            vector_store_config_id,
+          },
+        },
+      )
+
+      if (create_error) {
+        error = createKilnError(create_error)
+        return
+      }
+
+      goto(`/docs/rag_configs/${project_id}`)
     } finally {
       loading = false
     }
