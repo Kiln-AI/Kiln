@@ -97,7 +97,8 @@ class ExternalToolServer(KilnParentedModel):
 
     # Validation Helpers
 
-    def validate_server_url(self, server_url: str) -> None:
+    @classmethod
+    def validate_server_url(cls, server_url: str) -> None:
         """Validate Server URL"""
         if not isinstance(server_url, str):
             raise ValueError("Server URL must be a string")
@@ -105,10 +106,12 @@ class ExternalToolServer(KilnParentedModel):
         # Check for leading whitespace in URL
         if server_url != server_url.lstrip():
             raise ValueError("Server URL must not have leading whitespace")
-        if urlparse(server_url).scheme not in ["http", "https"]:
-            raise ValueError("Server URL must start with http:// or https://")
-        if not urlparse(server_url).netloc:
+
+        parsed_url = urlparse(server_url)
+        if not parsed_url.netloc:
             raise ValueError("Server URL is not a valid URL")
+        if parsed_url.scheme not in ["http", "https"]:
+            raise ValueError("Server URL must start with http:// or https://")
 
     @classmethod
     def validate_headers(cls, headers: dict) -> None:
@@ -189,7 +192,7 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "Server URL is required to connect to a remote MCP server"
                     )
-                self.validate_server_url(server_url)
+                ExternalToolServer.validate_server_url(server_url)
 
             case ToolServerType.local_mcp:
                 command = self.properties.get("command", None)

@@ -88,6 +88,45 @@ class TestExternalToolServer:
         assert server.properties == properties
 
     @pytest.mark.parametrize(
+        "server_url, expected_error",
+        [
+            (123, "Server URL must be a string"),
+            (" http://test.com", "Server URL must not have leading whitespace"),
+            ("ftp://test.com", "Server URL must start with http:// or https://"),
+            ("test.com", "Server URL is not a valid URL"),
+        ],
+    )
+    def test_validate_server_url(self, server_url, expected_error):
+        """Test validate_server_url."""
+        with pytest.raises(ValueError, match=expected_error):
+            ExternalToolServer.validate_server_url(server_url)
+
+    @pytest.mark.parametrize(
+        "headers, expected_error",
+        [
+            (123, "headers must be a dictionary"),
+            ("not-a-dict", "headers must be a dictionary"),
+            ({"": "ok"}, "Header name is required"),
+            ({"X-Key": ""}, "Header value is required"),
+            ({"X-Key": None}, "Header value is required"),
+            ({"Bad Name": "ok"}, r'Invalid header name: "Bad Name"'),
+            ({"X@Key": "ok"}, r'Invalid header name: "X@Key"'),
+            (
+                {"X-Key\n": "ok"},
+                "Header names/values must not contain invalid characters",
+            ),
+            (
+                {"X-Key": "bad\nvalue"},
+                "Header names/values must not contain invalid characters",
+            ),
+        ],
+    )
+    def test_validate_headers(self, headers, expected_error):
+        """Test validate_headers."""
+        with pytest.raises(ValueError, match=expected_error):
+            ExternalToolServer.validate_headers(headers)
+
+    @pytest.mark.parametrize(
         "server_type, invalid_props, expected_error",
         [
             # Remote MCP validation errors
@@ -95,16 +134,6 @@ class TestExternalToolServer:
                 ToolServerType.remote_mcp,
                 {"server_url": ""},
                 "Server URL is required to connect to a remote MCP server",
-            ),
-            (
-                ToolServerType.remote_mcp,
-                {"server_url": 123},
-                "Server URL must be a string",
-            ),
-            (
-                ToolServerType.remote_mcp,
-                {"server_url": "http://test.com", "headers": "not-a-dict"},
-                "headers must be a dictionary",
             ),
             (
                 ToolServerType.remote_mcp,
