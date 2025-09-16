@@ -81,6 +81,7 @@
         <div class="flex items-center gap-2 mb-2">
           <div class="text-sm font-medium">Selected Tags:</div>
           <button
+            type="button"
             class="text-xs text-gray-500 hover:text-gray-700 underline"
             on:click={clearAllTags}
           >
@@ -92,6 +93,7 @@
             <div class="badge badge-primary py-3 px-3 max-w-full">
               <span class="truncate">{tag}</span>
               <button
+                type="button"
                 class="pl-3 font-medium shrink-0 text-white hover:text-gray-200"
                 on:click={() => removeTag(tag)}
               >
@@ -113,6 +115,7 @@
         <div class="flex flex-row gap-2 flex-wrap">
           {#each unselected_tags as tag}
             <button
+              type="button"
               class="badge bg-gray-200 text-gray-700 py-3 px-3 max-w-full hover:bg-gray-300 transition-colors"
               on:click={() => toggleTag(tag)}
             >
