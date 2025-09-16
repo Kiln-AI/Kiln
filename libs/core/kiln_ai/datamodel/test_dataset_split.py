@@ -120,7 +120,7 @@ def test_dataset_split_validation():
         DatasetSplitDefinition(name="train", percentage=0.8),
         DatasetSplitDefinition(name="test", percentage=0.3),
     ]
-    with pytest.raises(ValueError, match="sum of split percentages must be 1.0"):
+    with pytest.raises(ValueError, match=r"sum of split percentages must be 1.0"):
         DatasetSplit(
             name="test_split",
             splits=invalid_splits,

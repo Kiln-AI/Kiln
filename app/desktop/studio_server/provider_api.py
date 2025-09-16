@@ -15,12 +15,13 @@ from kiln_ai.adapters.docker_model_runner_tools import (
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
+    KilnEmbeddingModel,
+    KilnEmbeddingModelProvider,
     built_in_embedding_models,
 )
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
@@ -181,7 +182,7 @@ class ProviderModel(BaseModel):
 
 
 class ProviderModels(BaseModel):
-    models: Dict[ModelName, ProviderModel]
+    models: Dict[str, ProviderModel]
 
 
 class ProviderEmbeddingModels(BaseModel):
@@ -332,6 +333,12 @@ def connect_provider_api(app: FastAPI):
                                 suggested_for_chunk_embedding=provider.suggested_for_chunk_embedding,
                             )
                         )
+
+        # Ollama is special: check which models are installed
+        ollama_models = await available_ollama_embedding_models()
+        if ollama_models:
+            models.insert(0, ollama_models)
+
         return models
 
     @app.get("/api/provider/ollama/connect")
@@ -1147,6 +1154,40 @@ async def available_ollama_models() -> AvailableModels | None:
         return None
 
 
+async def available_ollama_embedding_models() -> EmbeddingProvider | None:
+    # Try to connect to Ollama, and get the list of installed models
+    try:
+        ollama_connection = await connect_ollama()
+        ollama_embedding_models = EmbeddingProvider(
+            provider_name=provider_name_from_id(ModelProviderName.ollama),
+            provider_id=ModelProviderName.ollama,
+            models=[],
+        )
+
+        for ollama_model_tag in ollama_connection.supported_embedding_models:
+            models = embedding_models_from_ollama_tag(ollama_model_tag)
+            for model, ollama_provider in models:
+                if model and ollama_provider:
+                    ollama_embedding_models.models.append(
+                        EmbeddingModelDetails(
+                            id=model.name,
+                            name=model.friendly_name,
+                            n_dimensions=ollama_provider.n_dimensions,
+                            max_input_tokens=ollama_provider.max_input_tokens,
+                            supports_custom_dimensions=ollama_provider.supports_custom_dimensions,
+                            suggested_for_chunk_embedding=ollama_provider.suggested_for_chunk_embedding,
+                        )
+                    )
+
+        if len(ollama_embedding_models.models) > 0:
+            return ollama_embedding_models
+
+        return None
+    except HTTPException:
+        # skip ollama if it's not available
+        return None
+
+
 async def available_docker_model_runner_models() -> AvailableModels | None:
     # Try to connect to Docker Model Runner, and get the list of installed models
     try:
@@ -1240,6 +1281,31 @@ def models_from_ollama_tag(
 ) -> List[tuple[KilnModel | None, KilnModelProvider | None]]:
     models: list[tuple[KilnModel | None, KilnModelProvider | None]] = []
     for model in built_in_models:
+        ollama_provider = next(
+            (p for p in model.providers if p.name == ModelProviderName.ollama), None
+        )
+        if not ollama_provider:
+            continue
+
+        model_name = ollama_provider.model_id
+        if tag in [model_name, f"{model_name}:latest"]:
+            models.append((model, ollama_provider))
+        if ollama_provider.ollama_model_aliases is not None:
+            # all aliases (and :latest)
+            for alias in ollama_provider.ollama_model_aliases:
+                if tag in [alias, f"{alias}:latest"]:
+                    models.append((model, ollama_provider))
+
+    return models
+
+
+def embedding_models_from_ollama_tag(
+    tag: str,
+) -> List[tuple[KilnEmbeddingModel | None, KilnEmbeddingModelProvider | None]]:
+    models: list[
+        tuple[KilnEmbeddingModel | None, KilnEmbeddingModelProvider | None]
+    ] = []
+    for model in built_in_embedding_models:
         ollama_provider = next(
             (p for p in model.providers if p.name == ModelProviderName.ollama), None
         )

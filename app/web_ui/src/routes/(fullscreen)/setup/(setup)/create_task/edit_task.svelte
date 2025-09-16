@@ -99,7 +99,6 @@
                 project_id,
               },
             },
-            // @ts-expect-error This API is not typed
             body: body,
           },
         )
@@ -118,7 +117,6 @@
                 task_id: task.id || "",
               },
             },
-            // @ts-expect-error This API is not typed
             body: body,
           },
         )
@@ -269,6 +267,7 @@
       label="Prompt / Task Instructions"
       inputType="textarea"
       id="task_instructions"
+      tall="medium"
       description={prompt_description()}
       bind:value={task.instruction}
     />

@@ -12,10 +12,12 @@
   import CreateExtractorForm from "../../../extractors/[project_id]/create_extractor/create_extractor_form.svelte"
   import CreateChunkerForm from "./create_chunker_form.svelte"
   import CreateEmbeddingForm from "./create_embedding_form.svelte"
+  import CreateVectorStoreForm from "./create_vector_store_form.svelte"
   import type {
     ExtractorConfig,
     ChunkerConfig,
     EmbeddingConfig,
+    VectorStoreConfig,
   } from "$lib/types"
   import {
     embedding_model_name,
@@ -36,27 +38,36 @@
   let show_create_extractor_dialog: Dialog | null = null
   let show_create_chunker_dialog: Dialog | null = null
   let show_create_embedding_dialog: Dialog | null = null
+  let show_create_vector_store_dialog: Dialog | null = null
 
   // Selected configs
   let selected_extractor_config_id: string | null = null
   let selected_chunker_config_id: string | null = null
   let selected_embedding_config_id: string | null = null
+  let selected_vector_store_config_id: string | null = null
 
   // Data for dropdowns
   let extractor_configs: ExtractorConfig[] = []
   let chunker_configs: ChunkerConfig[] = []
   let embedding_configs: EmbeddingConfig[] = []
+  let vector_store_configs: VectorStoreConfig[] = []
 
   // Loading states for data fetching
   let loading_extractor_configs = false
   let loading_chunker_configs = false
   let loading_embedding_configs = false
+  let loading_vector_store_configs = false
 
   // track which modal is currently open to disable the other forms
-  let modal_opened: "extractor" | "chunker" | "embedding" | null = null
+  let modal_opened:
+    | "extractor"
+    | "chunker"
+    | "embedding"
+    | "vector_store"
+    | null = null
 
   function handle_modal_open(
-    modal_type: "extractor" | "chunker" | "embedding",
+    modal_type: "extractor" | "chunker" | "embedding" | "vector_store",
   ) {
     modal_opened = modal_type
   }
@@ -170,6 +181,38 @@
       : []),
   ] as OptionGroup[]
 
+  $: vector_store_options = [
+    {
+      options: [
+        {
+          label: "New Vector Store Configuration",
+          value: "create_new",
+          badge: "New",
+          badge_color: "primary",
+        },
+      ],
+    },
+    ...(vector_store_configs.length > 0
+      ? [
+          {
+            label: "Vector Stores",
+            options: vector_store_configs.map((config) => ({
+              label:
+                config.store_type === "lancedb_fts"
+                  ? "Full Text Search"
+                  : config.store_type === "lancedb_vector"
+                    ? "Vector Search"
+                    : "Hybrid Search",
+              value: config.id,
+              description:
+                config.name +
+                ` (${config.properties.similarity_top_k || 10} results)`,
+            })),
+          },
+        ]
+      : []),
+  ] as OptionGroup[]
+
   // show the create extractor dialog when the user clicks the create new extractor button
   $: if (selected_extractor_config_id === "create_new") {
     show_create_extractor_dialog?.show()
@@ -194,6 +237,14 @@
     show_create_embedding_dialog?.close()
   }
 
+  // show the create vector store dialog when the user clicks the create new vector store button
+  $: if (selected_vector_store_config_id === "create_new") {
+    show_create_vector_store_dialog?.show()
+    handle_modal_open("vector_store")
+  } else {
+    show_create_vector_store_dialog?.close()
+  }
+
   // Load data on mount
   onMount(async () => {
     await Promise.all([
@@ -201,6 +252,7 @@
       loadExtractorConfigs(),
       loadChunkerConfigs(),
       loadEmbeddingConfigs(),
+      loadVectorStoreConfigs(),
     ])
   })
 
@@ -279,6 +331,31 @@
     }
   }
 
+  async function loadVectorStoreConfigs() {
+    try {
+      loading_vector_store_configs = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/vector_store_configs",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (fetch_error) {
+        error = createKilnError(fetch_error)
+        return
+      }
+
+      vector_store_configs = data || []
+    } finally {
+      loading_vector_store_configs = false
+    }
+  }
+
   async function create_rag_config() {
     try {
       loading = true
@@ -318,6 +395,17 @@
         return
       }
 
+      if (
+        !selected_vector_store_config_id ||
+        selected_vector_store_config_id === "create_new"
+      ) {
+        error = createKilnError({
+          message: "Please select a vector store configuration.",
+          status: 400,
+        })
+        return
+      }
+
       const { error: create_error } = await client.POST(
         "/api/projects/{project_id}/rag_configs/create_rag_config",
         {
@@ -332,6 +420,7 @@
             extractor_config_id: selected_extractor_config_id,
             chunker_config_id: selected_chunker_config_id,
             embedding_config_id: selected_embedding_config_id,
+            vector_store_config_id: selected_vector_store_config_id,
           },
         },
       )
@@ -351,6 +440,16 @@
 <AppPage
   title="Create Search Tool (RAG)"
   subtitle="A configuration for searching your docs, including extracting, chunking and embeddings."
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Search Tools",
+      href: `/docs/rag_configs/${project_id}`,
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -423,6 +522,26 @@
                 info_description="Embedding models are a type of AI model which create searchable vectors from your chunks."
                 fancy_select_options={embedding_options}
                 bind:value={selected_embedding_config_id}
+                inputType="fancy_select"
+              />
+            {/if}
+          </div>
+
+          <!-- Vector Store Selection -->
+          <div class="flex flex-col gap-2">
+            {#if loading_vector_store_configs}
+              <div class="flex items-center gap-2">
+                <div class="loading loading-spinner loading-sm"></div>
+                <span class="text-sm">Loading vector stores...</span>
+              </div>
+            {:else}
+              <FormElement
+                id="vector_store_select"
+                label="Vector Store"
+                description="Choose how documents will be stored and searched."
+                info_description="Full text search is fastest for keyword searches, vector search is best for semantic meaning, and hybrid combines both approaches."
+                fancy_select_options={vector_store_options}
+                bind:value={selected_vector_store_config_id}
                 inputType="fancy_select"
               />
             {/if}
@@ -512,6 +631,27 @@
     on:success={async (e) => {
       await loadEmbeddingConfigs()
       selected_embedding_config_id = e.detail.embedding_config_id
+    }}
+  />
+</Dialog>
+
+<Dialog
+  bind:this={show_create_vector_store_dialog}
+  title="Vector Store Configuration"
+  subtitle="Choose how documents will be stored and searched."
+  width="wide"
+  on:close={() => {
+    handle_modal_close()
+    if (selected_vector_store_config_id === "create_new") {
+      selected_vector_store_config_id = null
+    }
+  }}
+>
+  <CreateVectorStoreForm
+    keyboard_submit={modal_opened === "vector_store"}
+    on:success={async (e) => {
+      await loadVectorStoreConfigs()
+      selected_vector_store_config_id = e.detail.vector_store_config_id
     }}
   />
 </Dialog>

@@ -8,11 +8,11 @@ actions:
 
   - name: "lint_python"
     description: "Lint the python source code, checking for errors and warnings"
-    command: "uvx ruff check --extend-select I,F401"
+    command: "uvx ruff check"
 
   - name: "lint_fix_python"
     description: "Lint the pythong source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
-    command: "uvx ruff check --extend-select I,F401 --fix"
+    command: "uvx ruff check --fix"
 
   - name: "check_format_python"
     description: "Check if the python source code is formatted correctly"

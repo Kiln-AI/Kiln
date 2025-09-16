@@ -7,8 +7,14 @@
   export let sub_subtitle: string = ""
   export let sub_subtitle_link: string | undefined = undefined
   export let no_y_padding: boolean = false
-
   export let action_buttons: ActionButton[] = []
+  export let limit_max_width: boolean = false
+
+  type Breadcrumb = {
+    label: string
+    href: string
+  }
+  export let breadcrumbs: Breadcrumb[] = []
 
   function run_action_button(action_button: ActionButton) {
     if (action_button.handler) {
@@ -46,7 +52,18 @@
 
 <svelte:window on:keydown={handle_key_down} />
 
-<div class="flex flex-row">
+{#if breadcrumbs.length > 0}
+  <div class="breadcrumbs text-sm pt-0">
+    <ul>
+      {#each breadcrumbs as breadcrumb}
+        <li><a href={breadcrumb.href}>{breadcrumb.label}</a></li>
+      {/each}
+      <!-- Adds the last ">" separator -->
+      <li></li>
+    </ul>
+  </div>
+{/if}
+<div class="flex flex-row {limit_max_width ? 'max-w-[1400px]' : ''}">
   <div class="flex flex-col grow">
     <h1 class="text-2xl font-bold">{title}</h1>
     {#if subtitle}
@@ -91,6 +108,10 @@
   </div>
 </div>
 
-<div class={no_y_padding ? "" : "mt-8 mb-12"}>
+<div
+  class="{no_y_padding ? '' : 'mt-8 mb-12'} {limit_max_width
+    ? 'max-w-[1400px]'
+    : ''}"
+>
   <slot />
 </div>

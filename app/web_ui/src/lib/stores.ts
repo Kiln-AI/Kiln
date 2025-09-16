@@ -11,6 +11,7 @@ import type {
   ModelDetails,
   EmbeddingProvider,
   EmbeddingModelDetails,
+  VectorStoreType,
   ToolSetApiDescription,
 } from "./types"
 import { client } from "./api_client"
@@ -207,6 +208,12 @@ export const available_tools = writable<
 >({})
 let loading_project_tools: string[] = []
 
+export function uncache_available_tools(project_id: string) {
+  // Delete the project_id from the available_tools, so next load it needs to load a updated list.
+  const { [project_id]: _, ...remaining } = get(available_tools)
+  available_tools.set(remaining)
+}
+
 export async function load_available_tools(
   project_id: string,
   force: boolean = false,
@@ -307,6 +314,11 @@ export async function load_available_embedding_models() {
     available_embedding_models.set([])
     available_embedding_models_loaded = "not_loaded"
   }
+}
+
+export function clear_available_models_cache() {
+  available_models_loaded = "not_loaded"
+  available_models.set([])
 }
 
 // Model Info
@@ -430,6 +442,22 @@ export function embedding_model_name(
     return model.name
   }
   return "Model ID: " + model_id
+}
+
+export function vector_store_name(store_type: VectorStoreType | null): string {
+  if (!store_type) {
+    return "Unknown"
+  }
+  switch (store_type) {
+    case "lancedb_fts":
+      return "Full Text Search"
+    case "lancedb_vector":
+      return "Vector Search"
+    case "lancedb_hybrid":
+      return "Hybrid Search"
+    default:
+      return "Unknown"
+  }
 }
 
 export function provider_name_from_id(provider_id: string): string {

@@ -8,21 +8,25 @@
   import type { KilnToolServerDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
-  $: is_empty = !tools || tools.length == 0
+  $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
 
   let tools: KilnToolServerDescription[] | null = null
+  let demo_tools_enabled: boolean | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
     await fetch_available_tool_servers()
+    await load_demo_tools()
+    loading = false
   })
 
   async function fetch_available_tool_servers() {
     try {
-      loading = true
       error = null
 
       if (!project_id) {
@@ -47,8 +51,18 @@
       tools = data
     } catch (err) {
       error = createKilnError(err)
-    } finally {
-      loading = false
+    }
+  }
+
+  async function load_demo_tools() {
+    try {
+      const { data, error } = await client.GET("/api/demo_tools")
+      if (error) {
+        throw error
+      }
+      demo_tools_enabled = data
+    } catch (error) {
+      console.error(error)
     }
   }
 
@@ -59,12 +73,40 @@
       )
     }
   }
+
+  async function disable_demo_tools() {
+    try {
+      demo_tools_enabled = false
+      const { error } = await client.POST("/api/demo_tools", {
+        params: {
+          query: {
+            enable_demo_tools: false,
+          },
+        },
+      })
+      if (error) {
+        throw error
+      }
+      // Delete the project_id from the available_tools, so next load it loads the updated list.
+      uncache_available_tools(project_id)
+    } catch (error) {
+      console.error(error)
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
     title="Manage Tools"
     subtitle="Connect your project to tools with MCP servers"
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp"
+    breadcrumbs={[
+      {
+        label: "Settings",
+        href: `/settings`,
+      },
+    ]}
     action_buttons={is_empty
       ? []
       : [
@@ -87,7 +129,7 @@
           {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
-    {:else if tools && tools.length > 0}
+    {:else if !is_empty}
       <div class="overflow-x-auto rounded-lg border mt-4">
         <table class="table">
           <thead>
@@ -95,10 +137,13 @@
               <th>Server Name</th>
               <th>Type</th>
               <th>Description</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {#each tools as tool}
+            {#each tools || [] as tool}
+              {@const missing_secrets =
+                tool.missing_secrets && tool.missing_secrets.length > 0}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolServer(tool)}
@@ -110,12 +155,51 @@
                 <td class="font-medium">{tool.name}</td>
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
                 <td class="text-sm">{tool.description || "N/A"}</td>
+                <td class="text-sm">
+                  {#if missing_secrets}
+                    <Warning
+                      warning_message="Action Required"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      tight={true}
+                    />
+                  {/if}
+                </td>
               </tr>
             {/each}
+            {#if demo_tools_enabled}
+              <tr>
+                <td class="font-medium">Math Demo Tools</td>
+                <td class="text-sm">Built-in Tools</td>
+                <td class="text-sm"
+                  >Basic math tools: add, subtract, multiply, divide.
+                  <button
+                    class="link text-gray-500"
+                    on:click={disable_demo_tools}
+                  >
+                    Disable
+                  </button>
+                </td>
+                <td class="text-sm">
+                  <Warning
+                    warning_message="Ready"
+                    warning_color="success"
+                    warning_icon="check"
+                    tight={true}
+                  />
+                </td>
+              </tr>
+            {/if}
           </tbody>
         </table>
       </div>
-    {:else if is_empty}
+    {:else}
       <div class="flex flex-col items-center justify-center min-h-[60vh]">
         <EmptyTools {project_id} />
       </div>

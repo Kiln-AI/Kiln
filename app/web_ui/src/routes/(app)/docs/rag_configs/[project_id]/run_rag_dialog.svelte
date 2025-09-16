@@ -66,23 +66,42 @@
     "embedding",
     config_progress,
   )
+  $: indexing_progress_value = get_step_progress_value(
+    "indexing",
+    config_progress,
+  )
 
-  $: progress_max = config_progress?.total_document_count || 100
+  $: document_progress_max = config_progress?.total_document_count || 100
   $: extraction_progress_pct = Math.round(
-    (extraction_progress_value / progress_max) * 100,
+    (extraction_progress_value / document_progress_max) * 100,
   )
   $: chunking_progress_pct = Math.round(
-    (chunking_progress_value / progress_max) * 100,
+    (chunking_progress_value / document_progress_max) * 100,
   )
   $: embedding_progress_pct = Math.round(
-    (embedding_progress_value / progress_max) * 100,
+    (embedding_progress_value / document_progress_max) * 100,
   )
+
+  $: chunk_progress_max = config_progress?.total_chunk_count || 100
+  $: indexing_progress_pct = Math.round(
+    (indexing_progress_value / chunk_progress_max) * 100,
+  )
+
   $: total_docs = config_progress?.total_document_count || 0
-  $: completed_pct =
+  $: docs_completed_pct =
     total_docs > 0
       ? Math.round(
           ((config_progress?.total_document_completed_count || 0) /
             total_docs) *
+            100,
+        )
+      : 0
+
+  $: total_chunks = config_progress?.total_chunk_count || 0
+  $: chunks_completed_pct =
+    total_chunks > 0
+      ? Math.round(
+          ((config_progress?.total_chunk_completed_count || 0) / total_chunks) *
             100,
         )
       : 0
@@ -136,6 +155,27 @@
           ? "completed"
           : "pending"
       }
+      case "indexing": {
+        // for indexing, we only know the total chunk count after chunking is complete
+        // so if any upstream step is not complete, we can't know if indexing is complete
+        if (
+          !is_step_completed("extraction", config_progress) ||
+          !is_step_completed("chunking", config_progress) ||
+          !is_step_completed("embedding", config_progress)
+        ) {
+          return "pending"
+        }
+        if (
+          config_progress.total_document_count === 0 ||
+          config_progress.total_chunk_count === 0
+        ) {
+          return "pending"
+        }
+        return config_progress.total_chunks_indexed_count >=
+          config_progress.total_chunk_count
+          ? "completed"
+          : "pending"
+      }
       default:
         return "pending"
     }
@@ -154,6 +194,8 @@
         return config_progress.total_document_chunked_count
       case "embedding":
         return config_progress.total_document_embedded_count
+      case "indexing":
+        return config_progress.total_chunks_indexed_count
       default:
         return 0
     }
@@ -189,62 +231,14 @@
         return false
       },
       loading: is_running,
-      hide: completed_pct === 100,
+      hide: docs_completed_pct === 100 && chunks_completed_pct === 100,
     },
   ]}
 >
   <div class="flex flex-col gap-6">
-    <!-- Overall RAG Progress Header -->
-    <div class="text-center">
-      <div class="flex flex-col items-center gap-4">
-        <div
-          class="radial-progress text-primary bg-primary/10 border-4 border-primary/20"
-          style="--value:{completed_pct}; --size:5rem; --thickness:6px;"
-          aria-valuenow={completed_pct}
-          role="progressbar"
-        >
-          <div class="text-center">
-            <div class="text-lg font-bold text-primary">{completed_pct}%</div>
-          </div>
-        </div>
-        <div class="text-center">
-          <div
-            class="inline-flex items-center gap-2 px-3 py-1 rounded-full {completed_pct ===
-            100
-              ? 'bg-success/10 text-success'
-              : completed_pct > 0
-                ? 'bg-warning/10 text-warning'
-                : 'bg-base-200 text-gray-500'}"
-          >
-            {#if completed_pct === 100}
-              <div class="w-4 h-4">
-                <Checkmark />
-              </div>
-              <span class="text-xs font-medium">Complete</span>
-            {:else if is_running}
-              <div class="bg-current rounded-full loading loading-sm"></div>
-              <span class="text-xs font-medium">Processing...</span>
-            {:else if has_error_logs}
-              <div class="bg-error rounded-full"></div>
-              <span class="text-xs font-medium text-error"
-                >Completed with errors</span
-              >
-            {:else}
-              <div class="bg-current rounded-full"></div>
-              <span class="text-xs font-medium">Ready to start</span>
-            {/if}
-          </div>
-          <div class="mt-2 text-xs text-gray-500">
-            {config_progress?.total_document_completed_count || 0} of
-            {config_progress?.total_document_count || 0} documents
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RAG Steps -->
+    <!-- Processing Steps -->
     <div class="flex flex-col gap-4 max-w-md mx-auto">
-      {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }] as step}
+      {#each [{ name: "extraction", label: "Extraction", progress: extraction_progress_value, pct: extraction_progress_pct }, { name: "chunking", label: "Chunking", progress: chunking_progress_value, pct: chunking_progress_pct }, { name: "embedding", label: "Embedding", progress: embedding_progress_value, pct: embedding_progress_pct }, { name: "indexing", label: "Indexing", progress: indexing_progress_value, pct: indexing_progress_pct }] as step}
         <div
           class="flex items-center gap-4 p-3 rounded-lg border border-base-200 bg-base-50/30 hover:bg-base-50/50 transition-all duration-200"
         >
@@ -269,27 +263,18 @@
             {/if}
           </div>
           <div class="flex-1 min-w-0">
-            <div class="font-medium text-sm text-base-content">
+            <div class="font-medium text-xs">
               {step.label}
             </div>
-            <div class="text-xs text-gray-500">
-              {step.progress} / {progress_max} documents
-            </div>
-          </div>
-          <div
-            class="radial-progress {is_step_completed(
-              step.name,
-              config_progress,
-            )
-              ? 'text-primary'
-              : is_running
-                ? 'text-warning'
-                : 'text-base-300'}"
-            style="--value:{step.pct}; --size:2.5rem; --thickness:3px;"
-            aria-valuenow={step.pct}
-            role="progressbar"
-          >
-            <span class="text-xs font-medium">{step.pct}%</span>
+            {#if step.name === "indexing"}
+              <div class="text-xs text-gray-500">
+                {step.progress} / {chunk_progress_max} chunks
+              </div>
+            {:else}
+              <div class="text-xs text-gray-500">
+                {step.progress} / {document_progress_max} documents
+              </div>
+            {/if}
           </div>
         </div>
       {/each}

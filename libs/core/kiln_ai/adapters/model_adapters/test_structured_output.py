@@ -359,6 +359,7 @@ async def test_all_built_in_models_structured_input_mocked(
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
     mock_config.user_id = "test_user"
+    mock_config.groq_api_key = "mock_api_key"
 
     with (
         patch(
@@ -415,6 +416,7 @@ async def test_structured_input_cot_prompt_builder_mocked(
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
     mock_config.user_id = "test_user"
+    mock_config.groq_api_key = "mock_api_key"
 
     with (
         patch(
@@ -473,7 +475,7 @@ When asked for a final result, this is the format (for an equilateral example):
 """
     task.output_json_schema = json.dumps(triangle_schema)
     task.save_to_file()
-    response, adapter, _ = await run_structured_input_task_no_validation(
+    response, _, _ = await run_structured_input_task_no_validation(
         task, model_name, provider_name, "simple_chain_of_thought_prompt_builder"
     )
 

@@ -12,6 +12,7 @@ from kiln_ai.adapters.embedding.litellm_embedding_adapter import (
     LitellmEmbeddingAdapter,
     validate_map_to_embeddings,
 )
+from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -120,7 +121,7 @@ class TestLitellmEmbeddingAdapter:
         # Verify litellm.aembedding was called with completion_kwargs
         call_args = mock_aembedding.call_args
         assert call_args[1]["custom_param"] == "value"
-        assert call_args[1]["base_url"] == "https://custom-api.example.com"
+        assert call_args[1]["api_base"] == "https://custom-api.example.com"
         assert call_args[1]["default_headers"] == {
             "Authorization": "Bearer custom-token"
         }
@@ -152,7 +153,7 @@ class TestLitellmEmbeddingAdapter:
         # Verify only the set options are passed
         call_args = mock_aembedding.call_args
         assert call_args[1]["timeout"] == 30
-        assert "base_url" not in call_args[1]
+        assert "api_base" not in call_args[1]
         assert "default_headers" not in call_args[1]
 
     async def test_generate_embeddings_with_empty_completion_kwargs(
@@ -181,7 +182,7 @@ class TestLitellmEmbeddingAdapter:
 
         # Verify no completion_kwargs are passed
         call_args = mock_aembedding.call_args
-        assert "base_url" not in call_args[1]
+        assert "api_base" not in call_args[1]
         assert "default_headers" not in call_args[1]
         # Should only have the basic parameters
         assert "model" in call_args[1]
@@ -263,7 +264,7 @@ class TestLitellmEmbeddingAdapter:
         # Verify litellm.aembedding was called with completion_kwargs
         call_args = mock_aembedding.call_args
         assert call_args[1]["custom_param"] == "value"
-        assert call_args[1]["base_url"] == "https://custom-api.example.com"
+        assert call_args[1]["api_base"] == "https://custom-api.example.com"
         assert call_args[1]["default_headers"] == {
             "Authorization": "Bearer custom-token"
         }
@@ -325,7 +326,7 @@ class TestLitellmEmbeddingAdapter:
         ):
             with pytest.raises(
                 RuntimeError,
-                match="Expected the number of embeddings in the response to be 2, got 1.",
+                match=r"Expected the number of embeddings in the response to be 2, got 1.",
             ):
                 await mock_litellm_adapter._generate_embeddings(["text1", "text2"])
 
@@ -818,7 +819,8 @@ def test_litellm_model_id(
     assert adapter.litellm_model_id == expected_model_id
 
 
-def test_litellm_model_id_custom_provider(mock_litellm_core_config):
+def test_litellm_model_id_custom_provider_without_base_url(mock_litellm_core_config):
+    """Test that custom providers without base_url raise an error."""
     config = EmbeddingConfig(
         name="test",
         model_provider_name=ModelProviderName.openai_compatible,
@@ -834,6 +836,163 @@ def test_litellm_model_id_custom_provider(mock_litellm_core_config):
         match="Embedding model some-model not found in the list of built-in models",
     ):
         adapter.model_provider
+
+
+def test_litellm_model_id_custom_provider_with_base_url(mock_litellm_core_config):
+    """Test that custom providers with base_url work correctly."""
+    # Set up a custom provider with base_url
+    mock_litellm_core_config.base_url = "https://custom-api.example.com"
+
+    config = EmbeddingConfig(
+        name="test",
+        model_provider_name=ModelProviderName.openai_compatible,
+        model_name="some-model",
+        properties={},
+    )
+    adapter = LitellmEmbeddingAdapter(
+        config, litellm_core_config=mock_litellm_core_config
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Embedding model some-model not found in the list of built-in models",
+    ):
+        adapter.model_provider
+
+
+def test_litellm_model_id_custom_provider_ollama_with_base_url():
+    """Test that ollama provider with base_url works correctly."""
+
+    # Create a mock provider that would be found in the built-in models
+    # We need to mock the built_in_embedding_models_from_provider function
+    with patch(
+        "kiln_ai.adapters.embedding.litellm_embedding_adapter.built_in_embedding_models_from_provider"
+    ) as mock_built_in:
+        mock_built_in.return_value = KilnEmbeddingModelProvider(
+            name=ModelProviderName.ollama,
+            model_id="test-model",
+            n_dimensions=768,
+        )
+
+        config = EmbeddingConfig(
+            name="test",
+            model_provider_name=ModelProviderName.ollama,
+            model_name="test-model",
+            properties={},
+        )
+
+        # With base_url - should work
+        litellm_core_config_with_url = LiteLlmCoreConfig(
+            base_url="http://localhost:11434"
+        )
+        adapter = LitellmEmbeddingAdapter(
+            config, litellm_core_config=litellm_core_config_with_url
+        )
+
+        # Should not raise an error
+        model_id = adapter.litellm_model_id
+        assert model_id == "openai/test-model"
+
+
+def test_litellm_model_id_custom_provider_ollama_without_base_url():
+    """Test that ollama provider without base_url raises an error."""
+    from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
+
+    # Create a mock provider that would be found in the built-in models
+    with patch(
+        "kiln_ai.adapters.embedding.litellm_embedding_adapter.built_in_embedding_models_from_provider"
+    ) as mock_built_in:
+        mock_built_in.return_value = KilnEmbeddingModelProvider(
+            name=ModelProviderName.ollama,
+            model_id="test-model",
+            n_dimensions=768,
+        )
+
+        config = EmbeddingConfig(
+            name="test",
+            model_provider_name=ModelProviderName.ollama,
+            model_name="test-model",
+            properties={},
+        )
+
+        # Without base_url - should raise an error
+        litellm_core_config_without_url = LiteLlmCoreConfig(base_url=None)
+        adapter = LitellmEmbeddingAdapter(
+            config, litellm_core_config=litellm_core_config_without_url
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="Provider ollama must have an explicit base URL",
+        ):
+            adapter.litellm_model_id
+
+
+def test_litellm_model_id_custom_provider_openai_compatible_with_base_url():
+    """Test that openai_compatible provider with base_url works correctly."""
+    from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
+
+    # Create a mock provider that would be found in the built-in models
+    with patch(
+        "kiln_ai.adapters.embedding.litellm_embedding_adapter.built_in_embedding_models_from_provider"
+    ) as mock_built_in:
+        mock_built_in.return_value = KilnEmbeddingModelProvider(
+            name=ModelProviderName.openai_compatible,
+            model_id="test-model",
+            n_dimensions=768,
+        )
+
+        config = EmbeddingConfig(
+            name="test",
+            model_provider_name=ModelProviderName.openai_compatible,
+            model_name="test-model",
+            properties={},
+        )
+
+        # With base_url - should work
+        litellm_core_config_with_url = LiteLlmCoreConfig(
+            base_url="https://custom-api.example.com"
+        )
+        adapter = LitellmEmbeddingAdapter(
+            config, litellm_core_config=litellm_core_config_with_url
+        )
+
+        # Should not raise an error
+        model_id = adapter.litellm_model_id
+        assert model_id == "openai/test-model"
+
+
+def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
+    """Test that openai_compatible provider without base_url raises an error."""
+
+    # Create a mock provider that would be found in the built-in models
+    with patch(
+        "kiln_ai.adapters.embedding.litellm_embedding_adapter.built_in_embedding_models_from_provider"
+    ) as mock_built_in:
+        mock_built_in.return_value = KilnEmbeddingModelProvider(
+            name=ModelProviderName.openai_compatible,
+            model_id="test-model",
+            n_dimensions=768,
+        )
+
+        config = EmbeddingConfig(
+            name="test",
+            model_provider_name=ModelProviderName.openai_compatible,
+            model_name="test-model",
+            properties={},
+        )
+
+        # Without base_url - should raise an error
+        litellm_core_config_without_url = LiteLlmCoreConfig(base_url=None)
+        adapter = LitellmEmbeddingAdapter(
+            config, litellm_core_config=litellm_core_config_without_url
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="Provider openai_compatible must have an explicit base URL",
+        ):
+            adapter.litellm_model_id
 
 
 @pytest.mark.paid
@@ -898,7 +1057,7 @@ def test_validate_map_to_embeddings_invalid_length():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Expected the number of embeddings in the response to be 2, got 1.",
+        match=r"Expected the number of embeddings in the response to be 2, got 1.",
     ):
         validate_map_to_embeddings(mock_response, 2)
 
@@ -910,7 +1069,7 @@ def test_validate_map_to_embeddings_invalid_object_type():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'object' is not 'embedding'. Got not_embedding.",
+        match=r"Embedding response data has an unexpected shape. Property 'object' is not 'embedding'. Got not_embedding.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -923,7 +1082,7 @@ def test_validate_map_to_embeddings_invalid_embedding_type():
     mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'embedding' is not a list. Got <class 'str'>.",
+        match=r"Embedding response data has an unexpected shape. Property 'embedding' is not a list. Got <class 'str'>.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -934,7 +1093,7 @@ def test_validate_map_to_embeddings_invalid_embedding_type():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'embedding' is None in response data item.",
+        match=r"Embedding response data has an unexpected shape. Property 'embedding' is None in response data item.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -947,7 +1106,7 @@ def test_validate_map_to_embeddings_invalid_index_type():
     mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'index' is not an integer. Got <class 'str'>.",
+        match=r"Embedding response data has an unexpected shape. Property 'index' is not an integer. Got <class 'str'>.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -958,7 +1117,7 @@ def test_validate_map_to_embeddings_invalid_index_type():
     ]
     with pytest.raises(
         RuntimeError,
-        match="Embedding response data has an unexpected shape. Property 'index' is None in response data item.",
+        match=r"Embedding response data has an unexpected shape. Property 'index' is None in response data item.",
     ):
         validate_map_to_embeddings(mock_response, 1)
 
@@ -985,6 +1144,6 @@ def test_generate_embeddings_response_not_embedding_response():
     response.usage = Usage(prompt_tokens=5, total_tokens=5)
     with pytest.raises(
         RuntimeError,
-        match="Expected EmbeddingResponse, got <class 'unittest.mock.AsyncMock'>.",
+        match=r"Expected EmbeddingResponse, got <class 'unittest.mock.AsyncMock'>.",
     ):
         validate_map_to_embeddings(response, 1)

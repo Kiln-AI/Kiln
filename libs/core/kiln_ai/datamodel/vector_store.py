@@ -4,86 +4,133 @@ from typing import TYPE_CHECKING, Union
 from pydantic import BaseModel, Field, model_validator
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.validation import (
+    validate_return_dict_prop,
+    validate_return_dict_prop_optional,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
 
 
 class VectorStoreType(str, Enum):
-    LANCE_DB = "lancedb"
+    LANCE_DB_FTS = "lancedb_fts"
+    LANCE_DB_HYBRID = "lancedb_hybrid"
+    LANCE_DB_VECTOR = "lancedb_vector"
 
 
-class LanceDBTableSchemaVersion(str, Enum):
-    V1 = "1"
-
-
-class LanceDBVectorIndexType(str, Enum):
-    BRUTEFORCE = "bruteforce"
-
-
-class QdrantVectorIndexType(str, Enum):
-    BRUTEFORCE = "bruteforce"
-
-
-class LanceDBVectorIndexMetric(str, Enum):
-    DOT = "dot"
-    COSINE = "cosine"
-    L2 = "l2"
-
-
-class LanceDBConfigProperties(BaseModel):
-    table_schema_version: LanceDBTableSchemaVersion
-    vector_index_type: LanceDBVectorIndexType
+class LanceDBConfigBaseProperties(BaseModel):
+    similarity_top_k: int = Field(
+        description="The number of results to return from the vector store.",
+    )
+    overfetch_factor: int = Field(
+        description="The overfetch factor to use for the vector search.",
+    )
+    vector_column_name: str = Field(
+        description="The name of the vector column in the vector store.",
+    )
+    text_key: str = Field(
+        description="The name of the text column in the vector store.",
+    )
+    doc_id_key: str = Field(
+        description="The name of the document id column in the vector store.",
+    )
+    nprobes: int | None = Field(
+        description="The number of probes to use for the vector search.",
+        default=None,
+    )
 
 
 class VectorStoreConfig(KilnParentedModel):
     name: FilenameString = Field(
         description="A name for your own reference to identify the vector store config.",
     )
+    description: str | None = Field(
+        description="A description for your own reference.",
+        default=None,
+    )
     store_type: VectorStoreType = Field(
         description="The type of vector store to use.",
     )
-    properties: dict[str, str | int] = Field(
+    properties: dict[str, str | int | float | None] = Field(
         description="The properties of the vector store config, specific to the selected store_type.",
     )
 
     @model_validator(mode="after")
     def validate_properties(self):
         match self.store_type:
-            case VectorStoreType.LANCE_DB:
-                return self.validate_lance_db_properties()
+            case (
+                VectorStoreType.LANCE_DB_FTS
+                | VectorStoreType.LANCE_DB_HYBRID
+                | VectorStoreType.LANCE_DB_VECTOR
+            ):
+                return self.validate_lancedb_properties(self.store_type)
             case _:
-                raise ValueError("Invalid vector store type")
+                raise_exhaustive_enum_error(self.store_type)
 
-    def validate_lance_db_properties(self):
-        if "table_schema_version" not in self.properties or self.properties[
-            "table_schema_version"
-        ] not in [v.value for v in LanceDBTableSchemaVersion]:
-            raise ValueError("LanceDB table schema version not found in properties")
-        if "vector_index_type" not in self.properties or self.properties[
-            "vector_index_type"
-        ] not in [v.value for v in LanceDBVectorIndexType]:
-            raise ValueError("LanceDB vector index type not found in properties")
+    def validate_lancedb_properties(self, store_type: VectorStoreType):
+        err_msg_prefix = f"LanceDB vector store configs properties for {store_type}:"
+        validate_return_dict_prop(
+            self.properties, "similarity_top_k", int, err_msg_prefix
+        )
+        validate_return_dict_prop(
+            self.properties, "overfetch_factor", int, err_msg_prefix
+        )
+        validate_return_dict_prop(
+            self.properties, "vector_column_name", str, err_msg_prefix
+        )
+        validate_return_dict_prop(self.properties, "text_key", str, err_msg_prefix)
+        validate_return_dict_prop(self.properties, "doc_id_key", str, err_msg_prefix)
+
+        # nprobes is only used for vector and hybrid queries
+        if (
+            store_type == VectorStoreType.LANCE_DB_VECTOR
+            or store_type == VectorStoreType.LANCE_DB_HYBRID
+        ):
+            validate_return_dict_prop(self.properties, "nprobes", int, err_msg_prefix)
 
         return self
 
-    def lancedb_typed_properties(self) -> LanceDBConfigProperties:
-        if self.store_type != VectorStoreType.LANCE_DB:
-            raise ValueError(
-                "lancedb_typed_properties can only be called for LanceDB vector store configs"
-            )
-
-        def safe_int(value) -> int | None:
-            if value is None:
-                return None
-            return int(value)
-
-        return LanceDBConfigProperties(
-            table_schema_version=LanceDBTableSchemaVersion(
-                self.properties.get("table_schema_version")
+    @property
+    def lancedb_properties(self) -> LanceDBConfigBaseProperties:
+        err_msg_prefix = "LanceDB vector store configs properties:"
+        return LanceDBConfigBaseProperties(
+            similarity_top_k=validate_return_dict_prop(
+                self.properties,
+                "similarity_top_k",
+                int,
+                err_msg_prefix,
             ),
-            vector_index_type=LanceDBVectorIndexType(
-                self.properties.get("vector_index_type")
+            overfetch_factor=validate_return_dict_prop(
+                self.properties,
+                "overfetch_factor",
+                int,
+                err_msg_prefix,
+            ),
+            vector_column_name=validate_return_dict_prop(
+                self.properties,
+                "vector_column_name",
+                str,
+                err_msg_prefix,
+            ),
+            text_key=validate_return_dict_prop(
+                self.properties,
+                "text_key",
+                str,
+                err_msg_prefix,
+            ),
+            doc_id_key=validate_return_dict_prop(
+                self.properties,
+                "doc_id_key",
+                str,
+                err_msg_prefix,
+            ),
+            nprobes=validate_return_dict_prop_optional(
+                self.properties,
+                "nprobes",
+                int,
+                err_msg_prefix,
             ),
         )
 

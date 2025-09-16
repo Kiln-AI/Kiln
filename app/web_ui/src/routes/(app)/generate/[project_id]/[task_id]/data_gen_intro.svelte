@@ -4,12 +4,18 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { Eval, FinetuneDatasetInfo } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
+  import MultiIntro from "$lib/ui/multi_intro.svelte"
+  import { onMount } from "svelte"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
   export let project_id: string
   export let task_id: string
   export let is_setup: boolean
+
+  onMount(async () => {
+    load_finetune_dataset_info()
+  })
 
   export let on_setup:
     | ((
@@ -116,12 +122,6 @@
       finetuning_tags = generate_fine_tuning_tags(
         finetune_dataset_info_response,
       )
-      const keys = Object.keys(finetuning_tags)
-      if (keys.length === 1 && keys[0] === "fine_tune_data") {
-        // Special case: there is only one tag, and it's the fine_tune_data tag.
-        // We don't need to show the dialog, just generate the data.
-        generate_fine_tuning_data_for_tag("fine_tune_data")
-      }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         finetune_dataset_info_error = new KilnError(
@@ -136,9 +136,21 @@
     }
   }
 
-  function show_fine_tuning_dialog() {
-    fine_tuning_dialog?.show()
-    load_finetune_dataset_info()
+  async function show_fine_tuning_dialog() {
+    // Special case: if loading or there is an error, show the dialog as it can handle these states. Usually it would alread be loaded by now since it's called onMount.
+    if (finetune_dataset_info_loading || finetune_dataset_info_error) {
+      fine_tuning_dialog?.show()
+      return
+    }
+
+    const keys = Object.keys(finetuning_tags)
+    if (keys.length === 1 && keys[0] === "fine_tune_data") {
+      // Special case: there is only one tag, and it's the fine_tune_data tag.
+      // We don't need to show the dialog, just generate the data.
+      generate_fine_tuning_data_for_tag("fine_tune_data")
+    } else {
+      fine_tuning_dialog?.show()
+    }
   }
 
   function generate_fine_tuning_data_for_tag(tag: string) {
@@ -163,215 +175,195 @@
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
   {#if is_setup}
-    <Intro
-      title="Generate Data"
-      description_paragraphs={[]}
-      action_buttons={[
+    <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
+      <Intro
+        title="Generate Data"
+        description_paragraphs={[]}
+        action_buttons={[
+          {
+            label: "Add Topics",
+            onClick: () => generate_subtopics(),
+            is_primary: true,
+          },
+          {
+            label: "Generate Model Inputs",
+            onClick: () => generate_samples(),
+            is_primary: false,
+          },
+        ]}
+      >
+        <div slot="description">
+          Adding topics will help generate diverse data. They can be nested,
+          forming a topic tree. <a
+            href="https://docs.kiln.tech/docs/synthetic-data-generation#topic-tree-data-generation"
+            target="_blank"
+            class="link">Guide</a
+          >.
+        </div>
+        <div slot="icon">
+          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+          <svg
+            class="w-12 h-12"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M22 10.5V12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2H13.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <path
+              d="M16.652 3.45506L17.3009 2.80624C18.3759 1.73125 20.1188 1.73125 21.1938 2.80624C22.2687 3.88124 22.2687 5.62415 21.1938 6.69914L20.5449 7.34795M16.652 3.45506C16.652 3.45506 16.7331 4.83379 17.9497 6.05032C19.1662 7.26685 20.5449 7.34795 20.5449 7.34795M16.652 3.45506L10.6872 9.41993C10.2832 9.82394 10.0812 10.0259 9.90743 10.2487C9.70249 10.5114 9.52679 10.7957 9.38344 11.0965C9.26191 11.3515 9.17157 11.6225 8.99089 12.1646L8.41242 13.9M20.5449 7.34795L14.5801 13.3128C14.1761 13.7168 13.9741 13.9188 13.7513 14.0926C13.4886 14.2975 13.2043 14.4732 12.9035 14.6166C12.6485 14.7381 12.3775 14.8284 11.8354 15.0091L10.1 15.5876M10.1 15.5876L8.97709 15.9619C8.71035 16.0508 8.41626 15.9814 8.21744 15.7826C8.01862 15.5837 7.9492 15.2897 8.03811 15.0229L8.41242 13.9M10.1 15.5876L8.41242 13.9"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+        </div>
+      </Intro>
+    </div>
+  {:else}
+    <MultiIntro
+      intros={[
         {
-          label: "Add Topics",
-          onClick: () => generate_subtopics(),
-          is_primary: true,
+          title: "Evals",
+          description:
+            "Generate data to evaluate model performance, including edge cases and challenging scenarios.",
+          action_buttons: [
+            {
+              label: "Generate Eval Data",
+              handler: show_evals_dialog,
+              primary: true,
+            },
+          ],
         },
         {
-          label: "Generate Model Inputs",
-          onClick: () => generate_samples(),
-          is_primary: false,
+          title: "Fine-Tuning",
+          description:
+            "Generate high-quality, diverse training examples for fine-tuning.",
+          action_buttons: [
+            {
+              label: "Generate Fine-Tuning Data",
+              handler: show_fine_tuning_dialog,
+              primary: true,
+            },
+          ],
         },
       ]}
     >
-      <div slot="description">
-        Adding topics will help generate diverse data. They can be nested,
-        forming a topic tree. <a
-          href="https://docs.kiln.tech/docs/synthetic-data-generation#topic-tree-data-generation"
-          target="_blank"
-          class="link">Guide</a
-        >.
-      </div>
-      <div slot="icon">
+      <div slot="image-0">
         <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
         <svg
-          class="w-10 h-10"
+          class="w-12 h-12"
           viewBox="0 0 24 24"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
           <path
-            d="M22 10.5V12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2H13.5"
+            d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z"
+            stroke="#1C274C"
+            stroke-width="1.5"
+          />
+          <path
+            d="M6 15.8L7.14286 17L10 14"
+            stroke="#1C274C"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M6 8.8L7.14286 10L10 7"
+            stroke="#1C274C"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M13 9L18 9"
+            stroke="#1C274C"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <path
+            d="M13 16L18 16"
+            stroke="#1C274C"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </svg>
+      </div>
+      <div slot="image-1">
+        <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+        <svg
+          class="w-12 h-12"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="2"
+            transform="rotate(180 12 12)"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <circle
+            cx="20"
+            cy="14"
+            r="2"
+            transform="rotate(180 20 14)"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <circle
+            cx="2"
+            cy="2"
+            r="2"
+            transform="matrix(-1 8.74228e-08 8.74228e-08 1 6 8)"
+            stroke="currentColor"
+            stroke-width="1.5"
+          />
+          <path
+            d="M12 8L12 5"
             stroke="currentColor"
             stroke-width="1.5"
             stroke-linecap="round"
           />
           <path
-            d="M16.652 3.45506L17.3009 2.80624C18.3759 1.73125 20.1188 1.73125 21.1938 2.80624C22.2687 3.88124 22.2687 5.62415 21.1938 6.69914L20.5449 7.34795M16.652 3.45506C16.652 3.45506 16.7331 4.83379 17.9497 6.05032C19.1662 7.26685 20.5449 7.34795 20.5449 7.34795M16.652 3.45506L10.6872 9.41993C10.2832 9.82394 10.0812 10.0259 9.90743 10.2487C9.70249 10.5114 9.52679 10.7957 9.38344 11.0965C9.26191 11.3515 9.17157 11.6225 8.99089 12.1646L8.41242 13.9M20.5449 7.34795L14.5801 13.3128C14.1761 13.7168 13.9741 13.9188 13.7513 14.0926C13.4886 14.2975 13.2043 14.4732 12.9035 14.6166C12.6485 14.7381 12.3775 14.8284 11.8354 15.0091L10.1 15.5876M10.1 15.5876L8.97709 15.9619C8.71035 16.0508 8.41626 15.9814 8.21744 15.7826C8.01862 15.5837 7.9492 15.2897 8.03811 15.0229L8.41242 13.9M10.1 15.5876L8.41242 13.9"
+            d="M20 10L20 5"
             stroke="currentColor"
             stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <path
+            d="M4 14L4 19"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <path
+            d="M12 19L12 16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <path
+            d="M20 19L20 18"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <path
+            d="M4 5L4 6"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
           />
         </svg>
       </div>
-    </Intro>
-  {:else}
-    <div class="flex justify-center">
-      <div
-        class="grid grid-cols-2 gap-x-32 gap-y-4 items-start font-light text-sm"
-        style="grid-template-columns: 270px 270px;"
-      >
-        <!-- Icons Row -->
-        <div class="text-center">
-          <div class="flex justify-center">
-            <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-            <svg
-              class="w-10 h-10"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z"
-                stroke="#1C274C"
-                stroke-width="1.5"
-              />
-              <path
-                d="M6 15.8L7.14286 17L10 14"
-                stroke="#1C274C"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M6 8.8L7.14286 10L10 7"
-                stroke="#1C274C"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M13 9L18 9"
-                stroke="#1C274C"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-              <path
-                d="M13 16L18 16"
-                stroke="#1C274C"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-            </svg>
-          </div>
-        </div>
-        <div class="text-center">
-          <div class="flex justify-center">
-            <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-            <svg
-              class="w-10 h-10"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="2"
-                transform="rotate(180 12 12)"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
-              <circle
-                cx="20"
-                cy="14"
-                r="2"
-                transform="rotate(180 20 14)"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
-              <circle
-                cx="2"
-                cy="2"
-                r="2"
-                transform="matrix(-1 8.74228e-08 8.74228e-08 1 6 8)"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
-              <path
-                d="M12 8L12 5"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-              <path
-                d="M20 10L20 5"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-              <path
-                d="M4 14L4 19"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-              <path
-                d="M12 19L12 16"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-              <path
-                d="M20 19L20 18"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-              <path
-                d="M4 5L4 6"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-            </svg>
-          </div>
-        </div>
-
-        <!-- Titles Row -->
-        <div class="text-center">
-          <h2 class="font-medium text-lg">Evals</h2>
-        </div>
-        <div class="text-center">
-          <h2 class="font-medium text-lg">Fine-Tuning</h2>
-        </div>
-
-        <!-- Descriptions Row -->
-        <div class="">
-          <p class="">
-            Generate data to evaluate model performance, including edge cases
-            and challenging scenarios.
-          </p>
-        </div>
-        <div class="">
-          <p class="">
-            Generate high-quality, diverse training examples for fine-tuning.
-          </p>
-        </div>
-
-        <!-- Action Buttons Row -->
-        <div class="">
-          <button
-            class="btn btn-primary w-full mt-4"
-            on:click={show_evals_dialog}
-          >
-            Generate Eval Data
-          </button>
-        </div>
-        <div class="">
-          <button
-            class="btn btn-primary w-full mt-4"
-            on:click={show_fine_tuning_dialog}
-          >
-            Generate Fine-Tuning Data
-          </button>
-        </div>
-      </div>
-    </div>
+    </MultiIntro>
   {/if}
 </div>
 

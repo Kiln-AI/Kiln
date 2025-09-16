@@ -216,6 +216,8 @@ export function toolServerTypeToString(
   switch (type) {
     case "remote_mcp":
       return "Remote MCP"
+    case "local_mcp":
+      return "Local MCP"
     default: {
       // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
       // and don't handle it above, TypeScript will error here

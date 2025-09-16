@@ -7,6 +7,23 @@
 
 set -e
 
+# Parse command line arguments
+# --staged-only is useful to only run checks on the types of files that are staged for commit, speeding up pre-commit hooks
+staged_only=false
+for arg in "$@"; do
+    case $arg in
+        --staged-only)
+            staged_only=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [--staged-only]"
+            exit 1
+            ;;
+    esac
+done
+
 # work from the root of the repo
 cd "$(dirname "$0")"
 
@@ -23,12 +40,17 @@ if command -v misspell >/dev/null 2>&1; then
     echo "No misspellings found"
 else
     echo "\033[31mWarning: misspell command not found. Skipping misspelling check.\033[0m"
-    echo "\033[31mTo install: go install github.com/client9/misspell/cmd/misspell@latest\033[0m"
+    echo "\033[31mTo install follow the instructions at https://github.com/golangci/misspell \033[0m"
 fi
+
+echo "${headerStart}OpenAPI Schema Check${headerEnd}"
+cd app/web_ui/src/lib/
+./check_schema.sh --allow-skip
+cd ../../../..
 
 echo "${headerStart}Web UI: format, lint, check${headerEnd}"
 changed_files=$(git diff --name-only --staged)
-if [[ "$changed_files" == *"app/web_ui/"* ]]; then
+if [ "$staged_only" = false ] || [[ "$changed_files" == *"app/web_ui/"* ]]; then
     echo "${headerStart}Checking Web UI: format, lint, check${headerEnd}"
     cd app/web_ui
     npm run format_check
@@ -44,7 +66,7 @@ fi
 
 
 # Check if python files were changed, and run tests/typecheck if so
-if echo "$changed_files" | grep -q "\.py$"; then
+if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
     echo "${headerStart}Checking Python Types${headerEnd}"
     pyright .
 

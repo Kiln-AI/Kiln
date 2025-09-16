@@ -146,7 +146,11 @@ class BaseAdapter(metaclass=ABCMeta):
                     f"response is not a string for non-structured task: {parsed_output.output}"
                 )
 
-        # Validate reasoning content is present (if reasoning)
+        # Validate reasoning content is present and required
+        # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
+        trace_has_toolcalls = parsed_output.trace is not None and any(
+            message.get("role", None) == "tool" for message in parsed_output.trace
+        )
         if (
             provider.reasoning_capable
             and (
@@ -157,6 +161,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 provider.reasoning_optional_for_structured_output
                 and self.has_structured_output()
             )
+            and not (trace_has_toolcalls)
         ):
             raise RuntimeError(
                 "Reasoning is required for this model, but no reasoning was returned."
@@ -327,7 +332,7 @@ class BaseAdapter(metaclass=ABCMeta):
             new_run_config.structured_output_mode = structured_output_mode
             self.run_config = new_run_config
 
-    def available_tools(self) -> list[KilnToolInterface]:
+    async def available_tools(self) -> list[KilnToolInterface]:
         tool_config = self.run_config.tools_config
         if tool_config is None or tool_config.tools is None:
             return []
@@ -340,5 +345,13 @@ class BaseAdapter(metaclass=ABCMeta):
         if project_id is None:
             raise ValueError("Project must have an ID to resolve tools")
 
-        tools = [tool_from_id(tool_id, project_id) for tool_id in tool_config.tools]
+        tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
+
+        # Check each tool has a unique name
+        tool_names = [await tool.name() for tool in tools]
+        if len(tool_names) != len(set(tool_names)):
+            raise ValueError(
+                "Each tool must have a unique name. Either de-select the duplicate tools, or modify their names to describe their unique purpose. Model will struggle if tools do not have descriptive names and tool execution will be undefined."
+            )
+
         return tools

@@ -1,4 +1,3 @@
-from typing import cast  # noqa: TID251
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,8 +11,8 @@ from mcp.types import (
 )
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
-from kiln_ai.tools.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 
 
 class TestMCPServerTool:
@@ -81,7 +80,8 @@ class TestMCPServerTool:
         mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
 
         call_result = CallToolResult(
-            content=cast(list[ContentBlock], []), isError=False
+            content=list[ContentBlock]([]),
+            isError=False,  # type: ignore
         )
         mock_session.call_tool.return_value = call_result
 
@@ -133,7 +133,8 @@ class TestMCPServerTool:
 
         result_content = [TextContent(type="text", text="Error occurred")]
         call_result = CallToolResult(
-            content=cast(list[ContentBlock], result_content), isError=True
+            content=list[ContentBlock](result_content),
+            isError=True,  # type: ignore
         )
         mock_session.call_tool.return_value = call_result
 
@@ -433,7 +434,6 @@ class TestMCPServerToolIntegration:
         assert len(result.content) > 0
         text_content = result.content[0]
         assert isinstance(text_content, TextContent)
-        print("text_content: ", text_content)
         assert (
             text_content.text == "Tool echo: " + test_message
         )  # 'Tool echo: Hello, world!'
@@ -446,7 +446,6 @@ class TestMCPServerToolIntegration:
         test_message = "Hello, world!"
 
         run_result = tool.run(message=test_message)
-        print("run_result: ", run_result)
         assert run_result == "Tool echo: " + test_message
 
     @pytest.mark.skip(
@@ -455,5 +454,4 @@ class TestMCPServerToolIntegration:
     async def test_get_tool(self):
         tool = MCPServerTool(self.external_tool_server, "echo")
         mcp_tool = await tool._get_tool("echo")
-        print("mcp_tool: ", mcp_tool)
         assert mcp_tool.name == "echo"

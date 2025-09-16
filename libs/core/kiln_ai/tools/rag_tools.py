@@ -7,15 +7,17 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapt
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
-    SimilarityMetric,
+    VectorStoreQuery,
 )
-from kiln_ai.adapters.vector_store.registry import vector_store_adapter_for_config
+from kiln_ai.adapters.vector_store.vector_store_registry import (
+    vector_store_adapter_for_config,
+)
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import VectorStoreConfig
+from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.tools.base_tool import KilnToolInterface
-from kiln_ai.tools.tool_id import ToolId
 
 
 class ChunkContext(BaseModel):
@@ -78,7 +80,8 @@ class RagTool(KilnToolInterface):
                 f"Vector store config not found: {self._rag_config.vector_store_config_id}"
             )
         return vector_store_config, await vector_store_adapter_for_config(
-            vector_store_config
+            vector_store_config=vector_store_config,
+            rag_config=self._rag_config,
         )
 
     async def id(self) -> ToolId:
@@ -101,25 +104,33 @@ class RagTool(KilnToolInterface):
             },
         }
 
-    async def run(self, query: str) -> str:
-        print(f"Running RAG tool with query: {query}")
+    async def run(self, query_string: str) -> str:
+        print(f"Running RAG tool with query: {query_string}")
         _, embedding_adapter = self.embedding
-
-        # embed query
-        query_embedding_result = await embedding_adapter.generate_embeddings([query])
-        if len(query_embedding_result.embeddings) == 0:
-            raise ValueError("No embeddings generated")
-        query_vec = query_embedding_result.embeddings[0].vector
 
         # TODO: the vector store adapter should be singleton and we should rather be dealing with collection here
         vector_store_config, vector_store_adapter = await self.vector_store
-        collection = await vector_store_adapter.collection(self._rag_config)
-        await collection.optimize()
-        knn_results = await collection.search_vector(
-            vector=query_vec,
-            k=10,
-            distance_type=SimilarityMetric.COSINE,
-        )
+
+        query: VectorStoreQuery | None = None
+        if vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS:
+            query = VectorStoreQuery(
+                query_embedding=None,
+                query_string=query_string,
+            )
+        else:
+            # embed query
+            query_embedding_result = await embedding_adapter.generate_embeddings(
+                [query_string]
+            )
+            if len(query_embedding_result.embeddings) == 0:
+                raise ValueError("No embeddings generated")
+            query_vec = query_embedding_result.embeddings[0].vector
+            query = VectorStoreQuery(
+                query_embedding=query_vec,
+                query_string=None,
+            )
+
+        knn_results = await vector_store_adapter.search(query)
 
         results: List[ChunkContext] = []
         for knn_result in knn_results:

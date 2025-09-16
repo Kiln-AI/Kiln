@@ -1,12 +1,6 @@
 <script lang="ts">
   import InfoTooltip from "./info_tooltip.svelte"
-
-  type UiProperty = {
-    name: string
-    value: string | number
-    tooltip?: string
-    link?: string
-  }
+  import type { UiProperty } from "./property_list"
 
   export let properties: UiProperty[]
   export let title: string | null = null
@@ -24,7 +18,11 @@
           <InfoTooltip tooltip_text={property.tooltip} />
         {/if}
       </div>
-      <div class="flex items-center text-gray-500 overflow-x-hidden">
+      <div
+        class="flex items-center overflow-x-hidden {property.error
+          ? 'text-error'
+          : 'text-gray-500'}"
+      >
         {#if property.link}
           <a href={property.link} class="link">{property.value}</a>
         {:else}

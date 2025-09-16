@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Documents Bulk */
+        post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents": {
         parameters: {
             query?: never;
@@ -379,8 +396,7 @@ export interface paths {
         /** Get Documents */
         get: operations["get_documents_api_projects__project_id__documents_get"];
         put?: never;
-        /** Create Document */
-        post: operations["create_document_api_projects__project_id__documents_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -402,7 +418,8 @@ export interface paths {
         delete: operations["delete_document_api_projects__project_id__documents__document_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Document */
+        patch: operations["patch_document_api_projects__project_id__documents__document_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/documents/edit_tags": {
@@ -679,6 +696,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_vector_store_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Vector Store Config */
+        post: operations["create_vector_store_config_api_projects__project_id__create_vector_store_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/vector_store_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vector Store Configs */
+        get: operations["get_vector_store_configs_api_projects__project_id__vector_store_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Config */
+        get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Rag Config */
+        patch: operations["update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/rag_configs/create_rag_config": {
         parameters: {
             query?: never;
@@ -705,23 +774,6 @@ export interface paths {
         };
         /** Get Rag Configs */
         get: operations["get_rag_configs_api_projects__project_id__rag_configs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/rag_configs/{rag_config_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Rag Config */
-        get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -758,6 +810,26 @@ export interface paths {
         put?: never;
         /** Get Rag Config Progress */
         post: operations["get_rag_config_progress_api_projects__project_id__rag_configs_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Rag Config
+         * @description Search the vector store associated with a RAG config.
+         */
+        post: operations["search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1064,8 +1136,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Sample */
+        /**
+         * Save Sample
+         * @description Save a sample generated by the generate_sample endpoint.
+         */
         post: operations["save_sample_api_projects__project_id__tasks__task_id__save_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Sample */
+        post: operations["generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1564,7 +1656,8 @@ export interface paths {
         get: operations["get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Tool Server */
+        delete: operations["delete_tool_server_api_projects__project_id__tool_servers__tool_server_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1581,6 +1674,75 @@ export interface paths {
         put?: never;
         /** Connect Remote Mcp */
         post: operations["connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Remote Mcp */
+        patch: operations["edit_remote_mcp_api_projects__project_id__edit_remote_mcp__tool_server_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/connect_local_mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect Local Mcp */
+        post: operations["connect_local_mcp_api_projects__project_id__connect_local_mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/edit_local_mcp/{tool_server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Local Mcp */
+        patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
+        trace?: never;
+    };
+    "/api/demo_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Demo Tools */
+        get: operations["get_demo_tools_api_demo_tools_get"];
+        put?: never;
+        /** Set Demo Tools */
+        post: operations["set_demo_tools_api_demo_tools_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1682,23 +1844,12 @@ export interface components {
             /** Splits */
             splits?: string | null;
         };
-        /** Body_create_document_api_projects__project_id__documents_post */
-        Body_create_document_api_projects__project_id__documents_post: {
-            /**
-             * File
-             * Format: binary
-             */
-            file: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-            /**
-             * Description
-             * @default
-             */
-            description: string;
+        /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
+        Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+            /** Files */
+            files?: string[] | null;
+            /** Names */
+            names?: string[] | null;
         };
         /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
         Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
@@ -1718,6 +1869,13 @@ export interface components {
             /** Remove Tags */
             remove_tags?: string[] | null;
         };
+        /** BulkCreateDocumentsResponse */
+        BulkCreateDocumentsResponse: {
+            /** Created Documents */
+            created_documents: components["schemas"]["Document"][];
+            /** Failed Files */
+            failed_files: string[];
+        };
         /** BulkUploadResponse */
         BulkUploadResponse: {
             /** Success */
@@ -1729,8 +1887,12 @@ export interface components {
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+         *
+         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
          *     https://github.com/pydantic/pydantic/issues/9541
+         *
+         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
         "ChatCompletionAssistantMessageParamWrapper-Input": {
             /**
@@ -1741,18 +1903,24 @@ export interface components {
             audio?: components["schemas"]["Audio"] | null;
             /** Content */
             content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
             function_call?: components["schemas"]["FunctionCall"] | null;
             /** Name */
             name?: string;
             /** Refusal */
             refusal?: string | null;
             /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but with List[T] instead of Iterable[T] for tool_calls.
+         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+         *
+         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
          *     https://github.com/pydantic/pydantic/issues/9541
+         *
+         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
         "ChatCompletionAssistantMessageParamWrapper-Output": {
             /**
@@ -1763,13 +1931,15 @@ export interface components {
             audio?: components["schemas"]["Audio"] | null;
             /** Content */
             content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
             function_call?: components["schemas"]["FunctionCall"] | null;
             /** Name */
             name?: string;
             /** Refusal */
             refusal?: string | null;
             /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -1833,8 +2003,8 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageToolCallParam */
-        ChatCompletionMessageToolCallParam: {
+        /** ChatCompletionMessageFunctionToolCallParam */
+        ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
             function: components["schemas"]["Function"];
@@ -2019,7 +2189,9 @@ export interface components {
             name?: string | null;
             type: components["schemas"]["EvalConfigType"];
             /** Properties */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Name */
             model_name: string;
             provider: components["schemas"]["ModelProviderName"];
@@ -2133,6 +2305,11 @@ export interface components {
              * @description The embedding config to use for the RAG workflow.
              */
             embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The vector store config to use for the RAG workflow.
+             */
+            vector_store_config_id: string | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -2141,6 +2318,25 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /** CreateVectorStoreConfigRequest */
+        CreateVectorStoreConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the vector store config
+             */
+            description?: string | null;
+            /** @description The type of vector store to use */
+            store_type: components["schemas"]["VectorStoreType"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -2225,7 +2421,9 @@ export interface components {
              * Input
              * @description Input for this sample
              */
-            input: string | Record<string, never>;
+            input: string | {
+                [key: string]: unknown;
+            };
             /**
              * Topic Path
              * @description The path to the topic for this sample. Empty is the root topic.
@@ -2516,7 +2714,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini-embedding-001";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -2646,7 +2844,9 @@ export interface components {
              * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
              * @default {}
              */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2833,7 +3033,9 @@ export interface components {
             /** Description */
             description: string | null;
             /** Inputschema */
-            inputSchema?: Record<string, never>;
+            inputSchema?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ExternalToolServer
@@ -2876,7 +3078,9 @@ export interface components {
              * @description Configuration properties specific to the tool type.
              * @default {}
              */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2897,22 +3101,28 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
+            /** Missing Secrets */
+            missing_secrets: string[];
         };
         /** ExternalToolServerCreationRequest */
         ExternalToolServerCreationRequest: {
             /** Name */
             name: string;
+            /** Description */
+            description?: string | null;
             /** Server Url */
             server_url: string;
             /** Headers */
             headers?: {
                 [key: string]: string;
             };
-            /** Description */
-            description?: string | null;
+            /** Secret Header Keys */
+            secret_header_keys?: string[];
         };
         /** ExtractionProgress */
         ExtractionProgress: {
@@ -3061,7 +3271,9 @@ export interface components {
              */
             mime_type: string;
             /** @description The attachment to the file */
-            attachment: Record<string, never>;
+            attachment: {
+                [key: string]: unknown;
+            };
         };
         /**
          * FineTuneParameter
@@ -3333,7 +3545,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        "KilnBaseModel-Input": {
+        KilnBaseModel: {
             /**
              * V
              * @default 1
@@ -3350,37 +3562,6 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-        };
-        /**
-         * KilnBaseModel
-         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
-         *
-         *     Attributes:
-         *         v (int): Schema version number for migration support
-         *         id (str): Unique identifier for the model instance
-         *         path (Path): File system path where the model is stored
-         *         created_at (datetime): Timestamp when the model was created
-         *         created_by (str): User ID of the creator
-         */
-        "KilnBaseModel-Output": {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -3399,12 +3580,31 @@ export interface components {
             type: components["schemas"]["ToolServerType"];
             /** Description */
             description: string | null;
+            /** Missing Secrets */
+            missing_secrets: string[];
         };
         /**
          * Kind
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LocalToolServerCreationRequest */
+        LocalToolServerCreationRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Command */
+            command: string;
+            /** Args */
+            args: string[];
+            /** Env Vars */
+            env_vars?: {
+                [key: string]: string;
+            };
+            /** Secret Env Var Keys */
+            secret_env_var_keys?: string[];
+        };
         /** LogMessage */
         LogMessage: {
             /**
@@ -3473,13 +3673,6 @@ export interface components {
             task_filter?: string[] | null;
         };
         /**
-         * ModelName
-         * @description Enumeration of specific model versions supported by the system.
-         *     Where models have instruct and raw versions, instruct is default and raw is specified.
-         * @enum {string}
-         */
-        ModelName: "llama_3_1_8b" | "llama_3_1_70b" | "llama_3_1_405b" | "llama_3_2_1b" | "llama_3_2_3b" | "llama_3_2_11b" | "llama_3_2_90b" | "llama_3_3_70b" | "llama_4_maverick" | "llama_4_scout" | "gpt_5" | "gpt_5_chat" | "gpt_5_mini" | "gpt_5_nano" | "gpt_4o_mini" | "gpt_4o" | "gpt_4_1" | "gpt_4_1_mini" | "gpt_4_1_nano" | "gpt_o3_low" | "gpt_o3_medium" | "gpt_o3_high" | "gpt_oss_20b" | "gpt_oss_120b" | "gpt_o1_low" | "gpt_o1_medium" | "gpt_o1_high" | "gpt_o4_mini_low" | "gpt_o4_mini_medium" | "gpt_o4_mini_high" | "gpt_o3_mini_low" | "gpt_o3_mini_medium" | "gpt_o3_mini_high" | "phi_3_5" | "phi_4" | "phi_4_5p6b" | "phi_4_mini" | "mistral_large" | "mistral_nemo" | "mistral_small_3" | "magistral_medium" | "magistral_medium_thinking" | "gemma_2_2b" | "gemma_2_9b" | "gemma_2_27b" | "gemma_3_0p27b" | "gemma_3_1b" | "gemma_3_4b" | "gemma_3_12b" | "gemma_3_27b" | "gemma_3n_2b" | "gemma_3n_4b" | "claude_3_5_haiku" | "claude_3_5_sonnet" | "claude_3_7_sonnet" | "claude_3_7_sonnet_thinking" | "claude_sonnet_4" | "claude_opus_4" | "gemini_1_5_flash" | "gemini_1_5_flash_8b" | "gemini_1_5_pro" | "gemini_2_0_flash" | "gemini_2_0_flash_lite" | "gemini_2_5_pro" | "gemini_2_5_flash" | "gemini_2_5_flash_lite" | "nemotron_70b" | "mixtral_8x7b" | "qwen_2p5_7b" | "qwen_2p5_14b" | "qwen_2p5_72b" | "qwq_32b" | "deepseek_3" | "deepseek_r1" | "deepseek_r1_0528" | "deepseek_r1_0528_distill_qwen3_8b" | "deepseek_r1_distill_qwen_32b" | "deepseek_r1_distill_llama_70b" | "deepseek_r1_distill_qwen_14b" | "deepseek_r1_distill_qwen_1p5b" | "deepseek_r1_distill_qwen_7b" | "deepseek_r1_distill_llama_8b" | "dolphin_2_9_8x22b" | "grok_2" | "grok_3" | "grok_3_mini" | "grok_4" | "qwen_3_0p6b" | "qwen_3_0p6b_no_thinking" | "qwen_3_1p7b" | "qwen_3_1p7b_no_thinking" | "qwen_3_4b" | "qwen_3_4b_no_thinking" | "qwen_3_8b" | "qwen_3_8b_no_thinking" | "qwen_3_14b" | "qwen_3_14b_no_thinking" | "qwen_3_30b_a3b_2507" | "qwen_3_30b_a3b" | "qwen_3_30b_a3b_2507_no_thinking" | "qwen_3_30b_a3b_no_thinking" | "qwen_3_32b" | "qwen_3_32b_no_thinking" | "qwen_3_235b_a22b_2507" | "qwen_3_235b_a22b" | "qwen_3_235b_a22b_2507_no_thinking" | "qwen_3_235b_a22b_no_thinking" | "qwen_long_l1_32b" | "kimi_k2" | "kimi_dev_72b" | "glm_4_5" | "glm_4_5_air" | "glm_4_1v_9b_thinking" | "glm_z1_32b_0414" | "glm_z1_9b_0414" | "ernie_4_5_300b_a47b" | "hunyuan_a13b" | "hunyuan_a13b_no_thinking" | "minimax_m1_80k" | "pangu_pro_moe_72b_a16b";
-        /**
          * ModelProviderName
          * @description Enumeration of supported AI model providers.
          * @enum {string}
@@ -3495,6 +3688,8 @@ export interface components {
             supported_models: string[];
             /** Untested Models */
             untested_models?: string[];
+            /** Supported Embedding Models */
+            supported_embedding_models?: string[];
         };
         /** OpenFileResponse */
         OpenFileResponse: {
@@ -3506,6 +3701,24 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** PatchDocumentRequest */
+        PatchDocumentRequest: {
+            /**
+             * Name
+             * @description A name for this document.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the document
+             */
+            description?: string | null;
+            /**
+             * Tags
+             * @description Tags for the document
+             */
+            tags?: string[] | null;
+        };
         /** PatchExtractorConfigRequest */
         PatchExtractorConfigRequest: {
             /**
@@ -3762,7 +3975,7 @@ export interface components {
             embedding_config_id: string | null;
             /**
              * Vector Store Config Id
-             * @description The ID of the vector store config that was used to store the documents.
+             * @description The ID of the vector store config used to store the documents.
              */
             vector_store_config_id: string | null;
             /** Model Type */
@@ -3786,6 +3999,7 @@ export interface components {
             extractor_config: components["schemas"]["ExtractorConfig"];
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
+            vector_store_config: components["schemas"]["VectorStoreConfig"];
         };
         /** RagProgress */
         RagProgress: {
@@ -3801,6 +4015,18 @@ export interface components {
              * @default 0
              */
             total_document_completed_count: number;
+            /**
+             * Total Chunk Count
+             * @description The number of chunks that should be indexed for the indexing to be completed.
+             * @default 0
+             */
+            total_chunk_count: number;
+            /**
+             * Total Chunk Completed Count
+             * @description The number of chunks that have been indexed
+             * @default 0
+             */
+            total_chunk_completed_count: number;
             /**
              * Total Document Extracted Count
              * @description The number of items that have been extracted
@@ -3838,10 +4064,38 @@ export interface components {
              */
             total_document_embedded_error_count: number;
             /**
+             * Total Chunks Indexed Count
+             * @description The number of chunks that have been indexed
+             * @default 0
+             */
+            total_chunks_indexed_count: number;
+            /**
+             * Total Chunks Indexed Error Count
+             * @description The number of chunks that have errored during indexing
+             * @default 0
+             */
+            total_chunks_indexed_error_count: number;
+            /**
              * Logs
              * @description A list of log messages to display to the user
              */
             logs?: components["schemas"]["LogMessage"][] | null;
+        };
+        /** RagSearchRequest */
+        RagSearchRequest: {
+            /**
+             * Query
+             * @description The search query text
+             */
+            query: string;
+        };
+        /** RagSearchResponse */
+        RagSearchResponse: {
+            /**
+             * Results
+             * @description The search results
+             */
+            results: components["schemas"]["SearchResult"][];
         };
         /** RatingOption */
         RatingOption: {
@@ -3969,7 +4223,9 @@ export interface components {
             /** Plaintext Input */
             plaintext_input?: string | null;
             /** Structured Input */
-            structured_input?: Record<string, never> | null;
+            structured_input?: {
+                [key: string]: unknown;
+            } | null;
             /** Tags */
             tags?: string[] | null;
         };
@@ -3977,6 +4233,29 @@ export interface components {
         ScoreSummary: {
             /** Mean Score */
             mean_score: number;
+        };
+        /** SearchResult */
+        SearchResult: {
+            /**
+             * Document Id
+             * @description The id of the Kiln document.
+             */
+            document_id: string;
+            /**
+             * Chunk Idx
+             * @description The index of the chunk.
+             */
+            chunk_idx: number;
+            /**
+             * Chunk Text
+             * @description The text of the chunk.
+             */
+            chunk_text: string;
+            /**
+             * Similarity
+             * @description The score of the chunk, which depends on the similarity metric used.
+             */
+            similarity: number | null;
         };
         /**
          * StructuredOutputMode
@@ -4265,7 +4544,7 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -4422,7 +4701,7 @@ export interface components {
          * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
-        ToolServerType: "remote_mcp";
+        ToolServerType: "remote_mcp" | "local_mcp";
         /** ToolSetApiDescription */
         ToolSetApiDescription: {
             /** Set Name */
@@ -4463,6 +4742,13 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** UpdateRagConfigRequest */
+        UpdateRagConfigRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
         /** Usage */
         Usage: {
             /**
@@ -4495,6 +4781,51 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VectorStoreConfig */
+        VectorStoreConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for your own reference to identify the vector store config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /** @description The type of vector store to use. */
+            store_type: components["schemas"]["VectorStoreType"];
+            /**
+             * Properties
+             * @description The properties of the vector store config, specific to the selected store_type.
+             */
+            properties: {
+                [key: string]: string | number | null;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * VectorStoreType
+         * @enum {string}
+         */
+        VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
     };
     responses: never;
     parameters: never;
@@ -4568,7 +4899,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4660,7 +4993,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -4716,7 +5051,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4784,7 +5121,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -5120,7 +5459,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -5352,6 +5693,41 @@ export interface operations {
             };
         };
     };
+    create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkCreateDocumentsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_documents_api_projects__project_id__documents_get: {
         parameters: {
             query?: never;
@@ -5370,41 +5746,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_document_api_projects__project_id__documents_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_create_document_api_projects__project_id__documents_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Validation Error */
@@ -5468,7 +5809,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_document_api_projects__project_id__documents__document_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Validation Error */
@@ -5639,7 +6018,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -5769,7 +6150,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -5868,7 +6251,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6082,6 +6467,140 @@ export interface operations {
             };
         };
     };
+    create_vector_store_config_api_projects__project_id__create_vector_store_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateVectorStoreConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vector_store_configs_api_projects__project_id__vector_store_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRagConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post: {
         parameters: {
             query?: never;
@@ -6135,38 +6654,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagConfigWithSubConfigs"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                rag_config_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
                 };
             };
             /** @description Validation Error */
@@ -6236,6 +6723,42 @@ export interface operations {
                     "application/json": {
                         [key: string]: components["schemas"]["RagProgress"];
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSearchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6464,7 +6987,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -6641,7 +7166,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -6805,6 +7332,42 @@ export interface operations {
         };
     };
     save_sample_api_projects__project_id__tasks__task_id__save_sample_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskRun-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post: {
         parameters: {
             query?: {
                 session_id?: string | null;
@@ -7983,6 +8546,38 @@ export interface operations {
             };
         };
     };
+    delete_tool_server_api_projects__project_id__tool_servers__tool_server_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post: {
         parameters: {
             query?: never;
@@ -8005,6 +8600,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_remote_mcp_api_projects__project_id__edit_remote_mcp__tool_server_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_local_mcp_api_projects__project_id__connect_local_mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_demo_tools_api_demo_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+        };
+    };
+    set_demo_tools_api_demo_tools_post: {
+        parameters: {
+            query: {
+                enable_demo_tools: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
                 };
             };
             /** @description Validation Error */

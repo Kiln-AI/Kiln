@@ -6,11 +6,13 @@
     embedding_model_name,
     model_name,
     provider_name_from_id,
+    vector_store_name,
   } from "$lib/stores"
   import {
     ragProgressStore,
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
+  import { goto } from "$app/navigation"
 
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
@@ -35,6 +37,7 @@
       case "complete": {
         return {
           text: "Complete",
+          primary: true,
         }
       }
       case "incomplete": {
@@ -64,21 +67,23 @@
   }
 
   $: status_badge_props = status_to_badge_props(status)
+
+  function open() {
+    goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
+  }
 </script>
 
 {#if rag_progress && rag_config}
-  <tr class={row_hovered ? "hover" : ""}>
+  <tr
+    class="{row_hovered ? 'hover' : ''} cursor-pointer hover:bg-base-200"
+    on:click|stopPropagation={open}
+  >
     <!-- Step Info Card -->
-    <td class="align-top p-4 h-full">
+    <td class="align-top p-4">
       <div class="flex flex-col gap-2">
         <!-- Header -->
-        <div class="flex items-center justify-between">
-          <a
-            class="font-medium text-base-content cursor-pointer link"
-            href={`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`}
-          >
-            {rag_config.name}
-          </a>
+        <div class="font-medium">
+          {rag_config.name}
         </div>
 
         <!-- Description -->
@@ -105,6 +110,11 @@
               rag_config.embedding_config.model_provider_name,
             ) || "N/A"}
           </div>
+          <div>
+            Vector Store: {vector_store_name(
+              rag_config.vector_store_config.store_type,
+            ) || "N/A"}
+          </div>
           <div class="text-xs text-gray-500">
             Created {formatDate(rag_config.created_at)}
           </div>
@@ -114,16 +124,21 @@
 
     <!-- Progress Section -->
     {#if total_docs > 0}
-      <td class="p-4 cursor-default align-top">
+      <td class="p-4 align-top">
         <div class="flex flex-col gap-2 w-full max-w-[360px]">
           <!-- Status and Action Row -->
           <div class="flex items-center justify-between gap-4">
             <div
-              class={`badge badge-outline px-3 py-1 ${status_badge_props?.warning ? "badge-warning" : ""} ${status_badge_props?.running ? "badge-success" : ""} ${status_badge_props?.error ? "badge-error" : ""}`}
+              class="badge badge-outline px-3 py-1 {status_badge_props?.warning
+                ? 'badge-warning'
+                : ''} {status_badge_props?.running
+                ? 'badge-success'
+                : ''} {status_badge_props?.error
+                ? 'badge-error'
+                : ''} {status_badge_props?.primary ? 'badge-primary' : ''}"
             >
               {status_badge_props?.text}
             </div>
-            <RunRagControl {rag_config} {project_id} />
           </div>
 
           <!-- Progress Bar (only when running) -->
@@ -154,10 +169,14 @@
               {/if}
             </div>
           {/if}
+
+          <div role="presentation" on:click|stopPropagation>
+            <RunRagControl {rag_config} {project_id} />
+          </div>
         </div>
       </td>
     {:else}
-      <td class="p-4 cursor-default align-top">
+      <td class="p-4 align-top">
         <div class="flex flex-col gap-3">
           <div class="text-xs text-gray-500 text-start">
             <p>Looks like you don't have any documents yet.</p>

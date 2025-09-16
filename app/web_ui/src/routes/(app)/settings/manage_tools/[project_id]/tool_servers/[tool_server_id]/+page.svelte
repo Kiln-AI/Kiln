@@ -8,6 +8,9 @@
   import { goto } from "$app/navigation"
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
+  import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -15,6 +18,8 @@
   let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
   let error: KilnError | null = null
+  let delete_dialog: DeleteDialog | null = null
+  $: delete_url = `/api/projects/${project_id}/tool_servers/${tool_server_id}`
 
   onMount(async () => {
     await fetch_tool_server()
@@ -94,22 +99,92 @@
       { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
 
-    if (tool.properties["server_url"]) {
-      properties.push({
-        name: "Server URL",
-        value: tool.properties["server_url"],
-      })
+    switch (tool.type) {
+      case "remote_mcp":
+        if (tool.properties["server_url"]) {
+          properties.push({
+            name: "Server URL",
+            value: String(tool.properties["server_url"]),
+          })
+        }
+        break
+      case "local_mcp": {
+        if (tool.properties["command"]) {
+          properties.push({
+            name: "Command",
+            value: String(tool.properties["command"]),
+          })
+        }
+        const args = tool.properties["args"]
+        if (args && isStringArray(args)) {
+          properties.push({
+            name: "Arguments",
+            value: (args as string[]).join(" ") || "None",
+          })
+        }
+        break
+      }
+      default: {
+        // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+        // and don't handle it above, TypeScript will error here
+        const exhaustiveCheck: never = tool.type
+        console.warn(`Unhandled toolType: ${exhaustiveCheck}`)
+        break
+      }
     }
 
     return properties
   }
-  function getHeadersProperties(tool: ExternalToolServerApiDescription) {
-    return Object.entries(tool.properties["headers"] || {}).map(
-      ([key, value]) => ({
+
+  /**
+   * Helper function to build properties list with secret handling
+   * @param nonSecretProperties - Object containing non-secret key-value pairs
+   * @param secretKeys - Array of secret key names
+   * @param missingSecrets - Array of missing secret key names
+   * @returns Array of UiProperty objects
+   */
+  function buildPropertiesWithSecrets(
+    nonSecretProperties: Record<string, string>,
+    secretKeys: string[],
+    missingSecrets: string[],
+  ): UiProperty[] {
+    // Non-secret values
+    const properties: UiProperty[] = []
+    properties.push(
+      ...Object.entries(nonSecretProperties).map(([key, value]) => ({
         name: key,
-        value: String(value || "N/A"),
-      }),
+        value: String(value ?? "N/A"),
+      })),
     )
+
+    // Add secret values with masked values or error state
+    secretKeys.forEach((key: string) => {
+      // Check if the secret is missing
+      if (missingSecrets.includes(key)) {
+        properties.push({
+          name: key,
+          value: "Value missing",
+          error: true,
+          link: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server_id}`,
+        })
+      } else if (!(key in nonSecretProperties)) {
+        // Only add if not already in regular values
+        properties.push({
+          name: key,
+          value: "●●●●●●",
+        })
+      }
+    })
+
+    // If the properties are empty, add a placeholder
+    if (properties.length === 0) {
+      properties.push({
+        name: "None",
+        value: " ",
+      })
+    }
+
+    return properties
   }
 
   interface Argument {
@@ -162,10 +237,41 @@
     }
     return args
   }
+
+  function afterDelete() {
+    // Delete the project_id from the available_tools, so next reload it loads the updated list.
+    uncache_available_tools(project_id)
+
+    goto(`/settings/manage_tools/${project_id}`)
+  }
+
+  $: headers = tool_server?.properties["headers"] as Record<string, string>
+  $: secret_header_keys = tool_server?.properties[
+    "secret_header_keys"
+  ] as string[]
+  $: env_vars = tool_server?.properties["env_vars"] as
+    | Record<string, string>
+    | undefined
+  $: secret_env_var_keys = tool_server?.properties["secret_env_var_keys"] as
+    | string[]
+    | undefined
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title={"Tool Server"} subtitle={`Name: ${tool_server?.name || ""}`}>
+  <AppPage
+    title={"Tool Server"}
+    subtitle={`Name: ${tool_server?.name || ""}`}
+    action_buttons={[
+      {
+        label: "Edit",
+        href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
+      },
+      {
+        icon: "/images/delete.svg",
+        handler: () => delete_dialog?.show(),
+      },
+    ]}
+  >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
@@ -197,12 +303,32 @@
               properties={getConnectionProperties(tool_server)}
               title="Connection Details"
             />
-            {#if getHeadersProperties(tool_server).length > 0}
-              <!-- Manually add a gap between the connection details and the headers -->
+            <!-- Manually add a gap between the connection details and the headers -->
+            <div class="mt-8">
+              <PropertyList
+                properties={buildPropertiesWithSecrets(
+                  headers,
+                  secret_header_keys,
+                  tool_server.missing_secrets,
+                )}
+                title="Headers"
+              />
+            </div>
+          {:else if tool_server.type === "local_mcp"}
+            <PropertyList
+              properties={getConnectionProperties(tool_server)}
+              title="Run Configuration"
+            />
+            <!-- Check if there are any environment variables or secret environment variables -->
+            {#if (env_vars && Object.keys(env_vars).length > 0) || (secret_env_var_keys && Object.keys(secret_env_var_keys).length > 0)}
               <div class="mt-8">
                 <PropertyList
-                  properties={getHeadersProperties(tool_server)}
-                  title="Headers"
+                  properties={buildPropertiesWithSecrets(
+                    env_vars || {},
+                    secret_env_var_keys || [],
+                    tool_server.missing_secrets,
+                  )}
+                  title="Environment Variables"
                 />
               </div>
             {/if}
@@ -284,3 +410,10 @@
     {/if}
   </AppPage>
 </div>
+
+<DeleteDialog
+  name="Tool Server"
+  bind:this={delete_dialog}
+  {delete_url}
+  after_delete={afterDelete}
+/>

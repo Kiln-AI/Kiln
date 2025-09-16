@@ -57,8 +57,36 @@ function createRagProgressStore() {
     return (
       (progress.total_document_extracted_error_count ?? 0) > 0 ||
       (progress.total_document_chunked_error_count ?? 0) > 0 ||
-      (progress.total_document_embedded_error_count ?? 0) > 0
+      (progress.total_document_embedded_error_count ?? 0) > 0 ||
+      (progress.total_chunks_indexed_error_count ?? 0) > 0
     )
+  }
+
+  async function run_all_rag_configs(project_id: string): Promise<boolean> {
+    // retrieve all rag configs
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/rag_configs",
+      {
+        params: {
+          path: {
+            project_id,
+          },
+        },
+      },
+    )
+
+    if (error) {
+      return false
+    }
+
+    for (const rag_config of data) {
+      if (!rag_config.id) {
+        continue
+      }
+      run_rag_config(project_id, rag_config.id)
+    }
+
+    return true
   }
 
   function run_rag_config(project_id: string, rag_config_id: string): boolean {
@@ -237,6 +265,7 @@ function createRagProgressStore() {
     subscribe,
     set,
     update,
+    run_all_rag_configs,
     run_rag_config,
     reset: () =>
       set({
@@ -268,7 +297,8 @@ function sortRagConfigs(
 
 function calculateStatus(progress: RagProgress): RagConfigurationStatus {
   if (
-    progress.total_document_completed_count === progress.total_document_count
+    progress.total_document_completed_count === progress.total_document_count &&
+    progress.total_chunk_completed_count === progress.total_chunk_count
   ) {
     return "complete"
   }
@@ -277,6 +307,7 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     progress.total_document_extracted_count,
     progress.total_document_chunked_count,
     progress.total_document_embedded_count,
+    progress.total_chunks_indexed_count,
   )
   if (max_step_completion === 0) {
     return "not_started"
@@ -295,9 +326,15 @@ function calculateStatus(progress: RagProgress): RagConfigurationStatus {
     progress.total_document_extracted_error_count,
     progress.total_document_chunked_error_count,
     progress.total_document_embedded_error_count,
+    progress.total_chunks_indexed_error_count,
   ].some((count) => count > 0)
   if (has_errors) {
     return "completed_with_errors"
+  }
+
+  // indexing is tracked in terms of chunks, not documents
+  if (progress.total_chunks_indexed_count < progress.total_chunk_count) {
+    return "incomplete"
   }
 
   return "complete"

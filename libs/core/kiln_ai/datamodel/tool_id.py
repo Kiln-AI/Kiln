@@ -12,7 +12,9 @@ A pydantic type that validates strings containing a valid tool ID.
 
 Tool IDs can be one of:
 - A kiln built-in tool name: kiln_tool::add_numbers
-- More coming soon like MCP servers and kiln_project_tool::rag::RAG_CONFIG_ID
+- A remote MCP tool: mcp::remote::<server_id>::<tool_name>
+- A local MCP tool: mcp::local::<server_id>::<tool_name>
+- More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
 
@@ -25,6 +27,7 @@ class KilnBuiltInToolId(str, Enum):
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
 RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
+MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 
 
 def _check_tool_id(id: str) -> str:
@@ -43,7 +46,16 @@ def _check_tool_id(id: str) -> str:
         server_id, tool_name = mcp_server_and_tool_name_from_id(id)
         if not server_id or not tool_name:
             raise ValueError(
-                f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
+                f"Invalid remote MCP tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
+            )
+        return id
+
+    # MCP local tools must have format: mcp::local::<server_id>::<tool_name>
+    if id.startswith(MCP_LOCAL_TOOL_ID_PREFIX):
+        server_id, tool_name = mcp_server_and_tool_name_from_id(id)
+        if not server_id or not tool_name:
+            raise ValueError(
+                f"Invalid local MCP tool ID: {id}. Expected format: 'mcp::local::<server_id>::<tool_name>'."
             )
         return id
 
@@ -65,9 +77,19 @@ def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
     """
     parts = id.split("::")
     if len(parts) != 4:
-        raise ValueError(
-            f"Invalid MCP remote tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
-        )
+        # Determine if it's remote or local for the error message
+        if id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Invalid remote MCP tool ID: {id}. Expected format: 'mcp::remote::<server_id>::<tool_name>'."
+            )
+        elif id.startswith(MCP_LOCAL_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Invalid local MCP tool ID: {id}. Expected format: 'mcp::local::<server_id>::<tool_name>'."
+            )
+        else:
+            raise ValueError(
+                f"Invalid MCP tool ID: {id}. Expected format: 'mcp::(remote|local)::<server_id>::<tool_name>'."
+            )
     return parts[2], parts[3]  # server_id, tool_name
 
 

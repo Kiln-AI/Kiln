@@ -149,20 +149,20 @@ get_install_dir() {
 
 # Download and install Kiln icon
 install_icon() {
-    local icon_dir="$HOME/.local/share/icons"
-    local icon_file="$icon_dir/kiln.png"
-    local icon_url="https://github.com/Kiln-AI/Kiln/raw/main/app/desktop/win_icon.png"
-    
-    # Create icon directory
-    if ! mkdir -p "$icon_dir" 2>/dev/null; then
-        return 1
-    fi
+    local temp_dir="$1"
+    local icon_url="https://github.com/Kiln-AI/Kiln/raw/main/app/desktop/linux_icon.png"
     
     # Download icon (silently, don't fail installation if this fails)
+    local downloaded=false
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL -o "$icon_file" "$icon_url" 2>/dev/null && return 0
+        curl -fsSL -o "$temp_dir/kiln-icon.png" "$icon_url" 2>/dev/null && downloaded=true
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "$icon_file" "$icon_url" 2>/dev/null && return 0
+        wget -q -O "$temp_dir/kiln-icon.png" "$icon_url" 2>/dev/null && downloaded=true
+    fi
+    
+    # Install icon if download was successful
+    if [ "$downloaded" = true ] && command -v xdg-icon-resource >/dev/null 2>&1; then
+        xdg-icon-resource install --mode user --context apps --size 256 "$temp_dir/kiln-icon.png" kiln-kilnicon >/dev/null 2>&1 && return 0
     fi
     
     return 1
@@ -170,6 +170,7 @@ install_icon() {
 
 # Create desktop entry for GUI access
 create_desktop_entry() {
+    local temp_dir="$1"
     local desktop_dir="$HOME/.local/share/applications"
     local desktop_file="$desktop_dir/kiln.desktop"
     local icon_name="application-x-executable"  # fallback icon
@@ -180,9 +181,9 @@ create_desktop_entry() {
         return 0
     fi
     
-    # Try to install the Kiln icon
-    if install_icon; then
-        icon_name="kiln"  # Use our custom icon
+    # Try to install the Kiln icon, Optional
+    if install_icon "$temp_dir"; then
+        icon_name="kiln-kilnicon"  # Use our custom icon
         print_info "Downloaded Kiln icon"
     fi
     
@@ -255,7 +256,7 @@ install_kiln() {
     chmod +x "$KILN_PATH"
     
     # Create desktop entry (non-fatal if it fails)
-    create_desktop_entry
+    create_desktop_entry "$TEMP_DIR"
     
     # Clean up temporary files
     cd /

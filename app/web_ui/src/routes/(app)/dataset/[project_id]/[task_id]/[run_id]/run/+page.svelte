@@ -14,7 +14,7 @@
     load_available_models,
   } from "$lib/stores"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
+  import { onMount, getContext } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, StructuredOutputMode } from "$lib/types"
@@ -28,6 +28,7 @@
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
+  import type { Writable } from "svelte/store"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -126,20 +127,6 @@
         value: provider_name_from_id(
           String(run.output.source.properties.model_provider),
         ),
-      })
-    }
-
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
       })
     }
 
@@ -277,6 +264,36 @@
       }
     }
   }
+
+  // Fancy logic to maintain the search string when navigating back to the dataset page (filters, sorting, etc.)
+  const lastPageUrl = getContext<Writable<URL | undefined>>("lastPageUrl")
+  function get_breadcrumbs() {
+    if (!$lastPageUrl) {
+      return []
+    }
+
+    try {
+      const referrerPath = $lastPageUrl.pathname
+
+      // Check if the referrer path is /dataset/{project_id}/{task_id}
+      // since we only want to breadcrumb back to that page
+      const expectedPath = `/dataset/${$page.params.project_id}/${$page.params.task_id}`
+
+      if (referrerPath === expectedPath) {
+        return [
+          {
+            label: "Dataset",
+            // Include the full URL with search params to a
+            href: $lastPageUrl.pathname + $lastPageUrl.search,
+          },
+        ]
+      }
+    } catch (error) {
+      console.warn("Failed to parse referrer URL:", error)
+    }
+
+    return []
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -284,6 +301,7 @@
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
     action_buttons={buttons}
+    breadcrumbs={get_breadcrumbs()}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
