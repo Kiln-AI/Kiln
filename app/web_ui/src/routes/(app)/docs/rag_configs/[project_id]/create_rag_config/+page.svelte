@@ -193,7 +193,7 @@
     {
       options: [
         {
-          label: "New Vector Store Configuration",
+          label: "New Search Index Configuration",
           value: "create_new",
           badge: "New",
           badge_color: "primary",
@@ -203,7 +203,7 @@
     ...(vector_store_configs.length > 0
       ? [
           {
-            label: "Vector Stores",
+            label: "Search Index Configurations",
             options: vector_store_configs.map((config) => ({
               label:
                 config.store_type === "lancedb_fts"
@@ -694,8 +694,8 @@
               {:else}
                 <FormElement
                   id="vector_store_select"
-                  label="Vector Store"
-                  description="Choose how documents will be stored and searched."
+                  label="Search Index"
+                  description="Choose how documents will be indexed and searched."
                   info_description="Full text search is fastest for keyword searches, vector search is best for semantic meaning, and hybrid combines both approaches."
                   fancy_select_options={vector_store_options}
                   bind:value={selected_vector_store_config_id}
@@ -795,8 +795,8 @@
 
 <Dialog
   bind:this={show_create_vector_store_dialog}
-  title="Vector Store Configuration"
-  subtitle="Choose how documents will be stored and searched."
+  title="Search Index Configuration"
+  subtitle="Choose how documents will be indexed and searched."
   width="wide"
   on:close={() => {
     handle_modal_close()

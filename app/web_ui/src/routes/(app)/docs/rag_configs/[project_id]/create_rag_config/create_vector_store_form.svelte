@@ -102,7 +102,7 @@
 
 <FormContainer
   submit_visible={true}
-  submit_label="Create Vector Store"
+  submit_label="Create Search Index"
   on:submit={create_vector_store_config}
   {error}
   gap={4}
@@ -111,7 +111,7 @@
 >
   <FormElement
     id="store_type_select"
-    label="Vector Store Type"
+    label="Search Type"
     description="Choose how documents will be searched"
     info_description="Full text search is fastest for keyword searches, vector search is best for semantic meaning, and hybrid combines both approaches."
     fancy_select_options={storeTypeOptions}
@@ -135,7 +135,7 @@
     <div class="collapse-content">
       <div class="flex flex-col gap-4">
         <FormElement
-          label="Vector Store Name"
+          label="Search Index Name"
           description="A name to identify this configuration. Leave blank and we'll generate one for you."
           optional={true}
           inputType="input"

@@ -111,7 +111,7 @@
             ) || "N/A"}
           </div>
           <div>
-            Vector Store: {vector_store_name(
+            Search Index: {vector_store_name(
               rag_config.vector_store_config.store_type,
             ) || "N/A"}
           </div>
