@@ -1287,6 +1287,7 @@ async def test_get_rag_configs_success(
             response_rag_config["embedding_config"]["id"]
             == rag_config.embedding_config_id
         )
+        assert response_rag_config["tags"] == rag_config.tags
 
 
 @pytest.mark.asyncio
@@ -1325,6 +1326,7 @@ async def test_get_rag_config_success(
     assert result["extractor_config"]["id"] == rag_config.extractor_config_id
     assert result["chunker_config"]["id"] == rag_config.chunker_config_id
     assert result["embedding_config"]["id"] == rag_config.embedding_config_id
+    assert result["tags"] == rag_config.tags
 
 
 @pytest.mark.asyncio
@@ -1337,6 +1339,74 @@ async def test_get_rag_config_not_found(client, mock_project):
 
     assert response.status_code == 404, response.text
     assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_rag_configs_with_mixed_tags_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test getting multiple RAG configs with mixed tags (some with tags, some without)"""
+    # Create RAG configs with different tag scenarios
+    rag_configs = [
+        RagConfig(
+            parent=mock_project,
+            name="RAG Config with Tags",
+            description="Has tags",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
+            tags=["python", "ml"],
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="RAG Config without Tags",
+            description="No tags (None)",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
+            tags=None,
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="RAG Config with Different Tags",
+            description="Has different tags",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
+            tags=["frontend", "api"],
+        ),
+    ]
+
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == len(rag_configs)
+
+    # Sort both lists by id for consistent comparison
+    sorted_result = sorted(result, key=lambda x: x["id"])
+    sorted_rag_configs = sorted(rag_configs, key=lambda x: str(x.id))
+
+    for response_rag_config, rag_config in zip(sorted_result, sorted_rag_configs):
+        assert response_rag_config["id"] == rag_config.id
+        assert response_rag_config["name"] == rag_config.name
+        assert response_rag_config["description"] == rag_config.description
+        assert response_rag_config["tags"] == rag_config.tags
 
 
 @pytest.mark.asyncio

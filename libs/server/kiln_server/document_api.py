@@ -193,6 +193,7 @@ class RagConfigWithSubConfigs(BaseModel):
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
     vector_store_config: VectorStoreConfig
+    tags: list[str] | None
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -1313,6 +1314,7 @@ def connect_document_api(app: FastAPI):
                     id=rag_config.id,
                     name=rag_config.name,
                     description=rag_config.description,
+                    tags=rag_config.tags,
                     created_at=rag_config.created_at,
                     created_by=rag_config.created_by,
                     extractor_config=extractor_config,
@@ -1386,6 +1388,7 @@ def connect_document_api(app: FastAPI):
             chunker_config=chunker_config,
             embedding_config=embedding_config,
             vector_store_config=vector_store_config,
+            tags=rag_config.tags,
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better

@@ -406,6 +406,16 @@
                 },
               ]}
             />
+            <div class="text-xl font-bold">Tags</div>
+            <div class="flex flex-row flex-wrap gap-2">
+              {#each (rag_config.tags || []).sort() as tag}
+                <div
+                  class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
+                >
+                  <span class="truncate">{tag}</span>
+                </div>
+              {/each}
+            </div>
           </div>
         </div>
       </div>

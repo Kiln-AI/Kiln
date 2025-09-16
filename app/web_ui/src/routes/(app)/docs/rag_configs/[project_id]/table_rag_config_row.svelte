@@ -118,6 +118,13 @@
           <div class="text-xs text-gray-500">
             Created {formatDate(rag_config.created_at)}
           </div>
+          <div class="text-xs text-gray-500 flex flex-row flex-wrap gap-2 w-80">
+            {#each rag_config.tags || [] as tag}
+              <div class="badge bg-gray-200 text-gray-500 text-xs">
+                {tag}
+              </div>
+            {/each}
+          </div>
         </div>
       </div>
     </td>

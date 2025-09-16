@@ -4027,6 +4027,8 @@ export interface components {
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
             vector_store_config: components["schemas"]["VectorStoreConfig"];
+            /** Tags */
+            tags: string[] | null;
         };
         /** RagProgress */
         RagProgress: {
