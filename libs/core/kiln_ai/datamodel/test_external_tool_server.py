@@ -7,11 +7,6 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
-SAMPLE_REMOTE_MCP_SECRETS = {
-    "Authorization": "Bearer token123",
-    "X-API-Key": "api-key-456",
-}
-
 
 class TestExternalToolServer:
     @pytest.fixture
@@ -33,15 +28,24 @@ class TestExternalToolServer:
         }
 
     @pytest.fixture
-    def remote_mcp_props_with_secrets(self, remote_mcp_base_props) -> Dict[str, Any]:
+    def sample_remote_mcp_secrets(self) -> Dict[str, str]:
+        return {
+            "Authorization": "Bearer token123",
+            "X-API-Key": "api-key-456",
+        }
+
+    @pytest.fixture
+    def remote_mcp_props_with_secrets(
+        self, remote_mcp_base_props, sample_remote_mcp_secrets
+    ) -> Dict[str, Any]:
         """Properties for remote MCP server with secrets."""
         return {
             **remote_mcp_base_props,
             "headers": {
                 **remote_mcp_base_props["headers"],
-                **SAMPLE_REMOTE_MCP_SECRETS,
+                **sample_remote_mcp_secrets,
             },
-            "secret_header_keys": list(SAMPLE_REMOTE_MCP_SECRETS.keys()),
+            "secret_header_keys": list(sample_remote_mcp_secrets.keys()),
         }
 
     @pytest.fixture
@@ -247,27 +251,18 @@ class TestExternalToolServer:
         )
         assert server.get_secret_keys() == ["API_KEY", "SECRET_TOKEN"]
 
-    def test_secret_processing_remote_mcp_initialization(self):
+    def test_secret_processing_remote_mcp_initialization(
+        self, remote_mcp_props_with_secrets, sample_remote_mcp_secrets
+    ):
         """Test secret processing during remote MCP server initialization."""
-        properties = {
-            "server_url": "https://api.example.com/mcp",
-            "headers": {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer secret123",
-                "X-API-Key": "api-key-456",
-            },
-            "secret_header_keys": ["Authorization", "X-API-Key"],
-        }
+        properties = remote_mcp_props_with_secrets
 
         server = ExternalToolServer(
             name="test-server", type=ToolServerType.remote_mcp, properties=properties
         )
 
         # Secrets should be extracted to _unsaved_secrets
-        assert server._unsaved_secrets == {
-            "Authorization": "Bearer secret123",
-            "X-API-Key": "api-key-456",
-        }
+        assert server._unsaved_secrets == sample_remote_mcp_secrets
 
         # Secrets should be removed from headers
         assert server.properties["headers"] == {"Content-Type": "application/json"}
@@ -328,7 +323,10 @@ class TestExternalToolServer:
         assert "New-Secret-Header" not in server.properties["headers"]
 
     def test_secret_processing_clears_existing_secrets(
-        self, remote_mcp_base_props, remote_mcp_props_with_secrets
+        self,
+        remote_mcp_base_props,
+        remote_mcp_props_with_secrets,
+        sample_remote_mcp_secrets,
     ):
         """Test that secret processing clears existing _unsaved_secrets."""
         server = ExternalToolServer(
@@ -344,11 +342,11 @@ class TestExternalToolServer:
         server.properties = remote_mcp_props_with_secrets
 
         # Only new secret should remain
-        assert server._unsaved_secrets == SAMPLE_REMOTE_MCP_SECRETS
+        assert server._unsaved_secrets == sample_remote_mcp_secrets
         assert "OldSecret" not in server._unsaved_secrets
 
     def test_retrieve_secrets_from_config(
-        self, mock_config, remote_mcp_props_with_secrets
+        self, mock_config, remote_mcp_props_with_secrets, sample_remote_mcp_secrets
     ):
         """Test retrieving secrets from config storage."""
         server = ExternalToolServer(
@@ -369,18 +367,17 @@ class TestExternalToolServer:
 
         secrets, missing = server.retrieve_secrets()
 
-        assert secrets == SAMPLE_REMOTE_MCP_SECRETS
+        assert secrets == sample_remote_mcp_secrets
         assert missing == []
 
-    def test_retrieve_secrets_from_unsaved(self, mock_config, remote_mcp_base_props):
+    def test_retrieve_secrets_from_unsaved(
+        self, mock_config, remote_mcp_props_with_secrets
+    ):
         """Test retrieving secrets from unsaved storage when not in config."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization", "X-API-Key"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
         server._unsaved_secrets = {
@@ -461,21 +458,17 @@ class TestExternalToolServer:
         assert secrets == {}
         assert missing == []
 
-    def test_save_secrets(self, mock_config, remote_mcp_base_props):
+    def test_save_secrets(
+        self, mock_config, remote_mcp_props_with_secrets, sample_remote_mcp_secrets
+    ):
         """Test saving unsaved secrets to config."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization", "X-API-Key"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
-        server._unsaved_secrets = {
-            "Authorization": "Bearer token",
-            "X-API-Key": "api-key",
-        }
+        server._unsaved_secrets = sample_remote_mcp_secrets
 
         # Mock existing config secrets
         existing_secrets = {"other-server::key": "other-value"}
@@ -486,8 +479,8 @@ class TestExternalToolServer:
         # Should update config with new secrets
         expected_secrets = {
             "other-server::key": "other-value",
-            "server-123::Authorization": "Bearer token",
-            "server-123::X-API-Key": "api-key",
+            "server-123::Authorization": "Bearer token123",
+            "server-123::X-API-Key": "api-key-456",
         }
         mock_config.update_settings.assert_called_once_with(
             {MCP_SECRETS_KEY: expected_secrets}
@@ -496,18 +489,14 @@ class TestExternalToolServer:
         # Should clear unsaved secrets
         assert server._unsaved_secrets == {}
 
-    def test_save_secrets_no_id_error(self, remote_mcp_base_props):
+    def test_save_secrets_no_id_error(self, remote_mcp_props_with_secrets):
         """Test that saving secrets without ID raises error."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
-        # Manually set unsaved secrets to bypass the empty check
-        server._unsaved_secrets = {"Authorization": "Bearer token"}
+
         # Explicitly set ID to None to test the error condition
         server.id = None
 
@@ -517,42 +506,37 @@ class TestExternalToolServer:
             server._save_secrets()
 
     def test_save_secrets_with_no_unsaved_secrets(
-        self, mock_config, remote_mcp_base_props
+        self, mock_config, remote_mcp_props_with_secrets
     ):
         """Test that saving secrets with no unsaved secrets does nothing."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
 
-        # No _unsaved_secrets set
+        # Override _unsaved_secrets to empty
+        server._unsaved_secrets = {}
 
         server._save_secrets()
 
         # Should not call update_settings
         mock_config.update_settings.assert_not_called()
 
-    def test_delete_secrets(self, mock_config, remote_mcp_base_props):
+    def test_delete_secrets(self, mock_config, remote_mcp_props_with_secrets):
         """Test deleting secrets from config."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization", "X-API-Key"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
 
         # Mock existing config secrets
         existing_secrets = {
-            "server-123::Authorization": "Bearer token",
-            "server-123::X-API-Key": "api-key",
+            "server-123::Authorization": "Bearer token123",
+            "server-123::X-API-Key": "api-key-456",
             "other-server::Authorization": "other-token",
         }
         mock_config.get_value.return_value = existing_secrets
@@ -566,16 +550,13 @@ class TestExternalToolServer:
         )
 
     def test_delete_secrets_with_no_existing_secrets(
-        self, mock_config, remote_mcp_base_props
+        self, mock_config, remote_mcp_props_with_secrets
     ):
         """Test deleting secrets when none exist in config."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
 
@@ -587,18 +568,17 @@ class TestExternalToolServer:
         # Should still call update_settings with empty dict
         mock_config.update_settings.assert_called_once_with({MCP_SECRETS_KEY: {}})
 
-    def test_save_to_file_saves_secrets_first(self, mock_config, remote_mcp_base_props):
+    def test_save_to_file_saves_secrets_first(
+        self, mock_config, remote_mcp_props_with_secrets, sample_remote_mcp_secrets
+    ):
         """Test that save_to_file automatically saves unsaved secrets first."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
-        server._unsaved_secrets = {"Authorization": "Bearer token"}
+        server._unsaved_secrets = sample_remote_mcp_secrets
 
         mock_config.get_value.return_value = {}
 
@@ -633,19 +613,19 @@ class TestExternalToolServer:
             # Should still call parent save_to_file
             mock_parent_save.assert_called_once()
 
-    def test_config_secret_key_format(self, remote_mcp_base_props):
+    def test_config_secret_key_format(self, remote_mcp_props_with_secrets):
         """Test the _config_secret_key method formats keys correctly."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties=remote_mcp_base_props,
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
 
         assert server._config_secret_key("Authorization") == "server-123::Authorization"
         assert server._config_secret_key("X-API-Key") == "server-123::X-API-Key"
 
-    def test_model_serialization_excludes_secrets(self, mock_config):
+    def test_model_serialization_excludes_secrets(self):
         """Test that model serialization excludes _unsaved_secrets private attribute and secrets from properties."""
         # Test all server types to ensure we update this test when new types are added
         for server_type in ToolServerType:
@@ -695,17 +675,19 @@ class TestExternalToolServer:
         assert secrets == {}
         assert missing == []
 
-    def test_none_mcp_secrets_in_config(self, mock_config, remote_mcp_base_props):
+    def test_none_mcp_secrets_in_config(
+        self, mock_config, remote_mcp_props_with_secrets
+    ):
         """Test behavior when MCP_SECRETS_KEY returns None from config."""
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization"],
-            },
+            properties=remote_mcp_props_with_secrets,
         )
         server.id = "server-123"
+
+        # Override _unsaved_secrets to empty
+        server._unsaved_secrets = {}
 
         # Mock config returning None for MCP_SECRETS_KEY
         mock_config.get_value.return_value = None
@@ -713,4 +695,4 @@ class TestExternalToolServer:
         secrets, missing = server.retrieve_secrets()
 
         assert secrets == {}
-        assert missing == ["Authorization"]
+        assert missing == ["Authorization", "X-API-Key"]
