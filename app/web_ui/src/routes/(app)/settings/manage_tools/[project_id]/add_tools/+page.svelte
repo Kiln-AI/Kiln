@@ -9,6 +9,26 @@
 
   $: project_id = $page.params.project_id
 
+  let currentSlide = 0
+
+  function goToPrevSlide() {
+    currentSlide = currentSlide > 0 ? currentSlide - 1 : sample_tools.length - 1
+    document.getElementById(`slide${currentSlide}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+      inline: "center",
+    })
+  }
+
+  function goToNextSlide() {
+    currentSlide = currentSlide < sample_tools.length - 1 ? currentSlide + 1 : 0
+    document.getElementById(`slide${currentSlide}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    })
+  }
+
   type BaseMcpServer = {
     name: string
     subtitle: string
@@ -199,40 +219,50 @@
 >
   <div>
     <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
-    <div
-      class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
-    >
-      {#each sample_tools as tool}
-        <div class="carousel-item">
-          <div
-            class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
-            on:click={tool.on_click}
-            on:keydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                tool.on_click()
-              }
-            }}
-            tabindex="0"
-            role="button"
-            aria-label="Connect {tool.name}"
-          >
-            <div class="p-4">
-              <div class="text-lg font-semibold leading-tight">
-                {tool.name}
-              </div>
-              {#if tool.subtitle}
-                <div class="text-xs text-gray-500 font-medium mt-1">
-                  {tool.subtitle}
+    <div class="relative">
+      <div
+        class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
+      >
+        {#each sample_tools as tool, index}
+          <div id={"slide" + index} class="carousel-item w-48">
+            <div
+              class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-full"
+              on:click={tool.on_click}
+              on:keydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  tool.on_click()
+                }
+              }}
+              tabindex="0"
+              role="button"
+              aria-label="Connect {tool.name}"
+            >
+              <div class="p-4">
+                <div class="text-lg font-semibold leading-tight">
+                  {tool.name}
                 </div>
-              {/if}
-              <p class="text-base-content/70 text-xs leading-relaxed mt-3">
-                {tool.description}
-              </p>
+                {#if tool.subtitle}
+                  <div class="text-xs text-gray-500 font-medium mt-1">
+                    {tool.subtitle}
+                  </div>
+                {/if}
+                <p class="text-base-content/70 text-xs leading-relaxed mt-3">
+                  {tool.description}
+                </p>
+              </div>
             </div>
           </div>
+        {/each}
+      </div>
+      {#if sample_tools.length > 1}
+        <div class="absolute left-2 top-1/2 -translate-y-1/2">
+          <button class="btn btn-circle" on:click={goToPrevSlide}>❮</button>
         </div>
-      {/each}
+        <div class="absolute right-2 top-1/2 -translate-y-1/2">
+          <button class="btn btn-circle" on:click={goToNextSlide}>❯</button>
+        </div>
+      {/if}
     </div>
     <div class="max-w-4xl mt-8">
       <SettingsSection
