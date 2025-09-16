@@ -34,7 +34,7 @@
 
 {#if $state}
   <button
-    class="bg-white border border-primary flex flex-col gap-1 items-start relative text-xs"
+    class="bg-white border border-primary flex flex-col gap-1 items-start relative text-xs 2xl:text-sm"
     on:click={openLink}
   >
     <button
