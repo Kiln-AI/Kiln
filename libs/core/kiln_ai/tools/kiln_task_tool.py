@@ -1,8 +1,6 @@
 import json
 from typing import Any, Dict
 
-from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX, ToolId
@@ -73,6 +71,10 @@ class KilnTaskTool(KilnToolInterface):
             else:
                 # Convert kwargs to a descriptive string
                 input = json.dumps(kwargs, indent=2)
+
+        # TODO: Moving these imports here to avoid circular imports, do we need to re-architect something to avoid this?
+        from kiln_ai.adapters.adapter_registry import adapter_for_task
+        from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 
         # Create adapter and run the task
         adapter = adapter_for_task(
