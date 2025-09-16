@@ -134,6 +134,8 @@
     event.preventDefault()
     await performSearch()
   }
+
+  $: sorted_tags = rag_config?.tags ? rag_config.tags.toSorted() : null
 </script>
 
 <div class="max-w-[1400px]">
@@ -408,13 +410,20 @@
             />
             <div class="text-xl font-bold">Tags</div>
             <div class="flex flex-row flex-wrap gap-2">
-              {#each (rag_config.tags || []).sort() as tag}
-                <div
-                  class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
-                >
-                  <span class="truncate">{tag}</span>
+              {#if sorted_tags}
+                {#each sorted_tags as tag}
+                  <div
+                    class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
+                  >
+                    <span class="truncate">{tag}</span>
+                  </div>
+                {/each}
+              {:else}
+                <div class="text-gray-500">
+                  Not tags. This Search Tool targets all documents in the
+                  project.
                 </div>
-              {/each}
+              {/if}
             </div>
           </div>
         </div>
