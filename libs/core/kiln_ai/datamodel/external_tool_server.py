@@ -134,6 +134,43 @@ class ExternalToolServer(KilnParentedModel):
                     "Header names/values must not contain invalid characters"
                 )
 
+    @classmethod
+    def validate_secret_keys(
+        cls, secret_keys: list, key_type: str, tool_type: str
+    ) -> None:
+        """Validate Secret Keys (generic method for both header and env var keys)"""
+        if not isinstance(secret_keys, list):
+            raise ValueError(
+                f"{key_type} must be a list for external tools of type '{tool_type}'"
+            )
+        if not all(isinstance(k, str) for k in secret_keys):
+            raise ValueError(f"{key_type} must contain only strings")
+        if not all(key for key in secret_keys):
+            raise ValueError("Secret key is required")
+
+    @classmethod
+    def validate_env_vars(cls, env_vars: dict) -> None:
+        """Validate Environment Variables"""
+        if not isinstance(env_vars, dict):
+            raise ValueError("environment variables must be a dictionary")
+
+        # Validate env_vars keys are in the correct format for Environment Variables
+        # According to POSIX specification, environment variable names must:
+        # - Start with a letter (a-z, A-Z) or underscore (_)
+        # - Contain only ASCII letters, digits, and underscores
+        for key, _ in env_vars.items():
+            if not key or not (
+                key[0].isascii() and (key[0].isalpha() or key[0] == "_")
+            ):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Must start with a letter or underscore."
+                )
+
+            if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
+                )
+
     @model_validator(mode="before")
     def validate_secrets(cls, data: dict) -> dict:
         """
@@ -157,26 +194,23 @@ class ExternalToolServer(KilnParentedModel):
                 # Secret header keys are optional, validate if they are set
                 secret_header_keys = properties.get("secret_header_keys", None)
                 if secret_header_keys is not None:
-                    if not isinstance(secret_header_keys, list):
-                        raise ValueError(
-                            "secret_header_keys must be a list for external tools of type 'remote_mcp'"
-                        )
-                    if not all(isinstance(k, str) for k in secret_header_keys):
-                        raise ValueError("secret_header_keys must contain only strings")
-
-                    for key in secret_header_keys:
-                        key = key if isinstance(key, str) else str(key)
-                        if not key:
-                            raise ValueError("Secret header key is required")
-
-                        # Check if the key is in the headers
-                        # if key not in headers:
-                        #     # raise ValueError(
-                        #     #     f"Secret header key {key} is not in the headers"
-                        #     # )
+                    ExternalToolServer.validate_secret_keys(
+                        secret_header_keys, "secret_header_keys", "remote_mcp"
+                    )
 
             case ToolServerType.local_mcp:
-                pass
+                # Validate secret environment variable keys
+                env_vars = properties.get("env_vars", {})
+                if env_vars is not None:
+                    ExternalToolServer.validate_env_vars(env_vars)
+
+                # Secret env var keys are optional, but if they are set, they must be a list of strings
+                secret_env_var_keys = properties.get("secret_env_var_keys", None)
+                if secret_env_var_keys is not None:
+                    ExternalToolServer.validate_secret_keys(
+                        secret_env_var_keys, "secret_env_var_keys", "local_mcp"
+                    )
+
             case _:
                 raise_exhaustive_enum_error(type)
 
@@ -208,24 +242,6 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "arguments must be a list to start a local MCP server"
                     )
-
-                env_vars = self.properties.get("env_vars", {})
-                if not isinstance(env_vars, dict):
-                    raise ValueError(
-                        "environment variables must be a dictionary for external tools of type 'local_mcp'"
-                    )
-
-                secret_env_var_keys = self.properties.get("secret_env_var_keys", None)
-                # Secret env var keys are optional, but if they are set, they must be a list of strings
-                if secret_env_var_keys is not None:
-                    if not isinstance(secret_env_var_keys, list):
-                        raise ValueError(
-                            "secret_env_var_keys must be a list for external tools of type 'local_mcp'"
-                        )
-                    if not all(isinstance(k, str) for k in secret_env_var_keys):
-                        raise ValueError(
-                            "secret_env_var_keys must contain only strings"
-                        )
 
             case _:
                 # Type checking will catch missing cases

@@ -100,10 +100,22 @@ class TestExternalToolServer:
             ("test.com", "Server URL is not a valid URL"),
         ],
     )
-    def test_validate_server_url(self, server_url, expected_error):
+    def test_validate_server_url_invalid(self, server_url, expected_error):
         """Test validate_server_url."""
         with pytest.raises(ValueError, match=expected_error):
             ExternalToolServer.validate_server_url(server_url)
+
+    @pytest.mark.parametrize(
+        "server_url",
+        [
+            "http://test.com",
+            "https://test.com",
+        ],
+    )
+    def test_validate_server_url_valid(self, server_url):
+        """Test validate_server_url with valid inputs."""
+        # Should not raise any exception
+        ExternalToolServer.validate_server_url(server_url)
 
     @pytest.mark.parametrize(
         "headers, expected_error",
@@ -125,10 +137,112 @@ class TestExternalToolServer:
             ),
         ],
     )
-    def test_validate_headers(self, headers, expected_error):
+    def test_validate_headers_invalid(self, headers, expected_error):
         """Test validate_headers."""
         with pytest.raises(ValueError, match=expected_error):
             ExternalToolServer.validate_headers(headers)
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"Authorization": "Bearer token123"},
+            {"X-API-Key": "api-key-456"},
+        ],
+    )
+    def test_validate_headers_valid(self, headers):
+        """Test validate_headers with valid inputs."""
+        # Should not raise any exception
+        ExternalToolServer.validate_headers(headers)
+
+    @pytest.mark.parametrize(
+        "secret_header_keys, expected_error",
+        [
+            (
+                123,
+                "secret_header_keys must be a list for external tools of type 'remote_mcp'",
+            ),
+            (
+                "not-a-list",
+                "secret_header_keys must be a list for external tools of type 'remote_mcp'",
+            ),
+            ([123], "secret_header_keys must contain only strings"),
+            (["ABC", ""], "Secret key is required"),
+        ],
+    )
+    def test_validate_secret_header_keys_invalid(
+        self, secret_header_keys, expected_error
+    ):
+        """Test validate_secret_header_keys with invalid inputs."""
+        with pytest.raises(ValueError, match=expected_error):
+            ExternalToolServer.validate_secret_keys(
+                secret_header_keys, "secret_header_keys", "remote_mcp"
+            )
+
+    @pytest.mark.parametrize(
+        "secret_header_keys",
+        [
+            ["Authorization", "X-API-Key"],
+        ],
+    )
+    def test_validate_secret_header_keys_valid(self, secret_header_keys):
+        """Test validate_secret_header_keys with valid inputs."""
+        # Should not raise any exception
+        ExternalToolServer.validate_secret_keys(
+            secret_header_keys, "secret_header_keys", "remote_mcp"
+        )
+
+    @pytest.mark.parametrize(
+        "env_vars, expected_error",
+        [
+            # Non-dictionary inputs
+            (123, "environment variables must be a dictionary"),
+            ("not-a-dict", "environment variables must be a dictionary"),
+            (None, "environment variables must be a dictionary"),
+            # Empty key
+            (
+                {"": "value"},
+                "Invalid environment variable key: . Must start with a letter or underscore.",
+            ),
+            # Keys that don't start with letter or underscore
+            (
+                {"123INVALID": "value"},
+                "Invalid environment variable key: 123INVALID. Must start with a letter or underscore.",
+            ),
+            (
+                {"-INVALID": "value"},
+                "Invalid environment variable key: -INVALID. Must start with a letter or underscore.",
+            ),
+            # Keys with invalid characters
+            (
+                {"INVALID-KEY": "value"},
+                "Invalid environment variable key: INVALID-KEY. Can only contain letters, digits, and underscores.",
+            ),
+            (
+                {"INVALID.KEY": "value"},
+                "Invalid environment variable key: INVALID.KEY. Can only contain letters, digits, and underscores.",
+            ),
+        ],
+    )
+    def test_validate_env_vars_invalid(self, env_vars, expected_error):
+        """Test validate_env_vars with invalid inputs."""
+        with pytest.raises(ValueError, match=expected_error):
+            ExternalToolServer.validate_env_vars(env_vars)
+
+    @pytest.mark.parametrize(
+        "env_vars",
+        [
+            # Valid cases
+            {},
+            {"VALID_KEY": "value"},
+            {"VALID123": "value"},
+            # Multiple valid keys
+            {"KEY1": "value1", "KEY2": "value2", "_KEY3": "value3"},
+        ],
+    )
+    def test_validate_env_vars_valid(self, env_vars):
+        """Test validate_env_vars with valid inputs."""
+        # Should not raise any exception
+        ExternalToolServer.validate_env_vars(env_vars)
 
     @pytest.mark.parametrize(
         "server_type, invalid_props, expected_error",
