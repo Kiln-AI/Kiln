@@ -439,7 +439,7 @@
 
 <AppPage
   title="Create Search Tool (RAG)"
-  subtitle="A configuration for searching your docs, including extracting, chunking and embeddings."
+  subtitle="Define parameters for how this tool will search and retrieve your documents"
   breadcrumbs={[
     {
       label: "Docs & Search",
@@ -448,6 +448,10 @@
     {
       label: "Search Tools",
       href: `/docs/rag_configs/${project_id}`,
+    },
+    {
+      label: "Add Search Tool",
+      href: `/docs/rag_configs/${project_id}/add_search_tool`,
     },
   ]}
 >

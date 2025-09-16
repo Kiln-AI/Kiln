@@ -2132,7 +2132,7 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             # Should have one tool set for RAG (since MCP server has no tools, only RAG set is added)
             assert len(result) == 1
             rag_set = result[0]
-            assert rag_set["set_name"] == "RAG Search Tools"
+            assert rag_set["set_name"] == "Search Tools (RAG)"
             assert len(rag_set["tools"]) == 2
 
             # Verify RAG tool details
@@ -2217,7 +2217,7 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
                 None,
             )
             rag_set = next(
-                (s for s in result if s["set_name"] == "RAG Search Tools"),
+                (s for s in result if s["set_name"] == "Search Tools (RAG)"),
                 None,
             )
 

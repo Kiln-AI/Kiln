@@ -141,7 +141,7 @@
 </script>
 
 <AppPage
-  title="Create Search Tool (RAG)"
+  title="Add a Search Tool (RAG)"
   subtitle="A tool to search for information in documents"
   breadcrumbs={[
     {
