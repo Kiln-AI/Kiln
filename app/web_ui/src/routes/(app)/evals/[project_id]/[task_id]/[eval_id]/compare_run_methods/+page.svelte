@@ -24,6 +24,10 @@
     load_task,
   } from "$lib/stores"
   import {
+    load_task_run_configs,
+    task_run_configs_by_task_id,
+  } from "$lib/stores/run_configs_store"
+  import {
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
@@ -51,19 +55,17 @@
   let eval_configs_loading = true
   let current_eval_config_id: string | null = null
 
-  let task_run_configs: TaskRunConfig[] | null = null
-  let task_run_configs_error: KilnError | null = null
-  let task_run_configs_loading = true
-
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
 
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
-  $: loading = eval_loading || eval_configs_loading || task_run_configs_loading
-  $: error = eval_error || eval_configs_error || task_run_configs_error
+  $: loading = eval_loading || eval_configs_loading
+  $: error = eval_error || eval_configs_error
+
+  $: current_task_run_configs = $task_run_configs_by_task_id[task_id] || []
 
   $: should_select_eval_config =
-    task_run_configs?.length && !evaluator?.current_run_config_id
+    current_task_run_configs?.length && !evaluator?.current_run_config_id
 
   // Check if all run configs are 100% complete
   $: all_run_configs_complete = score_summary?.run_config_percent_complete
@@ -90,7 +92,10 @@
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
     // These two can be parallel
-    await Promise.all([get_eval_configs(), get_task_run_configs()])
+    await Promise.all([
+      get_eval_configs(),
+      load_task_run_configs(project_id, task_id),
+    ])
     // This needs the selected eval config id, set from above requests
     get_score_summary()
   })
@@ -162,31 +167,6 @@
     }
   }
 
-  async function get_task_run_configs() {
-    try {
-      task_run_configs_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      task_run_configs = data
-    } catch (error) {
-      task_run_configs_error = createKilnError(error)
-    } finally {
-      task_run_configs_loading = false
-    }
-  }
-
   async function get_score_summary() {
     score_summary = null
     if (!current_eval_config_id) {
@@ -249,8 +229,8 @@
   )
 
   // Sort task run configs - default first, then by last output score
-  $: sorted_task_run_configs = task_run_configs
-    ? sortTaskRunConfigs(task_run_configs, evaluator, score_summary)
+  $: sorted_task_run_configs = current_task_run_configs
+    ? sortTaskRunConfigs(current_task_run_configs, evaluator, score_summary)
     : []
 
   function sortTaskRunConfigs(
@@ -493,7 +473,7 @@
       </div>
     </div>
     <div class="mt-16">
-      {#if task_run_configs?.length}
+      {#if current_task_run_configs?.length}
         <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
           <div class="grow">
             <div class="text-xl font-bold">Run Methods</div>
@@ -729,6 +709,6 @@
   {project_id}
   {task_id}
   run_method_added={(_) => {
-    get_task_run_configs()
+    load_task_run_configs(project_id, task_id)
   }}
 />
