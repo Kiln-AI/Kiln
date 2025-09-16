@@ -408,22 +408,22 @@
                 },
               ]}
             />
-            <div class="text-xl font-bold">Tags</div>
-            <div class="flex flex-row flex-wrap gap-2">
-              {#if sorted_tags}
-                {#each sorted_tags as tag}
-                  <div
-                    class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
-                  >
-                    <span class="truncate">{tag}</span>
-                  </div>
-                {/each}
-              {:else}
-                <div class="text-gray-500">
-                  Not tags. This Search Tool targets all documents in the
-                  project.
-                </div>
-              {/if}
+            <div>
+              <div class="text-xl font-bold mb-1">Documents</div>
+              <div class="flex flex-row flex-wrap gap-2 text-sm text-gray-500">
+                {#if sorted_tags && sorted_tags.length > 0}
+                  Search is limited to documents with the tags:
+                  {#each sorted_tags as tag}
+                    <div
+                      class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
+                    >
+                      <span class="truncate">{tag}</span>
+                    </div>
+                  {/each}
+                {:else}
+                  All documents in library.
+                {/if}
+              </div>
             </div>
           </div>
         </div>
