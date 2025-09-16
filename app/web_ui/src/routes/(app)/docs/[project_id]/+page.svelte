@@ -12,7 +12,7 @@
   limit_max_width
   action_buttons={[
     {
-      label: "Manage Extractors",
+      label: "Manage Document Extractors",
       href: `/docs/extractors/${project_id}`,
       primary: false,
     },

@@ -175,6 +175,12 @@ class ToolSetApiDescription(BaseModel):
     tools: list[ToolApiDescription]
 
 
+class SearchToolApiDescription(BaseModel):
+    id: ID_TYPE
+    name: str
+    description: str | None
+
+
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
     project = project_from_id(project_id)
     for tool_server in project.external_tool_servers(readonly=True):
@@ -509,3 +515,15 @@ def connect_tool_servers_api(app: FastAPI):
     async def set_demo_tools(enable_demo_tools: bool) -> bool:
         Config.shared().enable_demo_tools = enable_demo_tools
         return Config.shared().enable_demo_tools
+
+    @app.get("/api/projects/{project_id}/search_tools")
+    async def get_search_tools(project_id: str) -> list[SearchToolApiDescription]:
+        project = project_from_id(project_id)
+        return [
+            SearchToolApiDescription(
+                id=rag_config.id,
+                name=rag_config.name,
+                description=rag_config.description,
+            )
+            for rag_config in project.rag_configs(readonly=True)
+        ]

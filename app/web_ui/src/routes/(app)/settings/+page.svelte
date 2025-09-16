@@ -64,8 +64,7 @@
       items: [
         {
           name: "Manage Tools",
-          description:
-            "Connect your project to tools such as RAG systems and MCP servers.",
+          description: "Connect to tools such as RAG systems and MCP servers.",
           href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
           button_text: "Manage Tools",
         },

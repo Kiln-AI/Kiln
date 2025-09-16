@@ -5749,3 +5749,50 @@ async def test_edit_mcp_does_not_keep_bad_data_in_memory(
     # Read the server from memory again and ensure it's not changed
     post_validation_server = tool_server_from_id(test_project.id, test_server.id)
     assert post_validation_server.properties[property_key] == original_value
+
+
+def test_get_search_tools_success(client, test_project, mock_project_from_id):
+    """Test get_search_tools returns RAG configs as search tools"""
+    from kiln_ai.datamodel.rag import RagConfig
+
+    # Create some RAG configs
+    rag_config_1 = RagConfig(
+        parent=test_project,
+        name="Test Search Tool 1",
+        description="First test search tool",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+
+    rag_config_2 = RagConfig(
+        parent=test_project,
+        name="Test Search Tool 2",
+        description=None,
+        extractor_config_id="extractor456",
+        chunker_config_id="chunker789",
+        embedding_config_id="embedding123",
+        vector_store_config_id="vector_store456",
+    )
+
+    # Save the RAG configs
+    rag_config_1.save_to_file()
+    rag_config_2.save_to_file()
+
+    # Get search tools
+    response = client.get(f"/api/projects/{test_project.id}/search_tools")
+    assert response.status_code == 200
+
+    search_tools = response.json()
+    assert len(search_tools) == 2
+
+    # Check first search tool
+    tool1 = next(t for t in search_tools if t["name"] == "Test Search Tool 1")
+    assert tool1["id"] == str(rag_config_1.id)
+    assert tool1["description"] == "First test search tool"
+
+    # Check second search tool
+    tool2 = next(t for t in search_tools if t["name"] == "Test Search Tool 2")
+    assert tool2["id"] == str(rag_config_2.id)
+    assert tool2["description"] is None

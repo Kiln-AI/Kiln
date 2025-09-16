@@ -148,8 +148,14 @@
       subtitle: "by Kiln",
       description:
         "One click to try out tool calling, for simple math operations.",
-      button_text: "Enable",
       on_click: () => enable_demo_tools(),
+    },
+    {
+      name: "Search Tool (RAG)",
+      subtitle: "by Kiln",
+      description:
+        "Build a search tool to retrieve information from custom documents.",
+      on_click: () => goto(`/docs/rag_configs/${project_id}/add_search_tool`),
     },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
@@ -199,7 +205,7 @@
   ]}
 >
   <div>
-    <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
+    <h2 class="text-lg font-medium text-gray-900 mb-3">Suggested Tools</h2>
     <FeatureCarousel features={sample_tools} />
     <div class="max-w-4xl mt-8">
       <SettingsSection
