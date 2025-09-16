@@ -710,19 +710,9 @@ async def test_get_available_tools_success(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 2  # MCP Server + RAG (added inside loop)
-
-            # Find the MCP server set
-            mcp_set = next(
-                (
-                    s
-                    for s in set_result
-                    if s["set_name"] == "MCP Server: test_available_tools"
-                ),
-                None,
-            )
-            assert mcp_set is not None
-            result = mcp_set["tools"]
+            assert len(set_result) == 1
+            assert set_result[0]["set_name"] == "MCP Server: test_available_tools"
+            result = set_result[0]["tools"]
             assert len(result) == 3
 
             # Verify tool details
@@ -742,14 +732,6 @@ async def test_get_available_tools_success(client, test_project):
 
             weather_tool = next(t for t in result if t["name"] == "weather")
             assert weather_tool["description"] is None
-
-            # Verify RAG set is also present (added for each server in the loop)
-            rag_set = next(
-                (s for s in set_result if s["set_name"] == "RAG"),
-                None,
-            )
-            assert rag_set is not None
-            assert rag_set["tools"] == []  # No RAG configs in test project
 
 
 async def test_get_available_tools_multiple_servers(client, test_project):
@@ -827,7 +809,7 @@ async def test_get_available_tools_multiple_servers(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 4  # 2 MCP Servers + 2 RAG sets (one per server)
+            assert len(set_result) == 2
 
             # Find sets by name instead of assuming order
             server1_set = next(
@@ -860,12 +842,6 @@ async def test_get_available_tools_multiple_servers(client, test_project):
             assert "tool_b" in tool_names
             tool_names = [tool["name"] for tool in server2_set["tools"]]
             assert "tool_x" in tool_names
-
-            # Verify RAG sets are also present (one for each server in the loop)
-            rag_sets = [s for s in set_result if s["set_name"] == "RAG"]
-            assert len(rag_sets) == 2  # One RAG set per server
-            for rag_set in rag_sets:
-                assert rag_set["tools"] == []  # No RAG configs in test project
 
 
 async def test_get_available_tools_mcp_error_handling(client, test_project):
@@ -2156,14 +2132,14 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             # Should have one tool set for RAG (since MCP server has no tools, only RAG set is added)
             assert len(result) == 1
             rag_set = result[0]
-            assert rag_set["set_name"] == "RAG"
+            assert rag_set["set_name"] == "RAG Search Tools"
             assert len(rag_set["tools"]) == 2
 
             # Verify RAG tool details
             tool_names = [tool["name"] for tool in rag_set["tools"]]
 
-            assert "RAG: Test RAG Config 1" in tool_names
-            assert "RAG: Test RAG Config 2" in tool_names
+            assert "Test RAG Config 1" in tool_names
+            assert "Test RAG Config 2" in tool_names
 
             # Verify tool IDs are properly formatted
             for tool in rag_set["tools"]:
@@ -2171,12 +2147,12 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
 
             # Find specific tools and check their descriptions
             config1_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "RAG: Test RAG Config 1"
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
             )
             assert config1_tool["description"] == "First test RAG configuration"
 
             config2_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "RAG: Test RAG Config 2"
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 2"
             )
             assert config2_tool["description"] is None
 
@@ -2241,7 +2217,7 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
                 None,
             )
             rag_set = next(
-                (s for s in result if s["set_name"] == "RAG"),
+                (s for s in result if s["set_name"] == "RAG Search Tools"),
                 None,
             )
 
@@ -2255,7 +2231,7 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
 
             # Verify RAG tools
             assert len(rag_set["tools"]) == 1
-            assert rag_set["tools"][0]["name"] == "RAG: Mixed Test RAG"
+            assert rag_set["tools"][0]["name"] == "Mixed Test RAG"
             assert rag_set["tools"][0]["id"].startswith("kiln_tool::rag::")
 
 
