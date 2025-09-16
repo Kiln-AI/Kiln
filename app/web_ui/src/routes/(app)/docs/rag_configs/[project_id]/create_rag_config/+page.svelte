@@ -27,8 +27,16 @@
   } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
   import { extractor_output_format } from "$lib/utils/formatters"
+  import {
+    rag_config_templates,
+    build_rag_config_sub_configs,
+  } from "../add_search_tool/rag_config_templates"
+  import PropertyList from "$lib/ui/property_list.svelte"
 
   $: project_id = $page.params.project_id
+  $: template_id = $page.url.searchParams.get("template_id")
+  $: template = template_id ? rag_config_templates[template_id] : null
+  let customize_template_mode = false
 
   let loading: boolean = false
   let error: KilnError | null = null
@@ -357,6 +365,11 @@
   }
 
   async function create_rag_config() {
+    if (template && !customize_template_mode) {
+      // TODO implement this
+      loading = false
+      return
+    }
     try {
       loading = true
       error = null
@@ -435,6 +448,49 @@
       loading = false
     }
   }
+
+  async function customize_template() {
+    if (!template) {
+      return
+    }
+    try {
+      loading = true
+      // Fetch or build the sub configs
+      const {
+        extractor_config_id,
+        chunker_config_id,
+        embedding_config_id,
+        vector_store_config_id,
+      } = await build_rag_config_sub_configs(
+        template,
+        project_id,
+        extractor_configs,
+        chunker_configs,
+        embedding_configs,
+        vector_store_configs,
+      )
+      // Reload the configs, new ones may have been created in above step
+      await Promise.all([
+        loadExtractorConfigs(),
+        loadChunkerConfigs(),
+        loadEmbeddingConfigs(),
+        loadVectorStoreConfigs(),
+      ])
+      // Update the UI with the new configs
+      selected_extractor_config_id = extractor_config_id
+      selected_chunker_config_id = chunker_config_id
+      selected_embedding_config_id = embedding_config_id
+      selected_vector_store_config_id = vector_store_config_id
+      name = template.rag_config_name
+      // Don't render the template anymore, let them customize it
+      customize_template_mode = true
+    } catch (err) {
+      error = createKilnError("Error customizing template: " + err)
+      return
+    } finally {
+      loading = false
+    }
+  }
 </script>
 
 <AppPage
@@ -470,107 +526,152 @@
         bind:submitting={loading}
         keyboard_submit={!modal_opened}
       >
-        <div class="flex flex-col gap-6">
-          <!-- Extractor Selection -->
+        {#if template && !customize_template_mode}
           <div class="flex flex-col gap-2">
-            {#if loading_extractor_configs}
-              <div class="flex items-center gap-2">
-                <div class="loading loading-spinner loading-sm"></div>
-                <span class="text-sm">Loading extractors...</span>
-              </div>
-            {:else}
-              <FormElement
-                id="extractor_select"
-                label="Extractor"
-                description="Extractors convert your documents into text."
-                info_description="Documents like PDFs, images and videos need to be converted into text so they can be searched and read by models."
-                fancy_select_options={extractor_options}
-                bind:value={selected_extractor_config_id}
-                inputType="fancy_select"
+            <div class="mt-4 mb-16 max-w-[500px] mx-auto">
+              <PropertyList
+                title="Properties"
+                properties={[
+                  { name: "Name", value: template.name },
+                  {
+                    name: "Extractor Model",
+                    value: template.extractor.description,
+                    tooltip:
+                      "The model used to extract text from your documents (PDFs, images, videos, etc).",
+                  },
+                  {
+                    name: "Chunker",
+                    value: template.chunker.description,
+                    tooltip:
+                      "Parameters for splitting larger documents into smaller chunks for search.",
+                  },
+                  {
+                    name: "Embedding Model",
+                    value: template.embedding.description,
+                    tooltip:
+                      "The model used to convert text chunks into vectors for similarity search.",
+                  },
+                  {
+                    name: "Search Index",
+                    value: template.vector_store.description,
+                    tooltip:
+                      "How documents will be indexed and searched. Vector = semantic similarity, Full-Text = keyword search, Hybrid = both",
+                  },
+                ]}
               />
-            {/if}
+            </div>
+            <button
+              class="btn"
+              on:click={() => {
+                customize_template()
+              }}
+            >
+              Customize Template
+            </button>
+          </div>
+        {:else}
+          <div class="flex flex-col gap-6">
+            <!-- Extractor Selection -->
+            <div class="flex flex-col gap-2">
+              {#if loading_extractor_configs}
+                <div class="flex items-center gap-2">
+                  <div class="loading loading-spinner loading-sm"></div>
+                  <span class="text-sm">Loading extractors...</span>
+                </div>
+              {:else}
+                <FormElement
+                  id="extractor_select"
+                  label="Extractor"
+                  description="Extractors convert your documents into text."
+                  info_description="Documents like PDFs, images and videos need to be converted into text so they can be searched and read by models."
+                  fancy_select_options={extractor_options}
+                  bind:value={selected_extractor_config_id}
+                  inputType="fancy_select"
+                />
+              {/if}
+            </div>
+
+            <!-- Chunker Selection -->
+            <div class="flex flex-col gap-2">
+              {#if loading_chunker_configs}
+                <div class="flex items-center gap-2">
+                  <div class="loading loading-spinner loading-sm"></div>
+                  <span class="text-sm">Loading chunkers...</span>
+                </div>
+              {:else}
+                <FormElement
+                  id="chunker_select"
+                  label="Chunker"
+                  description="Split document text into smaller chunks for search."
+                  info_description="Splitting long documents into smaller chunks allows search to find relevant information."
+                  fancy_select_options={chunker_options}
+                  bind:value={selected_chunker_config_id}
+                  inputType="fancy_select"
+                />
+              {/if}
+            </div>
+
+            <!-- Embedding Selection -->
+            <div class="flex flex-col gap-2">
+              {#if loading_embedding_configs}
+                <div class="flex items-center gap-2">
+                  <div class="loading loading-spinner loading-sm"></div>
+                  <span class="text-sm">Loading embedding models...</span>
+                </div>
+              {:else}
+                <FormElement
+                  id="embedding_select"
+                  label="Embedding Model"
+                  description="Embedding models convert document chunks into vectors for similarity search."
+                  info_description="Embedding models are a type of AI model which create searchable vectors from your chunks."
+                  fancy_select_options={embedding_options}
+                  bind:value={selected_embedding_config_id}
+                  inputType="fancy_select"
+                />
+              {/if}
+            </div>
+
+            <!-- Vector Store Selection -->
+            <div class="flex flex-col gap-2">
+              {#if loading_vector_store_configs}
+                <div class="flex items-center gap-2">
+                  <div class="loading loading-spinner loading-sm"></div>
+                  <span class="text-sm">Loading vector stores...</span>
+                </div>
+              {:else}
+                <FormElement
+                  id="vector_store_select"
+                  label="Vector Store"
+                  description="Choose how documents will be stored and searched."
+                  info_description="Full text search is fastest for keyword searches, vector search is best for semantic meaning, and hybrid combines both approaches."
+                  fancy_select_options={vector_store_options}
+                  bind:value={selected_vector_store_config_id}
+                  inputType="fancy_select"
+                />
+              {/if}
+            </div>
           </div>
 
-          <!-- Chunker Selection -->
-          <div class="flex flex-col gap-2">
-            {#if loading_chunker_configs}
-              <div class="flex items-center gap-2">
-                <div class="loading loading-spinner loading-sm"></div>
-                <span class="text-sm">Loading chunkers...</span>
-              </div>
-            {:else}
-              <FormElement
-                id="chunker_select"
-                label="Chunker"
-                description="Split document text into smaller chunks for search."
-                info_description="Splitting long documents into smaller chunks allows search to find relevant information."
-                fancy_select_options={chunker_options}
-                bind:value={selected_chunker_config_id}
-                inputType="fancy_select"
-              />
-            {/if}
-          </div>
-
-          <!-- Embedding Selection -->
-          <div class="flex flex-col gap-2">
-            {#if loading_embedding_configs}
-              <div class="flex items-center gap-2">
-                <div class="loading loading-spinner loading-sm"></div>
-                <span class="text-sm">Loading embedding models...</span>
-              </div>
-            {:else}
-              <FormElement
-                id="embedding_select"
-                label="Embedding Model"
-                description="Embedding models convert document chunks into vectors for similarity search."
-                info_description="Embedding models are a type of AI model which create searchable vectors from your chunks."
-                fancy_select_options={embedding_options}
-                bind:value={selected_embedding_config_id}
-                inputType="fancy_select"
-              />
-            {/if}
-          </div>
-
-          <!-- Vector Store Selection -->
-          <div class="flex flex-col gap-2">
-            {#if loading_vector_store_configs}
-              <div class="flex items-center gap-2">
-                <div class="loading loading-spinner loading-sm"></div>
-                <span class="text-sm">Loading vector stores...</span>
-              </div>
-            {:else}
-              <FormElement
-                id="vector_store_select"
-                label="Vector Store"
-                description="Choose how documents will be stored and searched."
-                info_description="Full text search is fastest for keyword searches, vector search is best for semantic meaning, and hybrid combines both approaches."
-                fancy_select_options={vector_store_options}
-                bind:value={selected_vector_store_config_id}
-                inputType="fancy_select"
-              />
-            {/if}
-          </div>
-        </div>
-
-        <!-- Advanced -->
-        <Collapse title="Advanced Options">
-          <FormElement
-            label="Search Tool Name"
-            description="A name to identify this tool. Leave blank and we'll generate one for you."
-            optional={true}
-            inputType="input"
-            id="rag_config_name"
-            bind:value={name}
-          />
-          <FormElement
-            label="Description"
-            description="A description of the search tool for your reference."
-            optional={true}
-            inputType="textarea"
-            id="rag_config_description"
-            bind:value={description}
-          />
-        </Collapse>
+          <!-- Advanced -->
+          <Collapse title="Advanced Options">
+            <FormElement
+              label="Search Tool Name"
+              description="A name to identify this tool. Leave blank and we'll generate one for you."
+              optional={true}
+              inputType="input"
+              id="rag_config_name"
+              bind:value={name}
+            />
+            <FormElement
+              label="Description"
+              description="A description of the search tool for your reference."
+              optional={true}
+              inputType="textarea"
+              id="rag_config_description"
+              bind:value={description}
+            />
+          </Collapse>
+        {/if}
       </FormContainer>
     </div>
   {/if}

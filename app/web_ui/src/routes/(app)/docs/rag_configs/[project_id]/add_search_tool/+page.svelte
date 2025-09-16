@@ -9,71 +9,45 @@
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
+  import {
+    rag_config_templates,
+    type RequiredApiKeysSets,
+    type RagConfigTemplate,
+  } from "./rag_config_templates"
 
   $: project_id = $page.params.project_id
 
   let requires_api_keys_dialog: Dialog | null = null
-  type RequiredApiKeysSets = "OpenaiOrOpenRouter" | "GeminiOrOpenRouter"
 
   onMount(() => {
     load_settings()
   })
 
-  type SuggestedSearchTool = {
-    name: string
-    subtitle: string
-    description: string
-    on_click: () => void
-    // A list of the required API keys. The user must have one or more of the API keys in each sublist.
-    required_api_keys: RequiredApiKeysSets
-  }
-
-  const suggested_search_tools: SuggestedSearchTool[] = [
-    {
-      name: "Best Quality",
-      subtitle: "Spare No Expense",
-      description:
-        "Gemini 2.5 Pro extraction, Gemini embeddings, and hybrid search.",
-      on_click: () => suggestion_selected(suggested_search_tools[0]),
-      required_api_keys: "GeminiOrOpenRouter",
-    },
-    {
-      name: "Cost Optimized",
-      subtitle: "Balance Cost and Quality",
-      description:
-        "Gemini 2.5 Flash extraction, Gemini embeddings, and hybrid search.",
-      on_click: () => suggestion_selected(suggested_search_tools[1]),
-      required_api_keys: "GeminiOrOpenRouter",
-    },
-    {
-      name: "OpenAI Based",
-      subtitle: "Need to use OpenAI?",
-      description: "GPT-4o extraction, OpenAI embeddings, and hybrid search.",
-      on_click: () => suggestion_selected(suggested_search_tools[2]),
-      required_api_keys: "OpenaiOrOpenRouter",
-    },
-    {
-      name: "Vector Only",
-      subtitle: "No Full-Text Search",
-      description:
-        "Use only vector search for semantic similarity, not hybrid vector + full-text search.",
-      on_click: () => suggestion_selected(suggested_search_tools[3]),
-      required_api_keys: "GeminiOrOpenRouter",
-    },
-  ]
+  const suggested_search_tools = Object.entries(rag_config_templates).map(
+    ([id, template]) => ({
+      name: template.name,
+      subtitle: template.preview_subtitle,
+      description: template.preview_description,
+      on_click: () => suggestion_selected(template, id),
+      required_api_keys: template.required_api_keys,
+    }),
+  )
 
   let missing_api_keys: RequiredApiKeysSets | null = null
-  function suggestion_selected(suggestion: SuggestedSearchTool) {
+  function suggestion_selected(
+    suggestion: RagConfigTemplate,
+    template_id: string,
+  ) {
     if (settings_error) {
       alert(
-        "Settings unavailable: unable to check API keys. Please refresh and try again. Error: " +
+        "Settings unavailable: unable to check for necessary API keys. Please refresh and try again. Error: " +
           settings_error.getMessage(),
       )
       return
     }
     if (!settings) {
       alert(
-        "Settings unavailable: unable to check API keys. Please refresh and try again.",
+        "Settings unavailable: unable to check for necessary API keys. Please refresh and try again.",
       )
       return
     }
@@ -94,7 +68,10 @@
       }
     }
 
-    // TODO: we have needed keys, create the search tool
+    // Go to the create search tool page with the template id
+    goto(
+      `/docs/rag_configs/${project_id}/create_rag_config?template_id=${template_id}`,
+    )
   }
 
   let settings: Record<string, unknown> | undefined = undefined
