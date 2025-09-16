@@ -206,6 +206,13 @@
         title="Custom Tools"
         items={[
           {
+            name: "Search Tools (RAG)",
+            description:
+              "Create a tool to search for information in documents.",
+            button_text: "Create",
+            href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
+          {
             name: "Remote MCP Servers",
             description:
               "Connect to remote MCP servers to add tools to your project.",
