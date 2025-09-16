@@ -14,6 +14,7 @@ from kiln_ai.adapters.rag.deduplication import (
     deduplicate_chunk_embeddings,
     deduplicate_chunked_documents,
     deduplicate_extractions,
+    filter_documents_by_tags,
 )
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
@@ -227,11 +228,13 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         project: Project,
         extractor_config: ExtractorConfig,
         concurrency: int = 10,
+        rag_config: RagConfig | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
         self.lock_key = f"docs:extract:{self.extractor_config.id}"
         self.concurrency = concurrency
+        self.rag_config = rag_config
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.EXTRACTING
@@ -247,7 +250,12 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
     ) -> list[ExtractorJob]:
         jobs: list[ExtractorJob] = []
         target_extractor_config_id = self.extractor_config.id
-        for document in self.project.documents(readonly=True):
+
+        documents = self.project.documents(readonly=True)
+        if self.rag_config and self.rag_config.tags:
+            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+
+        for document in documents:
             if (
                 document_ids is not None
                 and len(document_ids) > 0
@@ -311,12 +319,14 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         extractor_config: ExtractorConfig,
         chunker_config: ChunkerConfig,
         concurrency: int = 10,
+        rag_config: RagConfig | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
         self.chunker_config = chunker_config
         self.lock_key = f"docs:chunk:{self.chunker_config.id}"
         self.concurrency = concurrency
+        self.rag_config = rag_config
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.CHUNKING
@@ -334,7 +344,11 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         target_chunker_config_id = self.chunker_config.id
 
         jobs: list[ChunkerJob] = []
-        for document in self.project.documents(readonly=True):
+        documents = self.project.documents(readonly=True)
+        if self.rag_config and self.rag_config.tags:
+            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+
+        for document in documents:
             if (
                 document_ids is not None
                 and len(document_ids) > 0
@@ -402,12 +416,14 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         chunker_config: ChunkerConfig,
         embedding_config: EmbeddingConfig,
         concurrency: int = 10,
+        rag_config: RagConfig | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
         self.chunker_config = chunker_config
         self.embedding_config = embedding_config
         self.concurrency = concurrency
+        self.rag_config = rag_config
         self.lock_key = f"docs:embedding:{self.embedding_config.id}"
 
     def stage(self) -> RagWorkflowStepNames:
@@ -427,7 +443,11 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         target_embedding_config_id = self.embedding_config.id
 
         jobs: list[EmbeddingJob] = []
-        for document in self.project.documents(readonly=True):
+        documents = self.project.documents(readonly=True)
+        if self.rag_config and self.rag_config.tags:
+            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+
+        for document in documents:
             if (
                 document_ids is not None
                 and len(document_ids) > 0
@@ -535,7 +555,11 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
 
         # (document_id, chunked_document, embedding)
         jobs: list[DocumentWithChunksAndEmbeddings] = []
-        for document in self.project.documents(readonly=True):
+        documents = self.project.documents(readonly=True)
+        if self.rag_config and self.rag_config.tags:
+            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+
+        for document in documents:
             if (
                 document_ids is not None
                 and len(document_ids) > 0
