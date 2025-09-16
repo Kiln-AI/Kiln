@@ -17,11 +17,11 @@
   })
 
   async function loadAvailableTags() {
-    try {
-      loading_tags = true
-      error = null
+    loading_tags = true
+    error = null
 
-      const { data, error: fetch_error } = await client.GET(
+    try {
+      const { data, error: load_available_tags_error } = await client.GET(
         "/api/projects/{project_id}/documents/tags",
         {
           params: {
@@ -32,12 +32,14 @@
         },
       )
 
-      if (fetch_error) {
-        error = createKilnError(fetch_error)
-        return
+      if (load_available_tags_error) {
+        throw load_available_tags_error
       }
 
       available_tags = data || []
+    } catch (e) {
+      error = createKilnError(e as unknown)
+      available_tags = []
     } finally {
       loading_tags = false
     }
