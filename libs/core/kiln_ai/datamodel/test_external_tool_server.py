@@ -221,6 +221,26 @@ class TestExternalToolServer:
                 {"INVALID.KEY": "value"},
                 "Invalid environment variable key: INVALID.KEY. Can only contain letters, digits, and underscores.",
             ),
+            # Emojis
+            (
+                {"API_KEY👍": "value"},
+                "Invalid environment variable key: API_KEY👍. Can only contain letters, digits, and underscores.",
+            ),
+            # Non-ASCII characters
+            (
+                {"API_KEY_密鑰": "value"},
+                "Invalid environment variable key: API_KEY_密鑰. Can only contain letters, digits, and underscores.",
+            ),
+            # Newlines
+            (
+                {"API\nKEY": "value"},
+                "Invalid environment variable key: API\nKEY. Can only contain letters, digits, and underscores.",
+            ),
+            # Tabs
+            (
+                {"Hello\tWorld": "value"},
+                "Invalid environment variable key: Hello\tWorld. Can only contain letters, digits, and underscores.",
+            ),
         ],
     )
     def test_validate_env_vars_invalid(self, env_vars, expected_error):
@@ -235,8 +255,11 @@ class TestExternalToolServer:
             {},
             {"VALID_KEY": "value"},
             {"VALID123": "value"},
+            {"_VALID123": "value"},
             # Multiple valid keys
             {"KEY1": "value1", "KEY2": "value2", "_KEY3": "value3"},
+            # With paths
+            {"PATH": "/usr/bin"},
         ],
     )
     def test_validate_env_vars_valid(self, env_vars):
