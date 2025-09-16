@@ -81,13 +81,13 @@ class TestKilnEmbeddingModel:
         model = KilnEmbeddingModel(
             family=KilnEmbeddingModelFamily.openai,
             name=EmbeddingModelName.openai_text_embedding_3_small,
-            friendly_name="text-embedding-3-small",
+            friendly_name="Text Embedding 3 Small",
             providers=providers,
         )
 
         assert model.family == KilnEmbeddingModelFamily.openai
         assert model.name == EmbeddingModelName.openai_text_embedding_3_small
-        assert model.friendly_name == "text-embedding-3-small"
+        assert model.friendly_name == "Text Embedding 3 Small"
         assert len(model.providers) == 1
         assert model.providers[0].name == ModelProviderName.openai
 
@@ -193,7 +193,7 @@ class TestEmbeddingModelsList:
         model = get_model_by_name(EmbeddingModelName.openai_text_embedding_3_small)
 
         assert model.family == KilnEmbeddingModelFamily.openai
-        assert model.friendly_name == "text-embedding-3-small"
+        assert model.friendly_name == "Text Embedding 3 Small"
         assert len(model.providers) == 1
 
         provider = model.providers[0]
@@ -208,7 +208,7 @@ class TestEmbeddingModelsList:
         model = get_model_by_name(EmbeddingModelName.openai_text_embedding_3_large)
 
         assert model.family == KilnEmbeddingModelFamily.openai
-        assert model.friendly_name == "text-embedding-3-large"
+        assert model.friendly_name == "Text Embedding 3 Large"
         assert len(model.providers) == 1
 
         provider = model.providers[0]
@@ -223,7 +223,7 @@ class TestEmbeddingModelsList:
         model = get_model_by_name(EmbeddingModelName.gemini_text_embedding_004)
 
         assert model.family == KilnEmbeddingModelFamily.gemini
-        assert model.friendly_name == "text-embedding-004"
+        assert model.friendly_name == "Text Embedding 004"
         assert len(model.providers) == 1
 
         provider = model.providers[0]
@@ -267,17 +267,17 @@ class TestGetModelByName:
             (
                 EmbeddingModelName.openai_text_embedding_3_small,
                 KilnEmbeddingModelFamily.openai,
-                "text-embedding-3-small",
+                "Text Embedding 3 Small",
             ),
             (
                 EmbeddingModelName.openai_text_embedding_3_large,
                 KilnEmbeddingModelFamily.openai,
-                "text-embedding-3-large",
+                "Text Embedding 3 Large",
             ),
             (
                 EmbeddingModelName.gemini_text_embedding_004,
                 KilnEmbeddingModelFamily.gemini,
-                "text-embedding-004",
+                "Text Embedding 004",
             ),
         ],
     )

@@ -3067,7 +3067,7 @@ def test_get_providers_embedding_models(client):
         )
         assert (
             data["models"][EmbeddingModelName.openai_text_embedding_3_small]["name"]
-            == "text-embedding-3-small"
+            == "Text Embedding 3 Small"
         )
 
 
