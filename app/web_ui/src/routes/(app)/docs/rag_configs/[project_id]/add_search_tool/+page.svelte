@@ -10,6 +10,8 @@
   import { page } from "$app/stores"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
 
+  $: project_id = $page.params.project_id
+
   let requires_api_keys_dialog: Dialog | null = null
   type RequiredApiKeysSets = "OpenaiOrOpenRouter" | "GeminiOrOpenRouter"
 
@@ -140,7 +142,17 @@
 
 <AppPage
   title="Create Search Tool (RAG)"
-  subtitle="Create a tool which can search documents for information"
+  subtitle="A tool to search for information in documents"
+  breadcrumbs={[
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Search Tools",
+      href: `/docs/rag_configs/${project_id}`,
+    },
+  ]}
 >
   <div>
     <h2 class="text-lg font-medium">Suggested Configurations</h2>
@@ -156,9 +168,9 @@
             name: "Custom Search Tool",
             badge_text: "Advanced",
             description:
-              "Create a custom search tool by defining the embedding model, index type, document extraction method, and chunking strategy. Only recommended for advanced users.",
+              "Create a custom search tool by specifying the embedding model, index type, document extraction method, and chunking strategy. Only recommended for advanced users.",
             button_text: "Create Custom",
-            on_click: () => {},
+            href: `/docs/rag_configs/${project_id}/create_rag_config`,
           },
         ]}
       />
