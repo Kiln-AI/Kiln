@@ -19,9 +19,9 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ollama_tools import get_ollama_connection
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
-from kiln_ai.datamodel.registry import project_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.project_utils import project_from_id
 
 logger = logging.getLogger(__name__)
 

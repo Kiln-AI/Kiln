@@ -19,7 +19,7 @@ from kiln_ai.datamodel import (
     TaskRun,
 )
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, EvalOutputScore
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 @pytest.fixture
@@ -93,11 +93,10 @@ def test_eval_config(test_task):
 
 
 @pytest.fixture
-def test_run_config(test_task):
-    return RunConfig(
+def test_run_config():
+    return RunConfigProperties(
         model_name="llama_3_1_8b",
         model_provider_name="groq",
-        task=test_task,
         prompt_id="simple_prompt_builder",
         structured_output_mode="json_schema",
     )

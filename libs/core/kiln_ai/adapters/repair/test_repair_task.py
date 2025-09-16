@@ -229,21 +229,20 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "rating": 8,
     }
 
+    run_config = RunConfigProperties(
+        model_name="llama_3_1_8b",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
     with patch.object(LiteLlmAdapter, "_run", new_callable=AsyncMock) as mock_run:
         mock_run.return_value = (
             RunOutput(output=mocked_output, intermediate_outputs=None),
             None,
         )
 
-        adapter = adapter_for_task(
-            repair_task,
-            RunConfigProperties(
-                model_name="llama_3_1_8b",
-                model_provider_name="ollama",
-                prompt_id="simple_prompt_builder",
-                structured_output_mode="json_schema",
-            ),
-        )
+        adapter = adapter_for_task(repair_task, run_config)
 
         run = await adapter.invoke(repair_task_input.model_dump())
 
@@ -264,6 +263,10 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
     }
     assert run.input_source.type == DataSourceType.human
     assert "created_by" in run.input_source.properties
+    assert run.output.source is not None
+    assert run.output.source.run_config is not None
+    saved_run_config = run.output.source.run_config.model_dump()
+    assert saved_run_config == run_config.model_dump()
 
     # Verify that the mock was called
     mock_run.assert_called_once()

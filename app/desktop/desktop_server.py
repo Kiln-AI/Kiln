@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from kiln_ai.adapters.remote_config import load_remote_models
 from kiln_ai.utils.logging import setup_litellm_logging
 
-from app.desktop.log_config import log_config
+from app.desktop.log_config import log_config, validate_log_level
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
@@ -22,6 +22,7 @@ from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.settings_api import connect_settings
+from app.desktop.studio_server.tool_api import connect_tool_servers_api
 from app.desktop.studio_server.webhost import connect_webhost
 
 # Loads github pages hosted JSON config.
@@ -47,8 +48,8 @@ async def lifespan(app: FastAPI):
     datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
-def make_app(tk_root: tk.Tk | None = None):
-    setup_litellm_logging()
+def make_app(tk_root: tk.Tk | None = None, litellm_log_filename: str | None = None):
+    setup_litellm_logging(litellm_log_filename)
 
     load_remote_models(REMOTE_MODEL_LIST_URL)
 
@@ -61,6 +62,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_fine_tune_api(app)
     connect_evals_api(app)
     connect_import_api(app, tk_root=tk_root)
+    connect_tool_servers_api(app)
 
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
@@ -69,11 +71,14 @@ def make_app(tk_root: tk.Tk | None = None):
 
 def server_config(port=8757, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
-        make_app(tk_root=tk_root),
+        make_app(tk_root=tk_root, litellm_log_filename="model_calls.log"),
         host="127.0.0.1",
         port=port,
         use_colors=False,
-        log_config=log_config(),
+        log_config=log_config(
+            log_level=validate_log_level(os.getenv("KILN_LOG_LEVEL", "WARNING")),
+            log_file_name="kiln_desktop.log",
+        ),
     )
 
 

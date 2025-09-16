@@ -7,6 +7,7 @@
   export let max_height: string | null = null
   export let hide_toggle: boolean = false
 
+  export let no_padding: boolean = false
   let formatted_json_html: string | null = null
   let is_expanded = false
   let content_element: HTMLElement
@@ -58,16 +59,17 @@
 
 <div class="relative">
   <div
-    class="flex flex-row gap-2 bg-base-200 p-1 rounded-lg {max_height &&
-    !is_expanded
-      ? 'overflow-hidden'
-      : ''}"
+    class="flex flex-row gap-2 bg-base-200 p-1 rounded-lg {no_padding
+      ? ''
+      : 'p-1'} {max_height && !is_expanded ? 'overflow-hidden' : ''}"
     style={max_height && !is_expanded ? `max-height: ${max_height}` : ""}
   >
     <!-- eslint-disable svelte/no-at-html-tags -->
     <pre
       bind:this={content_element}
-      class="grow p-3 whitespace-pre-wrap text-xs min-w-0"
+      class="grow p-3 whitespace-pre-wrap text-xs min-w-0 {no_padding
+        ? ''
+        : 'p-3'}"
       style="overflow-wrap: anywhere;">{#if formatted_json_html}{@html formatted_json_html}{:else}{raw_output}{/if}</pre>
     <!-- eslint-enable svelte/no-at-html-tags -->
     <div class="flex-none">

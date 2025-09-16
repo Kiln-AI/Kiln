@@ -4,6 +4,7 @@ import type { components } from "./api_schema"
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
 export type TaskRun = components["schemas"]["TaskRun-Input"]
+export type TaskRunOutput = components["schemas"]["TaskRun-Output"]
 export type TaskRequirement = components["schemas"]["TaskRequirement"]
 export type TaskOutputRating = components["schemas"]["TaskOutputRating-Output"]
 export type TaskOutputRatingType = components["schemas"]["TaskOutputRatingType"]
@@ -63,3 +64,23 @@ export type VectorStoreType = components["schemas"]["VectorStoreType"]
 export type LogMessage = components["schemas"]["LogMessage"]
 export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
+export type KilnToolServerDescription =
+  components["schemas"]["KilnToolServerDescription"]
+export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
+export type ExternalToolServerApiDescription =
+  components["schemas"]["ExternalToolServerApiDescription"]
+export type ToolServerType = components["schemas"]["ToolServerType"]
+export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
+export type ToolSetApiDescription =
+  components["schemas"]["ToolSetApiDescription"]
+
+export type TraceMessage =
+  | components["schemas"]["ChatCompletionDeveloperMessageParam"]
+  | components["schemas"]["ChatCompletionSystemMessageParam"]
+  | components["schemas"]["ChatCompletionUserMessageParam-Input"]
+  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
+  | components["schemas"]["ChatCompletionToolMessageParam"]
+  | components["schemas"]["ChatCompletionFunctionMessageParam"]
+export type Trace = TraceMessage[]
+export type ToolCallMessageParam =
+  components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]

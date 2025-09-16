@@ -65,6 +65,7 @@
       if (input) {
         topic.samples.push({
           input: input,
+          output: null,
           saved_id: null,
           model_name,
           model_provider,
@@ -246,9 +247,9 @@
         >✕</button
       >
     </form>
-    <h3 class="text-lg font-bold">Generate Model Inputs</h3>
+    <h3 class="text-lg font-bold">Generate Inputs</h3>
     <p class="text-sm font-light mb-8">
-      Add synthetic model inputs: the inputs which will be passed to the task.
+      Generate synthetic inputs: the data that will be passed into the task.
       {#if path.length > 0}
         {cascade_mode ? "For each subtopic of: " : "For the topic: "}
         <span class="font-mono text-xs bg-gray-100">{path.join(" → ")}</span>

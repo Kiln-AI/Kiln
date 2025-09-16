@@ -66,7 +66,7 @@
     }
 
     const model_id = run?.output?.source?.properties?.model_name
-    if (model_id) {
+    if (model_id && typeof model_id === "string") {
       properties.push({
         name: "Output Model",
         value: model_name(model_id, model_info),
@@ -127,20 +127,6 @@
         value: provider_name_from_id(
           String(run.output.source.properties.model_provider),
         ),
-      })
-    }
-
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
       })
     }
 

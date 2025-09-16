@@ -10,6 +10,7 @@ dependencies = [
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
+    "mcp[cli]>=1.10.1",
 ]
 
 [dependency-groups]
@@ -21,7 +22,7 @@ dev = [
     "pytest>=8.3.3",
     "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
-    "ruff>=0.9.0",
+    "ruff>=0.13.0",
     "watchfiles>=1.1.0",
 ]
 
