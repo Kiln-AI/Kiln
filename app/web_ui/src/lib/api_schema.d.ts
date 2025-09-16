@@ -1885,6 +1885,8 @@ export interface components {
              * @description The description of the extractor config
              */
             description?: string | null;
+            /** @description The type of extractor to use */
+            extractor_type: components["schemas"]["ExtractorType"];
             /** @description The name of the model provider to use for the extractor config. */
             model_provider_name: components["schemas"]["ModelProviderName"];
             /**
@@ -2723,12 +2725,12 @@ export interface components {
              * Model Provider Name
              * @description The name of the model provider to use for the extractor config.
              */
-            model_provider_name: string;
+            model_provider_name: string | null;
             /**
              * Model Name
              * @description The name of the model to use for the extractor config.
              */
-            model_name: string;
+            model_name: string | null;
             /**
              * @description The format to use for the output.
              * @default text/markdown
@@ -2770,7 +2772,7 @@ export interface components {
          * ExtractorType
          * @enum {string}
          */
-        ExtractorType: "litellm";
+        ExtractorType: "litellm" | "llama_pdf_reader";
         /** FileInfo */
         FileInfo: {
             /**

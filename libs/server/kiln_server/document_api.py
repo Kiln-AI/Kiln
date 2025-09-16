@@ -281,6 +281,9 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The description of the extractor config",
         default=None,
     )
+    extractor_type: ExtractorType = Field(
+        description="The type of extractor to use",
+    )
     model_provider_name: ModelProviderName = Field(
         description="The name of the model provider to use for the extractor config.",
     )
@@ -305,23 +308,29 @@ class CreateExtractorConfigRequest(BaseModel):
         except ValueError:
             raise ValueError(f"Invalid model provider name: {self.model_provider_name}")
 
-        # check the model exists and is suitable as an extractor
-        model = built_in_models_from_provider(
-            provider_name=typed_model_provider_name,
-            model_name=self.model_name,
-        )
+        if self.extractor_type == ExtractorType.LLAMA_PDF_READER:
+            return self
 
-        if model is None:
-            raise ValueError(
-                f"Model {self.model_name} not found in {self.model_provider_name}"
+        if self.extractor_type == ExtractorType.LITELLM:
+            # check the model exists and is suitable as an extractor
+            model = built_in_models_from_provider(
+                provider_name=typed_model_provider_name,
+                model_name=self.model_name,
             )
 
-        if not model.supports_doc_extraction:
-            raise ValueError(
-                f"Model {self.model_name} does not support document extraction"
-            )
+            if model is None:
+                raise ValueError(
+                    f"Model {self.model_name} not found in {self.model_provider_name}"
+                )
 
-        return self
+            if not model.supports_doc_extraction:
+                raise ValueError(
+                    f"Model {self.model_name} does not support document extraction"
+                )
+
+            return self
+
+        raise ValueError(f"Invalid extractor type: {self.extractor_type}")
 
 
 class PatchDocumentRequest(BaseModel):
@@ -723,7 +732,7 @@ def connect_document_api(app: FastAPI):
             model_name=request.model_name,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=ExtractorType.LITELLM,
+            extractor_type=request.extractor_type,
             properties=request.properties,
         )
         extractor_config.save_to_file()

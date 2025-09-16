@@ -1,5 +1,6 @@
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor
 from kiln_ai.adapters.extractors.litellm_extractor import LitellmExtractor
+from kiln_ai.adapters.extractors.llama_pdf_reader import LlamaPdfReader
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.provider_tools import (
     core_provider,
@@ -14,7 +15,14 @@ def extractor_adapter_from_type(
     extractor_config: ExtractorConfig,
 ) -> BaseExtractor:
     match extractor_type:
+        case ExtractorType.LLAMA_PDF_READER:
+            return LlamaPdfReader(extractor_config)
         case ExtractorType.LITELLM:
+            if extractor_config.model_provider_name is None:
+                raise ValueError("model_provider_name is required for LitellmExtractor")
+            if extractor_config.model_name is None:
+                raise ValueError("model_name is required for LitellmExtractor")
+
             try:
                 provider_enum = ModelProviderName(extractor_config.model_provider_name)
             except ValueError:
