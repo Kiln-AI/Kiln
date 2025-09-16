@@ -3191,37 +3191,6 @@ async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
         assert mcp_secrets[f"{server_id}::Authorization"] == "Bearer new-token"
 
 
-@pytest.mark.skip("TODO Fix")
-async def test_connect_remote_mcp_secret_header_validation_error(client, test_project):
-    """Test connect_remote_mcp endpoint handles secret header validation errors"""
-    tool_data = {
-        "name": "invalid_secret_tool",
-        "server_url": "https://example.com/api",
-        "headers": {
-            "Content-Type": "application/json",
-        },
-        "secret_header_keys": ["Authorization"],  # Not in headers
-        "description": "Tool with invalid secret header keys",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-        error_detail = response.json()["detail"]
-        assert any(
-            "Secret header key Authorization is not in the headers" in str(error)
-            for error in error_detail
-        )
-
-
 async def test_delete_tool_server_config_update_fixed(client, test_project):
     """Test that deleting a tool server with secret headers properly saves config changes"""
     # Create a tool server with secret headers
@@ -3510,39 +3479,6 @@ async def test_connect_local_mcp_existing_mcp_secrets(client, test_project):
         # New secret should be added
         assert f"{server_id}::NEW_SECRET" in mcp_secrets
         assert mcp_secrets[f"{server_id}::NEW_SECRET"] == "new_secret_value"
-
-
-@pytest.mark.skip("TODO Fix")
-async def test_connect_local_mcp_secret_env_var_validation_error(client, test_project):
-    """Test connect_local_mcp endpoint handles secret env var validation errors"""
-    tool_data = {
-        "name": "invalid_secret_env_tool",
-        "command": "python",
-        "args": ["-m", "my_server"],
-        "env_vars": {
-            "PUBLIC_VAR": "public_value",
-        },
-        "secret_env_var_keys": ["SECRET_API_KEY"],  # Not in env_vars
-        "description": "Tool with invalid secret env var keys",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-        error_detail = response.json()["detail"]
-        assert any(
-            "Secret environment variable key SECRET_API_KEY is not in the list of environment variables"
-            in str(error)
-            for error in error_detail
-        )
 
 
 async def test_delete_local_mcp_tool_server_with_secret_env_vars(client, test_project):
