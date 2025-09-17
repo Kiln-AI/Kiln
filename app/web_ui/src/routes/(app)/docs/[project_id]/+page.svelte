@@ -19,7 +19,7 @@
           "Add or browse documents. Docs can be queried by Search Tools.",
         action_buttons: [
           {
-            label: "View Library",
+            label: "Manage Documents",
             href: `/docs/library/${project_id}`,
             primary: true,
           },
