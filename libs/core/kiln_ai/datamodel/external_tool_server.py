@@ -1,10 +1,10 @@
 import re
 from enum import Enum
-from typing import Any, TypedDict
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import Field, PrivateAttr, model_validator
-from typing_extensions import NotRequired
+from typing_extensions import NotRequired, TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
