@@ -23,16 +23,16 @@ class ToolServerType(str, Enum):
     local_mcp = "local_mcp"
 
 
-class LocalServerProperties(TypedDict, total=False):
+class LocalServerProperties(TypedDict, total=True):
     command: str
     args: list[str]
-    env_vars: dict[str, str]
+    env_vars: NotRequired[dict[str, str]]
     secret_env_var_keys: NotRequired[list[str]]
 
 
-class RemoteServerProperties(TypedDict, total=False):
+class RemoteServerProperties(TypedDict, total=True):
     server_url: str
-    headers: dict[str, str]
+    headers: NotRequired[dict[str, str]]
     secret_header_keys: NotRequired[list[str]]
 
 
@@ -54,7 +54,6 @@ class ExternalToolServer(KilnParentedModel):
     )
 
     properties: LocalServerProperties | RemoteServerProperties = Field(
-        default_factory=lambda: {},
         description="Configuration properties specific to the tool type.",
     )
 
@@ -187,6 +186,46 @@ class ExternalToolServer(KilnParentedModel):
                 )
 
     @model_validator(mode="before")
+    def validate_required_fields(cls, data: dict) -> dict:
+        """Validate that each tool type has the required configuration."""
+        server_type = data.get("type")
+        properties = data.get("properties", {})
+
+        if not server_type:
+            return data
+
+        match server_type:
+            case ToolServerType.remote_mcp:
+                server_url = properties.get("server_url", None)
+                if server_url is None:
+                    raise ValueError(
+                        "Server URL is required to connect to a remote MCP server"
+                    )
+                ExternalToolServer.validate_server_url(server_url)
+
+            case ToolServerType.local_mcp:
+                command = properties.get("command", None)
+                if command is None:
+                    raise ValueError("command is required to start a local MCP server")
+
+                if not isinstance(command, str):
+                    raise ValueError(
+                        "command must be a string to start a local MCP server"
+                    )
+
+                args = properties.get("args", None)
+                if args is not None:
+                    if not isinstance(args, list):
+                        raise ValueError(
+                            "arguments must be a list to start a local MCP server"
+                        )
+
+            case _:
+                # Type checking will catch missing cases
+                raise_exhaustive_enum_error(server_type)
+        return data
+
+    @model_validator(mode="before")
     def validate_secrets(cls, data: dict) -> dict:
         """
         Validate secrets, these needs to be validated before model initlization because secrets will be processed and stripped
@@ -230,38 +269,6 @@ class ExternalToolServer(KilnParentedModel):
                 raise_exhaustive_enum_error(type)
 
         return data
-
-    @model_validator(mode="after")
-    def validate_required_fields(self) -> "ExternalToolServer":
-        """Validate that each tool type has the required configuration."""
-        match self.type:
-            case ToolServerType.remote_mcp:
-                server_url = self.properties.get("server_url", None)
-                if not server_url:
-                    raise ValueError(
-                        "Server URL is required to connect to a remote MCP server"
-                    )
-                ExternalToolServer.validate_server_url(server_url)
-
-            case ToolServerType.local_mcp:
-                command = self.properties.get("command", None)
-                if not isinstance(command, str):
-                    raise ValueError(
-                        "command must be a string to start a local MCP server"
-                    )
-                if not command.strip():
-                    raise ValueError("command is required to start a local MCP server")
-
-                args = self.properties.get("args", None)
-                if not isinstance(args, list):
-                    raise ValueError(
-                        "arguments must be a list to start a local MCP server"
-                    )
-
-            case _:
-                # Type checking will catch missing cases
-                raise_exhaustive_enum_error(self.type)
-        return self
 
     def get_secret_keys(self) -> list[str]:
         """

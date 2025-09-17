@@ -2240,7 +2240,7 @@ export interface components {
              * Properties
              * @description Configuration properties specific to the tool type.
              */
-            properties?: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2631,9 +2631,9 @@ export interface components {
         /** LocalServerProperties */
         LocalServerProperties: {
             /** Command */
-            command?: string;
+            command: string;
             /** Args */
-            args?: string[];
+            args: string[];
             /** Env Vars */
             env_vars?: {
                 [key: string]: string;
@@ -2919,7 +2919,7 @@ export interface components {
         /** RemoteServerProperties */
         RemoteServerProperties: {
             /** Server Url */
-            server_url?: string;
+            server_url: string;
             /** Headers */
             headers?: {
                 [key: string]: string;

@@ -937,7 +937,7 @@ class TestMCPSessionManager:
         """Test that missing command raises ValueError for local MCP."""
         with pytest.raises(
             ValidationError,
-            match="command must be a string to start a local MCP server",
+            match="command is required to start a local MCP server",
         ):
             ExternalToolServer(
                 name="missing_command_server",
@@ -954,7 +954,7 @@ class TestMCPSessionManager:
         """Test that missing args raises ValueError for local MCP."""
         with pytest.raises(
             ValidationError,
-            match="arguments must be a list to start a local MCP server",
+            match="Field required",  # Required by pydantic in LocalServerProperties
         ):
             ExternalToolServer(
                 name="missing_args_server",

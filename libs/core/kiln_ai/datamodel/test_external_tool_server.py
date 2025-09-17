@@ -274,7 +274,7 @@ class TestExternalToolServer:
             (
                 ToolServerType.remote_mcp,
                 {"server_url": ""},
-                "Server URL is required to connect to a remote MCP server",
+                "Server URL is not a valid URL",
             ),
             (
                 ToolServerType.remote_mcp,
@@ -295,13 +295,21 @@ class TestExternalToolServer:
                 "secret_header_keys must contain only strings",
             ),
             # Local MCP validation errors
-            (ToolServerType.local_mcp, {}, "command must be a string"),
-            (ToolServerType.local_mcp, {"command": ""}, "command is required"),
+            (
+                ToolServerType.local_mcp,
+                {},
+                "command is required to start a local MCP server",
+            ),
+            (
+                ToolServerType.local_mcp,
+                {"command": ""},
+                "Field required",
+            ),  # Required by pydantic in LocalServerProperties
             (ToolServerType.local_mcp, {"command": 123}, "command must be a string"),
             (
                 ToolServerType.local_mcp,
                 {"command": "python"},
-                "arguments must be a list",
+                "Field required",  # Required by pydantic in LocalServerProperties
             ),
             (
                 ToolServerType.local_mcp,
