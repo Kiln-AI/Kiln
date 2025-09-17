@@ -533,6 +533,7 @@
             chunker_config_id,
             embedding_config_id,
             vector_store_config_id,
+            tags: selected_tags.length > 0 ? selected_tags : null,
           },
         },
       )
@@ -582,13 +583,28 @@
         bind:submitting={loading}
         keyboard_submit={!modal_opened}
       >
+        <!-- Tag Selection -->
+        <div class="flex flex-col gap-2">
+          <TagSelector
+            {project_id}
+            bind:selected_tags
+            on:change={(e) => (selected_tags = e.detail.selected_tags)}
+          />
+        </div>
         {#if template && !customize_template_mode}
-          <div class="flex flex-col gap-2">
-            <div class="mt-4 mb-16 max-w-[500px] mx-auto">
+          <div class="flex flex-col mt-4">
+            <FormElement
+              id="search_tool_configuration_header"
+              label="Search Configuration"
+              description="These parameters control how the search tool will extract, index, and search your documents."
+              info_description="You selected a pre-configured search tool. Customizing is only recommended for advanced users."
+              inputType="header_only"
+              value={null}
+            />
+            <div class="mt-2 mb-8 max-w-[500px]">
               <PropertyList
-                title="Properties"
                 properties={[
-                  { name: "Name", value: template.name },
+                  { name: "Template Name", value: template.name },
                   {
                     name: "Extractor Model",
                     value: template.extractor.description,
@@ -625,15 +641,15 @@
                     : []),
                 ]}
               />
+              <button
+                class="btn mt-4 btn-wide btn-sm"
+                on:click={() => {
+                  customize_template()
+                }}
+              >
+                Customize Configuration
+              </button>
             </div>
-            <button
-              class="btn"
-              on:click={() => {
-                customize_template()
-              }}
-            >
-              Customize Template
-            </button>
           </div>
         {:else}
           <div class="flex flex-col gap-6">
@@ -716,15 +732,6 @@
                 />
               {/if}
             </div>
-          </div>
-
-          <!-- Tag Selection -->
-          <div class="flex flex-col gap-2">
-            <TagSelector
-              {project_id}
-              bind:selected_tags
-              on:change={(e) => (selected_tags = e.detail.selected_tags)}
-            />
           </div>
 
           <!-- Advanced -->
