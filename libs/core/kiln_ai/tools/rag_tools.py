@@ -7,6 +7,7 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapt
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
+    SearchResult,
     VectorStoreQuery,
 )
 from kiln_ai.adapters.vector_store.vector_store_registry import (
@@ -23,6 +24,25 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class ChunkContext(BaseModel):
     metadata: dict
     text: str
+
+    def serialize(self) -> str:
+        metadata_str = ", ".join([f"{k}: {v}" for k, v in self.metadata.items()])
+        return f"[{metadata_str}]\n{self.text}\n\n"
+
+
+def format_search_results(search_results: List[SearchResult]) -> str:
+    results: List[ChunkContext] = []
+    for search_result in search_results:
+        results.append(
+            ChunkContext(
+                metadata={
+                    "document_id": search_result.document_id,
+                    "chunk_idx": search_result.chunk_idx,
+                },
+                text=search_result.chunk_text,
+            )
+        )
+    return "\n=========\n".join([result.serialize() for result in results])
 
 
 class RagTool(KilnToolInterface):
@@ -126,28 +146,7 @@ class RagTool(KilnToolInterface):
                 raise ValueError("No embeddings generated")
             store_query.query_embedding = query_embedding_result.embeddings[0].vector
 
-        knn_results = await vector_store_adapter.search(store_query)
+        search_results = await vector_store_adapter.search(store_query)
+        context = format_search_results(search_results)
 
-        results: List[ChunkContext] = []
-        for knn_result in knn_results:
-            results.append(
-                ChunkContext(
-                    metadata={
-                        "document_id": knn_result.document_id,
-                        "chunk_idx": knn_result.chunk_idx,
-                    },
-                    text=knn_result.chunk_text,
-                )
-            )
-
-        result = "\n=========\n".join(
-            [
-                f"Document ID: {result.metadata['document_id']}\n"
-                f"Chunk Index: {result.metadata['chunk_idx']}\n"
-                f"Text: {result.text}\n"
-                f"=========\n"
-                for result in results
-            ]
-        )
-
-        return result
+        return context

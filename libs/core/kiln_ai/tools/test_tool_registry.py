@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -188,7 +189,7 @@ class TestToolRegistry:
         from unittest.mock import patch
 
         with (
-            patch("kiln_ai.datamodel.rag.RagConfig") as mock_rag_config_class,
+            patch("kiln_ai.tools.tool_registry.RagConfig") as mock_rag_config_class,
             patch("kiln_ai.tools.rag_tools.RagTool") as mock_rag_tool_class,
         ):
             # Setup mock RAG config
@@ -203,7 +204,7 @@ class TestToolRegistry:
             # Create mock project
             mock_project = Mock(spec=Project)
             mock_project.id = "test_project_id"
-            mock_project.path = "/test/path"
+            mock_project.path = Path("/test/path")
 
             # Create mock task with parent project
             mock_task = Mock(spec=Task)
@@ -216,7 +217,7 @@ class TestToolRegistry:
             # Verify the tool is RagTool
             assert tool == mock_rag_tool
             mock_rag_config_class.from_id_and_parent_path.assert_called_once_with(
-                "test_rag_config", "/test/path"
+                "test_rag_config", Path("/test/path")
             )
             mock_rag_tool_class.assert_called_once_with(tool_id, mock_rag_config)
 
@@ -248,14 +249,14 @@ class TestToolRegistry:
         """Test that RAG tool ID with missing RAG config raises ValueError."""
         from unittest.mock import patch
 
-        with patch("kiln_ai.datamodel.rag.RagConfig") as mock_rag_config_class:
+        with patch("kiln_ai.tools.tool_registry.RagConfig") as mock_rag_config_class:
             # Setup mock to return None (config not found)
             mock_rag_config_class.from_id_and_parent_path.return_value = None
 
             # Create mock project
             mock_project = Mock(spec=Project)
             mock_project.id = "test_project_id"
-            mock_project.path = "/test/path"
+            mock_project.path = Path("/test/path")
 
             # Create mock task with parent project
             mock_task = Mock(spec=Task)

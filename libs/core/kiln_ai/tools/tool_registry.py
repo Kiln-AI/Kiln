@@ -1,3 +1,4 @@
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
@@ -63,9 +64,6 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
 
         return MCPServerTool(server, tool_name)
     elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
-        from kiln_ai.datamodel.rag import RagConfig
-        from kiln_ai.tools.rag_tools import RagTool
-
         project = task.parent_project() if task is not None else None
         if project is None:
             raise ValueError(
@@ -73,13 +71,15 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
             )
 
         rag_config_id = rag_config_id_from_id(tool_id)
-        if project is None:
-            raise ValueError(f"Project not found: {project.id}")
         rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
         if rag_config is None:
             raise ValueError(
                 f"RAG config not found: {rag_config_id} in project {project.id} for tool {tool_id}"
             )
+
+        # Lazy import to avoid circular dependency
+        from kiln_ai.tools.rag_tools import RagTool
+
         return RagTool(tool_id, rag_config)
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")
