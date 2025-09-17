@@ -2325,6 +2325,16 @@ export interface components {
              */
             description?: string | null;
             /**
+             * Tool Name
+             * @description A name for the model to identify the Search Tool in conversations.
+             */
+            tool_name: string;
+            /**
+             * Tool Description
+             * @description A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.
+             */
+            tool_description: string;
+            /**
              * Extractor Config Id
              * @description The extractor config to use for the RAG workflow
              */
@@ -3998,6 +4008,16 @@ export interface components {
              */
             description?: string | null;
             /**
+             * Tool Name
+             * @description A name for the model to identify the Search Tool in conversations.
+             */
+            tool_name: string;
+            /**
+             * Tool Description
+             * @description A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.
+             */
+            tool_description: string;
+            /**
              * Extractor Config Id
              * @description The ID of the extractor config used to extract the documents.
              */
@@ -4033,6 +4053,10 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
             /**
              * Created At
              * Format: date-time

@@ -134,6 +134,8 @@ def real_rag_config(mock_project):
     """Create a real RAG config for workflow testing"""
     return RagConfig(
         name="test-rag",
+        tool_name="Test RAG Tool",
+        tool_description="A test RAG tool for searching documents",
         extractor_config_id="extractor-123",
         chunker_config_id="chunker-123",
         embedding_config_id="embedding-123",

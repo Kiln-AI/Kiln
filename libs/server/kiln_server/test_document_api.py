@@ -904,6 +904,8 @@ async def test_create_rag_config_success(
             json={
                 "name": "Test RAG Config",
                 "description": "Test RAG Config description",
+                "tool_name": "Test Search Tool",
+                "tool_description": "A test search tool for document retrieval",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -916,6 +918,8 @@ async def test_create_rag_config_success(
     assert result["id"] is not None
     assert result["name"] == "Test RAG Config"
     assert result["description"] == "Test RAG Config description"
+    assert result["tool_name"] == "Test Search Tool"
+    assert result["tool_description"] == "A test search tool for document retrieval"
     assert result["extractor_config_id"] is not None
     assert result["chunker_config_id"] is not None
     assert result["embedding_config_id"] is not None
@@ -951,6 +955,8 @@ async def test_create_rag_config_missing_config(
         payload = {
             "name": "Test RAG Config",
             "description": "Test RAG Config description",
+            "tool_name": "Test Search Tool",
+            "tool_description": "A test search tool for missing config testing",
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
@@ -988,6 +994,8 @@ async def test_create_rag_config_with_tags(
             json={
                 "name": "Test RAG Config with Tags",
                 "description": "Test RAG Config with tags description",
+                "tool_name": "Tagged Search Tool",
+                "tool_description": "A search tool for testing with tags",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -1023,6 +1031,8 @@ async def test_create_rag_config_with_empty_tags(
             json={
                 "name": "Test RAG Config empty tags",
                 "description": "Test RAG Config description",
+                "tool_name": "Empty Tags Tool",
+                "tool_description": "A search tool for testing empty tags validation",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -1063,6 +1073,8 @@ async def test_create_rag_config_with_invalid_tags(
             json={
                 "name": "Test RAG Config invalid tags",
                 "description": "Test RAG Config description",
+                "tool_name": "Invalid Tags Tool",
+                "tool_description": "A search tool for testing invalid tags validation",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -1095,6 +1107,8 @@ async def test_create_rag_config_with_null_tags(
             json={
                 "name": "Test RAG Config null tags",
                 "description": "Test RAG Config description",
+                "tool_name": "Null Tags Tool",
+                "tool_description": "A search tool for testing null tags",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -1127,6 +1141,8 @@ async def test_create_rag_config_tags_omitted(
             json={
                 "name": "Test RAG Config no tags field",
                 "description": "Test RAG Config description",
+                "tool_name": "No Tags Tool",
+                "tool_description": "A search tool for testing omitted tags field",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
@@ -1231,6 +1247,8 @@ async def test_get_rag_configs_success(
             parent=mock_project,
             name="Test RAG Config 1",
             description="Test RAG Config 1 description",
+            tool_name="Test Search Tool 1",
+            tool_description="First test search tool",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1240,6 +1258,8 @@ async def test_get_rag_configs_success(
             parent=mock_project,
             name="Test RAG Config 2",
             description="Test RAG Config 2 description",
+            tool_name="Test Search Tool 2",
+            tool_description="Second test search tool",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1249,6 +1269,8 @@ async def test_get_rag_configs_success(
             parent=mock_project,
             name="Test RAG Config 3",
             description="Test RAG Config 3 description",
+            tool_name="Test Search Tool 3",
+            tool_description="Third test search tool",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1303,6 +1325,8 @@ async def test_get_rag_config_success(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for getting config",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -1357,6 +1381,8 @@ async def test_get_rag_configs_with_mixed_tags_success(
             parent=mock_project,
             name="RAG Config with Tags",
             description="Has tags",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1367,6 +1393,8 @@ async def test_get_rag_configs_with_mixed_tags_success(
             parent=mock_project,
             name="RAG Config without Tags",
             description="No tags (None)",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1377,6 +1405,8 @@ async def test_get_rag_configs_with_mixed_tags_success(
             parent=mock_project,
             name="RAG Config with Different Tags",
             description="Has different tags",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1424,6 +1454,8 @@ async def test_update_rag_config_success(
         parent=mock_project,
         name="Original RAG Config",
         description="Original description",
+        tool_name="Original Search Tool",
+        tool_description="Original search tool",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -1514,6 +1546,8 @@ async def test_run_rag_config_success(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for document retrieval",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -1594,6 +1628,8 @@ async def test_run_rag_config_missing_configs(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for document retrieval",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -1641,6 +1677,8 @@ async def test_get_rag_config_progress_specific_configs(
             parent=mock_project,
             name="Test RAG Config 1",
             description="Test RAG Config 1 description",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1650,6 +1688,8 @@ async def test_get_rag_config_progress_specific_configs(
             parent=mock_project,
             name="Test RAG Config 2",
             description="Test RAG Config 2 description",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1725,6 +1765,8 @@ async def test_get_rag_config_progress_all_configs(
             parent=mock_project,
             name="Test RAG Config 1",
             description="Test RAG Config 1 description",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1734,6 +1776,8 @@ async def test_get_rag_config_progress_all_configs(
             parent=mock_project,
             name="Test RAG Config 2",
             description="Test RAG Config 2 description",
+            tool_name="Test Search Tool",
+            tool_description="A test search tool for document retrieval",
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
@@ -1834,6 +1878,8 @@ async def test_get_rag_config_progress_invalid_config_id(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for document retrieval",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -2143,6 +2189,8 @@ def mock_rag_config(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for document retrieval",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -2921,6 +2969,8 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for document retrieval",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -2987,6 +3037,8 @@ async def test_build_rag_workflow_runner_success_with_progress(
         parent=mock_project,
         name="Test RAG Config",
         description="Test RAG Config description",
+        tool_name="Test Search Tool",
+        tool_description="A test search tool for document retrieval",
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
@@ -3246,3 +3298,75 @@ def test_patch_document_partial_update_preserves_other_fields(
         )  # Should be preserved from first update
         assert data["description"] == "Updated Description Only"  # Should be updated
         assert data["tags"] == mock_document["document"].tags  # Should remain original
+
+
+@pytest.mark.parametrize(
+    "invalid_data",
+    [
+        # Missing tool_name
+        (
+            {
+                "name": "Missing Tool Name",
+                "tool_description": "Has description but no name",
+                "extractor_config_id": "test_extractor",
+                "chunker_config_id": "test_chunker",
+                "embedding_config_id": "test_embedding",
+                "vector_store_config_id": "test_vector_store",
+            },
+        ),
+        # Missing tool_description
+        (
+            {
+                "name": "Missing Tool Description",
+                "tool_name": "Has name but no description",
+                "extractor_config_id": "test_extractor",
+                "chunker_config_id": "test_chunker",
+                "embedding_config_id": "test_embedding",
+                "vector_store_config_id": "test_vector_store",
+            },
+        ),
+        # Both missing
+        (
+            {
+                "name": "Missing Both Tool Fields",
+                "extractor_config_id": "test_extractor",
+                "chunker_config_id": "test_chunker",
+                "embedding_config_id": "test_embedding",
+                "vector_store_config_id": "test_vector_store",
+            },
+        ),
+        # Empty tool_name
+        (
+            {
+                "name": "Empty Tool Name",
+                "tool_name": "",
+                "tool_description": "Has description but no name",
+            },
+        ),
+        # Empty tool_description
+        (
+            {
+                "name": "Empty Tool Description",
+                "tool_name": "Has name but no description",
+                "tool_description": "",
+            },
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_rag_config_invalid_tool_fields(
+    client,
+    mock_project,
+    invalid_data,
+):
+    """Test that creating RAG config with invalid tool fields returns appropriate errors."""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json=invalid_data,
+        )
+
+    assert response.status_code == 422
+    error_detail = response.json()
+    assert "error_messages" in error_detail

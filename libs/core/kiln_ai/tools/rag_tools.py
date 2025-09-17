@@ -52,16 +52,14 @@ class RagTool(KilnToolInterface):
 
     def __init__(self, tool_id: str, rag_config: RagConfig):
         self._id = tool_id
-        self._name = "rag"
-        self._description = (
-            "Search the vector store and return the most relevant chunks"
-        )
+        self._name = rag_config.tool_name
+        self._description = rag_config.tool_description
         self._parameters_schema = {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The query to search the RAG index for",
+                    "description": "The search query",
                 },
             },
             "required": ["query"],

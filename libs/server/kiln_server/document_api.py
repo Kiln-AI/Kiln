@@ -202,6 +202,8 @@ class RagConfigWithSubConfigs(BaseModel):
     id: ID_TYPE
     name: str
     description: str | None
+    tool_name: str
+    tool_description: str
     created_at: datetime.datetime
     created_by: str
     extractor_config: ExtractorConfig
@@ -219,6 +221,12 @@ class CreateRagConfigRequest(BaseModel):
     description: str | None = Field(
         description="A description for your own reference.",
         default=None,
+    )
+    tool_name: str = Field(
+        description="A name for the model to identify the Search Tool in conversations.",
+    )
+    tool_description: str = Field(
+        description="A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.",
     )
     extractor_config_id: ID_TYPE = Field(
         description="The extractor config to use for the RAG workflow",
@@ -1270,6 +1278,8 @@ def connect_document_api(app: FastAPI):
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
+            tool_name=request.tool_name,
+            tool_description=request.tool_description,
             extractor_config_id=extractor_config.id,
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
@@ -1329,6 +1339,8 @@ def connect_document_api(app: FastAPI):
                     id=rag_config.id,
                     name=rag_config.name,
                     description=rag_config.description,
+                    tool_name=rag_config.tool_name,
+                    tool_description=rag_config.tool_description,
                     tags=rag_config.tags,
                     created_at=rag_config.created_at,
                     created_by=rag_config.created_by,
@@ -1397,6 +1409,8 @@ def connect_document_api(app: FastAPI):
             id=rag_config.id,
             name=rag_config.name,
             description=rag_config.description,
+            tool_name=rag_config.tool_name,
+            tool_description=rag_config.tool_description,
             created_at=rag_config.created_at,
             created_by=rag_config.created_by,
             extractor_config=extractor_config,
