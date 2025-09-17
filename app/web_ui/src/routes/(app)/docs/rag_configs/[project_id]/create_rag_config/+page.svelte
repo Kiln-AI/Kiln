@@ -436,6 +436,8 @@
           body: {
             name: name || null,
             description: description || null,
+            tool_name: "replace_me",
+            tool_description: "replace_me",
             extractor_config_id: selected_extractor_config_id,
             chunker_config_id: selected_chunker_config_id,
             embedding_config_id: selected_embedding_config_id,
@@ -531,6 +533,8 @@
           },
           body: {
             name: template.rag_config_name,
+            tool_name: "replace_me",
+            tool_description: "replace_me",
             extractor_config_id,
             chunker_config_id,
             embedding_config_id,

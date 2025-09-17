@@ -139,6 +139,8 @@ class TestRagTool:
         """Create a mock RAG config."""
         config = Mock(spec=RagConfig)
         config.id = "rag_config_123"
+        config.tool_name = "Test Search Tool"
+        config.tool_description = "A test search tool for RAG"
         config.vector_store_config_id = "vector_store_456"
         config.embedding_config_id = "embedding_789"
         return config
@@ -179,8 +181,8 @@ class TestRagTool:
             tool = RagTool("tool_123", mock_rag_config)
 
             assert tool._id == "tool_123"
-            assert tool._name == "rag"
-            assert "Search the vector store" in tool._description
+            assert tool._name == "Test Search Tool"
+            assert tool._description == "A test search tool for RAG"
             assert tool._rag_config == mock_rag_config
             assert tool._vector_store_config == mock_vector_store_config
             assert tool._vector_store_adapter is None
@@ -334,26 +336,23 @@ class TestRagTool:
 
             # Test interface methods
             assert await tool.id() == "tool_123"
-            assert await tool.name() == "rag"
+            assert await tool.name() == "Test Search Tool"
             description = await tool.description()
-            assert (
-                "Search the vector store and return the most relevant chunks"
-                == description
-            )
+            assert description == "A test search tool for RAG"
 
             # Test toolcall_definition
             definition = await tool.toolcall_definition()
             expected_definition = {
                 "type": "function",
                 "function": {
-                    "name": "rag",
-                    "description": "Search the vector store and return the most relevant chunks",
+                    "name": "Test Search Tool",
+                    "description": "A test search tool for RAG",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The query to search the RAG index for",
+                                "description": "The search query",
                             },
                         },
                         "required": ["query"],
@@ -657,3 +656,170 @@ class TestRagTool:
 
             # Should return empty string for no results
             assert result == ""
+
+
+class TestRagToolNameAndDescription:
+    """Test RagTool name and description functionality with tool_name and tool_description fields."""
+
+    @pytest.fixture
+    def mock_rag_config_with_tool_fields(self):
+        """Create a mock RAG config with specific tool_name and tool_description."""
+        config = Mock(spec=RagConfig)
+        config.id = "rag_config_456"
+        config.tool_name = "Advanced Document Search"
+        config.tool_description = "An advanced search tool that retrieves relevant documents from the knowledge base using semantic similarity"
+        config.vector_store_config_id = "vector_store_789"
+        config.embedding_config_id = "embedding_101"
+        return config
+
+    @pytest.fixture
+    def mock_project_for_tool_fields(self):
+        """Create a mock project for tool field tests."""
+        project = Mock(spec=Project)
+        project.id = "project_456"
+        project.path = "/test/tool/project"
+        return project
+
+    def test_rag_tool_uses_tool_name_field(
+        self, mock_rag_config_with_tool_fields, mock_project_for_tool_fields
+    ):
+        """Test that RagTool uses the tool_name field from RagConfig."""
+        mock_rag_config_with_tool_fields.parent_project.return_value = (
+            mock_project_for_tool_fields
+        )
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_456", mock_rag_config_with_tool_fields)
+
+            assert tool._name == "Advanced Document Search"
+
+    def test_rag_tool_uses_tool_description_field(
+        self, mock_rag_config_with_tool_fields, mock_project_for_tool_fields
+    ):
+        """Test that RagTool uses the tool_description field from RagConfig."""
+        mock_rag_config_with_tool_fields.parent_project.return_value = (
+            mock_project_for_tool_fields
+        )
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_456", mock_rag_config_with_tool_fields)
+
+            assert (
+                tool._description
+                == "An advanced search tool that retrieves relevant documents from the knowledge base using semantic similarity"
+            )
+
+    async def test_rag_tool_name_method_returns_tool_name(
+        self, mock_rag_config_with_tool_fields, mock_project_for_tool_fields
+    ):
+        """Test that the name() method returns the tool_name field."""
+        mock_rag_config_with_tool_fields.parent_project.return_value = (
+            mock_project_for_tool_fields
+        )
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_456", mock_rag_config_with_tool_fields)
+
+            name = await tool.name()
+            assert name == "Advanced Document Search"
+
+    async def test_rag_tool_description_method_returns_tool_description(
+        self, mock_rag_config_with_tool_fields, mock_project_for_tool_fields
+    ):
+        """Test that the description() method returns the tool_description field."""
+        mock_rag_config_with_tool_fields.parent_project.return_value = (
+            mock_project_for_tool_fields
+        )
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_456", mock_rag_config_with_tool_fields)
+
+            description = await tool.description()
+            assert (
+                description
+                == "An advanced search tool that retrieves relevant documents from the knowledge base using semantic similarity"
+            )
+
+    async def test_rag_tool_toolcall_definition_uses_tool_fields(
+        self, mock_rag_config_with_tool_fields, mock_project_for_tool_fields
+    ):
+        """Test that toolcall_definition uses tool_name and tool_description fields."""
+        mock_rag_config_with_tool_fields.parent_project.return_value = (
+            mock_project_for_tool_fields
+        )
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_456", mock_rag_config_with_tool_fields)
+
+            definition = await tool.toolcall_definition()
+
+            expected_definition = {
+                "type": "function",
+                "function": {
+                    "name": "Advanced Document Search",
+                    "description": "An advanced search tool that retrieves relevant documents from the knowledge base using semantic similarity",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query",
+                            },
+                        },
+                        "required": ["query"],
+                    },
+                },
+            }
+
+            assert definition == expected_definition
+
+    def test_rag_tool_with_unicode_tool_fields(self, mock_project_for_tool_fields):
+        """Test RagTool with Unicode characters in tool_name and tool_description."""
+        config = Mock(spec=RagConfig)
+        config.id = "rag_config_unicode"
+        config.tool_name = "🔍 文档搜索工具"
+        config.tool_description = "一个用于搜索文档的高级工具 🚀"
+        config.vector_store_config_id = "vector_store_789"
+        config.embedding_config_id = "embedding_101"
+        config.parent_project.return_value = mock_project_for_tool_fields
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_unicode", config)
+            assert tool._name == "🔍 文档搜索工具"
+            assert tool._description == "一个用于搜索文档的高级工具 🚀"
+
+    def test_rag_tool_with_multiline_tool_description(
+        self, mock_project_for_tool_fields
+    ):
+        """Test RagTool with multiline tool_description."""
+        multiline_description = """This is a comprehensive search tool that:
+- Searches through document collections
+- Uses semantic similarity matching
+- Returns relevant context with metadata
+- Supports various document formats"""
+
+        config = Mock(spec=RagConfig)
+        config.id = "rag_config_multiline"
+        config.tool_name = "Comprehensive Search Tool"
+        config.tool_description = multiline_description
+        config.vector_store_config_id = "vector_store_789"
+        config.embedding_config_id = "embedding_101"
+        config.parent_project.return_value = mock_project_for_tool_fields
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_multiline", config)
+            assert tool._description == multiline_description
