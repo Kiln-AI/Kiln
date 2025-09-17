@@ -39,6 +39,12 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.lock import shared_async_lock_manager
 from pydantic import BaseModel, ConfigDict, Field
 
+# We set the timeout high because current UX is likely to cause the user triggering
+# multiple RAG Workflows whose subconfigs (e.g. same extractor) may be shared and take
+# a long time to complete, causing whichever ones are waiting on the lock to time out
+# before they are likely to start.
+LOCK_TIMEOUT_SECONDS = 60 * 60  # 1 hour
+
 logger = logging.getLogger(__name__)
 
 
@@ -260,7 +266,9 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
     async def run(
         self, document_ids: list[ID_TYPE] | None = None
     ) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+        async with shared_async_lock_manager.acquire(
+            self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
+        ):
             jobs = await self.collect_jobs(document_ids=document_ids)
             extractor = extractor_adapter_from_type(
                 self.extractor_config.extractor_type,
@@ -349,7 +357,9 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
     async def run(
         self, document_ids: list[ID_TYPE] | None = None
     ) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+        async with shared_async_lock_manager.acquire(
+            self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
+        ):
             jobs = await self.collect_jobs(document_ids=document_ids)
             chunker = chunker_adapter_from_type(
                 self.chunker_config.chunker_type,
@@ -449,7 +459,9 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
     async def run(
         self, document_ids: list[ID_TYPE] | None = None
     ) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+        async with shared_async_lock_manager.acquire(
+            self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
+        ):
             jobs = await self.collect_jobs(document_ids=document_ids)
             embedding_adapter = embedding_adapter_from_type(
                 self.embedding_config,
@@ -573,7 +585,9 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
     async def run(
         self, document_ids: list[ID_TYPE] | None = None
     ) -> AsyncGenerator[RagStepRunnerProgress, None]:
-        async with shared_async_lock_manager.acquire(self.lock_key):
+        async with shared_async_lock_manager.acquire(
+            self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
+        ):
             vector_dimensions: int | None = None
 
             # infer dimensionality - we peek into the first record to get the vector dimensions
@@ -758,7 +772,9 @@ class RagWorkflowRunner:
         """
         yield self.initial_progress
 
-        async with shared_async_lock_manager.acquire(self.lock_key, timeout=60):
+        async with shared_async_lock_manager.acquire(
+            self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
+        ):
             for step in self.step_runners:
                 if stages_to_run is not None and step.stage() not in stages_to_run:
                     continue
