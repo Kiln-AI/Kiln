@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Dict, List
+from typing import Annotated, Awaitable, Callable, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -97,7 +97,7 @@ async def run_extractor_runner_with_status(
 
 
 async def run_rag_workflow_runner_with_status(
-    runner: RagWorkflowRunner,
+    runner_factory: Callable[[], Awaitable[RagWorkflowRunner]],
 ) -> StreamingResponse:
     async def event_generator():
         latest_progress = RagProgress()
@@ -130,6 +130,9 @@ async def run_rag_workflow_runner_with_status(
             return data
 
         try:
+            # we initialize the runner inside the wrapper to surface errors to the frontend via logging UI
+            # we do it via a factory to allow for easier mocking in tests
+            runner = await runner_factory()
             async for progress in runner.run():
                 latest_progress = progress.model_copy()
                 data = serialize_progress(progress)
@@ -140,6 +143,20 @@ async def run_rag_workflow_runner_with_status(
                 LogMessage(
                     level="error",
                     message="Timed out after waiting for the lock to be acquired. This may be due to a concurrent RAG workflow running. You may retry in a few minutes.",
+                )
+            ]
+            data = serialize_progress(latest_progress)
+            yield f"data: {json.dumps(data)}\n\n"
+            return
+        except Exception as e:
+            logger.error(
+                f"Unexpected server error running RAG workflow runner: {e}",
+                exc_info=True,
+            )
+            latest_progress.logs = [
+                LogMessage(
+                    level="error",
+                    message=f"Unexpected server error: {e}",
                 )
             ]
             data = serialize_progress(latest_progress)
@@ -1375,10 +1392,12 @@ def connect_document_api(app: FastAPI):
         rag_config_id: str,
     ) -> StreamingResponse:
         project = project_from_id(project_id)
-        runner = await build_rag_workflow_runner(project, rag_config_id)
+
+        async def runner_factory():
+            return await build_rag_workflow_runner(project, rag_config_id)
 
         # the workflow runner handles locking
-        return await run_rag_workflow_runner_with_status(runner)
+        return await run_rag_workflow_runner_with_status(runner_factory)
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(
