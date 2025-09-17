@@ -35,8 +35,8 @@
   import PropertyList from "$lib/ui/property_list.svelte"
 
   $: project_id = $page.params.project_id
-  $: template_id = $page.url.searchParams.get("template_id")
-  $: template = template_id ? rag_config_templates[template_id] : null
+  const template_id = $page.url.searchParams.get("template_id")
+  const template = template_id ? rag_config_templates[template_id] : null
   let customize_template_mode = false
 
   let loading: boolean = false
