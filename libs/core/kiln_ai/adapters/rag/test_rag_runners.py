@@ -1304,6 +1304,7 @@ class TestRagIndexingStepRunner:
         ):
             mock_vector_store = MagicMock()
             mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
             mock_vector_store_factory.return_value = mock_vector_store
 
             progress_values = []
@@ -1350,6 +1351,7 @@ class TestRagIndexingStepRunner:
         ):
             mock_vector_store = MagicMock()
             mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
             mock_vector_store_factory.return_value = mock_vector_store
 
             progress_values = []
@@ -1405,6 +1407,7 @@ class TestRagIndexingStepRunner:
             mock_vector_store.add_chunks_with_embeddings = AsyncMock(
                 side_effect=Exception("Vector store error")
             )
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
             mock_vector_store_factory.return_value = mock_vector_store
 
             progress_values = []
@@ -1422,6 +1425,277 @@ class TestRagIndexingStepRunner:
             assert len(error_progress[0].logs) > 0
             assert "error" in error_progress[0].logs[0].level.lower()
             assert "Vector store error" in error_progress[0].logs[0].message
+
+    @pytest.mark.asyncio
+    async def test_run_calls_delete_nodes_not_in_set_with_all_documents_no_tags(
+        self, indexing_runner
+    ):
+        """Test that delete_nodes_not_in_set is called with all document IDs when no tags are configured"""
+        # Setup mock documents
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.tags = ["tag1", "tag2"]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.tags = ["tag3"]
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_doc3.tags = None
+
+        all_docs = [mock_doc1, mock_doc2, mock_doc3]
+
+        # Setup complete pipeline data for one document to satisfy vector dimension inference
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock()]
+
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3]
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc1.extractions.return_value = [mock_extraction]
+        mock_doc2.extractions.return_value = []
+        mock_doc3.extractions.return_value = []
+
+        indexing_runner.project.documents.return_value = all_docs
+
+        # Configure no tags in rag_config
+        indexing_runner.rag_config.tags = None
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            # Run the indexing
+            async for _ in indexing_runner.run():
+                pass
+
+            # Verify delete_nodes_not_in_set was called with all document IDs
+            mock_vector_store.delete_nodes_not_in_set.assert_called_once_with(
+                {"doc-1", "doc-2", "doc-3"}
+            )
+
+    @pytest.mark.asyncio
+    async def test_run_calls_delete_nodes_not_in_set_with_tagged_documents_only(
+        self, indexing_runner
+    ):
+        """Test that delete_nodes_not_in_set is called with only tagged document IDs when tags are configured"""
+        # Setup mock documents with different tags
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.tags = ["important", "data"]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.tags = ["important", "test"]
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_doc3.tags = ["unrelated"]
+
+        mock_doc4 = MagicMock(spec=Document)
+        mock_doc4.id = "doc-4"
+        mock_doc4.tags = None
+
+        all_docs = [mock_doc1, mock_doc2, mock_doc3, mock_doc4]
+
+        # Setup complete pipeline data for one document to satisfy vector dimension inference
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock()]
+
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3]
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc1.extractions.return_value = [mock_extraction]
+        mock_doc2.extractions.return_value = []
+        mock_doc3.extractions.return_value = []
+        mock_doc4.extractions.return_value = []
+
+        indexing_runner.project.documents.return_value = all_docs
+
+        # Configure tags to filter only documents with "important" tag
+        indexing_runner.rag_config.tags = ["important"]
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            # Run the indexing
+            async for _ in indexing_runner.run():
+                pass
+
+            # Verify delete_nodes_not_in_set was called with only "important" tagged document IDs
+            mock_vector_store.delete_nodes_not_in_set.assert_called_once_with(
+                {"doc-1", "doc-2"}
+            )
+
+    @pytest.mark.asyncio
+    async def test_run_raises_error_when_no_documents_match_tags(self, indexing_runner):
+        """Test that run raises ValueError when no documents match the tag filter"""
+        # Setup mock documents that don't match the configured tags
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.tags = ["tag1"]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.tags = ["tag2"]
+
+        all_docs = [mock_doc1, mock_doc2]
+
+        # Setup complete pipeline data for the documents but they won't match the tag filter
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock()]
+
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3]
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc1.extractions.return_value = [mock_extraction]
+        mock_doc2.extractions.return_value = [mock_extraction]
+
+        indexing_runner.project.documents.return_value = all_docs
+
+        # Configure tags that don't match any documents
+        indexing_runner.rag_config.tags = ["nonexistent_tag"]
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            # Should raise ValueError when no documents match the tag filter
+            with pytest.raises(ValueError, match="Vector dimensions are not set"):
+                async for _ in indexing_runner.run():
+                    pass
+
+            # Should not call vector store methods since it fails before that
+            mock_vector_store_factory.assert_not_called()
+            mock_vector_store.delete_nodes_not_in_set.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_calls_delete_nodes_not_in_set_with_multiple_tag_filters(
+        self, indexing_runner
+    ):
+        """Test that delete_nodes_not_in_set is called with documents matching any of multiple tags"""
+        # Setup mock documents with various tag combinations
+        mock_doc1 = MagicMock(spec=Document)
+        mock_doc1.id = "doc-1"
+        mock_doc1.tags = ["important", "data"]
+
+        mock_doc2 = MagicMock(spec=Document)
+        mock_doc2.id = "doc-2"
+        mock_doc2.tags = ["urgent", "test"]
+
+        mock_doc3 = MagicMock(spec=Document)
+        mock_doc3.id = "doc-3"
+        mock_doc3.tags = ["archive"]
+
+        mock_doc4 = MagicMock(spec=Document)
+        mock_doc4.id = "doc-4"
+        mock_doc4.tags = ["important", "urgent", "critical"]
+
+        all_docs = [mock_doc1, mock_doc2, mock_doc3, mock_doc4]
+
+        # Setup complete pipeline data for one document to satisfy vector dimension inference
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.created_at = datetime(2023, 1, 1)
+
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument)
+        mock_chunked_doc.chunker_config_id = "chunker-123"
+        mock_chunked_doc.created_at = datetime(2023, 1, 1)
+        mock_chunked_doc.chunks = [MagicMock()]
+
+        mock_embedding = MagicMock()
+        mock_embedding.vector = [0.1, 0.2, 0.3]
+        mock_chunk_embeddings = MagicMock()
+        mock_chunk_embeddings.embedding_config_id = "embedding-123"
+        mock_chunk_embeddings.embeddings = [mock_embedding]
+        mock_chunked_doc.chunk_embeddings.return_value = [mock_chunk_embeddings]
+
+        mock_extraction.chunked_documents.return_value = [mock_chunked_doc]
+        mock_doc1.extractions.return_value = [mock_extraction]
+        mock_doc2.extractions.return_value = []
+        mock_doc3.extractions.return_value = []
+        mock_doc4.extractions.return_value = []
+
+        indexing_runner.project.documents.return_value = all_docs
+
+        # Configure multiple tags - should match doc-1 (important), doc-2 (urgent), and doc-4 (both)
+        indexing_runner.rag_config.tags = ["important", "urgent"]
+
+        with (
+            patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+            patch(
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+            ) as mock_vector_store_factory,
+        ):
+            mock_vector_store = MagicMock()
+            mock_vector_store.add_chunks_with_embeddings = AsyncMock()
+            mock_vector_store.delete_nodes_not_in_set = AsyncMock()
+            mock_vector_store_factory.return_value = mock_vector_store
+
+            # Run the indexing
+            async for _ in indexing_runner.run():
+                pass
+
+            # Verify delete_nodes_not_in_set was called with documents having "important" OR "urgent" tags
+            mock_vector_store.delete_nodes_not_in_set.assert_called_once_with(
+                {"doc-1", "doc-2", "doc-4"}
+            )
 
 
 # Tests for workflow runner
