@@ -270,6 +270,18 @@ class TestExternalToolServer:
     @pytest.mark.parametrize(
         "server_type, invalid_props, expected_error",
         [
+            # Missing type entirely
+            (
+                None,
+                {},
+                "type is required",  # Required by pydantic in RemoteServerProperties
+            ),
+            # Remote MCP missing server_url
+            (
+                ToolServerType.remote_mcp,
+                {},
+                "Server URL is required to connect to a remote MCP server",
+            ),
             # Remote MCP validation errors
             (
                 ToolServerType.remote_mcp,

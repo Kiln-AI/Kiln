@@ -192,7 +192,8 @@ class ExternalToolServer(KilnParentedModel):
         properties = data.get("properties", {})
 
         if not server_type:
-            return data
+            # pydantic will catch this but the not None check is needed to support `raise_exhaustive_enum_error`
+            raise ValueError("Server type is required")
 
         match server_type:
             case ToolServerType.remote_mcp:
