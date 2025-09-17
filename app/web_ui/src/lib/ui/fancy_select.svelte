@@ -7,6 +7,7 @@
   export let selected: unknown
   export let empty_label: string = "Select an option"
   export let multi_select: boolean = false
+  export let disabled: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -420,14 +421,16 @@
 
 <div class="dropdown w-full relative">
   <div
-    tabindex="0"
+    tabindex={disabled ? -1 : 0}
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : ''}"
+      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
     bind:this={selectedElement}
     on:click={() => {
-      listVisible = true
+      if (!disabled) {
+        listVisible = true
+      }
     }}
     on:blur={(_) => {
       // Only close if focus is not moving to the dropdown
@@ -441,6 +444,9 @@
       }, 0)
     }}
     on:keydown={(event) => {
+      if (disabled) {
+        return
+      }
       if (
         !listVisible &&
         (event.key === "ArrowDown" ||

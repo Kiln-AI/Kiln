@@ -199,6 +199,7 @@
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
+        {disabled}
       />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}

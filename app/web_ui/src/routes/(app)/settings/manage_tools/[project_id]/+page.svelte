@@ -68,9 +68,13 @@
 
   function navigateToToolServer(tool_server: KilnToolServerDescription) {
     if (tool_server.id) {
-      goto(
-        `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
-      )
+      if (tool_server.type === "kiln_task") {
+        goto(`/settings/manage_tools/${project_id}/kiln_task/${tool_server.id}`)
+      } else {
+        goto(
+          `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
+        )
+      }
     }
   }
 
@@ -98,7 +102,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Manage Tools"
-    subtitle="Connect your project to tools with MCP servers"
+    subtitle="Connect your project to tools, such as Kiln Tasks or MCP servers"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp"
     breadcrumbs={[
@@ -134,7 +138,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Server Name</th>
+              <th>Name</th>
               <th>Type</th>
               <th>Description</th>
               <th>Status</th>
@@ -150,7 +154,7 @@
                 on:keydown={(e) =>
                   e.key === "Enter" && navigateToToolServer(tool)}
                 role="button"
-                tabindex="0"
+                tabindex={0}
               >
                 <td class="font-medium">{tool.name}</td>
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>

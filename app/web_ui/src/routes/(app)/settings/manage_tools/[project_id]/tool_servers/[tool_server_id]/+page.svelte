@@ -124,6 +124,10 @@
         }
         break
       }
+      case "kiln_task": {
+        // Kiln task tools don't have additional properties to display
+        break
+      }
       default: {
         // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
         // and don't handle it above, TypeScript will error here

@@ -4,7 +4,7 @@ from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
-    kiln_task_info_from_tool_id,
+    kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface
@@ -38,35 +38,54 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
             case _:
                 raise_exhaustive_enum_error(typed_tool_id)
 
-    # Check MCP Server Tools
-    if tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)):
+    # Check if this looks like an MCP or Kiln Task tool ID that requires a project
+    is_mcp_tool = tool_id.startswith(
+        (MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)
+    )
+    is_kiln_task_tool = tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX)
+
+    if is_mcp_tool or is_kiln_task_tool:
         project = task.parent_project() if task is not None else None
-        if project is None:
+        if project is None or project.id is None:
             raise ValueError(
                 f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
             )
 
-        # Get the tool server ID and tool name from the ID
-        tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
+        # Check MCP Server Tools
+        if is_mcp_tool:
+            # Get the tool server ID and tool name from the ID
+            tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
 
-        server = next(
-            (
-                server
-                for server in project.external_tool_servers()
-                if server.id == tool_server_id
-            ),
-            None,
-        )
-        if server is None:
-            raise ValueError(
-                f"External tool server not found: {tool_server_id} in project ID {project.id}"
+            server = next(
+                (
+                    server
+                    for server in project.external_tool_servers()
+                    if server.id == tool_server_id
+                ),
+                None,
             )
+            if server is None:
+                raise ValueError(
+                    f"External tool server not found: {tool_server_id} in project ID {project.id}"
+                )
 
-        return MCPServerTool(server, tool_name)
+            return MCPServerTool(server, tool_name)
 
-    # Check Kiln Task Tools
-    if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
-        task_id, project_id, run_config_id = kiln_task_info_from_tool_id(tool_id)
-        return KilnTaskTool(task_id, project_id, run_config_id)
+        # Check Kiln Task Tools
+        if is_kiln_task_tool:
+            server_id = kiln_task_server_id_from_tool_id(tool_id)
+            server = next(
+                (
+                    server
+                    for server in project.external_tool_servers()
+                    if server.id == server_id
+                ),
+                None,
+            )
+            if server is None:
+                raise ValueError(
+                    f"Kiln Task External tool server not found: {server_id} in project ID {project.id}"
+                )
+            return KilnTaskTool(project.id, tool_id, server)
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")

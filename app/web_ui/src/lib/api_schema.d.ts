@@ -1230,6 +1230,40 @@ export interface paths {
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/add_kiln_task_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Kiln Task Tool */
+        post: operations["add_kiln_task_tool_api_projects__project_id__add_kiln_task_tool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/edit_kiln_task/{tool_server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Kiln Task */
+        patch: operations["edit_kiln_task_api_projects__project_id__edit_kiln_task__tool_server_id__patch"];
+        trace?: never;
+    };
     "/api/demo_tools": {
         parameters: {
             query?: never;
@@ -2634,6 +2668,17 @@ export interface components {
             /** File Path */
             file_path: string | null;
         };
+        /** KilnTaskToolServerCreationRequest */
+        KilnTaskToolServerCreationRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Task Id */
+            task_id: string;
+            /** Run Config Id */
+            run_config_id: string;
+        };
         /**
          * KilnToolServerDescription
          * @description This class is used to describe the external tool server under Settings -> Manage Tools UI.
@@ -3495,7 +3540,7 @@ export interface components {
          * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
-        ToolServerType: "remote_mcp" | "local_mcp";
+        ToolServerType: "remote_mcp" | "local_mcp" | "kiln_task";
         /** ToolSetApiDescription */
         ToolSetApiDescription: {
             /** Set Name */
@@ -6306,6 +6351,77 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LocalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_kiln_task_tool_api_projects__project_id__add_kiln_task_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KilnTaskToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_kiln_task_api_projects__project_id__edit_kiln_task__tool_server_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KilnTaskToolServerCreationRequest"];
             };
         };
         responses: {

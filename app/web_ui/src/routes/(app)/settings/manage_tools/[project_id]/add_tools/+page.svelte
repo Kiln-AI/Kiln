@@ -239,6 +239,13 @@
         title="Custom Tools"
         items={[
           {
+            name: "Kiln Tasks",
+            description: "Add an existing Kiln Task as a tool to your project.",
+            button_text: "Add",
+            on_click: () =>
+              goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
+          },
+          {
             name: "Remote MCP Servers",
             description:
               "Connect to remote MCP servers to add tools to your project.",

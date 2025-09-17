@@ -2,8 +2,9 @@ import json
 from typing import Any, Dict
 
 from kiln_ai.datamodel import Task
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX, ToolId
+from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
 from kiln_ai.utils.project_utils import project_from_id
 
@@ -18,31 +19,30 @@ class KilnTaskTool(KilnToolInterface):
     def __init__(
         self,
         project_id: str,
-        task_id: str,
-        run_config_id: str,
+        tool_id: str,
+        data_model: ExternalToolServer,
     ):
         self._project_id = project_id
-        self._task_id = task_id
-        self._run_config_id = run_config_id
+        self._tool_server_model = data_model
+        self._tool_id = tool_id
+
+        self._name = data_model.properties.get("name", "")
+        self._description = data_model.properties.get("description", "")
+        self._task_id = data_model.properties.get("task_id", "")
+        self._run_config_id = data_model.properties.get("run_config_id", "")
+
         self._task: Task | None = None
         self._run_config: TaskRunConfig | None = None
         self._parameters_schema: Dict[str, Any] | None = None
-        self._tool_id = (
-            f"{KILN_TASK_TOOL_ID_PREFIX}{project_id}::{task_id}::{run_config_id}"
-        )
 
     async def id(self) -> ToolId:
         return self._tool_id
 
     async def name(self) -> str:
-        task = await self._get_task()
-        # TODO: task.name is not meant for tool use
-        return task.name
+        return self._name
 
     async def description(self) -> str:
-        task = await self._get_task()
-        # TODO: task.description is not meant for tool use
-        return task.description or "N/A"
+        return self._description
 
     async def toolcall_definition(self) -> Dict[str, Any]:
         """Generate OpenAI-compatible tool definition."""
@@ -51,7 +51,7 @@ class KilnTaskTool(KilnToolInterface):
             "function": {
                 "name": await self.name(),
                 "description": await self.description(),
-                "parameters": await self._get_parameters_schema(),
+                "parameters": await self.get_parameters_schema(),
             },
         }
 
@@ -120,11 +120,12 @@ class KilnTaskTool(KilnToolInterface):
                 )
         return self._run_config
 
-    async def _get_parameters_schema(self) -> Dict[str, Any]:
+    async def get_parameters_schema(self) -> Dict[str, Any]:
         """Lazy load the task parameters schema."""
         if self._parameters_schema is None:
             task = await self._get_task()
 
+            # TODO: The user should control the input schema, especially for plaintext tasks.
             if task.input_json_schema:
                 # Use the task's input schema directly
                 self._parameters_schema = task.input_schema()
@@ -135,7 +136,7 @@ class KilnTaskTool(KilnToolInterface):
                     "properties": {
                         "input": {
                             "type": "string",
-                            "description": f"Input for the task: {task.instruction}",
+                            "description": f"Plaintext input for the task: {task.instruction}",
                         }
                     },
                     "required": ["input"],

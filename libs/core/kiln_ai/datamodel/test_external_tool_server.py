@@ -654,6 +654,10 @@ class TestExternalToolServer:
                     assert "_unsaved_secrets" not in data
                     assert "API_KEY" not in data["properties"]["env_vars"]
 
+                case ToolServerType.kiln_task:
+                    # TODO: Add test for kiln task
+                    pass
+
                 case _:
                     raise_exhaustive_enum_error(server_type)
 

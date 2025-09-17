@@ -14,7 +14,7 @@ Tool IDs can be one of:
 - A kiln built-in tool name: kiln_tool::add_numbers
 - A remote MCP tool: mcp::remote::<server_id>::<tool_name>
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
-- A Kiln task tool: kiln_task::<project_id>::<task_id>::<run_config_id>
+- A Kiln task tool: kiln_task::<server_id>
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -62,10 +62,10 @@ def _check_tool_id(id: str) -> str:
 
     # Kiln task tools must have format: kiln_task::<project_id>::<task_id>::<run_config_id>
     if id.startswith(KILN_TASK_TOOL_ID_PREFIX):
-        project_id, task_id, run_config_id = kiln_task_info_from_tool_id(id)
-        if not project_id or not task_id or not run_config_id:
+        server_id = kiln_task_server_id_from_tool_id(id)
+        if not server_id:
             raise ValueError(
-                f"Invalid Kiln task tool ID: {id}. Expected format: 'kiln_task::<project_id>::<task_id>::<run_config_id>'."
+                f"Invalid Kiln task tool ID: {id}. Expected format: 'kiln_task::<server_id>'."
             )
         return id
 
@@ -94,9 +94,9 @@ def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
     return parts[2], parts[3]  # server_id, tool_name
 
 
-def kiln_task_info_from_tool_id(tool_id: str) -> tuple[str, str, str]:
+def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
     """
-    Get the project ID, task ID, and run config ID from the tool ID.
+    Get the server ID from the tool ID.
     """
     if not tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
         raise ValueError(
@@ -107,9 +107,9 @@ def kiln_task_info_from_tool_id(tool_id: str) -> tuple[str, str, str]:
     remaining = tool_id[len(KILN_TASK_TOOL_ID_PREFIX) :]
     parts = remaining.split("::")
 
-    if len(parts) != 3:
+    if len(parts) != 1:
         raise ValueError(
             f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<project_id>::<task_id>::<run_config_id>'."
         )
 
-    return parts[0], parts[1], parts[2]  # project_id, task_id, run_config_id
+    return parts[0]  # server_id

@@ -18,6 +18,7 @@ class ToolServerType(str, Enum):
 
     remote_mcp = "remote_mcp"
     local_mcp = "local_mcp"
+    kiln_task = "kiln_task"
 
 
 class ExternalToolServer(KilnParentedModel):
@@ -79,6 +80,9 @@ class ExternalToolServer(KilnParentedModel):
                         self._unsaved_secrets[key_name] = env_vars[key_name]
                         # Remove from env_vars immediately so they are not saved to file
                         del env_vars[key_name]
+
+            case ToolServerType.kiln_task:
+                pass
 
             case _:
                 raise_exhaustive_enum_error(self.type)
@@ -159,6 +163,49 @@ class ExternalToolServer(KilnParentedModel):
                             "secret_env_var_keys must contain only strings"
                         )
 
+            case ToolServerType.kiln_task:
+                # TODO: Do we also need to validate the name is snake case here or was the UI check enough?
+                name = self.properties.get("name", None)
+                if not isinstance(name, str):
+                    raise ValueError(
+                        "name must be a string to connect a kiln task as a tool"
+                    )
+                if not name.strip():
+                    raise ValueError(
+                        "name is required to connect a kiln task as a tool"
+                    )
+
+                description = self.properties.get("description", None)
+                if not isinstance(description, str):
+                    raise ValueError(
+                        "description must be a string to connect a kiln task as a tool"
+                    )
+                if not description.strip():
+                    raise ValueError(
+                        "description is required to connect a kiln task as a tool"
+                    )
+
+                # TODO: Do we also need to validate these id properties are valid?
+                task_id = self.properties.get("task_id", None)
+                if not isinstance(task_id, str):
+                    raise ValueError(
+                        "task_id must be a string to connect a kiln task as a tool"
+                    )
+                if not task_id.strip():
+                    raise ValueError(
+                        "task_id is required to connect a kiln task as a tool"
+                    )
+
+                run_config_id = self.properties.get("run_config_id", None)
+                if not isinstance(run_config_id, str):
+                    raise ValueError(
+                        "run_config_id must be a string to connect a kiln task as a tool"
+                    )
+                if not run_config_id.strip():
+                    raise ValueError(
+                        "run_config_id is required to connect a kiln task as a tool"
+                    )
+
             case _:
                 # Type checking will catch missing cases
                 raise_exhaustive_enum_error(self.type)
@@ -176,6 +223,8 @@ class ExternalToolServer(KilnParentedModel):
                 return self.properties.get("secret_header_keys", [])
             case ToolServerType.local_mcp:
                 return self.properties.get("secret_env_var_keys", [])
+            case ToolServerType.kiln_task:
+                return []
             case _:
                 raise_exhaustive_enum_error(self.type)
 
