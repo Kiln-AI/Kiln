@@ -1,9 +1,10 @@
 import re
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, TypedDict
 from urllib.parse import urlparse
 
 from pydantic import Field, PrivateAttr, model_validator
+from typing_extensions import NotRequired
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
@@ -22,6 +23,19 @@ class ToolServerType(str, Enum):
     local_mcp = "local_mcp"
 
 
+class LocalServerProperties(TypedDict, total=False):
+    command: str
+    args: list[str]
+    env_vars: dict[str, str]
+    secret_env_var_keys: NotRequired[list[str]]
+
+
+class RemoteServerProperties(TypedDict, total=False):
+    server_url: str
+    headers: dict[str, str]
+    secret_header_keys: NotRequired[list[str]]
+
+
 class ExternalToolServer(KilnParentedModel):
     """
     Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
@@ -38,8 +52,9 @@ class ExternalToolServer(KilnParentedModel):
         default=None,
         description="A description of the external tool for you and your team. Will not be used in prompts/training/validation.",
     )
-    properties: Dict[str, Any] = Field(
-        default={},
+
+    properties: LocalServerProperties | RemoteServerProperties = Field(
+        default_factory=lambda: {},
         description="Configuration properties specific to the tool type.",
     )
 

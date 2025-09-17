@@ -50,3 +50,7 @@ export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =
   components["schemas"]["ToolSetApiDescription"]
+export type LocalServerProperties =
+  components["schemas"]["LocalServerProperties"]
+export type RemoteServerProperties =
+  components["schemas"]["RemoteServerProperties"]

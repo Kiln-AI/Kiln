@@ -3,7 +3,12 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    LocalServerProperties,
+    RemoteServerProperties,
+    ToolServerType,
+)
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
@@ -78,7 +83,7 @@ class ExternalToolServerApiDescription(BaseModel):
     description: str | None
     created_at: datetime | None
     created_by: str | None
-    properties: Dict[str, Any]
+    properties: LocalServerProperties | RemoteServerProperties
     available_tools: list[ExternalToolApiDescription]
     missing_secrets: list[str]
 
@@ -330,7 +335,7 @@ def connect_tool_servers_api(app: FastAPI):
 
     def _remote_tool_server_properties(
         tool_data: ExternalToolServerCreationRequest,
-    ) -> dict[str, str | Dict[str, str] | List[str]]:
+    ) -> RemoteServerProperties:
         # Create the ExternalToolServer with all data for validation
         return {
             "server_url": tool_data.server_url,
@@ -389,7 +394,7 @@ def connect_tool_servers_api(app: FastAPI):
 
     def _local_tool_server_properties(
         tool_data: LocalToolServerCreationRequest,
-    ) -> dict[str, str | Dict[str, str] | List[str]]:
+    ) -> LocalServerProperties:
         return {
             "command": tool_data.command,
             "args": tool_data.args,

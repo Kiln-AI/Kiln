@@ -2239,9 +2239,8 @@ export interface components {
             /**
              * Properties
              * @description Configuration properties specific to the tool type.
-             * @default {}
              */
-            properties: Record<string, never>;
+            properties?: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2262,7 +2261,7 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: Record<string, never>;
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
@@ -2629,6 +2628,19 @@ export interface components {
             /** Missing Secrets */
             missing_secrets: string[];
         };
+        /** LocalServerProperties */
+        LocalServerProperties: {
+            /** Command */
+            command?: string;
+            /** Args */
+            args?: string[];
+            /** Env Vars */
+            env_vars?: {
+                [key: string]: string;
+            };
+            /** Secret Env Var Keys */
+            secret_env_var_keys?: string[];
+        };
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
             /** Name */
@@ -2903,6 +2915,17 @@ export interface components {
         RatingOptionResponse: {
             /** Options */
             options: components["schemas"]["RatingOption"][];
+        };
+        /** RemoteServerProperties */
+        RemoteServerProperties: {
+            /** Server Url */
+            server_url?: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /** Secret Header Keys */
+            secret_header_keys?: string[];
         };
         /** RepairRunPost */
         RepairRunPost: {
