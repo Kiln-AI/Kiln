@@ -59,10 +59,10 @@ const gemini_2_5_flash_extractor: ExtractorSubConfig = {
   model_name: "gemini_2_5_flash",
 }
 const default_chunker: ChunkerSubConfig = {
-  config_name: "Size 1000 - Overlap 200",
-  description: "Size: 1000, Overlap: 200",
-  chunk_size: 1000,
-  chunk_overlap: 200,
+  config_name: "Size 512 - Overlap 64",
+  description: "Size: 512, Overlap: 64",
+  chunk_size: 512,
+  chunk_overlap: 64,
 }
 const default_embedding: EmbeddingSubConfig = {
   config_name: "Gemini Embedding 001 (3072 dimensions)",
