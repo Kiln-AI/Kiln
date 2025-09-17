@@ -367,5 +367,22 @@
           : "warning"}
       warning_message="For doc extraction, we recommend using a high quality multimodal model like Gemini Pro."
     />
+
+    {#if available_model_details(model_name, provider_name, $available_models)?.multimodal_mime_types?.length}
+      <div class="mt-3 pl-1">
+        <p class="text-xs text-gray-500 font-medium mb-1">
+          {model_name_from_id(model_name || "", $model_info)} ({provider_name_from_id(
+            provider_name || "",
+          )}) supports the following mime types:
+        </p>
+        <div class="flex flex-wrap gap-1">
+          {#each available_model_details(model_name, provider_name, $available_models)?.multimodal_mime_types || [] as mime_type}
+            <span class="text-xs bg-base-200 text-gray-500 px-2 py-0.5 rounded"
+              >{mime_type}</span
+            >
+          {/each}
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>

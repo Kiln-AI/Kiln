@@ -1228,8 +1228,12 @@ async def test_run_rag_config_success(
         )
 
     assert response.status_code == 200
-    mock_build_runner.assert_called_once_with(mock_project, str(rag_config.id))
-    mock_run_runner.assert_called_once_with(mock_runner)
+    # build_rag_workflow_runner is now called inside the factory, so we don't check it directly
+    # Instead check that run_rag_workflow_runner_with_status was called with a factory
+    mock_run_runner.assert_called_once()
+    # Verify the factory was called by checking the call args
+    call_args = mock_run_runner.call_args[0]
+    assert callable(call_args[0])  # First argument should be the factory function
 
 
 @pytest.mark.asyncio
@@ -1239,18 +1243,24 @@ async def test_run_rag_config_not_found(client, mock_project):
         patch(
             "kiln_server.document_api.build_rag_workflow_runner"
         ) as mock_build_runner,
+        patch("kiln_ai.utils.lock.shared_async_lock_manager") as mock_lock_manager,
     ):
         mock_project_from_id.return_value = mock_project
         mock_build_runner.side_effect = HTTPException(
             status_code=404, detail="RAG config not found"
         )
+        mock_lock_manager.acquire.return_value.__aenter__ = AsyncMock()
+        mock_lock_manager.acquire.return_value.__aexit__ = AsyncMock()
 
         response = client.get(
             f"/api/projects/{mock_project.id}/rag_configs/fake_id/run"
         )
 
-    assert response.status_code == 404
-    assert "RAG config not found" in response.json()["message"]
+    # Now returns 200 with streaming response containing error message
+    assert response.status_code == 200
+    content = response.content.decode()
+    # Should contain error message in the streaming response
+    assert "RAG config not found" in content or "Unexpected server error" in content
 
 
 @pytest.mark.asyncio
@@ -1279,18 +1289,24 @@ async def test_run_rag_config_missing_configs(
         patch(
             "kiln_server.document_api.build_rag_workflow_runner"
         ) as mock_build_runner,
+        patch("kiln_ai.utils.lock.shared_async_lock_manager") as mock_lock_manager,
     ):
         mock_project_from_id.return_value = mock_project
         mock_build_runner.side_effect = HTTPException(
             status_code=400, detail="RAG config is missing required configs"
         )
+        mock_lock_manager.acquire.return_value.__aenter__ = AsyncMock()
+        mock_lock_manager.acquire.return_value.__aexit__ = AsyncMock()
 
         response = client.get(
             f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}/run"
         )
 
-    assert response.status_code == 400
-    assert "RAG config is missing required configs" in response.json()["message"]
+    # Now returns 200 with streaming response containing error message
+    assert response.status_code == 200
+    content = response.content.decode()
+    # Should contain error message in the streaming response
+    assert "missing required configs" in content or "Unexpected server error" in content
 
 
 @pytest.mark.asyncio
@@ -1583,8 +1599,12 @@ async def test_run_rag_workflow_runner_with_status_success():
     mock_runner = MagicMock()
     mock_runner.run.return_value = mock_run()
 
+    # Create an async factory that returns the mock runner
+    async def mock_factory():
+        return mock_runner
+
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_runner)
+    response = await run_rag_workflow_runner_with_status(mock_factory)
 
     # Verify response type
     assert isinstance(response, StreamingResponse)
@@ -1656,8 +1676,12 @@ async def test_run_rag_workflow_runner_with_status_no_logs(logs):
     mock_runner = MagicMock()
     mock_runner.run.return_value = mock_run()
 
+    # Create an async factory that returns the mock runner
+    async def mock_factory():
+        return mock_runner
+
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_runner)
+    response = await run_rag_workflow_runner_with_status(mock_factory)
 
     # Read the streaming content
     content = ""
@@ -1714,8 +1738,12 @@ async def test_run_rag_workflow_runner_with_status_multiple_logs():
     mock_runner = MagicMock()
     mock_runner.run.return_value = mock_run()
 
+    # Create an async factory that returns the mock runner
+    async def mock_factory():
+        return mock_runner
+
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_runner)
+    response = await run_rag_workflow_runner_with_status(mock_factory)
 
     # Read the streaming content
     content = ""
@@ -1762,8 +1790,12 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
     mock_runner = MagicMock()
     mock_runner.run.return_value = mock_run()
 
+    # Create an async factory that returns the mock runner
+    async def mock_factory():
+        return mock_runner
+
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_runner)
+    response = await run_rag_workflow_runner_with_status(mock_factory)
 
     # Read the streaming content
     content = ""

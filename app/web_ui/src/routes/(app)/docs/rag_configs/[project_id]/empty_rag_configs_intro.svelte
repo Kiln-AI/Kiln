@@ -11,7 +11,7 @@
     action_buttons={[
       {
         label: "Create Search Tool",
-        href: `/docs/rag_configs/${project_id}/create_rag_config`,
+        href: `/docs/rag_configs/${project_id}/add_search_tool`,
         is_primary: true,
       },
     ]}

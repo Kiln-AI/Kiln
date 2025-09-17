@@ -15,7 +15,7 @@ import {
   default_extractor_audio_prompts,
 } from "../../../extractors/[project_id]/create_extractor/default_extractor_prompts"
 
-export type RequiredApiKeysSets = "OpenaiOrOpenRouter" | "GeminiOrOpenRouter"
+export type RequiredApiKeysSets = "Openai" | "Gemini"
 
 type SubConfig = {
   config_name: string
@@ -81,7 +81,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_subtitle: "Spare No Expense",
     preview_description:
       "Gemini 2.5 Pro extraction, Gemini embeddings, and hybrid search.",
-    required_api_keys: "GeminiOrOpenRouter",
+    required_api_keys: "Gemini",
     extractor: {
       config_name: "Gemini 2p5 Pro w Default Prompts",
       description: "Gemini 2.5 Pro",
@@ -98,7 +98,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_subtitle: "Balance Cost and Quality",
     preview_description:
       "Gemini 2.5 Flash extraction, Gemini embeddings, and hybrid search.",
-    required_api_keys: "GeminiOrOpenRouter",
+    required_api_keys: "Gemini",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
@@ -110,7 +110,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_subtitle: "Need to use OpenAI?",
     preview_description:
       "GPT-4.1 extraction, OpenAI embeddings, and hybrid search.",
-    required_api_keys: "OpenaiOrOpenRouter",
+    required_api_keys: "Openai",
     extractor: {
       config_name: "GPT-4p1 w Default Prompts",
       description: "GPT-4.1",
@@ -125,14 +125,14 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       model_name: "openai_text_embedding_3_large",
     },
     vector_store: default_vector_store,
-    rag_config_name: "OpenAI Based - GPT-4.1 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-4_1 Hybrid Search",
   },
   vector_only: {
     name: "Vector Only",
     preview_subtitle: "No Full-Text Search",
     preview_description:
       "Use only vector search for semantic similarity, not hybrid vector + full-text search.",
-    required_api_keys: "GeminiOrOpenRouter",
+    required_api_keys: "Gemini",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
