@@ -10,7 +10,11 @@ from mcp.types import (
     Tool,
 )
 
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    RemoteServerProperties,
+    ToolServerType,
+)
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
@@ -25,10 +29,10 @@ class TestMCPServerTool:
             name="test_server",
             type=ToolServerType.remote_mcp,
             description="Test server",
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
 
         tool = MCPServerTool(server, "test_tool")
@@ -58,10 +62,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -88,10 +92,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -114,10 +118,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -141,10 +145,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -168,10 +172,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -194,10 +198,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -229,10 +233,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "target_tool")
 
@@ -256,10 +260,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "missing_tool")
 
@@ -285,10 +289,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -319,10 +323,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -345,10 +349,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 
@@ -363,10 +367,10 @@ class TestMCPServerTool:
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
         tool = MCPServerTool(server, "test_tool")
 

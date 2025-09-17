@@ -6,7 +6,11 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServerApiDescription } from "$lib/types"
+  import type {
+    ExternalToolServerApiDescription,
+    LocalServerProperties,
+    RemoteServerProperties,
+  } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
@@ -101,26 +105,31 @@
 
     switch (tool.type) {
       case "remote_mcp":
-        if (tool.properties["server_url"]) {
+        if (
+          isRemoteServerProperties(tool.properties) &&
+          tool.properties.server_url
+        ) {
           properties.push({
             name: "Server URL",
-            value: tool.properties["server_url"],
+            value: tool.properties.server_url,
           })
         }
         break
       case "local_mcp": {
-        if (tool.properties["command"]) {
-          properties.push({
-            name: "Command",
-            value: tool.properties["command"],
-          })
-        }
-        const args = tool.properties["args"]
-        if (args && isStringArray(args)) {
-          properties.push({
-            name: "Arguments",
-            value: (args as string[]).join(" ") || "None",
-          })
+        if (isLocalServerProperties(tool.properties)) {
+          if (tool.properties.command) {
+            properties.push({
+              name: "Command",
+              value: tool.properties.command,
+            })
+          }
+          const args = tool.properties.args
+          if (args && isStringArray(args)) {
+            properties.push({
+              name: "Arguments",
+              value: args.join(" ") || "None",
+            })
+          }
         }
         break
       }
@@ -209,6 +218,28 @@
     return typeof value === "string"
   }
 
+  // Type guards for server properties
+  function isLocalServerProperties(
+    properties: LocalServerProperties | RemoteServerProperties,
+  ): properties is LocalServerProperties {
+    return (
+      "command" in properties ||
+      "args" in properties ||
+      "env_vars" in properties ||
+      "secret_env_var_keys" in properties
+    )
+  }
+
+  function isRemoteServerProperties(
+    properties: LocalServerProperties | RemoteServerProperties,
+  ): properties is RemoteServerProperties {
+    return (
+      "server_url" in properties ||
+      "headers" in properties ||
+      "secret_header_keys" in properties
+    )
+  }
+
   function formatToolArguments(
     inputSchema: Record<string, unknown>,
   ): Argument[] {
@@ -294,14 +325,16 @@
             />
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
-              <PropertyList
-                properties={buildPropertiesWithSecrets(
-                  tool_server.properties["headers"],
-                  tool_server.properties["secret_header_keys"],
-                  tool_server.missing_secrets,
-                )}
-                title="Headers"
-              />
+              {#if isRemoteServerProperties(tool_server.properties)}
+                <PropertyList
+                  properties={buildPropertiesWithSecrets(
+                    tool_server.properties.headers || {},
+                    tool_server.properties.secret_header_keys || [],
+                    tool_server.missing_secrets,
+                  )}
+                  title="Headers"
+                />
+              {/if}
             </div>
           {:else if tool_server.type === "local_mcp"}
             <PropertyList
@@ -309,12 +342,12 @@
               title="Run Configuration"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
-            {#if (tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0) || (tool_server.properties["secret_env_var_keys"] && Object.keys(tool_server.properties["secret_env_var_keys"]).length > 0)}
+            {#if isLocalServerProperties(tool_server.properties) && ((tool_server.properties.env_vars && Object.keys(tool_server.properties.env_vars).length > 0) || (tool_server.properties.secret_env_var_keys && tool_server.properties.secret_env_var_keys.length > 0))}
               <div class="mt-8">
                 <PropertyList
                   properties={buildPropertiesWithSecrets(
-                    tool_server.properties["env_vars"],
-                    tool_server.properties["secret_env_var_keys"],
+                    tool_server.properties.env_vars || {},
+                    tool_server.properties.secret_env_var_keys || [],
                     tool_server.missing_secrets,
                   )}
                   title="Environment Variables"

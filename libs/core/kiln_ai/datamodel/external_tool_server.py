@@ -1,9 +1,10 @@
 import re
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import Field, PrivateAttr, model_validator
+from typing_extensions import NotRequired, TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
@@ -22,6 +23,19 @@ class ToolServerType(str, Enum):
     local_mcp = "local_mcp"
 
 
+class LocalServerProperties(TypedDict, total=True):
+    command: str
+    args: NotRequired[list[str]]
+    env_vars: NotRequired[dict[str, str]]
+    secret_env_var_keys: NotRequired[list[str]]
+
+
+class RemoteServerProperties(TypedDict, total=True):
+    server_url: str
+    headers: NotRequired[dict[str, str]]
+    secret_header_keys: NotRequired[list[str]]
+
+
 class ExternalToolServer(KilnParentedModel):
     """
     Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
@@ -38,8 +52,8 @@ class ExternalToolServer(KilnParentedModel):
         default=None,
         description="A description of the external tool for you and your team. Will not be used in prompts/training/validation.",
     )
-    properties: Dict[str, Any] = Field(
-        default={},
+
+    properties: LocalServerProperties | RemoteServerProperties = Field(
         description="Configuration properties specific to the tool type.",
     )
 
@@ -172,6 +186,51 @@ class ExternalToolServer(KilnParentedModel):
                 )
 
     @model_validator(mode="before")
+    def validate_required_fields(cls, data: dict) -> dict:
+        """Validate that each tool type has the required configuration."""
+        server_type = data.get("type")
+        properties = data.get("properties", {})
+
+        if not server_type:
+            # pydantic will catch this but the not None check is needed to support `raise_exhaustive_enum_error`
+            raise ValueError("Server type is required")
+
+        match server_type:
+            case ToolServerType.remote_mcp:
+                server_url = properties.get("server_url", None)
+                if server_url is None:
+                    raise ValueError(
+                        "Server URL is required to connect to a remote MCP server"
+                    )
+                ExternalToolServer.validate_server_url(server_url)
+
+            case ToolServerType.local_mcp:
+                command = properties.get("command", None)
+                if command is None:
+                    raise ValueError("command is required to start a local MCP server")
+
+                if not isinstance(command, str):
+                    raise ValueError(
+                        "command must be a string to start a local MCP server"
+                    )
+
+                # Reject empty/whitespace-only command strings
+                if command.strip() == "":
+                    raise ValueError("command must be a non-empty string")
+
+                args = properties.get("args", None)
+                if args is not None:
+                    if not isinstance(args, list):
+                        raise ValueError(
+                            "arguments must be a list to start a local MCP server"
+                        )
+
+            case _:
+                # Type checking will catch missing cases
+                raise_exhaustive_enum_error(server_type)
+        return data
+
+    @model_validator(mode="before")
     def validate_secrets(cls, data: dict) -> dict:
         """
         Validate secrets, these needs to be validated before model initlization because secrets will be processed and stripped
@@ -215,38 +274,6 @@ class ExternalToolServer(KilnParentedModel):
                 raise_exhaustive_enum_error(type)
 
         return data
-
-    @model_validator(mode="after")
-    def validate_required_fields(self) -> "ExternalToolServer":
-        """Validate that each tool type has the required configuration."""
-        match self.type:
-            case ToolServerType.remote_mcp:
-                server_url = self.properties.get("server_url", None)
-                if not server_url:
-                    raise ValueError(
-                        "Server URL is required to connect to a remote MCP server"
-                    )
-                ExternalToolServer.validate_server_url(server_url)
-
-            case ToolServerType.local_mcp:
-                command = self.properties.get("command", None)
-                if not isinstance(command, str):
-                    raise ValueError(
-                        "command must be a string to start a local MCP server"
-                    )
-                if not command.strip():
-                    raise ValueError("command is required to start a local MCP server")
-
-                args = self.properties.get("args", None)
-                if not isinstance(args, list):
-                    raise ValueError(
-                        "arguments must be a list to start a local MCP server"
-                    )
-
-            case _:
-                # Type checking will catch missing cases
-                raise_exhaustive_enum_error(self.type)
-        return self
 
     def get_secret_keys(self) -> list[str]:
         """
