@@ -48,6 +48,8 @@ export type RagConfigTemplate = {
   embedding: EmbeddingSubConfig
   vector_store: VectorStoreSubConfig
   rag_config_name: string
+  notice_text?: string
+  notice_tooltip?: string
 }
 
 const gemini_2_5_flash_extractor: ExtractorSubConfig = {
@@ -111,6 +113,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "GPT-4.1 extraction, OpenAI embeddings, and hybrid search.",
     required_api_keys: "Openai",
+    notice_text: "Does not support audio or video files.",
+    notice_tooltip:
+      "GPT 4.1 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
     extractor: {
       config_name: "GPT-4p1 w Default Prompts",
       description: "GPT-4.1",

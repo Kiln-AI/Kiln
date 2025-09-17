@@ -1,6 +1,7 @@
 <script lang="ts">
   import InfoTooltip from "./info_tooltip.svelte"
   import type { UiProperty } from "./property_list"
+  import Warning from "./warning.svelte"
 
   export let properties: UiProperty[]
   export let title: string | null = null
@@ -23,6 +24,14 @@
           ? 'text-error'
           : 'text-gray-500'}"
       >
+        {#if property.warn_icon}
+          <Warning
+            warning_message=" "
+            warning_icon="exclaim"
+            warning_color="warning"
+            tight={true}
+          />
+        {/if}
         {#if property.link}
           <a href={property.link} class="link">{property.value}</a>
         {:else}
