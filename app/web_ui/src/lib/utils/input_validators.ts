@@ -68,3 +68,40 @@ export function number_validator({
       optional,
     })
 }
+
+export const tool_name_validator: (value: unknown) => string | null = (
+  value: unknown,
+) => {
+  if (is_empty(value)) {
+    return "Cannot be empty"
+  }
+
+  if (typeof value !== "string") {
+    return "Must be a string"
+  }
+
+  const name = value
+
+  // Check if name contains only lowercase letters, numbers, and underscores
+  const snake_case_regex = /^[a-z0-9_]+$/
+  if (!snake_case_regex.test(name)) {
+    return "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores"
+  }
+
+  // Check that it doesn't start or end with underscore
+  if (name.startsWith("_") || name.endsWith("_")) {
+    return "Cannot start or end with an underscore"
+  }
+
+  // Check that it doesn't have consecutive underscores
+  if (name.includes("__")) {
+    return "Cannot contain consecutive underscores"
+  }
+
+  // Check that it starts with a letter (good snake_case practice)
+  if (!/^[a-z]/.test(name)) {
+    return "Must start with a lowercase letter"
+  }
+
+  return null
+}

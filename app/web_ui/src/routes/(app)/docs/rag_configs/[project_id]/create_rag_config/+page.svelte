@@ -33,6 +33,7 @@
     build_rag_config_sub_configs,
   } from "../add_search_tool/rag_config_templates"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import { tool_name_validator } from "$lib/utils/input_validators"
 
   $: project_id = $page.params.project_id
   const template_id = $page.url.searchParams.get("template_id")
@@ -592,6 +593,7 @@
           inputType="input"
           id="tool_name"
           bind:value={tool_name}
+          validator={tool_name_validator}
         />
         <FormElement
           label="Search Tool Description"

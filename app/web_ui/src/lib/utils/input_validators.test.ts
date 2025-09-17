@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { validate_number, number_validator } from "./input_validators"
+import {
+  validate_number,
+  number_validator,
+  tool_name_validator,
+} from "./input_validators"
 
 describe("input_validators", () => {
   describe("validate_number", () => {
@@ -399,6 +403,191 @@ describe("input_validators", () => {
       expect(zeroBoundedValidator(100)).toBe(
         "Zero Bounded Field must be less than 0",
       )
+    })
+  })
+
+  describe("tool_name_validator", () => {
+    describe("empty value validation", () => {
+      it("should return error for null", () => {
+        const result = tool_name_validator(null)
+        expect(result).toBe("Cannot be empty")
+      })
+
+      it("should return error for undefined", () => {
+        const result = tool_name_validator(undefined)
+        expect(result).toBe("Cannot be empty")
+      })
+
+      it("should return error for empty string", () => {
+        const result = tool_name_validator("")
+        expect(result).toBe("Cannot be empty")
+      })
+
+      it("should return error for whitespace string", () => {
+        const result = tool_name_validator("   ")
+        expect(result).toBe("Cannot be empty")
+      })
+    })
+
+    describe("type validation", () => {
+      it("should return error for number input", () => {
+        const result = tool_name_validator(123)
+        expect(result).toBe("Must be a string")
+      })
+
+      it("should return error for boolean input", () => {
+        const result = tool_name_validator(true)
+        expect(result).toBe("Must be a string")
+      })
+
+      it("should return error for object input", () => {
+        const result = tool_name_validator({})
+        expect(result).toBe("Must be a string")
+      })
+
+      it("should return error for array input", () => {
+        const result = tool_name_validator([])
+        expect(result).toBe("Must be a string")
+      })
+    })
+
+    describe("valid snake_case validation", () => {
+      it("should accept simple lowercase name", () => {
+        const result = tool_name_validator("tool")
+        expect(result).toBe(null)
+      })
+
+      it("should accept name with numbers", () => {
+        const result = tool_name_validator("tool123")
+        expect(result).toBe(null)
+      })
+
+      it("should accept name with underscores", () => {
+        const result = tool_name_validator("my_tool")
+        expect(result).toBe(null)
+      })
+
+      it("should accept complex valid snake_case", () => {
+        const result = tool_name_validator("my_tool_123_name")
+        expect(result).toBe(null)
+      })
+
+      it("should not allow leading/trailing whitespace", () => {
+        const result = tool_name_validator("  my_tool  ")
+        expect(result).toBe(
+          "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores",
+        )
+      })
+    })
+
+    describe("invalid character validation", () => {
+      it("should return error for uppercase letters", () => {
+        const result = tool_name_validator("MyTool")
+        expect(result).toBe(
+          "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores",
+        )
+      })
+
+      it("should return error for hyphens", () => {
+        const result = tool_name_validator("my-tool")
+        expect(result).toBe(
+          "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores",
+        )
+      })
+
+      it("should return error for spaces", () => {
+        const result = tool_name_validator("my tool")
+        expect(result).toBe(
+          "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores",
+        )
+      })
+
+      it("should return error for special characters", () => {
+        const result = tool_name_validator("my@tool")
+        expect(result).toBe(
+          "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores",
+        )
+      })
+
+      it("should return error for dots", () => {
+        const result = tool_name_validator("my.tool")
+        expect(result).toBe(
+          "Must be in snake_case: containing only lowercase letters (a-z), numbers (0-9), and underscores",
+        )
+      })
+    })
+
+    describe("underscore position validation", () => {
+      it("should return error for name starting with underscore", () => {
+        const result = tool_name_validator("_tool")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+
+      it("should return error for name ending with underscore", () => {
+        const result = tool_name_validator("tool_")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+
+      it("should return error for name starting and ending with underscore", () => {
+        const result = tool_name_validator("_tool_")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+    })
+
+    describe("consecutive underscore validation", () => {
+      it("should return error for double underscores", () => {
+        const result = tool_name_validator("my__tool")
+        expect(result).toBe("Cannot contain consecutive underscores")
+      })
+
+      it("should return error for triple underscores", () => {
+        const result = tool_name_validator("my___tool")
+        expect(result).toBe("Cannot contain consecutive underscores")
+      })
+
+      it("should return error for multiple double underscores", () => {
+        const result = tool_name_validator("my__tool__name")
+        expect(result).toBe("Cannot contain consecutive underscores")
+      })
+    })
+
+    describe("starting character validation", () => {
+      it("should return error for name starting with number", () => {
+        const result = tool_name_validator("1tool")
+        expect(result).toBe("Must start with a lowercase letter")
+      })
+
+      it("should return error for name starting with underscore (covered by underscore position rule)", () => {
+        const result = tool_name_validator("_tool")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+
+      it("should accept name starting with lowercase letter", () => {
+        const result = tool_name_validator("atool")
+        expect(result).toBe(null)
+      })
+    })
+
+    describe("edge cases", () => {
+      it("should accept single letter", () => {
+        const result = tool_name_validator("a")
+        expect(result).toBe(null)
+      })
+
+      it("should accept single letter with number", () => {
+        const result = tool_name_validator("a1")
+        expect(result).toBe(null)
+      })
+
+      it("should return error for single underscore", () => {
+        const result = tool_name_validator("_")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+
+      it("should return error for single number", () => {
+        const result = tool_name_validator("1")
+        expect(result).toBe("Must start with a lowercase letter")
+      })
     })
   })
 })
