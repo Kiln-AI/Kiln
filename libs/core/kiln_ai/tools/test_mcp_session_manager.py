@@ -950,23 +950,6 @@ class TestMCPSessionManager:
                 },
             )
 
-    async def test_local_mcp_missing_args_error(self):
-        """Test that missing args raises ValueError for local MCP."""
-        with pytest.raises(
-            ValidationError,
-            match="Field required",  # Required by pydantic in LocalServerProperties
-        ):
-            ExternalToolServer(
-                name="missing_args_server",
-                type=ToolServerType.local_mcp,
-                description="Server missing args",
-                properties={
-                    "command": "python",
-                    # No args provided
-                    "env_vars": {},
-                },
-            )
-
     async def test_local_mcp_empty_args_allowed(self):
         """Test that empty args list is now allowed for local MCP."""
         # Should not raise any exception - empty args are now allowed

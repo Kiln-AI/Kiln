@@ -2633,7 +2633,7 @@ export interface components {
             /** Command */
             command: string;
             /** Args */
-            args: string[];
+            args?: string[];
             /** Env Vars */
             env_vars?: {
                 [key: string]: string;

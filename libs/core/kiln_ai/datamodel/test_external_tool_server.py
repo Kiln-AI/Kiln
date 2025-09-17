@@ -315,14 +315,9 @@ class TestExternalToolServer:
             (
                 ToolServerType.local_mcp,
                 {"command": ""},
-                "Field required",
+                "command must be a non-empty string",
             ),  # Required by pydantic in LocalServerProperties
             (ToolServerType.local_mcp, {"command": 123}, "command must be a string"),
-            (
-                ToolServerType.local_mcp,
-                {"command": "python"},
-                "Field required",  # Required by pydantic in LocalServerProperties
-            ),
             (
                 ToolServerType.local_mcp,
                 {"command": "python", "args": "not-a-list"},

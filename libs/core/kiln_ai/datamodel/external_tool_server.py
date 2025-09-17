@@ -25,7 +25,7 @@ class ToolServerType(str, Enum):
 
 class LocalServerProperties(TypedDict, total=True):
     command: str
-    args: list[str]
+    args: NotRequired[list[str]]
     env_vars: NotRequired[dict[str, str]]
     secret_env_var_keys: NotRequired[list[str]]
 
@@ -213,6 +213,10 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "command must be a string to start a local MCP server"
                     )
+
+                # Reject empty/whitespace-only command strings
+                if command.strip() == "":
+                    raise ValueError("command must be a non-empty string")
 
                 args = properties.get("args", None)
                 if args is not None:
