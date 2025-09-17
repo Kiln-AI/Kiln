@@ -18,6 +18,88 @@ from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 
 
+def create_remote_server(
+    headers=None,
+    secret_header_keys=None,
+):
+    """Factory function to create remote MCP servers with configurable properties."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.remote_mcp,
+        description="Test server",
+        properties=RemoteServerProperties(
+            server_url="http://example.com/mcp",
+            headers=headers or {},
+            secret_header_keys=secret_header_keys or [],
+        ),
+    )
+
+
+def create_local_server(
+    command="python",
+    args=None,
+    env_vars=None,
+    secret_env_var_keys=None,
+):
+    """Factory function to create local MCP servers with configurable properties."""
+    return ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.local_mcp,
+        description="Test server",
+        properties=LocalServerProperties(
+            command=command,
+            args=args or [],
+            env_vars=env_vars or {},
+            secret_env_var_keys=secret_env_var_keys or [],
+        ),
+    )
+
+
+@pytest.fixture
+def basic_remote_server():
+    return create_remote_server()
+
+
+@pytest.fixture
+def remote_server_with_auth():
+    return create_remote_server(headers={"Authorization": "Bearer token123"})
+
+
+@pytest.fixture
+def basic_local_server():
+    return create_local_server()
+
+
+@pytest.fixture
+def local_server_with_env():
+    """Local MCP server with environment variables."""
+    return create_local_server(
+        args=["-m", "my_mcp_server"],
+        env_vars={"API_KEY": "test123"},
+    )
+
+
+@pytest.fixture
+def remote_server_with_secret_keys():
+    """Remote MCP server with secret header keys."""
+    server = create_remote_server(
+        headers={"Content-Type": "application/json"},
+        secret_header_keys=["Authorization", "X-API-Key"],
+    )
+    return server
+
+
+@pytest.fixture
+def local_server_with_secret_keys():
+    """Local MCP server with secret environment variable keys."""
+    server = create_local_server(
+        args=["-m", "my_server"],
+        env_vars={"PUBLIC_VAR": "public_value"},
+        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET"],
+    )
+    return server
+
+
 class TestMCPSessionManager:
     """Unit tests for MCPSessionManager."""
 
@@ -89,8 +171,9 @@ class TestMCPSessionManager:
         manager = MCPSessionManager()
 
         # Create a mock exception-like object with exceptions attribute
-        class MockExceptionGroup:
+        class MockExceptionGroup(Exception):
             def __init__(self, exceptions):
+                super().__init__("Mock exception group")
                 self.exceptions = exceptions
 
         # Test finding target exception in exceptions list
@@ -110,8 +193,9 @@ class TestMCPSessionManager:
         """Test _extract_first_exception with nested objects having exceptions attribute."""
         manager = MCPSessionManager()
 
-        class MockExceptionGroup:
+        class MockExceptionGroup(Exception):
             def __init__(self, exceptions):
+                super().__init__("Mock exception group")
                 self.exceptions = exceptions
 
         # Create nested structure
@@ -136,7 +220,7 @@ class TestMCPSessionManager:
         manager = MCPSessionManager()
 
         # Object without exceptions attribute should return None
-        class MockObject:
+        class MockObject(Exception):
             pass
 
         mock_obj = MockObject()
@@ -147,7 +231,7 @@ class TestMCPSessionManager:
         """Test _extract_first_exception with object that has None exceptions attribute."""
         manager = MCPSessionManager()
 
-        class MockObject:
+        class MockObject(Exception):
             exceptions = None
 
         mock_obj = MockObject()
@@ -158,8 +242,9 @@ class TestMCPSessionManager:
         """Test _extract_first_exception with empty exceptions list."""
         manager = MCPSessionManager()
 
-        class MockExceptionGroup:
+        class MockExceptionGroup(Exception):
             def __init__(self):
+                super().__init__("Mock exception group")
                 self.exceptions = []
 
         mock_group = MockExceptionGroup()
@@ -167,7 +252,9 @@ class TestMCPSessionManager:
         assert result is None
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
-    async def test_successful_session_creation(self, mock_client):
+    async def test_successful_session_creation(
+        self, mock_client, remote_server_with_auth
+    ):
         """Test successful MCP session creation with mocked client."""
         # Mock the streams
         mock_read_stream = MagicMock()
@@ -180,17 +267,6 @@ class TestMCPSessionManager:
             None,
         )
 
-        # Create a valid tool server
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            description="Test server",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Authorization": "Bearer token123"},
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         with patch(
@@ -201,7 +277,7 @@ class TestMCPSessionManager:
                 mock_session_instance
             )
 
-            async with manager.mcp_client(tool_server) as session:
+            async with manager.mcp_client(remote_server_with_auth) as session:
                 # Verify session is returned
                 assert session is mock_session_instance
 
@@ -214,7 +290,7 @@ class TestMCPSessionManager:
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
-    async def test_session_with_empty_headers(self, mock_client):
+    async def test_session_with_empty_headers(self, mock_client, basic_remote_server):
         """Test session creation when empty headers dict is provided."""
         # Mock the streams
         mock_read_stream = MagicMock()
@@ -227,16 +303,10 @@ class TestMCPSessionManager:
             None,
         )
 
-        # Create a tool server with empty headers
-        tool_server = ExternalToolServer(
-            name="empty_headers_server",
-            type=ToolServerType.remote_mcp,
-            description="Server with empty headers",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={},  # Empty headers dict is required by pydantic
-            ),
-        )
+        # Use basic server with empty headers
+        tool_server = basic_remote_server
+        tool_server.name = "empty_headers_server"
+        tool_server.description = "Server with empty headers"
 
         manager = MCPSessionManager.shared()
 
@@ -267,7 +337,7 @@ class TestMCPSessionManager:
     )
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
     async def test_remote_mcp_http_status_errors(
-        self, mock_client, status_code, reason_phrase
+        self, mock_client, status_code, reason_phrase, basic_remote_server
     ):
         """Test remote MCP session handles various HTTP status errors with simplified message."""
         # Create HTTP error with specific status code
@@ -281,15 +351,6 @@ class TestMCPSessionManager:
         # Mock client to raise the HTTP error
         mock_client.return_value.__aenter__.side_effect = http_error
 
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            description="Test server",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp", headers={}
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         # All HTTP errors should now use the simplified message format
@@ -297,7 +358,7 @@ class TestMCPSessionManager:
         with pytest.raises(
             ValueError, match=expected_pattern.replace("(", r"\(").replace(")", r"\)")
         ):
-            async with manager.mcp_client(tool_server):
+            async with manager.mcp_client(basic_remote_server):
                 pass
 
     @pytest.mark.parametrize(
@@ -311,7 +372,7 @@ class TestMCPSessionManager:
     )
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
     async def test_remote_mcp_connection_errors(
-        self, mock_client, connection_error_type, error_message
+        self, mock_client, connection_error_type, error_message, basic_remote_server
     ):
         """Test remote MCP session handles various connection errors with simplified message."""
         # Create connection error
@@ -325,24 +386,17 @@ class TestMCPSessionManager:
         # Mock client to raise the connection error
         mock_client.return_value.__aenter__.side_effect = connection_error
 
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            description="Test server",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp", headers={}
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         # All connection errors should use the simplified message format
         with pytest.raises(RuntimeError, match="Unable to connect to MCP server"):
-            async with manager.mcp_client(tool_server):
+            async with manager.mcp_client(basic_remote_server):
                 pass
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
-    async def test_remote_mcp_http_error_in_nested_exceptions(self, mock_client):
+    async def test_remote_mcp_http_error_in_nested_exceptions(
+        self, mock_client, basic_remote_server
+    ):
         """Test remote MCP session extracts HTTP error from nested exceptions."""
         # Create HTTP error nested in a mock exception group
         response = MagicMock()
@@ -362,26 +416,19 @@ class TestMCPSessionManager:
         # Mock client to raise the nested exception
         mock_client.return_value.__aenter__.side_effect = group_error
 
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            description="Test server",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp", headers={}
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         # Should extract the HTTP error from the nested structure
         with pytest.raises(
             ValueError, match=r"The MCP server rejected the request. Status 401"
         ):
-            async with manager.mcp_client(tool_server):
+            async with manager.mcp_client(basic_remote_server):
                 pass
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
-    async def test_remote_mcp_connection_error_in_nested_exceptions(self, mock_client):
+    async def test_remote_mcp_connection_error_in_nested_exceptions(
+        self, mock_client, basic_remote_server
+    ):
         """Test remote MCP session extracts connection error from nested exceptions."""
         # Create connection error nested in mock exception group
         connection_error = ConnectionError("Connection timeout")
@@ -396,48 +443,34 @@ class TestMCPSessionManager:
         # Mock client to raise the nested exception
         mock_client.return_value.__aenter__.side_effect = group_error
 
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            description="Test server",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp", headers={}
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         # Should extract the connection error from the nested structure
         with pytest.raises(RuntimeError, match="Unable to connect to MCP server"):
-            async with manager.mcp_client(tool_server):
+            async with manager.mcp_client(basic_remote_server):
                 pass
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
-    async def test_remote_mcp_unknown_error_fallback(self, mock_client):
+    async def test_remote_mcp_unknown_error_fallback(
+        self, mock_client, basic_remote_server
+    ):
         """Test remote MCP session handles unknown errors with fallback message."""
         # Mock client to raise an unknown error type
         unknown_error = RuntimeError("Unexpected error")
         mock_client.return_value.__aenter__.side_effect = unknown_error
 
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.remote_mcp,
-            description="Test server",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp", headers={}
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         # Should use the fallback error message
         with pytest.raises(RuntimeError, match="Failed to connect to the MCP Server"):
-            async with manager.mcp_client(tool_server):
+            async with manager.mcp_client(basic_remote_server):
                 pass
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
     @patch("kiln_ai.utils.config.Config.shared")
-    async def test_session_with_secret_headers(self, mock_config, mock_client):
+    async def test_session_with_secret_headers(
+        self, mock_config, mock_client, remote_server_with_secret_keys
+    ):
         """Test session creation with secret headers retrieved from config."""
         # Mock the streams
         mock_read_stream = MagicMock()
@@ -459,19 +492,10 @@ class TestMCPSessionManager:
         }
         mock_config.return_value = mock_config_instance
 
-        # Create a tool server with secret header keys
-        tool_server = ExternalToolServer(
-            name="secret_headers_server",
-            type=ToolServerType.remote_mcp,
-            description="Server with secret headers",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
-                secret_header_keys=["Authorization", "X-API-Key"],
-            ),
-        )
-        # Set the server ID to match our mock secrets
-        tool_server.id = "test_server_id"
+        tool_server = remote_server_with_secret_keys
+        tool_server.id = "test_server_id"  # Set the id
+        tool_server.name = "secret_headers_server"
+        tool_server.description = "Server with secret headers"
 
         manager = MCPSessionManager.shared()
 
@@ -852,7 +876,7 @@ class TestMCPSessionManager:
         assert headers != original_headers
 
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
-    async def test_local_mcp_session_creation(self, mock_client):
+    async def test_local_mcp_session_creation(self, mock_client, local_server_with_env):
         """Test successful local MCP session creation with mocked client."""
         # Mock the streams
         mock_read_stream = MagicMock()
@@ -862,18 +886,6 @@ class TestMCPSessionManager:
         mock_client.return_value.__aenter__.return_value = (
             mock_read_stream,
             mock_write_stream,
-        )
-
-        # Create a valid local tool server
-        tool_server = ExternalToolServer(
-            name="test_local_server",
-            type=ToolServerType.local_mcp,
-            description="Test local server",
-            properties=LocalServerProperties(
-                command="python",
-                args=["-m", "my_mcp_server"],
-                env_vars={"API_KEY": "test123"},
-            ),
         )
 
         manager = MCPSessionManager.shared()
@@ -886,7 +898,7 @@ class TestMCPSessionManager:
                 mock_session_instance
             )
 
-            async with manager.mcp_client(tool_server) as session:
+            async with manager.mcp_client(local_server_with_env) as session:
                 # Verify session is returned
                 assert session is mock_session_instance
 
@@ -987,7 +999,9 @@ class TestMCPSessionManager:
 
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     @patch("kiln_ai.utils.config.Config.shared")
-    async def test_local_mcp_session_with_secrets(self, mock_config, mock_client):
+    async def test_local_mcp_session_with_secrets(
+        self, mock_config, mock_client, local_server_with_secret_keys
+    ):
         """Test local MCP session creation with secret environment variables."""
         # Mock config to return different values based on the key
         mock_config_instance = MagicMock()
@@ -1015,19 +1029,7 @@ class TestMCPSessionManager:
             mock_write_stream,
         )
 
-        # Create a tool server with secret env var keys
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.local_mcp,
-            description="Test server with secrets",
-            properties=LocalServerProperties(
-                command="python",
-                args=["-m", "my_server"],
-                env_vars={"PUBLIC_VAR": "public_value"},
-                secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET"],
-            ),
-        )
-        # Set the server ID to match our mock secrets
+        tool_server = local_server_with_secret_keys
         tool_server.id = "test_server_id"
 
         manager = MCPSessionManager.shared()
@@ -1087,7 +1089,7 @@ class TestMCPSessionManager:
     )
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
     async def test_local_mcp_various_errors_use_simplified_message(
-        self, mock_client, error_type, error_message
+        self, mock_client, error_type, error_message, basic_local_server
     ):
         """Test local MCP session handles various errors with simplified message."""
         # Create the appropriate error
@@ -1100,22 +1102,11 @@ class TestMCPSessionManager:
         # Mock client to raise the error
         mock_client.return_value.__aenter__.side_effect = test_error
 
-        tool_server = ExternalToolServer(
-            name="test_server",
-            type=ToolServerType.local_mcp,
-            description="Test server",
-            properties=LocalServerProperties(
-                command="python",
-                args=["-m", "my_server"],
-                env_vars={},
-            ),
-        )
-
         manager = MCPSessionManager.shared()
 
         # All local errors should now use the simplified message format
         with pytest.raises(RuntimeError, match="MCP server failed to start"):
-            async with manager.mcp_client(tool_server):
+            async with manager.mcp_client(basic_local_server):
                 pass
 
     @patch("kiln_ai.tools.mcp_session_manager.stdio_client")
