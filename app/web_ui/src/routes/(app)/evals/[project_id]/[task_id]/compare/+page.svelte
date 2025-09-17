@@ -31,7 +31,8 @@
   } from "$lib/stores"
   import {
     load_task_run_configs,
-    task_run_configs_by_task_id,
+    run_configs_by_task_composite_id,
+    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
     getRunConfigPromptDisplayName,
@@ -270,7 +271,10 @@
   }
 
   // Generate dropdown options from run configs
-  $: current_task_run_configs = $task_run_configs_by_task_id[task_id] || []
+  $: current_task_run_configs =
+    $run_configs_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ] || []
 
   $: modelOptions = generateRunConfigOptions(
     current_task_run_configs,
