@@ -757,7 +757,7 @@
           <!-- Advanced -->
           <Collapse title="Advanced Options">
             <FormElement
-              label="Internal Name"
+              label="Reference Name"
               description="A search tool name for your reference, not seen by the model. Leave blank and we'll generate one for you."
               optional={true}
               inputType="input"
@@ -765,7 +765,7 @@
               bind:value={name}
             />
             <FormElement
-              label="Internal Description"
+              label="Reference Description"
               description="A description of the search tool for your reference, not seen by the model."
               optional={true}
               inputType="textarea"
