@@ -17,10 +17,14 @@
     load_available_models,
     model_name,
     provider_name_from_id,
+    available_model_details,
+    available_models,
   } from "$lib/stores"
+  import type { AvailableModels } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Output from "../../../../../run/output.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { mime_type_to_string } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -49,6 +53,7 @@
     await load_available_embedding_models()
 
     await get_rag_config()
+    await load_available_models()
   })
 
   async function get_rag_config() {
@@ -136,6 +141,28 @@
   }
 
   $: sorted_tags = rag_config?.tags ? rag_config.tags.toSorted() : null
+
+  function build_supported_file_types(
+    available_models: AvailableModels[],
+    model_name: string | undefined,
+    model_provider_name: string | undefined,
+  ) {
+    if (!model_name || !model_provider_name || !available_models) {
+      return []
+    }
+    const model_details = available_model_details(
+      model_name,
+      model_provider_name,
+      available_models,
+    )
+    const mime_types = model_details?.multimodal_mime_types || []
+    return mime_types.map(mime_type_to_string)
+  }
+  $: supported_file_types = build_supported_file_types(
+    $available_models,
+    rag_config?.extractor_config?.model_name,
+    rag_config?.extractor_config?.model_provider_name,
+  )
 </script>
 
 <div class="max-w-[1400px]">
@@ -322,6 +349,18 @@
                   value: "View Extractor",
                   link: `/docs/extractors/${project_id}/${rag_config.extractor_config.id}/extractor`,
                 },
+                ...(supported_file_types.length > 0
+                  ? [
+                      {
+                        name: "Supported File Types",
+                        value:
+                          supported_file_types.length == 1
+                            ? "1 file type"
+                            : `${supported_file_types.length} file types`,
+                        tooltip: supported_file_types.join(", "),
+                      },
+                    ]
+                  : []),
               ]}
             />
 
