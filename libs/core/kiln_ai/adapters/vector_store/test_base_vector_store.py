@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Set, Tuple
 from unittest.mock import MagicMock
 
 import pytest
@@ -36,6 +36,9 @@ class TestBaseVectorStoreAdapter:
                 return 0
 
             async def destroy(self) -> None:
+                pass
+
+            async def delete_nodes_not_in_set(self, document_ids: Set[str]) -> None:
                 pass
 
         config = MagicMock(spec=VectorStoreConfig)

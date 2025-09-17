@@ -2,7 +2,7 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, Set, TypedDict
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.schema import (
@@ -366,3 +366,24 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     async def destroy(self) -> None:
         lancedb_path = LanceDBAdapter.lancedb_path_for_config(self.rag_config)
         shutil.rmtree(lancedb_path)
+
+    async def delete_nodes_not_in_set(self, document_ids: Set[str]) -> None:
+        tbl = self.lancedb_vector_store.table
+        if tbl is None:
+            raise ValueError("Table is not initialized")
+
+        for batch in tbl.search().to_batches(100):
+            batch = batch.to_pandas()
+
+            rows_to_delete = []
+            for _, row in batch.iterrows():
+                kiln_doc_id = row["metadata"]["kiln_doc_id"]
+                if kiln_doc_id not in document_ids:
+                    kiln_chunk_idx = row["metadata"]["kiln_chunk_idx"]
+                    record_id = self.compute_deterministic_chunk_id(
+                        kiln_doc_id, kiln_chunk_idx
+                    )
+                    rows_to_delete.append(record_id)
+
+            if rows_to_delete:
+                self.lancedb_vector_store.delete_nodes(rows_to_delete)
