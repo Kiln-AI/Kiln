@@ -487,7 +487,6 @@
       selected_chunker_config_id = chunker_config_id
       selected_embedding_config_id = embedding_config_id
       selected_vector_store_config_id = vector_store_config_id
-      name = template.rag_config_name
       // Don't render the template anymore, let them customize it
       customize_template_mode = true
     } catch (err) {
@@ -617,11 +616,11 @@
               id="search_tool_configuration_header"
               label="Search Configuration"
               description="These parameters control how the search tool will extract, index, and search your documents."
-              info_description="You selected a pre-configured search tool. Customizing is only recommended for advanced users."
+              info_description="You selected a pre-configured search tool with these parameters."
               inputType="header_only"
               value={null}
             />
-            <div class="mt-2 mb-8 max-w-[500px]">
+            <div class="mt-2 mb-8">
               <PropertyList
                 properties={[
                   { name: "Template Name", value: template.name },
@@ -662,12 +661,13 @@
                 ]}
               />
               <button
-                class="btn mt-4 btn-wide btn-sm"
+                class="btn mt-4 btn-sm px-6"
                 on:click={() => {
                   customize_template()
                 }}
               >
                 Customize Configuration
+                <span class="badge badge-sm badge-outline">Advanced</span>
               </button>
             </div>
           </div>
