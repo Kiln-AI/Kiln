@@ -107,11 +107,28 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     vector_store: default_vector_store,
     rag_config_name: "Cost Optimized - Gemini Flash Hybrid Search",
   },
+  vector_only: {
+    name: "Vector Only",
+    preview_subtitle: "No Full-Text Search",
+    preview_description:
+      "Use only vector search for semantic similarity, not hybrid vector + full-text search.",
+    required_api_keys: "Gemini",
+    extractor: gemini_2_5_flash_extractor,
+    chunker: default_chunker,
+    embedding: default_embedding,
+    vector_store: {
+      config_name: "Vector Search - No Full-Text Search",
+      description: "Vector Search",
+      store_type: "lancedb_vector",
+      top_k: 10,
+    },
+    rag_config_name: "Vector Search - Gemini Flash Vector Search",
+  },
   openai_based: {
     name: "OpenAI Based",
     preview_subtitle: "Need to use OpenAI?",
     preview_description:
-      "GPT-4.1 extraction, OpenAI embeddings, and hybrid search.",
+      "We suggest Gemini, but if you need to use OpenAI try this template with GPT-4.1.",
     required_api_keys: "Openai",
     notice_text: "Does not support audio or video files.",
     notice_tooltip:
@@ -131,23 +148,6 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     },
     vector_store: default_vector_store,
     rag_config_name: "OpenAI Based - GPT-4_1 Hybrid Search",
-  },
-  vector_only: {
-    name: "Vector Only",
-    preview_subtitle: "No Full-Text Search",
-    preview_description:
-      "Use only vector search for semantic similarity, not hybrid vector + full-text search.",
-    required_api_keys: "Gemini",
-    extractor: gemini_2_5_flash_extractor,
-    chunker: default_chunker,
-    embedding: default_embedding,
-    vector_store: {
-      config_name: "Vector Search - No Full-Text Search",
-      description: "Vector Search",
-      store_type: "lancedb_vector",
-      top_k: 10,
-    },
-    rag_config_name: "Vector Search - Gemini Flash Vector Search",
   },
 }
 
