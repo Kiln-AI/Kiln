@@ -41,6 +41,8 @@
 
   let loading: boolean = false
   let error: KilnError | null = null
+  let tool_name: string = "search_docs"
+  let tool_description: string = "Search documents for knowledge."
   let name: string | null = null
   let description: string = ""
   let selected_tags: string[] = []
@@ -583,6 +585,24 @@
         bind:submitting={loading}
         keyboard_submit={!modal_opened}
       >
+        <!-- Search Tool Properties -->
+        <FormElement
+          label="Search Tool Name"
+          description="A short tool name such as 'knowledge_base_search'. Be specific about what data this tool can search."
+          info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being specific is important."
+          inputType="input"
+          id="tool_name"
+          bind:value={tool_name}
+        />
+        <FormElement
+          label="Search Tool Description"
+          description="A description for the model to understand what this tool can do, and when to use it. Include a description of what data this tool can search."
+          info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Search the customer facing help docs for information about the product.'"
+          inputType="textarea"
+          id="tool_description"
+          bind:value={tool_description}
+        />
+
         <!-- Tag Selection -->
         <div class="flex flex-col gap-2">
           <TagSelector
@@ -737,16 +757,16 @@
           <!-- Advanced -->
           <Collapse title="Advanced Options">
             <FormElement
-              label="Search Tool Name"
-              description="A name to identify this tool. Leave blank and we'll generate one for you."
+              label="Internal Name"
+              description="A search tool name for your reference, not seen by the model. Leave blank and we'll generate one for you."
               optional={true}
               inputType="input"
               id="rag_config_name"
               bind:value={name}
             />
             <FormElement
-              label="Description"
-              description="A description of the search tool for your reference."
+              label="Internal Description"
+              description="A description of the search tool for your reference, not seen by the model."
               optional={true}
               inputType="textarea"
               id="rag_config_description"
