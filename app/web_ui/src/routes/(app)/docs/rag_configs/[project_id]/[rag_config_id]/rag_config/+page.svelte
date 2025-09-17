@@ -308,8 +308,28 @@
               title="Properties"
               properties={[
                 { name: "ID", value: rag_config.id || "N/A" },
-                { name: "Name", value: rag_config.name || "N/A" },
-                { name: "Description", value: rag_config.description || "N/A" },
+                {
+                  name: "Tool Name",
+                  value: rag_config.tool_name,
+                  tooltip: "The tool name the model sees and calls.",
+                },
+                {
+                  name: "Tool Description",
+                  value: rag_config.tool_description,
+                  tooltip: "The tool description the model sees.",
+                },
+                {
+                  name: "Internal Name",
+                  tooltip:
+                    "A name to identify this RAG configuration for your own reference, not seen by the model.",
+                  value: rag_config.name || "N/A",
+                },
+                {
+                  name: "Internal Description",
+                  tooltip:
+                    "A description of the RAG configuration for your own reference, not seen by the model.",
+                  value: rag_config.description || "N/A",
+                },
                 {
                   name: "Created At",
                   value: formatDate(rag_config.created_at),
@@ -474,18 +494,21 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Search Tool"
+  subtitle="You can't edit the tool name or tool description. However, you can create a new search tool with the same configuration and a new tool name/description."
   patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
   fields={[
     {
-      label: "Search Tool Name",
-      description: "A name to identify this search tool.",
+      label: "Internal Name",
+      description:
+        "A name to identify this search tool for your own reference, not seen by the model.",
       api_name: "name",
       value: rag_config?.name || "",
       input_type: "input",
     },
     {
-      label: "Description",
-      description: "A description of the search tool for you and your team.",
+      label: "Internal Description",
+      description:
+        "A description of the search tool for your own reference, not seen by the model.",
       api_name: "description",
       value: rag_config?.description || "",
       input_type: "textarea",
