@@ -10,13 +10,6 @@
   title="Documents & Search"
   subtitle="Add searchable knowledge to your tasks"
   limit_max_width
-  action_buttons={[
-    {
-      label: "Manage Document Extractors",
-      href: `/docs/extractors/${project_id}`,
-      primary: false,
-    },
-  ]}
 >
   <MultiIntro
     intros={[
