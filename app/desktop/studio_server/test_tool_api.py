@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 from kiln_ai.utils.dataset_import import format_validation_error
 from mcp.types import ListToolsResult, Tool
@@ -5583,13 +5584,12 @@ async def test_edit_mcp_does_not_keep_bad_data_in_memory(
 
 def test_get_search_tools_success(client, test_project, mock_project_from_id):
     """Test get_search_tools returns RAG configs as search tools"""
-    from kiln_ai.datamodel.rag import RagConfig
 
     # Create some RAG configs
     rag_config_1 = RagConfig(
         parent=test_project,
         name="Test Search Tool 1",
-        tool_name="Test Search Tool 1",
+        tool_name="test_search_tool_1",
         tool_description="First test search tool",
         description="First test search tool",
         extractor_config_id="extractor123",
@@ -5602,7 +5602,7 @@ def test_get_search_tools_success(client, test_project, mock_project_from_id):
         parent=test_project,
         name="Test Search Tool 2",
         description=None,
-        tool_name="Test Search Tool 2",
+        tool_name="test_search_tool_2",
         tool_description="Second test search tool",
         extractor_config_id="extractor456",
         chunker_config_id="chunker789",
@@ -5622,27 +5622,26 @@ def test_get_search_tools_success(client, test_project, mock_project_from_id):
     assert len(search_tools) == 2
 
     # Check first search tool
-    tool1 = next(t for t in search_tools if t["name"] == "Test Search Tool 1")
+    tool1 = next(t for t in search_tools if t["name"] == "test_search_tool_1")
     assert tool1["id"] == str(rag_config_1.id)
     assert tool1["description"] == "First test search tool"
 
     # Check second search tool
-    tool2 = next(t for t in search_tools if t["name"] == "Test Search Tool 2")
+    tool2 = next(t for t in search_tools if t["name"] == "test_search_tool_2")
     assert tool2["id"] == str(rag_config_2.id)
-    assert tool2["description"] is None
+    assert tool2["description"] == "Second test search tool"
 
 
 # RAG-specific tests
 async def test_get_available_tools_with_rag_configs(client, test_project):
     """Test get_available_tools includes RAG configs when there's an external tool server"""
-    from kiln_ai.datamodel.rag import RagConfig
 
     # Create some RAG configs
     rag_config_1 = RagConfig(
         parent=test_project,
         name="Test RAG Config 1",
         description="First test RAG configuration",
-        tool_name="Test RAG Config 1",
+        tool_name="test_rag_config_1",
         tool_description="First test RAG configuration",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -5654,7 +5653,7 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
         parent=test_project,
         name="Test RAG Config 2",
         description=None,  # Test None description
-        tool_name="Test RAG Config 2",
+        tool_name="test_rag_config_2",
         tool_description="Second test RAG configuration",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -5703,8 +5702,8 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             # Verify RAG tool details
             tool_names = [tool["name"] for tool in rag_set["tools"]]
 
-            assert "Test RAG Config 1" in tool_names
-            assert "Test RAG Config 2" in tool_names
+            assert "test_rag_config_1" in tool_names
+            assert "test_rag_config_2" in tool_names
 
             # Verify tool IDs are properly formatted
             for tool in rag_set["tools"]:
@@ -5712,12 +5711,12 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
 
             # Find specific tools and check their descriptions
             config1_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
+                t for t in rag_set["tools"] if t["name"] == "test_rag_config_1"
             )
             assert config1_tool["description"] == "First test RAG configuration"
 
             config2_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 2"
+                t for t in rag_set["tools"] if t["name"] == "test_rag_config_2"
             )
             assert config2_tool["description"] is None
 
@@ -5729,9 +5728,9 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
     # Create a RAG config
     rag_config = RagConfig(
         parent=test_project,
-        name="Mixed Test RAG",
+        name="mixed_test_rag",
         description="RAG config for mixed test",
-        tool_name="Mixed Test RAG",
+        tool_name="mixed_test_rag",
         tool_description="RAG config for mixed test",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -5798,5 +5797,5 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
 
             # Verify RAG tools
             assert len(rag_set["tools"]) == 1
-            assert rag_set["tools"][0]["name"] == "Mixed Test RAG"
+            assert rag_set["tools"][0]["name"] == "mixed_test_rag"
             assert rag_set["tools"][0]["id"].startswith("kiln_tool::rag::")

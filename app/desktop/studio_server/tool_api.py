@@ -269,7 +269,7 @@ def connect_tool_servers_api(app: FastAPI):
                     tools=[
                         ToolApiDescription(
                             id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
-                            name=f"{rag_config.name}",
+                            name=f"{rag_config.tool_name}",
                             description=rag_config.description,
                         )
                         for rag_config in project.rag_configs(readonly=True)
@@ -522,8 +522,8 @@ def connect_tool_servers_api(app: FastAPI):
         return [
             SearchToolApiDescription(
                 id=rag_config.id,
-                name=rag_config.name,
-                description=rag_config.description,
+                name=rag_config.tool_name,
+                description=rag_config.tool_description,
             )
             for rag_config in project.rag_configs(readonly=True)
         ]
