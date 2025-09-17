@@ -20,10 +20,14 @@
     VectorStoreConfig,
   } from "$lib/types"
   import {
+    available_model_details,
     embedding_model_name,
     get_model_friendly_name,
     load_available_embedding_models,
     provider_name_from_id,
+    model_name as model_name_from_id,
+    available_models,
+    model_info,
   } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
   import { extractor_output_format } from "$lib/utils/formatters"
@@ -612,6 +616,30 @@
                   },
                 ]}
               />
+
+              <!-- Show the mime types that the extractor supports -->
+              <div class="mt-4">
+                {#if available_model_details(template.extractor.model_name, template.extractor.model_provider_name, $available_models)?.multimodal_mime_types?.length}
+                  <div class="mt-3">
+                    <p class="text-xs text-gray-500 font-medium mb-1">
+                      {model_name_from_id(
+                        template.extractor.model_name || "",
+                        $model_info,
+                      )} ({provider_name_from_id(
+                        template.extractor.model_provider_name || "",
+                      )}) supports the following file types:
+                    </p>
+                    <div class="flex flex-wrap gap-1">
+                      {#each available_model_details(template.extractor.model_name, template.extractor.model_provider_name, $available_models)?.multimodal_mime_types || [] as mime_type}
+                        <span
+                          class="text-xs bg-base-200 text-gray-500 px-2 py-0.5 rounded"
+                          >{mime_type}</span
+                        >
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
             </div>
             <button
               class="btn"
