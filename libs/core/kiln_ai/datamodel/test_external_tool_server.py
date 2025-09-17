@@ -1,9 +1,14 @@
-from typing import Any, Dict
+from typing import Dict
 from unittest.mock import Mock, patch
 
 import pytest
 
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    LocalServerProperties,
+    RemoteServerProperties,
+    ToolServerType,
+)
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -20,12 +25,12 @@ class TestExternalToolServer:
             yield config_instance
 
     @pytest.fixture
-    def remote_mcp_base_props(self) -> Dict[str, Any]:
+    def remote_mcp_base_props(self) -> RemoteServerProperties:
         """Base properties for remote MCP server."""
-        return {
-            "server_url": "https://api.example.com/mcp",
-            "headers": {"Content-Type": "application/json"},
-        }
+        return RemoteServerProperties(
+            server_url="https://api.example.com/mcp",
+            headers={"Content-Type": "application/json"},
+        )
 
     @pytest.fixture
     def sample_remote_mcp_secrets(self) -> Dict[str, str]:
@@ -37,25 +42,26 @@ class TestExternalToolServer:
     @pytest.fixture
     def remote_mcp_props_with_secrets(
         self, remote_mcp_base_props, sample_remote_mcp_secrets
-    ) -> Dict[str, Any]:
+    ) -> RemoteServerProperties:
         """Properties for remote MCP server with secrets."""
-        return {
-            **remote_mcp_base_props,
-            "headers": {
-                **remote_mcp_base_props["headers"],
+        base_headers = remote_mcp_base_props.get("headers", {})
+        return RemoteServerProperties(
+            server_url=remote_mcp_base_props["server_url"],
+            headers={
+                **base_headers,
                 **sample_remote_mcp_secrets,
             },
-            "secret_header_keys": list(sample_remote_mcp_secrets.keys()),
-        }
+            secret_header_keys=list(sample_remote_mcp_secrets.keys()),
+        )
 
     @pytest.fixture
-    def local_mcp_base_props(self) -> Dict[str, Any]:
+    def local_mcp_base_props(self) -> LocalServerProperties:
         """Base properties for local MCP server."""
-        return {
-            "command": "python",
-            "args": ["-m", "mcp_server"],
-            "env_vars": {},
-        }
+        return LocalServerProperties(
+            command="python",
+            args=["-m", "mcp_server"],
+            env_vars={},
+        )
 
     @pytest.mark.parametrize(
         "server_type, properties",
@@ -370,10 +376,11 @@ class TestExternalToolServer:
         assert server.get_secret_keys() == []
 
         # With secret header keys
-        props_with_secrets = {
-            **remote_mcp_base_props,
-            "secret_header_keys": ["Authorization", "X-API-Key"],
-        }
+        props_with_secrets = RemoteServerProperties(
+            server_url=remote_mcp_base_props["server_url"],
+            headers=remote_mcp_base_props.get("headers", {}),
+            secret_header_keys=["Authorization", "X-API-Key"],
+        )
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
@@ -392,10 +399,12 @@ class TestExternalToolServer:
         assert server.get_secret_keys() == []
 
         # With secret env var keys
-        props_with_secrets = {
-            **local_mcp_base_props,
-            "secret_env_var_keys": ["API_KEY", "SECRET_TOKEN"],
-        }
+        props_with_secrets = LocalServerProperties(
+            command=local_mcp_base_props["command"],
+            args=local_mcp_base_props.get("args", []),
+            env_vars=local_mcp_base_props.get("env_vars", {}),
+            secret_env_var_keys=["API_KEY", "SECRET_TOKEN"],
+        )
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.local_mcp,
@@ -417,20 +426,21 @@ class TestExternalToolServer:
         assert server._unsaved_secrets == sample_remote_mcp_secrets
 
         # Secrets should be removed from headers
-        assert server.properties["headers"] == {"Content-Type": "application/json"}
+        headers = server.properties.get("headers", {})
+        assert headers == {"Content-Type": "application/json"}
 
     def test_secret_processing_local_mcp_initialization(self):
         """Test secret processing during local MCP server initialization."""
-        properties = {
-            "command": "python",
-            "args": ["-m", "server"],
-            "env_vars": {
+        properties = LocalServerProperties(
+            command="python",
+            args=["-m", "server"],
+            env_vars={
                 "PATH": "/usr/bin",
                 "API_KEY": "secret123",
                 "DB_PASSWORD": "db-secret-456",
             },
-            "secret_env_var_keys": ["API_KEY", "DB_PASSWORD"],
-        }
+            secret_env_var_keys=["API_KEY", "DB_PASSWORD"],
+        )
 
         server = ExternalToolServer(
             name="test-server", type=ToolServerType.local_mcp, properties=properties
@@ -443,7 +453,8 @@ class TestExternalToolServer:
         }
 
         # Secrets should be removed from env_vars
-        assert server.properties["env_vars"] == {"PATH": "/usr/bin"}
+        env_vars = server.properties.get("env_vars", {})
+        assert env_vars == {"PATH": "/usr/bin"}
 
     def test_secret_processing_property_update_remote_mcp(
         self, remote_mcp_props_with_secrets
@@ -459,20 +470,20 @@ class TestExternalToolServer:
         server._unsaved_secrets.clear()
 
         # Update properties with new secrets
-        new_properties = {
-            **remote_mcp_props_with_secrets,
-            # Overwrite headers and secret header keys
-            "headers": {
+        new_properties = RemoteServerProperties(
+            server_url=remote_mcp_props_with_secrets["server_url"],
+            headers={
                 "New-Secret-Header": "Bearer new-token",
             },
-            "secret_header_keys": ["New-Secret-Header"],
-        }
+            secret_header_keys=["New-Secret-Header"],
+        )
 
         server.properties = new_properties
 
         # Secret should be processed (extracted and removed from headers)
         assert server._unsaved_secrets == {"New-Secret-Header": "Bearer new-token"}
-        assert "New-Secret-Header" not in server.properties["headers"]
+        headers = server.properties.get("headers", {})
+        assert "New-Secret-Header" not in headers
 
     def test_secret_processing_clears_existing_secrets(
         self,
@@ -555,10 +566,11 @@ class TestExternalToolServer:
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization"],
-            },
+            properties=RemoteServerProperties(
+                server_url=remote_mcp_base_props["server_url"],
+                headers=remote_mcp_base_props.get("headers", {}),
+                secret_header_keys=["Authorization"],
+            ),
         )
         server.id = "server-123"
         server._unsaved_secrets = {"Authorization": "Bearer unsaved-token"}
@@ -580,10 +592,11 @@ class TestExternalToolServer:
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={
-                **remote_mcp_base_props,
-                "secret_header_keys": ["Authorization", "X-API-Key", "Missing-Key"],
-            },
+            properties=RemoteServerProperties(
+                server_url=remote_mcp_base_props["server_url"],
+                headers=remote_mcp_base_props.get("headers", {}),
+                secret_header_keys=["Authorization", "X-API-Key", "Missing-Key"],
+            ),
         )
         server.id = "server-123"
 
@@ -816,7 +829,11 @@ class TestExternalToolServer:
 
     def test_empty_secret_keys_list(self, remote_mcp_base_props):
         """Test behavior with empty secret_header_keys list."""
-        properties = {**remote_mcp_base_props, "secret_header_keys": []}
+        properties = RemoteServerProperties(
+            server_url=remote_mcp_base_props["server_url"],
+            headers=remote_mcp_base_props.get("headers", {}),
+            secret_header_keys=[],
+        )
 
         server = ExternalToolServer(
             name="test-server", type=ToolServerType.remote_mcp, properties=properties

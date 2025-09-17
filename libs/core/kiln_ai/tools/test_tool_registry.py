@@ -2,7 +2,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    LocalServerProperties,
+    RemoteServerProperties,
+    ToolServerType,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
@@ -83,10 +88,10 @@ class TestToolRegistry:
         mock_server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
 
         # Create mock project with the external tool server
@@ -113,11 +118,11 @@ class TestToolRegistry:
         mock_server = ExternalToolServer(
             name="local_server",
             type=ToolServerType.local_mcp,
-            properties={
-                "command": "python",
-                "args": ["server.py", "--port", "8080"],
-                "env_vars": {},
-            },
+            properties=LocalServerProperties(
+                command="python",
+                args=["server.py", "--port", "8080"],
+                env_vars={},
+            ),
         )
 
         # Create mock project with the external tool server
@@ -153,10 +158,10 @@ class TestToolRegistry:
         mock_server = ExternalToolServer(
             name="different_server",
             type=ToolServerType.remote_mcp,
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
 
         # Create mock project with the external tool server
@@ -417,10 +422,10 @@ class TestToolRegistry:
             name="test_server",
             type=ToolServerType.remote_mcp,
             description="Test MCP server",
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
 
         # Create mock project with the external tool server
@@ -448,10 +453,10 @@ class TestToolRegistry:
             name="different_server",
             type=ToolServerType.remote_mcp,
             description="Different MCP server",
-            properties={
-                "server_url": "https://example.com",
-                "headers": {},
-            },
+            properties=RemoteServerProperties(
+                server_url="https://example.com",
+                headers={},
+            ),
         )
 
         # Create mock project with the external tool server
