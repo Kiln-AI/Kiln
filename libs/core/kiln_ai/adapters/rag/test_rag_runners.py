@@ -1299,7 +1299,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
@@ -1346,7 +1347,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
@@ -1399,7 +1401,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
@@ -1476,7 +1479,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
@@ -1548,7 +1552,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
@@ -1608,7 +1613,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
@@ -1680,7 +1686,8 @@ class TestRagIndexingStepRunner:
         with (
             patch("kiln_ai.utils.lock.shared_async_lock_manager"),
             patch(
-                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config"
+                "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vector_store_factory,
         ):
             mock_vector_store = MagicMock()
