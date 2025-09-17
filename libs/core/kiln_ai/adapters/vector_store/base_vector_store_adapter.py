@@ -1,6 +1,7 @@
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +9,8 @@ from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -67,4 +70,14 @@ class BaseVectorStoreAdapter(ABC):
 
     @abstractmethod
     async def destroy(self) -> None:
+        pass
+
+    @abstractmethod
+    async def delete_nodes_not_in_set(self, document_ids: Set[str]) -> None:
+        """
+        Delete nodes that are not in the set of document IDs. Can be used for
+        reconciliation between filesystem state and vector store when non-idempotent
+        operations have been done - for example if the user deletes a document, or
+        untag a document that was targeted for indexing.
+        """
         pass

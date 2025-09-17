@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncGenerator, Generic, Tuple, TypeVar
+from typing import AsyncGenerator, Generic, Set, Tuple, TypeVar
 
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
 from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
@@ -606,6 +606,12 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
             total_chunk_count += len(documents[0].chunks)
         return total_chunk_count
 
+    def get_all_target_document_ids(self) -> Set[str]:
+        documents = self.project.documents(readonly=True)
+        if self.rag_config and self.rag_config.tags:
+            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+        return {str(document.id) for document in documents}
+
     async def run(
         self, document_ids: list[ID_TYPE] | None = None
     ) -> AsyncGenerator[RagStepRunnerProgress, None]:
@@ -668,6 +674,12 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
                             ),
                         ],
                     )
+
+            # needed to reconcile and delete any chunks that are currently indexed but
+            # are no longer in our target set (because they were deleted or untagged)
+            await vector_store.delete_nodes_not_in_set(
+                self.get_all_target_document_ids()
+            )
 
 
 class RagWorkflowRunnerConfiguration(BaseModel):

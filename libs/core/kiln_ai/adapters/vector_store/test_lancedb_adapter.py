@@ -1405,7 +1405,7 @@ def generate_benchmark_data(
     vector_size: int,
     word_count: int,
     tmp_path: Path,
-) -> list[tuple[str, ChunkedDocument, ChunkEmbeddings]]:
+) -> list[DocumentWithChunksAndEmbeddings]:
     """Generate random data for benchmarking."""
 
     def generate_word_pool(target_size: int) -> list[str]:
@@ -1577,7 +1577,13 @@ def generate_benchmark_data(
             path=tmp_path / f"chunk_embeddings_{i}.kiln",
         )
 
-        results.append((doc_id, chunked_document, chunk_embeddings))
+        results.append(
+            DocumentWithChunksAndEmbeddings(
+                document_id=doc_id,
+                chunked_document=chunked_document,
+                chunk_embeddings=chunk_embeddings,
+            )
+        )
 
     return results
 
@@ -1637,3 +1643,193 @@ def test_benchmark_add_chunks(
         pytest.fail(
             f"Average time per iteration: {stats.mean:.4f}s, expected less than {max_time:.4f}s"
         )
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_not_in_set_basic_functionality(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test basic functionality of delete_nodes_not_in_set - keep some docs, delete others."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Add both documents (doc_001 and doc_002)
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify both documents are there (4 chunks each = 8 total)
+    initial_count = await adapter.count_records()
+    assert initial_count == 8
+
+    # Keep only doc_001, delete doc_002
+    keep_set = {"doc_001"}
+    await adapter.delete_nodes_not_in_set(keep_set)
+
+    # Verify only doc_001 chunks remain
+    final_count = await adapter.count_records()
+    assert final_count == 4
+
+    # Verify doc_001 chunks are still searchable
+    doc1_results = await adapter.search(VectorStoreQuery(query_string="population"))
+    assert len(doc1_results) > 0
+    assert all("doc_001" == result.document_id for result in doc1_results)
+
+    # Verify doc_002 chunks are gone
+    doc2_results = await adapter.search(VectorStoreQuery(query_string="area"))
+    assert len(doc2_results) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_not_in_set_empty_set(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test delete_nodes_not_in_set with empty set - should delete all nodes."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Add both documents
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify documents are there
+    initial_count = await adapter.count_records()
+    assert initial_count == 8
+
+    # Delete all nodes (empty keep set)
+    empty_set = set()
+    await adapter.delete_nodes_not_in_set(empty_set)
+
+    # Verify all nodes are deleted
+    final_count = await adapter.count_records()
+    assert final_count == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_not_in_set_complete_set(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test delete_nodes_not_in_set with complete set - should delete no nodes."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Add both documents
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Verify documents are there
+    initial_count = await adapter.count_records()
+    assert initial_count == 8
+
+    # Keep all documents
+    complete_set = {"doc_001", "doc_002"}
+    await adapter.delete_nodes_not_in_set(complete_set)
+
+    # Verify no nodes are deleted
+    final_count = await adapter.count_records()
+    assert final_count == 8
+
+    # Verify both documents are still searchable
+    doc1_results = await adapter.search(VectorStoreQuery(query_string="population"))
+    assert len(doc1_results) > 0
+
+    doc2_results = await adapter.search(VectorStoreQuery(query_string="area"))
+    assert len(doc2_results) > 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_not_in_set_partial_set(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+    tmp_path,
+):
+    """Test delete_nodes_not_in_set with partial set - keep some, delete others."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create three documents for more complex testing
+    three_docs_data = {
+        "keep_doc_1": [{"vector": [1.0, 1.0], "text": "Keep document one content"}],
+        "delete_doc_2": [{"vector": [2.0, 2.0], "text": "Delete document two content"}],
+        "keep_doc_3": [{"vector": [3.0, 3.0], "text": "Keep document three content"}],
+    }
+    three_docs = dicts_to_indexable_docs(three_docs_data, tmp_path)
+
+    # Add all three documents
+    await adapter.add_chunks_with_embeddings(three_docs)
+
+    # Verify all documents are there
+    initial_count = await adapter.count_records()
+    assert initial_count == 3
+
+    # Keep documents 1 and 3, delete document 2
+    keep_set = {"keep_doc_1", "keep_doc_3"}
+    await adapter.delete_nodes_not_in_set(keep_set)
+
+    # Verify only 2 documents remain
+    final_count = await adapter.count_records()
+    assert final_count == 2
+
+    # Verify kept documents are still searchable using more specific terms
+    keep1_results = await adapter.search(VectorStoreQuery(query_string="one"))
+    assert len(keep1_results) == 1
+    assert keep1_results[0].document_id == "keep_doc_1"
+
+    keep3_results = await adapter.search(VectorStoreQuery(query_string="three"))
+    assert len(keep3_results) == 1
+    assert keep3_results[0].document_id == "keep_doc_3"
+
+    # Verify deleted document is gone
+    delete_results = await adapter.search(VectorStoreQuery(query_string="two"))
+    assert len(delete_results) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_not_in_set_uninitialized_table(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test delete_nodes_not_in_set with uninitialized table - should raise TableNotFoundError."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Don't add any data, so table remains uninitialized
+    # The table property will raise TableNotFoundError when accessed
+    with pytest.raises(TableNotFoundError, match="Table vectors is not initialized"):
+        await adapter.delete_nodes_not_in_set({"doc_001"})
+
+
+@pytest.mark.asyncio
+async def test_delete_nodes_not_in_set_empty_table(
+    fts_vector_store_config,
+    mock_chunked_documents,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test delete_nodes_not_in_set with empty table - should handle gracefully."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create table by adding data, then delete all to make it empty
+    await adapter.add_chunks_with_embeddings(mock_chunked_documents)
+
+    # Delete all documents to make table empty but initialized
+    await adapter.delete_nodes_not_in_set(set())  # Empty set deletes everything
+
+    # Verify table is empty
+    initial_count = await adapter.count_records()
+    assert initial_count == 0
+
+    # Try to delete from empty table - should not error
+    await adapter.delete_nodes_not_in_set({"doc_001"})
+
+    # Verify count is still 0
+    final_count = await adapter.count_records()
+    assert final_count == 0
