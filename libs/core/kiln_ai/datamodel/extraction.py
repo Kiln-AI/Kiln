@@ -271,9 +271,6 @@ class Document(
         description="The kind of document. The kind is a broad family of filetypes that can be handled in a similar way"
     )
 
-    # NOTE: could extract {tags + validate_tags} into a reusable Taggable model and inherit from that here
-    # and in TaskRun
-    # thoughts?
     tags: List[str] = Field(
         default_factory=list,
         description="Tags for the document. Tags are used to categorize documents for filtering and reporting.",

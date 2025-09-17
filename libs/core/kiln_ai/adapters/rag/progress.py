@@ -6,6 +6,7 @@ from kiln_ai.adapters.rag.deduplication import (
     deduplicate_chunk_embeddings,
     deduplicate_chunked_documents,
     deduplicate_extractions,
+    filter_documents_by_tags,
 )
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
@@ -144,8 +145,12 @@ async def compute_current_progress_for_rag_configs(
 
     rag_config_progress_map: dict[str, RagProgress] = {}
     for rag_config in rag_configs:
+        all_documents = project.documents(readonly=True)
+        if rag_config.tags:
+            all_documents = filter_documents_by_tags(all_documents, rag_config.tags)
+
         rag_config_progress_map[str(rag_config.id)] = RagProgress(
-            total_document_count=len(project.documents(readonly=True)),
+            total_document_count=len(all_documents),
             total_document_completed_count=0,
             total_chunk_count=0,
             total_chunk_completed_count=0,
@@ -157,48 +162,71 @@ async def compute_current_progress_for_rag_configs(
             ),
         )
 
+    # Create a mapping of rag_config_id to its tags for efficient lookup
+    rag_config_tags_map = {
+        str(rag_config.id): rag_config.tags for rag_config in rag_configs
+    }
+
     for document in project.documents(readonly=True):
         for extraction in deduplicate_extractions(document.extractions(readonly=True)):
             extraction_path_prefix = str(extraction.extractor_config_id)
 
             # increment the extraction count for every rag config that has this extractor
+            # and includes this document based on its tags
             for matching_rag_config_id in path_prefixes[extraction_path_prefix]:
-                rag_config_progress_map[
-                    matching_rag_config_id
-                ].total_document_extracted_count += 1
+                rag_config_tags = rag_config_tags_map[matching_rag_config_id]
+                if not rag_config_tags or (
+                    document.tags
+                    and any(tag in document.tags for tag in rag_config_tags)
+                ):
+                    rag_config_progress_map[
+                        matching_rag_config_id
+                    ].total_document_extracted_count += 1
 
             for chunked_document in deduplicate_chunked_documents(
                 extraction.chunked_documents(readonly=True)
             ):
                 # increment the chunked count for every rag config that has this extractor+chunker combo
+                # and includes this document based on its tags
                 chunking_path_prefix = (
                     f"{extraction_path_prefix}::{chunked_document.chunker_config_id}"
                 )
                 for matching_rag_config_id in path_prefixes[chunking_path_prefix]:
-                    rag_config_progress_map[
-                        matching_rag_config_id
-                    ].total_document_chunked_count += 1
+                    rag_config_tags = rag_config_tags_map[matching_rag_config_id]
+                    if not rag_config_tags or (
+                        document.tags
+                        and any(tag in document.tags for tag in rag_config_tags)
+                    ):
+                        rag_config_progress_map[
+                            matching_rag_config_id
+                        ].total_document_chunked_count += 1
 
-                    rag_config_progress_map[
-                        matching_rag_config_id
-                    ].total_chunk_count += len(chunked_document.chunks)
+                        rag_config_progress_map[
+                            matching_rag_config_id
+                        ].total_chunk_count += len(chunked_document.chunks)
 
                 for embedding in deduplicate_chunk_embeddings(
                     chunked_document.chunk_embeddings(readonly=True)
                 ):
                     # increment the embedding count for every rag config that has this extractor+chunker+embedding combo
+                    # and includes this document based on its tags
                     embedding_path_prefix = (
                         f"{chunking_path_prefix}::{embedding.embedding_config_id}"
                     )
 
                     for matching_rag_config_id in path_prefixes[embedding_path_prefix]:
-                        rag_config_progress_map[
-                            matching_rag_config_id
-                        ].total_document_embedded_count += 1
+                        rag_config_tags = rag_config_tags_map[matching_rag_config_id]
+                        if not rag_config_tags or (
+                            document.tags
+                            and any(tag in document.tags for tag in rag_config_tags)
+                        ):
+                            rag_config_progress_map[
+                                matching_rag_config_id
+                            ].total_document_embedded_count += 1
 
     # a document is completed only when all steps are completed, so overall progress is the same
     # as the least complete step
-    for rag_config_id, rag_config_progress in rag_config_progress_map.items():
+    for _, rag_config_progress in rag_config_progress_map.items():
         rag_config_progress.total_document_completed_count = min(
             rag_config_progress.total_document_extracted_count,
             rag_config_progress.total_document_chunked_count,

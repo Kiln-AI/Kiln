@@ -30,6 +30,7 @@
   export let disabled: boolean = false
   export let info_msg: string | null = null
   export let tall: boolean | "medium" | "xl" = false
+  export let empty_label: string = "Select an option"
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -215,6 +216,7 @@
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
+        {empty_label}
       />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}

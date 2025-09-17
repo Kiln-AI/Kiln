@@ -18,6 +18,7 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagChunkingStepRunner,
     RagEmbeddingStepRunner,
     RagExtractionStepRunner,
+    RagIndexingStepRunner,
     RagStepRunnerProgress,
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
@@ -166,6 +167,7 @@ def mock_rag_config():
     """Create a mock RAG config for testing"""
     config = MagicMock(spec=RagConfig)
     config.id = "rag-123"
+    config.tags = None
     return config
 
 
@@ -1777,3 +1779,313 @@ class TestRagWorkflowIntegration:
             )
             mock_job_runner_class.assert_called_once()
             assert len(progress_values) > 0
+
+
+class TestRagStepRunnersWithTagFiltering:
+    """Test RAG step runners with document tag filtering"""
+
+    @pytest.mark.asyncio
+    async def test_extraction_runner_with_tag_filter(
+        self, mock_project, mock_extractor_config
+    ):
+        """Test RagExtractionStepRunner filters documents by tags"""
+        # Create documents with different tags
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["python", "ml"]
+
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["javascript", "web"]
+
+        doc3 = MagicMock(spec=Document)
+        doc3.id = "doc3"
+        doc3.tags = ["python", "backend"]
+
+        doc4 = MagicMock(spec=Document)
+        doc4.id = "doc4"
+        doc4.tags = None  # No tags
+
+        mock_project.documents.return_value = [doc1, doc2, doc3, doc4]
+
+        # Mock that none of the documents have extractions yet
+        for doc in [doc1, doc2, doc3, doc4]:
+            doc.extractions.return_value = []
+
+        # Create RAG config that filters for "python" tags
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["python"]
+
+        runner = RagExtractionStepRunner(
+            mock_project, mock_extractor_config, concurrency=1, rag_config=rag_config
+        )
+
+        jobs = await runner.collect_jobs()
+
+        # Should only create jobs for doc1 and doc3 (have "python" tag)
+        assert len(jobs) == 2
+        job_doc_ids = {job.doc.id for job in jobs}
+        assert "doc1" in job_doc_ids
+        assert "doc3" in job_doc_ids
+        assert "doc2" not in job_doc_ids  # javascript tag
+        assert "doc4" not in job_doc_ids  # no tags
+
+    @pytest.mark.asyncio
+    async def test_chunking_runner_with_tag_filter(
+        self, mock_project, mock_extractor_config, mock_chunker_config
+    ):
+        """Test RagChunkingStepRunner filters documents by tags"""
+        # Create documents with extractions and different tags
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["rust", "systems"]
+        extraction1 = MagicMock(spec=Extraction)
+        extraction1.extractor_config_id = mock_extractor_config.id
+        extraction1.created_at = "2024-01-01"
+        extraction1.chunked_documents.return_value = []  # No chunks yet
+        doc1.extractions.return_value = [extraction1]
+
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["python", "ml"]
+        extraction2 = MagicMock(spec=Extraction)
+        extraction2.extractor_config_id = mock_extractor_config.id
+        extraction2.created_at = "2024-01-02"
+        extraction2.chunked_documents.return_value = []  # No chunks yet
+        doc2.extractions.return_value = [extraction2]
+
+        doc3 = MagicMock(spec=Document)
+        doc3.id = "doc3"
+        doc3.tags = ["rust", "performance"]
+        extraction3 = MagicMock(spec=Extraction)
+        extraction3.extractor_config_id = mock_extractor_config.id
+        extraction3.created_at = "2024-01-03"
+        extraction3.chunked_documents.return_value = []  # No chunks yet
+        doc3.extractions.return_value = [extraction3]
+
+        mock_project.documents.return_value = [doc1, doc2, doc3]
+
+        # Create RAG config that filters for "rust" tags
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["rust"]
+
+        runner = RagChunkingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            concurrency=1,
+            rag_config=rag_config,
+        )
+
+        jobs = await runner.collect_jobs()
+
+        # Should only create jobs for doc1 and doc3 (have "rust" tag)
+        assert len(jobs) == 2
+        job_extraction_docs = {job.extraction.extractor_config_id for job in jobs}
+        assert all(doc_id == mock_extractor_config.id for doc_id in job_extraction_docs)
+
+    @pytest.mark.asyncio
+    async def test_embedding_runner_with_tag_filter(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+    ):
+        """Test RagEmbeddingStepRunner filters documents by tags"""
+        # Create document with chunked documents and specific tags
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["go", "backend"]
+
+        chunked_doc1 = MagicMock(spec=ChunkedDocument)
+        chunked_doc1.chunker_config_id = mock_chunker_config.id
+        chunked_doc1.created_at = "2024-01-01"
+        chunked_doc1.chunk_embeddings.return_value = []  # No embeddings yet
+
+        extraction1 = MagicMock(spec=Extraction)
+        extraction1.extractor_config_id = mock_extractor_config.id
+        extraction1.created_at = "2024-01-01"
+        extraction1.chunked_documents.return_value = [chunked_doc1]
+        doc1.extractions.return_value = [extraction1]
+
+        # Document with different tags
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["python", "web"]
+
+        chunked_doc2 = MagicMock(spec=ChunkedDocument)
+        chunked_doc2.chunker_config_id = mock_chunker_config.id
+        chunked_doc2.created_at = "2024-01-02"
+        chunked_doc2.chunk_embeddings.return_value = []  # No embeddings yet
+
+        extraction2 = MagicMock(spec=Extraction)
+        extraction2.extractor_config_id = mock_extractor_config.id
+        extraction2.created_at = "2024-01-02"
+        extraction2.chunked_documents.return_value = [chunked_doc2]
+        doc2.extractions.return_value = [extraction2]
+
+        mock_project.documents.return_value = [doc1, doc2]
+
+        # Create RAG config that filters for "go" tags
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["go"]
+
+        runner = RagEmbeddingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            mock_embedding_config,
+            concurrency=1,
+            rag_config=rag_config,
+        )
+
+        jobs = await runner.collect_jobs()
+
+        # Should only create job for doc1 (has "go" tag)
+        assert len(jobs) == 1
+        assert jobs[0].chunked_document == chunked_doc1
+
+    @pytest.mark.asyncio
+    async def test_indexing_runner_collect_records_with_tag_filter(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+    ):
+        """Test RagIndexingStepRunner filters documents by tags"""
+        # Create document with full pipeline and specific tags
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["typescript", "frontend"]
+
+        chunk_embedding1 = MagicMock()
+        chunk_embedding1.embedding_config_id = mock_embedding_config.id
+        chunk_embedding1.created_at = "2024-01-01"
+
+        chunked_doc1 = MagicMock(spec=ChunkedDocument)
+        chunked_doc1.chunker_config_id = mock_chunker_config.id
+        chunked_doc1.created_at = "2024-01-01"
+        chunked_doc1.chunk_embeddings.return_value = [chunk_embedding1]
+
+        extraction1 = MagicMock(spec=Extraction)
+        extraction1.extractor_config_id = mock_extractor_config.id
+        extraction1.created_at = "2024-01-01"
+        extraction1.chunked_documents.return_value = [chunked_doc1]
+        doc1.extractions.return_value = [extraction1]
+
+        # Document with different tags
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["java", "enterprise"]
+
+        chunk_embedding2 = MagicMock()
+        chunk_embedding2.embedding_config_id = mock_embedding_config.id
+        chunk_embedding2.created_at = "2024-01-02"
+
+        chunked_doc2 = MagicMock(spec=ChunkedDocument)
+        chunked_doc2.chunker_config_id = mock_chunker_config.id
+        chunked_doc2.created_at = "2024-01-02"
+        chunked_doc2.chunk_embeddings.return_value = [chunk_embedding2]
+
+        extraction2 = MagicMock(spec=Extraction)
+        extraction2.extractor_config_id = mock_extractor_config.id
+        extraction2.created_at = "2024-01-02"
+        extraction2.chunked_documents.return_value = [chunked_doc2]
+        doc2.extractions.return_value = [extraction2]
+
+        mock_project.documents.return_value = [doc1, doc2]
+
+        # Create RAG config that filters for "typescript" tags
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["typescript"]
+
+        # Create mock vector store config
+        mock_vector_store_config = MagicMock()
+        mock_vector_store_config.id = "vector-store-123"
+
+        runner = RagIndexingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            mock_embedding_config,
+            mock_vector_store_config,
+            rag_config,
+        )
+
+        records = []
+        async for record_batch in runner.collect_records(batch_size=10):
+            records.extend(record_batch)
+
+        # Should only collect records for doc1 (has "typescript" tag)
+        assert len(records) == 1
+        assert records[0].document_id == "doc1"
+
+    @pytest.mark.asyncio
+    async def test_step_runners_with_no_tag_filter(
+        self, mock_project, mock_extractor_config
+    ):
+        """Test that step runners work normally when rag_config has no tags"""
+        # Create documents with various tags
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["python", "ml"]
+        doc1.extractions.return_value = []
+
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["javascript", "web"]
+        doc2.extractions.return_value = []
+
+        mock_project.documents.return_value = [doc1, doc2]
+
+        # Create RAG config with no tag filter
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = None
+
+        runner = RagExtractionStepRunner(
+            mock_project, mock_extractor_config, concurrency=1, rag_config=rag_config
+        )
+
+        jobs = await runner.collect_jobs()
+
+        # Should create jobs for all documents
+        assert len(jobs) == 2
+        job_doc_ids = {job.doc.id for job in jobs}
+        assert "doc1" in job_doc_ids
+        assert "doc2" in job_doc_ids
+
+    @pytest.mark.asyncio
+    async def test_step_runners_with_empty_tag_filter(
+        self, mock_project, mock_extractor_config
+    ):
+        """Test that step runners work normally when rag_config has empty tags list"""
+        # Create documents with various tags
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["python", "ml"]
+        doc1.extractions.return_value = []
+
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["javascript", "web"]
+        doc2.extractions.return_value = []
+
+        mock_project.documents.return_value = [doc1, doc2]
+
+        # Create RAG config with empty tag filter
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = []
+
+        runner = RagExtractionStepRunner(
+            mock_project, mock_extractor_config, concurrency=1, rag_config=rag_config
+        )
+
+        jobs = await runner.collect_jobs()
+
+        # Should create jobs for all documents
+        assert len(jobs) == 2
+        job_doc_ids = {job.doc.id for job in jobs}
+        assert "doc1" in job_doc_ids
+        assert "doc2" in job_doc_ids

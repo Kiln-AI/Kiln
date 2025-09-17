@@ -403,6 +403,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document Tags */
+        get: operations["get_document_tags_api_projects__project_id__documents_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -2310,6 +2327,11 @@ export interface components {
              * @description The vector store config to use for the RAG workflow.
              */
             vector_store_config_id: string | null;
+            /**
+             * Tags
+             * @description List of document tags to filter by. If None, all documents in the project are used.
+             */
+            tags?: string[] | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -3978,6 +4000,11 @@ export interface components {
              * @description The ID of the vector store config used to store the documents.
              */
             vector_store_config_id: string | null;
+            /**
+             * Tags
+             * @description List of document tags to filter by. If None, all documents in the project are used.
+             */
+            tags?: string[] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4000,6 +4027,8 @@ export interface components {
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
             vector_store_config: components["schemas"]["VectorStoreConfig"];
+            /** Tags */
+            tags: string[] | null;
         };
         /** RagProgress */
         RagProgress: {
@@ -5746,6 +5775,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_tags_api_projects__project_id__documents_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
             /** @description Validation Error */
