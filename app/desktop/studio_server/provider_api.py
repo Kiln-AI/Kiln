@@ -1219,9 +1219,9 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
                             supports_doc_extraction=docker_provider.supports_doc_extraction,
                             suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
-                            supports_function_calling=docker_provider.supports_function_calling,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_function_calling=docker_provider.supports_function_calling,
                         )
                     )
         for docker_model in docker_connection.untested_models:
@@ -1239,9 +1239,9 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
-                    supports_function_calling=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_function_calling=False,
                 )
             )
 

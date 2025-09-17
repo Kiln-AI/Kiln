@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Union
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 
@@ -34,8 +34,26 @@ class RagConfig(KilnParentedModel):
         description="The ID of the vector store config used to store the documents.",
     )
 
+    tags: list[str] | None = Field(
+        default=None,
+        description="List of document tags to filter by. If None, all documents in the project are used.",
+    )
+
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:
         if self.parent is None or self.parent.__class__.__name__ != "Project":
             return None
         return self.parent  # type: ignore
+
+    @model_validator(mode="after")
+    def validate_tags(self):
+        if self.tags is not None:
+            if len(self.tags) == 0:
+                raise ValueError("Tags cannot be an empty list.")
+            for tag in self.tags:
+                if not tag:
+                    raise ValueError("Tags cannot be empty.")
+                if " " in tag:
+                    raise ValueError("Tags cannot contain spaces. Try underscores.")
+
+        return self

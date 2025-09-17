@@ -208,6 +208,7 @@ class RagConfigWithSubConfigs(BaseModel):
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
     vector_store_config: VectorStoreConfig
+    tags: list[str] | None
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -230,6 +231,10 @@ class CreateRagConfigRequest(BaseModel):
     )
     vector_store_config_id: ID_TYPE = Field(
         description="The vector store config to use for the RAG workflow.",
+    )
+    tags: list[str] | None = Field(
+        description="List of document tags to filter by. If None, all documents in the project are used.",
+        default=None,
     )
 
 
@@ -514,12 +519,14 @@ async def build_rag_workflow_runner(
                     project,
                     extractor_config,
                     concurrency=50,
+                    rag_config=rag_config,
                 ),
                 RagChunkingStepRunner(
                     project,
                     extractor_config,
                     chunker_config,
                     concurrency=50,
+                    rag_config=rag_config,
                 ),
                 RagEmbeddingStepRunner(
                     project,
@@ -527,6 +534,7 @@ async def build_rag_workflow_runner(
                     chunker_config,
                     embedding_config,
                     concurrency=50,
+                    rag_config=rag_config,
                 ),
                 RagIndexingStepRunner(
                     project,
@@ -639,6 +647,18 @@ def connect_document_api(app: FastAPI):
     ) -> list[Document]:
         project = project_from_id(project_id)
         return project.documents(readonly=True)
+
+    @app.get("/api/projects/{project_id}/documents/tags")
+    async def get_document_tags(
+        project_id: str,
+    ) -> list[str]:
+        project = project_from_id(project_id)
+        documents = project.documents(readonly=True)
+        all_tags = set()
+        for document in documents:
+            if document.tags:
+                all_tags.update(document.tags)
+        return sorted(list(all_tags))
 
     @app.get("/api/projects/{project_id}/documents/{document_id}")
     async def get_document(
@@ -1254,6 +1274,7 @@ def connect_document_api(app: FastAPI):
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
             vector_store_config_id=vector_store_config.id,
+            tags=request.tags,
         )
         rag_config.save_to_file()
 
@@ -1308,6 +1329,7 @@ def connect_document_api(app: FastAPI):
                     id=rag_config.id,
                     name=rag_config.name,
                     description=rag_config.description,
+                    tags=rag_config.tags,
                     created_at=rag_config.created_at,
                     created_by=rag_config.created_by,
                     extractor_config=extractor_config,
@@ -1381,6 +1403,7 @@ def connect_document_api(app: FastAPI):
             chunker_config=chunker_config,
             embedding_config=embedding_config,
             vector_store_config=vector_store_config,
+            tags=rag_config.tags,
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better

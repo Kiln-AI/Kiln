@@ -11,23 +11,10 @@ from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput, Usage
 from kiln_ai.adapters.ollama_tools import ollama_online
-from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
-
-
-@pytest.fixture
-def mock_openai_litellm_core_config():
-    # replace with
-    with patch(
-        "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider",
-        return_value=LiteLlmCoreConfig(
-            additional_body_options={"api_key": "mock_api_key"},
-        ),
-    ):
-        yield
 
 
 @pytest.mark.ollama
@@ -341,9 +328,7 @@ async def test_all_built_in_models_structured_input(
     )
 
 
-async def test_all_built_in_models_structured_input_mocked(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_all_built_in_models_structured_input_mocked(tmp_path):
     mock_response = ModelResponse(
         model="gpt-4o-mini",
         choices=[
@@ -387,9 +372,7 @@ async def test_structured_input_cot_prompt_builder(tmp_path, model_name, provide
     )
 
 
-async def test_structured_input_cot_prompt_builder_mocked(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_structured_input_cot_prompt_builder_mocked(tmp_path):
     task = build_structured_input_test_task(tmp_path)
     mock_response_1 = ModelResponse(
         model="gpt-4o-mini",

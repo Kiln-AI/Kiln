@@ -970,6 +970,253 @@ async def test_create_rag_config_missing_config(
 
 
 @pytest.mark.asyncio
+async def test_create_rag_config_with_tags(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test creating a RAG config with tag filtering"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config with Tags",
+                "description": "Test RAG Config with tags description",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
+                "tags": ["python", "ml", "backend"],
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test RAG Config with Tags"
+    assert result["description"] == "Test RAG Config with tags description"
+    assert result["tags"] == ["python", "ml", "backend"]
+
+
+@pytest.mark.asyncio
+async def test_create_rag_config_with_empty_tags(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test creating a RAG config with empty tags list fails validation"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config empty tags",
+                "description": "Test RAG Config description",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
+                "tags": [],  # Empty tags list should fail validation
+            },
+        )
+
+    assert response.status_code == 422
+    response_json = response.json()
+    # The validation error format may vary, so check both possible structures
+    if "detail" in response_json:
+        error_detail = response_json["detail"]
+        assert any(
+            "Tags cannot be an empty list" in str(error) for error in error_detail
+        )
+    else:
+        # Alternative error format
+        assert "Tags cannot be an empty list" in str(response_json)
+
+
+@pytest.mark.asyncio
+async def test_create_rag_config_with_invalid_tags(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test creating a RAG config with invalid tags (empty strings) fails validation"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config invalid tags",
+                "description": "Test RAG Config description",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
+                "tags": ["python", "", "ml"],  # Empty string in tags should fail
+            },
+        )
+
+    assert response.status_code == 422
+    response_json = response.json()
+    assert "Tags cannot be empty" in response_json["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_rag_config_with_null_tags(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test creating a RAG config with null tags (no filtering)"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config null tags",
+                "description": "Test RAG Config description",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
+                "tags": None,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["tags"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_rag_config_tags_omitted(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test creating a RAG config without specifying tags field defaults to None"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config no tags field",
+                "description": "Test RAG Config description",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config.id,
+                # tags field omitted - should default to None
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["tags"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_document_tags_success(client):
+    """Test getting document tags from a project"""
+    # Create mock documents with various tags
+    doc1 = MagicMock()
+    doc1.tags = ["python", "ml", "backend"]
+
+    doc2 = MagicMock()
+    doc2.tags = ["javascript", "frontend", "web"]
+
+    doc3 = MagicMock()
+    doc3.tags = ["python", "web"]  # Overlapping tags
+
+    doc4 = MagicMock()
+    doc4.tags = None  # No tags
+
+    doc5 = MagicMock()
+    doc5.tags = []  # Empty tags
+
+    # Create mock project
+    mock_project = MagicMock()
+    mock_project.id = "test-project-123"
+    mock_project.documents.return_value = [doc1, doc2, doc3, doc4, doc5]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tags")
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Should return sorted unique tags
+    expected_tags = ["backend", "frontend", "javascript", "ml", "python", "web"]
+    assert result == expected_tags
+
+
+@pytest.mark.asyncio
+async def test_get_document_tags_empty_project(client):
+    """Test getting document tags from a project with no documents"""
+    # Create mock project with no documents
+    mock_project = MagicMock()
+    mock_project.id = "empty-project-123"
+    mock_project.documents.return_value = []
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tags")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_document_tags_no_tags(client):
+    """Test getting document tags from a project where no documents have tags"""
+    doc1 = MagicMock()
+    doc1.tags = None
+
+    doc2 = MagicMock()
+    doc2.tags = []
+
+    # Create mock project
+    mock_project = MagicMock()
+    mock_project.id = "no-tags-project-123"
+    mock_project.documents.return_value = [doc1, doc2]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tags")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == []
+
+
+@pytest.mark.asyncio
 async def test_get_rag_configs_success(
     client,
     mock_project,
@@ -1040,6 +1287,7 @@ async def test_get_rag_configs_success(
             response_rag_config["embedding_config"]["id"]
             == rag_config.embedding_config_id
         )
+        assert response_rag_config["tags"] == rag_config.tags
 
 
 @pytest.mark.asyncio
@@ -1078,6 +1326,7 @@ async def test_get_rag_config_success(
     assert result["extractor_config"]["id"] == rag_config.extractor_config_id
     assert result["chunker_config"]["id"] == rag_config.chunker_config_id
     assert result["embedding_config"]["id"] == rag_config.embedding_config_id
+    assert result["tags"] == rag_config.tags
 
 
 @pytest.mark.asyncio
@@ -1090,6 +1339,74 @@ async def test_get_rag_config_not_found(client, mock_project):
 
     assert response.status_code == 404, response.text
     assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_rag_configs_with_mixed_tags_success(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Test getting multiple RAG configs with mixed tags (some with tags, some without)"""
+    # Create RAG configs with different tag scenarios
+    rag_configs = [
+        RagConfig(
+            parent=mock_project,
+            name="RAG Config with Tags",
+            description="Has tags",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
+            tags=["python", "ml"],
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="RAG Config without Tags",
+            description="No tags (None)",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
+            tags=None,
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="RAG Config with Different Tags",
+            description="Has different tags",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config.id,
+            tags=["frontend", "api"],
+        ),
+    ]
+
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == len(rag_configs)
+
+    # Sort both lists by id for consistent comparison
+    sorted_result = sorted(result, key=lambda x: x["id"])
+    sorted_rag_configs = sorted(rag_configs, key=lambda x: str(x.id))
+
+    for response_rag_config, rag_config in zip(sorted_result, sorted_rag_configs):
+        assert response_rag_config["id"] == rag_config.id
+        assert response_rag_config["name"] == rag_config.name
+        assert response_rag_config["description"] == rag_config.description
+        assert response_rag_config["tags"] == rag_config.tags
 
 
 @pytest.mark.asyncio
