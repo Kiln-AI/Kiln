@@ -33,14 +33,17 @@
     build_rag_config_sub_configs,
   } from "../add_search_tool/rag_config_templates"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import { tool_name_validator } from "$lib/utils/input_validators"
 
   $: project_id = $page.params.project_id
-  $: template_id = $page.url.searchParams.get("template_id")
-  $: template = template_id ? rag_config_templates[template_id] : null
+  const template_id = $page.url.searchParams.get("template_id")
+  const template = template_id ? rag_config_templates[template_id] : null
   let customize_template_mode = false
 
   let loading: boolean = false
   let error: KilnError | null = null
+  let tool_name: string = "search_docs"
+  let tool_description: string = "Search documents for knowledge."
   let name: string | null = null
   let description: string = ""
   let selected_tags: string[] = []
@@ -487,7 +490,6 @@
       selected_chunker_config_id = chunker_config_id
       selected_embedding_config_id = embedding_config_id
       selected_vector_store_config_id = vector_store_config_id
-      name = template.rag_config_name
       // Don't render the template anymore, let them customize it
       customize_template_mode = true
     } catch (err) {
@@ -587,6 +589,25 @@
         bind:submitting={loading}
         keyboard_submit={!modal_opened}
       >
+        <!-- Search Tool Properties -->
+        <FormElement
+          label="Search Tool Name"
+          description="A short tool name such as 'knowledge_base_search'. Be specific about what data this tool can search."
+          info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being specific is important."
+          inputType="input"
+          id="tool_name"
+          bind:value={tool_name}
+          validator={tool_name_validator}
+        />
+        <FormElement
+          label="Search Tool Description"
+          description="A description for the model to understand what this tool can do, and when to use it. Include a description of what data this tool can search."
+          info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Search the customer facing help docs for information about the product.'"
+          inputType="textarea"
+          id="tool_description"
+          bind:value={tool_description}
+        />
+
         <!-- Tag Selection -->
         <div class="flex flex-col gap-2">
           <TagSelector
@@ -601,11 +622,11 @@
               id="search_tool_configuration_header"
               label="Search Configuration"
               description="These parameters control how the search tool will extract, index, and search your documents."
-              info_description="You selected a pre-configured search tool. Customizing is only recommended for advanced users."
+              info_description="You selected a pre-configured search tool with these parameters."
               inputType="header_only"
               value={null}
             />
-            <div class="mt-2 mb-8 max-w-[500px]">
+            <div class="mt-2 mb-8">
               <PropertyList
                 properties={[
                   { name: "Template Name", value: template.name },
@@ -646,12 +667,13 @@
                 ]}
               />
               <button
-                class="btn mt-4 btn-wide btn-sm"
+                class="btn mt-4 btn-sm px-6"
                 on:click={() => {
                   customize_template()
                 }}
               >
                 Customize Configuration
+                <span class="badge badge-sm badge-outline">Advanced</span>
               </button>
             </div>
           </div>
@@ -741,16 +763,16 @@
           <!-- Advanced -->
           <Collapse title="Advanced Options">
             <FormElement
-              label="Search Tool Name"
-              description="A name to identify this tool. Leave blank and we'll generate one for you."
+              label="Reference Name"
+              description="A search tool name for your reference, not seen by the model. Leave blank and we'll generate one for you."
               optional={true}
               inputType="input"
               id="rag_config_name"
               bind:value={name}
             />
             <FormElement
-              label="Description"
-              description="A description of the search tool for your reference."
+              label="Reference Description"
+              description="A description of the search tool for your reference, not seen by the model."
               optional={true}
               inputType="textarea"
               id="rag_config_description"
