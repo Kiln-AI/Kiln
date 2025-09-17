@@ -118,7 +118,7 @@ def create_rag_config_factory() -> Callable[
     ) -> RagConfig:
         return RagConfig(
             name="test_rag",
-            tool_name="Test RAG Tool",
+            tool_name="test_rag_tool",
             tool_description="A test RAG tool for vector search",
             extractor_config_id="test_extractor",
             chunker_config_id="test_chunker",
@@ -575,7 +575,7 @@ def test_lancedb_path_for_config():
     # Test with valid rag_config
     rag_config = RagConfig(
         name="test_rag",
-        tool_name="Test RAG Tool",
+        tool_name="test_rag_tool",
         tool_description="A test RAG tool for path testing",
         extractor_config_id="test_extractor",
         chunker_config_id="test_chunker",
@@ -593,7 +593,7 @@ def test_lancedb_path_for_config():
     # Test with rag_config with no ID (should raise ValueError)
     rag_config_no_id = RagConfig(
         name="test_rag",
-        tool_name="Test RAG Tool",
+        tool_name="test_rag_tool",
         tool_description="A test RAG tool with no ID",
         extractor_config_id="test_extractor",
         chunker_config_id="test_chunker",

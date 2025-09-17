@@ -49,7 +49,7 @@ def test_rag_config_minimal_creation():
     """Test creating a RagConfig with only required fields."""
     rag_config = RagConfig(
         name="Minimal RAG Config",
-        tool_name="Minimal Search Tool",
+        tool_name="minimal_search_tool",
         tool_description="A minimal search tool for testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -59,7 +59,7 @@ def test_rag_config_minimal_creation():
 
     assert rag_config.name == "Minimal RAG Config"
     assert rag_config.description is None
-    assert rag_config.tool_name == "Minimal Search Tool"
+    assert rag_config.tool_name == "minimal_search_tool"
     assert rag_config.tool_description == "A minimal search tool for testing"
     assert rag_config.extractor_config_id == "extractor123"
     assert rag_config.chunker_config_id == "chunker456"
@@ -72,7 +72,7 @@ def test_rag_config_missing_required_fields():
     # Test missing name
     with pytest.raises(ValidationError) as exc_info:
         RagConfig(
-            tool_name="Test Tool",
+            tool_name="test_tool",
             tool_description="A test tool for missing required fields testing",
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
@@ -85,7 +85,7 @@ def test_rag_config_missing_required_fields():
     # Test missing extractor_config_id
     with pytest.raises(ValidationError) as exc_info:
         RagConfig(
-            name="Test Config",
+            name="test_config",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
             vector_store_config_id="vector_store123",
@@ -97,7 +97,7 @@ def test_rag_config_missing_required_fields():
     with pytest.raises(ValidationError) as exc_info:
         RagConfig(
             name="Test Config",
-            tool_name="Test Tool",
+            tool_name="test_tool",
             tool_description="A test tool for chunker config ID testing",
             extractor_config_id="extractor123",
             embedding_config_id="embedding789",
@@ -110,7 +110,7 @@ def test_rag_config_missing_required_fields():
     with pytest.raises(ValidationError) as exc_info:
         RagConfig(
             name="Test Config",
-            tool_name="Test Tool",
+            tool_name="test_tool",
             tool_description="A test tool for embedding config ID testing",
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
@@ -123,7 +123,7 @@ def test_rag_config_missing_required_fields():
     with pytest.raises(ValidationError) as exc_info:
         RagConfig(
             name="Test Config",
-            tool_name="Test Tool",
+            tool_name="test_tool",
             tool_description="A test tool for vector store config ID testing",
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
@@ -149,7 +149,7 @@ def test_rag_config_missing_required_fields():
     with pytest.raises(ValidationError) as exc_info:
         RagConfig(
             name="Test Config",
-            tool_name="Test Tool",
+            tool_name="test_tool",
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
             embedding_config_id="embedding789",
@@ -164,7 +164,7 @@ def test_rag_config_description_optional():
     rag_config = RagConfig(
         name="Test Config",
         description=None,
-        tool_name="Test Tool",
+        tool_name="test_tool",
         tool_description="A test tool for description testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -180,7 +180,7 @@ def test_rag_config_description_string():
     rag_config = RagConfig(
         name="Test Config",
         description="A detailed description of the RAG config",
-        tool_name="Test Tool",
+        tool_name="test_tool",
         tool_description="A test tool for description string testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -195,7 +195,7 @@ def test_rag_config_id_generation():
     """Test that RagConfig generates an ID automatically."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Tool",
+        tool_name="test_tool",
         tool_description="A test tool for ID generation",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -212,7 +212,7 @@ def test_rag_config_inheritance():
     """Test that RagConfig inherits from KilnParentedModel."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for inheritance testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -233,7 +233,7 @@ def test_rag_config_model_type():
     """Test that RagConfig has the correct model type."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for model type testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -249,7 +249,7 @@ def test_rag_config_config_id_types():
     # Test with numeric strings
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for config ID testing",
         extractor_config_id="123",
         chunker_config_id="456",
@@ -265,7 +265,7 @@ def test_rag_config_config_id_types():
     # Test with UUID-like strings
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for UUID-like config ID testing",
         extractor_config_id="extractor-123-456-789",
         chunker_config_id="chunker-abc-def-ghi",
@@ -284,7 +284,7 @@ def test_rag_config_serialization():
     original_config = RagConfig(
         name="Test Config",
         description="A test config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for serialization testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -319,7 +319,7 @@ def test_rag_config_default_values():
     """Test that RagConfig has appropriate default values."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for default values testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -341,7 +341,7 @@ def test_project_has_rag_configs(mock_project):
     rag_config_1 = RagConfig(
         parent=mock_project,
         name="Test Config 1",
-        tool_name="Test Search Tool 1",
+        tool_name="test_search_tool_1",
         tool_description="First test search tool for project relationship testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -352,7 +352,7 @@ def test_project_has_rag_configs(mock_project):
     rag_config_2 = RagConfig(
         parent=mock_project,
         name="Test Config 2",
-        tool_name="Test Search Tool 2",
+        tool_name="test_search_tool_2",
         tool_description="Second test search tool for project relationship testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -377,7 +377,7 @@ def test_parent_project(mock_project):
     rag_config = RagConfig(
         parent=mock_project,
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for parent project testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -392,7 +392,7 @@ def test_rag_config_parent_project_none():
     """Test that parent project is None if not set."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for parent project none testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -407,7 +407,7 @@ def test_rag_config_tags_with_none():
     """Test that tags field can be explicitly set to None."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for tags none testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -424,7 +424,7 @@ def test_rag_config_tags_with_valid_tags():
     tags = ["python", "ml", "backend", "api"]
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Test Search Tool",
+        tool_name="test_search_tool",
         tool_description="A test search tool for valid tags testing",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -457,7 +457,7 @@ def test_rag_config_tags_invalid(invalid_tags, expected_error):
     with pytest.raises(ValueError) as exc_info:
         RagConfig(
             name="Test Config",
-            tool_name="Test Search Tool",
+            tool_name="test_search_tool",
             tool_description="A test search tool for invalid tags testing",
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
@@ -471,13 +471,9 @@ def test_rag_config_tags_invalid(invalid_tags, expected_error):
 def test_rag_config_tool_name_string_values():
     """Test that tool_name accepts various string values."""
     test_cases = [
-        "Simple Tool",
+        "simple_tool",
         "Tool_With_Underscores",
-        "Tool-With-Hyphens",
         "Tool123WithNumbers",
-        "Very Long Tool Name With Multiple Words And Special Characters!@#",
-        "短い名前",  # Non-ASCII characters
-        "🔍 Search Tool",  # Emojis
     ]
 
     for tool_name in test_cases:
@@ -506,7 +502,7 @@ def test_rag_config_tool_description_string_values():
     for tool_description in test_cases:
         rag_config = RagConfig(
             name="Test Config",
-            tool_name="Test Tool",
+            tool_name="test_tool",
             tool_description=tool_description,
             extractor_config_id="extractor123",
             chunker_config_id="chunker456",
@@ -520,7 +516,7 @@ def test_rag_config_tool_fields_in_model_dump():
     """Test that tool_name and tool_description are included in model serialization."""
     rag_config = RagConfig(
         name="Test Config",
-        tool_name="Serialization Test Tool",
+        tool_name="serialization_test_tool",
         tool_description="A tool for testing serialization of tool fields",
         extractor_config_id="extractor123",
         chunker_config_id="chunker456",
@@ -532,7 +528,7 @@ def test_rag_config_tool_fields_in_model_dump():
 
     assert "tool_name" in serialized
     assert "tool_description" in serialized
-    assert serialized["tool_name"] == "Serialization Test Tool"
+    assert serialized["tool_name"] == "serialization_test_tool"
     assert (
         serialized["tool_description"]
         == "A tool for testing serialization of tool fields"

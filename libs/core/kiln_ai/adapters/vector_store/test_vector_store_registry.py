@@ -27,7 +27,7 @@ def create_rag_config_factory() -> Callable[
     ) -> RagConfig:
         return RagConfig(
             name="test_rag",
-            tool_name="Test RAG Tool",
+            tool_name="test_rag_tool",
             tool_description="A test RAG tool for registry testing",
             extractor_config_id="test_extractor",
             chunker_config_id="test_chunker",
