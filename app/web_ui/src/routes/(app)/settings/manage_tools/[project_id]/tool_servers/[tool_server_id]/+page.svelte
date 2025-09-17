@@ -306,7 +306,7 @@
           {:else if tool_server.type === "local_mcp"}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
-              title="Run Configuration"
+              title="Run Config"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
             {#if (tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0) || (tool_server.properties["secret_env_var_keys"] && Object.keys(tool_server.properties["secret_env_var_keys"]).length > 0)}

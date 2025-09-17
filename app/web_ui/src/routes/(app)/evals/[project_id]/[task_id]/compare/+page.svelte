@@ -13,7 +13,7 @@
     TaskRunConfig,
   } from "$lib/types"
   import type { components } from "$lib/api_schema"
-  import AddRunMethod from "../[eval_id]/compare_run_methods/add_run_method.svelte"
+  import AddRunMethod from "../[eval_id]/compare_run_configs/add_run_method.svelte"
   import RunEval from "../[eval_id]/run_eval.svelte"
 
   type RunConfigEvalScoresSummary =
@@ -330,7 +330,7 @@
         label: "Add New",
         options: [
           {
-            label: "New Run Method",
+            label: "New Run Config",
             value: "kiln_add_run_config",
             description: "Compare an additional model and prompt",
           },
@@ -501,8 +501,8 @@
 </script>
 
 <AppPage
-  title="Compare Run Methods"
-  subtitle="Compare run methods for your task using evals"
+  title="Compare Run Configs"
+  subtitle="Compare run configs for your task using evals"
   breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
 >
   {#if loading}
@@ -568,7 +568,7 @@
                   <FancySelect
                     options={modelOptions}
                     bind:selected={selectedModels[i]}
-                    empty_label="Choose a run method..."
+                    empty_label="Choose a run config..."
                   />
                 </div>
 
@@ -815,10 +815,10 @@
                 />
               </svg>
               <div class="text-lg font-medium text-gray-900 mb-2">
-                Select run methods to compare
+                Select run configs to compare
               </div>
               <div class="text-gray-500">
-                Choose run methods from the dropdowns above to see a detailed
+                Choose run configs from the dropdowns above to see a detailed
                 comparison
               </div>
             </div>

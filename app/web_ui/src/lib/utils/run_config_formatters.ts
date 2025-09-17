@@ -26,7 +26,7 @@ export function getRunConfigPromptDisplayName(
     return prompt_name
   }
 
-  return task_run_config.name || "Unnamed Run Method"
+  return task_run_config.name || "Unnamed Run Config"
 }
 
 export function getRunConfigPromptInfoText(

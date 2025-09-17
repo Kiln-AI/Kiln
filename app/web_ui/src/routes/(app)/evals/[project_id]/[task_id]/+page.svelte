@@ -204,7 +204,7 @@
             >
             <button
               class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"
-              >Compare Run Methods</button
+              >Compare Run Configs</button
             >
           </div>
         </div>
@@ -219,7 +219,7 @@
             <th></th>
             <th>Eval Name</th>
             <th>Description</th>
-            <th>Selected Run Method</th>
+            <th>Winning Run Config</th>
           </tr>
         </thead>
         <tbody>

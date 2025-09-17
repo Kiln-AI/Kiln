@@ -180,7 +180,7 @@
           eval_progress.current_run_method.run_config_properties.model_name,
           modelInfo,
         ),
-        tooltip: "The model used by your selected run method.",
+        tooltip: "The model used by your selected run config.",
       })
       properties.push({
         name: "Run Prompt",
@@ -190,7 +190,7 @@
             eval_progress.current_run_method.run_config_properties.prompt_id,
             taskPrompts,
           ),
-        tooltip: "The prompt used by your selected run method.",
+        tooltip: "The prompt used by your selected run config.",
         link: prompt_link(
           project_id,
           task_id,
@@ -371,9 +371,9 @@
     goto(url)
   }
 
-  function compare_run_methods() {
-    let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_methods`
-    show_progress_ui("When you're done comparing run methods, ", 5)
+  function compare_run_configs() {
+    let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_configs`
+    show_progress_ui("When you're done comparing run configs, ", 5)
     goto(url)
   }
 </script>
@@ -548,9 +548,9 @@
                           class="btn btn-sm {current_step == 5
                             ? 'btn-primary'
                             : ''}"
-                          on:click={compare_run_methods}
+                          on:click={compare_run_configs}
                         >
-                          Compare Run Methods
+                          Compare Run Configs
                         </button>
                       </div>
                     {/if}

@@ -111,7 +111,7 @@
 
 <Dialog
   bind:this={add_task_config_dialog}
-  title="Add a Task Run Method"
+  title="Add a Task Run Config"
   action_buttons={[
     {
       label: "Cancel",
@@ -128,7 +128,7 @@
     Define a method of running this task (model+prompt).
   </h4>
   <h4 class="text-sm text-gray-500 mt-1">
-    Your evaluator can compare multiple run methods to find which one produces
+    Your evaluator can compare multiple run configs to find which one produces
     the highest scores on your eval dataset.
   </h4>
   <div class="flex flex-col gap-2 pt-6">

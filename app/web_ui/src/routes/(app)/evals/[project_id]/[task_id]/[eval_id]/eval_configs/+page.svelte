@@ -551,7 +551,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as Default' below to select a winner."
+              warning_message="Click 'Set as Winner' below to select a winning run config for this eval."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon={focus_select_eval_config ? "exclaim" : "info"}
               large_icon={focus_select_eval_config}
