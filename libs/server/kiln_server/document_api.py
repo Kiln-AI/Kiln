@@ -147,7 +147,6 @@ async def run_rag_workflow_runner_with_status(
             ]
             data = serialize_progress(latest_progress)
             yield f"data: {json.dumps(data)}\n\n"
-            return
         except Exception as e:
             logger.error(
                 f"Unexpected server error running RAG workflow runner: {e}",
@@ -161,7 +160,6 @@ async def run_rag_workflow_runner_with_status(
             ]
             data = serialize_progress(latest_progress)
             yield f"data: {json.dumps(data)}\n\n"
-            return
 
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"

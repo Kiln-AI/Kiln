@@ -119,9 +119,41 @@ function createRagProgressStore() {
     const eventSource = new EventSource(run_url)
 
     eventSource.onmessage = (event) => {
+      const state = get(ragProgressStore)
+      const previous_progress_state = state.progress[rag_config_id]
       try {
+        // complete is a special message part of SSE to indicate the run is complete
+        // it does not mean the run was successful
         if (event.data === "complete") {
           eventSource.close()
+
+          // the run may have failed before even sending any explicit errors for any of the steps
+          // for example if the run failed before even starting (e.g. invalid config)
+          const extraction_incomplete =
+            previous_progress_state.total_document_extracted_count <
+            previous_progress_state.total_document_count
+          const chunking_incomplete =
+            previous_progress_state.total_document_chunked_count <
+            previous_progress_state.total_document_count
+          const embedding_incomplete =
+            previous_progress_state.total_document_embedded_count <
+            previous_progress_state.total_document_count
+          const indexing_incomplete =
+            previous_progress_state.total_chunk_completed_count <
+            previous_progress_state.total_chunk_count
+
+          const failed_implicitly =
+            previous_progress_state.total_document_count > 0 &&
+            (extraction_incomplete ||
+              chunking_incomplete ||
+              embedding_incomplete ||
+              indexing_incomplete)
+
+          const completion_status =
+            has_errors(rag_config_id) || failed_implicitly
+              ? "completed_with_errors"
+              : "complete"
+
           update((state) => {
             return {
               ...state,
@@ -131,9 +163,7 @@ function createRagProgressStore() {
               },
               status: {
                 ...state.status,
-                [rag_config_id]: has_errors(rag_config_id)
-                  ? "completed_with_errors"
-                  : "complete",
+                [rag_config_id]: completion_status,
               },
             }
           })
