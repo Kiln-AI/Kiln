@@ -18,7 +18,7 @@
   let selectedStoreType: VectorStoreType | null = null
 
   // Properties for all vector store types
-  let similarity_top_k: number = 10
+  let similarity_top_k: number = 5
 
   export let keyboard_submit: boolean = false
 
@@ -121,7 +121,7 @@
 
   <FormElement
     label="Top K"
-    description="The number of top search results to return"
+    description="The number of search results to return"
     inputType="input_number"
     id="similarity_top_k"
     bind:value={similarity_top_k}
