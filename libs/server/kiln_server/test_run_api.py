@@ -1440,3 +1440,46 @@ def test_parse_splits_invalid(input_str, expected_error):
         parse_splits(input_str)
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail == expected_error
+
+
+@pytest.mark.asyncio
+async def test_get_tags_success(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+
+    # Set tags on the existing run
+    task_run.tags = ["tag1", "tag2", "tag3"]
+    task_run.save_to_file()
+
+    # Create a second run with overlapping tags
+    second_run = TaskRun(
+        parent=task,
+        input="Test input 2",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Test output 2",
+            source=DataSource(
+                type=DataSourceType.human,
+                properties={"created_by": "Test User"},
+            ),
+        ),
+        tags=["tag2", "tag3", "tag4"],
+    )
+    second_run.save_to_file()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task = MagicMock()
+        mock_task.runs.return_value = [task_run, second_run]
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Verify tag counts: tag1(1), tag2(2), tag3(2), tag4(1)
+    expected_counts = {"tag1": 1, "tag2": 2, "tag3": 2, "tag4": 1}
+    assert result == expected_counts
