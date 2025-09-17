@@ -190,7 +190,7 @@
                   {/if}
                   <InfoTooltip
                     tooltip_text="Tools: {search_tools
-                      .map((tool) => tool.name)
+                      .map((tool) => tool.name + ' (' + tool.tool_name + ')')
                       .join(', ')}"
                     no_pad={true}
                   />

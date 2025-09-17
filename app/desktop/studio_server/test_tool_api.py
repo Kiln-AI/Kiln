@@ -5622,14 +5622,16 @@ def test_get_search_tools_success(client, test_project, mock_project_from_id):
     assert len(search_tools) == 2
 
     # Check first search tool
-    tool1 = next(t for t in search_tools if t["name"] == "test_search_tool_1")
+    tool1 = next(t for t in search_tools if t["tool_name"] == "test_search_tool_1")
     assert tool1["id"] == str(rag_config_1.id)
+    assert tool1["name"] == "Test Search Tool 1"
     assert tool1["description"] == "First test search tool"
 
     # Check second search tool
-    tool2 = next(t for t in search_tools if t["name"] == "test_search_tool_2")
+    tool2 = next(t for t in search_tools if t["tool_name"] == "test_search_tool_2")
     assert tool2["id"] == str(rag_config_2.id)
     assert tool2["description"] == "Second test search tool"
+    assert tool2["name"] == "Test Search Tool 2"
 
 
 # RAG-specific tests
@@ -5713,12 +5715,18 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             config1_tool = next(
                 t for t in rag_set["tools"] if t["name"] == "test_rag_config_1"
             )
-            assert config1_tool["description"] == "First test RAG configuration"
+            assert (
+                config1_tool["description"]
+                == "Test RAG Config 1: First test RAG configuration"
+            )
 
             config2_tool = next(
                 t for t in rag_set["tools"] if t["name"] == "test_rag_config_2"
             )
-            assert config2_tool["description"] is None
+            assert (
+                config2_tool["description"]
+                == "Test RAG Config 2: Second test RAG configuration"
+            )
 
 
 async def test_get_available_tools_with_rag_and_mcp(client, test_project):

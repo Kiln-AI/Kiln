@@ -4331,6 +4331,8 @@ export interface components {
         SearchToolApiDescription: {
             /** Id */
             id: string | null;
+            /** Tool Name */
+            tool_name: string;
             /** Name */
             name: string;
             /** Description */

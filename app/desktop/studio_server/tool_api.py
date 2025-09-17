@@ -177,6 +177,7 @@ class ToolSetApiDescription(BaseModel):
 
 class SearchToolApiDescription(BaseModel):
     id: ID_TYPE
+    tool_name: str
     name: str
     description: str | None
 
@@ -270,7 +271,7 @@ def connect_tool_servers_api(app: FastAPI):
                         ToolApiDescription(
                             id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
                             name=f"{rag_config.tool_name}",
-                            description=rag_config.description,
+                            description=f"{rag_config.name}: {rag_config.tool_description}",
                         )
                         for rag_config in project.rag_configs(readonly=True)
                     ],
@@ -522,7 +523,8 @@ def connect_tool_servers_api(app: FastAPI):
         return [
             SearchToolApiDescription(
                 id=rag_config.id,
-                name=rag_config.tool_name,
+                tool_name=rag_config.tool_name,
+                name=rag_config.name,
                 description=rag_config.tool_description,
             )
             for rag_config in project.rag_configs(readonly=True)
