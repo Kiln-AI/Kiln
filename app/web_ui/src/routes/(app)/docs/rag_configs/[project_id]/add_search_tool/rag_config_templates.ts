@@ -125,7 +125,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       model_name: "openai_text_embedding_3_large",
     },
     vector_store: default_vector_store,
-    rag_config_name: "OpenAI Based - GPT-4.1 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-4_1 Hybrid Search",
   },
   vector_only: {
     name: "Vector Only",
