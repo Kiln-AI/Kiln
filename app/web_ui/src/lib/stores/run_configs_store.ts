@@ -108,3 +108,30 @@ export async function save_new_task_run_config(
 
   return data
 }
+
+// Update the default run config for a task
+export async function update_task_default_run_config(
+  project_id: string,
+  task_id: string,
+  default_run_config_id: string,
+) {
+  const { error } = await client.PATCH(
+    "/api/projects/{project_id}/task/{task_id}",
+    {
+      params: {
+        path: {
+          project_id,
+          task_id,
+        },
+      },
+      body: {
+        // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
+        default_run_config_id,
+      },
+    },
+  )
+
+  if (error) {
+    throw error
+  }
+}

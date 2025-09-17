@@ -24,16 +24,16 @@
   export let default_run_config_id: string | null
 
   onMount(async () => {
-    await load_task_run_configs(
-      $current_project?.id ?? "",
-      $current_task?.id ?? "",
-    )
     await load_available_prompts()
     await load_model_info()
     if (default_run_config_id) {
       selected_run_config_id = default_run_config_id
     }
   })
+
+  $: if ($current_project?.id && $current_task?.id) {
+    load_task_run_configs($current_project.id, $current_task.id)
+  }
 
   // Build the options for the dropdown
   $: options = (() => {

@@ -7,6 +7,7 @@
   import { onMount, createEventDispatcher } from "svelte"
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
+  import { KilnError } from "$lib/utils/error_handlers"
 
   const dispatch = createEventDispatcher()
 
@@ -19,6 +20,8 @@
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
+  export let save_config_error: KilnError | null = null
+  export let set_default_error: KilnError | null = null
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -265,6 +268,13 @@
         Save new run options
       </button>
     </div>
+    {#if save_config_error}
+      <div class="mt-2 text-sm text-error text-right">
+        {#each save_config_error.getErrorMessages() as error_line}
+          <div>{error_line}</div>
+        {/each}
+      </div>
+    {/if}
   {/if}
 
   {#if show_set_as_default_button}
@@ -277,5 +287,12 @@
         Set as task default
       </button>
     </div>
+    {#if set_default_error}
+      <div class="mt-2 text-sm text-error text-right">
+        {#each set_default_error.getErrorMessages() as error_line}
+          <div>{error_line}</div>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>

@@ -13,6 +13,7 @@
     save_new_task_run_config,
     run_configs_by_task_composite_id,
     get_task_composite_id,
+    update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -35,9 +36,11 @@
   import { tick } from "svelte"
   import RunOptionsDropdown from "./run_options_dropdown.svelte"
 
-  let error: KilnError | null = null
+  let run_error: KilnError | null = null
   let submitting = false
   let run_complete = false
+  let save_config_error: KilnError | null = null
+  let set_default_error: KilnError | null = null
 
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
@@ -124,7 +127,7 @@
   async function run_task() {
     try {
       submitting = true
-      error = null
+      run_error = null
       response = null
       run_complete = false
       model_dropdown_error_message = null
@@ -161,7 +164,7 @@
       })
       response = data
     } catch (e) {
-      error = createKilnError(e)
+      run_error = createKilnError(e)
     } finally {
       submitting = false
       await tick() // ensure {#if !submitting && response} has rendered
@@ -188,6 +191,12 @@
   $: if (selected_run_config !== "custom") {
     update_current_run_options()
   }
+
+  $: selected_run_config,
+    (() => {
+      save_config_error = null
+      set_default_error = null
+    })()
 
   async function update_current_run_options() {
     updating_current_run_options = true
@@ -274,6 +283,7 @@
       return
     }
     try {
+      save_config_error = null
       const saved_config = await save_new_task_run_config(
         $current_project.id,
         $current_task.id,
@@ -302,8 +312,7 @@
         }
       }
     } catch (e) {
-      error = createKilnError(e)
-      // TODO: Show error to user
+      save_config_error = createKilnError(e)
     }
   }
 
@@ -320,26 +329,19 @@
     }
     // Update task default run config
     try {
-      await client.PATCH("/api/projects/{project_id}/task/{task_id}", {
-        params: {
-          path: {
-            project_id: $current_project?.id ?? "",
-            task_id: $current_task?.id ?? "",
-          },
-        },
-        body: {
-          // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
-          default_run_config_id: (selected_run_config as TaskRunConfig).id,
-        },
-      })
+      set_default_error = null
+      await update_task_default_run_config(
+        $current_project?.id ?? "",
+        $current_task?.id ?? "",
+        (selected_run_config as TaskRunConfig).id ?? "",
+      )
       await load_current_task($current_project)
       await tick()
       if (default_run_config_id) {
         selected_run_config_id = default_run_config_id
       }
     } catch (e) {
-      error = createKilnError(e)
-      // TODO: Show error to user
+      set_default_error = createKilnError(e)
     }
   }
 
@@ -390,7 +392,7 @@
         <FormContainer
           submit_label="Run"
           on:submit={run_task}
-          bind:error
+          bind:error={run_error}
           bind:submitting
           bind:primary={run_focus}
           bind:keyboard_submit={run_focus}
@@ -439,6 +441,8 @@
               on:setToDefault={handle_set_as_default}
               show_save_button={selected_run_config_id === "custom"}
               {show_set_as_default_button}
+              {save_config_error}
+              {set_default_error}
             />
           </Collapse>
         {/if}
