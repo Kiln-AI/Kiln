@@ -609,7 +609,7 @@
                     </div>
                     {#if item.description}
                       <div
-                        class="text-xs font-medium text-base-content/40 w-full"
+                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3"
                       >
                         {item.description}
                       </div>
