@@ -666,7 +666,6 @@ def test_get_available_tools_empty(client, test_project):
 
         assert response.status_code == 200
         result = response.json()
-        # Should return empty list when no tool servers and no demo tools
         assert result == []
 
 
@@ -876,7 +875,7 @@ async def test_get_available_tools_mcp_error_handling(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # Should return empty list since the MCP server failed and no tools are available
+            # Should return an empty list since the MCP server failed
             assert len(result) == 0
 
 
@@ -901,15 +900,10 @@ def test_get_available_tools_demo_tools_enabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        # Should have one tool set for demo tools (no external servers, so no RAG set)
+        # Should have one tool set for demo tools
         assert len(result) == 1
-
-        # Find the demo tools set
-        demo_set = next(
-            (s for s in result if s["set_name"] == "Kiln Demo Tools"),
-            None,
-        )
-        assert demo_set is not None
+        demo_set = result[0]
+        assert demo_set["set_name"] == "Kiln Demo Tools"
         assert len(demo_set["tools"]) == 4
 
         # Verify all demo tools are present with correct IDs and names
@@ -960,7 +954,7 @@ def test_get_available_tools_demo_tools_disabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        # Should have empty list when demo tools are disabled and no MCP servers
+        # Should have no tool sets when demo tools are disabled and no MCP servers
         assert len(result) == 0
 
 
@@ -2069,170 +2063,6 @@ def test_external_tool_server_creation_request_header_with_whitespace_fails():
 
     error_str = str(exc_info.value)
     assert 'Invalid header name: "  Authorization  "' in error_str
-
-
-# RAG-specific tests
-async def test_get_available_tools_with_rag_configs(client, test_project):
-    """Test get_available_tools includes RAG configs when there's an external tool server"""
-    from kiln_ai.datamodel.rag import RagConfig
-
-    # Create some RAG configs
-    rag_config_1 = RagConfig(
-        parent=test_project,
-        name="Test RAG Config 1",
-        description="First test RAG configuration",
-        extractor_config_id="extractor123",
-        chunker_config_id="chunker456",
-        embedding_config_id="embedding789",
-        vector_store_config_id="vector_store123",
-    )
-
-    rag_config_2 = RagConfig(
-        parent=test_project,
-        name="Test RAG Config 2",
-        description=None,  # Test None description
-        extractor_config_id="extractor123",
-        chunker_config_id="chunker456",
-        embedding_config_id="embedding789",
-        vector_store_config_id="vector_store456",
-    )
-
-    # Save the RAG configs
-    rag_config_1.save_to_file()
-    rag_config_2.save_to_file()
-
-    # Create an MCP tool server to trigger the RAG set inclusion
-    tool_data = {
-        "name": "test_server",
-        "server_url": "https://example.com/mcp",
-        "headers": {},
-        "description": "Test server",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # Create the MCP server
-        async with mock_mcp_success():
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-
-        # Mock no tools from MCP server
-        async with mock_mcp_success():
-            response = client.get(f"/api/projects/{test_project.id}/available_tools")
-
-            assert response.status_code == 200
-            result = response.json()
-
-            # Should have one tool set for RAG (since MCP server has no tools, only RAG set is added)
-            assert len(result) == 1
-            rag_set = result[0]
-            assert rag_set["set_name"] == "RAG Search Tools"
-            assert len(rag_set["tools"]) == 2
-
-            # Verify RAG tool details
-            tool_names = [tool["name"] for tool in rag_set["tools"]]
-
-            assert "Test RAG Config 1" in tool_names
-            assert "Test RAG Config 2" in tool_names
-
-            # Verify tool IDs are properly formatted
-            for tool in rag_set["tools"]:
-                assert tool["id"].startswith("kiln_tool::rag::")
-
-            # Find specific tools and check their descriptions
-            config1_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
-            )
-            assert config1_tool["description"] == "First test RAG configuration"
-
-            config2_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 2"
-            )
-            assert config2_tool["description"] is None
-
-
-async def test_get_available_tools_with_rag_and_mcp(client, test_project):
-    """Test get_available_tools with both RAG configs and MCP servers"""
-    from kiln_ai.datamodel.rag import RagConfig
-
-    # Create a RAG config
-    rag_config = RagConfig(
-        parent=test_project,
-        name="Mixed Test RAG",
-        description="RAG config for mixed test",
-        extractor_config_id="extractor123",
-        chunker_config_id="chunker456",
-        embedding_config_id="embedding789",
-        vector_store_config_id="vector_store123",
-    )
-    rag_config.save_to_file()
-
-    # Create an MCP tool server
-    tool_data = {
-        "name": "mixed_test_server",
-        "server_url": "https://example.com/mcp",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "MCP server for mixed test",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # Create the MCP server
-        async with mock_mcp_success():
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-        created_tool = create_response.json()
-        server_id = created_tool["id"]
-
-        # Mock tools for the MCP server
-        mock_tools = [
-            Tool(name="mcp_tool", description="MCP tool", inputSchema={}),
-        ]
-
-        async with mock_mcp_success(tools=mock_tools):
-            # Get available tools
-            response = client.get(f"/api/projects/{test_project.id}/available_tools")
-
-            assert response.status_code == 200
-            result = response.json()
-
-            # Should have two tool sets: MCP Server and RAG
-            assert len(result) == 2
-
-            # Find both sets
-            mcp_set = next(
-                (s for s in result if s["set_name"] == "MCP Server: mixed_test_server"),
-                None,
-            )
-            rag_set = next(
-                (s for s in result if s["set_name"] == "RAG Search Tools"),
-                None,
-            )
-
-            assert mcp_set is not None
-            assert rag_set is not None
-
-            # Verify MCP tools
-            assert len(mcp_set["tools"]) == 1
-            assert mcp_set["tools"][0]["name"] == "mcp_tool"
-            assert mcp_set["tools"][0]["id"].startswith(f"mcp::remote::{server_id}::")
-
-            # Verify RAG tools
-            assert len(rag_set["tools"]) == 1
-            assert rag_set["tools"][0]["name"] == "Mixed Test RAG"
-            assert rag_set["tools"][0]["id"].startswith("kiln_tool::rag::")
 
 
 def test_external_tool_server_creation_request_http_scheme():
@@ -5749,3 +5579,167 @@ async def test_edit_mcp_does_not_keep_bad_data_in_memory(
     # Read the server from memory again and ensure it's not changed
     post_validation_server = tool_server_from_id(test_project.id, test_server.id)
     assert post_validation_server.properties[property_key] == original_value
+
+
+# RAG-specific tests
+async def test_get_available_tools_with_rag_configs(client, test_project):
+    """Test get_available_tools includes RAG configs when there's an external tool server"""
+    from kiln_ai.datamodel.rag import RagConfig
+
+    # Create some RAG configs
+    rag_config_1 = RagConfig(
+        parent=test_project,
+        name="Test RAG Config 1",
+        description="First test RAG configuration",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+
+    rag_config_2 = RagConfig(
+        parent=test_project,
+        name="Test RAG Config 2",
+        description=None,  # Test None description
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store456",
+    )
+
+    # Save the RAG configs
+    rag_config_1.save_to_file()
+    rag_config_2.save_to_file()
+
+    # Create an MCP tool server to trigger the RAG set inclusion
+    tool_data = {
+        "name": "test_server",
+        "server_url": "https://example.com/mcp",
+        "headers": {},
+        "description": "Test server",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create the MCP server
+        async with mock_mcp_success():
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+
+        # Mock no tools from MCP server
+        async with mock_mcp_success():
+            response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+            assert response.status_code == 200
+            result = response.json()
+
+            # Should have one tool set for RAG (since MCP server has no tools, only RAG set is added)
+            assert len(result) == 1
+            rag_set = result[0]
+            assert rag_set["set_name"] == "RAG Search Tools"
+            assert len(rag_set["tools"]) == 2
+
+            # Verify RAG tool details
+            tool_names = [tool["name"] for tool in rag_set["tools"]]
+
+            assert "Test RAG Config 1" in tool_names
+            assert "Test RAG Config 2" in tool_names
+
+            # Verify tool IDs are properly formatted
+            for tool in rag_set["tools"]:
+                assert tool["id"].startswith("kiln_tool::rag::")
+
+            # Find specific tools and check their descriptions
+            config1_tool = next(
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
+            )
+            assert config1_tool["description"] == "First test RAG configuration"
+
+            config2_tool = next(
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 2"
+            )
+            assert config2_tool["description"] is None
+
+
+async def test_get_available_tools_with_rag_and_mcp(client, test_project):
+    """Test get_available_tools with both RAG configs and MCP servers"""
+    from kiln_ai.datamodel.rag import RagConfig
+
+    # Create a RAG config
+    rag_config = RagConfig(
+        parent=test_project,
+        name="Mixed Test RAG",
+        description="RAG config for mixed test",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+    rag_config.save_to_file()
+
+    # Create an MCP tool server
+    tool_data = {
+        "name": "mixed_test_server",
+        "server_url": "https://example.com/mcp",
+        "headers": {"Authorization": "Bearer token"},
+        "description": "MCP server for mixed test",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create the MCP server
+        async with mock_mcp_success():
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+        created_tool = create_response.json()
+        server_id = created_tool["id"]
+
+        # Mock tools for the MCP server
+        mock_tools = [
+            Tool(name="mcp_tool", description="MCP tool", inputSchema={}),
+        ]
+
+        async with mock_mcp_success(tools=mock_tools):
+            # Get available tools
+            response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+            assert response.status_code == 200
+            result = response.json()
+
+            # Should have two tool sets: MCP Server and RAG
+            assert len(result) == 2
+
+            # Find both sets
+            mcp_set = next(
+                (s for s in result if s["set_name"] == "MCP Server: mixed_test_server"),
+                None,
+            )
+            rag_set = next(
+                (s for s in result if s["set_name"] == "RAG Search Tools"),
+                None,
+            )
+
+            assert mcp_set is not None
+            assert rag_set is not None
+
+            # Verify MCP tools
+            assert len(mcp_set["tools"]) == 1
+            assert mcp_set["tools"][0]["name"] == "mcp_tool"
+            assert mcp_set["tools"][0]["id"].startswith(f"mcp::remote::{server_id}::")
+
+            # Verify RAG tools
+            assert len(rag_set["tools"]) == 1
+            assert rag_set["tools"][0]["name"] == "Mixed Test RAG"
+            assert rag_set["tools"][0]["id"].startswith("kiln_tool::rag::")

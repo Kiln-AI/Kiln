@@ -73,6 +73,7 @@ export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =
   components["schemas"]["ToolSetApiDescription"]
+
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]

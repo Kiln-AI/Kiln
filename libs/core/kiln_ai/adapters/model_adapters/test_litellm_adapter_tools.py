@@ -14,7 +14,6 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     ModelTurnResult,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
-from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
@@ -26,18 +25,6 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     SubtractTool,
 )
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
-
-
-@pytest.fixture
-def mock_openai_litellm_core_config():
-    # replace with
-    with patch(
-        "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider",
-        return_value=LiteLlmCoreConfig(
-            additional_body_options={"api_key": "mock_api_key"},
-        ),
-    ):
-        yield
 
 
 def build_test_task(tmp_path: Path):
@@ -407,7 +394,7 @@ async def test_tools_mocked(tmp_path):
         assert task_run.usage.cost == 1.5
 
 
-async def test_run_model_turn_parallel_tools(tmp_path, mock_openai_litellm_core_config):
+async def test_run_model_turn_parallel_tools(tmp_path):
     """Test _run_model_turn with multiple parallel tool calls in a single response."""
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
@@ -473,9 +460,7 @@ async def test_run_model_turn_parallel_tools(tmp_path, mock_openai_litellm_core_
     add_spy = Mock(wraps=add_tool)
 
     with patch.object(
-        litellm_adapter,
-        "cached_available_tools",
-        return_value=[multiply_spy, add_spy],
+        litellm_adapter, "cached_available_tools", return_value=[multiply_spy, add_spy]
     ):
         with patch(
             "litellm.acompletion",
@@ -508,9 +493,7 @@ async def test_run_model_turn_parallel_tools(tmp_path, mock_openai_litellm_core_
     )  # user + assistant + 2 tool results + final assistant
 
 
-async def test_run_model_turn_sequential_tools(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_run_model_turn_sequential_tools(tmp_path):
     """Test _run_model_turn with sequential tool calls across multiple turns."""
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
@@ -623,9 +606,7 @@ async def test_run_model_turn_sequential_tools(
     assert len(result.all_messages) == 6
 
 
-async def test_run_model_turn_max_tool_calls_exceeded(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_run_model_turn_max_tool_calls_exceeded(tmp_path):
     """Test _run_model_turn raises error when MAX_TOOL_CALLS_PER_TURN is exceeded."""
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
@@ -692,7 +673,7 @@ async def test_run_model_turn_max_tool_calls_exceeded(
                         )
 
 
-async def test_run_model_turn_no_tool_calls(tmp_path, mock_openai_litellm_core_config):
+async def test_run_model_turn_no_tool_calls(tmp_path):
     """Test _run_model_turn with a simple response that doesn't use tools."""
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
@@ -781,7 +762,7 @@ class MockTool:
         return self._return_value
 
 
-async def test_process_tool_calls_none_input(tmp_path, mock_openai_litellm_core_config):
+async def test_process_tool_calls_none_input(tmp_path):
     """Test process_tool_calls with None input"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -800,7 +781,7 @@ async def test_process_tool_calls_none_input(tmp_path, mock_openai_litellm_core_
     assert tool_messages == []
 
 
-async def test_process_tool_calls_empty_list(tmp_path, mock_openai_litellm_core_config):
+async def test_process_tool_calls_empty_list(tmp_path):
     """Test process_tool_calls with empty tool calls list"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -819,9 +800,7 @@ async def test_process_tool_calls_empty_list(tmp_path, mock_openai_litellm_core_
     assert tool_messages == []
 
 
-async def test_process_tool_calls_task_response_only(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_task_response_only(tmp_path):
     """Test process_tool_calls with only task_response tool call"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -844,9 +823,7 @@ async def test_process_tool_calls_task_response_only(
     assert tool_messages == []
 
 
-async def test_process_tool_calls_multiple_task_response(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_multiple_task_response(tmp_path):
     """Test process_tool_calls with multiple task_response calls - should keep the last one"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -873,9 +850,7 @@ async def test_process_tool_calls_multiple_task_response(
     assert tool_messages == []
 
 
-async def test_process_tool_calls_normal_tool_success(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_normal_tool_success(tmp_path):
     """Test process_tool_calls with successful normal tool call"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -907,9 +882,7 @@ async def test_process_tool_calls_normal_tool_success(
     }
 
 
-async def test_process_tool_calls_multiple_normal_tools(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     """Test process_tool_calls with multiple normal tool calls"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -946,9 +919,7 @@ async def test_process_tool_calls_multiple_normal_tools(
     assert tool_messages[1]["content"] == "6"
 
 
-async def test_process_tool_calls_tool_not_found(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_tool_not_found(tmp_path):
     """Test process_tool_calls when tool is not found"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -971,9 +942,7 @@ async def test_process_tool_calls_tool_not_found(
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_invalid_json_arguments(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_invalid_json_arguments(tmp_path):
     """Test process_tool_calls with invalid JSON arguments"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -998,9 +967,7 @@ async def test_process_tool_calls_invalid_json_arguments(
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_empty_arguments(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_empty_arguments(tmp_path):
     """Test process_tool_calls with empty arguments string"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -1025,9 +992,7 @@ async def test_process_tool_calls_empty_arguments(
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_schema_validation_error(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_schema_validation_error(tmp_path):
     """Test process_tool_calls with schema validation error"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -1053,9 +1018,7 @@ async def test_process_tool_calls_schema_validation_error(
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_tool_execution_error(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_tool_execution_error(tmp_path):
     """Test process_tool_calls when tool execution raises exception"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -1080,9 +1043,7 @@ async def test_process_tool_calls_tool_execution_error(
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
 
 
-async def test_process_tool_calls_complex_result(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_complex_result(tmp_path):
     """Test process_tool_calls when tool returns complex object"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
@@ -1113,9 +1074,7 @@ async def test_process_tool_calls_complex_result(
     assert tool_messages[0]["content"] == complex_result
 
 
-async def test_process_tool_calls_task_response_with_normal_tools_error(
-    tmp_path, mock_openai_litellm_core_config
-):
+async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):
     """Test process_tool_calls raises error when mixing task_response with normal tools"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(

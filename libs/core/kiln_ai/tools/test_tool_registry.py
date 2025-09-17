@@ -8,6 +8,7 @@ from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     _check_tool_id,
     mcp_server_and_tool_name_from_id,
@@ -178,6 +179,93 @@ class TestToolRegistry:
             with pytest.raises(
                 ValueError,
                 match="External tool server not found: missing_server in project ID test_project_id",
+            ):
+                tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_rag_tool_success(self):
+        """Test that tool_from_id works with RAG tool IDs."""
+        # Create mock RAG config
+        from unittest.mock import patch
+
+        with (
+            patch("kiln_ai.datamodel.rag.RagConfig") as mock_rag_config_class,
+            patch("kiln_ai.tools.rag_tools.RagTool") as mock_rag_tool_class,
+        ):
+            # Setup mock RAG config
+            mock_rag_config = Mock()
+            mock_rag_config.id = "test_rag_config"
+            mock_rag_config_class.from_id_and_parent_path.return_value = mock_rag_config
+
+            # Setup mock RAG tool
+            mock_rag_tool = Mock()
+            mock_rag_tool_class.return_value = mock_rag_tool
+
+            # Create mock project
+            mock_project = Mock(spec=Project)
+            mock_project.id = "test_project_id"
+            mock_project.path = "/test/path"
+
+            # Create mock task with parent project
+            mock_task = Mock(spec=Task)
+            mock_task.parent_project.return_value = mock_project
+
+            # Test with RAG tool ID
+            tool_id = f"{RAG_TOOL_ID_PREFIX}test_rag_config"
+            tool = tool_from_id(tool_id, task=mock_task)
+
+            # Verify the tool is RagTool
+            assert tool == mock_rag_tool
+            mock_rag_config_class.from_id_and_parent_path.assert_called_once_with(
+                "test_rag_config", "/test/path"
+            )
+            mock_rag_tool_class.assert_called_once_with(tool_id, mock_rag_config)
+
+    def test_tool_from_id_rag_tool_no_task(self):
+        """Test that RAG tool ID without task raises ValueError."""
+        tool_id = f"{RAG_TOOL_ID_PREFIX}test_rag_config"
+
+        with pytest.raises(
+            ValueError,
+            match=r"Unable to resolve tool from id.*Requires a parent project/task",
+        ):
+            tool_from_id(tool_id, task=None)
+
+    def test_tool_from_id_rag_tool_no_project(self):
+        """Test that RAG tool ID with task but no project raises ValueError."""
+        # Create mock task without parent project
+        mock_task = Mock(spec=Task)
+        mock_task.parent_project.return_value = None
+
+        tool_id = f"{RAG_TOOL_ID_PREFIX}test_rag_config"
+
+        with pytest.raises(
+            ValueError,
+            match=r"Unable to resolve tool from id.*Requires a parent project/task",
+        ):
+            tool_from_id(tool_id, task=mock_task)
+
+    def test_tool_from_id_rag_config_not_found(self):
+        """Test that RAG tool ID with missing RAG config raises ValueError."""
+        from unittest.mock import patch
+
+        with patch("kiln_ai.datamodel.rag.RagConfig") as mock_rag_config_class:
+            # Setup mock to return None (config not found)
+            mock_rag_config_class.from_id_and_parent_path.return_value = None
+
+            # Create mock project
+            mock_project = Mock(spec=Project)
+            mock_project.id = "test_project_id"
+            mock_project.path = "/test/path"
+
+            # Create mock task with parent project
+            mock_task = Mock(spec=Task)
+            mock_task.parent_project.return_value = mock_project
+
+            tool_id = f"{RAG_TOOL_ID_PREFIX}missing_rag_config"
+
+            with pytest.raises(
+                ValueError,
+                match="RAG config not found: missing_rag_config in project test_project_id for tool",
             ):
                 tool_from_id(tool_id, task=mock_task)
 
