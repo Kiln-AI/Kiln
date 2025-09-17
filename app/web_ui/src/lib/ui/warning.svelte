@@ -55,7 +55,9 @@
   <div
     class="text-sm text-gray-500 flex flex-row items-center {outline
       ? `border-2 ${get_color('border')} rounded-lg px-4 py-2 mb-6`
-      : 'mt-2'}"
+      : tight
+        ? ''
+        : 'mt-2'}"
   >
     {#if warning_icon === "exclaim" || warning_icon === "info"}
       <svg

@@ -179,7 +179,7 @@
                 tabindex="0"
               >
                 <td class="font-medium">Search Tools (RAG)</td>
-                <td class="text-sm">Built-in Tools</td>
+                <td class="text-sm">Kiln Search Tools</td>
                 <td class="text-sm"
                   >Search tools retrieve information from your Kiln document
                   library.
