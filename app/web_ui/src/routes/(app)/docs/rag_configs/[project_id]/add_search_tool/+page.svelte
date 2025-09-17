@@ -53,16 +53,16 @@
     }
 
     // Check if the user has the required API keys
-    if (suggestion.required_api_keys === "OpenaiOrOpenRouter") {
-      if (!settings["open_ai_api_key"] && !settings["open_router_api_key"]) {
-        missing_api_keys = "OpenaiOrOpenRouter"
+    if (suggestion.required_api_keys === "Openai") {
+      if (!settings["open_ai_api_key"]) {
+        missing_api_keys = "Openai"
         requires_api_keys_dialog?.show()
         return
       }
     }
-    if (suggestion.required_api_keys === "GeminiOrOpenRouter") {
-      if (!settings["gemini_api_key"] && !settings["open_router_api_key"]) {
-        missing_api_keys = "GeminiOrOpenRouter"
+    if (suggestion.required_api_keys === "Gemini") {
+      if (!settings["gemini_api_key"]) {
+        missing_api_keys = "Gemini"
         requires_api_keys_dialog?.show()
         return
       }
@@ -91,12 +91,10 @@
 
   function add_api_key(): boolean {
     let selected_providers = []
-    if (missing_api_keys === "OpenaiOrOpenRouter") {
+    if (missing_api_keys === "Openai") {
       selected_providers.push("openai")
-      selected_providers.push("openrouter")
-    } else if (missing_api_keys === "GeminiOrOpenRouter") {
+    } else if (missing_api_keys === "Gemini") {
       selected_providers.push("gemini_api")
-      selected_providers.push("openrouter")
     }
     goto(
       `/settings/providers?required_providers=${selected_providers.join(",")}`,
@@ -171,16 +169,10 @@
   ]}
 >
   <p>
-    {#if missing_api_keys === "OpenaiOrOpenRouter"}
-      <p>
-        This search configuration requires an OpenAI API key or an OpenRouter
-        API key.
-      </p>
-    {:else if missing_api_keys === "GeminiOrOpenRouter"}
-      <p>
-        This search configuration requires a Google Gemini API key or an
-        OpenRouter API key.
-      </p>
+    {#if missing_api_keys === "Openai"}
+      <p>This search configuration requires an OpenAI API key.</p>
+    {:else if missing_api_keys === "Gemini"}
+      <p>This search configuration requires a Google Gemini API key.</p>
     {/if}
   </p>
 </Dialog>
