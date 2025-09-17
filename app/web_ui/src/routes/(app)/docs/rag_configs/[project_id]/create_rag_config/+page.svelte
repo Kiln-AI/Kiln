@@ -605,6 +605,7 @@
           info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Search the customer facing help docs for information about the product.'"
           inputType="textarea"
           id="tool_description"
+          max_length={128}
           bind:value={tool_description}
         />
 

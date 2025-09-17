@@ -22,7 +22,7 @@ def sample_rag_config_data():
     return {
         "name": "Test RAG Config",
         "description": "A test RAG config for testing purposes",
-        "tool_name": "Test Search Tool",
+        "tool_name": "test_search_tool",
         "tool_description": "A test search tool for document retrieval",
         "extractor_config_id": "extractor123",
         "chunker_config_id": "chunker456",
@@ -37,7 +37,7 @@ def test_rag_config_valid_creation(sample_rag_config_data):
 
     assert rag_config.name == "Test RAG Config"
     assert rag_config.description == "A test RAG config for testing purposes"
-    assert rag_config.tool_name == "Test Search Tool"
+    assert rag_config.tool_name == "test_search_tool"
     assert rag_config.tool_description == "A test search tool for document retrieval"
     assert rag_config.extractor_config_id == "extractor123"
     assert rag_config.chunker_config_id == "chunker456"
@@ -468,27 +468,6 @@ def test_rag_config_tags_invalid(invalid_tags, expected_error):
     assert expected_error in str(exc_info.value)
 
 
-def test_rag_config_tool_name_string_values():
-    """Test that tool_name accepts various string values."""
-    test_cases = [
-        "simple_tool",
-        "Tool_With_Underscores",
-        "Tool123WithNumbers",
-    ]
-
-    for tool_name in test_cases:
-        rag_config = RagConfig(
-            name="Test Config",
-            tool_name=tool_name,
-            tool_description="A test search tool",
-            extractor_config_id="extractor123",
-            chunker_config_id="chunker456",
-            embedding_config_id="embedding789",
-            vector_store_config_id="vector_store123",
-        )
-        assert rag_config.tool_name == tool_name
-
-
 def test_rag_config_tool_description_string_values():
     """Test that tool_description accepts various string values."""
     test_cases = [
@@ -541,14 +520,14 @@ def test_rag_config_tool_fields_in_model_dump():
         # Empty tool_name
         ("", "Valid description", "Tool name cannot be empty"),
         # Empty tool_description
-        ("Valid Tool", "", "Tool description cannot be empty"),
+        ("valid_tool", "", "Tool description cannot be empty"),
         # Whitespace-only tool_name
         ("   ", "Valid description", "Tool name cannot be empty"),
         # Whitespace-only tool_description
-        ("Valid Tool", "   ", "Tool description cannot be empty"),
+        ("valid_tool", "   ", "Tool description cannot be empty"),
         # Tab and newline whitespace
         ("\t\n", "Valid description", "Tool name cannot be empty"),
-        ("Valid Tool", "\t\n", "Tool description cannot be empty"),
+        ("valid_tool", "\t\n", "Tool description cannot be empty"),
     ],
 )
 def test_rag_config_tool_fields_validation_edge_cases(
@@ -565,3 +544,27 @@ def test_rag_config_tool_fields_validation_edge_cases(
             embedding_config_id="embedding789",
             vector_store_config_id="vector_store123",
         )
+
+
+@pytest.mark.parametrize(
+    "tool_name,expected_error",
+    [
+        ("Invalid Tool Name", "Tool name must be in snake_case"),
+        ("", "Tool name cannot be empty"),
+        ("a" * 65, "Tool name must be less than 64 characters long"),
+    ],
+)
+def test_rag_config_tool_name_validation(tool_name, expected_error):
+    """Test that tool_name validation works."""
+    # Not exhaustive, just an integration test that the validator is called. The validator is tested in utils/test_validation.py.
+    with pytest.raises(ValueError) as exc_info:
+        RagConfig(
+            name="Test Config",
+            tool_name=tool_name,
+            tool_description="A test search tool for invalid tool name testing",
+            extractor_config_id="extractor123",
+            chunker_config_id="chunker456",
+            embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
+        )
+    assert expected_error in str(exc_info.value)

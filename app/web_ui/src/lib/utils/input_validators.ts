@@ -69,6 +69,7 @@ export function number_validator({
     })
 }
 
+// Important: if updating this, also update the corresponding validator in the backend utils/validation.py
 export const tool_name_validator: (value: unknown) => string | null = (
   value: unknown,
 ) => {
@@ -101,6 +102,11 @@ export const tool_name_validator: (value: unknown) => string | null = (
   // Check that it starts with a letter (good snake_case practice)
   if (!/^[a-z]/.test(name)) {
     return "Must start with a lowercase letter"
+  }
+
+  // Check length
+  if (name.length > 64) {
+    return "Must be less than 64 characters long"
   }
 
   return null

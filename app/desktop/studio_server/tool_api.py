@@ -270,7 +270,7 @@ def connect_tool_servers_api(app: FastAPI):
                     tools=[
                         ToolApiDescription(
                             id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
-                            name=f"{rag_config.tool_name}",
+                            name=rag_config.tool_name,
                             description=f"{rag_config.name}: {rag_config.tool_description}",
                         )
                         for rag_config in project.rag_configs(readonly=True)

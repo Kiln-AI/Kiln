@@ -904,7 +904,7 @@ async def test_create_rag_config_success(
             json={
                 "name": "Test RAG Config",
                 "description": "Test RAG Config description",
-                "tool_name": "Test Search Tool",
+                "tool_name": "test_search_tool",
                 "tool_description": "A test search tool for document retrieval",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
@@ -918,7 +918,7 @@ async def test_create_rag_config_success(
     assert result["id"] is not None
     assert result["name"] == "Test RAG Config"
     assert result["description"] == "Test RAG Config description"
-    assert result["tool_name"] == "Test Search Tool"
+    assert result["tool_name"] == "test_search_tool"
     assert result["tool_description"] == "A test search tool for document retrieval"
     assert result["extractor_config_id"] is not None
     assert result["chunker_config_id"] is not None
@@ -994,7 +994,7 @@ async def test_create_rag_config_with_tags(
             json={
                 "name": "Test RAG Config with Tags",
                 "description": "Test RAG Config with tags description",
-                "tool_name": "Tagged Search Tool",
+                "tool_name": "tagged_search_tool",
                 "tool_description": "A search tool for testing with tags",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
@@ -1031,7 +1031,7 @@ async def test_create_rag_config_with_empty_tags(
             json={
                 "name": "Test RAG Config empty tags",
                 "description": "Test RAG Config description",
-                "tool_name": "Empty Tags Tool",
+                "tool_name": "empty_tags_tool",
                 "tool_description": "A search tool for testing empty tags validation",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
@@ -1073,7 +1073,7 @@ async def test_create_rag_config_with_invalid_tags(
             json={
                 "name": "Test RAG Config invalid tags",
                 "description": "Test RAG Config description",
-                "tool_name": "Invalid Tags Tool",
+                "tool_name": "invalid_tags_tool",
                 "tool_description": "A search tool for testing invalid tags validation",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
@@ -1107,7 +1107,7 @@ async def test_create_rag_config_with_null_tags(
             json={
                 "name": "Test RAG Config null tags",
                 "description": "Test RAG Config description",
-                "tool_name": "Null Tags Tool",
+                "tool_name": "null_tags_tool",
                 "tool_description": "A search tool for testing null tags",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
@@ -1141,7 +1141,7 @@ async def test_create_rag_config_tags_omitted(
             json={
                 "name": "Test RAG Config no tags field",
                 "description": "Test RAG Config description",
-                "tool_name": "No Tags Tool",
+                "tool_name": "no_tags_tool",
                 "tool_description": "A search tool for testing omitted tags field",
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
