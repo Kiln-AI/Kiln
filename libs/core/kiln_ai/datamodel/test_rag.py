@@ -331,3 +331,62 @@ def test_rag_config_parent_project_none():
     )
 
     assert rag_config.parent_project() is None
+
+
+def test_rag_config_tags_with_none():
+    """Test that tags field can be explicitly set to None."""
+    rag_config = RagConfig(
+        name="Test Config",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+        tags=None,
+    )
+
+    assert rag_config.tags is None
+
+
+def test_rag_config_tags_with_valid_tags():
+    """Test that tags field accepts a valid list of strings."""
+    tags = ["python", "ml", "backend", "api"]
+    rag_config = RagConfig(
+        name="Test Config",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+        tags=tags,
+    )
+
+    assert rag_config.tags == tags
+    assert isinstance(rag_config.tags, list)
+    assert all(isinstance(tag, str) for tag in rag_config.tags)
+
+
+@pytest.mark.parametrize(
+    "invalid_tags,expected_error",
+    [
+        ([], "Tags cannot be an empty list"),
+        (
+            ["python", "with spaces", "ml"],
+            "Tags cannot contain spaces. Try underscores.",
+        ),
+        (["python", "   ", "ml"], "Tags cannot contain spaces. Try underscores."),
+        (["python", " leading_space"], "Tags cannot contain spaces. Try underscores."),
+        (["trailing_space ", "ml"], "Tags cannot contain spaces. Try underscores."),
+        (["", "ml"], "Tags cannot be empty."),
+    ],
+)
+def test_rag_config_tags_invalid(invalid_tags, expected_error):
+    """Test that tags field rejects invalid inputs."""
+    with pytest.raises(ValueError) as exc_info:
+        RagConfig(
+            name="Test Config",
+            extractor_config_id="extractor123",
+            chunker_config_id="chunker456",
+            embedding_config_id="embedding789",
+            vector_store_config_id="vector_store123",
+            tags=invalid_tags,
+        )
+    assert expected_error in str(exc_info.value)

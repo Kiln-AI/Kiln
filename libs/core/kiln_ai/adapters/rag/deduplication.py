@@ -3,7 +3,7 @@ from typing import DefaultDict
 
 from kiln_ai.datamodel.chunk import ChunkedDocument
 from kiln_ai.datamodel.embedding import ChunkEmbeddings
-from kiln_ai.datamodel.extraction import Extraction
+from kiln_ai.datamodel.extraction import Document, Extraction
 
 
 def deduplicate_extractions(items: list[Extraction]) -> list[Extraction]:
@@ -33,3 +33,17 @@ def deduplicate_chunk_embeddings(items: list[ChunkEmbeddings]) -> list[ChunkEmbe
             raise ValueError("Embedding config ID is required")
         grouped_items[item.embedding_config_id].append(item)
     return [min(group, key=lambda x: x.created_at) for group in grouped_items.values()]
+
+
+def filter_documents_by_tags(
+    documents: list[Document], tags: list[str] | None
+) -> list[Document]:
+    if not tags:
+        return documents
+
+    filtered_documents = []
+    for document in documents:
+        if document.tags and any(tag in document.tags for tag in tags):
+            filtered_documents.append(document)
+
+    return filtered_documents

@@ -13,6 +13,7 @@
   import CreateChunkerForm from "./create_chunker_form.svelte"
   import CreateEmbeddingForm from "./create_embedding_form.svelte"
   import CreateVectorStoreForm from "./create_vector_store_form.svelte"
+  import TagSelector from "./tag_selector.svelte"
   import type {
     ExtractorConfig,
     ChunkerConfig,
@@ -34,6 +35,7 @@
   let error: KilnError | null = null
   let name: string | null = null
   let description: string = ""
+  let selected_tags: string[] = []
 
   let show_create_extractor_dialog: Dialog | null = null
   let show_create_chunker_dialog: Dialog | null = null
@@ -421,6 +423,7 @@
             chunker_config_id: selected_chunker_config_id,
             embedding_config_id: selected_embedding_config_id,
             vector_store_config_id: selected_vector_store_config_id,
+            tags: selected_tags.length > 0 ? selected_tags : null,
           },
         },
       )
@@ -545,6 +548,14 @@
                 inputType="fancy_select"
               />
             {/if}
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <TagSelector
+              {project_id}
+              bind:selected_tags
+              on:change={(e) => (selected_tags = e.detail.selected_tags)}
+            />
           </div>
         </div>
 
