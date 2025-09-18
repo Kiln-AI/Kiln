@@ -185,6 +185,8 @@
 <AppPage
   title="Document"
   subtitle={`${document?.name || document?.original_file.filename}`}
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width
   breadcrumbs={[
     {
@@ -192,7 +194,7 @@
       href: `/docs/${project_id}`,
     },
     {
-      label: "Doc Library",
+      label: "Document Library",
       href: `/docs/library/${project_id}`,
     },
   ]}

@@ -126,6 +126,8 @@
 <AppPage
   title="Add a Search Tool (RAG)"
   subtitle="A tool to search for information in documents"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   breadcrumbs={[
     {
       label: "Docs & Search",
