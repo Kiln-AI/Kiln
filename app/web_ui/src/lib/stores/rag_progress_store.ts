@@ -5,6 +5,8 @@ import { createKilnError, type KilnError } from "../utils/error_handlers"
 import { progress_ui_state } from "./progress_ui_store"
 import { Semaphore } from "$lib/utils/semaphore"
 
+const MAX_CONCURRENT_RAG_CONFIGS = 2
+
 export type RagConfigurationStatus =
   | "not_started"
   | "incomplete"
@@ -30,7 +32,7 @@ export const allRagConfigs = derived(ragProgressStore, ($store) => {
 
 // cap concurrent EventSource connections browsers have different limits,
 // we keep the limit low enough to be safe for most browsers
-const sseSlots = new Semaphore(5)
+const sseSlots = new Semaphore(MAX_CONCURRENT_RAG_CONFIGS)
 
 function createRagProgressStore() {
   const { subscribe, set, update } = writable<RagConfigurationProgressState>({
@@ -108,10 +110,12 @@ function createRagProgressStore() {
     return failed.length === 0
   }
 
-  function run_rag_config(
+  async function run_rag_config(
     project_id: string,
     rag_config_id: string,
   ): Promise<void> {
+    // we update the status even if waiting for slot, so that it looks
+    // like it is running to the user
     update((state) => ({
       ...state,
       status: { ...state.status, [rag_config_id]: "running" },
@@ -137,6 +141,60 @@ function createRagProgressStore() {
       current_step: 0,
     })
 
+    // we will send a log to say that the config is queued if we are still blocked for more than 10s
+    // otherwise, if the config starts in less than 10s, we won't show anything
+    let showed_queued_log = false
+    let wait_log_timer: ReturnType<typeof setTimeout> | null = setTimeout(
+      () => {
+        showed_queued_log = true
+        update((state) => ({
+          ...state,
+          logs: {
+            ...state.logs,
+            [rag_config_id]: [
+              ...(state.logs[rag_config_id] ?? []),
+              {
+                level: "info",
+                message: `A maximum of ${MAX_CONCURRENT_RAG_CONFIGS} configs can run at the same time. This config is queued and will start automatically when a slot is free. Refreshing the browser window will cancel the queue and any config that is currently running or waiting to start.`,
+              },
+            ],
+          },
+        }))
+      },
+      10_000,
+    )
+
+    await sseSlots.acquire()
+    // if we got a slot within 10s, prevent the log from being added
+    if (wait_log_timer) {
+      clearTimeout(wait_log_timer)
+      wait_log_timer = null
+    }
+
+    if (showed_queued_log) {
+      update((state) => ({
+        ...state,
+        logs: {
+          ...state.logs,
+          [rag_config_id]: [
+            ...(state.logs[rag_config_id] ?? []),
+            { level: "info", message: "Started running" },
+          ],
+        },
+      }))
+    }
+
+    try {
+      await run_rag_config_unsafe(project_id, rag_config_id)
+    } finally {
+      sseSlots.release()
+    }
+  }
+
+  function run_rag_config_unsafe(
+    project_id: string,
+    rag_config_id: string,
+  ): Promise<void> {
     const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
     const eventSource = new EventSource(run_url)
 
