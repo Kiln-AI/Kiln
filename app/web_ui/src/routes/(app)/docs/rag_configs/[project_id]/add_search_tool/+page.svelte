@@ -14,6 +14,7 @@
     type RequiredApiKeysSets,
     type RagConfigTemplate,
   } from "./rag_config_templates"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
 
@@ -35,6 +36,12 @@
   )
 
   let missing_api_keys: RequiredApiKeysSets | null = null
+  $: missing_api_keys_string = missing_api_keys
+    ? {
+        Openai: "OpenAI",
+        Gemini: "Google Gemini",
+      }[missing_api_keys]
+    : null
   function suggestion_selected(
     suggestion: RagConfigTemplate,
     template_id: string,
@@ -169,11 +176,16 @@
     },
   ]}
 >
-  <p>
-    {#if missing_api_keys === "Openai"}
-      <p>This search configuration requires an OpenAI API key.</p>
-    {:else if missing_api_keys === "Gemini"}
-      <p>This search configuration requires a Google Gemini API key.</p>
+  <div>
+    <p class="mb-6">
+      This search configuration requires an {missing_api_keys_string} API key.
+    </p>
+    {#if settings && settings["open_router_api_key"]}
+      <Warning
+        warning_message="OpenRouter doesn't support embeddings yet. Please add a direct {missing_api_keys_string} API key for search tools."
+        warning_color="warning"
+        warning_icon="info"
+      />
     {/if}
-  </p>
+  </div>
 </Dialog>
