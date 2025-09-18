@@ -549,7 +549,7 @@
             </ul>
           </div>
         {:else if should_select_eval_config}
-          <div class="mb-4">
+          <div class="mb-4 mt-2">
             <Warning
               warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}

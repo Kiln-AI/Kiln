@@ -25,7 +25,7 @@
       title="Add Tools to Your Project"
       description_paragraphs={[
         "Tools can provide powerful capabilities to your AI tasks.",
-        "To get started, add MCP servers to give your system new skills.",
+        "To get started, add search tools or MCP servers to give your system new skills.",
       ]}
       action_buttons={[
         {

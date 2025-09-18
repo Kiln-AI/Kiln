@@ -125,7 +125,6 @@ export async function update_task_default_run_config(
         },
       },
       body: {
-        // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
         default_run_config_id,
       },
     },
