@@ -85,11 +85,7 @@
 
 {#if rag_progress && rag_config}
   <tr
-    class="{row_hovered
-      ? 'hover'
-      : ''} cursor-pointer hover:bg-base-200 {rag_config.is_archived
-      ? 'opacity-60 bg-gray-50'
-      : ''}"
+    class="{row_hovered ? 'hover' : ''} cursor-pointer hover:bg-base-200"
     on:click|stopPropagation={open}
   >
     <!-- Step Info Card -->
@@ -150,17 +146,15 @@
           <!-- Status and Action Row -->
           <div class="flex items-center justify-between gap-4">
             <div
-              class="badge badge-outline px-3 py-1 {status_badge_props?.warning
-                ? 'badge-warning'
+              class="badge px-3 py-1 {status_badge_props?.warning
+                ? 'badge-outline badge-warning'
                 : ''} {status_badge_props?.running
-                ? 'badge-success'
+                ? 'badge-outline badge-success'
                 : ''} {status_badge_props?.error
-                ? 'badge-error'
+                ? 'badge-outline badge-error'
                 : ''} {status_badge_props?.primary
-                ? 'badge-primary'
-                : ''} {status_badge_props?.archived
-                ? 'text-gray-500 border-gray-300'
-                : ''}"
+                ? 'badge-outline badge-primary'
+                : ''} {status_badge_props?.archived ? 'badge-secondary' : ''}"
             >
               {status_badge_props?.text}
             </div>

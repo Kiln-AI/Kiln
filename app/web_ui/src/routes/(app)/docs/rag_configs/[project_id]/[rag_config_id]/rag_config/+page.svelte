@@ -85,54 +85,35 @@
     }
   }
 
-  export async function archive_rag_config() {
-    const { error } = await client.PATCH(
-      "/api/projects/{project_id}/rag_configs/{rag_config_id}",
-      {
-        body: {
-          is_archived: true,
-        },
-        params: {
-          path: {
-            project_id,
-            rag_config_id,
+  async function update_archived_state(is_archived: boolean) {
+    try {
+      error = null
+      const { error: update_archived_state_error } = await client.PATCH(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}",
+        {
+          body: { is_archived },
+          params: {
+            path: {
+              project_id,
+              rag_config_id,
+            },
           },
         },
-      },
-    )
+      )
 
-    if (error) {
-      throw error
+      if (update_archived_state_error) {
+        throw update_archived_state_error
+      }
+
+      // update the store to make sure state gets reflected everywhere
+      await update_rag_config_archived_state(rag_config_id, is_archived)
+
+      await get_rag_config()
+    } catch (e) {
+      error = createKilnError(e)
+    } finally {
+      loading = false
     }
-
-    await update_rag_config_archived_state(rag_config_id, true)
-
-    await get_rag_config()
-  }
-
-  export async function unarchive_rag_config() {
-    const { error } = await client.PATCH(
-      "/api/projects/{project_id}/rag_configs/{rag_config_id}",
-      {
-        body: {
-          is_archived: false,
-        },
-        params: {
-          path: {
-            project_id,
-            rag_config_id,
-          },
-        },
-      },
-    )
-
-    if (error) {
-      throw createKilnError(error)
-    }
-
-    await update_rag_config_archived_state(rag_config_id, false)
-
-    await get_rag_config()
   }
 
   function tooltip_for_chunker_type(chunker_type: ChunkerType): string {
@@ -246,11 +227,13 @@
         label: rag_config?.is_archived ? "Unarchive" : "Archive",
         primary: rag_config?.is_archived,
         handler: () => {
-          if (rag_config?.is_archived) {
-            unarchive_rag_config()
-          } else {
-            archive_rag_config()
+          if (!rag_config) {
+            return
           }
+
+          // flip the archived state
+          const new_is_archived = !rag_config.is_archived
+          update_archived_state(new_is_archived)
         },
       },
     ]}
