@@ -494,7 +494,7 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Search Tool"
-  subtitle="You can't edit the tool name or tool description. However, you can create a new search tool with the same configuration and a new tool name/description."
+  subtitle="You can't edit the tool name/description that the model sees, which are different from reference name/description below. If that's your goal, create a new search tool with the same configuration and new name/description."
   patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
   fields={[
     {
