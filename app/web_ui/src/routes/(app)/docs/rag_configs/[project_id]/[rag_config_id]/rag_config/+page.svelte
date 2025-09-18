@@ -211,11 +211,11 @@
         <!-- Main Content - Search Section -->
         <div class="flex-1">
           <div class="text-xl font-bold mb-1">Test Search Tool</div>
-          <div class="font-light mb-2">
-            Experiment with your search tool, without running an AI task.
+          <div class="text-sm text-gray-500 mb-2">
+            Run your search tool, without connecting it to an AI task.
             <span class="text-gray-500">
               <InfoTooltip
-                tooltip_text="This UI runs your search tool (RAG) without sending the results to an AI task. You can use the search tool in an AI task by selecting it from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
+                tooltip_text="This UI runs your search tool (RAG) and shows the search results (chunks), without sending the results to an AI task. To use it in an AI task, select this search tool from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
                 no_pad={true}
               />
             </span>
