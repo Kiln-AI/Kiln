@@ -299,7 +299,8 @@ class TestRagTool:
         with (
             patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
             patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config"
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_adapter_factory,
         ):
             mock_vector_store_config = Mock()
@@ -389,7 +390,8 @@ class TestRagTool:
                 "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
             ) as mock_adapter_factory,
             patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config"
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vs_adapter_factory,
         ):
             # Setup mocks
@@ -470,7 +472,8 @@ class TestRagTool:
                 "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
             ) as mock_adapter_factory,
             patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config"
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vs_adapter_factory,
         ):
             # Setup mocks
@@ -538,7 +541,8 @@ class TestRagTool:
                 "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
             ) as mock_adapter_factory,
             patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config"
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vs_adapter_factory,
         ):
             # Setup mocks
@@ -597,7 +601,8 @@ class TestRagTool:
                 "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
             ) as mock_adapter_factory,
             patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config"
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vs_adapter_factory,
         ):
             # Setup mocks
@@ -640,7 +645,8 @@ class TestRagTool:
                 "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
             ) as mock_adapter_factory,
             patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config"
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
             ) as mock_vs_adapter_factory,
         ):
             # Setup mocks
