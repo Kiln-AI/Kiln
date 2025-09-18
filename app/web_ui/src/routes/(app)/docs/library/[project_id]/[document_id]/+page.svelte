@@ -14,6 +14,7 @@
   import Output from "../../../../run/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
   import TagDropdown from "../../../../../../lib/ui/tag_dropdown.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -221,12 +222,13 @@
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
       {#if results}
         <div class="flex-grow">
-          <div class="text-xl font-bold">Document Extractions</div>
-          <div class="text-gray-500 text-sm">
-            Each
-            <a class="link" href={`/docs/extractors/${project_id}`}
-              >document extractor</a
-            > generated extractions of this document:
+          <div class="text-xl font-bold flex flex-row items-center gap-2">
+            Document Extractions
+            <InfoTooltip
+              no_pad
+              tooltip_text="Extractors generate a text representation of this document which can be indexed, searched and read by language models."
+              position="bottom"
+            />
           </div>
           {#if results.length == 0}
             <div class="mt-4 text-sm text-gray-500">

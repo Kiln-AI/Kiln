@@ -277,11 +277,11 @@
         <!-- Main Content - Search Section -->
         <div class="flex-1">
           <div class="text-xl font-bold mb-1">Test Search Tool</div>
-          <div class="font-light mb-2">
-            Experiment with your search tool, without running an AI task.
+          <div class="text-sm text-gray-500 mb-2">
+            Run your search tool, without connecting it to an AI task.
             <span class="text-gray-500">
               <InfoTooltip
-                tooltip_text="This UI runs your search tool (RAG) without sending the results to an AI task. You can use the search tool in an AI task by selecting it from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
+                tooltip_text="This UI runs your search tool (RAG) and shows the search results (chunks), without sending the results to an AI task. To use it in an AI task, select this search tool from the 'Tools' dropdown in the 'Advanced' section of the 'Run' page."
                 no_pad={true}
               />
             </span>
@@ -385,13 +385,13 @@
                   tooltip: "The tool description the model sees.",
                 },
                 {
-                  name: "Internal Name",
+                  name: "Reference Name",
                   tooltip:
                     "A name to identify this RAG configuration for your own reference, not seen by the model.",
                   value: rag_config.name || "N/A",
                 },
                 {
-                  name: "Internal Description",
+                  name: "Reference Description",
                   tooltip:
                     "A description of the RAG configuration for your own reference, not seen by the model.",
                   value: rag_config.description || "N/A",
@@ -535,9 +535,9 @@
             />
             <div>
               <div class="text-xl font-bold mb-1">Documents</div>
-              <div class="flex flex-row flex-wrap gap-2 text-sm text-gray-500">
+              <div class="flex flex-row flex-wrap gap-2 text-sm items-center">
                 {#if sorted_tags && sorted_tags.length > 0}
-                  Search is limited to documents with the tags:
+                  Documents with the {sorted_tags.length == 1 ? "tag" : "tags"}
                   {#each sorted_tags as tag}
                     <div
                       class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
@@ -560,11 +560,11 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Search Tool"
-  subtitle="You can't edit the tool name or tool description. However, you can create a new search tool with the same configuration and a new tool name/description."
+  subtitle="You can't edit the tool name/description that the model sees, which are different from reference name/description below. If that's your goal, create a new search tool with the same configuration and new name/description."
   patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
   fields={[
     {
-      label: "Internal Name",
+      label: "Reference Name",
       description:
         "A name to identify this search tool for your own reference, not seen by the model.",
       api_name: "name",
@@ -572,7 +572,7 @@
       input_type: "input",
     },
     {
-      label: "Internal Description",
+      label: "Reference Description",
       description:
         "A description of the search tool for your own reference, not seen by the model.",
       api_name: "description",

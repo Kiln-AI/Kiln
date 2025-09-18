@@ -592,8 +592,8 @@
         <!-- Search Tool Properties -->
         <FormElement
           label="Search Tool Name"
-          description="A short tool name such as 'knowledge_base_search'. Be specific about what data this tool can search."
-          info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being specific is important."
+          description="A unique short tool name such as 'knowledge_base_search'. Be descriptive about what data this tool can search."
+          info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
           inputType="input"
           id="tool_name"
           bind:value={tool_name}
@@ -638,7 +638,7 @@
                       "The model used to extract text from your documents (PDFs, images, videos, etc).",
                   },
                   {
-                    name: "Chunker",
+                    name: "Chunking Strategy",
                     value: template.chunker.description,
                     tooltip:
                       "Parameters for splitting larger documents into smaller chunks for search.",
@@ -667,15 +667,17 @@
                     : []),
                 ]}
               />
-              <button
-                class="btn mt-4 btn-sm px-6"
-                on:click={() => {
-                  customize_template()
-                }}
-              >
-                Customize Configuration
-                <span class="badge badge-sm badge-outline">Advanced</span>
-              </button>
+              <div class="flex flex-row items-center gap-2 mt-4">
+                <button
+                  class="btn btn-sm px-6"
+                  on:click={() => {
+                    customize_template()
+                  }}
+                >
+                  Customize Configuration
+                </button>
+                <div class="badge badge-sm badge-outline">Advanced</div>
+              </div>
             </div>
           </div>
         {:else}

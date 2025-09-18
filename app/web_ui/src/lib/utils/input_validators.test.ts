@@ -591,7 +591,7 @@ describe("input_validators", () => {
 
       it("should return error for name longer than 64 characters", () => {
         const result = tool_name_validator("a".repeat(65))
-        expect(result).toBe("Must be less than 64 characters long")
+        expect(result).toBe("Must be less than 65 characters long")
       })
     })
   })

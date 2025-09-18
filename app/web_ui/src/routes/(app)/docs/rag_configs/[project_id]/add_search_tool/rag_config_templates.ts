@@ -42,6 +42,7 @@ export type RagConfigTemplate = {
   name: string
   preview_description: string
   preview_subtitle: string
+  preview_tooltip?: string
   required_api_keys: RequiredApiKeysSets
   extractor: ExtractorSubConfig
   chunker: ChunkerSubConfig
@@ -82,7 +83,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Best Quality",
     preview_subtitle: "Spare No Expense",
     preview_description:
-      "Gemini 2.5 Pro extraction, Gemini embeddings, and hybrid search.",
+      "The best quality search configuration. Uses Gemini 2.5 Pro with hybrid search.",
+    preview_tooltip:
+      "Gemini 2.5 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_api_keys: "Gemini",
     extractor: {
       config_name: "Gemini 2p5 Pro w Default Prompts",
@@ -99,7 +102,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Cost Optimized",
     preview_subtitle: "Balance Cost and Quality",
     preview_description:
-      "Gemini 2.5 Flash extraction, Gemini embeddings, and hybrid search.",
+      "Great quality at a lower price. Uses Gemini 2.5 Flash with hybrid search.",
+    preview_tooltip:
+      "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_api_keys: "Gemini",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
@@ -111,7 +116,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Vector Only",
     preview_subtitle: "No Full-Text Search",
     preview_description:
-      "Use only vector search for semantic similarity, not hybrid vector + full-text search.",
+      "Use only vector search for semantic similarity, without keyword search.",
+    preview_tooltip:
+      "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB vector search (no full-text search).",
     required_api_keys: "Gemini",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
@@ -128,7 +135,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "OpenAI Based",
     preview_subtitle: "Need to use OpenAI?",
     preview_description:
-      "We suggest Gemini, but if you need to use OpenAI try this template with GPT-4.1.",
+      "We suggest Gemini, but if you need to use OpenAI try this template.",
+    preview_tooltip:
+      "GPT-4.1 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_api_keys: "Openai",
     notice_text: "Does not support audio or video files.",
     notice_tooltip:
