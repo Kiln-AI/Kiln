@@ -11,7 +11,7 @@
 </script>
 
 <div
-  class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
+  class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box overflow-visible"
 >
   {#each features as feature, index}
     <div class="carousel-item">
@@ -44,7 +44,7 @@
         </div>
 
         {#if feature.tooltip}
-          <div class="absolute top-1 right-1">
+          <div class="absolute top-1 right-1 text-gray-500">
             <InfoTooltip
               tooltip_text={feature.tooltip}
               no_pad={true}
