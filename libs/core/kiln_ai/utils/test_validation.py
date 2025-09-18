@@ -1,6 +1,7 @@
 import pytest
 
 from kiln_ai.utils.validation import (
+    tool_name_validator,
     validate_return_dict_prop,
     validate_return_dict_prop_optional,
 )
@@ -272,3 +273,252 @@ class TestValidateReturnDictPropOptional:
             )
             assert result == expected_value
             assert result is not None
+
+
+class TestToolNameValidator:
+    """Test cases for tool_name_validator function."""
+
+    def test_valid_simple_name(self):
+        """Test validation succeeds for simple valid tool names."""
+        valid_names = [
+            "tool",
+            "my_tool",
+            "data_processor",
+            "test123",
+            "a",
+            "tool_v2",
+            "get_weather",
+        ]
+        for name in valid_names:
+            result = tool_name_validator(name)
+            assert result == name
+
+    def test_valid_name_with_numbers(self):
+        """Test validation succeeds for tool names with numbers."""
+        valid_names = [
+            "tool1",
+            "my_tool_v2",
+            "data_processor_3000",
+            "test_123_abc",
+            "version2",
+        ]
+        for name in valid_names:
+            result = tool_name_validator(name)
+            assert result == name
+
+    def test_none_name_raises_error(self):
+        """Test that None name raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            tool_name_validator(None)
+        assert str(exc_info.value) == "Tool name cannot be empty"
+
+    def test_empty_string_raises_error(self):
+        """Test that empty string raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            tool_name_validator("")
+        assert str(exc_info.value) == "Tool name cannot be empty"
+
+    def test_whitespace_only_raises_error(self):
+        """Test that whitespace-only string raises ValueError."""
+        whitespace_names = [" ", "  ", "\t", "\n", "   \t  "]
+        for name in whitespace_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert str(exc_info.value) == "Tool name cannot be empty"
+
+    def test_non_string_raises_error(self):
+        """Test that non-string input raises ValueError."""
+        non_string_inputs = [123, [], {}, True, 3.14]
+        for input_val in non_string_inputs:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(input_val)
+            assert str(exc_info.value) == "Tool name must be a string"
+
+    def test_uppercase_letters_raise_error(self):
+        """Test that uppercase letters raise ValueError."""
+        invalid_names = [
+            "Tool",
+            "MY_TOOL",
+            "myTool",
+            "tool_Name",
+            "TOOL",
+            "Test123",
+        ]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert "Tool name must be in snake_case" in str(exc_info.value)
+
+    def test_special_characters_raise_error(self):
+        """Test that special characters raise ValueError."""
+        invalid_names = [
+            "tool-name",
+            "tool.name",
+            "tool@name",
+            "tool#name",
+            "tool$name",
+            "tool%name",
+            "tool&name",
+            "tool*name",
+            "tool+name",
+            "tool=name",
+            "tool!name",
+            "tool?name",
+            "tool name",  # space
+            "tool,name",
+            "tool;name",
+            "tool:name",
+            "tool'name",
+            'tool"name',
+            "tool(name)",
+            "tool[name]",
+            "tool{name}",
+            "tool/name",
+            "tool\\name",
+        ]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert "Tool name must be in snake_case" in str(exc_info.value)
+
+    def test_starts_with_underscore_raises_error(self):
+        """Test that names starting with underscore raise ValueError."""
+        invalid_names = ["_tool", "_my_tool", "_", "_123"]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert (
+                str(exc_info.value)
+                == "Tool name cannot start or end with an underscore"
+            )
+
+    def test_ends_with_underscore_raises_error(self):
+        """Test that names ending with underscore raise ValueError."""
+        invalid_names = ["tool_", "my_tool_", "test_"]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert (
+                str(exc_info.value)
+                == "Tool name cannot start or end with an underscore"
+            )
+
+    def test_consecutive_underscores_raise_error(self):
+        """Test that consecutive underscores raise ValueError."""
+        invalid_names = [
+            "tool__name",
+            "my__tool",
+            "test___name",
+            "a__b__c",
+            "tool____name",
+        ]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert (
+                str(exc_info.value)
+                == "Tool name cannot contain consecutive underscores"
+            )
+
+    def test_starts_with_number_raises_error(self):
+        """Test that names starting with number raise ValueError."""
+        invalid_names = ["1tool", "2_tool", "123abc", "9test"]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            assert str(exc_info.value) == "Tool name must start with a lowercase letter"
+
+    def test_starts_with_underscore_number_raises_error(self):
+        """Test that names starting with underscore followed by number raise ValueError."""
+        invalid_names = ["_1tool", "_2tool"]
+        for name in invalid_names:
+            with pytest.raises(ValueError) as exc_info:
+                tool_name_validator(name)
+            # This should fail on the underscore check first
+            assert (
+                str(exc_info.value)
+                == "Tool name cannot start or end with an underscore"
+            )
+
+    def test_long_name_raises_error(self):
+        """Test that names longer than 64 characters raise ValueError."""
+        # Create a 65-character name
+        long_name = "a" * 65
+        with pytest.raises(ValueError) as exc_info:
+            tool_name_validator(long_name)
+        assert str(exc_info.value) == "Tool name must be less than 64 characters long"
+
+    def test_exactly_64_characters_succeeds(self):
+        """Test that names with exactly 64 characters succeed."""
+        # Create a 64-character name
+        max_length_name = "a" * 64
+        result = tool_name_validator(max_length_name)
+        assert result == max_length_name
+
+    def test_boundary_length_cases(self):
+        """Test various boundary cases for name length."""
+        # Test lengths around the limit
+        test_cases = [
+            ("a", 1),  # minimum valid length
+            ("ab", 2),
+            ("a" * 63, 63),  # just under limit
+            ("a" * 64, 64),  # exactly at limit
+        ]
+
+        for name, expected_length in test_cases:
+            result = tool_name_validator(name)
+            assert result == name
+            assert len(result) == expected_length
+
+    def test_complex_valid_names(self):
+        """Test complex but valid tool names."""
+        valid_names = [
+            "get_user_data",
+            "process_payment_info",
+            "validate_email_address",
+            "send_notification_v2",
+            "calculate_tax_amount",
+            "fetch_weather_data_for_city",
+            "convert_currency_usd_to_eur",
+            "a1b2c3d4e5f6g7h8i9j0",
+            "tool_with_many_underscores_and_numbers_123",
+        ]
+        for name in valid_names:
+            result = tool_name_validator(name)
+            assert result == name
+
+    @pytest.mark.parametrize(
+        "invalid_name,expected_error",
+        [
+            (None, "Tool name cannot be empty"),
+            ("", "Tool name cannot be empty"),
+            ("   ", "Tool name cannot be empty"),
+            (123, "Tool name must be a string"),
+            ("Tool", "Tool name must be in snake_case"),
+            ("tool-name", "Tool name must be in snake_case"),
+            ("_tool", "Tool name cannot start or end with an underscore"),
+            ("tool_", "Tool name cannot start or end with an underscore"),
+            ("tool__name", "Tool name cannot contain consecutive underscores"),
+            ("1tool", "Tool name must start with a lowercase letter"),
+            ("a" * 65, "Tool name must be less than 64 characters long"),
+        ],
+    )
+    def test_parametrized_invalid_cases(self, invalid_name, expected_error):
+        """Test various invalid cases with parameterized inputs."""
+        with pytest.raises(ValueError) as exc_info:
+            tool_name_validator(invalid_name)
+        assert expected_error in str(exc_info.value)
+
+    def test_edge_case_single_character_names(self):
+        """Test single character names (valid and invalid)."""
+        # Valid single characters
+        valid_chars = "abcdefghijklmnopqrstuvwxyz"
+        for char in valid_chars:
+            result = tool_name_validator(char)
+            assert result == char
+
+        # Invalid single characters
+        invalid_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-+="
+        for char in invalid_chars:
+            with pytest.raises(ValueError):
+                tool_name_validator(char)

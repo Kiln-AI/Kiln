@@ -111,7 +111,7 @@
     ></label>
 
     <ul
-      class="menu bg-base-200 text-base-content w-72 md:w-64 p-4 pt-1 lg:pt-4 min-h-full"
+      class="menu bg-base-200 text-base-content w-72 md:w-64 2xl:w-72 p-4 pt-1 lg:pt-4 min-h-full"
     >
       <li class="hover:bg-transparent flex flex-row justify-end">
         <label
@@ -130,7 +130,9 @@
       <li class="mb-4">
         <details id="task-menu">
           <summary>
-            <div class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+            <div
+              class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs 2xl:text-sm"
+            >
               <span class="font-bold whitespace-nowrap">Project:</span>
               <span class="truncate">{$current_project?.name}</span>
               <span class="font-bold whitespace-nowrap">Task:</span>

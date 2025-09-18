@@ -990,13 +990,6 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
@@ -1068,13 +1061,6 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
             ),
@@ -1136,13 +1122,6 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
                 ],
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
@@ -1200,13 +1179,6 @@ built_in_models: List[KilnModel] = [
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
                 ],
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),

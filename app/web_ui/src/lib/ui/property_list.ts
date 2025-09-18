@@ -4,4 +4,5 @@ export type UiProperty = {
   tooltip?: string
   link?: string
   error?: boolean
+  warn_icon?: boolean
 }

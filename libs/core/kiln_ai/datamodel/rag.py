@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Union
 from pydantic import Field, model_validator
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
+from kiln_ai.utils.validation import ToolNameString
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -16,6 +17,15 @@ class RagConfig(KilnParentedModel):
     description: str | None = Field(
         default=None,
         description="A description of the RAG configuration for you and your team. Will not be used in prompts/training/validation.",
+    )
+
+    tool_name: ToolNameString = Field(
+        description="A name for the model to identify the Search Tool in conversations.",
+    )
+
+    tool_description: str = Field(
+        description="A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.",
+        max_length=128,
     )
 
     extractor_config_id: ID_TYPE = Field(
@@ -55,5 +65,10 @@ class RagConfig(KilnParentedModel):
                     raise ValueError("Tags cannot be empty.")
                 if " " in tag:
                     raise ValueError("Tags cannot contain spaces. Try underscores.")
+
+        if self.tool_name.strip() == "":
+            raise ValueError("Tool name cannot be empty.")
+        if self.tool_description.strip() == "":
+            raise ValueError("Tool description cannot be empty.")
 
         return self

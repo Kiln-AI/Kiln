@@ -80,7 +80,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.openai,
         name=EmbeddingModelName.openai_text_embedding_3_small,
-        friendly_name="text-embedding-3-small",
+        friendly_name="Text Embedding 3 Small",
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openai,
@@ -94,7 +94,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.openai,
         name=EmbeddingModelName.openai_text_embedding_3_large,
-        friendly_name="text-embedding-3-large",
+        friendly_name="Text Embedding 3 Large",
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openai,
@@ -110,7 +110,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemini,
         name=EmbeddingModelName.gemini_text_embedding_004,
-        friendly_name="text-embedding-004",
+        friendly_name="Text Embedding 004",
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -123,7 +123,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemini,
         name=EmbeddingModelName.gemini_embedding_001,
-        friendly_name="gemini-embedding-001",
+        friendly_name="Gemini Embedding 001",
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -139,7 +139,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemma,
         name=EmbeddingModelName.embedding_gemma_300m,
-        friendly_name="EmbeddingGemma:300m",
+        friendly_name="Embedding Gemma 300m",
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.ollama,
@@ -157,7 +157,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.nomic,
         name=EmbeddingModelName.nomic_text_embedding_v1_5,
-        friendly_name="nomic-embed-text:v1.5",
+        friendly_name="Nomic Embed Text v1.5",
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.ollama,
