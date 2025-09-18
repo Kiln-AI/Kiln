@@ -667,15 +667,17 @@
                     : []),
                 ]}
               />
-              <button
-                class="btn mt-4 btn-sm px-6"
-                on:click={() => {
-                  customize_template()
-                }}
-              >
-                Customize Configuration
-                <span class="badge badge-sm badge-outline">Advanced</span>
-              </button>
+              <div class="flex flex-row items-center gap-2 mt-4">
+                <button
+                  class="btn btn-sm px-6"
+                  on:click={() => {
+                    customize_template()
+                  }}
+                >
+                  Customize Configuration
+                </button>
+                <div class="badge badge-sm badge-outline">Advanced</div>
+              </div>
             </div>
           </div>
         {:else}
