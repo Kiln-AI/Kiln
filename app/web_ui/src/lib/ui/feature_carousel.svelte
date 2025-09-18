@@ -44,7 +44,7 @@
         </div>
 
         {#if feature.tooltip}
-          <div class="absolute top-1 right-1 text-gray-500">
+          <div class="absolute top-1 right-1">
             <InfoTooltip
               tooltip_text={feature.tooltip}
               no_pad={true}
