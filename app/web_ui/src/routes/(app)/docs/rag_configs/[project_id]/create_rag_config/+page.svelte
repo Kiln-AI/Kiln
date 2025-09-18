@@ -592,8 +592,8 @@
         <!-- Search Tool Properties -->
         <FormElement
           label="Search Tool Name"
-          description="A short tool name such as 'knowledge_base_search'. Be specific about what data this tool can search."
-          info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being specific is important."
+          description="A unique short tool name such as 'knowledge_base_search'. Be descriptive about what data this tool can search."
+          info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
           inputType="input"
           id="tool_name"
           bind:value={tool_name}
