@@ -469,9 +469,9 @@
             />
             <div>
               <div class="text-xl font-bold mb-1">Documents</div>
-              <div class="flex flex-row flex-wrap gap-2 text-sm text-gray-500">
+              <div class="flex flex-row flex-wrap gap-2 text-sm items-center">
                 {#if sorted_tags && sorted_tags.length > 0}
-                  Search is limited to documents with the tags:
+                  Documents with the {sorted_tags.length == 1 ? "tag" : "tags"}
                   {#each sorted_tags as tag}
                     <div
                       class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
