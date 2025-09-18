@@ -106,7 +106,7 @@ export const tool_name_validator: (value: unknown) => string | null = (
 
   // Check length
   if (name.length > 64) {
-    return "Must be less than 64 characters long"
+    return "Must be less than 65 characters long"
   }
 
   return null
