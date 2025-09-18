@@ -27,8 +27,8 @@
   class="group flex items-center justify-between py-4 px-6 rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer w-full text-left"
 >
   <div class="flex-1 min-w-0">
-    <div class="flex flex-row items-center">
-      <h3 class="text-base font-medium text-gray-900 mb-1">
+    <div class="flex flex-row items-center mb-1">
+      <h3 class="text-base font-medium text-gray-900">
         {name}
       </h3>
       {#if badge_text}
