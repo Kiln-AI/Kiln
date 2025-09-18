@@ -98,7 +98,6 @@ class ExtractorRunner:
                     data=output.content,
                     mime_type=output.content_format,
                 ),
-                # TODO: harmonize between ExtractionSource and output property
                 source=ExtractionSource.PASSTHROUGH
                 if output.is_passthrough
                 else ExtractionSource.PROCESSED,
