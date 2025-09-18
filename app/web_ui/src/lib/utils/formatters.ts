@@ -1,5 +1,7 @@
 import {
+  type ChunkerType,
   type EvalConfigType,
+  type OutputFormat,
   type StructuredOutputMode,
   type ToolServerType,
 } from "$lib/types"
@@ -47,6 +49,28 @@ export function formatDate(dateString: string | undefined): string {
     .replace(",", "")
 }
 
+export function formatSize(byteSize: number | undefined | null): string {
+  if (typeof byteSize !== "number" || isNaN(byteSize) || byteSize < 0) {
+    return "unknown"
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let size = byteSize
+  let idx = 0
+
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024
+    idx += 1
+  }
+
+  // Remove trailing .0 from the size
+  const formattedSize = idx === 0 ? size.toString() : size.toFixed(1)
+  const displaySize = formattedSize.endsWith(".0")
+    ? formattedSize.slice(0, -2)
+    : formattedSize
+  return `${displaySize} ${units[idx]}`
+}
+
 export function eval_config_to_ui_name(
   eval_config_type: EvalConfigType,
 ): string {
@@ -86,6 +110,64 @@ export function rating_name(rating_type: string): string {
   }
 }
 
+export function mime_type_to_string(mime_type: string): string {
+  if (mime_type === "application/pdf") {
+    return "PDF"
+  } else if (mime_type === "text/csv") {
+    return "CSV"
+  } else if (mime_type === "text/markdown") {
+    return "Markdown"
+  } else if (mime_type === "text/html") {
+    return "HTML"
+  } else if (mime_type === "text/plain") {
+    return "Text"
+  } else if (mime_type.startsWith("image/")) {
+    return `Image (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("text/")) {
+    return `Text (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("video/")) {
+    return `Video (${mime_type.split("/")[1]})`
+  } else if (mime_type.startsWith("audio/")) {
+    return `Audio (${mime_type.split("/")[1]})`
+  } else {
+    return mime_type
+  }
+}
+
+export function extractor_output_format(output_format: OutputFormat): string {
+  switch (output_format) {
+    case "text/plain":
+      return "Text"
+    case "text/markdown":
+      return "Markdown"
+    default: {
+      // trigger a type error if there is a new output format, but don't handle it
+      // in the switch
+      const exhaustiveCheck: never = output_format
+      return exhaustiveCheck
+    }
+  }
+}
+
+export function chunker_type_format(chunker_type: ChunkerType): string {
+  switch (chunker_type) {
+    case "fixed_window":
+      return "Fixed Window"
+    default: {
+      // trigger a type error if there is a new chunker type, but don't handle it
+      // in the switch
+      const exhaustiveCheck: never = chunker_type
+      return exhaustiveCheck
+    }
+  }
+}
+
+export function capitalize(str: string | undefined | null): string {
+  if (!str) {
+    return ""
+  }
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}
 /**
  * Converts StructuredOutputMode to a human-readable string.
  * This function uses exhaustive case checking - if you add a new case to StructuredOutputMode,

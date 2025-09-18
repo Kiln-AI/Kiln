@@ -160,8 +160,12 @@ class EvalRunner:
         """
         jobs = self.collect_tasks()
 
-        runner = AsyncJobRunner(concurrency=concurrency)
-        async for progress in runner.run(jobs, self.run_job):
+        runner = AsyncJobRunner(
+            concurrency=concurrency,
+            jobs=jobs,
+            run_job_fn=self.run_job,
+        )
+        async for progress in runner.run():
             yield progress
 
     async def run_job(self, job: EvalJob) -> bool:

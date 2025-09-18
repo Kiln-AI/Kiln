@@ -344,6 +344,7 @@ async def test_all_built_in_models_structured_input_mocked(tmp_path):
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
     mock_config.user_id = "test_user"
+    mock_config.groq_api_key = "mock_api_key"
 
     with (
         patch(
@@ -398,6 +399,7 @@ async def test_structured_input_cot_prompt_builder_mocked(tmp_path):
     mock_config = Mock()
     mock_config.open_ai_api_key = "mock_api_key"
     mock_config.user_id = "test_user"
+    mock_config.groq_api_key = "mock_api_key"
 
     with (
         patch(

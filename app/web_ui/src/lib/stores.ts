@@ -9,6 +9,9 @@ import type {
   RatingOptionResponse,
   TaskRequirement,
   ModelDetails,
+  EmbeddingProvider,
+  EmbeddingModelDetails,
+  VectorStoreType,
   ToolSetApiDescription,
 } from "./types"
 import { client } from "./api_client"
@@ -286,6 +289,33 @@ export async function load_available_models() {
   }
 }
 
+// Available embedding models for each provider
+export const available_embedding_models = writable<EmbeddingProvider[]>([])
+let available_embedding_models_loaded: "not_loaded" | "loading" | "loaded" =
+  "not_loaded"
+
+export async function load_available_embedding_models() {
+  try {
+    if (
+      available_embedding_models_loaded === "loading" ||
+      available_embedding_models_loaded === "loaded"
+    ) {
+      return
+    }
+    available_embedding_models_loaded = "loading"
+    const { data, error } = await client.GET("/api/available_embedding_models")
+    if (error) {
+      throw error
+    }
+    available_embedding_models.set(data)
+    available_embedding_models_loaded = "loaded"
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    available_embedding_models.set([])
+    available_embedding_models_loaded = "not_loaded"
+  }
+}
+
 export function clear_available_models_cache() {
   available_models_loaded = "not_loaded"
   available_models.set([])
@@ -364,6 +394,27 @@ export function get_model_info(
   return null
 }
 
+export function get_embedding_model_info(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): EmbeddingModelDetails | null {
+  if (!model_id) {
+    return null
+  }
+
+  for (const provider of get(available_embedding_models)) {
+    if (provider.provider_id === provider_id) {
+      const models = provider.models || []
+      for (const model of models) {
+        if (model.id === model_id) {
+          return model
+        }
+      }
+    }
+  }
+  return null
+}
+
 export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
@@ -377,6 +428,36 @@ export function model_name(
     return model.name
   }
   return "Model ID: " + model_id
+}
+
+export function embedding_model_name(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): string {
+  if (!model_id) {
+    return "Unknown"
+  }
+  const model = get_embedding_model_info(model_id, provider_id)
+  if (model?.name) {
+    return model.name
+  }
+  return "Model ID: " + model_id
+}
+
+export function vector_store_name(store_type: VectorStoreType | null): string {
+  if (!store_type) {
+    return "Unknown"
+  }
+  switch (store_type) {
+    case "lancedb_fts":
+      return "Full Text Search"
+    case "lancedb_vector":
+      return "Vector Search"
+    case "lancedb_hybrid":
+      return "Hybrid Search"
+    default:
+      return "Unknown"
+  }
 }
 
 export function provider_name_from_id(provider_id: string): string {
@@ -519,4 +600,12 @@ export function rating_options_for_sample(
       return option.show_for_tags.some((tag: string) => tags.includes(tag))
     })
     .map((option) => option.requirement)
+}
+
+export function get_model_friendly_name(model_id: string): string {
+  const model = get_model_info(model_id, get(model_info))
+  if (model?.name) {
+    return model.name
+  }
+  return model_id
 }

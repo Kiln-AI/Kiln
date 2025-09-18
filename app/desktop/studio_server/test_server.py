@@ -57,6 +57,7 @@ def test_connect_ollama_success(client):
         assert response.json() == {
             "message": "Ollama connected",
             "supported_models": ["phi3.5:latest"],
+            "supported_embedding_models": [],
             "untested_models": [],
             "version": "0.5.0",
         }

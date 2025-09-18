@@ -692,9 +692,7 @@
     {:else if task}
       <DataGenDescription bind:guidance_data />
       {#if is_empty}
-        <div
-          class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
-        >
+        <div>
           <DataGenIntro
             generate_subtopics={() => {
               root_node_component?.open_generate_subtopics_modal()
