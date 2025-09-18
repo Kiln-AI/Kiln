@@ -4003,6 +4003,12 @@ export interface components {
              */
             name: string;
             /**
+             * Is Archived
+             * @description Whether the RAG configuration is archived. Archived RAG configurations are not shown in the UI and are not available for use.
+             * @default false
+             */
+            is_archived: boolean;
+            /**
              * Description
              * @description A description of the RAG configuration for you and your team. Will not be used in prompts/training/validation.
              */
@@ -4064,6 +4070,8 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by: string;
+            /** Is Archived */
+            is_archived: boolean;
             extractor_config: components["schemas"]["ExtractorConfig"];
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
@@ -4826,9 +4834,11 @@ export interface components {
         /** UpdateRagConfigRequest */
         UpdateRagConfigRequest: {
             /** Name */
-            name: string;
+            name?: string | null;
             /** Description */
             description?: string | null;
+            /** Is Archived */
+            is_archived?: boolean | null;
         };
         /** Usage */
         Usage: {

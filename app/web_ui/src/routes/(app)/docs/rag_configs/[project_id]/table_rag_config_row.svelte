@@ -32,7 +32,17 @@
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 
-  function status_to_badge_props(status: RagConfigurationStatus) {
+  function status_to_badge_props(
+    status: RagConfigurationStatus,
+    is_archived: boolean,
+  ) {
+    if (is_archived) {
+      return {
+        text: "Archived",
+        archived: true,
+      }
+    }
+
     switch (status) {
       case "complete": {
         return {
@@ -66,7 +76,7 @@
     }
   }
 
-  $: status_badge_props = status_to_badge_props(status)
+  $: status_badge_props = status_to_badge_props(status, rag_config.is_archived)
 
   function open() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
@@ -75,7 +85,11 @@
 
 {#if rag_progress && rag_config}
   <tr
-    class="{row_hovered ? 'hover' : ''} cursor-pointer hover:bg-base-200"
+    class="{row_hovered
+      ? 'hover'
+      : ''} cursor-pointer hover:bg-base-200 {rag_config.is_archived
+      ? 'opacity-60 bg-gray-50'
+      : ''}"
     on:click|stopPropagation={open}
   >
     <!-- Step Info Card -->
@@ -142,7 +156,11 @@
                 ? 'badge-success'
                 : ''} {status_badge_props?.error
                 ? 'badge-error'
-                : ''} {status_badge_props?.primary ? 'badge-primary' : ''}"
+                : ''} {status_badge_props?.primary
+                ? 'badge-primary'
+                : ''} {status_badge_props?.archived
+                ? 'text-gray-500 border-gray-300'
+                : ''}"
             >
               {status_badge_props?.text}
             </div>
@@ -164,7 +182,7 @@
                 max={total_docs || 100}
               ></progress>
             </div>
-          {:else if total_docs > 0}
+          {:else if total_docs > 0 && !rag_config.is_archived}
             <!-- Document count for non-running states -->
             <div class="text-gray-500">
               {#if rag_progress.total_document_completed_count < total_docs}
@@ -177,9 +195,11 @@
             </div>
           {/if}
 
-          <div role="presentation" on:click|stopPropagation>
-            <RunRagControl {rag_config} {project_id} />
-          </div>
+          {#if !rag_config.is_archived}
+            <div role="presentation" on:click|stopPropagation>
+              <RunRagControl {rag_config} {project_id} />
+            </div>
+          {/if}
         </div>
       </td>
     {:else}

@@ -73,6 +73,16 @@ class BulkCreateDocumentsResponse(BaseModel):
     failed_files: List[str]
 
 
+def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
+    rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
+    if rag_config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="RAG config not found",
+        )
+    return rag_config
+
+
 async def run_extractor_runner_with_status(
     extractor_runner: ExtractorRunner,
 ) -> StreamingResponse:
@@ -206,6 +216,7 @@ class RagConfigWithSubConfigs(BaseModel):
     tool_description: str
     created_at: datetime.datetime
     created_by: str
+    is_archived: bool
     extractor_config: ExtractorConfig
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
@@ -407,8 +418,9 @@ class PatchExtractorConfigRequest(BaseModel):
 
 
 class UpdateRagConfigRequest(BaseModel):
-    name: FilenameString
+    name: FilenameString | None = None
     description: str | None = None
+    is_archived: bool | None = None
 
 
 def build_extraction_summary(
@@ -1227,8 +1239,12 @@ def connect_document_api(app: FastAPI):
     ) -> RagConfig:
         project = project_from_id(project_id)
         rag_config = get_rag_config_from_id(project, rag_config_id)
-        rag_config.name = request.name
-        rag_config.description = request.description
+        if request.name is not None:
+            rag_config.name = request.name
+        if request.description is not None:
+            rag_config.description = request.description
+        if request.is_archived is not None:
+            rag_config.is_archived = request.is_archived
         rag_config.save_to_file()
         return rag_config
 
@@ -1344,6 +1360,7 @@ def connect_document_api(app: FastAPI):
                     tags=rag_config.tags,
                     created_at=rag_config.created_at,
                     created_by=rag_config.created_by,
+                    is_archived=rag_config.is_archived,
                     extractor_config=extractor_config,
                     chunker_config=chunker_config,
                     embedding_config=embedding_config,
@@ -1352,15 +1369,6 @@ def connect_document_api(app: FastAPI):
             )
 
         return rag_configs
-
-    def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
-        rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
-        if rag_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="RAG config not found",
-            )
-        return rag_config
 
     @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
     async def get_rag_config(
@@ -1413,6 +1421,7 @@ def connect_document_api(app: FastAPI):
             tool_description=rag_config.tool_description,
             created_at=rag_config.created_at,
             created_by=rag_config.created_by,
+            is_archived=rag_config.is_archived,
             extractor_config=extractor_config,
             chunker_config=chunker_config,
             embedding_config=embedding_config,
@@ -1427,6 +1436,13 @@ def connect_document_api(app: FastAPI):
         rag_config_id: str,
     ) -> StreamingResponse:
         project = project_from_id(project_id)
+
+        rag_config = get_rag_config_from_id(project, rag_config_id)
+        if rag_config.is_archived:
+            raise HTTPException(
+                status_code=422,
+                detail="This RAG configuration is archived. You must unarchive it to use it.",
+            )
 
         async def runner_factory():
             return await build_rag_workflow_runner(project, rag_config_id)

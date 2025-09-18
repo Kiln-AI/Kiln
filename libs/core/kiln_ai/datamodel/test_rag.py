@@ -43,6 +43,7 @@ def test_rag_config_valid_creation(sample_rag_config_data):
     assert rag_config.chunker_config_id == "chunker456"
     assert rag_config.embedding_config_id == "embedding789"
     assert rag_config.vector_store_config_id == "vector_store123"
+    assert not rag_config.is_archived  # Default value
 
 
 def test_rag_config_minimal_creation():
@@ -568,3 +569,73 @@ def test_rag_config_tool_name_validation(tool_name, expected_error):
             vector_store_config_id="vector_store123",
         )
     assert expected_error in str(exc_info.value)
+
+
+def test_rag_config_is_archived_field():
+    """Test the is_archived field functionality."""
+    # Test default value
+    rag_config = RagConfig(
+        name="Test RAG Config",
+        tool_name="test_search_tool",
+        tool_description="A test search tool",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+    )
+    assert not rag_config.is_archived
+
+    # Test explicit False
+    rag_config = RagConfig(
+        name="Test RAG Config",
+        tool_name="test_search_tool",
+        tool_description="A test search tool",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+        is_archived=False,
+    )
+    assert not rag_config.is_archived
+
+    # Test explicit True
+    rag_config = RagConfig(
+        name="Test RAG Config",
+        tool_name="test_search_tool",
+        tool_description="A test search tool",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+        is_archived=True,
+    )
+    assert rag_config.is_archived
+
+
+def test_rag_config_archived_persistence(mock_project, sample_rag_config_data):
+    """Test that is_archived field persists when saving and loading."""
+    # Create archived config
+    rag_config = RagConfig(
+        parent=mock_project,
+        is_archived=True,
+        **sample_rag_config_data,
+    )
+    rag_config.save_to_file()
+
+    assert rag_config.id
+
+    # Load it back
+    loaded_config = RagConfig.from_id_and_parent_path(rag_config.id, mock_project.path)
+    assert loaded_config is not None
+    assert loaded_config.is_archived
+
+    # Test unarchiving
+    loaded_config.is_archived = False
+    loaded_config.save_to_file()
+
+    # Load it back again
+    reloaded_config = RagConfig.from_id_and_parent_path(
+        rag_config.id, mock_project.path
+    )
+    assert reloaded_config is not None
+    assert not reloaded_config.is_archived

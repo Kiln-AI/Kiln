@@ -255,6 +255,7 @@ def connect_tool_servers_api(app: FastAPI):
                             description=f"{rag_config.name}: {rag_config.tool_description}",
                         )
                         for rag_config in rag_configs
+                        if not rag_config.is_archived
                     ],
                 )
             )
@@ -530,4 +531,5 @@ def connect_tool_servers_api(app: FastAPI):
                 description=rag_config.tool_description,
             )
             for rag_config in project.rag_configs(readonly=True)
+            if not rag_config.is_archived
         ]
