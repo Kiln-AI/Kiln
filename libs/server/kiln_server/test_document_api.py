@@ -2535,6 +2535,24 @@ async def test_search_rag_config_not_found(client, mock_project):
 
 
 @pytest.mark.asyncio
+async def test_search_rag_config_archived(client, mock_project, mock_rag_config):
+    """Test search with archived RAG config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        mock_rag_config.is_archived = True
+        mock_rag_config.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 422, response.text
+    assert "archived" in response.json()["message"]
+
+
+@pytest.mark.asyncio
 async def test_search_rag_config_vector_store_not_found(
     client, mock_project, mock_rag_config
 ):

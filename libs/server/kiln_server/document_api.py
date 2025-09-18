@@ -1494,6 +1494,12 @@ def connect_document_api(app: FastAPI):
                 detail="RAG config not found",
             )
 
+        if rag_config.is_archived:
+            raise HTTPException(
+                status_code=422,
+                detail="This RAG configuration is archived. You must unarchive it to use it.",
+            )
+
         # Empty query - return empty results
         if not request.query.strip():
             return RagSearchResponse(results=[])
