@@ -526,7 +526,7 @@ async def build_rag_workflow_runner(
                 RagExtractionStepRunner(
                     project,
                     extractor_config,
-                    concurrency=50,
+                    concurrency=20,
                     rag_config=rag_config,
                 ),
                 RagChunkingStepRunner(
@@ -541,7 +541,7 @@ async def build_rag_workflow_runner(
                     extractor_config,
                     chunker_config,
                     embedding_config,
-                    concurrency=50,
+                    concurrency=20,
                     rag_config=rag_config,
                 ),
                 RagIndexingStepRunner(

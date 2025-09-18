@@ -5,11 +5,11 @@ from conftest import MockFileFactoryMimeType
 from kiln_ai.utils.pdf_utils import split_pdf_into_pages
 
 
-def test_split_pdf_into_pages_success(mock_file_factory):
+async def test_split_pdf_into_pages_success(mock_file_factory):
     """Test that split_pdf_into_pages successfully splits a PDF into individual pages."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
 
-    with split_pdf_into_pages(test_file) as page_paths:
+    async with split_pdf_into_pages(test_file) as page_paths:
         # Verify we get the expected number of pages (test PDF has 2 pages)
         assert len(page_paths) == 2
 
@@ -33,14 +33,14 @@ def test_split_pdf_into_pages_success(mock_file_factory):
         assert not page_path.exists()
 
 
-def test_split_pdf_into_pages_cleanup_on_exception(mock_file_factory):
+async def test_split_pdf_into_pages_cleanup_on_exception(mock_file_factory):
     """Test that temporary files are cleaned up even when an exception occurs during normal usage."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     captured_page_paths = []
 
     # Test that cleanup happens even when an exception occurs during the with block
     with pytest.raises(RuntimeError, match="Simulated error during usage"):
-        with split_pdf_into_pages(test_file) as page_paths:
+        async with split_pdf_into_pages(test_file) as page_paths:
             # Capture the page paths before the exception
             captured_page_paths.extend(page_paths)
             # Simulate an exception during normal usage of the context manager
@@ -56,12 +56,12 @@ def test_split_pdf_into_pages_cleanup_on_exception(mock_file_factory):
         assert not temp_dir.exists()
 
 
-def test_split_pdf_into_pages_temporary_directory_creation(mock_file_factory):
+async def test_split_pdf_into_pages_temporary_directory_creation(mock_file_factory):
     """Test that temporary directories are created with the correct prefix."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     captured_temp_dirs = []
 
-    with split_pdf_into_pages(test_file) as page_paths:
+    async with split_pdf_into_pages(test_file) as page_paths:
         # Check that page paths are in a directory with the expected prefix
         temp_dir = page_paths[0].parent
         captured_temp_dirs.append(temp_dir)
