@@ -3,6 +3,7 @@ import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
 import { progress_ui_state } from "./progress_ui_store"
+import { Semaphore } from "$lib/utils/semaphore"
 
 export type RagConfigurationStatus =
   | "not_started"
@@ -26,6 +27,10 @@ export const ragProgressStore = createRagProgressStore()
 export const allRagConfigs = derived(ragProgressStore, ($store) => {
   return sortRagConfigs(Object.values($store.rag_configs), "created_at")
 })
+
+// cap concurrent EventSource connections browsers have different limits,
+// we keep the limit low enough to be safe for most browsers
+const sseSlots = new Semaphore(5)
 
 function createRagProgressStore() {
   const { subscribe, set, update } = writable<RagConfigurationProgressState>({
@@ -63,7 +68,7 @@ function createRagProgressStore() {
   }
 
   async function run_all_rag_configs(project_id: string): Promise<boolean> {
-    // retrieve all rag configs
+    // get all rag configs
     const { data, error } = await client.GET(
       "/api/projects/{project_id}/rag_configs",
       {
@@ -79,17 +84,34 @@ function createRagProgressStore() {
       return false
     }
 
+    // process rag configs with concurrency limit to avoid hitting browser limits
+    const tasks: Promise<unknown>[] = []
     for (const rag_config of data) {
       if (!rag_config.id) {
         continue
       }
-      run_rag_config(project_id, rag_config.id)
+
+      tasks.push(
+        (async () => {
+          await sseSlots.acquire()
+          try {
+            await run_rag_config(project_id, String(rag_config.id))
+          } finally {
+            sseSlots.release()
+          }
+        })(),
+      )
     }
 
-    return true
+    const results = await Promise.allSettled(tasks)
+    const failed = results.filter((r) => r.status === "rejected")
+    return failed.length === 0
   }
 
-  function run_rag_config(project_id: string, rag_config_id: string): boolean {
+  function run_rag_config(
+    project_id: string,
+    rag_config_id: string,
+  ): Promise<void> {
     update((state) => ({
       ...state,
       status: { ...state.status, [rag_config_id]: "running" },
@@ -118,82 +140,90 @@ function createRagProgressStore() {
     const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
     const eventSource = new EventSource(run_url)
 
-    eventSource.onmessage = (event) => {
-      try {
-        // complete is a special message part of SSE to indicate the run is complete
-        // it does not mean the run was successful
-        if (event.data === "complete") {
+    return new Promise<void>((resolve) => {
+      const finalize = (status: RagConfigurationStatus) => {
+        try {
           eventSource.close()
-
-          // the run may have failed before even sending any explicit errors for any of the steps
-          // for example if the run failed before even starting (e.g. invalid config)
-
-          const state = get(ragProgressStore)
-          const previous_progress_state = state.progress[rag_config_id]
-          const extraction_incomplete =
-            (previous_progress_state.total_document_extracted_count ?? 0) <
-            previous_progress_state.total_document_count
-          const chunking_incomplete =
-            (previous_progress_state.total_document_chunked_count ?? 0) <
-            previous_progress_state.total_document_count
-          const embedding_incomplete =
-            (previous_progress_state.total_document_embedded_count ?? 0) <
-            previous_progress_state.total_document_count
-          const indexing_incomplete =
-            (previous_progress_state.total_chunk_completed_count ?? 0) <
-            previous_progress_state.total_chunk_count
-
-          const failed_implicitly =
-            (previous_progress_state.total_document_count ?? 0) > 0 &&
-            (extraction_incomplete ||
-              chunking_incomplete ||
-              embedding_incomplete ||
-              indexing_incomplete)
-
-          const completion_status =
-            has_errors(rag_config_id) || failed_implicitly
-              ? "completed_with_errors"
-              : "complete"
-
-          update((state) => {
-            return {
-              ...state,
-              running_rag_configs: {
-                ...state.running_rag_configs,
-                [rag_config_id]: false,
-              },
-              status: {
-                ...state.status,
-                [rag_config_id]: completion_status,
-              },
-            }
+        } catch (error) {
+          console.error("Error closing event source", error)
+        }
+        update((state) => ({
+          ...state,
+          running_rag_configs: {
+            ...state.running_rag_configs,
+            [rag_config_id]: false,
+          },
+          status: { ...state.status, [rag_config_id]: status },
+        }))
+        if (
+          get(ragProgressStore).last_started_rag_config_id === rag_config_id
+        ) {
+          progress_ui_state.set({
+            title: "Processing Documents",
+            body: "",
+            link: `/docs/rag_configs/${project_id}`,
+            cta:
+              status === "completed_with_errors"
+                ? "View Errors"
+                : "View Results",
+            progress: 100,
+            step_count: null,
+            current_step: 0,
           })
+        }
 
-          if (
-            get(ragProgressStore).last_started_rag_config_id === rag_config_id
-          ) {
-            progress_ui_state.set({
-              title: "Processing Documents",
-              body: "",
-              link: `/docs/rag_configs/${project_id}`,
-              cta: has_errors(rag_config_id) ? "View Errors" : "View Results",
-              progress: 100,
-              step_count: null,
-              current_step: 0,
-            })
+        // we don't need to reject because we handle errors in a more complex
+        // and communicate it in the UI
+        resolve()
+      }
+
+      eventSource.onmessage = (event) => {
+        try {
+          if (event.data === "complete") {
+            const state = get(ragProgressStore)
+            const prev = state.progress[rag_config_id]
+            // guard for undefined
+            if (!prev)
+              return finalize(
+                has_errors(rag_config_id)
+                  ? "completed_with_errors"
+                  : "complete",
+              )
+            const extraction_incomplete =
+              (prev.total_document_extracted_count ?? 0) <
+              (prev.total_document_count ?? 0)
+            const chunking_incomplete =
+              (prev.total_document_chunked_count ?? 0) <
+              (prev.total_document_count ?? 0)
+            const embedding_incomplete =
+              (prev.total_document_embedded_count ?? 0) <
+              (prev.total_document_count ?? 0)
+            const indexing_incomplete =
+              (prev.total_chunk_completed_count ?? 0) <
+              (prev.total_chunk_count ?? 0)
+
+            const failed_implicitly =
+              (prev.total_document_count ?? 0) > 0 &&
+              (extraction_incomplete ||
+                chunking_incomplete ||
+                embedding_incomplete ||
+                indexing_incomplete)
+
+            const completion_status =
+              has_errors(rag_config_id) || failed_implicitly
+                ? "completed_with_errors"
+                : "complete"
+
+            return finalize(completion_status)
           }
-        } else {
+
           const payload = JSON.parse(event.data) as RagProgress
           update((state) => {
             const currentLogs = state.logs[rag_config_id] || []
             const newLogs = payload.logs || []
-
             return {
               ...state,
-              progress: {
-                ...state.progress,
-                [rag_config_id]: payload,
-              },
+              progress: { ...state.progress, [rag_config_id]: payload },
               logs: {
                 ...state.logs,
                 [rag_config_id]: [...currentLogs, ...newLogs],
@@ -217,79 +247,41 @@ function createRagProgressStore() {
               current_step: null,
             })
           }
+        } catch (err) {
+          update((state) => ({
+            ...state,
+            logs: {
+              ...state.logs,
+              [rag_config_id]: [
+                ...(state.logs[rag_config_id] || []),
+                {
+                  level: "error",
+                  message: `Error running RAG config: ${String(err)}`,
+                },
+              ],
+            },
+          }))
+          finalize("completed_with_errors")
         }
-      } catch (error) {
-        eventSource.close()
+      }
+
+      eventSource.onerror = (error) => {
         update((state) => ({
           ...state,
-          status: { ...state.status, [rag_config_id]: "completed_with_errors" },
-          running_rag_configs: {
-            ...state.running_rag_configs,
-            [rag_config_id]: false,
-          },
           logs: {
             ...state.logs,
             [rag_config_id]: [
               ...(state.logs[rag_config_id] || []),
               {
                 level: "error",
-                message: `Error running RAG config: ${error}`,
+                message: `SSE connection error: ${String(error)}`,
               },
             ],
           },
         }))
-
-        if (
-          get(ragProgressStore).last_started_rag_config_id === rag_config_id
-        ) {
-          progress_ui_state.set({
-            title: "Processing Documents",
-            body: "",
-            link: `/docs/rag_configs/${project_id}`,
-            cta: "View Errors",
-            progress: 100,
-            step_count: null,
-            current_step: null,
-          })
-        }
+        finalize("completed_with_errors")
       }
-    }
-
-    // Don't restart on an error (default SSE behavior)
-    eventSource.onerror = (error) => {
-      eventSource.close()
-      update((state) => ({
-        ...state,
-        status: { ...state.status, [rag_config_id]: "completed_with_errors" },
-        running_rag_configs: {
-          ...state.running_rag_configs,
-          [rag_config_id]: false,
-        },
-        logs: {
-          ...state.logs,
-          [rag_config_id]: [
-            ...(state.logs[rag_config_id] || []),
-            {
-              level: "error",
-              message: `SSE connection error: ${error}`,
-            },
-          ],
-        },
-      }))
-      if (get(ragProgressStore).last_started_rag_config_id === rag_config_id) {
-        progress_ui_state.set({
-          title: "Processing Documents",
-          body: "",
-          link: `/docs/rag_configs/${project_id}`,
-          cta: "View Errors",
-          progress: 100,
-          step_count: null,
-          current_step: null,
-        })
-      }
-    }
-
-    return true
+    })
   }
 
   return {

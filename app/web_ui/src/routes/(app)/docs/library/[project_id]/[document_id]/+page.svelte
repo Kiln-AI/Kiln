@@ -14,6 +14,7 @@
   import Output from "../../../../run/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
   import TagDropdown from "../../../../../../lib/ui/tag_dropdown.svelte"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -119,6 +120,9 @@
   let delete_document_dialog: DeleteDialog | null = null
   $: delete_document_url = `/api/projects/${project_id}/documents/${document_id}`
   function after_document_delete() {
+    ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+      console.error("Error running all rag configs", error)
+    })
     goto(`/docs/library/${project_id}`)
   }
 
