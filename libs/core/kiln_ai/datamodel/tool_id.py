@@ -97,9 +97,9 @@ def rag_config_id_from_id(id: str) -> str:
     """
     Get the RAG config ID from the ID.
     """
-    error_message = f"Invalid RAG tool ID: {id}. Expected format: 'kiln_tool::rag::<rag_config_id>'."
-
     parts = id.split("::")
     if not id.startswith(RAG_TOOL_ID_PREFIX) or len(parts) != 3:
-        raise ValueError(error_message)
+        raise ValueError(
+            f"Invalid RAG tool ID: {id}. Expected format: 'kiln_tool::rag::<rag_config_id>'."
+        )
     return parts[2]

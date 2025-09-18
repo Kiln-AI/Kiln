@@ -19,6 +19,7 @@ from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class ChunkContext(BaseModel):
@@ -135,10 +136,16 @@ class RagTool(KilnToolInterface):
             query_embedding=None,
             query_string=query,
         )
-        if self._vector_store_config.store_type in [
-            VectorStoreType.LANCE_DB_HYBRID,
-            VectorStoreType.LANCE_DB_FTS,
-        ]:
+
+        match self._vector_store_config.store_type:
+            case VectorStoreType.LANCE_DB_HYBRID | VectorStoreType.LANCE_DB_VECTOR:
+                is_vector_query = True
+            case VectorStoreType.LANCE_DB_FTS:
+                is_vector_query = False
+            case _:
+                raise_exhaustive_enum_error(self._vector_store_config.store_type)
+
+        if is_vector_query:
             query_embedding_result = await embedding_adapter.generate_embeddings(
                 [query]
             )

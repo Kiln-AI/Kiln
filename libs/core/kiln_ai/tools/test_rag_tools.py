@@ -363,7 +363,7 @@ class TestRagTool:
             assert definition == expected_definition
 
     async def test_rag_tool_run_vector_store_type(self, mock_rag_config, mock_project):
-        """Test RagTool.run() with LANCE_DB_VECTOR store type (no embedding needed)."""
+        """Test RagTool.run() with LANCE_DB_VECTOR store type (embedding needed)."""
         mock_rag_config.parent_project.return_value = mock_project
 
         # Mock search results
@@ -404,7 +404,12 @@ class TestRagTool:
                 mock_embedding_config
             )
 
-            mock_embedding_adapter = Mock()
+            mock_embedding_adapter = AsyncMock()
+            mock_embedding_result = Mock()
+            mock_embedding_result.embeddings = [Mock(vector=[0.1, 0.2, 0.3, 0.4])]
+            mock_embedding_adapter.generate_embeddings.return_value = (
+                mock_embedding_result
+            )
             mock_adapter_factory.return_value = mock_embedding_adapter
 
             mock_vector_store_adapter = AsyncMock()
@@ -424,11 +429,21 @@ class TestRagTool:
             )
             assert result == expected_result
 
+            # Verify embedding generation was called
+            mock_embedding_adapter.generate_embeddings.assert_called_once_with(
+                ["test query"]
+            )
+
             # Verify vector store search was called correctly
             mock_vector_store_adapter.search.assert_called_once()
             search_query = mock_vector_store_adapter.search.call_args[0][0]
             assert search_query.query_string == "test query"
-            assert search_query.query_embedding is None  # No embedding for VECTOR type
+            assert search_query.query_embedding == [
+                0.1,
+                0.2,
+                0.3,
+                0.4,
+            ]  # Embedding provided for VECTOR type
 
     async def test_rag_tool_run_hybrid_store_type(self, mock_rag_config, mock_project):
         """Test RagTool.run() with LANCE_DB_HYBRID store type (embedding needed)."""
@@ -503,12 +518,8 @@ class TestRagTool:
             assert result == expected_result
 
     async def test_rag_tool_run_fts_store_type(self, mock_rag_config, mock_project):
-        """Test RagTool.run() with LANCE_DB_FTS store type (embedding needed)."""
+        """Test RagTool.run() with LANCE_DB_FTS store type (no embedding needed)."""
         mock_rag_config.parent_project.return_value = mock_project
-
-        # Mock embedding result
-        mock_embedding_result = Mock()
-        mock_embedding_result.embeddings = [Mock(vector=[0.5, 0.6, 0.7])]
 
         # Mock search results
         search_results = [
@@ -543,9 +554,6 @@ class TestRagTool:
             )
 
             mock_embedding_adapter = AsyncMock()
-            mock_embedding_adapter.generate_embeddings.return_value = (
-                mock_embedding_result
-            )
             mock_adapter_factory.return_value = mock_embedding_adapter
 
             mock_vector_store_adapter = AsyncMock()
@@ -555,18 +563,22 @@ class TestRagTool:
             tool = RagTool("tool_123", mock_rag_config)
 
             # Run the tool
-            await tool.run("fts query")
+            result = await tool.run("fts query")
 
-            # Verify embedding generation was called
-            mock_embedding_adapter.generate_embeddings.assert_called_once_with(
-                ["fts query"]
+            # Verify the result format
+            expected_result = (
+                "[document_id: doc_fts, chunk_idx: 2]\nFTS search result\n\n"
             )
+            assert result == expected_result
 
-            # Verify vector store search was called with embedding
+            # Verify embedding generation was NOT called for FTS
+            mock_embedding_adapter.generate_embeddings.assert_not_called()
+
+            # Verify vector store search was called without embedding
             mock_vector_store_adapter.search.assert_called_once()
             search_query = mock_vector_store_adapter.search.call_args[0][0]
             assert search_query.query_string == "fts query"
-            assert search_query.query_embedding == [0.5, 0.6, 0.7]
+            assert search_query.query_embedding is None  # No embedding for FTS type
 
     async def test_rag_tool_run_no_embeddings_generated(
         self, mock_rag_config, mock_project
@@ -643,7 +655,12 @@ class TestRagTool:
                 mock_embedding_config
             )
 
-            mock_embedding_adapter = Mock()
+            mock_embedding_adapter = AsyncMock()
+            mock_embedding_result = Mock()
+            mock_embedding_result.embeddings = [Mock(vector=[0.1, 0.2, 0.3, 0.4])]
+            mock_embedding_adapter.generate_embeddings.return_value = (
+                mock_embedding_result
+            )
             mock_adapter_factory.return_value = mock_embedding_adapter
 
             mock_vector_store_adapter = AsyncMock()
