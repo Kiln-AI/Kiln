@@ -549,7 +549,7 @@
             </ul>
           </div>
         {:else if should_select_eval_config}
-          <div class="mb-4">
+          <div class="mb-4 mt-2">
             <Warning
               warning_message="Click 'Set as Winner' below to select a winning run config for this eval."
               warning_color={focus_select_eval_config ? "primary" : "gray"}

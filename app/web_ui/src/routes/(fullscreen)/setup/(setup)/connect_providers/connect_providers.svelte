@@ -16,6 +16,7 @@
   import posthog from "posthog-js"
 
   export let highlight_finetune = false
+  export let required_providers: string[] = []
 
   type Provider = {
     name: string
@@ -933,23 +934,17 @@
           <img
             src={get_provider_image(provider.id)}
             alt={provider.name}
-            class="flex-none p-1 {provider.featured
-              ? 'size-12'
-              : 'size-10 mx-1'}"
+            class="flex-none p-1 size-10 mx-1"
           />
           <div class="flex flex-col grow pr-4">
-            <h3
-              class={provider.featured
-                ? "text-large font-bold"
-                : "text-base font-medium"}
-            >
+            <h3 class="text-base font-medium flex flex-row gap-2 items-center">
               {provider.name}
-              {#if provider.featured}
-                <div class="badge badge-sm ml-2 badge-secondary">
-                  Recommended
-                </div>
+              {#if required_providers.includes(provider.id)}
+                <div class="badge badge-sm badge-warning">Required</div>
+              {:else if provider.featured}
+                <div class="badge badge-sm badge-secondary">Recommended</div>
               {:else if provider.pill_text}
-                <div class="badge badge-sm ml-2 badge-primary">
+                <div class="badge badge-sm badge-primary">
                   {provider.pill_text}
                 </div>
               {/if}

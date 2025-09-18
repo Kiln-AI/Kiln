@@ -442,17 +442,21 @@
             )}
           />
           {#if !has_default_eval_config}
-            <Warning
-              warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
-              warning_color="warning"
-              tight={true}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
+                warning_color="warning"
+                tight={true}
+              />
+            </div>
           {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
-            <Warning
-              warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
-              warning_color="warning"
-              tight={true}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
+                warning_color="warning"
+                tight={true}
+              />
+            </div>
           {/if}
         </div>
         <div

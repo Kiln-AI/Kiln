@@ -26,6 +26,7 @@ class KilnBuiltInToolId(str, Enum):
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
+RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 
 
@@ -58,6 +59,15 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # RAG tools must have format: kiln_tool::rag::<rag_config_id>
+    if id.startswith(RAG_TOOL_ID_PREFIX):
+        rag_config_id = rag_config_id_from_id(id)
+        if not rag_config_id:
+            raise ValueError(
+                f"Invalid RAG tool ID: {id}. Expected format: 'kiln_tool::rag::<rag_config_id>'."
+            )
+        return id
+
     raise ValueError(f"Invalid tool ID: {id}")
 
 
@@ -81,3 +91,15 @@ def mcp_server_and_tool_name_from_id(id: str) -> tuple[str, str]:
                 f"Invalid MCP tool ID: {id}. Expected format: 'mcp::(remote|local)::<server_id>::<tool_name>'."
             )
     return parts[2], parts[3]  # server_id, tool_name
+
+
+def rag_config_id_from_id(id: str) -> str:
+    """
+    Get the RAG config ID from the ID.
+    """
+    parts = id.split("::")
+    if not id.startswith(RAG_TOOL_ID_PREFIX) or len(parts) != 3:
+        raise ValueError(
+            f"Invalid RAG tool ID: {id}. Expected format: 'kiln_tool::rag::<rag_config_id>'."
+        )
+    return parts[2]

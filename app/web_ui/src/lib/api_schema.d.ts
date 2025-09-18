@@ -369,6 +369,490 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Documents Bulk */
+        post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Documents */
+        get: operations["get_documents_api_projects__project_id__documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document Tags */
+        get: operations["get_document_tags_api_projects__project_id__documents_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_api_projects__project_id__documents__document_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Document */
+        delete: operations["delete_document_api_projects__project_id__documents__document_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Document */
+        patch: operations["patch_document_api_projects__project_id__documents__document_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/edit_tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Tags */
+        post: operations["edit_tags_api_projects__project_id__documents_edit_tags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_extractor_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Extractor Config */
+        post: operations["create_extractor_config_api_projects__project_id__create_extractor_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extractor Configs */
+        get: operations["get_extractor_configs_api_projects__project_id__extractor_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extractor Config */
+        get: operations["get_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Extractor Config */
+        patch: operations["patch_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Extractor Config */
+        get: operations["run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/extractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extractions */
+        get: operations["get_extractions_api_projects__project_id__documents__document_id__extractions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extraction */
+        get: operations["get_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Extraction */
+        delete: operations["delete_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Document File */
+        get: operations["download_document_file_api_projects__project_id__documents__document_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Document Enclosing Folder */
+        post: operations["open_document_enclosing_folder_api_projects__project_id__documents__document_id__open_enclosing_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Documents */
+        post: operations["delete_documents_api_projects__project_id__documents_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Extraction Progress */
+        get: operations["get_extraction_progress_api_projects__project_id__extractor_configs__extractor_config_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/documents/{document_id}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract File */
+        post: operations["extract_file_api_projects__project_id__documents__document_id__extract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_chunker_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Chunker Config */
+        post: operations["create_chunker_config_api_projects__project_id__create_chunker_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/chunker_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chunker Configs */
+        get: operations["get_chunker_configs_api_projects__project_id__chunker_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_embedding_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Embedding Config */
+        post: operations["create_embedding_config_api_projects__project_id__create_embedding_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/embedding_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Embedding Configs */
+        get: operations["get_embedding_configs_api_projects__project_id__embedding_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_vector_store_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Vector Store Config */
+        post: operations["create_vector_store_config_api_projects__project_id__create_vector_store_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/vector_store_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vector Store Configs */
+        get: operations["get_vector_store_configs_api_projects__project_id__vector_store_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Config */
+        get: operations["get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Rag Config */
+        patch: operations["update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/create_rag_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Rag Config */
+        post: operations["create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rag Configs */
+        get: operations["get_rag_configs_api_projects__project_id__rag_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Rag Config */
+        get: operations["run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Rag Config Progress */
+        post: operations["get_rag_config_progress_api_projects__project_id__rag_configs_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/rag_configs/{rag_config_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Rag Config
+         * @description Search the vector store associated with a RAG config.
+         */
+        post: operations["search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -395,6 +879,40 @@ export interface paths {
         };
         /** Get Available Models */
         get: operations["get_available_models_api_available_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/embedding_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Embedding Models */
+        get: operations["get_providers_embedding_models_api_providers_embedding_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_embedding_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Embedding Models */
+        get: operations["get_available_embedding_models_api_available_embedding_models_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1248,6 +1766,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/search_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Search Tools */
+        get: operations["get_search_tools_api_projects__project_id__search_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1343,6 +1878,22 @@ export interface components {
             /** Splits */
             splits?: string | null;
         };
+        /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
+        Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+            /** Files */
+            files?: string[] | null;
+            /** Names */
+            names?: string[] | null;
+        };
+        /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
+        Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
+            /** Document Ids */
+            document_ids: string[];
+            /** Add Tags */
+            add_tags?: string[] | null;
+            /** Remove Tags */
+            remove_tags?: string[] | null;
+        };
         /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
         Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
             /** Run Ids */
@@ -1351,6 +1902,13 @@ export interface components {
             add_tags?: string[] | null;
             /** Remove Tags */
             remove_tags?: string[] | null;
+        };
+        /** BulkCreateDocumentsResponse */
+        BulkCreateDocumentsResponse: {
+            /** Created Documents */
+            created_documents: components["schemas"]["Document"][];
+            /** Failed Files */
+            failed_files: string[];
         };
         /** BulkUploadResponse */
         BulkUploadResponse: {
@@ -1387,7 +1945,7 @@ export interface components {
             /** Refusal */
             refusal?: string | null;
             /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -1415,7 +1973,7 @@ export interface components {
             /** Refusal */
             refusal?: string | null;
             /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -1479,8 +2037,8 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageToolCallParam */
-        ChatCompletionMessageToolCallParam: {
+        /** ChatCompletionMessageFunctionToolCallParam */
+        ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
             function: components["schemas"]["Function"];
@@ -1544,6 +2102,51 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
+        /** ChunkerConfig */
+        ChunkerConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name to identify the chunker config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The description of the chunker config
+             */
+            description?: string | null;
+            /** @description This is used to determine the type of chunker to use. */
+            chunker_type: components["schemas"]["ChunkerType"];
+            /**
+             * Properties
+             * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
+             */
+            properties: {
+                [key: string]: string | number | boolean;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * ChunkerType
+         * @enum {string}
+         */
+        ChunkerType: "fixed_window";
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -1561,6 +2164,25 @@ export interface components {
             /** Kendalltau Correlation */
             kendalltau_correlation: number | null;
         };
+        /** CreateChunkerConfigRequest */
+        CreateChunkerConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the chunker config
+             */
+            description?: string | null;
+            /** @description The type of the chunker */
+            chunker_type: components["schemas"]["ChunkerType"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
+        };
         /**
          * CreateDatasetSplitRequest
          * @description Request to create a dataset split
@@ -1574,13 +2196,36 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** CreateEmbeddingConfigRequest */
+        CreateEmbeddingConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the embedding config
+             */
+            description?: string | null;
+            /** @description The provider of the embedding model */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /** @description The name of the embedding model */
+            model_name: components["schemas"]["EmbeddingModelName"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
+        };
         /** CreateEvalConfigRequest */
         CreateEvalConfigRequest: {
             /** Name */
             name?: string | null;
             type: components["schemas"]["EvalConfigType"];
             /** Properties */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Name */
             model_name: string;
             provider: components["schemas"]["ModelProviderName"];
@@ -1601,6 +2246,39 @@ export interface components {
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
+            };
+        };
+        /** CreateExtractorConfigRequest */
+        CreateExtractorConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the extractor config
+             */
+            description?: string | null;
+            /** @description The name of the model provider to use for the extractor config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
+            /** @description The output format of the extractor config */
+            output_format: components["schemas"]["OutputFormat"];
+            /**
+             * Passthrough Mimetypes
+             * @description The mimetypes to pass through to the extractor
+             */
+            passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean | {
+                    [key: string]: string;
+                } | null;
             };
         };
         /**
@@ -1634,6 +2312,54 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
         };
+        /** CreateRagConfigRequest */
+        CreateRagConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /**
+             * Tool Name
+             * @description A name for the model to identify the Search Tool in conversations.
+             */
+            tool_name: string;
+            /**
+             * Tool Description
+             * @description A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.
+             */
+            tool_description: string;
+            /**
+             * Extractor Config Id
+             * @description The extractor config to use for the RAG workflow
+             */
+            extractor_config_id: string | null;
+            /**
+             * Chunker Config Id
+             * @description The chunker config to use for the RAG workflow.
+             */
+            chunker_config_id: string | null;
+            /**
+             * Embedding Config Id
+             * @description The embedding config to use for the RAG workflow.
+             */
+            embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The vector store config to use for the RAG workflow.
+             */
+            vector_store_config_id: string | null;
+            /**
+             * Tags
+             * @description List of document tags to filter by. If None, all documents in the project are used.
+             */
+            tags?: string[] | null;
+        };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
             /** Name */
@@ -1641,6 +2367,25 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /** CreateVectorStoreConfigRequest */
+        CreateVectorStoreConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the vector store config
+             */
+            description?: string | null;
+            /** @description The type of vector store to use */
+            store_type: components["schemas"]["VectorStoreType"];
+            /** Properties */
+            properties?: {
+                [key: string]: string | number | boolean;
+            };
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -1725,7 +2470,9 @@ export interface components {
              * Input
              * @description Input for this sample
              */
-            input: string | Record<string, never>;
+            input: string | {
+                [key: string]: unknown;
+            };
             /**
              * Topic Path
              * @description The path to the topic for this sample. Empty is the root topic.
@@ -1911,6 +2658,121 @@ export interface components {
             /** Untested Models */
             untested_models?: string[];
         };
+        /** Document */
+        Document: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name to identify the document.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for the file
+             */
+            description: string;
+            /** @description The original file */
+            original_file: components["schemas"]["FileInfo"];
+            /** @description The kind of document. The kind is a broad family of filetypes that can be handled in a similar way */
+            kind: components["schemas"]["Kind"];
+            /**
+             * Tags
+             * @description Tags for the document. Tags are used to categorize documents for filtering and reporting.
+             */
+            tags?: string[];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** EmbeddingConfig */
+        EmbeddingConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name to identify the embedding config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your reference, not shared with embedding models.
+             */
+            description?: string | null;
+            /** @description The provider to use to generate embeddings. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The model to use to generate embeddings.
+             */
+            model_name: string;
+            /**
+             * Properties
+             * @description Properties to be used to execute the embedding config.
+             */
+            properties: {
+                [key: string]: string | number | boolean;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** EmbeddingModelDetails */
+        EmbeddingModelDetails: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** N Dimensions */
+            n_dimensions: number;
+            /** Max Input Tokens */
+            max_input_tokens: number | null;
+            /** Supports Custom Dimensions */
+            supports_custom_dimensions: boolean;
+            /** Suggested For Chunk Embedding */
+            suggested_for_chunk_embedding: boolean;
+        };
+        /**
+         * EmbeddingModelName
+         * @description Enumeration of specific model versions supported by the system.
+         * @enum {string}
+         */
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
+        /** EmbeddingProvider */
+        EmbeddingProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["EmbeddingModelDetails"][];
+        };
         /** Eval */
         Eval: {
             /**
@@ -2031,7 +2893,9 @@ export interface components {
              * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
              * @default {}
              */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2218,7 +3082,9 @@ export interface components {
             /** Description */
             description: string | null;
             /** Inputschema */
-            inputSchema?: Record<string, never>;
+            inputSchema?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ExternalToolServer
@@ -2261,7 +3127,9 @@ export interface components {
              * @description Configuration properties specific to the tool type.
              * @default {}
              */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -2282,7 +3150,9 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
@@ -2303,6 +3173,117 @@ export interface components {
             /** Secret Header Keys */
             secret_header_keys?: string[];
         };
+        /** ExtractionProgress */
+        ExtractionProgress: {
+            /** Document Count Total */
+            document_count_total: number;
+            /** Document Count Successful */
+            document_count_successful: number;
+            extractor_config: components["schemas"]["ExtractorConfig"] | null;
+        };
+        /** ExtractionSummary */
+        ExtractionSummary: {
+            /** Id */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Source */
+            source: string;
+            /** Output Content */
+            output_content: string;
+            extractor: components["schemas"]["ExtractorSummary"];
+        };
+        /** ExtractorConfig */
+        ExtractorConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name to identify the extractor config.
+             */
+            name: string;
+            /**
+             * Is Archived
+             * @description Whether the extractor config is archived. Archived extractor configs are not shown in the UI and are not available for use.
+             * @default false
+             */
+            is_archived: boolean;
+            /**
+             * Description
+             * @description The description of the extractor config
+             */
+            description?: string | null;
+            /**
+             * Model Provider Name
+             * @description The name of the model provider to use for the extractor config.
+             */
+            model_provider_name: string;
+            /**
+             * Model Name
+             * @description The name of the model to use for the extractor config.
+             */
+            model_name: string;
+            /**
+             * @description The format to use for the output.
+             * @default text/markdown
+             */
+            output_format: components["schemas"]["OutputFormat"];
+            /**
+             * Passthrough Mimetypes
+             * @description If the mimetype is in this list, the extractor will not be used and the text content of the file will be returned as is.
+             */
+            passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
+            /** @description This is used to determine the type of extractor to use. */
+            extractor_type: components["schemas"]["ExtractorType"];
+            /**
+             * Properties
+             * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
+             */
+            properties?: {
+                [key: string]: string | number | boolean | {
+                    [key: string]: string;
+                } | null;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** ExtractorSummary */
+        ExtractorSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            output_format: components["schemas"]["OutputFormat"];
+            /** Passthrough Mimetypes */
+            passthrough_mimetypes: components["schemas"]["OutputFormat"][];
+            extractor_type: components["schemas"]["ExtractorType"];
+        };
+        /**
+         * ExtractorType
+         * @enum {string}
+         */
+        ExtractorType: "litellm";
         /** File */
         File: {
             file: components["schemas"]["FileFile"];
@@ -2320,6 +3301,28 @@ export interface components {
             file_id?: string;
             /** Filename */
             filename?: string;
+        };
+        /** FileInfo */
+        FileInfo: {
+            /**
+             * Filename
+             * @description The filename of the file
+             */
+            filename: string;
+            /**
+             * Size
+             * @description The size of the file in bytes
+             */
+            size: number;
+            /**
+             * Mime Type
+             * @description The MIME type of the file
+             */
+            mime_type: string;
+            /** @description The attachment to the file */
+            attachment: {
+                [key: string]: unknown;
+            };
         };
         /**
          * FineTuneParameter
@@ -2544,6 +3547,14 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** GetRagConfigProgressRequest */
+        GetRagConfigProgressRequest: {
+            /**
+             * Rag Config Ids
+             * @description The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned
+             */
+            rag_config_ids?: string[] | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2569,6 +3580,9 @@ export interface components {
              */
             format: "wav" | "mp3";
         };
+        KilnAttachmentModel: {
+            [key: string]: string;
+        } | null;
         /**
          * KilnBaseModel
          * @description Base model for all Kiln data models with common functionality for persistence and versioning.
@@ -2580,7 +3594,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        "KilnBaseModel-Input": {
+        KilnBaseModel: {
             /**
              * V
              * @default 1
@@ -2597,37 +3611,6 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-        };
-        /**
-         * KilnBaseModel
-         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
-         *
-         *     Attributes:
-         *         v (int): Schema version number for migration support
-         *         id (str): Unique identifier for the model instance
-         *         path (Path): File system path where the model is stored
-         *         created_at (datetime): Timestamp when the model was created
-         *         created_by (str): User ID of the creator
-         */
-        "KilnBaseModel-Output": {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -2649,6 +3632,11 @@ export interface components {
             /** Missing Secrets */
             missing_secrets: string[];
         };
+        /**
+         * Kind
+         * @enum {string}
+         */
+        Kind: "document" | "image" | "video" | "audio";
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
             /** Name */
@@ -2665,6 +3653,20 @@ export interface components {
             };
             /** Secret Env Var Keys */
             secret_env_var_keys?: string[];
+        };
+        /** LogMessage */
+        LogMessage: {
+            /**
+             * Level
+             * @description The level of the log message
+             * @enum {string}
+             */
+            level: "info" | "error" | "warning";
+            /**
+             * Message
+             * @description The message to display to the user
+             */
+            message: string;
         };
         /** MeanUsage */
         MeanUsage: {
@@ -2699,6 +3701,17 @@ export interface components {
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
             suggested_for_uncensored_data_gen: boolean;
+            /** Supports Doc Extraction */
+            supports_doc_extraction: boolean;
+            /** Suggested For Doc Extraction */
+            suggested_for_doc_extraction: boolean;
+            /**
+             * Multimodal Capable
+             * @default false
+             */
+            multimodal_capable: boolean;
+            /** Multimodal Mime Types */
+            multimodal_mime_types?: string[] | null;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /**
              * Untested Model
@@ -2724,6 +3737,54 @@ export interface components {
             supported_models: string[];
             /** Untested Models */
             untested_models?: string[];
+            /** Supported Embedding Models */
+            supported_embedding_models?: string[];
+        };
+        /** OpenFileResponse */
+        OpenFileResponse: {
+            /** Path */
+            path: string;
+        };
+        /**
+         * OutputFormat
+         * @enum {string}
+         */
+        OutputFormat: "text/plain" | "text/markdown";
+        /** PatchDocumentRequest */
+        PatchDocumentRequest: {
+            /**
+             * Name
+             * @description A name for this document.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the document
+             */
+            description?: string | null;
+            /**
+             * Tags
+             * @description Tags for the document
+             */
+            tags?: string[] | null;
+        };
+        /** PatchExtractorConfigRequest */
+        PatchExtractorConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the extractor config
+             */
+            description?: string | null;
+            /**
+             * Is Archived
+             * @description Whether the extractor config is archived
+             */
+            is_archived?: boolean | null;
         };
         /**
          * Priority
@@ -2897,6 +3958,13 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** ProviderEmbeddingModels */
+        ProviderEmbeddingModels: {
+            /** Models */
+            models: {
+                [key: string]: components["schemas"]["ProviderModel"];
+            };
+        };
         /** ProviderModel */
         ProviderModel: {
             /** Id */
@@ -2910,6 +3978,202 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /** RagConfig */
+        RagConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name to identify this RAG configuration for your own reference.
+             */
+            name: string;
+            /**
+             * Is Archived
+             * @description Whether the RAG configuration is archived. Archived RAG configurations are not shown in the UI and are not available for use.
+             * @default false
+             */
+            is_archived: boolean;
+            /**
+             * Description
+             * @description A description of the RAG configuration for you and your team. Will not be used in prompts/training/validation.
+             */
+            description?: string | null;
+            /**
+             * Tool Name
+             * @description A name for the model to identify the Search Tool in conversations.
+             */
+            tool_name: string;
+            /**
+             * Tool Description
+             * @description A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.
+             */
+            tool_description: string;
+            /**
+             * Extractor Config Id
+             * @description The ID of the extractor config used to extract the documents.
+             */
+            extractor_config_id: string | null;
+            /**
+             * Chunker Config Id
+             * @description The ID of the chunker config used to chunk the documents.
+             */
+            chunker_config_id: string | null;
+            /**
+             * Embedding Config Id
+             * @description The ID of the embedding config used to embed the documents.
+             */
+            embedding_config_id: string | null;
+            /**
+             * Vector Store Config Id
+             * @description The ID of the vector store config used to store the documents.
+             */
+            vector_store_config_id: string | null;
+            /**
+             * Tags
+             * @description List of document tags to filter by. If None, all documents in the project are used.
+             */
+            tags?: string[] | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** RagConfigWithSubConfigs */
+        RagConfigWithSubConfigs: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Is Archived */
+            is_archived: boolean;
+            extractor_config: components["schemas"]["ExtractorConfig"];
+            chunker_config: components["schemas"]["ChunkerConfig"];
+            embedding_config: components["schemas"]["EmbeddingConfig"];
+            vector_store_config: components["schemas"]["VectorStoreConfig"];
+            /** Tags */
+            tags: string[] | null;
+        };
+        /** RagProgress */
+        RagProgress: {
+            /**
+             * Total Document Count
+             * @description The total number of items to process
+             * @default 0
+             */
+            total_document_count: number;
+            /**
+             * Total Document Completed Count
+             * @description The number of items that have been processed
+             * @default 0
+             */
+            total_document_completed_count: number;
+            /**
+             * Total Chunk Count
+             * @description The number of chunks that should be indexed for the indexing to be completed.
+             * @default 0
+             */
+            total_chunk_count: number;
+            /**
+             * Total Chunk Completed Count
+             * @description The number of chunks that have been indexed
+             * @default 0
+             */
+            total_chunk_completed_count: number;
+            /**
+             * Total Document Extracted Count
+             * @description The number of items that have been extracted
+             * @default 0
+             */
+            total_document_extracted_count: number;
+            /**
+             * Total Document Extracted Error Count
+             * @description The number of items that have errored during extraction
+             * @default 0
+             */
+            total_document_extracted_error_count: number;
+            /**
+             * Total Document Chunked Count
+             * @description The number of items that have been chunked
+             * @default 0
+             */
+            total_document_chunked_count: number;
+            /**
+             * Total Document Chunked Error Count
+             * @description The number of items that have errored during chunking
+             * @default 0
+             */
+            total_document_chunked_error_count: number;
+            /**
+             * Total Document Embedded Count
+             * @description The number of items that have been embedded
+             * @default 0
+             */
+            total_document_embedded_count: number;
+            /**
+             * Total Document Embedded Error Count
+             * @description The number of items that have errored during embedding
+             * @default 0
+             */
+            total_document_embedded_error_count: number;
+            /**
+             * Total Chunks Indexed Count
+             * @description The number of chunks that have been indexed
+             * @default 0
+             */
+            total_chunks_indexed_count: number;
+            /**
+             * Total Chunks Indexed Error Count
+             * @description The number of chunks that have errored during indexing
+             * @default 0
+             */
+            total_chunks_indexed_error_count: number;
+            /**
+             * Logs
+             * @description A list of log messages to display to the user
+             */
+            logs?: components["schemas"]["LogMessage"][] | null;
+        };
+        /** RagSearchRequest */
+        RagSearchRequest: {
+            /**
+             * Query
+             * @description The search query text
+             */
+            query: string;
+        };
+        /** RagSearchResponse */
+        RagSearchResponse: {
+            /**
+             * Results
+             * @description The search results
+             */
+            results: components["schemas"]["SearchResult"][];
         };
         /** RatingOption */
         RatingOption: {
@@ -3037,7 +4301,9 @@ export interface components {
             /** Plaintext Input */
             plaintext_input?: string | null;
             /** Structured Input */
-            structured_input?: Record<string, never> | null;
+            structured_input?: {
+                [key: string]: unknown;
+            } | null;
             /** Tags */
             tags?: string[] | null;
         };
@@ -3045,6 +4311,40 @@ export interface components {
         ScoreSummary: {
             /** Mean Score */
             mean_score: number;
+        };
+        /** SearchResult */
+        SearchResult: {
+            /**
+             * Document Id
+             * @description The id of the Kiln document.
+             */
+            document_id: string;
+            /**
+             * Chunk Idx
+             * @description The index of the chunk.
+             */
+            chunk_idx: number;
+            /**
+             * Chunk Text
+             * @description The text of the chunk.
+             */
+            chunk_text: string;
+            /**
+             * Similarity
+             * @description The score of the chunk, which depends on the similarity metric used.
+             */
+            similarity: number | null;
+        };
+        /** SearchToolApiDescription */
+        SearchToolApiDescription: {
+            /** Id */
+            id: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
         };
         /**
          * StructuredOutputMode
@@ -3338,7 +4638,7 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -3536,6 +4836,15 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** UpdateRagConfigRequest */
+        UpdateRagConfigRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Is Archived */
+            is_archived?: boolean | null;
+        };
         /** Usage */
         Usage: {
             /**
@@ -3568,6 +4877,51 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VectorStoreConfig */
+        VectorStoreConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for your own reference to identify the vector store config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /** @description The type of vector store to use. */
+            store_type: components["schemas"]["VectorStoreType"];
+            /**
+             * Properties
+             * @description The properties of the vector store config, specific to the selected store_type.
+             */
+            properties: {
+                [key: string]: string | number | null;
+            };
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * VectorStoreType
+         * @enum {string}
+         */
+        VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
     };
     responses: never;
     parameters: never;
@@ -3641,7 +4995,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -3733,7 +5089,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -3789,7 +5147,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -3857,7 +5217,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4193,7 +5555,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4425,6 +5789,1116 @@ export interface operations {
             };
         };
     };
+    create_documents_bulk_api_projects__project_id__documents_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_documents_bulk_api_projects__project_id__documents_bulk_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkCreateDocumentsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_documents_api_projects__project_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_tags_api_projects__project_id__documents_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_api_projects__project_id__documents__document_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_document_api_projects__project_id__documents__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_document_api_projects__project_id__documents__document_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_tags_api_projects__project_id__documents_edit_tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Body_edit_tags_api_projects__project_id__documents_edit_tags_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_extractor_config_api_projects__project_id__create_extractor_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExtractorConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractorConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractor_configs_api_projects__project_id__extractor_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractorConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractorConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchExtractorConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractions_api_projects__project_id__documents__document_id__extractions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+                extraction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_extraction_api_projects__project_id__documents__document_id__extractions__extraction_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+                extraction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_document_file_api_projects__project_id__documents__document_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_document_enclosing_folder_api_projects__project_id__documents__document_id__open_enclosing_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenFileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_documents_api_projects__project_id__documents_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": string[];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_progress_api_projects__project_id__extractor_configs__extractor_config_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_file_api_projects__project_id__documents__document_id__extract_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": (string | null)[] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_chunker_config_api_projects__project_id__create_chunker_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChunkerConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkerConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chunker_configs_api_projects__project_id__chunker_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChunkerConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_embedding_config_api_projects__project_id__create_embedding_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmbeddingConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_embedding_configs_api_projects__project_id__embedding_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_vector_store_config_api_projects__project_id__create_vector_store_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateVectorStoreConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vector_store_configs_api_projects__project_id__vector_store_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorStoreConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_config_api_projects__project_id__rag_configs__rag_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rag_config_api_projects__project_id__rag_configs__rag_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRagConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_rag_config_api_projects__project_id__rag_configs_create_rag_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRagConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_configs_api_projects__project_id__rag_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagConfigWithSubConfigs"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_rag_config_api_projects__project_id__rag_configs__rag_config_id__run_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rag_config_progress_api_projects__project_id__rag_configs_progress_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetRagConfigProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["RagProgress"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rag_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RagSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RagSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_providers_models_api_providers_models_get: {
         parameters: {
             query?: never;
@@ -4461,6 +6935,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AvailableModels"][];
+                };
+            };
+        };
+    };
+    get_providers_embedding_models_api_providers_embedding_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderEmbeddingModels"];
+                };
+            };
+        };
+    };
+    get_available_embedding_models_api_available_embedding_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingProvider"][];
                 };
             };
         };
@@ -4600,7 +7114,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -4777,7 +7293,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -6367,6 +8885,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_search_tools_api_projects__project_id__search_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchToolApiDescription"][];
                 };
             };
             /** @description Validation Error */
