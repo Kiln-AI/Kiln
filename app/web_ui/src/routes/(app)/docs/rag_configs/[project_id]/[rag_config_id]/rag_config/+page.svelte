@@ -33,6 +33,7 @@
 
   let loading: boolean = false
   let error: KilnError | null = null
+  let update_error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
   let edit_dialog: EditDialog | null = null
@@ -87,7 +88,7 @@
 
   async function update_archived_state(is_archived: boolean) {
     try {
-      error = null
+      update_error = null
       const { error: update_archived_state_error } = await client.PATCH(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}",
         {
@@ -110,7 +111,7 @@
 
       await get_rag_config()
     } catch (e) {
-      error = createKilnError(e)
+      update_error = createKilnError(e)
     } finally {
       loading = false
     }
@@ -259,6 +260,11 @@
         </div>
       </div>
     {:else}
+      {#if update_error}
+        <div class="my-4 text-error">
+          <span>{update_error.getMessage() || "Update failed"}</span>
+        </div>
+      {/if}
       {#if rag_config?.is_archived}
         <Warning
           warning_message="This Search Tool is archived. You may unarchive it to use it again."
