@@ -118,7 +118,7 @@ class LitellmExtractor(BaseExtractor):
     async def _extract_from_pdf_pages(self, pdf_path: Path, prompt: str) -> str:
         combined_content = []
 
-        with split_pdf_into_pages(pdf_path) as page_paths:
+        async with split_pdf_into_pages(pdf_path) as page_paths:
             # we extract from each page individually and then combine the results
             # this ensures the model stays focused on the current page and does not
             # start summarizing the later pages
